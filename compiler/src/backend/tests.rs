@@ -1047,6 +1047,45 @@ fn explicit_check_failure_emits_the_exact_mandatory_record_shape() {
     assert_eq!(stderr.lines().count(), 1);
 }
 
+/// [DIAG-3] record fields carry their exact bytes for every scalar, not only
+/// for ASCII.
+///
+/// This exercises the record encoder directly because [FORM-5] still admits no
+/// non-ASCII byte in a STRING, so no source program can reach the case through
+/// a `trap` message yet. The encoder is nonetheless the real emission path for
+/// every record, and it was silently lossy: byte iteration re-encoded each
+/// continuation byte as its Latin-1 scalar, so `"é"` (2 bytes) left as 4 and
+/// `"日"` (3 bytes) as 6. The assertion is exact bytes rather than a length,
+/// because a length check passes on mojibake of the right size.
+///
+/// A green run establishes that the encoder preserves and escapes correctly;
+/// it does not establish that any source program can produce such a message.
+#[test]
+fn a_diag3_record_preserves_the_exact_utf8_bytes_of_its_message() {
+    let record = crate::backend::emitter::trap_record(&crate::IrTrapSite {
+        rule_id: "OP-5",
+        // One two-byte scalar, one three-byte scalar, one four-byte scalar,
+        // and both characters that still need a JSON escape.
+        message: "é 日 \u{1F600} \"q\"\nl".to_owned(),
+        function: "main".to_owned(),
+        node_path: vec![0, 1],
+    });
+    assert_eq!(
+        record,
+        "{\"rule_id\":\"OP-5\",\"message\":\"é 日 \u{1F600} \\\"q\\\"\\nl\",\
+         \"function\":\"main\",\"node_path\":[0,1]}\n"
+            .as_bytes()
+    );
+    // The record is exactly the bytes the message was written with: no
+    // expansion, no replacement scalar, and no encoding split across the
+    // escape boundary.
+    assert!(String::from_utf8(record.clone()).is_ok());
+    assert_eq!(
+        record.iter().filter(|byte| !byte.is_ascii()).count(),
+        "é日\u{1F600}".len()
+    );
+}
+
 #[test]
 fn integer_overflow_reports_op2_before_abort() {
     let source = br#"fn main() -> own unit traps {

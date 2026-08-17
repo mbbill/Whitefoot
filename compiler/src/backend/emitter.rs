@@ -1319,14 +1319,28 @@ pub(super) fn trap_record(trap: &IrTrapSite) -> Vec<u8> {
     .into_bytes()
 }
 
+/// Encodes one [DIAG-3] record field as a JSON string.
+///
+/// The input is always a Rust `str`, so it is already one well-formed UTF-8
+/// sequence; the record must carry those exact bytes. Iteration is therefore
+/// over scalar values, not bytes: pushing a `char` writes its complete UTF-8
+/// encoding, so a multi-byte scalar survives intact and no record can end
+/// inside an encoding. Byte iteration with `char::from` was wrong for exactly
+/// this case — it reinterpreted each continuation byte as the Latin-1 scalar
+/// of the same value and re-encoded it, doubling every non-ASCII byte. ASCII
+/// input is unaffected either way.
+///
+/// Only `"`, `\`, and newline need escaping here: [FORM-5] admits no other
+/// control in a STRING, so no other scalar in a record field requires a JSON
+/// escape.
 fn json_string(value: &str) -> String {
     let mut encoded = String::from("\"");
-    for byte in value.bytes() {
-        match byte {
-            b'"' => encoded.push_str("\\\""),
-            b'\\' => encoded.push_str("\\\\"),
-            b'\n' => encoded.push_str("\\n"),
-            _ => encoded.push(char::from(byte)),
+    for scalar in value.chars() {
+        match scalar {
+            '"' => encoded.push_str("\\\""),
+            '\\' => encoded.push_str("\\\\"),
+            '\n' => encoded.push_str("\\n"),
+            _ => encoded.push(scalar),
         }
     }
     encoded.push('"');

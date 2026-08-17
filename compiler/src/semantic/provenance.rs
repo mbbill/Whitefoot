@@ -474,51 +474,79 @@ fn selectors(ty: CheckedType, nominals: &[CheckedNominal]) -> Vec<DatumSelector>
     }
 }
 
+/// Which result components one system operation's [SYS-2] `wf-prov` row
+/// classifies as external.
+///
+/// The row is declaration data, so the classification is data too, named once
+/// here rather than spread through the dependency construction below. An
+/// extraction lock compares each case against the specification's own cell;
+/// before it existed the whole PRV-1 provenance table was hand-transcribed as
+/// bare numeric ordinals with nothing checking it.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) enum SystemResultProvenance {
+    /// Every component of the result carries an external class: a plain
+    /// external result, or both `Ok` and `Err` payloads.
+    AllExternal,
+    /// Exactly the second variant's first payload — `Err(error:)` — is
+    /// external; the `Ok` success count is program-bounded and internal.
+    ErrorPayloadOnly,
+    /// Exactly the third variant's first payload — `ReadFailed(error:)` — is
+    /// external. `ReadBytes(count:)` is internal and `ReadEnd()` carries no
+    /// component at all.
+    ReadFailedPayloadOnly,
+    /// No component is external.
+    NoneExternal,
+}
+
+/// The `wf-prov` result-component class of each [SYS-2] operation, by its
+/// index in `SYSTEM_OPERATIONS`.
+///
+/// `None` for an index no operation occupies; the caller turns that into a
+/// compiler failure, because the checked model cannot normally contain one.
+pub(super) const fn system_result_provenance(operation: u8) -> Option<SystemResultProvenance> {
+    Some(match operation {
+        // args_count, arg_get, host_bytes_len, host_utf8_len, relative_path,
+        // open_read.
+        0 | 1 | 2 | 4 | 6 | 7 => SystemResultProvenance::AllExternal,
+        // host_copy_bytes, host_copy_utf8, write_once.
+        3 | 5 | 9 => SystemResultProvenance::ErrorPayloadOnly,
+        8 => SystemResultProvenance::ReadFailedPayloadOnly,
+        // exit_status.
+        10 => SystemResultProvenance::NoneExternal,
+        _ => return None,
+    })
+}
+
 fn system_result_dependencies(
     operation: u8,
     ty: CheckedType,
     nominals: &[CheckedNominal],
 ) -> ProvenanceResult<ValueDependencies> {
     let mut value = ValueDependencies::empty(ty, nominals);
-    match operation {
-        // Complete external results or both Result payloads.
-        0 | 1 | 2 | 4 | 6 | 7 => {
+    let mut mark = |variant, field| -> ProvenanceResult<()> {
+        value
+            .component_mut(DatumSelector::EnumPayload { variant, field })
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .dependency
+            .unconditional_external = true;
+        Ok(())
+    };
+    match system_result_provenance(operation).ok_or(SemanticCompilerFailure::InvalidResolution)? {
+        SystemResultProvenance::AllExternal => {
             for component in &mut value.components {
                 component.dependency.unconditional_external = true;
             }
         }
-        // host_copy_bytes / host_copy_utf8 / write_once: only Err(error:).
-        3 | 5 | 9 => {
-            value
-                .component_mut(DatumSelector::EnumPayload {
-                    variant: 1,
-                    field: 0,
-                })
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                .dependency
-                .unconditional_external = true
-        }
-        // read_once: ReadBytes(count:) is internal and ReadEnd has no payload;
-        // only ReadFailed(error:) is external.
-        8 => {
-            value
-                .component_mut(DatumSelector::EnumPayload {
-                    variant: 2,
-                    field: 0,
-                })
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                .dependency
-                .unconditional_external = true
-        }
-        // exit_status is internal. Unknown operation ids fail closed as a
-        // compiler failure; the checked model cannot normally contain one.
-        10 => {}
-        _ => return Err(SemanticCompilerFailure::InvalidResolution),
+        SystemResultProvenance::ErrorPayloadOnly => mark(1, 0)?,
+        SystemResultProvenance::ReadFailedPayloadOnly => mark(2, 0)?,
+        SystemResultProvenance::NoneExternal => {}
     }
     Ok(value)
 }
 
-fn system_external_writes(operation: u8) -> ProvenanceResult<&'static [usize]> {
+/// The `wf-prov` writable-`&uniq`-parameter column: the parameter ordinals one
+/// operation writes with an external class.
+pub(super) fn system_external_writes(operation: u8) -> ProvenanceResult<&'static [usize]> {
     Ok(match operation {
         3 | 5 => &[1],
         8 => &[0, 1],

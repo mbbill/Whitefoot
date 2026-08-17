@@ -1,0 +1,590 @@
+//! Full-row extraction locks for the [OP-1] operation table.
+//!
+//! The `op` column has been locked to the compiler's family inventory for
+//! several versions (`resolution::catalog`), but `domain`, `signature`, and
+//! `effects` were re-encoded by hand in `semantic::model` and nothing compared
+//! them with the specification. The measured consequence of a one-sided mirror
+//! was sixteen unreachable match arms naming operation spellings the table had
+//! stopped containing; the same class covers a trap classification, a result
+//! type, or an operand domain drifting from its cell in silence.
+//!
+//! These locks close that in both directions. Extraction keys on the
+//! ```` ```wf-ops ```` fence info string rather than on a prose anchor, so
+//! moving the table inside its rule cannot silently empty the extraction. The
+//! variant-to-spelling maps are exhaustive matches with no wildcard arm, so a
+//! new compiler operation cannot be added without naming its row, and a row
+//! whose spelling no operation claims fails the coverage assertion.
+//!
+//! A green run establishes that every modelled row's trap classification,
+//! result type, operand count, argument types, and operand domain agree with
+//! the specification's own cells, and that the modelled spellings and the
+//! table's spellings are the same set. It does not establish that the
+//! operations compute the right values — that is the business of the ordinary
+//! semantic and backend tests — and it says nothing about the rows this module
+//! deliberately does not model (see `UNMODELLED_ROW_SPELLINGS`).
+
+use std::collections::{BTreeSet, HashSet};
+
+use crate::semantic::model::{
+    CheckedFloatOperation, CheckedIntegerErrorClass, CheckedIntegerOperation, CheckedType,
+    FloatType, IntegerType,
+};
+
+/// One extracted row of the `wf-ops` table, cell for cell.
+#[derive(Debug, Eq, PartialEq)]
+struct OpsRow {
+    /// Every backticked spelling of the `op` cell, in written order.
+    ops: Vec<String>,
+    domain: String,
+    signature: String,
+    effects: String,
+}
+
+impl OpsRow {
+    /// The parameter list of the `signature` cell, `(T, u32)` for
+    /// `` `(T, u32) -> own T` ``. A nullary row writes `()`, and the two place
+    /// rows write no parameter list at all.
+    fn parameters(&self) -> Option<Vec<&str>> {
+        let list = self.signature.strip_prefix('(')?.split_once(')')?.0;
+        Some(if list.is_empty() {
+            Vec::new()
+        } else {
+            list.split(", ").collect()
+        })
+    }
+
+    /// The written result of the `signature` cell, `T` for
+    /// `` `(T, T) -> own T` ``. Every row's result is `own`.
+    fn result(&self) -> &str {
+        self.signature
+            .split_once("-> own ")
+            .expect("every wf-ops signature writes one `own` result")
+            .1
+    }
+}
+
+/// The `wf-ops` table, extracted from the active specification by fence info
+/// string.
+fn ops_rows() -> Vec<OpsRow> {
+    let mut fences = crate::ACTIVE_KERNEL_SPEC_TEXT.split("\n```wf-ops\n");
+    let _before = fences.next().expect("the split always yields a first part");
+    let body = fences
+        .next()
+        .expect("the active specification has one wf-ops fence")
+        .split_once("\n```")
+        .expect("the wf-ops fence is terminated")
+        .0;
+    assert!(
+        fences.next().is_none(),
+        "the wf-ops schema names exactly one table"
+    );
+
+    let mut lines = body.lines();
+    assert_eq!(
+        lines.next(),
+        Some("| op | domain | signature | effects |"),
+        "the first row of a wf-ops fence is its column schema"
+    );
+    assert_eq!(lines.next(), Some("|---|---|---|---|"));
+
+    lines
+        .map(|line| {
+            let cells: Vec<&str> = line
+                .strip_prefix("| ")
+                .and_then(|rest| rest.strip_suffix(" |"))
+                .expect("a wf-ops row is pipe-delimited")
+                .split(" | ")
+                .collect();
+            let [ops, domain, signature, effects] = cells.as_slice() else {
+                panic!("a wf-ops row has exactly four cells, found {}", cells.len());
+            };
+            let ops: Vec<String> = ops
+                .split('`')
+                .enumerate()
+                .filter(|(index, _)| index % 2 == 1)
+                .map(|(_, part)| part.to_owned())
+                .collect();
+            assert!(!ops.is_empty(), "a wf-ops op cell names at least one op");
+            OpsRow {
+                ops,
+                domain: (*domain).to_owned(),
+                // The two place rows carry a parenthesised gloss after the
+                // backticked signature; the cell's signature is the backticked
+                // span, and the gloss is prose.
+                signature: signature
+                    .split('`')
+                    .nth(1)
+                    .expect("a wf-ops signature cell is backticked")
+                    .to_owned(),
+                effects: (*effects).to_owned(),
+            }
+        })
+        .collect()
+}
+
+/// Finds the one row that names `spelling`.
+fn row_of<'rows>(rows: &'rows [OpsRow], spelling: &str) -> &'rows OpsRow {
+    let mut found = rows
+        .iter()
+        .filter(|row| row.ops.iter().any(|op| op == spelling));
+    let row = found
+        .next()
+        .unwrap_or_else(|| panic!("no wf-ops row names {spelling}"));
+    assert!(
+        found.next().is_none(),
+        "{spelling} appears in more than one wf-ops row"
+    );
+    row
+}
+
+/// The [OP-1] spelling of each integer operation the compiler models.
+///
+/// Exhaustive by construction: a new variant is a compile error here, which is
+/// the point — the row it belongs to must be named before it can be checked.
+const fn integer_spelling(operation: CheckedIntegerOperation) -> &'static str {
+    use CheckedIntegerOperation as Op;
+    match operation {
+        Op::AddWrap => "+wrap",
+        Op::SubtractWrap => "-wrap",
+        Op::MultiplyWrap => "*wrap",
+        Op::AddTrap => "+",
+        Op::SubtractTrap => "-",
+        Op::MultiplyTrap => "*",
+        Op::AddChecked => "+checked",
+        Op::SubtractChecked => "-checked",
+        Op::MultiplyChecked => "*checked",
+        Op::DivideTrap => "/",
+        Op::RemainderTrap => "%",
+        Op::DivideChecked => "/checked",
+        Op::RemainderChecked => "%checked",
+        Op::AbsoluteWrap => "iabs.wrap",
+        Op::AbsoluteTrap => "iabs.trap",
+        Op::AbsoluteChecked => "iabs.checked",
+        Op::NegateWrap => "ineg.wrap",
+        Op::NegateTrap => "ineg.trap",
+        Op::NegateChecked => "ineg.checked",
+        Op::BitAnd => "iand",
+        Op::BitOr => "ior",
+        Op::BitXor => "ixor",
+        Op::BitNot => "inot",
+        Op::ShiftLeftWrap => "ishl.wrap",
+        Op::ShiftRightWrap => "ishr.wrap",
+        Op::ShiftLeftTrap => "ishl.trap",
+        Op::ShiftRightTrap => "ishr.trap",
+        Op::RotateLeft => "irotl",
+        Op::RotateRight => "irotr",
+        Op::PopulationCount => "ipopcount",
+        Op::LeadingZeros => "iclz",
+        Op::TrailingZeros => "ictz",
+        Op::ByteSwap => "ibswap",
+        Op::MultiplyHigh => "imulhi",
+        Op::AddSaturating => "+sat",
+        Op::SubtractSaturating => "-sat",
+        Op::MultiplySaturating => "*sat",
+        Op::Minimum => "imin",
+        Op::Maximum => "imax",
+        Op::Equal => "ieq",
+        Op::NotEqual => "ine",
+        Op::Less => "ilt",
+        Op::LessEqual => "ile",
+        Op::Greater => "igt",
+        Op::GreaterEqual => "ige",
+    }
+}
+
+const INTEGER_OPERATIONS: [CheckedIntegerOperation; 45] = {
+    use CheckedIntegerOperation as Op;
+    [
+        Op::AddWrap,
+        Op::SubtractWrap,
+        Op::MultiplyWrap,
+        Op::AddTrap,
+        Op::SubtractTrap,
+        Op::MultiplyTrap,
+        Op::AddChecked,
+        Op::SubtractChecked,
+        Op::MultiplyChecked,
+        Op::DivideTrap,
+        Op::RemainderTrap,
+        Op::DivideChecked,
+        Op::RemainderChecked,
+        Op::AbsoluteWrap,
+        Op::AbsoluteTrap,
+        Op::AbsoluteChecked,
+        Op::NegateWrap,
+        Op::NegateTrap,
+        Op::NegateChecked,
+        Op::BitAnd,
+        Op::BitOr,
+        Op::BitXor,
+        Op::BitNot,
+        Op::ShiftLeftWrap,
+        Op::ShiftRightWrap,
+        Op::ShiftLeftTrap,
+        Op::ShiftRightTrap,
+        Op::RotateLeft,
+        Op::RotateRight,
+        Op::PopulationCount,
+        Op::LeadingZeros,
+        Op::TrailingZeros,
+        Op::ByteSwap,
+        Op::MultiplyHigh,
+        Op::AddSaturating,
+        Op::SubtractSaturating,
+        Op::MultiplySaturating,
+        Op::Minimum,
+        Op::Maximum,
+        Op::Equal,
+        Op::NotEqual,
+        Op::Less,
+        Op::LessEqual,
+        Op::Greater,
+        Op::GreaterEqual,
+    ]
+};
+
+const fn float_spelling(operation: CheckedFloatOperation) -> &'static str {
+    use CheckedFloatOperation as Op;
+    match operation {
+        Op::AddStrict => "fadd.strict",
+        Op::SubtractStrict => "fsub.strict",
+        Op::MultiplyStrict => "fmul.strict",
+        Op::DivideStrict => "fdiv.strict",
+        Op::Equal => "feq",
+        Op::Less => "flt",
+        Op::LessEqual => "fle",
+        Op::Greater => "fgt",
+        Op::GreaterEqual => "fge",
+        Op::NotEqual => "fne",
+        Op::Negate => "fneg",
+        Op::Absolute => "fabs",
+        Op::CopySign => "fcopysign",
+        Op::Minimum => "fmin",
+        Op::Maximum => "fmax",
+        Op::Floor => "ffloor",
+        Op::Ceil => "fceil",
+        Op::Truncate => "ftrunc",
+        Op::RoundEven => "froundeven",
+        Op::Remainder => "frem",
+        Op::SquareRootStrict => "fsqrt.strict",
+        Op::FusedMultiplyAddStrict => "ffma.strict",
+        Op::Infinity => "finf",
+        Op::Nan => "fnan",
+    }
+}
+
+const FLOAT_OPERATIONS: [CheckedFloatOperation; 24] = {
+    use CheckedFloatOperation as Op;
+    [
+        Op::AddStrict,
+        Op::SubtractStrict,
+        Op::MultiplyStrict,
+        Op::DivideStrict,
+        Op::Equal,
+        Op::Less,
+        Op::LessEqual,
+        Op::Greater,
+        Op::GreaterEqual,
+        Op::NotEqual,
+        Op::Negate,
+        Op::Absolute,
+        Op::CopySign,
+        Op::Minimum,
+        Op::Maximum,
+        Op::Floor,
+        Op::Ceil,
+        Op::Truncate,
+        Op::RoundEven,
+        Op::Remainder,
+        Op::SquareRootStrict,
+        Op::FusedMultiplyAddStrict,
+        Op::Infinity,
+        Op::Nan,
+    ]
+};
+
+/// The four Bool rows. Their arity is decided at the call site rather than by
+/// an accessor, so the lock covers their cells and arity only.
+const BOOLEAN_SPELLINGS: [(&str, usize); 4] = [("band", 2), ("bor", 2), ("bxor", 2), ("bnot", 1)];
+
+/// The table spellings no scalar-operation model covers.
+///
+/// Each is checked by its own rule's tests rather than by a scalar-operation
+/// accessor: the conversions carry written type pairs, the storage operations
+/// carry allocation effects, and the place operations take a place rather than
+/// value operands. Listing them explicitly is what makes the coverage
+/// assertion below two-sided — a new row is a failure unless someone decides
+/// which side it belongs on.
+const UNMODELLED_ROW_SPELLINGS: [&str; 10] = [
+    "eeq",
+    "ene",
+    "cvt",
+    "reinterpret",
+    "len",
+    "slice_of",
+    "box_new",
+    "arena_new",
+    "array_new",
+    "buffer_new",
+];
+
+const ALL_INTEGER_TYPES: [IntegerType; 8] = [
+    IntegerType::I8,
+    IntegerType::I16,
+    IntegerType::I32,
+    IntegerType::I64,
+    IntegerType::U8,
+    IntegerType::U16,
+    IntegerType::U32,
+    IntegerType::U64,
+];
+
+/// Every table spelling is either modelled by a scalar operation or explicitly
+/// excluded, and nothing is both.
+#[test]
+fn the_wf_ops_table_and_the_compilers_operations_name_the_same_spellings() {
+    let rows = ops_rows();
+    let table: Vec<String> = rows.iter().flat_map(|row| row.ops.clone()).collect();
+    // `cvt` owns two rows, so the flattened sequence repeats it exactly once.
+    let distinct: BTreeSet<&String> = table.iter().collect();
+    assert_eq!(
+        table.len() - distinct.len(),
+        1,
+        "only `cvt` may name two wf-ops rows"
+    );
+
+    let mut modelled: BTreeSet<String> = BTreeSet::new();
+    for operation in INTEGER_OPERATIONS {
+        assert!(
+            modelled.insert(integer_spelling(operation).to_owned()),
+            "{operation:?} repeats a spelling"
+        );
+    }
+    for operation in FLOAT_OPERATIONS {
+        assert!(
+            modelled.insert(float_spelling(operation).to_owned()),
+            "{operation:?} repeats a spelling"
+        );
+    }
+    for (spelling, _) in BOOLEAN_SPELLINGS {
+        assert!(modelled.insert(spelling.to_owned()));
+    }
+    for spelling in UNMODELLED_ROW_SPELLINGS {
+        assert!(
+            modelled.insert(spelling.to_owned()),
+            "{spelling} is both modelled and excluded"
+        );
+    }
+
+    let table: BTreeSet<String> = distinct.into_iter().cloned().collect();
+    assert_eq!(
+        table, modelled,
+        "the wf-ops op column and the compiler's operations disagree"
+    );
+}
+
+/// Column 4 of every modelled row decides `traps()`.
+#[test]
+fn the_effects_column_decides_the_trap_classification() {
+    let rows = ops_rows();
+    let mut trapping = 0;
+    for operation in INTEGER_OPERATIONS {
+        let spelling = integer_spelling(operation);
+        let row = row_of(&rows, spelling);
+        assert!(
+            matches!(row.effects.as_str(), "pure" | "traps"),
+            "{spelling}'s effects cell is {}",
+            row.effects
+        );
+        let traps = row.effects == "traps";
+        assert_eq!(
+            operation.traps(),
+            traps,
+            "{spelling} is written `{}` but the compiler says traps() == {}",
+            row.effects,
+            operation.traps()
+        );
+        trapping += usize::from(traps);
+    }
+    // Nine trapping integer rows: the three bare arithmetic operators, `/`,
+    // `%`, the two trapping shifts, `ineg.trap`, and `iabs.trap`. A count keeps
+    // the loop above from passing vacuously if extraction ever yields nothing.
+    assert_eq!(trapping, 9);
+    // [OP-3]: every float row rounds or is exact, and none traps.
+    for operation in FLOAT_OPERATIONS {
+        let spelling = float_spelling(operation);
+        assert_eq!(row_of(&rows, spelling).effects, "pure", "{spelling}");
+    }
+    for (spelling, _) in BOOLEAN_SPELLINGS {
+        assert_eq!(row_of(&rows, spelling).effects, "pure", "{spelling}");
+    }
+}
+
+/// Column 3 of every modelled row decides the operand count, the argument
+/// types, and the result type.
+#[test]
+fn the_signature_column_decides_arity_argument_types_and_results() {
+    let rows = ops_rows();
+    let mut checked_rows = 0;
+    for operation in INTEGER_OPERATIONS {
+        let spelling = integer_spelling(operation);
+        let row = row_of(&rows, spelling);
+        let parameters = row
+            .parameters()
+            .unwrap_or_else(|| panic!("{spelling} writes a parameter list"));
+        assert_eq!(
+            parameters.len(),
+            operation.operand_count(),
+            "{spelling} is written {} but the compiler expects {} operands",
+            row.signature,
+            operation.operand_count()
+        );
+
+        // The selected type stands in for the row's `T`. i32 is an arbitrary
+        // member of every integer domain the table writes, so it exercises the
+        // substitution without standing in for a domain judgment, which the
+        // domain test below makes separately.
+        let selected = CheckedType::Integer(IntegerType::I32);
+        for (index, written) in parameters.iter().enumerate() {
+            let expected = match *written {
+                "T" => selected,
+                "u32" => CheckedType::Integer(IntegerType::U32),
+                other => panic!("{spelling} writes an unmodelled parameter type {other}"),
+            };
+            assert_eq!(
+                operation.argument_type(selected, index),
+                Some(expected),
+                "{spelling} argument {index} is written {written}"
+            );
+        }
+        assert_eq!(operation.argument_type(selected, parameters.len()), None);
+
+        match row.result() {
+            "T" => assert_eq!(operation.scalar_result_type(selected), Some(selected)),
+            "Bool" => assert_eq!(
+                operation.scalar_result_type(selected),
+                Some(CheckedType::Bool)
+            ),
+            "u32" => assert_eq!(
+                operation.scalar_result_type(selected),
+                Some(CheckedType::Integer(IntegerType::U32))
+            ),
+            written => {
+                let error = written
+                    .strip_prefix("Result<T, ")
+                    .and_then(|rest| rest.strip_suffix('>'))
+                    .unwrap_or_else(|| panic!("{spelling} writes an unmodelled result {written}"));
+                // A `Result` row is exactly a row with no scalar result, and
+                // its error type is the cell's own spelling.
+                assert_eq!(
+                    operation.scalar_result_type(selected),
+                    None,
+                    "{spelling} produces {written} yet reports a scalar result"
+                );
+                assert_eq!(
+                    operation
+                        .checked_error()
+                        .map(CheckedIntegerErrorClass::spelling),
+                    Some(error),
+                    "{spelling} is written {written}"
+                );
+                checked_rows += 1;
+            }
+        }
+        if !row.result().starts_with("Result<") {
+            assert_eq!(
+                operation.checked_error(),
+                None,
+                "{spelling} has a scalar result yet names a checked error"
+            );
+        }
+    }
+    // Seven checked integer operations: add, subtract, multiply, divide,
+    // remainder, negate, absolute.
+    assert_eq!(checked_rows, 7);
+
+    for operation in FLOAT_OPERATIONS {
+        let spelling = float_spelling(operation);
+        let row = row_of(&rows, spelling);
+        let parameters = row
+            .parameters()
+            .unwrap_or_else(|| panic!("{spelling} writes a parameter list"));
+        assert_eq!(
+            parameters.len(),
+            operation.operand_count(),
+            "{spelling} is written {}",
+            row.signature
+        );
+        assert!(
+            parameters.iter().all(|written| *written == "T"),
+            "{spelling} writes a non-T float parameter"
+        );
+        let selected = CheckedType::Float(FloatType::F64);
+        let expected = match row.result() {
+            "T" => selected,
+            "Bool" => CheckedType::Bool,
+            written => panic!("{spelling} writes an unmodelled result {written}"),
+        };
+        assert_eq!(operation.result_type(selected), expected, "{spelling}");
+    }
+
+    for (spelling, arity) in BOOLEAN_SPELLINGS {
+        let row = row_of(&rows, spelling);
+        let parameters = row
+            .parameters()
+            .expect("a Bool row writes a parameter list");
+        assert_eq!(parameters.len(), arity, "{spelling}");
+        assert!(parameters.iter().all(|written| *written == "Bool"));
+        assert_eq!(row.result(), "Bool", "{spelling}");
+    }
+}
+
+/// Column 2 of every modelled integer row decides which operand types the
+/// operation accepts.
+///
+/// The domain tokens are sampled at their boundaries rather than swept: `i8`
+/// versus `i16` is the whole content of `width>=16`, and one signed and one
+/// unsigned type is the whole content of `signed int T`. Bool stands in for
+/// every non-integer operand, which every integer row must refuse.
+#[test]
+fn the_domain_column_decides_which_operand_types_are_accepted() {
+    let rows = ops_rows();
+    let mut domains: HashSet<&str> = HashSet::new();
+    for operation in INTEGER_OPERATIONS {
+        let spelling = integer_spelling(operation);
+        let row = row_of(&rows, spelling);
+        domains.insert(row.domain.as_str());
+        let accepted: Vec<IntegerType> = ALL_INTEGER_TYPES
+            .into_iter()
+            .filter(|integer| operation.accepts_operand_type(CheckedType::Integer(*integer)))
+            .collect();
+        let expected: Vec<IntegerType> = match row.domain.as_str() {
+            "all int T" => ALL_INTEGER_TYPES.to_vec(),
+            "signed int T" => ALL_INTEGER_TYPES
+                .into_iter()
+                .filter(|integer| integer.signed())
+                .collect(),
+            "int T, width>=16" => ALL_INTEGER_TYPES
+                .into_iter()
+                .filter(|integer| integer.width() >= 16)
+                .collect(),
+            other => panic!("{spelling} writes an unmodelled domain {other}"),
+        };
+        assert_eq!(accepted, expected, "{spelling}'s domain is {}", row.domain);
+        assert!(
+            !operation.accepts_operand_type(CheckedType::Bool),
+            "{spelling} accepts Bool, which no integer domain admits"
+        );
+    }
+    // All three integer domain tokens are exercised; a table that collapsed to
+    // one token would otherwise pass every assertion above.
+    assert_eq!(domains.len(), 3);
+
+    for operation in FLOAT_OPERATIONS {
+        let spelling = float_spelling(operation);
+        assert_eq!(row_of(&rows, spelling).domain, "f32 f64", "{spelling}");
+    }
+    for (spelling, _) in BOOLEAN_SPELLINGS {
+        assert_eq!(row_of(&rows, spelling).domain, "Bool", "{spelling}");
+    }
+}
