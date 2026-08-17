@@ -6,3 +6,7 @@ fn make() -> own Result<Pair, u64> pure {
   let pair = Pair(value: 1_u64);
   return Ok<Pair, u64>(value: move pair);
 }
+
+fn main() -> own unit pure {
+  return unit;
+}
