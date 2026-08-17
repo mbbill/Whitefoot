@@ -92,3 +92,38 @@ W3 wfgrep traversal slice and the byte-string program did not land
 waits on the recorded generics+regions gap. These open the next batch.
 Three fable agents died at the session limit mid-flight; all work was
 salvaged from their worktrees and completed by opus successors.
+
+
+### Exit audit and dispositions (2026-08-18)
+
+Ten-agent adversarial exit audit over the whole batch: 2 confirmed
+majors, 4 refuted, 10 minors — all dispositioned before this closure:
+
+- CONFIRMED and FIXED: own-mode box/arena content borrows AND set
+  targets were misreported as invalid source (OWN-6/OWN-14/TYPE-7)
+  once arenas began executing — the deref-spelling dispatch assumed a
+  borrow holder against OWN-14's own definition. Both paths now judge
+  the ordinary rules (OWN-11/OWN-1/OWN-10/OWN-5, STOR-1/SET-2) and stop
+  honestly at the unlowerable capability; the pre-existing box half was
+  fixed in the same motion; ten probe shapes pinned.
+- CONFIRMED and FIXED: duplicated plan-authority paragraph from two
+  uncoordinated parallel repairs of the same gate red.
+- Minors: all repaired (adapter docstring, Makefile headers without
+  baked tallies, stale test-entry docstrings, spec-ratchet directory
+  disposition per its own conditions, status-line inventory recount
+  with the terminal/lexical-domain distinction stated, roadmap
+  batch-end pass, DOSSIER ratchet correction) except two history-only
+  notes (a wrong line anchor in one protected commit message; the
+  pre-batch tally misquote in this record, corrected in place).
+- Refuted (4): the O11 projection claim, the W5-disposition and
+  W4-review-document claims, and the mcts_mem claim (deltas ride
+  activation by design, prepared in the design appendices).
+
+Final state: `make check` exit 0; lib 908/908; adapter Pass=460
+Skip=1 Fail=0; coverage 134/134; candidate digest
+`6657c3420bef8678be2e43bdf941d6db0095a4ccfece46c557beba26d09b07f4`
+(the D4 status-line amendment superseded `fd77b195…`; the review's
+earlier digest quote is historical). Batch economics: ~50 commits,
+5 docs-only; three fable session-limit casualties fully salvaged by
+opus successors; two pre-existing compiler defect classes found and
+fixed by the audit loop itself.
