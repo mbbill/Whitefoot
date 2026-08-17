@@ -86,13 +86,18 @@ const OUTCOME_CASES: &[OutcomeCase] = &[
     },
 ];
 
-fn boundary_driver() -> CompiledProgram {
-    build_program(&compile_programs(&[
-        "raw_deflate.wf",
-        "raw_deflate_dynamic.wf",
-        "raw_deflate_dynamic_decode.wf",
-        "raw_deflate_boundary.wf",
-    ]))
+fn boundary_driver() -> &'static CompiledProgram {
+    // Shared across the boundary tests: same immutable artifact, isolation
+    // lives in each run's fixture directory (see wfgrep::wfgrep).
+    static PROGRAM: std::sync::OnceLock<CompiledProgram> = std::sync::OnceLock::new();
+    PROGRAM.get_or_init(|| {
+        build_program(&compile_programs(&[
+            "raw_deflate.wf",
+            "raw_deflate_dynamic.wf",
+            "raw_deflate_dynamic_decode.wf",
+            "raw_deflate_boundary.wf",
+        ]))
+    })
 }
 
 #[ignore = "heavy owning test: runs in make -C compiler heavy"]

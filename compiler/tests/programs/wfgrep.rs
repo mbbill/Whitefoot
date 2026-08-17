@@ -26,8 +26,15 @@ use super::support::{
 /// exposes it.
 const BUFFER_LENGTH: usize = 4096;
 
-fn wfgrep() -> CompiledProgram {
-    build_program(&compile_program("wfgrep.wf"))
+fn wfgrep() -> &'static CompiledProgram {
+    // One compilation shared by every scenario test in this module: the ten
+    // tests exercise ten different behaviors of the same immutable artifact,
+    // and rebuilding it per test was measured at 136s each against
+    // milliseconds of scenario work. Isolation lives in each run's own
+    // fixture directory, never in the binary. The static's directory is not
+    // dropped at process exit; it is pid-unique under the system temp dir.
+    static PROGRAM: std::sync::OnceLock<CompiledProgram> = std::sync::OnceLock::new();
+    PROGRAM.get_or_init(|| build_program(&compile_program("wfgrep.wf")))
 }
 
 /// Publishes every line of every input containing the literal pattern bytes.
@@ -115,22 +122,22 @@ fn wfgrep_matches_the_reference_across_every_required_file_shape() {
     let program = wfgrep();
 
     // Empty, short, and unterminated inputs.
-    assert_reference(&program, b"alpha", &[(b"empty.txt", Vec::new())]);
+    assert_reference(program, b"alpha", &[(b"empty.txt", Vec::new())]);
     assert_reference(
-        &program,
+        program,
         b"alpha",
         &[(b"short.txt", b"alpha\nbeta\ngamma\nalphabet\n".to_vec())],
     );
     assert_reference(
-        &program,
+        program,
         b"second",
         &[(b"tail.txt", b"first\nsecond without a terminator".to_vec())],
     );
     // A file that is nothing but terminators still has lines.
-    assert_reference(&program, b"", &[(b"blank.txt", b"\n\n\n".to_vec())]);
+    assert_reference(program, b"", &[(b"blank.txt", b"\n\n\n".to_vec())]);
     // No line contains the pattern: exit 1, nothing published.
     assert_reference(
-        &program,
+        program,
         b"absent",
         &[(b"short.txt", b"alpha\nbeta\ngamma\n".to_vec())],
     );
@@ -138,16 +145,16 @@ fn wfgrep_matches_the_reference_across_every_required_file_shape() {
     // Exactly one buffer, ending on a line boundary and ending inside a line.
     let terminated = numbered_lines(BUFFER_LENGTH / 64, 63);
     assert_eq!(terminated.len(), BUFFER_LENGTH);
-    assert_reference(&program, b"01", &[(b"exact.txt", terminated)]);
+    assert_reference(program, b"01", &[(b"exact.txt", terminated)]);
     let mut unterminated = numbered_lines(BUFFER_LENGTH / 64 - 1, 63);
     unterminated.extend(std::iter::repeat_n(b'z', 64));
     assert_eq!(unterminated.len(), BUFFER_LENGTH);
-    assert_reference(&program, b"zzz", &[(b"exact-open.txt", unterminated)]);
+    assert_reference(program, b"zzz", &[(b"exact-open.txt", unterminated)]);
 
     // Several buffers.
     let multichunk = numbered_lines(700, 40);
     assert!(multichunk.len() > 5 * BUFFER_LENGTH);
-    assert_reference(&program, b"0069", &[(b"multichunk.txt", multichunk)]);
+    assert_reference(program, b"0069", &[(b"multichunk.txt", multichunk)]);
 
     // A match straddling the first read boundary. The first line fills the
     // buffer to just under its length, so the second line is carried across
@@ -160,16 +167,16 @@ fn wfgrep_matches_the_reference_across_every_required_file_shape() {
     assert!(boundary < BUFFER_LENGTH && boundary + 8 > BUFFER_LENGTH);
     straddle.extend(std::iter::repeat_n(b'c', 40));
     straddle.push(b'\n');
-    assert_reference(&program, b"STRADDLE", &[(b"straddle.txt", straddle)]);
+    assert_reference(program, b"STRADDLE", &[(b"straddle.txt", straddle)]);
 
     // Bytes and patterns that are not valid text travel the lossless route.
     let binary = b"\xff\xfe head\nplain\n\x00\x01\xc3\x28 tail\n".to_vec();
-    assert_reference(&program, b"\xc3\x28", &[(b"binary.txt", binary.clone())]);
-    assert_reference(&program, b"\xff\xfe", &[(b"binary.txt", binary)]);
+    assert_reference(program, b"\xc3\x28", &[(b"binary.txt", binary.clone())]);
+    assert_reference(program, b"\xff\xfe", &[(b"binary.txt", binary)]);
 
     // Several files publish in argument order and share one output batch.
     assert_reference(
-        &program,
+        program,
         b"e",
         &[
             (b"one.txt", b"alpha\nbeta\n".to_vec()),
@@ -178,11 +185,7 @@ fn wfgrep_matches_the_reference_across_every_required_file_shape() {
         ],
     );
     // One long run of matches forces several batch flushes.
-    assert_reference(
-        &program,
-        b"7",
-        &[(b"flushes.txt", numbered_lines(2000, 20))],
-    );
+    assert_reference(program, b"7", &[(b"flushes.txt", numbered_lines(2000, 20))]);
 }
 
 #[ignore = "heavy owning test: runs in make -C compiler heavy"]
@@ -257,7 +260,7 @@ fn wfgrep_reports_a_line_longer_than_its_reusable_buffer() {
     // One byte shorter is an ordinary line.
     let mut fitting = vec![b'x'; BUFFER_LENGTH - 1];
     fitting.push(b'\n');
-    assert_reference(&program, b"xxx", &[(b"fitting.txt", fitting)]);
+    assert_reference(program, b"xxx", &[(b"fitting.txt", fitting)]);
 }
 
 #[ignore = "heavy owning test: runs in make -C compiler heavy"]
