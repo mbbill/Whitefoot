@@ -37,15 +37,17 @@ use super::state::{
 };
 use super::term::{
     CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm,
-    TermId, TermKind, TermTable, integer_value,
+    TermId, TermKind, TermTable, ZERO, integer_value,
 };
 use super::{
     BoundsRequest, CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome,
     ClaimDisposition, ClaimOutcome, CountedDerivationSet, EntailmentContext, FunctionEntailment,
-    FunctionEntailmentView, FunctionPostconditionProof, ObligationOutcome, PostconditionAggregate,
-    PostconditionDisposition, PostconditionEntryImage, PostconditionEntryImageOutcome,
-    PostconditionExit, PostconditionViewExit, S7Derivation, VerifiedPostconditionSummary,
-    VerifiedPostconditionSummaryRef, ViewObligationOutcome, fragment_type,
+    FunctionEntailmentView, FunctionPostconditionProof, ObligationFamily, ObligationOutcome,
+    OverflowOperandClass, PostconditionAggregate, PostconditionDisposition,
+    PostconditionEntryImage, PostconditionEntryImageOutcome, PostconditionExit,
+    PostconditionViewExit, S7Derivation, VerifiedPostconditionSummary,
+    VerifiedPostconditionSummaryRef, ViewObligationOutcome, fragment_type, overflow_conjuncts,
+    overflow_obligation_class,
 };
 use crate::{SYSTEM_OPERATIONS, SystemParameterMode};
 
@@ -4188,6 +4190,29 @@ impl Analyzer<'_, '_> {
                 self.judge_obligation(base, None, offset, node_path, states);
                 None
             }
+            CheckedExpression::IntegerOperation {
+                carrier,
+                operation,
+                operand_type,
+                arguments,
+                trap,
+                ..
+            } => {
+                for argument in arguments {
+                    let _ = self.judge_expression(argument, states);
+                }
+                // A trap-free bare add/subtract/multiply is exactly a
+                // constant-operand-class site the checker classified under
+                // the arithmetic-obligation switch; with the switch off,
+                // every such operation retains its trap record and no
+                // obligation exists [OP-2, ENT-6].
+                if trap.is_none()
+                    && let Some(class) = overflow_obligation_class(*operation, arguments)
+                {
+                    self.judge_overflow_obligation(&class, *operand_type, carrier, states);
+                }
+                None
+            }
             _ => {
                 for child in expression_children(expression) {
                     let _ = self.judge_expression(child, states);
@@ -4397,6 +4422,7 @@ impl Analyzer<'_, '_> {
         }
         self.obligations.push(ObligationOutcome {
             node_path: node_path.clone(),
+            family: ObligationFamily::Bounds,
             conjunct: 0,
             requested: BoundsRequest {
                 left: offset_term,
@@ -4430,6 +4456,7 @@ impl Analyzer<'_, '_> {
         };
         self.unasserted_obligations.push(ViewObligationOutcome {
             node_path: node_path.clone(),
+            family: ObligationFamily::Bounds,
             discharged: unasserted_discharged,
             residual: (!unasserted_discharged).then(|| rendered_residual.clone()),
             derivation: unasserted_derivation,
@@ -4454,10 +4481,169 @@ impl Analyzer<'_, '_> {
         };
         self.s4_blinded_obligations.push(ViewObligationOutcome {
             node_path,
+            family: ObligationFamily::Bounds,
             discharged: blinded_discharged,
             residual: (!blinded_discharged).then_some(rendered_residual),
             derivation: blinded_derivation,
         });
+    }
+
+    /// [ENT-6] the overflow obligation of one [OP-2] constant-operand-class
+    /// call: two conjuncts, judged in the complete, unasserted, and
+    /// S4-blinded views exactly as a bounds obligation is. The site reaches
+    /// this judgment only when the checker classified it into the class and
+    /// dropped its trap record, so the discharge verdict is the sole
+    /// remaining authority over the site's acceptance.
+    fn judge_overflow_obligation(
+        &mut self,
+        class: &OverflowOperandClass<'_>,
+        operand_type: CheckedType,
+        node_path: &crate::NodePath,
+        states: &ViewStates,
+    ) {
+        let Some(fragment) = fragment_type(operand_type) else {
+            // A class site always carries one concrete fragment type by
+            // [OP-2]'s operand agreement; fail closed rather than trust an
+            // inconsistent checked expression.
+            debug_assert!(false, "overflow class site without a fragment type");
+            return;
+        };
+        let conjuncts = overflow_conjuncts(class, fragment);
+        let operand_term = if conjuncts.ground {
+            Some(ZERO)
+        } else {
+            match class {
+                OverflowOperandClass::Folded { operand, .. } => self.read_operand(operand),
+                OverflowOperandClass::Ground { .. } => Some(ZERO),
+            }
+        };
+        let rendered_operand = match class {
+            OverflowOperandClass::Folded { operand, .. } if !conjuncts.ground => {
+                Some(self.render_expression(operand))
+            }
+            _ => None,
+        };
+        let ground_residual = || {
+            let result = conjuncts
+                .ground_result
+                .expect("a ground overflow obligation retains its exact result");
+            format!(
+                "{} outside {}",
+                result.render(),
+                integer_type_name(fragment)
+            )
+        };
+        // Conjunct ordinal zero: `operand - Z <= upper` (`Z - Z <= upper`
+        // when ground). Conjunct ordinal one: `Z - operand <= lower`.
+        let requests = [
+            (
+                0_u8,
+                operand_term,
+                conjuncts.ground.then_some(ZERO).or(operand_term),
+                ZERO,
+                conjuncts.upper,
+            ),
+            (
+                1_u8,
+                operand_term,
+                Some(ZERO),
+                if conjuncts.ground {
+                    ZERO
+                } else {
+                    operand_term.unwrap_or(ZERO)
+                },
+                conjuncts.lower,
+            ),
+        ];
+        for (conjunct, operand_term, left, right, bound) in requests {
+            let residual_text = |rendered: &Option<String>| match rendered {
+                Some(operand) => {
+                    if conjunct == 0 {
+                        format!("{operand} <= {bound}")
+                    } else {
+                        format!("{} <= {operand}", -bound)
+                    }
+                }
+                None => ground_residual(),
+            };
+            let judge = |closed: &ClosedState, derivations: &mut DerivationLedger| {
+                match (operand_term, left) {
+                    (Some(_), Some(left)) => (
+                        closed.derives_bound(left, right, bound),
+                        closed.bound_proof(left, right, bound, derivations),
+                    ),
+                    // A non-term operand leaves the conjunct underivable,
+                    // never ill-formed [ENT-6], except in a contradictory
+                    // state, where every obligation discharges [ENT-4].
+                    _ => (closed.contradictory(), closed.contradiction_proof()),
+                }
+            };
+            let closed = close(
+                &states.complete,
+                &self.terms,
+                &self.goals,
+                &mut self.derivations,
+            );
+            let contradictory = closed.contradictory();
+            let (discharged, proof) = judge(&closed, &mut self.derivations);
+            let derivation = discharged.then_some(proof).flatten();
+            let ordinal = u32::try_from(self.obligations.len())
+                .expect("ENT obligation-root ordinal exceeds the u32 identity space");
+            if let Some(root) = derivation {
+                self.derivations
+                    .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
+            }
+            self.obligations.push(ObligationOutcome {
+                node_path: node_path.clone(),
+                family: ObligationFamily::Overflow,
+                conjunct,
+                requested: BoundsRequest {
+                    // A non-term operand records no left term, signalling
+                    // the underivable relation exactly as a non-term
+                    // subscript offset does [ENT-6].
+                    left: match (conjuncts.ground, operand_term) {
+                        (true, _) => Some(ZERO),
+                        (false, Some(_)) => left,
+                        (false, None) => None,
+                    },
+                    right,
+                    bound,
+                },
+                discharged,
+                contradictory,
+                residual: (!discharged).then(|| residual_text(&rendered_operand)),
+                derivation,
+            });
+            let unasserted = close(
+                &states.unasserted,
+                &self.terms,
+                &self.goals,
+                &mut self.derivations,
+            );
+            let (unasserted_discharged, unasserted_proof) =
+                judge(&unasserted, &mut self.derivations);
+            self.unasserted_obligations.push(ViewObligationOutcome {
+                node_path: node_path.clone(),
+                family: ObligationFamily::Overflow,
+                discharged: unasserted_discharged,
+                residual: (!unasserted_discharged).then(|| residual_text(&rendered_operand)),
+                derivation: unasserted_discharged.then_some(unasserted_proof).flatten(),
+            });
+            let blinded = close(
+                &states.s4_blinded,
+                &self.terms,
+                &self.goals,
+                &mut self.derivations,
+            );
+            let (blinded_discharged, blinded_proof) = judge(&blinded, &mut self.derivations);
+            self.s4_blinded_obligations.push(ViewObligationOutcome {
+                node_path: node_path.clone(),
+                family: ObligationFamily::Overflow,
+                discharged: blinded_discharged,
+                residual: (!blinded_discharged).then(|| residual_text(&rendered_operand)),
+                derivation: blinded_discharged.then_some(blinded_proof).flatten(),
+            });
+        }
     }
 
     fn judge_set_target(&mut self, target: &CheckedSetTarget, states: &ViewStates) {

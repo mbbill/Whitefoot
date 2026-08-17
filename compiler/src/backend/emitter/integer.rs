@@ -89,7 +89,35 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 if result_type != operand_type {
                     return Err(BackendFailure::InvalidIr);
                 }
-                let trap = trap.ok_or(BackendFailure::InvalidIr)?;
+                let Some(trap) = trap else {
+                    // A trap-free add/subtract/multiply is a discharged
+                    // [OP-2] constant-operand-class site: the checker proved
+                    // overflow unreachable, so the exact result needs no
+                    // branch in any build mode [ENT-6, DIAG-2]. Negation is
+                    // outside the class and always retains its record.
+                    let (opcode, left, right) = match operation {
+                        IrIntegerOperation::AddTrap => {
+                            let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
+                            ("add", left.as_str(), right.as_str())
+                        }
+                        IrIntegerOperation::SubtractTrap => {
+                            let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
+                            ("sub", left.as_str(), right.as_str())
+                        }
+                        IrIntegerOperation::MultiplyTrap => {
+                            let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
+                            ("mul", left.as_str(), right.as_str())
+                        }
+                        _ => return Err(BackendFailure::InvalidIr),
+                    };
+                    writeln!(
+                        self.output,
+                        "  {} = {opcode} {ty} {left}, {right}",
+                        self.value_name(result)
+                    )
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                    return Ok(());
+                };
                 let (stem, left, right) = match operation {
                     IrIntegerOperation::AddTrap => {
                         let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;

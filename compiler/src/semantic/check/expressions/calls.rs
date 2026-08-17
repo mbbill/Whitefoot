@@ -13,6 +13,7 @@ use crate::{
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
 };
 
+use super::super::super::entailment::overflow_obligation_class;
 use super::super::super::model::{
     CheckedBooleanOperation, CheckedExpression, CheckedIntegerArgument,
     CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMode, CheckedNominalKind,
@@ -200,11 +201,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let mut arguments = Vec::with_capacity(operand_count);
         let mut argument_metadata = Vec::with_capacity(operand_count);
-        let mut effects = if operation.traps() {
-            EffectSet::TRAPS
-        } else {
-            EffectSet::NONE
-        };
+        let mut effects = EffectSet::NONE;
         // [OP-2] the selected type is derived from the operands: the first
         // operand's exact type is it, and every later operand must be
         // exactly the row's argument type for that selection — which for the
@@ -263,7 +260,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // `operation_atoms` already rejected a wrong operand count, and no
         // integer row is nullary, so the selection is always made by here.
         let operand_type = operand_type.ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let trap = if operation.traps() {
+        // Under the arithmetic-mode dissolution switch, a bare trapping
+        // add/subtract/multiply with a constant operand carries an [ENT-6]
+        // overflow obligation instead of a runtime trap: it contributes no
+        // `traps` effect [EFF-2] and retains no trap record, and the
+        // entailment flow judges the obligation at this site [OP-2]. With
+        // the switch off, v0.30 behavior is byte-identical.
+        let overflow_obligation_site = self.arithmetic_obligations
+            && overflow_obligation_class(operation, &arguments).is_some();
+        if operation.traps() && !overflow_obligation_site {
+            effects = effects.union(EffectSet::TRAPS);
+        }
+        let trap = if operation.traps() && !overflow_obligation_site {
             Some(TrapSite {
                 rule_id: if matches!(
                     operation,

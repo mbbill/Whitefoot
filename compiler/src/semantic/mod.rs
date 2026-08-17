@@ -19,6 +19,8 @@ mod tests;
 use crate::{BundleSourceExtent, NodePath, ResolutionIssue, ResolvedSyntaxUnit, SyntaxCoordinate};
 
 pub use check::check_semantics;
+#[cfg(test)]
+pub(crate) use check::check_semantics_arithmetic_obligations;
 
 pub(crate) use goal::{GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 pub(crate) use model::{
@@ -73,6 +75,9 @@ pub enum SemanticRule {
     Stor5,
     /// Operation-table row selection.
     Op1,
+    /// Exact integer arithmetic semantics and the constant-operand-class
+    /// overflow-obligation discharge.
+    Op2,
     /// Subscript bounds-obligation discharge and offset typing.
     Op4,
     /// Exact conversion-pair result classification.
@@ -156,6 +161,7 @@ impl SemanticRule {
             Self::Stor1 => "STOR-1",
             Self::Stor5 => "STOR-5",
             Self::Op1 => "OP-1",
+            Self::Op2 => "OP-2",
             Self::Op4 => "OP-4",
             Self::Op6 => "OP-6",
             Self::Op5 => "OP-5",
@@ -228,7 +234,8 @@ impl SemanticRule {
             Self::Own14 => Self::Stor1,
             Self::Stor1 => Self::Stor5,
             Self::Stor5 => Self::Op1,
-            Self::Op1 => Self::Op4,
+            Self::Op1 => Self::Op2,
+            Self::Op2 => Self::Op4,
             Self::Op4 => Self::Op5,
             Self::Op5 => Self::Op6,
             Self::Op6 => Self::Fn1,
@@ -289,27 +296,28 @@ impl SemanticRule {
             Self::Stor1 => 22,
             Self::Stor5 => 23,
             Self::Op1 => 24,
-            Self::Op4 => 25,
-            Self::Op5 => 26,
-            Self::Op6 => 27,
-            Self::Fn1 => 28,
-            Self::Fn2 => 29,
-            Self::Fn3 => 30,
-            Self::Fn4 => 31,
-            Self::Fn7 => 32,
-            Self::Fn8 => 33,
-            Self::Fn9 => 34,
-            Self::Eff1 => 35,
-            Self::Eff2 => 36,
-            Self::Err2 => 37,
-            Self::Err3 => 38,
-            Self::Sys2 => 39,
-            Self::Clm1 => 40,
-            Self::Clm2 => 41,
-            Self::Clm3 => 42,
-            Self::Ent2 => 43,
-            Self::Prv2 => 44,
-            Self::Prv3 => 45,
+            Self::Op2 => 25,
+            Self::Op4 => 26,
+            Self::Op5 => 27,
+            Self::Op6 => 28,
+            Self::Fn1 => 29,
+            Self::Fn2 => 30,
+            Self::Fn3 => 31,
+            Self::Fn4 => 32,
+            Self::Fn7 => 33,
+            Self::Fn8 => 34,
+            Self::Fn9 => 35,
+            Self::Eff1 => 36,
+            Self::Eff2 => 37,
+            Self::Err2 => 38,
+            Self::Err3 => 39,
+            Self::Sys2 => 40,
+            Self::Clm1 => 41,
+            Self::Clm2 => 42,
+            Self::Clm3 => 43,
+            Self::Ent2 => 44,
+            Self::Prv2 => 45,
+            Self::Prv3 => 46,
         }
     }
 }
@@ -712,9 +720,21 @@ pub enum SemanticIssueKind {
         /// The mechanical fix ENT-6 names.
         mechanical_fix: &'static str,
     },
+    /// A constant-operand-class bare `+`/`-`/`*` overflow obligation is not
+    /// derivable from the closed fact state at its node [OP-2, ENT-6].
+    UndischargedOverflowObligation {
+        /// The exact ENT-6 residual rendering of the least undischarged
+        /// conjunct: `operand <= c`, `c <= operand`, or `z outside T`.
+        residual: String,
+        /// The mechanical fix OP-2 names.
+        mechanical_fix: &'static str,
+    },
     /// A demanded strict component's protected obligation is not discharged
     /// in the existing unasserted U view [OP-4, CLM-3].
     StrictUndischargedBounds(Box<StrictUndischargedBoundsDetail>),
+    /// A demanded strict component's overflow obligation is not discharged
+    /// in the existing unasserted U view [OP-2, CLM-3].
+    StrictUndischargedOverflow(Box<StrictUndischargedBoundsDetail>),
     /// The complete instantiated requirement at an ordinary call is refuted
     /// or unproved in the caller's pre-transfer state [FN-8].
     UndischargedCallRequirement(Box<UndischargedCallRequirementDetail>),
