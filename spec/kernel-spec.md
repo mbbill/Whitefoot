@@ -1219,8 +1219,8 @@ The callee-instance identity and final-check NodePath identify the requirement o
 
 Two instantiated goals are identical exactly when these finite typed expression trees are identical.
 No equality step commutes operands, folds a named const or literal, reassociates, inverts a comparison, applies De Morgan, eliminates double negation, or otherwise rewrites an operation tree.
-In particular a complete `band`, `bor`, `bxor`, or `bnot` tree is one indivisible goal: evidence for its children establishes nothing about the whole, and evidence for the whole establishes nothing about a child.
-When the complete root is exactly one [ENT-3] comparison relation over admitted [ENT-2] terms or constants, [ENT-4] may additionally derive that one goal through its exact L0 projection; no Boolean subtree receives such a projection.
+In particular a complete `band`, `bor`, `bxor`, or `bnot` tree is one goal that no evidence for its children ever composes: discharging the whole requires the exact whole tree, while an established whole additionally establishes exactly its [ENT-3] signed decomposition set.
+When the complete root is exactly one [ENT-3] comparison relation over admitted [ENT-2] terms or constants, [ENT-4] may additionally derive that one goal through its exact L0 projection; a Boolean subtree projects only as an established member of a signed decomposition set, never toward its parent.
 
 At an ordinary source call, the checker first completes callee resolution, concrete generic instantiation, named-argument and exact-type checking, borrow feasibility, and every obligation belonging to an actual expression.
 It then substitutes each formal datum in the concrete GoalTemplate with that actual's pre-transfer value image; for a borrow formal this is the resolved referent place and projections, and for an own actual it is the value before any consuming transfer.
@@ -1234,7 +1234,7 @@ Only a call with no PRV-2 event then permits the existing transfer, call, and no
 An ordinary caller never receives a fallback runtime check, entry branch, or second callee body.
 A source call to the unlabelled `main` uses this ordinary judgment; a kind-declaring entry remains uncallable under [FN-7].
 
-The function body is checked with its one complete requirement goal established true as [ENT-3] source S4, together with the exact L0 relation only when that complete root has the projection above.
+The function body is checked with its one complete requirement goal established true as [ENT-3] source S4, together with the members of its signed decomposition set, and with the exact L0 relation of the complete root or of a member only where that root has the projection above.
 There is no executable ordinary-callee prologue.
 Direct recursion, mutual recursion, forward calls, and every concrete generic instance use the same finite rule: each written call edge must discharge its own instantiated goal, independently of declaration or traversal order.
 The S4 axiom authorizes source checking only; it creates no `llvm.assume`, optimizer fact, body clone, or alternate lowering path, and later body kills apply normally.
@@ -2613,7 +2613,7 @@ No predicate is illegal merely by operand provenance: a claim's own legality is 
 A claim supporting no protected obligation is ungated, and a claim whose external operand occurs only as a bound, base, or unrelated goal operand remains legal.
 
 [CLM-2] Claim lifecycle judgments are fixed by the entailment fragment under [ENT-1]'s monotonicity law, whose one enumerated non-monotone edge is this rule's refutation.
-Redundancy and refutation are judged only for a predicate with comparison origin [ENT-3]; a conforming claim whose predicate has none — a constructed `True()`, a `band` result — is neither redundant nor refutable, is accepted, and traps whenever it evaluates false at runtime, exactly as today's `check` on the same expression.
+Redundancy and refutation are judged only for a predicate with comparison origin [ENT-3]; a conforming claim whose predicate has none — a constructed `True()`, a `band` result — is neither redundant nor refutable, is accepted, and traps whenever it evaluates false at runtime, exactly as today's `check` on the same expression, even though the passed claim establishes the predicate's signed decomposition members [ENT-3].
 When the closed fact state at a `claim_stmt` [ENT-3] derives its predicate [ENT-4], the claim is redundant: the program remains accepted, the check still executes [CLM-1], and a conforming implementation reports one non-rejecting redundancy advisory naming the claim — an advisory is not a [DIAG-1] rejection, and a later specification version that proves more predicates therefore rejects no previously accepted program on that ground.
 When the fact state is non-contradictory [ENT-4] and derives the predicate's exact negation, the program is rejected with a hard error citing CLM-2 at the `claim_stmt` node, carrying the claim name, the predicate, and the derived negation: a refuted claim is a defect found at compile time.
 A claim whose trap record any execution produces is thereby demonstrated not to be a necessary truth; surfacing fired claims for reclassification is a toolchain contract in the [ERR-2] edit-list sense, not a language judgment.
@@ -2714,7 +2714,7 @@ Provenance [PRV-1] is a separate judgment over finite value and storage componen
 
 A comparison origin is defined first.
 An expression has comparison origin R when (a) it is a call to one of `ieq`, `ine`, `ilt`, `ile`, `igt`, `ige` [OP-2] whose two operands are each a term or constant, R the corresponding relation over them; or (b) it is a bare IDENT naming a `let` binding of type `own Bool` whose initializer right-hand side satisfies (a) with relation R, no [ENT-5] kill event (a)–(d) applies to a fact supported by an operand term of R on any path from that initializer to the use, and the binding is the target of no `set` on any such path.
-No other shape has one: `band`, `bor`, `bxor`, `bnot`, `eeq`, `ene`, user-function results, and deeper indirection chains contribute no L0 comparison origin in this version.
+No other shape has one: `band`, `bor`, `bxor`, `bnot`, `eeq`, `ene`, user-function results, and deeper indirection chains contribute no L0 comparison origin in this version; an established Boolean goal contributes relations only through the members of its signed decomposition set.
 
 A Bool expression has a direct goal origin G when its completely typed expression consists only of non-consuming place datums, typed literals, named const datums, and calls to or infix spellings of pure, total, non-trapping operation-table rows, with exact tree identity as [FN-8] fixes.
 Construction, a user-function or system call, a subscript, a move or borrow, a trapping or partial operation, and any other expression shape has no goal origin.
@@ -2723,6 +2723,12 @@ Expansion continues to a fixed point and is all-or-nothing for every eligible le
 The goal-origin set is the direct goal plus that one complete valid expansion when it differs.
 Thus a condition binding's own Bool value and its still-valid computation origin are both retained: a later write to an origin place kills the expanded goal but not the already-computed binding goal, while a write to the binding kills the latter normally.
 Clause-local expansion in FN-8 is unconditional because the admitted block contains no mutation.
+
+Signed Boolean decomposition applies at every establishment of a signed goal fact by the sources below.
+The decomposition set of `+G` whose complete root is `band(A, B)` is `+A` and `+B` together with each member's own decomposition set; the decomposition set of `-G` whose complete root is `bor(A, B)` is `-A` and `-B` together with each member's own decomposition set; the decomposition set of `+G` or `-G` whose complete root is `bnot(A)` is respectively `-A` or `+A` together with that member's own decomposition set; a `bxor`, `eeq`, `ene`, comparison, datum, or non-Boolean root has the empty decomposition set — in particular `-band` and `+bor` carry only genuinely disjunctive content and establish nothing about a child.
+When a source establishes `+G` or `-G`, it establishes every member of that signed decomposition set at the same point; each member is one concrete goal under [FN-8]'s structural identity, and each member whose complete root is one comparison call admitted by comparison-origin shape (a), whose operands are each an admitted term, constant, or `len(P)` length term, independently establishes that exact relation under `+` and the relation's exact L0 negation under `-`.
+A member's support is the ordinary [ENT-5] signed-goal support of its own complete typed expression; kill events, scope exits, joins, and the loop rule apply to each member independently of its parent.
+Decomposition is a finite structural walk of the established goal's tree: it performs no algebraic rewrite and no children ever establish or derive a parent.
 
 The sources are:
 
@@ -2741,7 +2747,7 @@ After `claim n: e because "…";` [CLM-1], each goal in `e`'s goal-origin set is
 - S4 (requires facts).
 At a concrete function-body entry, its complete instantiated [FN-8] goal G is established as `+G`.
 When and only when G's complete root is one comparison call admitted by comparison-origin shape (a), whose operands after template and call substitution are each an admitted term, constant, or `len(P)` length term, that exact relation R is also established.
-No child of any other goal is established.
+Beyond that projection, only the members of G's signed decomposition set and their projections are established; no other child of any goal is established.
 S4 is the admitted-body axiom justified by every ordinary caller's static discharge or the successful dynamic boundary check [PROG-3, GATE-1]; no callee-entry prologue executes.
 [ENT-3.S5]
 - S5 (copy and conversion equalities).
@@ -2793,9 +2799,9 @@ The label S8 is retired, not reused: its midpoint family was struck as an owner-
 [ENT-4] The L0 component of the closed fact state is the least set containing its established and implicit facts and closed under exactly: (1) from `t1 - t2 <= c1` and `t2 - t3 <= c2`, derive `t1 - t3 <= c1 + c2`; (2) from `t1 - t2 <= 0` and a disequality between t1 and t2 in either orientation, derive `t1 - t2 <= -1`; (3) of two bounds on one ordered pair, the smaller constant subsumes.
 L0 derivability is exact: `a - b <= c` is derivable when the closed state contains `a - b <= c'` with c' <= c; `a = b` when both `a - b <= 0` and `b - a <= 0` are derivable; `a != b` when a disequality is present or `a - b <= -1` or `b - a <= -1` is derivable.
 
-The opaque component retains exactly the established signed facts and receives no closure, decomposition, composition, or implication rule.
+The opaque component retains exactly the established signed facts — Boolean decomposition happens at [ENT-3] establishment, never here — and receives no closure, composition, or implication rule.
 `+G` is derivable when that exact positive fact is present or when G has an exact comparison projection R and L0 derives R; `-G` is derivable when that exact negative fact is present or when G has that projection and L0 derives R's exact negation.
-Deriving the two children of a Boolean operation never derives its parent, and deriving the parent never derives either child.
+Deriving the two children of a Boolean operation never derives its parent, and derivability never decomposes: only an established parent establishes its members, at its establishment point.
 
 The combined state is contradictory when L0 derives `t - t <= -1` for any t or when both signs of one exact goal are derivable.
 At a contradictory point every L0 relation and both signs of every goal in the finite universe are derivable, every obligation, call goal, and FN-9 selected-return relation is discharged, and no call goal, selected-return relation, or claim is refuted.
