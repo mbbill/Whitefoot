@@ -1,6 +1,6 @@
-# Kernel Specification v0.30
+# Kernel Specification v0.31
 
-Status: ACTIVE v0.30 (2026-08-17; structured representation profile; no semantic change from v0.29).
+Status: CANDIDATE v0.31 supersedes v0.30 5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1 (2026-08-17; spec delta: rules +1 [SET-2], operations +1 `buffer_vacant`, tokens +2 `replace` `buffer_vacant`, spellings +1 `replace_let_rhs`, exceptions ±0 — the OWN-5 replace admission is a positive commit rule; evidence-selected: the recorded §5 take/replace collection blocker and the batch-0070 growable-vector, byte-string, and affine-element consumers).
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -53,7 +53,7 @@ Every nonempty physical line begins with exactly two ASCII spaces for each enclo
 A closing brace is rendered after reducing the depth for the block it closes.
 A match-arm header is therefore one level inside its match, and statements in the arm body are two levels inside it.
 
-The line-bearing simple productions are `field`, `variant`, `fn_sig`, `law`, `fn_bind`, `const_decl`, `doc`, `set_stmt`, `expr_stmt`, `return_stmt`, `break_stmt`, `check_stmt`, `claim_stmt`, and `give_stmt`, plus a `let_stmt` whose selected right-hand side is `ordinary_let_rhs` or `propagate_let_rhs`.
+The line-bearing simple productions are `field`, `variant`, `fn_sig`, `law`, `fn_bind`, `const_decl`, `doc`, `set_stmt`, `expr_stmt`, `return_stmt`, `break_stmt`, `check_stmt`, `claim_stmt`, and `give_stmt`, plus a `let_stmt` whose selected right-hand side is `ordinary_let_rhs`, `propagate_let_rhs`, or `replace_let_rhs`.
 Each renders completely on one line, including its final semicolon.
 
 The block-bearing productions are `struct_decl`, `enum_decl`, `contract_decl`, `conform_decl`, the body of `fn_decl`, `requires_block`, `ensures_block`, `loop_stmt`, `for_stmt`, `region_stmt`, `match_stmt`, `value_match`, `if_stmt`, `value_if`, and `arm`.
@@ -203,12 +203,13 @@ stmt        := let_stmt | set_stmt | expr_stmt | return_stmt | loop_stmt
              | for_stmt | break_stmt | region_stmt | check_stmt | claim_stmt
              | if_stmt | match_stmt | give_stmt
 let_stmt    := "let" IDENT "="
-               ( ordinary_let_rhs | propagate_let_rhs | value_match
-               | value_if )
+               ( ordinary_let_rhs | propagate_let_rhs | replace_let_rhs
+               | value_match | value_if )
 if_stmt     := "if" expr "{" stmt* "}" ("else" (if_stmt | "{" stmt* "}"))?
 value_if    := "if" expr "{" stmt* "}" "else" (value_if | "{" stmt* "}")
 ordinary_let_rhs:= expr ";"
 propagate_let_rhs := "propagate" expr ";"
+replace_let_rhs := "replace" place "=" expr ";"
 set_stmt    := "set" place "=" expr ";"
 expr_stmt   := call ";"
 return_stmt := "return" expr ";"
@@ -323,7 +324,9 @@ Callee kind is resolved by name lookup [OP-1], the same partition that already s
 (`Bool` is a prelude enum, §15, not a primitive.)
 
 [TYPE-2] Composite types: `struct`, `enum`, `array<T, N>` (N a constant-expression, [CONST-1]), `slice<'r, T>` (region-carrying view), `box<T>` (heap-owned unique), `arena<'r, T>` (region-bounded owned), `buffer<T>` (heap-owned, runtime-length, flat contiguous {data-pointer, u64 length} value; affine single-owner; length fixed at allocation, no in-place growth).
-The opaque system types [SYS-2] are a distinct class: they are nominal, have no writer-visible component, and are constructed only by system operations and standard entry bindings. v0 buffer/array element type T must be copy (a primitive or tag-only enum, per the OWN-1 copy amendment); affine-element buffers are DEFERRED with recorded delta (blocked on the §5 take/replace resolution).
+The opaque system types [SYS-2] are a distinct class: they are nominal, have no writer-visible component, and are constructed only by system operations and standard entry bindings. v0 `array` element type T must be copy (a primitive or tag-only enum, per the OWN-1 copy amendment).
+A `buffer` element type T must be copy or a region-free [STOR-5] affine type; construction is gated per operation — `buffer_new` fills only copy elements, and `buffer_vacant` constructs `Option`-element buffers [OP-1, OP-9] — so an affine-element buffer type outside those constructors is well-formed but has no v0 construction route, exactly the formation/construction distinction this rule already draws for its element domains.
+Affine elements leave and enter their slots only through [SET-2] element replacement and are read in place through borrowed `match` [OWN-13]; the element exchange never changes the buffer's length [ENT-5].
 
 [TYPE-3] Nameability: every constructible type/mode/effect has a canonical, finite, writable name requiring no compiler execution.
 
@@ -334,10 +337,10 @@ The exact partition and per-value semantics are [OP-6].
 Deliberate rounding is a separate DEFERRED float-round op family, never `cvt`.
 
 [TYPE-5] Statement-local typing; boundary-explicit facts.
-A `let` binder's mode and type are derived, never written: exactly the mode and type its selected right-hand side produces — an `ordinary_let_rhs` from its expression, which is always self-typed (operands are typed atoms, calls are typed by their [FN-1]/[OP-1]/[SYS-2] signatures, literals carry mandatory suffixes [FORM-5], constructions name their nominal and, when that nominal is generic, write its arguments); a `propagate_let_rhs` from the propagated Ok payload [ERR-3]; a `value_match` or `value_if` from the derived common delivery type [GIVE-1], whose delivering `give`s are inside the same `let_stmt`, so the derivation stays statement-local.
+A `let` binder's mode and type are derived, never written: exactly the mode and type its selected right-hand side produces — an `ordinary_let_rhs` from its expression, which is always self-typed (operands are typed atoms, calls are typed by their [FN-1]/[OP-1]/[SYS-2] signatures, literals carry mandatory suffixes [FORM-5], constructions name their nominal and, when that nominal is generic, write its arguments); a `propagate_let_rhs` from the propagated Ok payload [ERR-3]; a `replace_let_rhs` at mode `own` from its target place's final selected type [SET-2]; a `value_match` or `value_if` from the derived common delivery type [GIVE-1], whose delivering `give`s are inside the same `let_stmt`, so the derivation stays statement-local.
 This is unique reconstruction, not inference: no binder's type depends on a later statement, an expected type, or any use site, and no two derivations can disagree [FORM-1].
 One form is excluded rather than reconstructed: a body `let` may not annotate a borrow with a region its right-hand side did not name, stating a destination the right-hand side satisfies by outlives [OWN-4] rather than equals, and a derived type is always the region the right-hand side itself produces.
-Call sites state explicitly exactly what their callee class requires: type, region, and const arguments for user generics [FN-2]; region arguments for system operations [SYS-2]; and, for exactly the retained-argument table operations — `cvt` and `reinterpret` (type pairs [OP-6, OP-8]), `array_new` (element type and const length [CONST-1]), `arena_new` (region and element type), and `finf`/`fnan` (result type) — the written arguments their rows fix, because no operand can supply them.
+Call sites state explicitly exactly what their callee class requires: type, region, and const arguments for user generics [FN-2]; region arguments for system operations [SYS-2]; and, for exactly the retained-argument table operations — `cvt` and `reinterpret` (type pairs [OP-6, OP-8]), `array_new` (element type and const length [CONST-1]), `arena_new` (region and element type), `buffer_vacant` (element payload type [OP-1]), and `finf`/`fnan` (result type) — the written arguments their rows fix, because no operand can supply them.
 A `construct` of a generic nominal states that nominal's type and const arguments on the same ground and in every position, mandatorily: the source nominals under [FN-2], and the prelude generic nominals `Option<T>` and `Result<T, E>` through their variant constructors `None`, `Some`, `Ok`, and `Err`.
 A nullary `None()` has no operand to supply anything, and construction never consults an expected nominal type [TYPE-6], so the written arguments are the only supply there is; their absence, or a count other than the named nominal's parameter list, is a hard error citing TYPE-5 at the complete `construct`.
 The non-generic prelude nominals — `Bool`, `Overflow`, `DivError`, `NarrowError` — have no parameters and write nothing.
@@ -345,6 +348,7 @@ Every other table operation carries no written argument and derives its selected
 Argument types match declared parameter types exactly.
 After [SET-1] derives a writable target place of type T, the right-hand side of `set p = e;` must produce exactly `own T`; there is no mode coercion, type conversion, or target-selected operation overload.
 After the TYPE-7 implicit-read exclusivity below, a different right-hand-side mode or type is a hard error citing TYPE-5 at the complete `expr` child of the `set_stmt`, carrying expected `own T` and the actual mode and type.
+After [SET-2] derives a writable affine target place of type T, the right-hand side of `let x = replace p = e;` receives this same exact-`own T` judgment, located at the complete `expr` child of the `replace_let_rhs`.
 Redundant-explicit facts remain mandatory at every trust boundary — signatures with full modes, types, effect rows, and regions [FN-1], construction field names [GRAM-8], match binders [GRAM-10], call argument names [GRAM-11] — and are deleted exactly where reconstruction is unique and no transposition risk exists.
 
 Each lower and upper endpoint atom of a `for_stmt` must produce exactly `own u64`; after [TYPE-7]'s implicit-read exclusivity, every other mode or type is a hard error citing TYPE-5 at that endpoint's `atom` node, with `SourceCoordinate` equal to its complete checked half-open source extent.
@@ -452,6 +456,23 @@ The new value occupies the same place and the target root remains live.
 If right-hand-side evaluation traps, no store occurs; preceding right-hand-side effects are not rolled back, and trap-abort behavior remains [EFF-4].
 The checked program retains the exact target path, each required target check, the right-hand-side value, the post-right-hand-side liveness and writability judgments, and the single store before lowering [DIAG-2].
 
+[SET-2] Affine-place replacement.
+`let x = replace p = e;` atomically exchanges the affine value stored at a writable place with a same-typed replacement, binding the previous value as the fresh `own` binding x [TYPE-5].
+Target formation, evaluation order, subscript discharge in target position, the closed writability relation, the loan-state judgment, and the post-right-hand-side revalidation are exactly [SET-1]'s, including its specific rule attributions; every other failure of the writability relation cites SET-2 at the complete target `place`.
+The target's final selected type T must be affine under [OWN-1] and region-free under [STOR-5]'s relation.
+A copy-typed target is a hard error citing SET-2 at the complete target `place`, carrying T and the restructuring `use set for a copy place; read the previous value bare`.
+A region-bearing target type — `slice<'r, U>` or `arena<'r, U>` at any depth of T — is a hard error citing SET-2 at the complete target `place`, carrying T and the restructuring `a slice's static origin set and an arena's confinement are fixed at initialization; bind a new slice or arena under a new let`; region-bearing types cannot occur in stored content [STOR-5], so this judgment bites only a direct binding or dereference target.
+The right-hand side must produce exactly `own T` under the [TYPE-5] judgment stated there.
+On successful revalidation, the commit performs one read of the previous value into x's storage and one write of the replacement value into resolved(p), with no writer-observable program point between them: at every program point the place holds exactly one valid owner, and no temporary uninitialized hole, vacancy state, or move-from-target residue exists.
+The commit is not a consuming use of the target root under [OWN-1]: the root binding remains live, no partial-move death occurs, and the moved-out value's sole owner is x, an ordinary `own T` binding thereafter with the ordinary [OWN-1] and [STOR-3] lifecycle.
+Through a live usable `&uniq` holder the commit is the sole exception to [OWN-5]'s prohibition on moving content reached through a borrow: the exchange leaves the far-side owner owning exactly one valid T in that place at every program point, and exclusivity already excludes every other observer for the statement's duration.
+A commit through a shared holder is never admitted, and a suspended holder is not usable [OWN-5].
+Under [EFF-2]'s attribution the commit is one read and one write of the target's ultimate storage origin.
+A successful commit derives no drop, release, finalizer, or cleanup edge [STOR-3]: nothing is destroyed, and the previous value's later release, if x is abandoned, is x's ordinary compiler-derived scope-exit action.
+If right-hand-side evaluation traps, no commit occurs and x is never initialized; the place still holds the previous value, preceding right-hand-side effects are not rolled back, and trap-abort behavior remains [EFF-4].
+The commit is an [ENT-5] kill event exactly as stated there; it establishes no fact.
+The checked program retains the exact target path, each discharged target check, the right-hand-side value, the post-right-hand-side liveness and writability judgments, the read-out, the write-in, and the binding initialization before lowering [DIAG-2].
+
 [CONST-1] The grammar production `const` of the fence below is usable at `array<T, N>` sizes and `const` targs.
 
 ```wf-ebnf CONST-1
@@ -484,9 +505,10 @@ Struct/enum-typed consts are DEFERRED with recorded delta.
 Values are classified copy or affine: primitives (TYPE-1), shared borrows, and tag-only enums (every variant nullary; `Bool` is the canonical case) copy on use; all other values (owned composites, `box`, `arena`, `slice` as `&uniq`, uniq borrows) are affine.
 An affine place rooted in a live own-mode binding is consumed exactly once by an explicit `move p`, by use as an own-place match scrutinee under [OWN-13], or by use as the direct bare affine `Result<T, E>` place operand of `propagate` under [ERR-3].
 Every other bare `place` expression of affine type is a hard error (write `move p`), and `move p` on a copy value is a hard error (copy values are used bare — one spelling per meaning, FORM-1).
-Resolving and evaluating the target of SET-1 does not by itself read, copy, or move the selected value or its affine owner.
+Resolving and evaluating the target of SET-1 or SET-2 does not by itself read, copy, or move the selected value or its affine owner.
 After any consuming use, the whole binding rooting `p` is dead (partial moves kill the whole binding); any later use, write, or `set` of a dead binding is an error at the later use or target place — reinitialization requires a new `let`.
-SET-1 rechecks this premise after its right-hand side and never revives a dead binding.
+The [SET-2] replace commit is not a consuming use: it exchanges the stored value, leaves the target root live, and initializes its fresh binding as the moved-out value's sole owner.
+SET-1 and SET-2 recheck the live-root premise after their right-hand sides and never revive a dead binding.
 
 [OWN-2] Modes: `own` (owned), `&'r` (shared borrow in region `'r`), `&uniq 'r` (exclusive borrow in region `'r`).
 Modes are always written.
@@ -504,9 +526,9 @@ It may be stored into a destination of declared region `'b`, passed to a paramet
 While `&uniq 'a p` is live and its holder is not suspended [OWN-6]: no place overlapping resolved(`p`) may be read, written, moved, or borrowed, except reads/writes through that borrow's holder and except the creation of a statement-scoped child reborrow, an arm-scoped child reborrow, or a returned reborrow of that holder [OWN-6, OWN-13, OWN-14].
 While a holder is suspended (a live statement-scoped child, arm-scoped child, or returned reborrow of it exists), its own read/write allowance is withdrawn: no read, write, move, copy, `set` commit, or call-transfer through it is admitted until its last child ends.
 While any `&'a p` is live: no place overlapping resolved(`p`) may be written, moved, uniq-borrowed, or committed by `set`; reads are permitted.
-A SET-1 commit is one write to resolved(target) and is judged against the complete loan state after right-hand-side evaluation.
+A SET-1 commit is one write to resolved(target), and a [SET-2] commit is one read and one write to resolved(target); each is judged against the complete loan state after right-hand-side evaluation.
 A commit through a live usable `&uniq` holder is a write through that holder; a commit through a shared holder is never admitted.
-Content reached through any borrow may never be moved: `move` requires a place rooted at an own-mode binding.
+Content reached through any borrow may never be moved: `move` requires a place rooted at an own-mode binding, and the [SET-2] replace commit is the sole exception, sound because the exchange leaves no program point at which the referent place lacks exactly one valid owner.
 Exclusivity invariant, checked unconditionally: no two live usable `&uniq` borrows have overlapping resolved places; a suspended holder is not usable, so the only overlapping pair, a suspended parent and its statement-scoped child, arm-scoped child, or returned reborrow, is never both-usable by construction.
 
 Every `slice<'r, T>` value carries a finite set of possible ultimate storage origins.
@@ -585,11 +607,11 @@ Bound reborrows, `give`-position and stored reborrows, `uniq`-to-`shared` downgr
 [STOR-1] Storage class is a function of type, stated once: `box<T>` is heap-owned; `arena<'r, T>` is arena-owned, bounded by `'r`; `buffer<T>` is heap-owned (one compiler-derived heap allocation, released by one compiler-derived free at owner scope-exit [STOR-3]); a `const` item [CONST-2] is immutable static storage (program-lifetime, read-only, never dropped); every other owned value is frame-resident (inline in its owner or the stack frame).
 There is no per-binding storage annotation and no default clause.
 The reserved storage-contract field `foreign_shared` exists in the vocabulary but is legal only in programs containing gated FFI frames (§14); compiler-inferred demotion of an allocation to foreign-shared is a floor violation.
-SET-1 may overwrite only a copy-typed final place.
-Setting an affine-typed final place is a hard error citing STOR-1 at the complete target `place`, carrying its exact affine type and the restructuring `construct a fresh owner under a new let; do not replace an affine place`.
-This specification defines no take/replace operation, temporary uninitialized hole, move-from-target exception, or implicit destruction of the old affine value.
-Growable or keyed collections (dynamic vector, hash map, set, byte-string, text) are neither storage classes nor kernel constructs: they are future library structures over `buffer<T>` plus struct/enum and generics (a byte-string is `buffer<u8>`; a growable vector pairs a `buffer<T>` with a length).
-They are out-of-v0-kernel and recorded, additionally blocked on the §5 take/replace resolution that in-place buffer replacement requires; the arena-index-pool ownership pattern is rejected as a collection basis (it resurrects use-after-free as well-typed slot-recycling).
+SET-1 may overwrite only a copy-typed final place, and [SET-2] may replace only a region-free affine final place; the two forms partition writable final places by [OWN-1] class with one spelling each.
+Setting an affine-typed final place with `set` is a hard error citing STOR-1 at the complete target `place`, carrying its exact affine type and the restructuring `use replace: let old = replace p = e; binds the previous owner`.
+This specification defines no bare take operation, temporary uninitialized hole, vacancy type state, or implicit destruction of the old affine value: [SET-2]'s atomic exchange is the sole affine replacement form, and the previous value always leaves through its fresh binding.
+Growable or keyed collections (dynamic vector, hash map, set, byte-string, text) are neither storage classes nor kernel constructs: they are library structures over `buffer<T>` plus struct/enum and generics (a byte-string is `buffer<u8>`; a growable vector pairs a `buffer<T>` with a length, growing by allocate-new, move, [SET-2] field replace, and ordinary release of the superseded buffer).
+The arena-index-pool ownership pattern remains rejected as a collection basis (it resurrects use-after-free as well-typed slot-recycling); keyed collections additionally remain blocked on their own occupancy and identity designs.
 Char and Unicode text are out-of-v0, recorded.
 
 [STOR-2] Creation: `box_new(v)` returns `own box<T>` for `v`'s exact type T [OP-2]; `arena_new<'r, T>(v)` returns `own arena<'r, T>`; both are ordinary calls in the operation table.
@@ -608,7 +630,8 @@ No exit duplicates an action already carried by an inner scope edge.
 
 The release action of a type is compiler-owned semantic data selected by that type, not a fixed enumeration of memory-reclamation actions.
 A `box<T>` drop is one compiler-derived heap free.
-A `buffer<T>` drop is one compiler-derived heap free on every owner-scope exit, ordered like a `box<T>` drop.
+A `buffer<T>` drop with copy-typed elements is one compiler-derived heap free on every owner-scope exit, ordered like a `box<T>` drop.
+A `buffer<T>` drop with affine-typed elements [TYPE-2] is each element's compiler-derived drop in ascending index order followed by that same one heap free; for an element type whose own drop derives no action, the composite action remains exactly the heap free.
 An `arena<'r, T>` value's storage is released with its region [STOR-4].
 A `const` item [CONST-2] is never dropped.
 Every other frame-resident owned value [STOR-1] has no release action.
@@ -622,7 +645,8 @@ No source construct selects, replaces, supplies, suppresses, reorders, duplicate
 There are no finalizers in the writer-registered sense: no source declaration, annotation, attribute, contract, conformance, or binding attaches a writer-defined action to a value's release, and this specification defines no construct that could.
 This clause does not forbid the compiler-owned release action above, which is fixed by the language and its family contracts rather than registered by a writer.
 
-A successful SET-1 assignment replaces one copy value and therefore derives no drop, release, finalizer, or cleanup edge; an affine target is rejected before checked-program construction [STOR-1].
+A successful SET-1 assignment replaces one copy value and therefore derives no drop, release, finalizer, or cleanup edge; an affine `set` target is rejected before checked-program construction [STOR-1].
+A successful [SET-2] commit likewise derives no drop, release, finalizer, or cleanup edge: the previous value is not destroyed, and its later release, if its binding is abandoned, is that binding's ordinary scope-exit action under this rule.
 
 [STOR-4] Arena confinement: a value of type `arena<'r, T>` may not be returned, stored into a field, or moved to a destination outside `'r`'s block; borrows of its content obey OWN-10 with source region `'r`.
 
@@ -699,6 +723,7 @@ The table below is the normative inventory (columns: op, type domain, signature,
 | `arena_new` | any T | `(own T) -> own arena<'r, T>` | allocates(arena 'r) |
 | `array_new` | `T` copy (v0: primitive), `N` a constant-expression [CONST-1] | `(T) -> own array<T, N>` (fills all N elements with the argument; T1) | pure |
 | `buffer_new` | `T` copy (v0: primitive) | `(u64, T) -> own buffer<T>` (allocates a flat buffer of the u64 length and fills every element; T1) | allocates(heap), traps |
+| `buffer_vacant` | `T` region-free [STOR-5] | `(u64) -> own buffer<Option<T>>` (allocates a flat buffer of the u64 length; every element is `None()` of `Option<T>`, compiler-minted, no source value duplicated; T1) | allocates(heap), traps |
 | `iand` `ior` `ixor` | all int T | `(T, T) -> own T` | pure |
 | `inot` | all int T | `(T) -> own T` | pure |
 | `ishl.wrap` `ishr.wrap` | all int T | `(T, u32) -> own T` | pure |
@@ -874,8 +899,8 @@ Both operations lower directly to equality or inequality of the validated discri
 They are pure and total: after normal operand evaluation, the primitive does not inspect a payload, access memory, trap, convert a value, or introduce a new optimizer fact channel; an operand read still exhibits its ordinary effect before the primitive executes.
 Payload-carrying enums, enum ordering, and enum/integer conversion remain outside the operation table.
 
-[OP-9] `buffer_new(n, v)` computes its allocation byte-size as the u64 product of n and sizeof(T) (sizeof(T) is a monomorphization-time constant).
-When this product overflows u64, `buffer_new` traps [SCOPE-4] before allocating: an unrepresentable buffer size is a contract violation, never a silent under-allocation (R4: no silent corruption; T2: no-UB), so `buffer_new`'s effect row includes `traps`.
+[OP-9] `buffer_new(n, v)` computes its allocation byte-size as the u64 product of n and sizeof(T) (sizeof(T) is a monomorphization-time constant); `buffer_vacant<T>(n)` computes the same product over sizeof(`Option<T>`) and shares every judgment of this rule.
+When this product overflows u64, the operation traps [SCOPE-4] before allocating: an unrepresentable buffer size is a contract violation, never a silent under-allocation (R4: no silent corruption; T2: no-UB), so both rows' effect rows include `traps`.
 This u64 multiplication overflow is the sole language-level allocation-size trap that `box_new`/`arena_new` (single-T, no runtime multiply) do not have.
 After the u64 product succeeds, [STOR-6] separately requires the byte count to have an exact value-preserving representation in every applicable selected-target allocator and address-index domain; failure of that dynamic target-domain guard follows the non-continuing TCB/resource path and is not this OP-9 trap.
 Allocation failure (OOM) is handled as by `box_new` (TCB-level, SCOPE-3), not a language trap.
@@ -936,7 +961,7 @@ Ordinary `loop_stmt` execution is unchanged.
 Function completion and statement reachability use one conservative structural normal-control graph over the resolved function body.
 For any statement s, `normal_successor(s)` is the entry of s's next sibling statement in the same block when one exists, and otherwise that containing block's normal exit.
 A block entry reaches its first statement, or its normal block exit when it contains no statement.
-An ordinary `let`, `set`, expression statement, and a passed `check` or `claim` have a normal edge to `normal_successor(s)`.
+An ordinary `let`, a `let` selecting `replace_let_rhs`, `set`, an expression statement, and a passed `check` or `claim` have a normal edge to `normal_successor(s)`.
 A call or operation with a trapping effect also retains that normal edge; a possible trap never proves divergence.
 A `return_stmt` has an edge only to the function-return sink.
 A `region_stmt` enters its body, and that body's normal exit reaches `normal_successor(region_stmt)`.
@@ -1411,7 +1436,7 @@ This attribution reads only the release rows [STOR-3] fixes, and it does not ret
 A `box<T>` drop, a `buffer<T>` drop, an `arena<'r, T>` region release, and the absent drop of a `const` item [CONST-2] each carry the empty release row and therefore contribute nothing to any function's exhibited row; only a resource family whose contract fixes a nonempty release row contributes one.
 `external` and `blocks` carry no region payload, so the preceding call-boundary projection applies only to `reads`, `writes`, and `allocates` entries: the two categories transfer by presence and are unaffected by region-argument substitution, occurrence selection, and origin projection.
 
-A [SET-1] commit is one write under this attribution.
+A [SET-1] commit is one write under this attribution, and a [SET-2] commit is one read and one write of the same target origin.
 A shared-holder commit is rejected [OWN-5] and contributes no accepted effect judgment.
 Effects exhibited while evaluating the target and right-hand side contribute normally; an accepted target subscript is discharged [OP-4] and contributes no `traps`.
 Rows are checked both ways against the exhibited row defined above: undeclared-but-exhibited and declared-but-unexhibited are both errors, and a category contributed only by the release contribution is checked exactly like one written in the body.
@@ -2710,7 +2735,7 @@ S4 is the admitted-body axiom justified by every ordinary caller's static discha
 An `ordinary_let_rhs` establishes at its binding: for `let x = lit;`, x = value(lit); for `let x = p;` with p a term of type T, x = p; for `let y = cvt<Src, Dst>(p);` with (Src, Dst) a total pair [OP-6] and p a term or constant, y = p — `cvt` keeps its written type pair [TYPE-5].
 [ENT-3.S6]
 - S6 (length facts).
-`let b = buffer_new(n, v);` establishes len(b) = n on the normal continuation [OP-9], n read as term or constant.
+`let b = buffer_new(n, v);` and `let b = buffer_vacant<T>(n);` each establish len(b) = n on the normal continuation [OP-9], n read as term or constant.
 `let m = len(P);` for a tracked P establishes m = len(P).
 `let s = slice_of…(&'r P);` for a tracked P establishes len(s) = len(P).
 [ENT-3.S7]
@@ -2790,7 +2815,7 @@ A structural merge retains stability only when every reaching input retains it, 
 Neither contradiction, re-establishment of a fact, assignment of an equal value, nor a later iteration restores stability.
 This metadata creates no snapshot, term, relation, signed goal, or runtime action.
 
-A fact dies at the earliest of: (a) a `set p = e;` commit whose resolved target [SET-1, OWN-5] overlaps, under [OWN-7]'s overlap relation, the resolved place of any support member, or the compiler-owned update of a `for_stmt` binder when that binder is a support member; (b) a call — user function, table operation, or system operation — one of whose [EFF-2] boundary-projected `writes` occurrences projects onto a caller place or origin set containing a place that overlaps [OWN-7] the resolved place of any support member; the projection is exactly [EFF-2]'s, so a callee writing only through one `&uniq` actual kills exactly the facts whose support overlaps that actual's resolved place, and a call whose row carries no `writes` kills nothing; (c) a consuming use [OWN-1] of any support member's root; (d) an edge leaving the region of any borrow holder in its support, leaving the lexical scope of any support binding, or leaving the owning counted construct of any capture term in its support, region exit [OWN-3] included.
+A fact dies at the earliest of: (a) a [SET-1] `set` or [SET-2] `replace` commit whose resolved target [SET-1, SET-2, OWN-5] overlaps, under [OWN-7]'s overlap relation, the resolved place of any support member, or the compiler-owned update of a `for_stmt` binder when that binder is a support member — because a length term's support is its viewed place's non-element root path, a whole-place replace of a buffer or of any prefix of it kills that buffer's length facts, while an element-position replace, like an element write, kills none; (b) a call — user function, table operation, or system operation — one of whose [EFF-2] boundary-projected `writes` occurrences projects onto a caller place or origin set containing a place that overlaps [OWN-7] the resolved place of any support member; the projection is exactly [EFF-2]'s, so a callee writing only through one `&uniq` actual kills exactly the facts whose support overlaps that actual's resolved place, and a call whose row carries no `writes` kills nothing; (c) a consuming use [OWN-1] of any support member's root; (d) an edge leaving the region of any borrow holder in its support, leaving the lexical scope of any support binding, or leaving the owning counted construct of any capture term in its support, region exit [OWN-3] included.
 Scope exits are edge events: kills (c) and (d) apply on every edge leaving the scope, before any join at that edge's target is taken — mirroring [STOR-3]'s edge-carried releases — so no arm-local or block-local fact survives its scope into a join under any reading.
 
 An ordinary user-call boundary has one order in every proof view.
