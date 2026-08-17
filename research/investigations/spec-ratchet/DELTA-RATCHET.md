@@ -27,9 +27,9 @@ The premise being tested was DOSSIER §D2, "Restatement instead of reference:
 because refs are unchecked at write time, drafting agents restate hub content
 defensively." As a *byte* story that premise is measurably false. The six
 balloon rules are not inflated by restatement; they are dense original
-normative content. What inflates them is subject matter — DIAG-1 alone
-enumerates 29 location assignments across five diagnostic stages — not
-duplication.
+normative content. What inflates them is subject matter — DIAG-1 alone carries
+33 location-form mentions (24 `SourceNode`, 5 `BundleRoot`, 4 `SourceBytes`)
+across five diagnostic stages, each attached to its own case — not duplication.
 
 ## 2. The four proposed cuts
 
