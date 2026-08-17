@@ -1,528 +1,67 @@
-# Current Plan
+# Current Plan — close the specified-language gap; resolve take/replace
 
-Status: **COMPLETE (2026-08-15)**: the owner-selected obligation-discharge
-sequence is installed through the deterministic claim ledger and the
-separately approved strict partition. This plan now grants no further execution
-authority; beginning another wfgrep undertaking requires a new owner-approved
-high-level plan.
+Status: ACTIVE (owner direction in conversation, 2026-08-17: "把剩下所有事情
+都放进计划里面全都实现了吧……为了防止卡我审评，你就在分枝上搞就好了，这样
+spec修订也不卡。你可以开agent并行。" The direction authorizes this plan and
+its batches; every specification byte and every protected-compliance change
+this plan produces still lands only as a marked branch candidate awaiting
+the owner's exact-byte morning approval.)
 
-The owner selected the predecessor plan on 2026-08-12 and explicitly selected
-the narrow Stage 8b receiver correction described below on 2026-08-14. Task
-0058 proved that OWN-6 prevents a value-producing match result from surviving
-the mandatory statement-scoped child-reborrow region at all fourteen mapped
-`read_bits` calls. The 2026-08-14 plan revision changed only that Stage 8b
-delivery mechanism;
-it carried forward the objective, workstream order, consumers, verification
-boundary, and later exact specification/protected-conformance waits. Its
-former `ACTIVE` status authorized task execution inside the exact written
-boundary, but did not approve any specification or protected-conformance bytes
-before their separate exact owner decisions.
-
-Derived from [Direction Outline revision 36](roadmap.md), primarily `outline:PROOF-8`,
-with `outline:PROOF-1`, `outline:VERIFY-1`, and `outline:VERIFY-2` as proof, safety, and evidence
-constraints; the installed landscape is synchronized through Direction
-Outline revision 41. `outline:CAND-8` remains the selected flagship pressure source
-and is now unparked, but this completed plan does not authorize its next slice.
+Derived from Direction Outline revision 41 and the 2026-08-17 capability
+review. Supersedes the completed obligation-discharge plan in place.
 
 ## Objective
 
-Finish the already selected obligation-discharge sequence without repeatedly
-returning for task-level approval:
-
-1. establish or falsify the two local facts needed by the real `read_bits` and
-   `append_slice` consumers, and inventory every caller-side gap;
-2. independently repair the checked program's already-required exact
-   derivation retention before adding another normative fact family;
-3. if those prerequisites close, design and activate the smallest verified
-   normal-return postcondition mechanism that closes the real call sequences;
-4. expose a deterministic, complete review ledger for the resulting claims;
-   and
-5. only after that ledger exists, add an opt-in strict partition in which
-   obligations must be proved or handled by value control flow rather than by
-   claims.
-
-The authentic consumers are the four-source raw-DEFLATE unit and `wfgrep`.
-The plan ends by making the obligation-discharge direction terminal and
-unparking the existing wfgrep checkpoint. It does not begin a new wfgrep
-optimization or performance project.
-
-## Installed baseline and frozen boundaries
-
-- Active language authority: v0.30 at `spec/kernel-spec.md`, SHA-256
-  `5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1`;
-  the outgoing v0.28 bytes are archived unchanged at
-  `spec/kernel-spec-v0.28.md`, SHA-256
-  `08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
-- Raw-DEFLATE sources, in compilation order:
-  - `raw_deflate.wf`:
-    `6da69f4dfaa3906c8516a4b0eb3f113b96b8c406084ac3c16ffb92514098bdf2`;
-  - `raw_deflate_dynamic.wf`:
-    `87099254c197460733a3a4661b0a5e0dd6290936e4647634ceed0134043b0b84`;
-  - `raw_deflate_dynamic_decode.wf`:
-    `8604a81550083bdaea85e5da0aaf798a75e14beb7626a2f21d08975ae88d071d`;
-  - `raw_deflate_boundary.wf`:
-    `c5044c5db980e1d2c14b5c3731a153351a58d61d84aec81880e355707c2a2f84`.
-- `wfgrep.wf`:
-  `fb2f3b44160a947d7adca9fc9b5af851b446a7bcfc179ede4f8c689b21033904`;
-  Stage 9b changed only the twelve-byte `deny_claims ` prefix on
-  `report_failure`.
-- Installed Stage 8b acceptance covers all fourteen `read_bits` routes, all
-  twenty `append_slice` routes, and the single wfgrep A10 `value_if` repair
-  through the ordinary compiler path with unchanged output, error, cleanup,
-  effect, status, invalid-domain, and required-check oracles. Installed Stage
-  9a commit `e04d3acad80e1260c4f1aee24d8f45cba5140d84` enumerates the complete
-  v0.28 claim-ledger populations as UTF-8 `2`, four-source raw-DEFLATE `12`,
-  and wfgrep `8`; the former v0.27 retained/redundant split was not copied
-  forward as an unmeasured v0.28 fact.
-- Protected conformance boundary: 446 cases, 30 coverage annotations, rule
-  coverage `133/133`, and the installed adapter result
-  `Pass=432 Fail=1 Skip=13`; the sole failure remains
-  the existing OWN-3 unsupported boundary.
-
-Every task must resolve these identities before using them. A changed real
-consumer is permitted only when its task states the exact behavior-preserving
-reason and replays the frozen output, error, cleanup, and status oracles.
-Protected conformance and canonical compliance machinery use their separate
-approval gate.
-
-## Workstream 8a — bounded proof-feasibility evidence
-
-Stage 8a is a removable experiment, not a language or compiler installation.
-It first freezes the baseline, then may split into parallel bit-bound and
-counted-append probes, followed by one synthesis task.
-
-### Local facts
-
-For `read_bits`, use a temporary in-crate harness over production checked and
-entailment representations to test exactly these two unsigned fact sources:
-
-- `result = iand(left, right)` establishes `result <= left` and
-  `result <= right` only for the corresponding admitted term or checked
-  constant; and
-- `high = ishl.wrap(one, count)` establishes `high != 0` only when `one` is a
-  checked unsigned constant with mathematical value one.
-
-Together with existing closure and the existing `mask = high -wrap 1` fact,
-measure whether every `Ok(value:)` return of `read_bits` establishes
-`value < high`; `Err` establishes no result fact. Cover unsigned widths,
-signed and operation near misses, boundary counts, operand order, and
-per-support mutation kills. In particular, the real later mutation of
-`state.hold` must preserve the bound through `mask`, while mutation of a fact's
-own supported term kills only that fact.
-
-For `append_slice`, use the truthful admitted domain expressed by this exact
-existing-language requirement in the proof-only scratch helper:
-
-```whitefoot
-requires {
-  let capacity = len(deref(destination));
-  let admitted = ile(filled, capacity);
-  check admitted else trap "append filled exceeds destination";
-}
-```
-
-Rewrite only the scratch/runtime variant to the existing counted form
-`for @append at in filled..capacity`. An early return uses the counted body
-fact `at < capacity`; exhaustion returns `capacity` directly. Do not invent a
-post-loop binder equality or a variable-subtraction fact. Exhaustively compare
-result and every written byte with the current body for capacities and text
-lengths `0..=8`, all admitted filled values, two destination fills, and zero,
-maximum, and ascending text patterns. Preserve the wfgrep `9/9` and
-raw-DEFLATE `3/3` program oracles.
-
-### Caller audit
-
-Before hypothetical facts, reproduce that v0.27 proves neither local result
-goal and that unconditional `append_slice result <= capacity` is false for
-`filled > capacity && len(text) = 0`.
-
-Inventory all fourteen real `read_bits` calls and all twenty real
-`append_slice` calls. With only the hypothetical local result fact, classify
-each future caller requirement as `discharged` or `unproved`; an unexpected
-refutation is a blocker. The audit must reproduce at least these known gaps:
-
-- all fourteen `read_bits` `Ok` payloads are assigned with `set` into an outer
-  binding, while current ENT-3 transfers no fact through that assignment and
-  the inner support expires; and
-- in wfgrep, `length <= len(deref(report))` survives the host-copy element
-  write, but `set length = length +wrap copied` kills the scalar relation and
-  current S7 creates no variable-offset replacement.
-
-Stage 8a leaves no tracked compiler, source, specification, conformance,
-generated, or MCTS change. It appends measured evidence to the existing
-acceptance record only after temporary files are removed and host hashes are
-restored. Local success is not a claim that either complete caller sequence is
-feasible.
-
-### Stage 8a stop
-
-Stop with the smallest reproducer if either local goal needs general loop
-induction or a loop fixed point, arithmetic-expression terms, Boolean
-decomposition, a solver, source/function recognition, invariant or
-postcondition syntax, an unproved premise, a third fact-source family,
-invalid-domain behavior changes, or an incomplete or ill-typed caller map.
-Do not start Stage 8b after a stopped result.
-
-## Trust prerequisite — bounded existing-DIAG-2 repair
-
-Independently of the Stage 8a outcome, repair a present implementation gap
-against active DIAG-2. The active specification already requires the checked
-program to retain the exact ENT-4 derivation for every accepted subscript,
-every discharged ordinary-call goal, and every S11 fact of every counted
-statement, including S11 facts not used by a later query. This work may run in
-parallel with Stage 8a, remains required if Stage 8a stops, and must be terminal
-before Stage 8b.
-
-Fold in only task 0049's bounded Stage 1 result. While the canonical entailment
-engine performs its existing closure and flow work, record canonical parents
-and exact roots for that complete required set. Cover source identity,
-invalidation, joins, contradiction, ordinary and counted loops, substitutions,
-generics, recursion, and root completeness. Record parents during the existing
-pass; do not rerun closure to reconstruct a proof. Measure parent nodes, bytes,
-proof depth, compile time, and peak memory on the frozen programs.
-
-This is an implementation of already-active semantics, not a new proof system.
-It changes neither accepted source nor runtime behavior and grants no new
-lowering authority. It creates no certificate format, portable identity,
-serialized artifact, ProofFlow, shadow verifier, or second semantic walk. If
-the complete required derivations cannot be represented compactly and exactly
-without one of those expansions, stop with the smallest missing case. Ordinary
-compiler tests are autonomous; any protected conformance change enters the
-separate approval gate.
-
-## Workstream 8b — verified normal-return postconditions
-
-Status: **COMPLETE (2026-08-15).** The exact owner-approved v0.28
-specification, compiler, five consumers, outgoing archive, protected corpus,
-runner identity, approval chain, and derived material are installed atomically.
-Workstream 9a followed this installation and is also terminal below.
-
-Stage 8b begins only after Stage 8a establishes both local witnesses, every
-caller gap has the fixed disposition below, and the trust prerequisite
-correctly retains the complete existing derivation set. General arithmetic,
-induction, solvers, recognizers, trusted writer assertions, general `set`
-equality or arbitrary RHS fact transfer, and variable-offset S7 are outside
-the plan. The one result-specific selected-outcome receiver event enumerated
-below is not general assignment authority. Every new postcondition or
-operation-derived fact extends the same exact derivation representation rather
-than creating a parallel proof channel.
-
-Prepare the smallest normal-return postcondition design and implementation:
-
-- install only the measured bit-operation fact sources needed by `read_bits`;
-- adopt the truthful counted `append_slice` body and admitted-domain
-  requirement rather than the refuted unconditional contract;
-- define verified normal-return postconditions, including result/outcome
-  selection, body proof at every normal return, formal and result
-  substitution, support and kills, branch and early-return behavior, cleanup,
-  concrete generic instantiation, false-postcondition rejection, unsupported
-  boundaries, deterministic diagnostics, and caller fact establishment;
-- retain the fourteen existing direct-call match shapes and add one bounded
-  selected-outcome receiver event. At the selected direct
-  `Ok(value: payload)` arm of a match whose scrutinee is one accepted ordinary
-  user call, and whose entry holds exactly the instantiated planned-S12
-  verified normal-result relation, a direct non-consuming
-  `set outer = payload;` may carry that relation only when `payload` is the bare
-  own fragment binder, `outer` is a previously live bare outer own binding of
-  the exact same type, and no intervening event occurs. Evaluate the RHS, apply
-  the ordinary target commit and kill, then replace only the result-payload
-  occurrences in that relation with the post-write receiver and re-establish
-  the relation in the same complete/U/B view when every non-payload support
-  remains live. The receiver may not be any actual argument of that call;
-  within that instantiated relation it may not appear as a non-result term or
-  support, nor overlap another substituted support. This check is
-  relation-local: unrelated pre-existing receiver facts do not block the event
-  and are removed by the ordinary target kill. A projected, computed, or
-  consuming RHS; wrong or unselected binder; differently typed receiver;
-  named/pending outcome; extra reaching write; alias; missing relation; or
-  killed support establishes nothing. Payload scope exit and the ordinary
-  match join then apply normally. This event establishes neither
-  `outer = payload` nor any unrelated fact and is not general `set` equality;
-- retain bounded immutable delivery for `value_if` only. On each reaching
-  `give` edge, for each eligible typed L0 relation replace every occurrence of
-  the delivered bare copy atom with the receiving binding, apply ordinary
-  scope kills to every other support, and pass the surviving edge relations
-  through the ordinary L0 join. Establish only each joined typed relation on the
-  fresh receiving binding, supported by it plus the exact surviving support.
-  Perform this independently within the same complete/U/B view; no relation or
-  edge evidence crosses views. A non-atom or consuming delivery, a missing or
-  ill-typed edge relation, or a join with no common relation establishes
-  nothing. This remains delivery-specific fact substitution, not assignment
-  equality, and no Stage 8b consumer relies on a corresponding `value_match`
-  rule;
-- repair wfgrep's post-copy transition after the child region ends: retain the
-  prior length and the copied count in outer scalars, form the candidate next
-  length, then take an explicit value-producing branch on
-  `candidate_length <= len(deref(report))`. Give the candidate only on the
-  established true edge and otherwise give the prior length exactly as the
-  existing failed-copy path leaves it unchanged. Use the resulting
-  `bounded_length` for every post-selection length use: as both receiver and
-  `filled` actual for the separator and all later append calls, and as the final
-  length passed to `publish_all`. Do not write it back through the old `length`
-  binding, add variable-addition entailment, or add a trusted system-result
-  arithmetic premise; and
-- exercise the complete raw-DEFLATE and wfgrep call sequences through the one
-  ordinary compiler path with unchanged output, errors, cleanup, effects, and
-  required runtime checks.
-
-This workstream is expected to change language semantics and protected
-conformance. Candidate design, implementation, ordinary tests, real-program
-repair, measurement, and independent review may proceed autonomously on task
-branches. Before any protected bytes land, present one combined owner packet
-with the exact full specification SHA/diff/impact/verifier results and the
-exact conformance before/after inventory, then hard-wait. Changed bytes or
-scope require renewed explanation and approval. Activation is atomic with the
-outgoing archive, digest chain, compiler, approved corpus, docs, and real
-consumer migration.
-
-Task 0058 froze the reviewed, non-authoritative semantic candidate at held
-commit `7a293861ddb0aad0cd8d494ee8f4bfa5f6cbba29`, with candidate specification
-SHA-256 `08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
-Implementation proceeded as one strict isolated held stack: 0059 frontend and
-FN-9 surface; 0060 callee proof and summaries; 0061 call publication,
-receivers, and provenance atomicity; 0062 `value_if`-only delivery; 0063 the
-five real consumers and behavior oracles; and 0064 additive protected
-conformance plus the combined exact packet. Task 0064 stopped at the owner
-boundary, and 0065 installed the unchanged approved H6 tree atomically after
-approval. H0–H6 remain audit-line history rather than intermediate mainline
-language states.
-
-Stage 8b is terminal only when every mapped real caller sequence derives its
-intended fact. An unresolved or refuted mapping, a hidden runtime fallback, or
-a changed error, cleanup, effect, or output contract is a stop.
-
-## Workstream 9a — deterministic claim ledger
-
-Run this workstream after Stage 8b so it describes the final fact sources,
-postcondition edges, and remaining claim population rather than a transitional
-compiler.
-
-Expose a deterministic read-only claim ledger from the checked program. Reuse
-the trust prerequisite's exact derivation parents and retain only the additional
-observational used-premise links actually needed to connect a named claim to a
-reported obligation and provenance. For every remaining named claim the report
-includes stable source identity, name and predicate, justification, lifecycle
-disposition, the obligation or obligations it supports, the used derivation,
-and provenance. Ordering and counts must be identical across clean builds and
-complete for UTF-8, raw-DEFLATE, and wfgrep. Synthetic retained, redundant,
-refuted, kill, join, call, and loop controls challenge the mapping.
-
-This is ordinary compiler/tooling work and changes neither language acceptance
-nor lowering authority. It creates no serialized artifact, portable identity,
-replay protocol, second semantic engine, optimizer fact, or compliance
-baseline. If exact completeness requires re-analysis per claim, a second
-closure, guessed support, or a durable identity framework, stop and report the
-smallest gap. Any protected compliance change still enters its own owner gate.
-
-Installed outcome (2026-08-15): commit
-`e04d3acad80e1260c4f1aee24d8f45cba5140d84` exposes the ledger only from the
-successfully checked program and traverses the existing finalized canonical
-derivation ancestry. It reports complete deterministic populations of UTF-8
-`2`, four-source raw-DEFLATE `12`, and wfgrep `8`, including exact nonempty S3
-premise links. The frozen-real owning test passed in `414.00s` against H5's
-`412.36s` baseline at
-`5fd017b46973e5cbf990fe3fc92a2cc20a76f91c` (about `0.4%`); the complete
-compiler and repository gates are green with library `816/816` and real
-programs `32/32`, and the independent adapter preserves the exact installed
-`Pass=423 Fail=1 Skip=13` boundary. No stop condition fired, and Stage 9a is
-terminal.
-
-## Workstream 9b — opt-in strict no-claim partition
-
-Status: **COMPLETE (2026-08-15).** Stage 9b began only after Stage 9a
-deterministically enumerated the actual remaining claims and their transitive
-support.
-
-The selected design implements the smallest opt-in `deny_claims` partition
-semantics. The marker is carried by a function declaration. Each marked
-concrete function instance is
-one strict root. Its outgoing transitive closure contains every concrete user
-function instance reached by an ordinary call, each recursive strongly
-connected component, and the generated entry wrapper or adapter when the root
-has one. The closure does not flow upward into unrelated callers.
-
-One function may therefore be used by both ordinary and strict callers. It has
-one runtime body and ordinary acceptance remains unchanged; strict membership
-uses the existing unasserted proof views plus a finite summary, not a second
-semantic rewalk, lowering, or specialization. A call from outside into a
-marked root must prove that root's requirement in the caller's unasserted
-state. Calls within the strict closure are likewise judged unasserted, and
-their callees must have a successful strict summary.
-
-The closure's complete transitive claim ledger must be empty. Every checked
-direct claim counts, including one in a structurally unreachable arm. A finite
-may-claim fixed point propagates through ordinary calls, recursion, concrete
-generic instances, and generated boundaries. A direct claim rejects at its
-claim node; the first source-ordered call that imports a may-claim summary
-rejects at that call node. Installed CLM-3 fixes the exact rule ID and payload;
-those two ownership locations remain part of the approved boundary.
-
-All protected obligations and ordinary required calls inside the partition are
-judged in the unasserted state: a body `check` may remain as an executed check
-for an unrelated invariant, but neither it nor a claim grants authorization.
-A real branch, proved requirement, verified normal-return fact, structural fact,
-or other non-asserted source may still discharge. Outside the opt-in partition,
-the existing claim lifecycle and runtime checks remain unchanged. This is not
-a global claim ban, a universal sole-trap-source law, or permission to erase
-explicit runtime checks.
-
-The installed evidence covers direct and transitive positive, negative,
-near-miss, recursion, generated-entry, generic, and bypass cases, plus
-claim-free acceptance, claim-bearing rejection, and value-branch repair on a
-real path. This workstream required a second exact specification and protected
-conformance packet. Candidate work proceeded autonomously; landing waited for
-the explanation, exact candidate SHA/diff/impact/verifier results, exact corpus
-before/after audit, and explicit owner approval.
-
-Stop if the partition cannot be finite and deterministic without a generalized
-effect/proof framework, if a transitive bypass remains, or if ordinary code's
-existing acceptance or required runtime behavior changes.
-
-Installed outcome (2026-08-15): held frontend checkpoint
-`ec95b7026e84b9d001cd9912b3f34ee9b2511d19` defined the reviewed v0.29
-declaration grammar and generated-data bytes, and held semantic checkpoint
-`a927f2ca15471de22bbc878355fd7376d74f660b` defined the reviewed CLM-3
-direct/import may-claim SCC summaries, existing-U OP-4/FN-8 judgments,
-marked-entry pre-wrapper check, deterministic source ownership, and
-failure-atomic checked publication. Those checkpoint bytes are incorporated by
-the single atomic main integration; the held commits are review identities,
-not main ancestors. The exact nine protected additions and the sole wfgrep marker are
-installed without changing any older case, row, annotation, verdict, runner
-logic, runtime body, lowering, or ordinary unmarked acceptance.
-
-Focused strict semantics pass `17/17`, and the non-heavy semantic selection
-passes `481/481`. The separately selected heavy entailment test
-`frozen_real_sources_retain_complete_entailment_roots_without_counted_false_positives`
-passes `1/1` in `711.37s`, and the separately selected heavy provenance test
-`canonical_deflate_retains_one_subject_bridge_and_three_unasserted_calls`
-passes `1/1` in `207.28s`. Together those selections cover the original 483
-semantic tests, but they were not one `483/483` run. The `711.37s` owning test
-combines multiple real sources, production checking, and test-only derivation
-validation, so it has no defensible wfgrep-versus-validator or other per-phase
-timing attribution. An exact wfgrep preactivation integration test ran
-`139.63s` and then failed only at the expected still-v0.28
-target-qualification `CommandEntry` mapping pin, before the approved v0.29
-activation identity was installed; it was not an activation-era passing
-wfgrep gate or a semantic failure. Canonical installed evidence and the
-candidate-time ledger boundary are recorded in the acceptance report. The
-postactivation canonical adapter completed in `202.22s` with exact
-`Pass=432 Fail=1 Skip=13`; `make conformance-run` exited `2` only because
-`own3-pos-outlives-store` still expects `Run(0)` and reaches
-`Unsupported(RegionsAndBorrows)`. No other protected case failed. The final
-Stage 9b repository-root `make check`, with `TMPDIR` under
-`/Users/bytedance/do_not_scan`, exited `0`: specification append-only checks,
-archive identities `30`, runner `23/23`, coverage `133/133`, compiler library
-`833/833` in `679.39s`, grammar
-`9/9`, generated tables `1/1`, migration `36/36`, specification `10/10`,
-canonical corpus `3/3`, real programs `32/32` in `2170.33s`, rustdoc with
-warnings denied, and active v0.29 identity at the exact SHA with 133 rules and
-21 activation links are green. It ended with both repository and compiler
-green markers; the conformance target remains its one deliberately ignored
-known OWN-3 integration test.
-
-## Cross-workstream invariants
-
-- The active specification remains sole language authority; tests and plans do
-  not select semantics.
-- There is one normal compiler path with no project-, function-, source-,
-  corpus-, or test-shaped exception.
-- No writer statement becomes trusted unchecked. A required runtime check is
-  removed only by the exact machine proof authorized by the active spec.
-- Expected external failure remains a value path. Claims remain named executed
-  runtime backstops for internal invariants outside an opt-in strict partition.
-- Real-program success, error, cleanup, ownership, effect, and byte oracles are
-  preserved unless a later material plan revision explicitly says otherwise.
-- Specification and protected-conformance changes always use their separate
-  explanation-first approval workflows; this plan never preapproves their
-  bytes.
-- Bounded subordinate compiler defects, diagnostics, probes, ordinary tests,
-  docs, integration, and closure may proceed autonomously when they preserve
-  this strategy and these boundaries.
-
-## Approval checkpoints
-
-The revised successful path has four owner decisions, not one decision per
-task:
-
-1. **complete (2026-08-12):** approve this high-level plan once;
-2. **complete (2026-08-14):** approve this one material Stage 8b delivery
-   correction;
-3. **complete (2026-08-15):** approve and atomically activate Stage 8b's exact
-   specification plus protected-conformance packet; and
-4. **complete (2026-08-15):** approve and atomically activate Stage 9b's exact
-   specification plus protected-conformance packet.
-
-Stage 8a, the existing-DIAG-2 repair, Stage 9a, ordinary implementation and
-tests, real-source repair, documentation, integration, task lifecycle, and
-closure require no further owner approval while they stay inside this plan.
-Splitting an exact protected batch creates another protected checkpoint; a
-material strategy change creates a revised high-level-plan checkpoint.
-
-## Explicit exclusions
-
-Task 0049's complete shadow authorization inventory,
-`EntailmentApprovedProgram` lowering capability, ProofFlow extraction, shadow
-or independent verifier, capability-issuer replacement, and closure
-performance work are separate architectural directions and are not required
-by this plan; only its bounded Stage 1 parent-retention repair is included.
-Also excluded are serialized proof artifacts, cache/replay,
-portable proof identities, SMT authority, general theorem or arithmetic
-frameworks, general loop induction, O11 Boolean composition, language-wide
-claim removal, Stage 9 performance work, and new wfgrep optimization.
-
-## Verification and terminal acceptance
-
-Each task runs focused checks and the complete gates owed by its touch set.
-Each installed language stage additionally verifies archive identity, chained
-activation digests, grammar and generated data, exact protected differentials,
-independent adapter totals, and the same frozen real-program oracles.
-
-The successful terminal boundary requires:
-
-- Stage 8a's two local witnesses, hostile controls, and complete 14/20 caller
-  inventories;
-- the trust prerequisite's complete exact derivations for every accepted subscript,
-  discharged call goal, and S11 fact, with bounded measured cost and no second
-  authority;
-- Stage 8b's verified postconditions working through every mapped real caller,
-  with no unresolved prerequisite or behavior drift;
-- Stage 9a's complete deterministic claim ledger, with bounded overhead and no
-  second authority;
-- Stage 9b's finite transitive strict-partition semantics with no bypass and no
-  change to ordinary claim behavior;
-- positive, negative, near-miss, invalidation, recursion, generic, entry, and
-  facts-on/off evidence appropriate to each installed capability;
-- the complete repository gate and independent conformance report green or
-  carrying only explicitly recorded unchanged unsupported boundaries; and
-- roadmap, compiler documentation, canonical acceptance evidence, durable
-  design memory where a real decision changed, and all task records reconciled
-  once at closure.
-
-Remaining ordinary claims are reported honestly; terminal does not mean every
-claim has disappeared or that claim is the language's sole possible trap.
-After closure, `outline:PROOF-8` is terminal and the existing `outline:CAND-8` wfgrep checkpoint
-is unparked. Beginning the next wfgrep undertaking requires a new high-level
-plan rather than extending this one silently.
-
-An honest Stage 8a prerequisite failure is an earlier terminal stopped result
-after the independent DIAG-2 trust repair has completed. Any later blocker that
-requires a material change to this objective, strategy, principal consumer
-boundary, acceptance, risk, or stop conditions has the same disposition. The
-lead records the evidence and returns a revised `PROPOSED` plan instead of
-weakening the gate or accumulating side tasks around it. A stopped outcome
-does not mark `outline:PROOF-8` complete or unpark `outline:CAND-8`.
-
-## Terminal authority record
-
-The owner approved this plan's predecessor on 2026-08-12, selected the narrow
-receiver strategy on 2026-08-14, and approved the exact Stage 8b and Stage 9b
-specification, protected-corpus, and activation identities on 2026-08-15.
-Tasks 0058–0067 and `outline:PROOF-8` are terminal. The installed Stage 9a commit is
-`e04d3acad80e1260c4f1aee24d8f45cba5140d84`; the Stage 9b frontend and
-semantic review checkpoints are `ec95b7026e84b9d001cd9912b3f34ee9b2511d19`
-and `a927f2ca15471de22bbc878355fd7376d74f660b`, whose bytes are incorporated by
-the single atomic main integration without making those held commits main
-ancestors. The exact approvals and active
-specification chain remain in `governance/APPROVALS.md`; this terminal plan
-does not extend them or authorize another task. `outline:CAND-8` is unparked, and its
-next bounded slice begins only under a new owner-approved high-level plan.
+Make the compiler implement the language the active v0.30 specification
+already defines, then resolve the one recorded structural blocker in front
+of the flagship: §5 take/replace and the first collections layer. Both
+advance outline:CAND-8 (ripgrep-class search at 2.00x), whose every missing
+functional leg (regex, traversal queue, result buffers) is blocked on
+collections, which are blocked on take/replace.
+
+## Workstreams
+
+- **W1 — specified-but-unimplemented gap closure.** The 13 pending adapter
+  rows and the one runnable failure (own3 outlives-store,
+  RegionsAndBorrows): named-const array sizes, arena confinement and
+  arena-origin slices, float `.strict` rows, polymorphic-recursion
+  rejection, `propagate` execution, Result aggregate payloads,
+  borrow-affine payload match, nested direct slices, cross-region borrow
+  stores. Compiler-only; no spec bytes move. Evidence per gap: the pending
+  case compiled and run directly (manifest untouched); the status flips are
+  prepared as one marked protected candidate commit for morning approval.
+- **W2 — §5 take/replace and first collections.** Consult mcts_mem, weigh
+  the recorded alternatives, design the take/replace semantics against the
+  obligation-discharge model (the hole's interaction with facts and kills
+  is the novel part), draft the v0.31 candidate under candidate mode, run
+  the grammar verifier, implement the semantic core, and build the minimal
+  library layer (growable vector, byte-string over `buffer<T>`). Extend
+  generics beyond Copy exactly as far as the container design forces
+  (task #39's recorded trigger). Conformance case family prepared as a
+  marked protected candidate.
+- **W3 (stretch) — wfgrep recursive-traversal slice** using W2's
+  collections, only if W2's library lands with gate margin.
+- **W4 — batch audit and morning packet:** adversarial audit, batch
+  economics, and one review document enumerating every approval the owner
+  owes.
+
+## Boundaries and invariants
+
+Candidate mode for all spec work; no activation, no chain line, no
+`ACTIVE-SPEC:` append. No manifest row, verdict, status, or gate-wiring
+change outside commits marked as protected candidates. Facts-off
+acceptance, one normal path, no `unsafe`, English artifacts. Blockers stop
+and get reported in the batch record, never absorbed.
+
+## Acceptance and stop
+
+Gate green at the branch tip; each W1 gap carries direct-run evidence; W2's
+design is recorded in mcts_mem with rejected alternatives and its candidate
+verifies; the audit ran and its findings are dispositioned. Stop rather
+than weaken any check; unfinished workstreams report honestly.
+
+## Exclusions
+
+Task #44 owner rulings; DIAG-1 restructure and the conciseness ratchet;
+parallelism (outline:PAR-1 gates on flagship profiling); activation of any
+candidate; merging to main.
