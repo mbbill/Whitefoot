@@ -1,0 +1,10 @@
+fn main() -> own unit pure {
+  doc "SET-2 requires the target's final selected type to be region-free under STOR-5. A slice<'r, U> binding carries a region, so `replace` on it is a hard error citing SET-2 at the complete target place: a slice's static origin set is fixed at initialization and a new view is bound under a new let.";
+  let left = array_new<u8, 2>(11_u8);
+  let right = array_new<u8, 2>(29_u8);
+  region 'view {
+    let view = slice_of(&'view left);
+    let previous = replace view = slice_of(&'view right);
+  }
+  return unit;
+}

@@ -1,0 +1,20 @@
+struct Item {
+  value: u64;
+}
+
+struct Slot {
+  item: Item;
+}
+
+fn main() -> own unit traps {
+  doc "SET-2: `let x = replace p = e;` exchanges the affine value at a writable place and binds the previous value as a fresh own binding. The target root stays live and is read again after the commit, and the moved-out value's sole owner is the new binding.";
+  let first = Item(value: 1_u64);
+  let slot = Slot(item: move first);
+  let second = Item(value: 2_u64);
+  let previous = replace slot.item = move second;
+  let old = previous.value;
+  check ieq(old, 1_u64) else trap "previous value did not bind";
+  let current = slot.item.value;
+  check ieq(current, 2_u64) else trap "replacement value not stored";
+  return unit;
+}

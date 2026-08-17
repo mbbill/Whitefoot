@@ -1,0 +1,11 @@
+enum Mode {
+  Fast();
+  Slow();
+}
+
+const preset: Mode = Fast();
+
+fn main() -> own unit pure {
+  doc "CONST-2 const-eligibility is a closed list: a primitive, an array<T, N> of const-eligible T, or a source struct whose every field type is const-eligible. Enums are not const-eligible and stay DEFERRED with recorded delta: a payload-enum const has no non-consuming read path because a match scrutinee is an own place [OWN-13], and a tag-only-enum const additionally needs a constant-value family no current program demands. The declaration is a hard error citing CONST-2.";
+  return unit;
+}

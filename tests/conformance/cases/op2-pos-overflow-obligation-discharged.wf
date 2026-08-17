@@ -1,0 +1,15 @@
+fn bump(x: own u64) -> own u64 pure {
+  doc "OP-2 constant-operand class: `x + 1_u64` has a constant operand, so it carries the overflow obligation rather than a runtime trap. The dominating branch establishes x < 100, which derives the residual upper conjunct, so the site is discharged: it returns the exact value with no runtime overflow check in any build mode and exhibits no `traps` under EFF-2, which is why this row is `pure`.";
+  let small = ilt(x, 100_u64);
+  if small {
+    let y = x + 1_u64;
+    return y;
+  } else {
+    return 0_u64;
+  }
+}
+
+fn main() -> own unit pure {
+  let raised = bump(x: 7_u64);
+  return unit;
+}

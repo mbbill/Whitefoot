@@ -1,0 +1,22 @@
+fn passthru['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {
+  return &uniq 'r0 deref(x);
+}
+
+fn bump['r](n: &uniq 'r i32) -> own unit writes('r) {
+  set deref(n) = 42_i32;
+  return unit;
+}
+
+fn main() -> own unit traps {
+  doc "OWN-6 reborrow extension: `passthru` determines one provenance-candidate parameter, so binding its borrow-mode result makes `r` an ordinary borrow holder whose resolved place is the candidate actual's. The child fed to it in candidate position may take a caller-supplied region, and `r` is itself reborrowable, composing a grandchild chain of depth two. Creating the candidate-position child suspends `h` for the remainder of its life, so no point sees two usable uniq paths to `v`.";
+  let v = 1_i32;
+  region 'a {
+    let h = &uniq 'a v;
+    let r = passthru<'a>(x: &uniq 'a deref(h));
+    region 'c {
+      bump<'c>(n: &uniq 'c deref(r));
+    }
+  }
+  check ieq(v, 42_i32) else trap "chain write lost";
+  return unit;
+}
