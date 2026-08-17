@@ -419,6 +419,32 @@ impl CheckedFloatOperation {
     }
 }
 
+/// The [PRE-1] error type a checked [OP-1] integer row reports.
+///
+/// The row's `signature` cell names it, so the choice is table data rather
+/// than a property of the operation's semantics; this enum exists so that one
+/// place decides it and an extraction lock can compare that decision against
+/// the specification's own cell.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedIntegerErrorClass {
+    Overflow,
+    DivError,
+}
+
+impl CheckedIntegerErrorClass {
+    /// The exact PRE-1 spelling the `wf-ops` `signature` cell writes.
+    ///
+    /// Read only by the extraction lock: nothing in the compiler's own path
+    /// needs the name, because the class already selects the prelude type.
+    #[cfg(test)]
+    pub(crate) const fn spelling(self) -> &'static str {
+        match self {
+            Self::Overflow => "Overflow",
+            Self::DivError => "DivError",
+        }
+    }
+}
+
 impl CheckedIntegerOperation {
     pub(crate) const fn traps(self) -> bool {
         matches!(
@@ -501,6 +527,23 @@ impl CheckedIntegerOperation {
             Some(CheckedType::Integer(IntegerType::U32))
         } else {
             Some(operand)
+        }
+    }
+
+    /// The error type of a checked row, or `None` for a row whose result is a
+    /// scalar. Exactly the complement of [`Self::scalar_result_type`]'s `None`:
+    /// a row either produces a scalar or produces `Result<T, E>`.
+    pub(crate) const fn checked_error(self) -> Option<CheckedIntegerErrorClass> {
+        match self {
+            Self::AddChecked
+            | Self::SubtractChecked
+            | Self::MultiplyChecked
+            | Self::AbsoluteChecked
+            | Self::NegateChecked => Some(CheckedIntegerErrorClass::Overflow),
+            Self::DivideChecked | Self::RemainderChecked => {
+                Some(CheckedIntegerErrorClass::DivError)
+            }
+            _ => None,
         }
     }
 

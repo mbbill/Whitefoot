@@ -15,8 +15,8 @@ use crate::{
 
 use super::super::super::model::{
     CheckedBooleanOperation, CheckedExpression, CheckedIntegerArgument,
-    CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMode, CheckedNominalKind,
-    CheckedNumericType, CheckedType, TrapSite,
+    CheckedIntegerArgumentSource, CheckedIntegerErrorClass, CheckedIntegerOperation, CheckedMode,
+    CheckedNominalKind, CheckedNumericType, CheckedType, TrapSite,
 };
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PendingNominal, PreludeType,
@@ -290,17 +290,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         } else {
             None
         };
-        let checked_error =
-            match operation {
-                CheckedIntegerOperation::AddChecked
-                | CheckedIntegerOperation::SubtractChecked
-                | CheckedIntegerOperation::MultiplyChecked => Some(PreludeType::Overflow),
-                CheckedIntegerOperation::DivideChecked
-                | CheckedIntegerOperation::RemainderChecked => Some(PreludeType::DivError),
-                CheckedIntegerOperation::AbsoluteChecked
-                | CheckedIntegerOperation::NegateChecked => Some(PreludeType::Overflow),
-                _ => None,
-            };
+        // The row's own `signature` cell decides this, so the mapping lives
+        // once on the operation and an extraction lock compares it against the
+        // specification's cell.
+        let checked_error = operation.checked_error().map(|class| match class {
+            CheckedIntegerErrorClass::Overflow => PreludeType::Overflow,
+            CheckedIntegerErrorClass::DivError => PreludeType::DivError,
+        });
         let result = if let Some(error) = checked_error {
             CheckedType::Nominal(self.prelude_nominal(PreludeType::Result(
                 operand_type,

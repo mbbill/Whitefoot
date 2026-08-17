@@ -19,6 +19,7 @@ mod integer_absolute;
 mod integer_conversion;
 mod integer_extended;
 mod integer_negation;
+mod operation_table;
 mod options;
 mod postconditions;
 mod provenance;
