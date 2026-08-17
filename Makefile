@@ -185,8 +185,9 @@ conformance:
 compiler:
 	$(MAKE) -C compiler check
 
-# The heavy owning tests excluded from `check` (30 end-to-end and cost-shape
-# tests, ~44 min measured). Required green before integrating to main and
+# The heavy owning tests excluded from `check` (29 end-to-end and cost-shape
+# tests; ~44 min at the unoptimized profile before the heavy profile and
+# shared-setup repairs, re-measured below in the heavy commit). Required green before integrating to main and
 # before any activation; `check` alone does not claim their coverage.
 check-heavy:
 	$(MAKE) -C compiler heavy

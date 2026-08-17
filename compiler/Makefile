@@ -12,7 +12,7 @@ lint:
 test:
 	$(CARGO) test --all-targets --locked --offline
 
-# The 30 `#[ignore = "heavy owning test…"]` tests: end-to-end program
+# The 29 `#[ignore = "heavy owning test…"]` tests: end-to-end program
 # executions (wfgrep, raw DEFLATE, wide scan, UTF-8 pipeline), backend cost
 # shapes, and the two heaviest semantic rewalks. Measured 2026-08-16 they
 # carried ~44 of the gate's ~50 minutes. `check` green therefore does NOT

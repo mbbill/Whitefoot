@@ -9,87 +9,121 @@ struct IntegerType {
     signed: bool,
 }
 
-const INTEGER_TYPES: [IntegerType; 8] = [
-    IntegerType {
-        spelling: "i8",
-        width: 8,
-        signed: true,
-    },
-    IntegerType {
-        spelling: "i16",
-        width: 16,
-        signed: true,
-    },
-    IntegerType {
-        spelling: "i32",
-        width: 32,
-        signed: true,
-    },
-    IntegerType {
-        spelling: "i64",
-        width: 64,
-        signed: true,
-    },
-    IntegerType {
-        spelling: "u8",
-        width: 8,
-        signed: false,
-    },
-    IntegerType {
-        spelling: "u16",
-        width: 16,
-        signed: false,
-    },
-    IntegerType {
-        spelling: "u32",
-        width: 32,
-        signed: false,
-    },
-    IntegerType {
-        spelling: "u64",
-        width: 64,
-        signed: false,
-    },
+const I8: IntegerType = IntegerType {
+    spelling: "i8",
+    width: 8,
+    signed: true,
+};
+const I16: IntegerType = IntegerType {
+    spelling: "i16",
+    width: 16,
+    signed: true,
+};
+const I32: IntegerType = IntegerType {
+    spelling: "i32",
+    width: 32,
+    signed: true,
+};
+const I64: IntegerType = IntegerType {
+    spelling: "i64",
+    width: 64,
+    signed: true,
+};
+const U8: IntegerType = IntegerType {
+    spelling: "u8",
+    width: 8,
+    signed: false,
+};
+const U16: IntegerType = IntegerType {
+    spelling: "u16",
+    width: 16,
+    signed: false,
+};
+const U32: IntegerType = IntegerType {
+    spelling: "u32",
+    width: 32,
+    signed: false,
+};
+const U64: IntegerType = IntegerType {
+    spelling: "u64",
+    width: 64,
+    signed: false,
+};
+
+/// One representative per conversion class rather than all 56 ordered pairs.
+///
+/// Both compiler sides are fully parametric in `(width, signedness)` and hold
+/// no per-pair path. The semantic side decides totality with the single
+/// comparison `IntegerType::converts_totally_to`, reached from
+/// `semantic/check/expressions/calls/conversions.rs`. The emitter in
+/// `backend/emitter/conversion.rs` picks one of four integer cast arms
+/// (`trunc`, `sext`, `zext`, and the same-width `or`) and, for a checked
+/// conversion, one of five reachable validity arms — signed narrowing
+/// (`sge`/`sle` pair), unsigned narrowing (`ule`), signed to unsigned without
+/// narrowing (`sge 0`), signed to unsigned with narrowing (`sge 0` and
+/// `sle`), and unsigned to signed (`ule`) — from the width relation and the
+/// sign pair alone. Two pairs sharing a
+/// `(source sign, destination sign, width relation)` class therefore emit
+/// structurally identical code that differs only in its constants, so one
+/// representative per class is complete evidence for the arm selection, and
+/// the widest rows below cover the constant arithmetic those arms compute.
+///
+/// ADDING AN EMITTER ARM REQUIRES ADDING A ROW HERE.
+const CONVERSION_CLASSES: [(IntegerType, IntegerType); 15] = [
+    // Equivalence-class representatives, one per reachable arm combination.
+    (I16, I8), // trunc, signed narrowing validity (sge/sle pair)
+    (I8, I16), // sext, total
+    (U16, U8), // trunc, unsigned narrowing validity (ule)
+    (U8, U16), // zext, total
+    (I16, U8), // trunc, signed to unsigned narrowing validity (sge 0 and sle)
+    (I8, U8),  // same-width or, signed to unsigned validity (sge 0)
+    (I8, U16), // zext under a checked conversion, validity (sge 0)
+    (U16, I8), // trunc, unsigned to signed validity (ule)
+    (U8, I8),  // same-width or, unsigned to signed validity (ule)
+    (U8, I16), // zext, total
+    // Widest-constant rows: the emitter computes its validity bounds as
+    // `1 << (w - 1)` and `(1 << w) - 1` from the operand widths, so every arm
+    // that computes a constant is exercised once at 64 bits.
+    (I64, I32), // signed narrowing bounds at the widest destination
+    (U64, U32), // unsigned narrowing maximum at the widest destination
+    (I64, U64), // 64-bit same-width or, signed to unsigned validity
+    (U64, I64), // 64-bit same-width or, unsigned to signed maximum
+    (I64, U32), // signed to unsigned narrowing maximum at 64-bit width
 ];
 
 #[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
-fn executes_exact_success_and_failure_edges_for_every_integer_pair() {
+fn executes_exact_success_and_failure_edges_for_every_conversion_class() {
     let mut source = String::from("fn main() -> own unit traps {\n");
     let mut total_count = 0;
     let mut checked_count = 0;
-    for source_type in INTEGER_TYPES {
-        for destination_type in INTEGER_TYPES {
-            if source_type.spelling == destination_type.spelling {
-                continue;
-            }
-            if converts_totally(source_type, destination_type) {
-                let value = total_value(source_type);
-                writeln!(
-                    source,
-                    "  let total{total_count} = cvt<{source_type}, {destination}>({value}_{source_type});\n  check ieq(total{total_count}, {value}_{destination}) else trap \"total conversion {total_count}\";",
-                    destination = destination_type.spelling,
-                    source_type = source_type.spelling,
-                )
-                .expect("write total conversion");
-                total_count += 1;
-                continue;
-            }
-
-            let failure = failing_value(source_type, destination_type);
+    for (source_type, destination_type) in CONVERSION_CLASSES {
+        if converts_totally(source_type, destination_type) {
+            let value = total_value(source_type);
             writeln!(
                 source,
-                "  let success{checked_count} = cvt<{source_type}, {destination}>(1_{source_type});\n  match move success{checked_count} {{\n    Ok(value: success_value{checked_count}) => {{\n      check ieq(success_value{checked_count}, 1_{destination}) else trap \"checked success value {checked_count}\";\n    }}\n    Err(error: success_error{checked_count}) => {{\n      check False() else trap \"checked success became error {checked_count}\";\n    }}\n  }}\n  let failure{checked_count} = cvt<{source_type}, {destination}>({failure}_{source_type});\n  match move failure{checked_count} {{\n    Ok(value: failure_value{checked_count}) => {{\n      check False() else trap \"unrepresentable conversion succeeded {checked_count}\";\n    }}\n    Err(error: failure_error{checked_count}) => {{\n      match failure_error{checked_count} {{\n        NarrowError() => {{\n        }}\n      }}\n    }}\n  }}",
+                "  let total{total_count} = cvt<{source_type}, {destination}>({value}_{source_type});\n  check ieq(total{total_count}, {value}_{destination}) else trap \"total conversion {total_count}\";",
                 destination = destination_type.spelling,
                 source_type = source_type.spelling,
             )
-            .expect("write checked conversion");
-            checked_count += 1;
+            .expect("write total conversion");
+            total_count += 1;
+            continue;
         }
+
+        let failure = failing_value(source_type, destination_type);
+        writeln!(
+            source,
+            "  let success{checked_count} = cvt<{source_type}, {destination}>(1_{source_type});\n  match move success{checked_count} {{\n    Ok(value: success_value{checked_count}) => {{\n      check ieq(success_value{checked_count}, 1_{destination}) else trap \"checked success value {checked_count}\";\n    }}\n    Err(error: success_error{checked_count}) => {{\n      check False() else trap \"checked success became error {checked_count}\";\n    }}\n  }}\n  let failure{checked_count} = cvt<{source_type}, {destination}>({failure}_{source_type});\n  match move failure{checked_count} {{\n    Ok(value: failure_value{checked_count}) => {{\n      check False() else trap \"unrepresentable conversion succeeded {checked_count}\";\n    }}\n    Err(error: failure_error{checked_count}) => {{\n      match failure_error{checked_count} {{\n        NarrowError() => {{\n        }}\n      }}\n    }}\n  }}",
+            destination = destination_type.spelling,
+            source_type = source_type.spelling,
+        )
+        .expect("write checked conversion");
+        checked_count += 1;
     }
     source.push_str("  return unit;\n}\n");
-    assert_eq!(total_count, 18);
-    assert_eq!(checked_count, 38);
+    assert_eq!(total_count, 3);
+    assert_eq!(checked_count, 12);
 
     let llvm = compile(source.as_bytes());
     for instruction in [
