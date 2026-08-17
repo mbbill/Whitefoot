@@ -39,8 +39,22 @@ collections, which are blocked on take/replace.
   generics beyond Copy exactly as far as the container design forces
   (task #39's recorded trigger). Conformance case family prepared as a
   marked protected candidate.
-- **W3 (stretch) — wfgrep recursive-traversal slice** using W2's
-  collections, only if W2's library lands with gate margin.
+- **W3 — wfgrep recursive-traversal slice** using W2's collections.
+- **W5 — every remaining deferred and parked item** (owner expansion,
+  2026-08-17: "之前所有'还没实现的'，包括pending的，deferred，以及其他各种
+  零碎的东西，都要实现"): const arithmetic and struct/enum consts
+  (CONST-1/2 deferred notes), the OWN-1/FN-8 repair conflict (#35),
+  arithmetic-mode dissolution (#13), grandchild reborrows and
+  call-result-borrow roots, non-ASCII diagnostics, escaped host-string
+  display, affine-element buffers (rides W2), DIAG-1 restructure and the
+  conciseness ratchet, representation Stage 2 extraction locks, O11
+  boolean composition (from its four recorded findings), a minimal
+  char/text slice over W2's byte-string, and wfgrep re-attribution (#17)
+  after W3. Research-grade items that cannot be closed soundly tonight
+  (complete-domain proof calculi; FN-3 contracts round-2, which gates on
+  writer-tier evidence) end as blocking analyses, not invented semantics.
+  All spec deltas integrate into the single v0.31 candidate through the
+  lead; the spec file has one writer.
 - **W4 — batch audit and morning packet:** adversarial audit, batch
   economics, and one review document enumerating every approval the owner
   owes.
