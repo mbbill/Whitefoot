@@ -1,5 +1,6 @@
 #![allow(clippy::panic)]
 
+mod arithmetic_obligations;
 mod arrays;
 mod borrows;
 mod boxes;
@@ -166,6 +167,49 @@ fn with_semantics_dark<ResultValue>(
         panic!("semantic test source must resolve");
     };
     run(super::check::check_semantics_dark(resolved))
+}
+
+/// [`with_semantics`] through the test-only entry that forces the
+/// arithmetic-mode dissolution switch on, so the v0.31 candidate judgment
+/// [OP-2, ENT-6] is testable while the shipped switch stays off under the
+/// active v0.30 specification.
+fn with_semantics_arithmetic<ResultValue>(
+    source: &[u8],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        SemanticOutcome<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
+        panic!("semantic test bundle must be valid");
+    };
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("semantic test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("semantic test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("semantic test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("semantic test derivation must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("semantic test source must be canonical");
+    };
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+        panic!("semantic test source must resolve");
+    };
+    run(super::check::check_semantics_arithmetic_obligations(
+        resolved,
+    ))
 }
 
 fn assert_rule(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
