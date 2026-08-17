@@ -146,6 +146,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let (result_mode, result) =
             self.parse_rtype_with(rtype, &GenericSubstitution::default())?;
+        // [STOR-4] an arena result has no legal producing return; a member
+        // signature is judged exactly as a top-level callable boundary.
+        if self.arena_instance(result)?.is_some() {
+            return self.issue_node(
+                SemanticRule::Stor4,
+                rtype,
+                SemanticIssueKind::ArenaEscape {
+                    mechanical_fix: super::ARENA_ESCAPE_RESTRUCTURING,
+                },
+            );
+        }
         if result_mode != CheckedMode::Own && matches!(result, CheckedType::Slice { .. }) {
             return self.issue_node(
                 SemanticRule::Fn1,

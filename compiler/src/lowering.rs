@@ -249,6 +249,15 @@ pub enum IrNominalKind {
     Box {
         referent: IrType,
     },
+    /// One `arena<'r, T>` instance: a pointer-shaped handle to region-owned
+    /// heap content, released with its region rather than with an owner
+    /// scope [STOR-3, STOR-4].
+    Arena {
+        content: IrType,
+    },
+    /// One region block's compiler-owned arena allocation-list cell; its
+    /// drop walks and frees every registered allocation [STOR-3].
+    ArenaStorage,
     /// One [SYS-2] opaque system resource type. It has no field, variant, or
     /// source-visible content: its identity is the target-independent
     /// semantic identity [QUAL-1] the contract carries, together with the
@@ -725,6 +734,23 @@ pub enum IrOperation {
         value: IrValueId,
     },
     BoxDeref {
+        nominal: IrNominalId,
+        value: IrValueId,
+    },
+    /// One region block's arena allocation-list cell, materialized at region
+    /// entry: a stack cell reset to empty, whose address is the operation's
+    /// value [STOR-2, STOR-3].
+    ArenaListNew,
+    /// One `arena_new` allocation: heap storage for the content, registered
+    /// on the owning region's allocation list so the region's exit release
+    /// frees it [STOR-2, STOR-3, STOR-4]. The value is the content address.
+    ArenaNew {
+        nominal: IrNominalId,
+        list: IrValueId,
+        value: IrValueId,
+    },
+    /// Arena content read through explicit `deref` [STOR-2].
+    ArenaDeref {
         nominal: IrNominalId,
         value: IrValueId,
     },

@@ -128,9 +128,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // unsupported capability rather than a source rejection.
             return match self.flat_element(element_type)? {
                 Some(element) => Ok(CheckedType::Buffer { element }),
-                None => {
-                    self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node)
-                }
+                None => self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node),
             };
         }
         if self.has_fixed(node, FixedTerminal::Arena)? {
@@ -139,7 +137,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .first_child_with(node, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.reject_region_bearing_storage_type(content_node, substitution)?;
-            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+            let content = self.parse_type_with(content_node, substitution)?;
+            let usage = self.use_at(node, LexicalUseRole::TypeRegion)?;
+            let ResolvedTarget::Source {
+                declaration: region,
+                class: DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            return self
+                .arena_nominals
+                .get(&(region, content))
+                .copied()
+                .map(CheckedType::Nominal)
+                .ok_or(SemanticCompilerFailure::InvalidResolution.into());
         }
         if self.has_fixed(node, FixedTerminal::Slice)? {
             let usage = self.use_at(node, LexicalUseRole::TypeRegion)?;
@@ -341,9 +353,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 declaration,
                 class: DeclarationClass::GenericType,
             } = usage.target()
-                && substitution
-                    .type_argument(declaration)
-                    .is_some_and(|ty| matches!(ty, CheckedType::Slice { .. }))
+                && let Some(ty) = substitution.type_argument(declaration)
+                && (matches!(ty, CheckedType::Slice { .. }) || self.arena_instance(ty)?.is_some())
             {
                 return Ok(true);
             }

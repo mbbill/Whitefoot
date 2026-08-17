@@ -448,6 +448,21 @@ impl Analyzer<'_, '_> {
                         },
                         None,
                     ),
+                    // Content reached in an arena through one explicit deref
+                    // [OWN-5]; the viewed array's constant length still
+                    // equates to the formed slice's length.
+                    CheckedSliceSource::ArenaContent {
+                        binding,
+                        fields,
+                        length,
+                    } => (
+                        PlaceTerm {
+                            root: PlaceRoot::Binding(*binding),
+                            deref: true,
+                            fields: fields.clone(),
+                        },
+                        Some(*length),
+                    ),
                 };
                 let source_length = self.length_term(place, array_length);
                 let slice_place = self.bound_place(binding);

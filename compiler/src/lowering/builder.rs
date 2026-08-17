@@ -181,6 +181,10 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
                 CheckedNominalKind::Box { referent } => IrNominalKind::Box {
                     referent: lower_type(*referent)?,
                 },
+                CheckedNominalKind::Arena { content, .. } => IrNominalKind::Arena {
+                    content: lower_type(*content)?,
+                },
+                CheckedNominalKind::ArenaStorage => IrNominalKind::ArenaStorage,
                 // The opaque type's own [SYS-2] identity, [SYS-5] release
                 // action and row, and [HOST-3] backing class travel into the
                 // IR unchanged. A target representation for it is target
@@ -556,9 +560,26 @@ impl<'program> IrBuilder<'program> {
                     })?;
                 }
                 CheckedStatement::Region {
+                    arena_list,
                     body,
                     fallthrough_drops,
                 } => {
+                    // The region's arena allocation list is materialized at
+                    // region entry; its compiler-derived drop on each normal
+                    // exit edge is the region's storage release [STOR-3].
+                    if let Some(list) = arena_list {
+                        let storage = self
+                            .nominals
+                            .iter()
+                            .find(|nominal| nominal.kind == IrNominalKind::ArenaStorage)
+                            .map(|nominal| nominal.id)
+                            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                        let value =
+                            self.define(IrType::Nominal(storage), IrOperation::ArenaListNew)?;
+                        if self.bindings.insert(*list, value).is_some() {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        }
+                    }
                     self.lower_statements(body, give_target.clone())?;
                     if self.current.is_some() {
                         let drops = self.lower_drops(fallthrough_drops)?;
@@ -1064,6 +1085,51 @@ impl<'program> IrBuilder<'program> {
                 };
                 self.define(referent, IrOperation::BoxDeref { nominal, value })
             }
+            CheckedExpression::ArenaNew {
+                nominal,
+                list,
+                value,
+                ..
+            } => {
+                let value = self.expression(value)?;
+                let nominal = IrNominalId(nominal.0);
+                let IrNominalKind::Arena { content } = self
+                    .nominals
+                    .get(nominal.index())
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                    .kind
+                else {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                };
+                if self.value_type(value)? != content {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                let list = self.binding_value(*list)?;
+                self.define(
+                    IrType::Nominal(nominal),
+                    IrOperation::ArenaNew {
+                        nominal,
+                        list,
+                        value,
+                    },
+                )
+            }
+            CheckedExpression::ArenaDeref { nominal, value, .. } => {
+                let value = self.expression(value)?;
+                let nominal = IrNominalId(nominal.0);
+                if self.value_type(value)? != IrType::Nominal(nominal) {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                let IrNominalKind::Arena { content } = self
+                    .nominals
+                    .get(nominal.index())
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                    .kind
+                else {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                };
+                self.define(content, IrOperation::ArenaDeref { nominal, value })
+            }
             CheckedExpression::BorrowBuffer { root, .. } => self.lower_buffer_borrow(root),
             CheckedExpression::BorrowBox {
                 binding, nominal, ..
@@ -1360,6 +1426,8 @@ impl<'program> IrBuilder<'program> {
                 // struct path reaches through one.
                 IrNominalKind::Enum { .. }
                 | IrNominalKind::Box { .. }
+                | IrNominalKind::Arena { .. }
+                | IrNominalKind::ArenaStorage
                 | IrNominalKind::SystemResource(_) => {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
@@ -1405,6 +1473,8 @@ impl<'program> IrBuilder<'program> {
             // struct path reaches through one.
             IrNominalKind::Enum { .. }
             | IrNominalKind::Box { .. }
+            | IrNominalKind::Arena { .. }
+            | IrNominalKind::ArenaStorage
             | IrNominalKind::SystemResource(_) => {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }

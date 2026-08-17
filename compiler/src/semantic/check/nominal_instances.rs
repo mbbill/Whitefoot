@@ -304,6 +304,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.intern_box_nominal(referent)?;
             return Ok(());
         }
+        if self.has_fixed(node, crate::FixedTerminal::Arena)? {
+            let content_node = self
+                .tree
+                .first_child_with(node, Production::Type)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            self.reject_region_bearing_storage_type(content_node, substitution)?;
+            let content = self.parse_type_with(content_node, substitution)?;
+            let usage = self.use_at(node, crate::LexicalUseRole::TypeRegion)?;
+            let crate::ResolvedTarget::Source {
+                declaration: region,
+                class: crate::DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            self.intern_arena_nominal(region, content)?;
+            return Ok(());
+        }
         if self
             .tree
             .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
@@ -834,6 +852,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .retain(|_, id| (id.0 as usize) < checkpoint);
         self.box_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
+        self.arena_nominals
+            .retain(|_, id| (id.0 as usize) < checkpoint);
+        if self
+            .arena_storage_nominal
+            .is_some_and(|id| (id.0 as usize) >= checkpoint)
+        {
+            self.arena_storage_nominal = None;
+        }
         self.system_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
         Ok(())

@@ -1211,6 +1211,7 @@ impl Analyzer<'_, '_> {
             // do not create a second consume, but M must retain the holder on
             // which the resulting caller image depends.
             CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.collect_checked_argument_holders(value, holders);
             }
@@ -3127,7 +3128,8 @@ impl Analyzer<'_, '_> {
                 root: PlaceRoot::Binding(*binding),
                 projections: vec![PlaceProjection::Deref],
             }),
-            CheckedExpression::BoxDeref { value, .. } => {
+            CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. } => {
                 let mut path = self.read_place_path(value)?;
                 path.projections.push(PlaceProjection::Deref);
                 Some(path)
@@ -3269,6 +3271,9 @@ impl Analyzer<'_, '_> {
             } if self.is_copy(*referent) => self
                 .direct_goal_expression(value)?
                 .with_projection(GoalProjection::Deref, *referent),
+            CheckedExpression::ArenaDeref { content, value, .. } if self.is_copy(*content) => self
+                .direct_goal_expression(value)?
+                .with_projection(GoalProjection::Deref, *content),
             CheckedExpression::ProjectValue {
                 value, field, ty, ..
             } if self.is_copy(*ty) => self
@@ -3459,6 +3464,8 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::SliceOf { .. }
             | CheckedExpression::SliceIndex { .. }
             | CheckedExpression::BoxNew { .. }
+            | CheckedExpression::ArenaNew { .. }
+            | CheckedExpression::ArenaDeref { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
@@ -4063,7 +4070,9 @@ impl Analyzer<'_, '_> {
             // These wrappers are checked reads of one place. Their nested
             // expression preserves source spelling and lowering structure;
             // it is not a second consuming evaluation of an affine holder.
-            CheckedExpression::BoxDeref { .. } | CheckedExpression::ProjectValue { .. } => {}
+            CheckedExpression::BoxDeref { .. }
+            | CheckedExpression::ArenaDeref { .. }
+            | CheckedExpression::ProjectValue { .. } => {}
             CheckedExpression::UserCall {
                 function,
                 call,
@@ -6563,7 +6572,8 @@ impl Analyzer<'_, '_> {
             CheckedExpression::DerefAddressed { binding, .. } => {
                 format!("deref({})", self.binding_name(*binding))
             }
-            CheckedExpression::BoxDeref { value, .. } => {
+            CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. } => {
                 format!("deref({})", self.render_expression(value))
             }
             CheckedExpression::ProjectValue {
@@ -6655,7 +6665,9 @@ fn holder_from_value(value: &CheckedExpression) -> Option<HolderReferent> {
             binding: result_borrow.binding,
             fields: result_borrow.fields.clone(),
         }),
-        CheckedExpression::BoxNew { .. } => Some(HolderReferent::Opaque),
+        CheckedExpression::BoxNew { .. } | CheckedExpression::ArenaNew { .. } => {
+            Some(HolderReferent::Opaque)
+        }
         _ => None,
     }
 }
@@ -6724,6 +6736,8 @@ pub(super) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         | CheckedExpression::ArrayFill { value, .. }
         | CheckedExpression::BoxNew { value, .. }
         | CheckedExpression::BoxDeref { value, .. }
+        | CheckedExpression::ArenaNew { value, .. }
+        | CheckedExpression::ArenaDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => vec![value.as_ref()],
         CheckedExpression::ArrayIndex { offset, .. } => vec![offset.as_ref()],
         CheckedExpression::BufferFill { length, value, .. } => {

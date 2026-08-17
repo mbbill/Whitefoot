@@ -86,8 +86,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.check_float_operation(node, spelling, function, bindings, loop_depth);
         }
         if spelling == "arena_new" {
-            self.reject_region_bearing_storage_operation_argument(node, spelling, function, 2, 1)?;
-            return self.unsupported(UnsupportedSemanticFeature::OperationFamily, node);
+            return self.check_arena_new(node, function, bindings, loop_depth);
         }
         if spelling == "array_new" {
             return self.check_array_new(node, function, bindings, loop_depth);
@@ -393,6 +392,87 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         parsed
             .try_into()
             .map_err(|_| SemanticCompilerFailure::InvalidCanonicalTree.into())
+    }
+
+    /// [STOR-2] `arena_new<'r, T>(v)` returns `own arena<'r, T>`: the content
+    /// moves into storage owned by region `'r` and registered on that
+    /// region's allocation list, which the region's exits release [STOR-3].
+    fn check_arena_new(
+        &self,
+        node: NodeId,
+        function: &FunctionSignature,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<TypedExpression, CheckStop> {
+        // GRAM-11 named-argument rejection plus [STOR-5] on the written
+        // content argument.
+        self.reject_region_bearing_storage_operation_argument(node, "arena_new", function, 2, 1)?;
+        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        };
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
+        let [region_argument, content_argument] = arguments.as_slice() else {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        };
+        if self
+            .tree
+            .first_child_with(*region_argument, Production::Type)?
+            .is_some()
+        {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        }
+        let region_use = self.use_at(*region_argument, LexicalUseRole::TypeArgumentRegion)?;
+        let ResolvedTarget::Source {
+            declaration: region,
+            class: DeclarationClass::Region,
+        } = region_use.target()
+        else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        let Some(content_node) = self
+            .tree
+            .first_child_with(*content_argument, Production::Type)?
+        else {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        };
+        let content = self.parse_type_with(content_node, &function.substitution)?;
+        // The implemented content fragment carries no release action of its
+        // own [STOR-3]: flat scalars and arrays of them. Wider content stays
+        // an explicit capability stop rather than a silent storage leak.
+        if self.flat_element(content)?.is_none() && !matches!(content, CheckedType::Array { .. }) {
+            return self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, content_node);
+        }
+        let atoms = self.operation_atoms(node, 1)?;
+        let value = self.check_atom(function, atoms[0], bindings, loop_depth)?;
+        if value.mode != CheckedMode::Own || value.expression.ty() != content {
+            return self.issue_node(
+                SemanticRule::Type5,
+                atoms[0],
+                SemanticIssueKind::TypeMismatch,
+            );
+        }
+        // The region's allocation list exists exactly for the local region
+        // blocks this checker opened [STOR-3]. A caller-supplied region has
+        // no local list; allocation into it is the explicit unimplemented
+        // remainder of the arena runtime.
+        let Some(list) = bindings.get(&region).map(|local| local.binding) else {
+            return self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, node);
+        };
+        let Some(nominal) = self.arena_nominals.get(&(region, content)).copied() else {
+            self.pending_nominals
+                .borrow_mut()
+                .push(PendingNominal::Arena(region, content));
+            return Err(CheckStop::DeferredNominal);
+        };
+        Ok(TypedExpression::owned(
+            CheckedExpression::ArenaNew {
+                carrier: self.tree.path(node)?.clone(),
+                nominal,
+                list,
+                value: Box::new(value.expression),
+            },
+            value.effects,
+        ))
     }
 
     fn check_box_new(

@@ -102,9 +102,16 @@ pub(super) fn type_requires_cleanup(
                     // Every [SYS-5] release action is an explicit release the
                     // target stage must emit, including a logical consume that
                     // emits nothing.
-                    IrNominalKind::Box { .. } | IrNominalKind::SystemResource(_) => {
+                    IrNominalKind::Box { .. }
+                    | IrNominalKind::SystemResource(_)
+                    // The allocation-list drop is the region's storage
+                    // release [STOR-3]: walk and free.
+                    | IrNominalKind::ArenaStorage => {
                         return Ok(true);
                     }
+                    // An arena value's storage is released with its region,
+                    // never by an owner-scope cleanup [STOR-3, STOR-4].
+                    IrNominalKind::Arena { .. } => {}
                 }
             }
             IrType::Unit
@@ -247,6 +254,17 @@ fn emit_cleanup_jobs(
                                 ty: *referent,
                                 operand: format!("%{loaded}"),
                             });
+                        }
+                        // An arena value's storage is released with its
+                        // region, never by an owner-scope cleanup
+                        // [STOR-3, STOR-4].
+                        IrNominalKind::Arena { .. } => {}
+                        // The region's allocation-list drop: walk the list
+                        // and free every registered allocation, then leave
+                        // the cell empty [STOR-3].
+                        IrNominalKind::ArenaStorage => {
+                            writeln!(output, "  call void @wf_arena_release(ptr {operand})")
+                                .map_err(|_| BackendFailure::TextEmission)?;
                         }
                     }
                 }

@@ -352,6 +352,19 @@ pub(crate) enum CheckedNominalKind {
     Box {
         referent: CheckedType,
     },
+    /// One `arena<'r, T>` instance [STOR-1, STOR-2]. The region is part of
+    /// the type's identity, so `arena<'r, T>` and `arena<'s, T>` are two
+    /// nominals. Its storage is released with its region rather than with an
+    /// owner scope [STOR-3, STOR-4], so the value itself derives no drop.
+    Arena {
+        region: DeclarationId,
+        content: CheckedType,
+    },
+    /// The compiler-owned allocation list one region block carries when it
+    /// has arena allocations: a pointer-shaped cell whose compiler-derived
+    /// drop walks and frees every registered allocation, which is exactly
+    /// the region's [STOR-3] storage release.
+    ArenaStorage,
     /// One [SYS-2] opaque resource type, by index into the system
     /// nominal catalog. It has no source-visible content; its
     /// compiler-derived release carries the fixed [SYS-5] row.
@@ -727,6 +740,15 @@ pub(crate) enum CheckedSliceSource {
         length: CheckedConst,
     },
     Buffer(CheckedBufferRoot),
+    /// An array reached in `arena<'r, T>` content through `deref` [OWN-5,
+    /// OWN-10]. Semantic checking admits it; the arena runtime lowering is
+    /// not implemented yet, and the temporary arena-parameter capability
+    /// stop keeps it from reaching lowering.
+    ArenaContent {
+        binding: BindingId,
+        fields: Vec<u32>,
+        length: CheckedConst,
+    },
 }
 
 /// Source category retained only for integer-operation operands whose exact
@@ -922,6 +944,23 @@ pub(crate) enum CheckedExpression {
         referent: CheckedType,
         value: Box<CheckedExpression>,
     },
+    /// One `arena_new<'r, T>(v)` allocation [STOR-2]: the content moves into
+    /// region-owned storage registered on the region's allocation list, and
+    /// the whole list is released with the region [STOR-3, STOR-4].
+    ArenaNew {
+        carrier: NodePath,
+        nominal: NominalId,
+        /// The owning region's hidden allocation-list binding.
+        list: BindingId,
+        value: Box<CheckedExpression>,
+    },
+    /// Arena content read through explicit `deref` [STOR-2, TYPE-7].
+    ArenaDeref {
+        carrier: NodePath,
+        nominal: NominalId,
+        content: CheckedType,
+        value: Box<CheckedExpression>,
+    },
     BorrowBuffer {
         carrier: NodePath,
         root: CheckedBufferRoot,
@@ -1011,6 +1050,8 @@ impl CheckedExpression {
             | Self::SliceIndex { carrier, .. }
             | Self::BoxNew { carrier, .. }
             | Self::BoxDeref { carrier, .. }
+            | Self::ArenaNew { carrier, .. }
+            | Self::ArenaDeref { carrier, .. }
             | Self::BorrowBuffer { carrier, .. }
             | Self::BorrowAddressed { carrier, .. }
             | Self::BorrowBox { carrier, .. }
@@ -1055,8 +1096,11 @@ impl CheckedExpression {
             },
             Self::SliceLength { .. } => CheckedType::Integer(IntegerType::U64),
             Self::SliceIndex { root, .. } => root.element.ty(),
-            Self::BoxNew { nominal, .. } => CheckedType::Nominal(*nominal),
+            Self::BoxNew { nominal, .. } | Self::ArenaNew { nominal, .. } => {
+                CheckedType::Nominal(*nominal)
+            }
             Self::BoxDeref { referent, .. } => *referent,
+            Self::ArenaDeref { content, .. } => *content,
             Self::BorrowBuffer { root, .. } => CheckedType::Buffer {
                 element: root.element,
             },
@@ -1280,6 +1324,12 @@ pub(crate) enum CheckedStatement {
         drops: Vec<CheckedDrop>,
     },
     Region {
+        /// The region's hidden arena allocation-list binding, present exactly
+        /// when the block allocates into this region [STOR-2]. Lowering
+        /// materializes it at region entry; its compiler-derived drop on
+        /// every normal exit edge is the region's storage release
+        /// [STOR-3, STOR-4].
+        arena_list: Option<BindingId>,
         body: Vec<CheckedStatement>,
         fallthrough_drops: Vec<CheckedDrop>,
     },

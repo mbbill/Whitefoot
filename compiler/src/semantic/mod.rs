@@ -87,6 +87,8 @@ pub enum SemanticRule {
     Type7,
     /// Storage-class and affine replacement restrictions.
     Stor1,
+    /// Arena confinement to its region's block.
+    Stor4,
     /// Borrow-free and region-free stored-content formation.
     Stor5,
     /// Operation-table row selection.
@@ -178,6 +180,7 @@ impl SemanticRule {
             Self::Own14 => "OWN-14",
             Self::Type7 => "TYPE-7",
             Self::Stor1 => "STOR-1",
+            Self::Stor4 => "STOR-4",
             Self::Stor5 => "STOR-5",
             Self::Op1 => "OP-1",
             Self::Op2 => "OP-2",
@@ -253,7 +256,8 @@ impl SemanticRule {
             Self::Own11 => Self::Own12,
             Self::Own12 => Self::Own14,
             Self::Own14 => Self::Stor1,
-            Self::Stor1 => Self::Stor5,
+            Self::Stor1 => Self::Stor4,
+            Self::Stor4 => Self::Stor5,
             Self::Stor5 => Self::Op1,
             Self::Op1 => Self::Op2,
             Self::Op2 => Self::Op4,
@@ -317,31 +321,32 @@ impl SemanticRule {
             Self::Own12 => 21,
             Self::Own14 => 22,
             Self::Stor1 => 23,
-            Self::Stor5 => 24,
-            Self::Op1 => 25,
-            Self::Op2 => 26,
-            Self::Op4 => 27,
-            Self::Op5 => 28,
-            Self::Op6 => 29,
-            Self::Fn1 => 30,
-            Self::Fn2 => 31,
-            Self::Fn3 => 32,
-            Self::Fn4 => 33,
-            Self::Fn6 => 34,
-            Self::Fn7 => 35,
-            Self::Fn8 => 36,
-            Self::Fn9 => 37,
-            Self::Eff1 => 38,
-            Self::Eff2 => 39,
-            Self::Err2 => 40,
-            Self::Err3 => 41,
-            Self::Sys2 => 42,
-            Self::Clm1 => 43,
-            Self::Clm2 => 44,
-            Self::Clm3 => 45,
-            Self::Ent2 => 46,
-            Self::Prv2 => 47,
-            Self::Prv3 => 48,
+            Self::Stor4 => 24,
+            Self::Stor5 => 25,
+            Self::Op1 => 26,
+            Self::Op2 => 27,
+            Self::Op4 => 28,
+            Self::Op5 => 29,
+            Self::Op6 => 30,
+            Self::Fn1 => 31,
+            Self::Fn2 => 32,
+            Self::Fn3 => 33,
+            Self::Fn4 => 34,
+            Self::Fn6 => 35,
+            Self::Fn7 => 36,
+            Self::Fn8 => 37,
+            Self::Fn9 => 38,
+            Self::Eff1 => 39,
+            Self::Eff2 => 40,
+            Self::Err2 => 41,
+            Self::Err3 => 42,
+            Self::Sys2 => 43,
+            Self::Clm1 => 44,
+            Self::Clm2 => 45,
+            Self::Clm3 => 46,
+            Self::Ent2 => 47,
+            Self::Prv2 => 48,
+            Self::Prv3 => 49,
         }
     }
 }
@@ -848,6 +853,12 @@ pub enum SemanticIssueKind {
         /// Required STOR-5 restructuring.
         mechanical_fix: &'static str,
     },
+    /// An arena value would leave its region's block [STOR-4]: it may not be
+    /// returned, stored into a field, or moved to an outside destination.
+    ArenaEscape {
+        /// Required STOR-4 restructuring.
+        mechanical_fix: &'static str,
+    },
     /// A slice-valued value match would require an unselected origin join.
     SliceValueMatch {
         /// Required OWN-5 restructuring.
@@ -1098,6 +1109,10 @@ pub enum UnsupportedSemanticFeature {
     DuplicateMatchArm,
     /// An OP-1 family outside the implemented scalar and nominal-tag families.
     OperationFamily,
+    /// Arena values at runtime: the region-tied allocation and release
+    /// lowering [STOR-2, STOR-3] is not implemented yet, so a checked
+    /// function that would carry an arena value to execution stops here.
+    ArenaRuntime,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

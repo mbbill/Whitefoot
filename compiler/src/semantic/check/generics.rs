@@ -664,6 +664,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .first_child_with(template.node, Production::Rtype)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let (result_mode, result) = self.parse_rtype_with(rtype, &substitution)?;
+        // [STOR-4] a value of type `arena<'r, T>` may not be returned, so a
+        // result type naming an arena has no legal producing return and is
+        // rejected at the callable boundary.
+        if self.arena_instance(result)?.is_some() {
+            return self.issue_node(
+                SemanticRule::Stor4,
+                rtype,
+                SemanticIssueKind::ArenaEscape {
+                    mechanical_fix: super::ARENA_ESCAPE_RESTRUCTURING,
+                },
+            );
+        }
         if result_mode != super::super::model::CheckedMode::Own {
             if matches!(result, super::super::model::CheckedType::Slice { .. }) {
                 return self.issue_node(

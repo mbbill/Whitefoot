@@ -1,5 +1,6 @@
 #![allow(clippy::panic)]
 
+mod arenas;
 mod arithmetic_obligations;
 mod arrays;
 mod base64;

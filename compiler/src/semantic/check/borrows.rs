@@ -749,7 +749,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Err(SemanticCompilerFailure::InvalidCanonicalTree.into())
     }
 
-    fn borrow_region_is_inside_current_loops(
+    pub(in crate::semantic::check) fn borrow_region_is_inside_current_loops(
         &self,
         region: DeclarationId,
         borrow: NodeId,
@@ -966,6 +966,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         self.scope_is_within(
             self.declaration_scope(holder)?,
+            self.region_declaration(region)?.scope(),
+        )
+    }
+
+    /// Whether `declaration`'s owning lexical scope lies within `region`'s
+    /// block — the [STOR-4] destination judgment for a value confined to that
+    /// region. A caller-supplied region's block encloses the whole body.
+    pub(super) fn declaration_is_within_region_block(
+        &self,
+        declaration: DeclarationId,
+        region: DeclarationId,
+    ) -> Result<bool, CheckStop> {
+        self.scope_is_within(
+            self.declaration_scope(declaration)?,
             self.region_declaration(region)?.scope(),
         )
     }

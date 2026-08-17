@@ -672,6 +672,7 @@ impl<'check> FunctionPass<'check> {
             | CheckedExpression::DerefAddressed { binding, .. }
             | CheckedExpression::Project { binding, .. } => Some(HolderRoot::Holder(*binding)),
             CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => Self::match_holder(value),
             _ => None,
         }
@@ -701,7 +702,9 @@ impl<'check> FunctionPass<'check> {
                             result_borrow: Some(result_borrow),
                             ..
                         } => Some(HolderRoot::Place(result_borrow.binding)),
-                        CheckedExpression::BoxNew { .. } => Some(HolderRoot::Opaque),
+                        CheckedExpression::BoxNew { .. } | CheckedExpression::ArenaNew { .. } => {
+                            Some(HolderRoot::Opaque)
+                        }
                         _ => None,
                     };
                     if let Some(holder) = holder {
@@ -1216,7 +1219,9 @@ impl<'check> FunctionPass<'check> {
             }
             CheckedExpression::Reinterpret { value, .. }
             | CheckedExpression::BoxNew { value, .. }
-            | CheckedExpression::BoxDeref { value, .. } => {
+            | CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaNew { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. } => {
                 let value = self.expression(value, summaries)?;
                 let aggregate = value.aggregate();
                 ValueDependencies::from_aggregate(expression.ty(), &aggregate, self.nominals)
@@ -1249,6 +1254,7 @@ impl<'check> FunctionPass<'check> {
                 let aggregate = match source {
                     CheckedSliceSource::Array { root, .. } => self.array_root(root)?,
                     CheckedSliceSource::Buffer(root) => self.root(root.binding)?,
+                    CheckedSliceSource::ArenaContent { binding, .. } => self.root(*binding)?,
                 };
                 ValueDependencies::from_aggregate(expression.ty(), &aggregate, self.nominals)
             }
@@ -1947,6 +1953,8 @@ fn expression_children(expression: &CheckedExpression) -> Vec<&CheckedExpression
         | CheckedExpression::ArrayFill { value, .. }
         | CheckedExpression::BoxNew { value, .. }
         | CheckedExpression::BoxDeref { value, .. }
+        | CheckedExpression::ArenaNew { value, .. }
+        | CheckedExpression::ArenaDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => vec![value],
         CheckedExpression::ArrayIndex { offset, .. }
         | CheckedExpression::BufferIndex { offset, .. }
@@ -2358,6 +2366,8 @@ impl<'check> CarrierReconstructor<'check> {
             | CheckedExpression::ArrayFill { value, .. }
             | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaNew { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.route_expression_aggregate(function, value, goal, visited)?
             }
@@ -2407,6 +2417,9 @@ impl<'check> CarrierReconstructor<'check> {
                 },
                 CheckedSliceSource::Buffer(root) => {
                     self.route_storage(function, root.binding, goal, visited)?
+                }
+                CheckedSliceSource::ArenaContent { binding, .. } => {
+                    self.route_storage(function, *binding, goal, visited)?
                 }
             },
             CheckedExpression::ConstructEnum {

@@ -59,9 +59,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .iter()
                 .flat_map(|variant| variant.fields.iter())
                 .collect(),
-            CheckedNominalKind::Box { .. } | CheckedNominalKind::SystemResource { .. } => {
-                Vec::new()
-            }
+            CheckedNominalKind::Box { .. }
+            | CheckedNominalKind::Arena { .. }
+            | CheckedNominalKind::ArenaStorage
+            | CheckedNominalKind::SystemResource { .. } => Vec::new(),
         };
         Ok(fields
             .into_iter()
@@ -85,6 +86,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.nominals
             .get(id.0 as usize)
             .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    /// The arena instance data behind a checked type, when it is one
+    /// [STOR-1]: its region declaration and content type.
+    pub(super) fn arena_instance(
+        &self,
+        ty: CheckedType,
+    ) -> Result<Option<(crate::DeclarationId, CheckedType)>, CheckStop> {
+        Ok(match ty {
+            CheckedType::Nominal(id) => match self.nominal(id)?.kind {
+                CheckedNominalKind::Arena { region, content } => Some((region, content)),
+                _ => None,
+            },
+            _ => None,
+        })
     }
 
     pub(super) fn is_copy_type(&self, ty: CheckedType) -> Result<bool, CheckStop> {
@@ -148,6 +164,77 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if self.box_nominals.insert(referent, id).is_some() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
+        Ok(id)
+    }
+
+    pub(super) fn intern_arena_nominal(
+        &mut self,
+        region: crate::DeclarationId,
+        content: CheckedType,
+    ) -> Result<NominalId, CheckStop> {
+        if let Some(id) = self.arena_nominals.get(&(region, content)) {
+            return Ok(*id);
+        }
+        let id = NominalId(
+            u32::try_from(self.nominals.len())
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        );
+        let region_spelling = self
+            .resolved
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.id() == region)
+            .map(|declaration| declaration.spelling().to_owned())
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let name = format!(
+            "arena<{region_spelling}, {}>",
+            self.checked_type_name(content)?
+        );
+        self.nominals.push(CheckedNominal {
+            id,
+            name,
+            kind: CheckedNominalKind::Arena { region, content },
+        });
+        self.nominal_nodes.push(None);
+        self.nominal_states.push(2);
+        self.source_nominal_instances.push(None);
+        self.prelude_types.push(None);
+        if self.arena_nominals.insert((region, content), id).is_some() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        Ok(id)
+    }
+
+    /// The one compiler-owned region allocation-list nominal [STOR-3],
+    /// deferring interning to the `&mut self` driver on first use.
+    pub(super) fn arena_storage_nominal_or_defer(&self) -> Result<NominalId, CheckStop> {
+        if let Some(id) = self.arena_storage_nominal {
+            return Ok(id);
+        }
+        self.pending_nominals
+            .borrow_mut()
+            .push(PendingNominal::ArenaStorage);
+        Err(CheckStop::DeferredNominal)
+    }
+
+    pub(super) fn intern_arena_storage_nominal(&mut self) -> Result<NominalId, CheckStop> {
+        if let Some(id) = self.arena_storage_nominal {
+            return Ok(id);
+        }
+        let id = NominalId(
+            u32::try_from(self.nominals.len())
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        );
+        self.nominals.push(CheckedNominal {
+            id,
+            name: "arena-region-storage".to_owned(),
+            kind: CheckedNominalKind::ArenaStorage,
+        });
+        self.nominal_nodes.push(None);
+        self.nominal_states.push(2);
+        self.source_nominal_instances.push(None);
+        self.prelude_types.push(None);
+        self.arena_storage_nominal = Some(id);
         Ok(id)
     }
 

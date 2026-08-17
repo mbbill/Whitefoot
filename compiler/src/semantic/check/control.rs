@@ -8,8 +8,9 @@ mod results;
 use crate::syntax::NodeId;
 use crate::syntax::terminal::TerminalPredicate;
 use crate::{
-    DeclarationId, DeclarationRole, Production, SemanticCompilerFailure, SemanticIssue,
-    SemanticIssueKind, SemanticLocation, SemanticRule, UnsupportedSemanticFeature,
+    DeclarationClass, DeclarationId, DeclarationRole, LexicalUseRole, Production, ResolvedTarget,
+    SemanticCompilerFailure, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticRule,
+    UnsupportedSemanticFeature,
 };
 
 use super::super::model::{
@@ -534,6 +535,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self
                     .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, initializer);
             }
+            // [STOR-4] the delivered value lands in this binding, so a
+            // delivered arena value whose region block does not enclose the
+            // binding has been moved to a destination outside its region.
+            if let Some((region, _)) = self.arena_instance(expected)?
+                && !self.declaration_is_within_region_block(declaration_id, region)?
+            {
+                return self.issue_node(
+                    SemanticRule::Stor4,
+                    initializer,
+                    SemanticIssueKind::ArenaEscape {
+                        mechanical_fix: super::ARENA_ESCAPE_RESTRUCTURING,
+                    },
+                );
+            }
             // [OWN-5]'s slice-valued-delivery prohibition used to be judged
             // here, one step too late: the branch-state join runs inside the
             // checkers above and stopped with a capability limit before this
@@ -782,10 +797,45 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
-        let region = self
-            .declaration_at(node, DeclarationRole::LocalRegion)?
-            .id();
+        let declaration = self.declaration_at(node, DeclarationRole::LocalRegion)?;
+        let region = declaration.id();
         let base_keys = bindings.keys().copied().collect::<HashSet<_>>();
+        // A region block with arena allocations carries the compiler-owned
+        // allocation list [STOR-3]: an ordinary hidden own binding keyed by
+        // the region declaration, so `arena_new` sites find it by region and
+        // every existing exit-edge drop derivation releases it exactly once
+        // per normal edge leaving the block, after the block's own bindings.
+        let arena_list = if self.region_allocates_arenas(node, region)? {
+            let storage = self.arena_storage_nominal_or_defer()?;
+            let list = Self::allocate_binding(counters.next_binding)?;
+            counters
+                .binding_names
+                .push(format!("<arena {}>", declaration.spelling()));
+            if bindings
+                .insert(
+                    region,
+                    LocalBinding {
+                        binding: list,
+                        declaration: region,
+                        mode: CheckedMode::Own,
+                        ty: CheckedType::Nominal(storage),
+                        live: true,
+                        loop_depth: scope.loops.len(),
+                        compiler_updated: false,
+                        borrow: None,
+                        slice: None,
+                        slice_loans: Vec::new(),
+                        suspended: false,
+                    },
+                )
+                .is_some()
+            {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+            Some(list)
+        } else {
+            None
+        };
         let statements = self.tree.children_with(node, Production::Stmt)?;
         let mut checked = self.check_block(function, &statements, bindings, counters, scope)?;
         let fallthrough_drops = if checked.can_continue {
@@ -811,6 +861,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(StatementResult {
             statement: CheckedStatement::Region {
+                arena_list,
                 body: checked.statements,
                 fallthrough_drops,
             },
@@ -821,6 +872,59 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             give_states: checked.give_states,
             break_states: checked.break_states,
         })
+    }
+
+    /// Whether any `call` in this region block resolves to the `arena_new`
+    /// operation naming this region [STOR-2]. The judgment reads resolved
+    /// operation identity and the resolved region argument — never a source
+    /// spelling — so shadowing cannot select it, and an inner region's
+    /// allocations register on the inner region's own list.
+    fn region_allocates_arenas(
+        &self,
+        node: NodeId,
+        region: DeclarationId,
+    ) -> Result<bool, CheckStop> {
+        for call in self.tree.descendants_with(node, Production::Call)? {
+            let Some(callee) = self.tree.first_child_with(call, Production::Callee)? else {
+                continue;
+            };
+            let usage = self.use_at_roles(
+                callee,
+                &[
+                    LexicalUseRole::IdentifierCallee,
+                    LexicalUseRole::OperationCallee,
+                ],
+            )?;
+            let ResolvedTarget::Operation(operation) = usage.target() else {
+                continue;
+            };
+            if crate::operation_family_spelling(operation) != Some("arena_new") {
+                continue;
+            }
+            let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+                continue;
+            };
+            let Some(first) = self
+                .tree
+                .children_with(targs, Production::Targ)?
+                .first()
+                .copied()
+            else {
+                continue;
+            };
+            let Ok(region_use) = self.use_at(first, LexicalUseRole::TypeArgumentRegion) else {
+                continue;
+            };
+            if region_use.target()
+                == (ResolvedTarget::Source {
+                    declaration: region,
+                    class: DeclarationClass::Region,
+                })
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn live_affine_drops(

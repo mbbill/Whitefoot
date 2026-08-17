@@ -4,6 +4,7 @@
 //! check, emits no overflow or alias promises, initializes complete aggregate
 //! representations, and keeps a defensive abort edge for enum discriminants.
 
+mod arena;
 mod array;
 mod boxes;
 mod buffer;
@@ -130,12 +131,19 @@ fn emit_llvm_for(
             .any(|block| matches!(block.terminator(), IrTerminator::Match { .. }))
     });
     let drop_helpers = emit_resource_drop_helpers(program, &qualification)?;
+    let has_arena_storage = program
+        .nominals()
+        .iter()
+        .any(|nominal| matches!(nominal.kind(), IrNominalKind::ArenaStorage));
     let has_heap_storage = !drop_helpers.is_empty()
+        || has_arena_storage
         || program.functions().iter().any(IrFunction::contains_buffer)
-        || program
-            .nominals()
-            .iter()
-            .any(|nominal| matches!(nominal.kind(), IrNominalKind::Box { .. }));
+        || program.nominals().iter().any(|nominal| {
+            matches!(
+                nominal.kind(),
+                IrNominalKind::Box { .. } | IrNominalKind::Arena { .. }
+            )
+        });
 
     let mut text = format!(
         "; Whitefoot conservative module\nsource_filename = \"whitefoot\"\ntarget datalayout = \"{}\"\ntarget triple = \"{}\"\n\n",
@@ -179,6 +187,10 @@ fn emit_llvm_for(
         );
     } else if has_matches {
         text.push('\n');
+    }
+    if has_arena_storage {
+        text.push('\n');
+        text.push_str(arena::ARENA_RELEASE_HELPER);
     }
     text.push_str(&drop_helpers);
     text.push_str(&system.definitions);
@@ -321,7 +333,10 @@ fn emit_nominal_declarations(
         if nominal.is_tag_only_enum()
             || matches!(
                 nominal.kind(),
-                IrNominalKind::Box { .. } | IrNominalKind::SystemResource(_)
+                IrNominalKind::Box { .. }
+                    | IrNominalKind::Arena { .. }
+                    | IrNominalKind::ArenaStorage
+                    | IrNominalKind::SystemResource(_)
             )
         {
             continue;
@@ -347,7 +362,10 @@ fn emit_nominal_declarations(
                     }
                 }
             }
-            IrNominalKind::Box { .. } | IrNominalKind::SystemResource(_) => {
+            IrNominalKind::Box { .. }
+            | IrNominalKind::Arena { .. }
+            | IrNominalKind::ArenaStorage
+            | IrNominalKind::SystemResource(_) => {
                 return Err(BackendFailure::InvalidIr);
             }
         }
@@ -769,6 +787,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::BoxDeref { nominal, value } => {
                 self.emit_box_deref(result, ty, *nominal, *value)
             }
+            IrOperation::ArenaListNew => self.emit_arena_list_new(result, ty),
+            IrOperation::ArenaNew {
+                nominal,
+                list,
+                value,
+            } => self.emit_arena_new(result, ty, *nominal, *list, *value),
+            IrOperation::ArenaDeref { nominal, value } => {
+                self.emit_arena_deref(result, ty, *nominal, *value)
+            }
             IrOperation::ConstructStruct { nominal, fields } => {
                 self.emit_struct(result, ty, *nominal, fields)
             }
@@ -955,6 +982,21 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrType::Nominal(nominal) if !self.nominal(nominal)?.is_tag_only_enum() => {
                 match self.nominal(nominal)?.kind() {
                     IrNominalKind::Struct { .. } => {}
+                    // An arena value derives no owner-scope drop action; its
+                    // storage is released with its region [STOR-3, STOR-4].
+                    IrNominalKind::Arena { .. } => {}
+                    // The region's allocation-list drop is that release:
+                    // walk the list and free every registered allocation.
+                    IrNominalKind::ArenaStorage => {
+                        emit_value_cleanup(
+                            self.program,
+                            self.qualification,
+                            &mut self.output,
+                            &mut self.temporary,
+                            drop.ty(),
+                            value_name.clone(),
+                        )?;
+                    }
                     // The checked program's own [SYS-5] record is the single
                     // source of truth for which action runs here, so a table
                     // row disagreeing with it stops rather than silently
@@ -1095,7 +1137,12 @@ fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, Back
         IrType::Address(_) => Ok("ptr".to_owned()),
         IrType::Nominal(id) => {
             let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
-            if matches!(nominal.kind(), IrNominalKind::Box { .. }) {
+            if matches!(
+                nominal.kind(),
+                IrNominalKind::Box { .. }
+                    | IrNominalKind::Arena { .. }
+                    | IrNominalKind::ArenaStorage
+            ) {
                 return Ok("ptr".to_owned());
             }
             // [QUAL-1] fixes an opaque resource's representation in its
@@ -1221,6 +1268,16 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock) -> String {
             } => label = array_fill_done_label(*result),
             IrInstruction::Define {
                 result,
+                operation: IrOperation::BoxNew { .. },
+                ..
+            } => label = box_new_ready_label(*result),
+            IrInstruction::Define {
+                result,
+                operation: IrOperation::ArenaNew { .. },
+                ..
+            } => label = arena_new_ready_label(*result),
+            IrInstruction::Define {
+                result,
                 operation: IrOperation::BufferFill { .. },
                 ..
             } => label = buffer_fill_done_label(*result),
@@ -1281,6 +1338,14 @@ fn integer_error_label(value: IrValueId) -> String {
 
 fn integer_continue_label(value: IrValueId) -> String {
     format!("integer.cont.v{}", value.ordinal())
+}
+
+fn box_new_ready_label(value: IrValueId) -> String {
+    format!("box.new.ready.v{}", value.ordinal())
+}
+
+fn arena_new_ready_label(value: IrValueId) -> String {
+    format!("arena.new.ready.v{}", value.ordinal())
 }
 
 fn array_fill_head_label(value: IrValueId) -> String {

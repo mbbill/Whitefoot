@@ -21,6 +21,7 @@ use crate::syntax::NodeId;
 use crate::{
     DeclarationId, DeclarationRole, Production, ResolvedSyntaxUnit, SemanticCompilerFailure,
     SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule,
+    UnsupportedSemanticFeature,
 };
 
 use super::entailment::{
@@ -118,6 +119,11 @@ fn derive_slice_return_ceiling(
     ceiling
 }
 
+/// [STOR-4]'s restructuring for an arena value that would leave its region's
+/// block, shared by every site that establishes the escape.
+const ARENA_ESCAPE_RESTRUCTURING: &str = "keep the arena value inside its region's block; \
+     return or deliver its content, or a borrow OWN-10 admits, instead";
+
 struct ContractInfo {
     checked: CheckedContract,
     members: Vec<contracts::ContractMemberInfo>,
@@ -145,6 +151,10 @@ struct NominalTemplate {
 enum PendingNominal {
     /// [STOR-2] a box over this referent.
     Box(CheckedType),
+    /// [STOR-2] an `arena<'r, T>` instance over this region and content.
+    Arena(DeclarationId, CheckedType),
+    /// The one compiler-owned region allocation-list nominal [STOR-3].
+    ArenaStorage,
     /// A prelude instance, such as the `Result<T, E>` a checked row produces.
     Prelude(PreludeType),
 }
@@ -410,6 +420,12 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     nominal_states: Vec<u8>,
     source_nominal_instances: Vec<Option<(usize, GenericSubstitution)>>,
     box_nominals: HashMap<CheckedType, NominalId>,
+    /// `arena<'r, T>` instances by (region declaration, content type): the
+    /// region is part of the type's identity [OWN-3, STOR-4].
+    arena_nominals: HashMap<(DeclarationId, CheckedType), NominalId>,
+    /// The one compiler-owned region allocation-list nominal, interned on
+    /// first use [STOR-3].
+    arena_storage_nominal: Option<NominalId>,
     /// Nominal instances a derived type named that were not interned yet.
     /// Written by the `&self` checking path and drained by the `&mut self`
     /// driver between attempts at one function.
@@ -591,6 +607,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             nominal_states: Vec::new(),
             source_nominal_instances: Vec::new(),
             box_nominals: HashMap::new(),
+            arena_nominals: HashMap::new(),
+            arena_storage_nominal: None,
             pending_nominals: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             system_nominals: HashMap::new(),
@@ -625,7 +643,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // drop records — is implemented below, so no capability stop
         // remains at this stage; an accepted system program stops later, at
         // lowering, as an explicit unsupported capability.
-        let entry = self.check_entry_form(&items)?;
+        let entry = match self.check_entry_form(&items) {
+            Ok(entry) => entry,
+            Err(stop) => return Err(self.reject_missing_main_last(&items, stop)),
+        };
         self.check_system_call_arguments()?;
         self.declare_nominals(&items)?;
         self.collect_constants(&items)?;
@@ -1052,6 +1073,47 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
+    /// Orders the whole-unit missing-`main` rejection after per-declaration
+    /// source rejections.
+    ///
+    /// [DIAG-1] leaves the order among rejection events at distinct nodes
+    /// implementation-defined, and this compiler reports a declaration's own
+    /// established rule violation before the [FN-7] `BundleRoot` whole-unit
+    /// rejection: when the entry is missing, the remaining declarations are
+    /// still driven through signature collection and phase-A function
+    /// checking, and the first established source rejection found there is
+    /// reported instead. Anything short of an established source rejection —
+    /// success, an unsupported capability, an internal failure — falls back
+    /// to the held missing-`main` rejection, so a capability stop never
+    /// masks the definite FN-7 violation [DIAG-1].
+    fn reject_missing_main_last(&mut self, items: &[NodeId], stop: CheckStop) -> CheckStop {
+        let missing_main = matches!(
+            &stop,
+            CheckStop::Issue(issue)
+                if issue.rule == SemanticRule::Fn7
+                    && matches!(issue.kind, SemanticIssueKind::MissingMain)
+        );
+        if !missing_main {
+            return stop;
+        }
+        let salvage = (|| -> Result<(), CheckStop> {
+            self.check_system_call_arguments()?;
+            self.declare_nominals(items)?;
+            self.collect_constants(items)?;
+            self.complete_nominals()?;
+            self.collect_function_signatures(items)?;
+            self.admit_postcondition_selectors()?;
+            for index in 0..self.signatures.len() {
+                self.check_function_interning_nominals(index)?;
+            }
+            Ok(())
+        })();
+        match salvage {
+            Err(rejection @ (CheckStop::Issue(_) | CheckStop::Resolution(_))) => rejection,
+            _ => stop,
+        }
+    }
+
     /// Returns the dense identity of the checked entry function.
     fn main_id(&self) -> Result<FunctionId, CheckStop> {
         self.signatures
@@ -1083,6 +1145,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         match nominal {
                             PendingNominal::Box(referent) => {
                                 self.intern_box_nominal(referent)?;
+                            }
+                            PendingNominal::Arena(region, content) => {
+                                self.intern_arena_nominal(region, content)?;
+                            }
+                            PendingNominal::ArenaStorage => {
+                                self.intern_arena_storage_nominal()?;
                             }
                             PendingNominal::Prelude(ty) => {
                                 self.intern_prelude_nominal(ty)?;
@@ -1290,6 +1358,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             (None, None) => None,
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
+        // TEMPORARY capability stop, judged only after every source rejection
+        // above had its chance: arena-typed parameters check under their
+        // ownership and [STOR-4] confinement rules, but the region-tied
+        // allocation and release lowering is not implemented yet, so a clean
+        // function that would carry an arena value to execution stops as an
+        // explicit unsupported capability rather than lowering wrong code.
+        for parameter in &signature.parameters {
+            if self.arena_instance(parameter.ty)?.is_some() {
+                return self.unsupported(
+                    UnsupportedSemanticFeature::ArenaRuntime,
+                    self.tree
+                        .node_with_path(&parameter.node_path)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                );
+            }
+        }
         let function = CheckedFunction {
             id: signature.id,
             declaration: signature.declaration,
@@ -1612,6 +1696,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ArrayFill { value, .. }
             | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaNew { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.install_expression_call_requirements(value, requirements)?;
             }
