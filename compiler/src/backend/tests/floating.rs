@@ -85,6 +85,58 @@ fn every_direct_float_operation_executes_for_both_widths() {
     }
 }
 
+/// [OP-3] the rounding float ops carry `.strict`: IEEE 754, no reassociation,
+/// no contraction. The absent `fast` flags the test above asserts are a
+/// statement about the emitted module; this one is a statement about the
+/// executed program, because the link step optimizes at the same level every
+/// Whitefoot executable uses.
+///
+/// The witness is an addition that is not associative in binary32. With
+/// `half_ulp` below one half of 1.0's ulp, `(1.0 + h) + h` rounds each step
+/// back to 1.0, while `1.0 + (h + h)` rounds once and lands one ulp above it.
+/// A run that reassociated, contracted, or widened any of the four additions
+/// would make the two results agree and trap.
+///
+/// A green run establishes exactly that: it does not establish that any other
+/// float op resists reassociation, only these additions under this host and
+/// optimization level.
+#[test]
+fn strict_float_addition_rounds_every_step_and_is_never_reassociated() {
+    let source = br#"fn left(a: own f32, b: own f32, c: own f32) -> own f32 pure {
+  let ab = fadd.strict(a, b);
+  return fadd.strict(ab, c);
+}
+
+fn right(a: own f32, b: own f32, c: own f32) -> own f32 pure {
+  let bc = fadd.strict(b, c);
+  return fadd.strict(a, bc);
+}
+
+fn main() -> own unit traps {
+  let one = 1.0_f32;
+  let half_ulp = 4.0e-8_f32;
+  let stepwise = left(a: one, b: half_ulp, c: half_ulp);
+  let regrouped = right(a: one, b: half_ulp, c: half_ulp);
+  check feq(stepwise, one) else trap "each strict addition must round on its own";
+  check fne(stepwise, regrouped) else trap "strict addition was reassociated";
+  return unit;
+}
+"#;
+    let llvm = compile(source);
+    for forbidden in ["fadd fast", "reassoc", "contract"] {
+        assert!(
+            !llvm.contains(forbidden),
+            "strict addition must not carry {forbidden}"
+        );
+    }
+    let output = compile_and_run(&llvm);
+    assert!(
+        output.status.success(),
+        "strict float association failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn float_constants_work_in_aggregates_arrays_and_buffers() {
     let source = br#"struct Sample {
