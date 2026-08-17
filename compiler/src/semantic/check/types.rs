@@ -640,6 +640,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         expected: CheckedType,
     ) -> Result<CheckedValue, CheckStop> {
+        // The construction shape is decided first: its direct tokens include
+        // the field-label IDENTs, so the single-identifier reference reader
+        // below must never see it.
+        if self
+            .tree
+            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
+            .is_some()
+        {
+            return self.parse_const_construction(node, expected);
+        }
         if let Some(literal) = self
             .tree
             .direct_token_with(node, TerminalPredicate::Literal)?
@@ -682,13 +692,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node,
                 SemanticIssueKind::InvalidConstValue,
             );
-        }
-        if self
-            .tree
-            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-            .is_some()
-        {
-            return self.parse_const_construction(node, expected);
         }
         let CheckedType::Array { element, length } = expected else {
             return self.issue_node(
