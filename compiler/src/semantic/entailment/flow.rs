@@ -1120,12 +1120,18 @@ impl Analyzer<'_, '_> {
         };
         if let CheckedType::Array { length, .. } = ty {
             let bound = match length {
-                CheckedConst::Value(value) => LengthBound::Constant(i128::from(value)),
-                CheckedConst::Parameter(declaration) => {
-                    LengthBound::Equal(self.terms.intern(TermKind::ConstParameter(declaration)))
-                }
+                CheckedConst::Value(value) => Some(LengthBound::Constant(i128::from(value))),
+                CheckedConst::Parameter(declaration) => Some(LengthBound::Equal(
+                    self.terms.intern(TermKind::ConstParameter(declaration)),
+                )),
+                // A symbolic derived length has no [ENT-2] term form; the
+                // template states no bound and the concrete instance, whose
+                // length is a value, restates the constant bound.
+                CheckedConst::Derived(_) => None,
             };
-            self.terms.set_length_bound(term, bound);
+            if let Some(bound) = bound {
+                self.terms.set_length_bound(term, bound);
+            }
         } else if !matches!(ty, CheckedType::Buffer { .. } | CheckedType::Slice { .. }) {
             return None;
         }
@@ -3768,12 +3774,18 @@ impl Analyzer<'_, '_> {
                 };
                 if let GoalOperation::ArrayLength { length, .. } = row {
                     let bound = match length {
-                        CheckedConst::Value(value) => LengthBound::Constant(i128::from(*value)),
-                        CheckedConst::Parameter(declaration) => LengthBound::Equal(
+                        CheckedConst::Value(value) => {
+                            Some(LengthBound::Constant(i128::from(*value)))
+                        }
+                        CheckedConst::Parameter(declaration) => Some(LengthBound::Equal(
                             self.terms.intern(TermKind::ConstParameter(*declaration)),
-                        ),
+                        )),
+                        // A symbolic derived length has no [ENT-2] term form.
+                        CheckedConst::Derived(_) => None,
                     };
-                    self.terms.set_length_bound(term, bound);
+                    if let Some(bound) = bound {
+                        self.terms.set_length_bound(term, bound);
+                    }
                 }
                 Some(term)
             }
@@ -4333,12 +4345,18 @@ impl Analyzer<'_, '_> {
         let length_term = self.terms.intern(TermKind::Length(base));
         if let Some(length) = array_length {
             let bound = match length {
-                CheckedConst::Value(value) => LengthBound::Constant(i128::from(value)),
-                CheckedConst::Parameter(declaration) => {
-                    LengthBound::Equal(self.terms.intern(TermKind::ConstParameter(declaration)))
-                }
+                CheckedConst::Value(value) => Some(LengthBound::Constant(i128::from(value))),
+                CheckedConst::Parameter(declaration) => Some(LengthBound::Equal(
+                    self.terms.intern(TermKind::ConstParameter(declaration)),
+                )),
+                // A symbolic derived length has no [ENT-2] term form; the
+                // template registers no implicit equality and each concrete
+                // instance, whose length is a value, registers the constant.
+                CheckedConst::Derived(_) => None,
             };
-            self.terms.set_length_bound(length_term, bound);
+            if let Some(bound) = bound {
+                self.terms.set_length_bound(length_term, bound);
+            }
         }
         length_term
     }

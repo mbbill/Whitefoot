@@ -627,6 +627,21 @@ pub enum SemanticIssueKind {
     InvalidFloatLiteral,
     /// A named constant value does not exactly inhabit its written type.
     InvalidConstValue,
+    /// A const-expression's compile-time evaluation has no u64 result: the
+    /// mathematical result lies outside the domain or the divisor is zero.
+    /// This is the const-eval overflow policy's rejection [CONST-1]; it is
+    /// never a runtime trap and never enters EFF-2's exhibits-traps relation.
+    ConstEvalOverflow {
+        /// Bare spelling of the rejected const operation.
+        operation: &'static str,
+    },
+    /// A const-expression names a runtime arithmetic mode; const evaluation
+    /// has exactly the five bare spellings under the const-eval overflow
+    /// policy [CONST-1].
+    ConstRuntimeArithmeticMode {
+        /// Exact mechanical repair selected by CONST-1.
+        mechanical_fix: &'static str,
+    },
     /// Two exact written modes or types disagree.
     TypeMismatch,
     /// A constant was selected as an assignment target.

@@ -8,7 +8,7 @@ use crate::{
 
 use super::super::model::{
     CheckedConst, CheckedConstant, CheckedConstantId, CheckedFlatElement, CheckedMode, CheckedType,
-    CheckedValue, FloatType, IntegerType,
+    CheckedValue, ConstOperation, FloatType, IntegerType, evaluate_const_operation,
 };
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
@@ -492,11 +492,87 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<CheckedConst, CheckStop> {
-        if let Some(digits) = self
+        let digits = self
             .tree
-            .direct_token_with(node, TerminalPredicate::Digits)?
-        {
-            return std::str::from_utf8(self.tree.token_bytes(digits)?)
+            .direct_tokens_matching(node, &[TerminalPredicate::Digits])?;
+        let identifiers = self.tree.direct_identifiers(node)?;
+        let mut terms = digits
+            .iter()
+            .copied()
+            .chain(identifiers.iter().copied())
+            .collect::<Vec<_>>();
+        terms.sort_unstable();
+        let Some(operator) = self.tree.first_child_with(node, Production::InfixOp)? else {
+            let [term] = terms.as_slice() else {
+                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+            };
+            return self.parse_const_term(node, *term, &identifiers, substitution);
+        };
+        // The candidate CONST-1 shape: exactly one operation over two terms,
+        // evaluated at monomorphization. Both terms concrete evaluates now
+        // under the const-eval overflow policy; a symbolic operand interns
+        // one symbolic operation instead, and every concrete instantiation
+        // re-enters this path with a concrete substitution.
+        let operation = self.const_operation(operator)?;
+        let [left, right] = terms.as_slice() else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        let left = self.parse_const_term(node, *left, &identifiers, substitution)?;
+        let right = self.parse_const_term(node, *right, &identifiers, substitution)?;
+        if let (CheckedConst::Value(left), CheckedConst::Value(right)) = (left, right) {
+            return evaluate_const_operation(operation, left, right)
+                .map(CheckedConst::Value)
+                .ok_or_else(|| {
+                    self.issue_value(
+                        SemanticRule::Const1,
+                        node,
+                        SemanticIssueKind::ConstEvalOverflow {
+                            operation: operation.spelling(),
+                        },
+                    )
+                });
+        }
+        self.combine_const(operation, left, right)
+            .ok_or(SemanticCompilerFailure::CounterOverflow.into())
+    }
+
+    /// The one const operation of a candidate-grammar `const` tail. The
+    /// grammar reuses `infix_op`; the runtime arithmetic modes are rejected
+    /// here, so const evaluation has exactly the five bare spellings and
+    /// never overloads a runtime overflow mode [CONST-1].
+    fn const_operation(&self, operator: NodeId) -> Result<ConstOperation, CheckStop> {
+        let [terminal] = self.tree.direct_token_indices(operator)? else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        match self.tree.token_bytes(*terminal)? {
+            b"+" => Ok(ConstOperation::Add),
+            b"-" => Ok(ConstOperation::Subtract),
+            b"*" => Ok(ConstOperation::Multiply),
+            b"/" => Ok(ConstOperation::Divide),
+            b"%" => Ok(ConstOperation::Remainder),
+            b"+wrap" | b"+checked" | b"+sat" | b"-wrap" | b"-checked" | b"-sat" | b"*wrap"
+            | b"*checked" | b"*sat" | b"/checked" | b"%checked" => self.issue_node(
+                SemanticRule::Const1,
+                operator,
+                SemanticIssueKind::ConstRuntimeArithmeticMode {
+                    mechanical_fix: "write the bare operator: const evaluation rejects overflow at compile time and has no runtime arithmetic modes",
+                },
+            ),
+            _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+        }
+    }
+
+    /// One `const` term: a bare decimal u64 literal, an integer-typed named
+    /// const, or an in-scope const-generic parameter [CONST-1].
+    fn parse_const_term(
+        &self,
+        node: NodeId,
+        terminal: usize,
+        identifiers: &[usize],
+        substitution: &GenericSubstitution,
+    ) -> Result<CheckedConst, CheckStop> {
+        let Some(ordinal) = identifiers.iter().position(|entry| *entry == terminal) else {
+            return std::str::from_utf8(self.tree.token_bytes(terminal)?)
                 .ok()
                 .and_then(|digits| digits.parse::<u64>().ok())
                 .map(CheckedConst::Value)
@@ -507,60 +583,56 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         SemanticIssueKind::InvalidConstValue,
                     )
                 });
-        }
-        if self
-            .tree
-            .direct_token_with(node, TerminalPredicate::Identifier)?
-            .is_some()
-        {
-            let usage = self.use_at(node, LexicalUseRole::Const)?;
-            let (declaration, named) = match usage.target() {
-                ResolvedTarget::Source {
-                    declaration,
-                    class: DeclarationClass::NamedConst,
-                } => (declaration, true),
-                ResolvedTarget::Source {
-                    declaration,
-                    class: DeclarationClass::ConstGeneric,
-                } => (declaration, false),
-                _ => {
-                    return self.issue_node(
-                        SemanticRule::Const1,
-                        node,
-                        SemanticIssueKind::InvalidConstValue,
-                    );
-                }
-            };
-            if !named {
-                let Some(value) = substitution.const_argument(declaration) else {
-                    return self.unsupported(UnsupportedSemanticFeature::Generics, node);
-                };
-                return Ok(value);
-            }
-            let Some(constant) = self.constants.get(&declaration).copied() else {
-                if self.postcondition_declaration_unavailable(declaration) {
-                    return Err(CheckStop::PostconditionPrerequisiteUnavailable);
-                }
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            };
-            let constant = self.constant(constant)?;
-            let CheckedValue::Integer { ty, bits } = &constant.value else {
-                return self.issue_node(
-                    SemanticRule::Const1,
-                    node,
-                    SemanticIssueKind::InvalidConstValue,
-                );
-            };
-            if ty.signed() && bits & (1_u64 << (ty.width() - 1)) != 0 {
+        };
+        let uses = self.uses_at_ordered(node, LexicalUseRole::Const)?;
+        let usage = uses
+            .get(ordinal)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let (declaration, named) = match usage.target() {
+            ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::NamedConst,
+            } => (declaration, true),
+            ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::ConstGeneric,
+            } => (declaration, false),
+            _ => {
                 return self.issue_node(
                     SemanticRule::Const1,
                     node,
                     SemanticIssueKind::InvalidConstValue,
                 );
             }
-            return Ok(CheckedConst::Value(*bits));
+        };
+        if !named {
+            let Some(value) = substitution.const_argument(declaration) else {
+                return self.unsupported(UnsupportedSemanticFeature::Generics, node);
+            };
+            return Ok(value);
         }
-        Err(SemanticCompilerFailure::InvalidCanonicalTree.into())
+        let Some(constant) = self.constants.get(&declaration).copied() else {
+            if self.postcondition_declaration_unavailable(declaration) {
+                return Err(CheckStop::PostconditionPrerequisiteUnavailable);
+            }
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        let constant = self.constant(constant)?;
+        let CheckedValue::Integer { ty, bits } = &constant.value else {
+            return self.issue_node(
+                SemanticRule::Const1,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        };
+        if ty.signed() && bits & (1_u64 << (ty.width() - 1)) != 0 {
+            return self.issue_node(
+                SemanticRule::Const1,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        }
+        Ok(CheckedConst::Value(*bits))
     }
 
     pub(super) fn parse_const_value(

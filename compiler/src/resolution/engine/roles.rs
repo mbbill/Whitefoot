@@ -481,7 +481,10 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::Const if !names.is_empty() => add_single(
+        // Every IDENT term of a `const` expression is one Const use; the
+        // candidate CONST-1 grammar admits two terms in one operation, and
+        // source order is retained through the per-name role ordinal.
+        Production::Const if !names.is_empty() => add_all(
             classified,
             owner,
             &names,

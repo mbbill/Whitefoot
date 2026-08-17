@@ -197,12 +197,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedType::Nominal(id) => self.nominal(id)?.name.clone(),
             CheckedType::Array { element, length } => {
-                let length = match length {
-                    CheckedConst::Value(value) => value.to_string(),
-                    CheckedConst::Parameter(declaration) => {
-                        format!("<const-parameter:{}>", declaration.index())
-                    }
-                };
+                let length = self.checked_const_name(length)?;
                 format!("array<{}, {length}>", self.checked_type_name(element.ty())?)
             }
             CheckedType::Slice { region, element } => format!(
@@ -212,6 +207,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ),
             CheckedType::Buffer { element } => {
                 format!("buffer<{}>", self.checked_type_name(element.ty())?)
+            }
+        })
+    }
+
+    pub(super) fn checked_const_name(&self, value: CheckedConst) -> Result<String, CheckStop> {
+        Ok(match value {
+            CheckedConst::Value(value) => value.to_string(),
+            CheckedConst::Parameter(declaration) => {
+                format!("<const-parameter:{}>", declaration.index())
+            }
+            CheckedConst::Derived(id) => {
+                let derived = self.derived_const(id)?;
+                format!(
+                    "{} {} {}",
+                    self.checked_const_name(derived.left)?,
+                    derived.operation.spelling(),
+                    self.checked_const_name(derived.right)?
+                )
             }
         })
     }

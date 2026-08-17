@@ -71,6 +71,41 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.use_at_roles(node, &[role])
     }
 
+    /// Every lexical use of one role at one node, ordered by role ordinal
+    /// (source order). The single-use reader above suits the carriers with
+    /// one name; a candidate-grammar `const` operation carries two [CONST-1].
+    pub(super) fn uses_at_ordered(
+        &self,
+        node: NodeId,
+        role: LexicalUseRole,
+    ) -> Result<Vec<&crate::LexicalUseRecord>, CheckStop> {
+        let path = self.tree.path(node)?;
+        if let Some(context) = self.active_postcondition.get() {
+            let record = self
+                .resolved
+                .postconditions()
+                .get(context.record)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let mut uses = record
+                .provisional_uses
+                .iter()
+                .filter(|usage| usage.role() == role && usage.origin().node() == path)
+                .collect::<Vec<_>>();
+            if !uses.is_empty() {
+                uses.sort_by_key(|usage| usage.origin().role_ordinal());
+                return Ok(uses);
+            }
+        }
+        let mut uses = self
+            .resolved
+            .lexical_uses()
+            .iter()
+            .filter(|usage| usage.role() == role && usage.origin().node() == path)
+            .collect::<Vec<_>>();
+        uses.sort_by_key(|usage| usage.origin().role_ordinal());
+        Ok(uses)
+    }
+
     pub(super) fn use_at_roles(
         &self,
         node: NodeId,
