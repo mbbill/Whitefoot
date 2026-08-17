@@ -41,8 +41,12 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes('
         if parents_done {
           break @parents;
         } else {
+          let parent_halvable = ile(parent, 9223372036854775807_u64);
+          claim parent_below_half_max: parent_halvable because "main sizes the pool to hold the complete tree";
           let doubled = parent * 2_u64;
           let left_child = start + doubled;
+          let left_child_incrementable = ile(left_child, 18446744073709551614_u64);
+          claim left_child_below_max: left_child_incrementable because "main sizes the pool to hold the complete tree";
           let right_child = left_child + 1_u64;
           let slot = deref(pool).count;
           let left_room = len(deref(pool).left);
@@ -80,6 +84,8 @@ fn checksum['r](pool: &'r Pool, root: own u64) -> own u64 reads('r), traps {
   let left_count = checksum<'r>(pool: pool, root: left_child);
   let right_count = checksum<'r>(pool: pool, root: right_child);
   let children = left_count + right_count;
+  let children_countable = ile(children, 18446744073709551614_u64);
+  claim children_below_max: children_countable because "the pool holds far fewer than u64 max nodes";
   return children + 1_u64;
 }
 

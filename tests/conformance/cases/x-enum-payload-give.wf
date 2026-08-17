@@ -8,6 +8,8 @@ fn main() -> own unit traps {
   let b = Item(n: 7_i32);
   let r = match b {
     Item(n: v) => {
+      let v_in_range = ile(v, 2147483612_i32);
+      claim payload_below_max: v_in_range because "the constructed payload is 7";
       give v + 35_i32;
     }
     Empty() => {

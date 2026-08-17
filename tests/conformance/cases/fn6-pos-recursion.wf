@@ -1,6 +1,6 @@
 fn sumto(n: own i32) -> own i32 traps {
-  doc "Recursion is permitted [FN-6].";
-  if ieq(n, 0_i32) {
+  doc "Recursion is permitted [FN-6]. The guard is `ile` rather than `ieq` so the else arm establishes n > 0: that dominating branch discharges the OP-2 overflow obligation on the class site `n - 1_i32`. The accumulating `n + r` has two non-constant operands, so it keeps its trapping semantics and the row keeps `traps`.";
+  if ile(n, 0_i32) {
     return 0_i32;
   } else {
     let m = n - 1_i32;

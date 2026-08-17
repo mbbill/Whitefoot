@@ -4,7 +4,11 @@ enum Op {
 }
 
 fn apply(op: own Op, x: own i32) -> own i32 traps {
-  doc "Closed-set dispatch is match, not a function value [FN-5].";
+  doc "Closed-set dispatch is match, not a function value [FN-5]. Both arms hold OP-2 class sites, so two dominating claims discharge their overflow obligations before the dispatch.";
+  let below_max = ile(x, 2147483646_i32);
+  claim x_below_max: below_max because "the sole caller passes 41";
+  let above_min = ige(x, -2147483647_i32);
+  claim x_above_min: above_min because "the sole caller passes 41";
   match op {
     Inc() => {
       return x + 1_i32;

@@ -8,6 +8,10 @@ fn main() -> own unit traps {
   let t = Num(n: 21_i32);
   match t {
     Num(n: v) => {
+      let v_below = ile(v, 1073741823_i32);
+      claim payload_below_half_max: v_below because "the constructed payload is 21";
+      let v_above = ige(v, -1073741824_i32);
+      claim payload_above_half_min: v_above because "the constructed payload is 21";
       let d = v * 2_i32;
       check ieq(d, 42_i32) else trap "num payload drift";
     }

@@ -1,6 +1,7 @@
 fn risky_checked(x: own i32) -> own Result<i32, Overflow> traps {
-  doc "A trapping increment behind a Result surface; the row declares traps.";
-  let bumped = x + 1_i32;
+  doc "A trapping increment behind a Result surface; the row declares traps. Both operands are bound terms, so this is the retained two-non-constant trapping form: the site stays outside OP-2's constant-operand class and still contributes `traps` to the row this case exists to check.";
+  let step = 1_i32;
+  let bumped = x + step;
   return Ok<i32, Overflow>(value: bumped);
 }
 

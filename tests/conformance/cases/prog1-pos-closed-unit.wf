@@ -1,5 +1,7 @@
 fn helper(x: own i32) -> own i32 traps {
-  doc "In-unit helper; every callee name is defined within this compilation unit.";
+  doc "In-unit helper; every callee name is defined within this compilation unit. The increment is an OP-2 class site, so a dominating claim discharges its overflow obligation and the row keeps `traps` for the claim's own runtime check.";
+  let below_max = ile(x, 2147483646_i32);
+  claim x_below_max: below_max because "the sole in-unit caller passes 6";
   return x + 1_i32;
 }
 
