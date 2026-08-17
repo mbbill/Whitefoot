@@ -23,8 +23,8 @@ ordered source bundle
   -> host executable
 ```
 
-The frontend targets the exact v0.29 bytes of `../spec/kernel-spec.md`, SHA-256
-`0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3`.
+The frontend targets the exact v0.30 bytes of `../spec/kernel-spec.md`, SHA-256
+`5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1`.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same
 specification identity. The committed grammar tables are ordinary compiler

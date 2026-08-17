@@ -1124,3 +1124,28 @@ ARCHIVE-SPEC: v0.8 d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba29532
 - boundary: the merge commit and the named commits; no conformance verdict
   changed in this batch; the coverage-semantics commit restores the
   pre-batch denominator (133) rather than altering it.
+
+## 2026-08-17 — OWNER EXACT-BYTE APPROVAL: v0.30 structured representation profile
+- owner: **the owner, in conversation, 2026-08-17** — "批了", replying to the
+  explicit activation request naming candidate SHA-256
+  `db2b4b6906f6309a4fe04568fa5c2beb0fecfae72405591872e6e9c6c70c5ef2`, after
+  reviewing the batch 0068 document and the full-diff walkthrough page.
+- APPROVED BYTES: the v0.30 candidate at that digest. Content: the
+  structured representation migration — header changelog evicted,
+  sentence-per-line, [ENT-3.Sk] sub-ids, wf- fences, stale self-reference
+  and plan-vocabulary sweeps. No semantic change from v0.29: 133 rules,
+  126 operation-table rows byte-identical, grammar unchanged, coverage
+  denominator and split unchanged; content preservation proven by the
+  one-shot transform verifier recorded at commit 0ba366d.
+- ACTIVATION DELTA: per the candidate-mode workflow, activation replaced
+  exactly the one declared status line
+  `Status: CANDIDATE v0.30 supersedes v0.29 0b7aa8cc…` with
+  `Status: ACTIVE v0.30 (2026-08-17; structured representation profile; no
+  semantic change from v0.29).` and changed nothing else; the resulting
+  active digest recorded in the chain is
+  `5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1`.
+- boundary: the stable file, its new v0.29 archive (verified against the
+  prior chain tail before installation), the chain line below, identity
+  constants and generated module, and the prose authority lines the
+  digest-sync gate enumerates. No conformance verdict changes.
+ACTIVE-SPEC: v0.30 5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1 0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3

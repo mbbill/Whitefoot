@@ -30,8 +30,8 @@ structure discipline future agents must apply.
 
 ## Current state
 
-[Kernel specification v0.29](spec/kernel-spec.md), SHA-256
-`0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3`,
+[Kernel specification v0.30](spec/kernel-spec.md), SHA-256
+`5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1`,
 is the active specification at its stable path. Exact v0.8 through v0.28
 remain immutable flat archives.
 

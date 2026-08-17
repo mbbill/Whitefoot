@@ -1,6 +1,6 @@
 # Kernel Specification v0.30
 
-Status: CANDIDATE v0.30 supersedes v0.29 0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3
+Status: ACTIVE v0.30 (2026-08-17; structured representation profile; no semantic change from v0.29).
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.

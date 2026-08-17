@@ -3,10 +3,10 @@
 Status: CANONICAL DIRECTION OUTLINE
 Revision: 41 (outline:PROOF-8 terminal; outline:CAND-8 unparked)
 
-The active language authority is v0.29 at the stable path
+The active language authority is v0.30 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
-`0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3`.
-Exact v0.8 through v0.28 are immutable flat archives. The completed execution
+`5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1`.
+Exact v0.8 through v0.29 are immutable flat archives. The completed execution
 plan is [`docs/current-plan.md`](current-plan.md); a new undertaking requires a
 new owner-approved plan. Project law is the
 [`Constitution`](constitution.md), and the operational process is
@@ -54,7 +54,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.29]` `[current: safe-Rust compiler]`
+`[current: spec v0.30]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -66,7 +66,7 @@ The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
-active [v0.29 specification](../spec/kernel-spec.md) remains semantic authority.
+active [v0.30 specification](../spec/kernel-spec.md) remains semantic authority.
 The first-slice system interface compiles and runs end-to-end on the native
 macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
 remain ahead of any performance claim.
@@ -404,7 +404,7 @@ facts-off evidence rather than trust in the compiler or writer.
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
   `make conformance-run` compiles and runs every case through the real
-  compiler. The installed-v0.29 run is `Pass=432 Fail=1 Skip=13`; the one
+  compiler. The installed-v0.30 run is `Pass=432 Fail=1 Skip=13`; the one
   runnable divergence is `own3-pos-outlives-store` at the retained
   `RegionsAndBorrows` unsupported boundary, while the thirteen pending rows
   remain explicit toolchain gaps. This adapter is deliberately `#[ignore]` and
