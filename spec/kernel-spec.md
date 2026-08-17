@@ -1979,7 +1979,7 @@ A Bq branch additionally carries the B aggregate parent and no same-view Gv pare
 A named or pending outcome, false `M(c,q)`, unavailable view, rejected call, killed support, or excluded receiver creates no fact root or pending metadata.
 
 For bounded `value_if` delivery, `PostconditionGive` records one eligible reaching edge, the already evaluated source value and relation root, then the forward `d ↦ x` substitution, then that edge's ordinary scope and event kills applied to every other support in that order.
-`PostconditionDeliveryJoin` orders all non-contradictory reaching delivery images by edge NodePath and applies exactly the ordinary L0 join: for each ordered term pair it retains the weakest largest-constant bound held by every image and each disequality held by every image.
+`PostconditionDeliveryJoin` orders all non-contradictory reaching delivery images by edge NodePath and applies exactly the ordinary [ENT-5] L0 delivery join.
 Its parents therefore need not state byte-identical relations; an `x < 8` image and an `x < 128` image may parent the joined `x < 128` root.
 Contradictory inputs use the existing contradiction root and are neutral when a non-contradictory input reaches.
 Missing edge evidence, a `value_match`, or no common joined relation creates no delivery root.
@@ -2749,7 +2749,7 @@ L0 negation is exact over mathematical integers: the negation of `a - b <= c` is
 After `check e else trap "…";` [OP-5], each goal in `e`'s goal-origin set is established with positive sign on the normal continuation; when `e` also has comparison origin R, R is established there independently.
 [ENT-3.S3]
 - S3 (claim facts).
-After `claim n: e because "…";` [CLM-1], each goal in `e`'s goal-origin set is established with positive sign on the normal continuation; when `e` also has comparison origin R, R is established there independently.
+After `claim n: e because "…";` [CLM-1], establishment is exactly [ENT-3.S2]'s.
 [ENT-3.S4]
 - S4 (requires facts).
 At a concrete function-body entry, its complete instantiated [FN-8] goal G is established as `+G`.
@@ -2793,7 +2793,7 @@ The false header edge, every `break` edge, and the counted continuation establis
 [ENT-3.S12]
 - S12 (verified user normal results).
 For one call c and verified relation q, use exactly FN-9's `A0(c)`, per-relation `M(c,q)`, nonempty aggregate booleans Cq/Uq/Bq, and same-view call premise Gv(c).
-After ordinary transfer and every applicable consume, borrow, callee-effect, and target kill, candidate scratch establishes q in complete exactly when `A0(c) and M(c,q) and Cq`; in U exactly when `A0(c) and M(c,q)` and first Bq, otherwise only `Uq and GU(c)`; and in B exactly when `A0(c) and M(c,q)` and first Bq, otherwise only `Uq and GB(c)`.
+Candidate scratch establishes q in each proof view exactly as [FN-9] fixes, after ordinary transfer and every applicable consume, borrow, callee-effect, and target kill.
 This is FN-9's Bq-first evidence order, not a nondeterministic Boolean-parent choice.
 Each substituted formal is independent: a referenced actual that has no ENT-2 image makes only that q unavailable, while an unreferenced non-ENT-2 actual has no effect on q.
 FN-8 ephemeral actual-value datums never enter q.
@@ -3010,7 +3010,7 @@ An unconditional-external bit is never replaced by or propagated as parameter-on
 At a kind-declaring `command` entry, each labelled input is unconditionally external [PRV-1]; a B-failing direct local leaf whose subject carries that bit is owned by PRV-3, while a B-failing inherited bridge whose selected actual carries that bit is owned by PRV-2 at that call's argument.
 This active bridge and gate add no runtime operation, fallback check, trusted assertion, or optimizer consequence.
 
-For [CLM-3], the unasserted U state is exactly the existing view that removes S2 body-check and S3 claim establishment while retaining S1, S4 after its independently proved incoming boundary, S5 through S12, every kill, join, loop rule, and [ENT-4] closure.
+For [CLM-3], the unasserted U state is exactly the unasserted state U above, retaining S4 after its independently proved incoming boundary.
 Each demanded protected leaf queries its existing normalized relation in U and each demanded ordinary-call goal queries its existing instantiated goal in caller U; successful queries retain their already-produced U derivation roots.
 A marked program-start requirement instead queries U before its wrapper check or S4 exists.
 These strict queries introduce no new obligation family, protected subject, provenance class, component dependency, direct demand, bridge, call target, fact source, or repair.
