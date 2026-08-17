@@ -283,6 +283,15 @@ resolution changes the approved high-level plan or a protected boundary.
 - A peer report is a lead, not evidence. Reproduce it or label the unverified
   part. If a probe did not isolate the claim, write `not measured`.
 - Every new check states what a green run does and does not establish.
+- A test earns its runtime with its purpose, never with its duration: a slow
+  test is not thereby a thorough test. State what each test proves and prove
+  it in the minimum time that does. Unjustified repetition — xN loops with no
+  stated reason, exhaustive sweeps where a boundary sample proves the same
+  property — is forbidden. Setup identical across scenarios is built once and
+  shared, unless the setup's isolation or repetition is itself the property
+  under test (a determinism assertion legitimately compiles twice). Measured
+  exhibit: ten scenario tests at 136s each collapsed to 136s total once the
+  shared artifact stopped being rebuilt per test, with zero assertions lost.
 
 ### The failures that look like success
 
