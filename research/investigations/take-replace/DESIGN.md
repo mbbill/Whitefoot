@@ -442,6 +442,14 @@ Do-not-build note: no trait system, no `Clone`, no per-type capability
 lattice. The recorded Rust-anchor research (mcts_mem data-model, ownership)
 stays research; nothing of it is imported by this delta.
 
+Implementation finding (2026-08-17): the compiler additionally stops a
+generic function carrying region parameters as unsupported (`Generics`),
+so even the copy-element `Vec<T: Int>` with a `&uniq` push cannot
+instantiate today; the shipped consumer is the concrete
+`tests/programs/growable_vec.wf`. That combination is a compiler
+capability gap, not a language rule, and is the first blocker in front of
+the generic vector once an ACTIVE plan wants it.
+
 ## 9. Prepared mcts_mem delta (appendix — to be applied only at activation)
 
 Per the mcts-mem-use skill, at v0.31 activation, in the same change:
