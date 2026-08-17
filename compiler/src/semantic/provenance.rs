@@ -665,6 +665,14 @@ impl<'check> FunctionPass<'check> {
                         CheckedExpression::ReborrowAddressed { binding, .. } => {
                             Some(HolderRoot::Holder(*binding))
                         }
+                        // A bound borrow-mode call result is a holder over
+                        // the provenance-candidate actual's storage root
+                        // [OWN-6]; provenance retains the whole root exactly
+                        // as it does for a matched holder's payload binder.
+                        CheckedExpression::UserCall {
+                            result_borrow: Some(result_borrow),
+                            ..
+                        } => Some(HolderRoot::Place(result_borrow.binding)),
                         CheckedExpression::BoxNew { .. } => Some(HolderRoot::Opaque),
                         _ => None,
                     };

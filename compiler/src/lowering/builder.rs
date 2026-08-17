@@ -28,11 +28,27 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     let nominals = lower_nominals(&checked.data)?;
     let constants = lower_constants(&checked.data)?;
     let entry_goal = lower_entry_goal(&checked.data, &nominals)?;
+    // Each function's declared IR result carries its result *mode*: a borrow
+    // of addressed content is an address. A call site must produce exactly
+    // the callee's declared result type, so the declared results are computed
+    // once and consulted at every `UserCall` [OWN-2, TYPE-7].
+    let function_results = checked
+        .data
+        .functions
+        .iter()
+        .map(|function| {
+            lower_borrow_mode_type(
+                function.result_mode,
+                lower_type(function.result)?,
+                &nominals,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let functions = checked
         .data
         .functions
         .iter()
-        .map(|function| lower_function(function, &nominals, &constants))
+        .map(|function| lower_function(function, &nominals, &constants, &function_results))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(IrProgram {
         main: checked.data.main.0,
@@ -179,11 +195,19 @@ fn lower_function(
     function: &crate::semantic::CheckedFunction,
     nominals: &[IrNominal],
     constants: &[IrGlobalConstant],
+    function_results: &[IrType],
 ) -> Result<IrFunction, LoweringFailure> {
     let addressed_bindings = collect_addressed_bindings(function);
-    let result =
-        lower_borrow_mode_type(function.result_mode, lower_type(function.result)?, nominals)?;
-    let mut builder = IrBuilder::new(nominals, constants, result, addressed_bindings)?;
+    let result = *function_results
+        .get(function.id.0 as usize)
+        .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+    let mut builder = IrBuilder::new(
+        nominals,
+        constants,
+        result,
+        addressed_bindings,
+        function_results,
+    )?;
     for parameter in &function.parameters {
         let ty = lower_parameter_type(parameter, nominals)?;
         let value = builder.new_value(ty)?;
@@ -277,6 +301,10 @@ struct IrBuilder<'program> {
     loops: Vec<LoopTarget>,
     result: IrType,
     addressed_bindings: std::collections::HashSet<BindingId>,
+    /// Every function's declared IR result, indexed by [`FunctionId`], so a
+    /// call defines exactly the callee's declared result type — an address
+    /// for a borrow of addressed content [OWN-2, TYPE-7].
+    function_results: &'program [IrType],
 }
 
 #[derive(Clone)]
@@ -292,6 +320,7 @@ impl<'program> IrBuilder<'program> {
         constants: &'program [IrGlobalConstant],
         result: IrType,
         addressed_bindings: std::collections::HashSet<BindingId>,
+        function_results: &'program [IrType],
     ) -> Result<Self, LoweringFailure> {
         let mut builder = Self {
             nominals,
@@ -304,6 +333,7 @@ impl<'program> IrBuilder<'program> {
             loops: Vec::new(),
             result,
             addressed_bindings,
+            function_results,
         };
         let (entry, parameters) = builder.new_block(&[])?;
         if !parameters.is_empty() {
@@ -723,15 +753,21 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::UserCall {
                 function,
                 arguments,
-                result,
                 ..
             } => {
                 let arguments = arguments
                     .iter()
                     .map(|argument| self.expression(argument))
                     .collect::<Result<Vec<_>, _>>()?;
+                // The definition takes the callee's declared IR result, which
+                // carries the result mode: a borrow-returning callee delivers
+                // an address, not a referent value [OWN-2, TYPE-7].
+                let result = *self
+                    .function_results
+                    .get(function.0 as usize)
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
                 self.define(
-                    lower_type(*result)?,
+                    result,
                     IrOperation::Call {
                         function: function.0,
                         arguments,

@@ -446,6 +446,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
         own_result: bool,
+        result_candidate: bool,
     ) -> Result<TypedExpression, CheckStop> {
         self.check_atom_in_context(
             function,
@@ -453,7 +454,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             loop_depth,
             PlaceUseContext::Ordinary,
-            ReborrowPosition::CallArgument { own_result },
+            ReborrowPosition::CallArgument {
+                own_result,
+                result_candidate,
+            },
         )
     }
 
