@@ -763,6 +763,31 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
     );
 }
 
+/// [OWN-3, OWN-4] an enclosing region outlives an inner one, so a borrow of
+/// an outer region is legally held by a binding declared any number of
+/// blocks deeper: the borrow value stays live for the holder's whole scope.
+/// The judgment is the outlives relation over region blocks, not a fixed
+/// holder-directly-inside-its-region shape.
+#[test]
+fn outer_region_borrows_may_be_held_under_inner_regions() {
+    with_semantics(
+        b"fn main() -> own unit traps {\n  let a = 7_i32;\n  region 'r {\n    region 's {\n      region 't {\n        let q = &'r a;\n        check ieq(deref(q), 7_i32) else trap \"q\";\n      }\n    }\n  }\n  return unit;\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("an outer-region borrow held two blocks deeper must check: {outcome:?}");
+            };
+        },
+    );
+    with_semantics(
+        b"fn main() -> own unit pure {\n  let a = 7_i32;\n  region 'r {\n    region 's {\n      let u = &uniq 'r a;\n      set deref(u) = 8_i32;\n    }\n  }\n  return unit;\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("an outer-region uniq borrow held one block deeper must check: {outcome:?}");
+            };
+        },
+    );
+}
+
 /// [EFF-2] §9.1 attributes reads and writes through an incoming borrow
 /// parameter to that parameter's formal region, both ways.
 #[test]

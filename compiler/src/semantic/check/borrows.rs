@@ -948,6 +948,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Some(borrow))
     }
 
+    /// A borrow-mode `let` holder is supported when its lexical scope lies
+    /// within its borrow's region block, so the borrow value [OWN-4] is live
+    /// for the holder's whole scope. The region may enclose the holder any
+    /// number of blocks up (an outer region's borrow legally stored under an
+    /// inner region), and a caller-supplied region encloses the entire body
+    /// [OWN-3]. A holder that would outlive its borrow's region stays an
+    /// explicit capability stop.
     pub(super) fn borrow_holder_scope_supported(
         &self,
         holder: DeclarationId,
@@ -957,13 +964,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedMode::Own => return Ok(true),
             CheckedMode::Shared(region) | CheckedMode::Unique(region) => region,
         };
-        let holder_scope = self.declaration_scope(holder)?;
-        let holder_scope = self
-            .resolved
-            .scopes()
-            .get(holder_scope.index())
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        Ok(holder_scope.parent() == Some(self.region_declaration(region)?.scope()))
+        self.scope_is_within(
+            self.declaration_scope(holder)?,
+            self.region_declaration(region)?.scope(),
+        )
     }
 
     pub(super) fn check_loan_access(
