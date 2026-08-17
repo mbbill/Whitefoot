@@ -6409,6 +6409,16 @@ fn holder_from_value(value: &CheckedExpression) -> Option<HolderReferent> {
         CheckedExpression::ReborrowAddressed { binding, .. } => {
             Some(HolderReferent::Holder(*binding))
         }
+        // A bound borrow-mode call result reads and writes through the
+        // provenance-candidate actual's storage, so a write through it must
+        // kill exactly the facts on that storage [ENT-5, OWN-6].
+        CheckedExpression::UserCall {
+            result_borrow: Some(result_borrow),
+            ..
+        } => Some(HolderReferent::Place {
+            binding: result_borrow.binding,
+            fields: result_borrow.fields.clone(),
+        }),
         CheckedExpression::BoxNew { .. } => Some(HolderReferent::Opaque),
         _ => None,
     }
@@ -6443,6 +6453,10 @@ const fn value_has_implicit_deref(value: &CheckedExpression) -> bool {
             | CheckedExpression::BorrowBox { .. }
             | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::ReborrowAddressed { .. }
+            | CheckedExpression::UserCall {
+                result_borrow: Some(_),
+                ..
+            }
     )
 }
 

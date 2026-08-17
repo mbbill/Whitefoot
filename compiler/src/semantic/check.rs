@@ -380,12 +380,24 @@ enum PreludeType {
     NarrowError,
 }
 
+/// v0.31-candidate reborrow-extension switch. While the active specification
+/// is v0.30, the deferred forms — a reborrow argument to a borrow-returning
+/// call, a bound call-result borrow holder, and the grandchild chains they
+/// compose — keep their v0.30 dispositions, so this stays `false`. The
+/// integration switch for the approved v0.31 activation is flipping this one
+/// constant to `true`; until then only the test-only
+/// `check_semantics_reborrow_extension` entry exercises the extension.
+pub(crate) const REBORROW_EXTENSION_ACTIVE: bool = false;
+
 struct Checker<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     /// Whether an undischarged obligation or refuted claim rejects [OP-4,
     /// CLM-2]. Always true outside `check_semantics_dark`, the test-only
     /// observability hook.
     reject_entailment: bool,
+    /// Whether the v0.31-candidate reborrow extension is admitted; see
+    /// [`REBORROW_EXTENSION_ACTIVE`].
+    reborrow_extension: bool,
     tree: TreeView<'unit, 'classified, 'lexed, 'source>,
     nominals: Vec<CheckedNominal>,
     nominal_nodes: Vec<Option<NodeId>>,
@@ -425,7 +437,7 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
 pub fn check_semantics<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true)
+    check_semantics_with(resolved, true, REBORROW_EXTENSION_ACTIVE)
 }
 
 /// [`check_semantics`] with the [OP-4]/[CLM-2] entailment rejection disabled,
@@ -438,23 +450,37 @@ pub fn check_semantics<'classified, 'lexed, 'source>(
 pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, false)
+    check_semantics_with(resolved, false, REBORROW_EXTENSION_ACTIVE)
+}
+
+/// [`check_semantics`] with the v0.31-candidate reborrow extension admitted,
+/// so tests can exercise the implemented extension while the shipped switch
+/// [`REBORROW_EXTENSION_ACTIVE`] keeps v0.30 semantics. Test-only: the
+/// shipped acceptance behavior has exactly one path.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn check_semantics_reborrow_extension<'classified, 'lexed, 'source>(
+    resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+) -> SemanticOutcome<'classified, 'lexed, 'source> {
+    check_semantics_with(resolved, true, true)
 }
 
 fn check_semantics_with<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     reject_entailment: bool,
+    reborrow_extension: bool,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
     let preflight = if resolved.postconditions().is_empty() {
         Ok(())
     } else {
-        Checker::new(&resolved, reject_entailment).and_then(|mut checker| {
+        Checker::new(&resolved, reject_entailment, reborrow_extension).and_then(|mut checker| {
             let items = checker.item_declarations()?;
             checker.preflight_postcondition_selectors(&items)
         })
     };
     let result = preflight.and_then(|()| {
-        Checker::new(&resolved, reject_entailment).and_then(|mut checker| checker.check_program())
+        Checker::new(&resolved, reject_entailment, reborrow_extension)
+            .and_then(|mut checker| checker.check_program())
     });
     match result {
         Ok(data) => SemanticOutcome::Complete(Box::new(CheckedProgram {
@@ -496,10 +522,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn new(
         resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
         reject_entailment: bool,
+        reborrow_extension: bool,
     ) -> Result<Self, CheckStop> {
         Ok(Self {
             resolved,
             reject_entailment,
+            reborrow_extension,
             tree: TreeView::new(resolved)?,
             nominals: Vec::new(),
             nominal_nodes: Vec::new(),

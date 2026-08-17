@@ -92,7 +92,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // Every [SYS-2] result mode is `own`, so child reborrows are
             // admitted exactly as for an own-result user callee.
             let argument =
-                self.check_call_argument_atom(function, atom, bindings, loop_depth, true)?;
+                self.check_call_argument_atom(function, atom, bindings, loop_depth, true, false)?;
             for access in &argument.accesses {
                 for borrow in &call_scoped_borrows {
                     if places_overlap(&access.place, &borrow.place)

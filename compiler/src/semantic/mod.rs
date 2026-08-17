@@ -19,6 +19,8 @@ mod tests;
 use crate::{BundleSourceExtent, NodePath, ResolutionIssue, ResolvedSyntaxUnit, SyntaxCoordinate};
 
 pub use check::check_semantics;
+#[cfg(test)]
+pub(crate) use check::check_semantics_reborrow_extension;
 
 pub(crate) use goal::{GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 pub(crate) use model::{
@@ -675,6 +677,13 @@ pub enum SemanticIssueKind {
     /// or a return-position reborrow failed OWN-14's admission.
     InvalidReborrowPosition {
         /// Exact restructuring required by OWN-14.
+        mechanical_fix: &'static str,
+    },
+    /// A borrow-mode call result was bound, but the callee signature does not
+    /// determine one provenance-candidate parameter for it (reborrow
+    /// extension only).
+    AmbiguousResultBorrow {
+        /// Exact restructuring required by OWN-6.
         mechanical_fix: &'static str,
     },
     /// A borrow holder was used without the required explicit dereference.

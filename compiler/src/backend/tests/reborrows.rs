@@ -72,6 +72,46 @@ fn main() -> own unit traps {
     assert!(output.stderr.is_empty());
 }
 
+/// The v0.31-candidate chain executes end to end (test-only extension
+/// checker): a holder's candidate child feeds a borrow-returning callee, the
+/// bound result becomes a holder, and a statement-scoped grandchild of that
+/// result carries the callee write back into the owner's storage.
+///
+/// A *suffixed* reborrow (`&uniq 'r deref(p).left`) remains an explicit
+/// RegionsAndBorrows capability stop in both admitted positions, so the
+/// executable chain stays on whole-referent reborrows.
+#[test]
+fn extension_chains_execute_and_write_the_owners_storage() {
+    let llvm = emit_reborrow_extension(
+        br#"fn passthru['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {
+  return &uniq 'r0 deref(x);
+}
+
+fn bump['r](n: &uniq 'r i32) -> own unit writes('r) {
+  set deref(n) = 42_i32;
+  return unit;
+}
+
+fn main() -> own unit traps {
+  let v = 1_i32;
+  region 'a {
+    let h = &uniq 'a v;
+    let r = passthru<'a>(x: &uniq 'a deref(h));
+    region 'c {
+      bump<'c>(n: &uniq 'c deref(r));
+    }
+  }
+  check ieq(v, 42_i32) else trap "chain write lost";
+  return unit;
+}
+"#,
+    );
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
 /// A borrow-mode parameter crosses the call boundary as an address, so the
 /// callee's write lands in the caller's storage.
 #[test]

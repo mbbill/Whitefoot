@@ -8,7 +8,8 @@ use crate::{
 
 use super::super::super::super::goal::{GoalDatum, GoalExpression, GoalProjection};
 use super::super::super::super::model::{
-    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedSliceOrigin, CheckedType,
+    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow, CheckedSliceOrigin,
+    CheckedType,
 };
 use super::super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, places_overlap, push_slice_origin,
@@ -36,7 +37,74 @@ impl CallClaimOrigin {
     }
 }
 
+/// Whether a written parameter or result type carries the given formal
+/// region anywhere a borrow could be rooted through it. Storage is borrow-
+/// and region-free [STOR-5], so a direct `slice` type is the only written
+/// type region today; an unsubstituted generic is conservatively treated as
+/// carrying every region.
+fn type_carries_region(ty: CheckedType, region: crate::DeclarationId) -> bool {
+    match ty {
+        CheckedType::Slice { region: slice, .. } => slice == region,
+        CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => true,
+        CheckedType::Unit
+        | CheckedType::Bool
+        | CheckedType::Integer(_)
+        | CheckedType::Float(_)
+        | CheckedType::Nominal(_)
+        | CheckedType::Buffer { .. }
+        | CheckedType::Array { .. } => false,
+    }
+}
+
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// The single provenance-candidate parameter position of a
+    /// borrow-returning callee signature under the reborrow extension: the
+    /// one parameter written as a borrow of the result's kind in the
+    /// result's formal region, admitted only when no other parameter
+    /// mentions that formal region in its mode or type. Distinct formal
+    /// regions are incomparable inside the callee [OWN-3] and storage is
+    /// borrow- and region-free [STOR-5], so every borrow an accepted callee
+    /// can deliver in the result region is rooted in this parameter's actual
+    /// or in immutable named-const storage; the candidate's resolved place
+    /// therefore covers every mutable storage the result can reach.
+    fn result_borrow_candidate(&self, signature: &FunctionSignature) -> Option<usize> {
+        if !self.reborrow_extension {
+            return None;
+        }
+        let (result_kind, result_region) = match signature.result_mode {
+            CheckedMode::Own => return None,
+            CheckedMode::Shared(region) => (BorrowKind::Shared, region),
+            CheckedMode::Unique(region) => (BorrowKind::Unique, region),
+        };
+        // A borrow-mode direct-slice result carries descriptor and origin
+        // relations this rule does not model [OWN-5]; form no candidate.
+        if type_carries_region(signature.result, result_region) {
+            return None;
+        }
+        let mut candidate = None;
+        for (index, parameter) in signature.parameters.iter().enumerate() {
+            if type_carries_region(parameter.ty, result_region) {
+                return None;
+            }
+            let (kind, region) = match parameter.mode {
+                CheckedMode::Own => continue,
+                CheckedMode::Shared(region) => (BorrowKind::Shared, region),
+                CheckedMode::Unique(region) => (BorrowKind::Unique, region),
+            };
+            if region != result_region {
+                continue;
+            }
+            // A same-region parameter of the other kind, or a second
+            // same-region parameter, leaves the provenance ambiguous:
+            // reject-when-unsure [OWN-8].
+            if kind != result_kind || candidate.is_some() {
+                return None;
+            }
+            candidate = Some(index);
+        }
+        candidate
+    }
+
     pub(super) fn check_user_call(
         &self,
         node: NodeId,
@@ -90,6 +158,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             blocks: signature.declared_effects.blocks,
             traps: signature.declared_effects.traps,
         };
+        let result_candidate = self.result_borrow_candidate(signature);
         for (ordinal, (field, parameter)) in
             fields.into_iter().zip(&signature.parameters).enumerate()
         {
@@ -114,6 +183,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 bindings,
                 loop_depth,
                 signature.result_mode == CheckedMode::Own,
+                result_candidate == Some(ordinal),
             )?;
             for access in &argument.accesses {
                 for borrow in &call_scoped_borrows {
@@ -184,6 +254,46 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .as_ref()
             .map(|slice| slice.origins.clone())
             .unwrap_or_default();
+        // Reborrow extension: a borrow-mode result with a provenance
+        // candidate carries the candidate actual's complete resolved place
+        // as its own claim, so binding the result creates an ordinary holder
+        // over caller storage [OWN-5, OWN-6]. Creating that claim through a
+        // still-usable `&uniq` parent holder suspends the parent for the
+        // remainder of its life: the claim may outlive the statement inside
+        // the bound result, so statement-end resumption would leave two
+        // usable paths to one place.
+        let result_borrow_info = result_candidate
+            .and_then(|index| checked_borrows.get(index))
+            .cloned()
+            .flatten();
+        let result_borrow = if let Some(borrow) = &result_borrow_info {
+            if let Some(holder) = result_candidate
+                .and_then(|index| argument_holders.get(index))
+                .copied()
+                .flatten()
+            {
+                let parent_is_unique = bindings
+                    .get(&holder)
+                    .and_then(|local| local.borrow.as_ref())
+                    .is_some_and(|parent| parent.kind == BorrowKind::Unique);
+                if parent_is_unique {
+                    bindings
+                        .get_mut(&holder)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                        .suspended = true;
+                }
+            }
+            let root = bindings
+                .get(&borrow.place.root)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .binding;
+            Some(CheckedResultBorrow {
+                binding: root,
+                fields: borrow.place.fields.clone(),
+            })
+        } else {
+            None
+        };
         Ok(TypedExpression {
             expression: CheckedExpression::UserCall {
                 function: target,
@@ -195,9 +305,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 requirement: None,
                 result,
                 slice_origins,
+                result_borrow,
             },
             mode: result_mode,
-            borrow: None,
+            borrow: result_borrow_info,
             slice,
             holder: None,
             // A reference-returning call still yields a reference value; the

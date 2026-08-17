@@ -169,8 +169,59 @@ fn with_semantics_dark<ResultValue>(
     run(super::check::check_semantics_dark(resolved))
 }
 
+/// [`with_semantics`] through the test-only extension checker, which admits
+/// the v0.31-candidate reborrow extension while the shipped switch keeps
+/// v0.30 semantics [OWN-6, OWN-14].
+fn with_semantics_extension<ResultValue>(
+    source: &[u8],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        SemanticOutcome<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
+        panic!("semantic test bundle must be valid");
+    };
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("semantic test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("semantic test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("semantic test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("semantic test derivation must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("semantic test source must be canonical");
+    };
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+        panic!("semantic test source must resolve");
+    };
+    run(super::check::check_semantics_reborrow_extension(resolved))
+}
+
 fn assert_rule(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
     with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("expected {rule:?}/{kind:?}, got {outcome:?}");
+        };
+        assert_eq!(issue.rule(), rule);
+        assert_eq!(issue.kind(), &kind);
+    });
+}
+
+/// [`assert_rule`] under the reborrow extension [OWN-6, OWN-14].
+fn assert_rule_extension(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
+    with_semantics_extension(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("expected {rule:?}/{kind:?}, got {outcome:?}");
         };

@@ -123,6 +123,48 @@ fn compile(source: &[u8]) -> String {
     compile_sources(&[("test.wf", source)])
 }
 
+/// [`emit`] through the test-only reborrow-extension checker, so execution
+/// tests can run the implemented v0.31-candidate chains while the shipped
+/// switch keeps v0.30 semantics [OWN-6, OWN-14].
+fn emit_reborrow_extension(source: &[u8]) -> String {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("backend test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("backend test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("backend test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("backend test source must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("backend test source must be canonical");
+    };
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+        panic!("backend test source must resolve");
+    };
+    let checked = match crate::semantic::check_semantics_reborrow_extension(resolved) {
+        SemanticOutcome::Complete(checked) => checked,
+        outcome => {
+            panic!("backend test source must check under the reborrow extension: {outcome:?}")
+        }
+    };
+    let ir = lower_checked(*checked).expect("checked program must lower");
+    emit_llvm(&ir)
+        .expect("lowered program must emit")
+        .into_string()
+}
+
 /// Compiles a source that must be rejected, returning the failure for rule
 /// and detail assertions.
 fn compile_rejection(source: &[u8]) -> crate::CompilationFailure {

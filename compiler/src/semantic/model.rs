@@ -631,6 +631,16 @@ pub(crate) struct CheckedIntegerArgument {
     pub(crate) source: CheckedIntegerArgumentSource,
 }
 
+/// The caller-side root a bound borrow-mode call result reads and writes
+/// through: the resolved place of the single provenance-candidate actual
+/// [OWN-6, ENT-5]. The claim deliberately keeps the complete actual place
+/// even when the callee returned a narrower suffix of it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedResultBorrow {
+    pub(crate) binding: BindingId,
+    pub(crate) fields: Vec<u32>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedExpression {
     Constant(CheckedValue),
@@ -666,6 +676,14 @@ pub(crate) enum CheckedExpression {
         requirement: Option<Box<super::goal::CheckedCallRequirement>>,
         result: CheckedType,
         slice_origins: Vec<CheckedSliceOrigin>,
+        /// For a borrow-mode result admitted under the reborrow extension:
+        /// the caller-side storage the result borrow is conservatively rooted
+        /// at — the resolved place of the callee signature's single
+        /// provenance-candidate actual. Entailment reads it so a write
+        /// through the bound result kills exactly the facts on that storage
+        /// [ENT-5]; it is `None` for every own-mode result and whenever the
+        /// extension is off.
+        result_borrow: Option<CheckedResultBorrow>,
     },
     /// One call to an admitted [SYS-2] system operation, by index into the
     /// system operation catalog. Arguments follow declared parameter order.

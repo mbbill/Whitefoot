@@ -34,6 +34,12 @@ pub(super) enum ReborrowPosition {
     CallArgument {
         /// Whether the receiving call's result mode is `own` or `unit`.
         own_result: bool,
+        /// Under the reborrow extension only: this argument position is the
+        /// receiving borrow-returning call's single provenance candidate, so
+        /// a written reborrow here may outlive the statement inside the
+        /// bound result and its parent holder is suspended for the remainder
+        /// of its life. Always `false` with the extension off.
+        result_candidate: bool,
     },
     /// The complete `expr` of a `return_stmt` [OWN-14].
     ReturnExpression,
@@ -551,7 +557,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 );
             }
-            ReborrowPosition::CallArgument { own_result } if !own_result => {
+            // A reborrow argument to a borrow-returning call is admitted
+            // only in the call's single provenance-candidate position under
+            // the reborrow extension; every other borrow-returning receiver
+            // keeps OWN-6's own/unit-result condition.
+            ReborrowPosition::CallArgument {
+                own_result,
+                result_candidate,
+            } if !own_result && !result_candidate => {
                 return self.issue_node(
                     SemanticRule::Own6,
                     node,
@@ -569,16 +582,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        if matches!(position, ReborrowPosition::CallArgument { .. }) {
-            let region_declaration = self.region_declaration(region)?;
-            if region_declaration.role() != DeclarationRole::LocalRegion
-                || !self.child_region_is_statement_scoped(region_declaration, node)?
-            {
-                return self.issue_node(
-                    SemanticRule::Own6,
-                    node,
-                    SemanticIssueKind::InvalidChildReborrow,
-                );
+        if let ReborrowPosition::CallArgument {
+            result_candidate, ..
+        } = position
+        {
+            // In the provenance-candidate position of a borrow-returning
+            // call, the child's loan survives in the bound result, so the
+            // statement-scoped-region condition is replaced by the parent's
+            // permanent suspension [OWN-6]; a caller-supplied region is
+            // admitted there because the claim is carried by the result
+            // holder, never by a resumed parent. Every other argument child
+            // stays statement-scoped.
+            if !result_candidate {
+                let region_declaration = self.region_declaration(region)?;
+                if region_declaration.role() != DeclarationRole::LocalRegion
+                    || !self.child_region_is_statement_scoped(region_declaration, node)?
+                {
+                    return self.issue_node(
+                        SemanticRule::Own6,
+                        node,
+                        SemanticIssueKind::InvalidChildReborrow,
+                    );
+                }
             }
         }
         let (holder, local, parent) = self.resolve_dereference_holder(node, pbase, bindings)?;
