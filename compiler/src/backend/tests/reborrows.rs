@@ -42,6 +42,60 @@ fn general_scalar_and_enum_borrows_execute_through_host_llvm() {
     }
 }
 
+/// [OWN-13] matching an enum through a shared borrow leaves the scrutinee
+/// live and derives a shared binder on an affine struct payload;
+/// `deref(binder).field` reads through that provenance without transferring
+/// ownership, and the matched-through root remains usable afterwards. This
+/// is the own13-pos-borrow-affine-payload capability stated with conforming
+/// source: the binder spelling is distinct from its field [GRAM-10], the
+/// unit has a `main` [FN-7], and the read through the caller region is
+/// declared [EFF-2].
+#[test]
+fn borrow_match_preserves_provenance_on_an_affine_payload() {
+    let llvm = compile(
+        br#"struct Pair {
+  left: i32;
+  right: i32;
+}
+
+enum Packet {
+  Data(item: Pair);
+  Empty();
+}
+
+fn inspect['r](packet: &'r Packet) -> own i32 reads('r) {
+  match deref(packet) {
+    Data(item: payload) => {
+      return deref(payload).left;
+    }
+    Empty() => {
+      return 0_i32;
+    }
+  }
+}
+
+fn main() -> own unit traps {
+  let pair = Pair(left: 41_i32, right: 1_i32);
+  let packet = Data(item: move pair);
+  let fallback = Empty();
+  region 'r {
+    let held = &'r packet;
+    let read = inspect<'r>(packet: held);
+    check ieq(read, 41_i32) else trap "payload left";
+    let hollow = &'r fallback;
+    let zero = inspect<'r>(packet: hollow);
+    check ieq(zero, 0_i32) else trap "empty arm";
+  }
+  return unit;
+}
+"#,
+    );
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
 /// A borrow-mode parameter crosses the call boundary as an address, so the
 /// callee's write lands in the caller's storage.
 #[test]
