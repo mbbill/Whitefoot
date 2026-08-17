@@ -121,6 +121,28 @@ repaired, not excluded. One process lesson re-learned and recorded: the
 first "green" run was an echo swallowing make's real exit 2; exit codes
 are now read directly.
 
+### Test economy (owner-directed, 2026-08-16/17)
+
+The owner rejected duration-based triage — a slow test is not thereby a
+thorough test — and ordered per-test diagnosis. Outcome, every number
+measured: the ">60s per test" readings were largely artifacts (threads
+blocked on shared memos reporting the compiler's time as their own; the
+compiler's own 136s wfgrep analysis is ~8s at opt level 2). Repairs, all
+purpose-preserving with the soundness argument carried in-file: shared
+program compilation across scenario tests (wfgrep 10x136s → 136s at the
+old profile); one front-end pass for cost_shape's two target emissions;
+a `[profile.heavy]` keeping debug assertions at release codegen; the
+unjustified `0..20` stability loop cut to two named re-analyses; the
+56-pair integer-conversion sweep sampled to 15 emitter classes with an
+add-an-arm-add-a-row sentinel; the duplicate DEFLATE provenance pass
+absorbed into the frozen-corpus walk with cross-referenced guards.
+Final: `make check` 1m28s cold-ish / 1m08s warm, `make check-heavy`
+2m38s, both exit 0 — from ~50 minutes combined. Zero tests deleted,
+zero assertions weakened; one test renamed to stop overclaiming. The
+rule is codified in WORKFLOW.md Evidence discipline. Base64's duplicate
+execution with `conformance-run` is a protected dedup left on the
+owner-decision list (#44).
+
 ### Deferred deliberately
 
 DIAG-1 prose→rows restructure and controlled-vocabulary cells (semantic
