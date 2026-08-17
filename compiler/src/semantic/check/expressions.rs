@@ -16,7 +16,7 @@ use super::super::model::{
     CheckedNominalKind, CheckedProjectedDrop, CheckedSetTarget, CheckedType, CheckedValue,
     CheckedWritablePlace, FloatType, IntegerType,
 };
-use super::borrows::{AccessKind, ReborrowPosition, ResolvedPlace};
+use super::borrows::{AccessKind, OwnedContent, ReborrowPosition, ResolvedPlace};
 use super::{
     CheckStop, Checker, Constructor, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
 };
@@ -981,6 +981,68 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    /// A [SET-1] or [SET-2] target whose `deref` reaches storage the root
+    /// binding owns rather than a referent behind a holder. [SET-1]'s
+    /// writability relation admits both roots, and this one directly: the
+    /// target is rooted in a live own-mode value binding whose storage is
+    /// box-owned or arena-owned [STOR-1]. There is no holder here to be live,
+    /// usable, `&uniq`, or unsuspended, so the judgment is the ordinary
+    /// own-rooted one — liveness [OWN-1], the loan state [OWN-5], then the
+    /// final selected type's class.
+    ///
+    /// Past the judgment nothing writes owned indirection content: the target
+    /// names the root binding, which lowers to the content pointer under the
+    /// box's own IR type, and arena storage has no runtime at all. The target
+    /// therefore stops at an explicit capability gate rather than publishing a
+    /// checked program whose single store would overwrite the pointer.
+    fn check_owned_content_set_target(
+        &self,
+        node: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        for_replace: bool,
+        root: (LocalBinding, OwnedContent),
+    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+        let (local, content) = root;
+        if !local.live {
+            return self.issue_node(
+                SemanticRule::Own1,
+                node,
+                SemanticIssueKind::UseAfterMove {
+                    mechanical_fix: "introduce a new `let` binding before reuse",
+                },
+            );
+        }
+        // The written suffix chain still selects a real field of the content
+        // type, so a wrong spelling stays a source rejection rather than being
+        // masked by the capability stop below [DIAG-1].
+        let suffixes = self.tree.children_with(node, Production::Psuffix)?;
+        let (fields, ty) = self.resolve_struct_path(&suffixes, content.ty())?;
+        // Owned indirection content is reached from the owning binding, so the
+        // resolved place is that root plus the selected field path — the same
+        // place the read path resolves for a `deref` of this binding.
+        self.check_loan_access(
+            bindings,
+            None,
+            &ResolvedPlace {
+                root: local.declaration,
+                fields,
+            },
+            AccessKind::Write,
+            node,
+        )?;
+        self.check_mutation_target_class(node, ty, for_replace)?;
+        // TEMPORARY capability stop, judged after every [OWN-1], [OWN-5], and
+        // [STOR-1] source rejection above.
+        match content {
+            OwnedContent::Arena { .. } => {
+                self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, node)
+            }
+            OwnedContent::Boxed(_) => {
+                self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node)
+            }
+        }
+    }
+
     fn check_dereferenced_set_target(
         &self,
         node: NodeId,
@@ -988,6 +1050,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         for_replace: bool,
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+        // [SET-1] makes a `deref` target writable through either of two roots:
+        // an explicit `deref` of a live usable `&uniq` holder, or a live
+        // own-mode binding whose storage the `deref` reaches [STOR-1]. Only
+        // the first has a holder to resolve. Routing every `deref` target
+        // through `resolve_dereference_holder` demanded one of an own-mode
+        // `box` or `arena` binding and cited TYPE-7 `MissingDereference`
+        // against source that wrote no holder — a compiler capability gap
+        // misreported as invalid source, and the mutation-target twin of the
+        // same defect in the borrow dispatch.
+        if let Some(root) = self.owned_content_deref_root(pbase, bindings)? {
+            return self.check_owned_content_set_target(node, bindings, for_replace, root);
+        }
         let (declaration, local, borrow) =
             self.resolve_dereference_holder(node, pbase, bindings)?;
         // [SET-1] states the shared-borrow referent as an [OWN-5] violation

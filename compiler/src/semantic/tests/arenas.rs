@@ -289,6 +289,31 @@ fn main() -> own unit pure {
     );
 }
 
+/// The set-target twin of the borrow dispatch above. [SET-1] makes a `deref`
+/// target writable through a live own-mode binding whose storage is
+/// arena-owned [STOR-1] just as it does through a live usable `&uniq` holder,
+/// and an `arena_new` result is own mode. Resolving a holder for every
+/// `deref` target reported this spec-legal target as TYPE-7 "deref requires a
+/// borrow holder"; it is now judged as the own-rooted target it is — the
+/// content is copy, so SET-1 admits it — and stops at the arena-runtime gate,
+/// because arena storage has no runtime to store into.
+#[test]
+fn arena_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
+    assert_unsupported(
+        br#"fn main() -> own unit traps {
+  region 'r {
+    let a = arena_new<'r, i32>(4_i32);
+    set deref(a) = 7_i32;
+    let seen = deref(a);
+    check ieq(seen, 7_i32) else trap "arena content set";
+  }
+  return unit;
+}
+"#,
+        UnsupportedSemanticFeature::ArenaRuntime,
+    );
+}
+
 /// [STOR-4] a value delivery whose destination binding lies outside the
 /// arena's region block moves the value out of its region and rejects.
 #[test]

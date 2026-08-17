@@ -23,15 +23,17 @@ pub(super) enum BorrowKind {
 
 /// The owned indirection a `deref` place base reaches when its root binding
 /// is own-mode rather than a borrow holder [OWN-14]. Each arm names the
-/// [OWN-10] case that governs the borrow and the content type the written
-/// suffix chain continues from.
+/// storage class the root owns [STOR-1] and the content type the written
+/// suffix chain continues from; a borrow position additionally reads the arm
+/// as the [OWN-10] case that governs it.
 #[derive(Clone, Copy)]
-enum OwnedContent {
+pub(super) enum OwnedContent {
     /// `box<T>` content: heap storage this binding owns [STOR-1], so
-    /// [OWN-10]'s own-mode-binding case governs.
+    /// [OWN-10]'s own-mode-binding case governs a borrow of it.
     Boxed(CheckedType),
-    /// `arena<'r, T>` content: [OWN-10]'s arena case governs with source
-    /// region `'r` [STOR-4].
+    /// `arena<'r, T>` content: arena-owned storage bounded by `'r`
+    /// [STOR-1, STOR-4], so [OWN-10]'s arena case governs a borrow of it
+    /// with source region `'r`.
     Arena {
         source: DeclarationId,
         content: CheckedType,
@@ -39,7 +41,7 @@ enum OwnedContent {
 }
 
 impl OwnedContent {
-    const fn ty(self) -> CheckedType {
+    pub(super) const fn ty(self) -> CheckedType {
         match self {
             Self::Boxed(content) | Self::Arena { content, .. } => content,
         }
@@ -371,7 +373,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // arena-content cases. Dispatching it as a reborrow demanded a
             // borrow holder the source never wrote and reported spec-legal
             // programs as OWN-6/OWN-14/TYPE-7 violations.
-            if let Some(root) = self.owned_content_borrow_root(pbase, bindings)? {
+            if let Some(root) = self.owned_content_deref_root(pbase, bindings)? {
                 return self.check_owned_content_borrow(
                     node, place_node, region, function, loop_depth, root,
                 );
@@ -534,10 +536,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// The own-mode `box` or `arena` binding a `deref` place base is rooted
-    /// at, when it is one. `None` means the base is not that shape, and the
-    /// borrow keeps [OWN-14]'s reborrow disposition: a borrow-holder root, a
-    /// chained or suffixed holder place, or a nonvalue target.
-    fn owned_content_borrow_root(
+    /// at, when it is one. `None` means the base is not that shape — a
+    /// borrow-holder root, a chained or suffixed holder place, or a nonvalue
+    /// target — and the position keeps its holder disposition: [OWN-14]'s
+    /// reborrow judgment for a borrow, and [SET-1]'s live usable `&uniq`
+    /// referent for a mutation target.
+    pub(super) fn owned_content_deref_root(
         &self,
         pbase: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
