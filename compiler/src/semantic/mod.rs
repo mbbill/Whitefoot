@@ -87,6 +87,8 @@ pub enum SemanticRule {
     Fn3,
     /// Closed source-law declaration and discharge.
     Fn4,
+    /// Polymorphic recursion in a call cycle among generic functions.
+    Fn6,
     /// Closed-program `main` contract.
     Fn7,
     /// Finite atomic function requirement goal.
@@ -163,6 +165,7 @@ impl SemanticRule {
             Self::Fn2 => "FN-2",
             Self::Fn3 => "FN-3",
             Self::Fn4 => "FN-4",
+            Self::Fn6 => "FN-6",
             Self::Fn7 => "FN-7",
             Self::Fn8 => "FN-8",
             Self::Fn9 => "FN-9",
@@ -235,7 +238,8 @@ impl SemanticRule {
             Self::Fn1 => Self::Fn2,
             Self::Fn2 => Self::Fn3,
             Self::Fn3 => Self::Fn4,
-            Self::Fn4 => Self::Fn7,
+            Self::Fn4 => Self::Fn6,
+            Self::Fn6 => Self::Fn7,
             Self::Fn7 => Self::Fn8,
             Self::Fn8 => Self::Fn9,
             Self::Fn9 => Self::Eff1,
@@ -296,20 +300,21 @@ impl SemanticRule {
             Self::Fn2 => 29,
             Self::Fn3 => 30,
             Self::Fn4 => 31,
-            Self::Fn7 => 32,
-            Self::Fn8 => 33,
-            Self::Fn9 => 34,
-            Self::Eff1 => 35,
-            Self::Eff2 => 36,
-            Self::Err2 => 37,
-            Self::Err3 => 38,
-            Self::Sys2 => 39,
-            Self::Clm1 => 40,
-            Self::Clm2 => 41,
-            Self::Clm3 => 42,
-            Self::Ent2 => 43,
-            Self::Prv2 => 44,
-            Self::Prv3 => 45,
+            Self::Fn6 => 32,
+            Self::Fn7 => 33,
+            Self::Fn8 => 34,
+            Self::Fn9 => 35,
+            Self::Eff1 => 36,
+            Self::Eff2 => 37,
+            Self::Err2 => 38,
+            Self::Err3 => 39,
+            Self::Sys2 => 40,
+            Self::Clm1 => 41,
+            Self::Clm2 => 42,
+            Self::Clm3 => 43,
+            Self::Ent2 => 44,
+            Self::Prv2 => 45,
+            Self::Prv3 => 46,
         }
     }
 }
@@ -757,6 +762,16 @@ pub enum SemanticIssueKind {
     /// A generic type argument contains a region-bearing value.
     RegionBearingGenericArgument {
         /// Required FN-2 restructuring.
+        mechanical_fix: &'static str,
+    },
+    /// A call on a cycle among generic functions instantiates its callee at
+    /// something other than exactly the caller's own type parameters [FN-6].
+    PolymorphicRecursion {
+        /// The cycle FN-6 requires the diagnostic to name: the function
+        /// spellings along the shortest cycle through this call, in call
+        /// order, joined by ` -> ` and closed on the caller.
+        cycle: String,
+        /// Required FN-6 restructuring.
         mechanical_fix: &'static str,
     },
     /// A stored-content position contains a region-bearing value.
