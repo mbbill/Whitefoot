@@ -77,8 +77,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedMode::Unique(region) => (BorrowKind::Unique, region),
         };
         // A borrow-mode direct-slice result carries descriptor and origin
-        // relations this rule does not model [OWN-5]; form no candidate.
-        if type_carries_region(signature.result, result_region) {
+        // relations this rule does not model [OWN-5]; form no candidate for
+        // any slice-typed or region-carrying result, whatever region the
+        // written slice names.
+        if matches!(signature.result, CheckedType::Slice { .. })
+            || type_carries_region(signature.result, result_region)
+        {
             return None;
         }
         let mut candidate = None;
