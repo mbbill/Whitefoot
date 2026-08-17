@@ -1,16 +1,18 @@
-//! O11 signed-Boolean-decomposition candidate tests, in both directions.
+//! O11 signed-Boolean-decomposition tests, in both directions.
 //!
-//! Direction one: the acceptance-dark candidate metadata records exactly the
-//! sound decomposition set — `+band` and `-bor` decompose into their signed
+//! Direction one: establishment records and establishes exactly the sound
+//! decomposition set — `+band` and `-bor` decompose into their signed
 //! children recursively, `bnot` flips, and `-band`, `+bor`, and `bxor` on
-//! either sign record nothing (the classic asymmetry: the other sign's
-//! content is genuinely disjunctive). Direction two: v0.30 acceptance is
-//! untouched — the composed goals still establish no child facts, the
-//! obligations behind them stay undischarged, and the ruled conformance
-//! shape (`governance/APPROVALS.md` 2026-08-09 (2)) still rejects on OP-4.
+//! either sign contribute nothing (the classic asymmetry: the other sign's
+//! content is genuinely disjunctive). Direction two: decomposition never runs
+//! upward — children still establish nothing about a parent, so a caller
+//! discharges a composed requirement only by exact-whole-tree evidence.
+//!
+//! The obligations these guards protect now discharge, which is the rule's
+//! purpose: the [ENT-3] members are facts at their establishment point.
 //! Design: `research/investigations/o11-composition/DESIGN.md`.
 
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
+use crate::SemanticOutcome;
 
 use super::super::entailment::{
     BooleanGoalDecomposition, FunctionEntailment, GoalSign, Relation, TermKind,
@@ -105,11 +107,11 @@ fn assert_comparison_member(
     assert_eq!(*held, bound);
 }
 
-/// S2: a passed `check` on a `band` tree records the positive conjuncts and
-/// their exact projections, while under v0.30 the composed goal still
-/// discharges nothing: both guarded obligations stay undischarged.
+/// S2: a passed `check` on a `band` tree establishes the positive conjuncts
+/// with their exact projections, so both guarded subscripts discharge from
+/// the one conjoined guard.
 #[test]
-fn passed_band_check_records_positive_conjuncts_and_establishes_no_child() {
+fn passed_band_check_establishes_positive_conjuncts_and_discharges_both() {
     let source =
         br#"fn read_pair(table: own array<u8, 8>, low: own u64, high: own u64) -> own u8 traps {
   let low_ok = ilt(low, 8_u64);
@@ -126,10 +128,10 @@ fn main() -> own unit pure {
 }
 "#;
     let summary = entailment(source, "read_pair");
-    // v0.30 direction: the conjunction establishes nothing about a child.
+    // Each conjunct is established, so each subscript discharges.
     assert_eq!(summary.obligations.len(), 2);
-    assert!(summary.obligations.iter().all(|o| !o.discharged));
-    // Candidate direction: exactly one band entry with the two conjuncts.
+    assert!(summary.obligations.iter().all(|o| o.discharged));
+    // Exactly one band entry with the two conjuncts.
     assert_eq!(summary.boolean_decompositions.len(), 1);
     let entry = entry_with_root(&summary, CheckedBooleanOperation::And, GoalSign::Positive);
     assert_eq!(entry.members.len(), 2);
@@ -139,13 +141,12 @@ fn main() -> own unit pure {
     assert_ne!(entry.members[0].0, entry.members[1].0);
 }
 
-/// S1: the ruled-flip guard shape. The `bor` else edge records both negative
-/// disjuncts (whose projections negate to the two-sided bound), records
-/// nothing on the true edge, and the program still rejects on OP-4 through
-/// the ordinary path — the conformance verdict stays until the owner's
-/// activation flips it.
+/// S1: the ruled-flip guard shape. The `bor` else edge establishes both
+/// negative disjuncts (whose projections negate to the two-sided bound) and
+/// contributes nothing on the true edge, so the guarded subscript discharges
+/// on the edge the guard protects.
 #[test]
-fn bor_guard_false_edge_records_negative_disjuncts_and_still_rejects() {
+fn bor_guard_false_edge_establishes_negative_disjuncts_and_discharges() {
     let source = br#"fn get(table: own array<u8, 4>, symbol: own u64) -> own u8 pure {
   let below = ilt(symbol, 0_u64);
   let above = ige(symbol, 4_u64);
@@ -163,8 +164,8 @@ fn main() -> own unit pure {
 "#;
     let summary = entailment(source, "get");
     assert_eq!(summary.obligations.len(), 1);
-    assert!(!summary.obligations[0].discharged);
-    // Only the false edge decomposes a disjunction; +bor records nothing.
+    assert!(summary.obligations[0].discharged);
+    // Only the false edge decomposes a disjunction; +bor contributes nothing.
     assert_eq!(summary.boolean_decompositions.len(), 1);
     let entry = entry_with_root(&summary, CheckedBooleanOperation::Or, GoalSign::Negative);
     assert_eq!(entry.members.len(), 2);
@@ -180,16 +181,16 @@ fn main() -> own unit pure {
         TermKind::Constant(4)
     );
     assert_eq!(*bound, 0);
-    // The ruled verdict is unchanged until activation.
+    // The ruled flip, now live: this is the shape the owner's 2026-08-09
+    // ruling (2) disposed. The protected corpus case
+    // `ent3-neg-bor-no-comparison-origin.wf` still declares the v0.30
+    // rejection and needs its owner-approved rewrite before the coverage
+    // gate agrees with this verdict.
     with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the ruled shape must still reject under v0.30: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Op4);
-        assert!(matches!(
-            issue.kind(),
-            SemanticIssueKind::UndischargedBoundsObligation { .. }
-        ));
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the guarded subscript discharges from the decomposed else edge",
+        );
     });
 }
 
@@ -263,9 +264,9 @@ fn main() -> own unit pure {
 }
 "#;
     let summary = entailment(source, "guard");
-    // v0.30 direction: the subscript stays undischarged.
+    // The recursion reaches `-ilt(index, 4)`, which discharges the subscript.
     assert_eq!(summary.obligations.len(), 1);
-    assert!(!summary.obligations[0].discharged);
+    assert!(summary.obligations[0].discharged);
     assert_eq!(summary.boolean_decompositions.len(), 2);
     let positive = entry_with_root(&summary, CheckedBooleanOperation::Not, GoalSign::Positive);
     assert_eq!(positive.members.len(), 3);
@@ -287,12 +288,12 @@ fn main() -> own unit pure {
     assert_eq!(negative.members[0].0, positive.members[0].0);
 }
 
-/// S4: a `band` requirement goal records its conjuncts at body entry while
-/// the caller still discharges only the exact whole tree — the preserved
-/// no-composition direction — and the body obligation stays undischarged
-/// under v0.30.
+/// S4: a `band` requirement goal establishes its conjuncts at body entry, so
+/// the body's own subscript discharges, while the caller still discharges the
+/// requirement only by exact-whole-tree evidence — the preserved
+/// no-upward-composition direction.
 #[test]
-fn band_requirement_records_body_conjuncts_and_composes_nothing() {
+fn band_requirement_establishes_body_conjuncts_and_composes_nothing_upward() {
     let source =
         br#"fn pick(table: own array<u8, 8>, low: own u64, high: own u64) -> own u8 pure requires {
   let low_ok = ilt(low, 8_u64);
@@ -319,7 +320,7 @@ fn main() -> own unit pure {
 "#;
     let callee = entailment(source, "pick");
     assert_eq!(callee.obligations.len(), 1);
-    assert!(!callee.obligations[0].discharged);
+    assert!(callee.obligations[0].discharged);
     let entry = entry_with_root(&callee, CheckedBooleanOperation::And, GoalSign::Positive);
     assert_eq!(entry.members.len(), 2);
     assert_comparison_member(&callee, entry.members[0], GoalSign::Positive, 8, -1);

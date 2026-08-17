@@ -22,6 +22,8 @@ fn count['r](tree: &'r box<Tree>) -> own u64 reads('r), traps {
       let left_count = count<'r>(tree: l);
       let right_count = count<'r>(tree: r);
       let children = left_count + right_count;
+      let children_bounded = ilt(children, 18446744073709551615_u64);
+      claim node_count_fits: children_bounded because "a reachable node count cannot reach the u64 maximum";
       return children + 1_u64;
     }
   }

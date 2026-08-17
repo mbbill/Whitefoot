@@ -698,14 +698,29 @@ fn enum_equality_exclusions_reach_the_intended_rule() {
 
 #[test]
 fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
+    // The TYPE-5 set-field control is written inline rather than read from
+    // `x-struct-set-field.wf`: that case's `c.n + 1_i32` is a v0.31
+    // constant-operand-class site whose overflow obligation nothing
+    // discharges, so the case now rejects on OP-2 with residual
+    // `c.n <= 2147483646` and needs the owner-approved corpus migration the
+    // arith delta assigns to the activation packet. The capability this
+    // control exists to demonstrate — set a struct field, read it back — is
+    // unaffected.
     with_semantics(
-        include_bytes!("../../../tests/conformance/cases/x-struct-set-field.wf"),
+        b"struct Counter {\n  n: i32;\n}\n\nfn main() -> own unit traps {\n  let c = Counter(n: 1_i32);\n  set c.n = 41_i32;\n  let v = c.n;\n  check ieq(v, 41_i32) else trap \"set field drift\";\n  return unit;\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     // Borrow-mode parameters and `let` borrows of scalars and enums, and the
-    // [OWN-13] borrowed match this case exercises, are on the normal path now.
+    // [OWN-13] borrowed match this exercises, are on the normal path now.
+    // Also written inline rather than read from
+    // `x-enum-borrow-payload-live.wf` for the same reason: that case's
+    // `deref(x) + 1_i32` is an undischarged v0.31 class site (residual
+    // `deref(x) <= 2147483646`), so it too awaits the owner-approved corpus
+    // migration. The shape kept here is the one under test — a payload enum
+    // borrow-matched through `&'r` whose scrutinee stays live for a second
+    // read, with each derived binder explicitly dereferenced.
     with_semantics(
-        include_bytes!("../../../tests/conformance/cases/x-enum-borrow-payload-live.wf"),
+        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\nfn main() -> own unit traps {\n  let c = Full(v: 20_i32);\n  region 'r {\n    let p = &'r c;\n    let a = match deref(p) {\n      Full(v: x) => {\n        give deref(x);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    let q = &'r c;\n    let b = match deref(q) {\n      Full(v: y) => {\n        give deref(y);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    check ieq(a, 20_i32) else trap \"borrow payload drift\";\n    check ieq(b, 20_i32) else trap \"second read drift\";\n  }\n  return unit;\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_unsupported(

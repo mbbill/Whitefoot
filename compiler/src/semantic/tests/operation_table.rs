@@ -392,12 +392,16 @@ fn the_effects_column_decides_the_trap_classification() {
     for operation in INTEGER_OPERATIONS {
         let spelling = integer_spelling(operation);
         let row = row_of(&rows, spelling);
+        // v0.31 qualifies the bare add/sub/mul cell with OP-2's
+        // constant-operand carve-out. The row's effect class is still
+        // `traps`: whether a given site keeps its runtime overflow test is a
+        // per-site [ENT-6] discharge judgment, not a property of the row.
+        let traps = row.effects == "traps" || row.effects.starts_with("traps (");
         assert!(
-            matches!(row.effects.as_str(), "pure" | "traps"),
+            traps || row.effects == "pure",
             "{spelling}'s effects cell is {}",
             row.effects
         );
-        let traps = row.effects == "traps";
         assert_eq!(
             operation.traps(),
             traps,

@@ -19,9 +19,10 @@ use super::super::entailment::{
     CountedAtomicDerivation, CountedCaptureSide, CountedDerivationSet, CountedProofPoint,
     CountedRootAtom, DerivationId, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId,
     FlowEventKind, FunctionEntailment, GoalId, GoalSign, ImplicitBoundKind, JoinParent,
-    LengthBound, ObligationOutcome, PlaceProjection, PlaceRoot, PostconditionAggregate,
-    PostconditionDisposition, PostconditionExit, PostconditionViewExit, ProofView, Relation,
-    S7DerivationKind, ShiftOneIdentity, TermId, TermKind, ZERO, build_claim_ledger, type_range,
+    LengthBound, ObligationFamily, ObligationOutcome, PlaceProjection, PlaceRoot,
+    PostconditionAggregate, PostconditionDisposition, PostconditionExit, PostconditionViewExit,
+    ProofView, Relation, S7DerivationKind, ShiftOneIdentity, TermId, TermKind, ZERO,
+    build_claim_ledger, type_range,
 };
 use super::super::model::{
     CheckedExpression, CheckedProgramData, CheckedStatement, CheckedValue, FunctionId, IntegerType,
@@ -1488,7 +1489,13 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert!(!seen_obligations[ordinal], "one exact root per obligation");
                 seen_obligations[ordinal] = true;
                 assert!(outcome.discharged);
-                assert_eq!(outcome.conjunct, 0);
+                // [ENT-6] conjunct ordinals per family: the bounds relation
+                // has one conjunct at ordinal zero, the overflow relation an
+                // upper conjunct at zero and a lower conjunct at one.
+                match outcome.family {
+                    ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
+                    ObligationFamily::Overflow => assert!(outcome.conjunct <= 1),
+                }
                 assert_eq!(outcome.derivation, Some(root.node));
                 assert!(!outcome.node_path.components().is_empty());
                 retained_term(summary, outcome.requested.right);
@@ -5348,9 +5355,11 @@ fn main() -> own unit pure {
 }
 
 #[test]
-fn a_check_without_comparison_origin_establishes_no_l0_fact() {
-    // `band` has no comparison projection [ENT-3], so its passed check
-    // establishes the exact whole goal but no child comparison relation.
+fn a_check_on_a_band_establishes_its_conjuncts_not_a_whole_tree_relation() {
+    // `band` itself has no comparison projection [ENT-3], so the whole tree
+    // delivers no L0 relation of its own; its passed check instead
+    // establishes the signed decomposition members, and `ilt(i, 4)`'s
+    // projection is what discharges the subscript.
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
@@ -5364,7 +5373,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    assert_eq!(discharge_flags(source, "read"), vec![false]);
+    assert_eq!(discharge_flags(source, "read"), vec![true]);
 }
 
 // ---------------------------------------------------------------------
@@ -6025,7 +6034,7 @@ fn main() -> own unit pure {
 fn a_trapping_offset_establishes_its_equality_unconditionally() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   if ilt(i, 3_u64) {
     let next = i + 1_u64;
     return values[next];
@@ -6040,16 +6049,28 @@ fn main() -> own unit pure {
 "#;
     let summary = entailment(source, "read");
     validate_derivations(&summary);
+    // The subscript's bounds conjunct plus the class site's two overflow
+    // conjuncts: `i + 1_u64` is now a constant-operand-class call, and its
+    // discharged obligation is what makes the S7 equality unconditional.
     assert_eq!(
         summary
             .obligations
             .iter()
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
-        vec![true],
-        "the executed contract check is the proof [ENT-3] S7"
+        vec![true, true, true],
+        "the site's discharged overflow obligation is the proof [ENT-3] S7"
     );
-    assert_root_has_event_kind(&summary, obligation_root(&summary, 0), FlowEventKind::S7);
+    let bounds = summary
+        .obligations
+        .iter()
+        .position(|outcome| outcome.family == ObligationFamily::Bounds)
+        .expect("the subscript attaches one bounds obligation");
+    assert_root_has_event_kind(
+        &summary,
+        obligation_root(&summary, bounds),
+        FlowEventKind::S7,
+    );
 }
 
 #[test]
@@ -6299,7 +6320,7 @@ fn main() -> own unit pure {
 }
 
 #[test]
-fn a_noncomparison_s4_goal_establishes_no_child_l0_fact() {
+fn a_band_s4_goal_establishes_its_conjuncts_at_body_entry() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure requires {
@@ -6317,8 +6338,8 @@ fn main() -> own unit pure {
 "#;
     assert_eq!(
         discharge_flags(source, "read"),
-        vec![false],
-        "S4 establishes the atomic band, not either comparison child"
+        vec![true],
+        "S4 establishes the band's signed decomposition set at body entry"
     );
 }
 

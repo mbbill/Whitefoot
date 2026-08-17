@@ -104,13 +104,17 @@ fn an_operand_type_outside_every_row_is_an_op1_rejection() {
     assert_rule_at(source, SemanticRule::Op1, "f + g");
 }
 
-/// [EFF-2] bare infix arithmetic is the trapping row, so it contributes
-/// `traps` exactly as the named `.trap` spelling did.
+/// [EFF-2] bare infix arithmetic outside [OP-2]'s constant-operand class is
+/// the trapping row, so it contributes `traps` exactly as the named `.trap`
+/// spelling did. Both operands are non-constant here; a site with a constant
+/// operand instead carries the [ENT-6] overflow obligation and contributes
+/// nothing, which `arithmetic_obligations` pins.
 #[test]
 fn bare_arithmetic_contributes_the_traps_effect() {
     let source = br#"fn main() -> own unit pure {
   let a = 20_i32;
-  let b = a + 22_i32;
+  let b = 22_i32;
+  let c = a + b;
   return unit;
 }
 "#;

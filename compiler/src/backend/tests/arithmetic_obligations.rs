@@ -1,8 +1,8 @@
 //! Emission of the arithmetic-mode dissolution [OP-2, ENT-6]: a discharged
 //! constant-operand-class site compiles to the plain exact operation with no
-//! overflow branch, while the same source under the default v0.30 switch
-//! keeps every runtime overflow check. Same-source differential, so the
-//! only variable is the integration switch.
+//! overflow branch, while a two-non-constant site keeps its runtime overflow
+//! check. The switch is on, so the shipped emission is this one; the
+//! forced-on entry must agree with it exactly.
 
 use super::{emit, emit_arithmetic_obligations};
 
@@ -31,27 +31,27 @@ fn overflow_call_count(module: &str) -> usize {
         .count()
 }
 
-/// The switch is the only difference between the two emissions: v0.30 keeps
-/// two overflow branches, the dissolution keeps exactly the two-variable
-/// one and emits the discharged site as a plain `add`.
+/// Exactly the two-variable overflow branch survives, and the discharged
+/// literal-operand site is a plain `add`. The shipped emission and the
+/// forced-on entry are byte-identical: there is one acceptance and lowering
+/// path, not a switchable pair.
 #[test]
 fn a_discharged_class_site_emits_no_overflow_branch() {
-    let baseline = emit(BOTH_CLASSES);
+    let shipped = emit(BOTH_CLASSES);
     assert_eq!(
-        overflow_call_count(&baseline),
-        2,
-        "v0.30 checks both bare additions",
-    );
-    let dissolved = emit_arithmetic_obligations(BOTH_CLASSES);
-    assert_eq!(
-        overflow_call_count(&dissolved),
+        overflow_call_count(&shipped),
         1,
         "the discharged literal-operand site loses its overflow branch",
     );
     assert!(
-        dissolved
+        shipped
             .lines()
             .any(|line| line.trim_start().starts_with('%') && line.contains("= add i64")),
         "the discharged site compiles to the plain exact add",
+    );
+    assert_eq!(
+        shipped,
+        emit_arithmetic_obligations(BOTH_CLASSES),
+        "the shipped path and the forced-on entry are one judgment",
     );
 }
