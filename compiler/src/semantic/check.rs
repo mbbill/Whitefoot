@@ -550,6 +550,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.declare_nominals(&items)?;
         self.collect_constants(&items)?;
         self.complete_nominals()?;
+        self.collect_deferred_nominal_constants(&items)?;
         self.collect_function_signatures(&items)?;
         self.admit_postcondition_selectors()?;
         let nominal_count_before_function_checking = self.nominals.len();
@@ -776,6 +777,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.collect_concrete_function_signatures()
     }
 
+    /// Collects every non-nominal-typed const declaration. Runs before
+    /// nominal completion because a nominal field's array length may name an
+    /// earlier const; nominal-typed const declarations [CONST-2 candidate]
+    /// need completed field inventories and are collected by the second pass
+    /// below.
     fn collect_constants(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
         let nodes = items
             .iter()
@@ -787,9 +793,50 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             })
             .collect::<Vec<_>>();
         for node in nodes {
+            if self.constant_declaration_is_deferred(node)? {
+                continue;
+            }
             self.collect_constant(node)?;
         }
         Ok(())
+    }
+
+    /// Collects the nominal-typed const declarations deferred by the first
+    /// pass, in item order, after `complete_nominals` has filled the field
+    /// inventories they are checked against. CONST-2's declaration-before-use
+    /// rule is unaffected: a non-nominal const can never reference a
+    /// nominal-typed one (a cvalue reference must have the exact expected
+    /// type), so the two passes never reorder a legal dependency.
+    fn collect_deferred_nominal_constants(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
+        let nodes = items
+            .iter()
+            .copied()
+            .filter(|node| {
+                self.tree
+                    .production(*node)
+                    .is_ok_and(|production| production == Production::ConstDecl)
+            })
+            .collect::<Vec<_>>();
+        for node in nodes {
+            if self.constant_declaration_is_deferred(node)? {
+                self.collect_constant(node)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn constant_declaration_is_deferred(&self, node: NodeId) -> Result<bool, CheckStop> {
+        if !super::V031_CANDIDATE_SEMANTICS {
+            return Ok(false);
+        }
+        let ty = self
+            .tree
+            .first_child_with(node, Production::Type)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        Ok(self
+            .tree
+            .direct_token_with(ty, crate::TerminalPredicate::TypeIdentifier)?
+            .is_some())
     }
 
     pub(super) fn collect_constants_for_postconditions(
@@ -808,6 +855,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for node in nodes {
             let declaration = self.declaration_at(node, DeclarationRole::NamedConst)?.id();
             if !self.postcondition_constant_has_links(node)? {
+                self.mark_postcondition_unavailable(declaration);
+                continue;
+            }
+            // A nominal-typed const [CONST-2 candidate] is conservatively
+            // unavailable to the FN-9 selector preflight for now; ordinary
+            // checking collects it through the deferred second pass.
+            if self.constant_declaration_is_deferred(node)? {
                 self.mark_postcondition_unavailable(declaration);
                 continue;
             }
@@ -1840,6 +1894,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 elements: elements
                     .iter()
                     .map(|element| self.instantiate_goal_value(element, signature, regions))
+                    .collect::<Result<Vec<_>, _>>()?,
+            },
+            CheckedValue::Struct { ty, fields } => CheckedValue::Struct {
+                ty: self.instantiate_goal_type(*ty, signature, regions)?,
+                fields: fields
+                    .iter()
+                    .map(|field| self.instantiate_goal_value(field, signature, regions))
                     .collect::<Result<Vec<_>, _>>()?,
             },
         })

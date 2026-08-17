@@ -1135,3 +1135,41 @@ fn main() -> own unit pure {
         assert!(main.entailment.call_goals[1].evidence.is_empty());
     });
 }
+
+/// The OWN-1 bare-affine rejection inside a requires clause carries a
+/// position-conditional mechanical fix [#35]: under v0.30 semantics it is the
+/// ordinary `write move p` instruction, and under the v0.31 candidate switch
+/// it is the clause-specific repair, because [FN-8] rejects `move` itself
+/// inside the block and the ordinary instruction would send the writer from
+/// one hard error to another. The expectation follows the switch, so this
+/// test pins the exact wording on whichever side is shipped.
+#[test]
+fn requires_clause_bare_affine_use_carries_the_clause_conditional_repair() {
+    let expected_fix = if crate::semantic::V031_CANDIDATE_SEMANTICS {
+        "restate the clause over copy operands or non-consuming admitted reads; a requires block admits no `move`"
+    } else {
+        "write `move p` for the affine place"
+    };
+    assert_rule(
+        br#"enum Holder {
+  Value(content: u64);
+}
+
+fn inspect(holder: own Holder) -> own unit pure requires {
+  check eeq(holder, holder) else trap "same holder";
+} {
+  return unit;
+}
+
+fn main() -> own unit pure {
+  let holder = Value(content: 4_u64);
+  let held = inspect(holder: move holder);
+  return unit;
+}
+"#,
+        SemanticRule::Own1,
+        SemanticIssueKind::BareAffineUse {
+            mechanical_fix: expected_fix,
+        },
+    );
+}

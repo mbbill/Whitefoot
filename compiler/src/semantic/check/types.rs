@@ -683,6 +683,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::InvalidConstValue,
             );
         }
+        if self
+            .tree
+            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
+            .is_some()
+        {
+            return self.parse_const_construction(node, expected);
+        }
         let CheckedType::Array { element, length } = expected else {
             return self.issue_node(
                 SemanticRule::Const2,
@@ -715,6 +722,120 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// One construction cvalue [CONST-2 candidate]: `TYPEID(field: cvalue,
+    /// ...)` totally defining a struct-typed constant. The constructor must
+    /// name the expected struct, and the written fields must be the declared
+    /// fields in exact declared order [GRAM-8], each field value a cvalue of
+    /// the declared field type.
+    fn parse_const_construction(
+        &self,
+        node: NodeId,
+        expected: CheckedType,
+    ) -> Result<CheckedValue, CheckStop> {
+        if !crate::semantic::V031_CANDIDATE_SEMANTICS {
+            return self.issue_node(
+                SemanticRule::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        }
+        // Written generic construction arguments in const position are not
+        // implemented yet: valid under the candidate's eligibility relation
+        // only through concrete instances, which this version does not intern
+        // from a cvalue.
+        if self
+            .tree
+            .first_child_with(node, Production::Targs)?
+            .is_some()
+        {
+            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+        }
+        let CheckedType::Nominal(id) = expected else {
+            return self.issue_node(
+                SemanticRule::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        };
+        let (constructor_name, declared_fields) = {
+            let nominal = self.nominal(id)?;
+            let super::super::model::CheckedNominalKind::Struct { fields } = &nominal.kind else {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::InvalidConstValue,
+                );
+            };
+            (nominal.name.clone(), fields.clone())
+        };
+        let expected_template = self
+            .source_nominal_instances
+            .get(id.0 as usize)
+            .and_then(|instance| instance.as_ref().map(|(template, _)| *template))
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let usage = self.use_at(node, LexicalUseRole::Construct)?;
+        let ResolvedTarget::Source { declaration, .. } = usage.target() else {
+            // A prelude or system constructor never names a const-eligible
+            // struct.
+            return self.issue_node(
+                SemanticRule::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        };
+        let written_template = match self.constructor_templates_by_declaration.get(&declaration) {
+            Some(super::ConstructorTemplate::Struct { template }) => *template,
+            _ => {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::InvalidConstValue,
+                );
+            }
+        };
+        if written_template != expected_template {
+            return self.issue_node(
+                SemanticRule::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        }
+        let labels = self.tree.direct_identifiers(node)?;
+        let values = self.tree.children_with(node, Production::Cvalue)?;
+        let declared_field_names = declared_fields
+            .iter()
+            .map(|field| field.name.clone())
+            .collect::<Vec<_>>();
+        if labels.len() != declared_fields.len() || values.len() != declared_fields.len() {
+            return self.issue_node(
+                SemanticRule::Gram8,
+                node,
+                SemanticIssueKind::InvalidConstructionFields {
+                    constructor: constructor_name,
+                    declared_fields: declared_field_names,
+                },
+            );
+        }
+        let mut fields = Vec::with_capacity(declared_fields.len());
+        for ((label, value), declared) in labels.iter().zip(&values).zip(&declared_fields) {
+            if self.tree.token_bytes(*label)? != declared.name.as_bytes() {
+                return self.issue_node(
+                    SemanticRule::Gram8,
+                    node,
+                    SemanticIssueKind::InvalidConstructionFields {
+                        constructor: constructor_name,
+                        declared_fields: declared_field_names,
+                    },
+                );
+            }
+            fields.push(self.parse_const_value(*value, declared.ty)?);
+        }
+        Ok(CheckedValue::Struct {
+            ty: expected,
+            fields,
+        })
+    }
+
     pub(super) fn constant(&self, id: CheckedConstantId) -> Result<&CheckedConstant, CheckStop> {
         self.checked_constants
             .get(id.0 as usize)
@@ -722,10 +843,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     pub(super) fn parse_const_type(&self, node: NodeId) -> Result<CheckedType, CheckStop> {
-        let directly_ineligible = self
-            .tree
-            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-            .is_some()
+        let directly_ineligible = (!crate::semantic::V031_CANDIDATE_SEMANTICS
+            && self
+                .tree
+                .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
+                .is_some())
             || self.has_fixed(node, FixedTerminal::Slice)?
             || self.has_fixed(node, FixedTerminal::Box)?
             || self.has_fixed(node, FixedTerminal::Arena)?
@@ -738,7 +860,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let ty = self.parse_type(node)?;
-        let eligible = match ty {
+        if self.const_eligible_type(ty)? {
+            Ok(ty)
+        } else {
+            self.issue_node(
+                SemanticRule::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            )
+        }
+    }
+
+    /// The CONST-2 const-eligibility relation: a primitive, an array of
+    /// const-eligible flat elements, or — under the v0.31 candidate — a
+    /// source struct whose every field type is const-eligible. Enums, boxes,
+    /// buffers, slices, arenas, and generics remain ineligible (a const is
+    /// pure static rodata: no allocation, no region, no drop).
+    fn const_eligible_type(&self, ty: CheckedType) -> Result<bool, CheckStop> {
+        Ok(match ty {
             CheckedType::Unit | CheckedType::Integer(_) | CheckedType::Float(_) => true,
             CheckedType::Array { element, .. } => {
                 matches!(
@@ -748,22 +887,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         | CheckedFlatElement::Float(_)
                 )
             }
+            CheckedType::Nominal(id) if crate::semantic::V031_CANDIDATE_SEMANTICS => {
+                match &self.nominal(id)?.kind {
+                    super::super::model::CheckedNominalKind::Struct { fields } => {
+                        let fields = fields.iter().map(|field| field.ty).collect::<Vec<_>>();
+                        for field in fields {
+                            if !self.const_eligible_type(field)? {
+                                return Ok(false);
+                            }
+                        }
+                        true
+                    }
+                    _ => false,
+                }
+            }
             CheckedType::Bool
             | CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
             | CheckedType::GenericFloat(_)
             | CheckedType::Nominal(_) => false,
             CheckedType::Slice { .. } | CheckedType::Buffer { .. } => false,
-        };
-        if eligible {
-            Ok(ty)
-        } else {
-            self.issue_node(
-                SemanticRule::Const2,
-                node,
-                SemanticIssueKind::InvalidConstValue,
-            )
-        }
+        })
     }
 
     pub(super) fn checked_flat_element(

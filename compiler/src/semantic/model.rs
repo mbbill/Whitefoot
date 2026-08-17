@@ -288,6 +288,12 @@ pub(crate) enum CheckedValue {
         ty: CheckedType,
         elements: Vec<CheckedValue>,
     },
+    /// One struct-typed constant value [CONST-2 candidate]: the nominal
+    /// instance plus its complete field values in declared order.
+    Struct {
+        ty: CheckedType,
+        fields: Vec<CheckedValue>,
+    },
 }
 
 impl CheckedValue {
@@ -299,6 +305,7 @@ impl CheckedValue {
             Self::Float { ty, .. } => CheckedType::Float(*ty),
             Self::NumericIdentity { ty, .. } => *ty,
             Self::Array { ty, .. } => *ty,
+            Self::Struct { ty, .. } => *ty,
         }
     }
 }

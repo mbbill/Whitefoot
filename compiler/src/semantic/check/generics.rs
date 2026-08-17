@@ -1136,6 +1136,12 @@ fn value_uses_nominal_prefix(value: &CheckedValue, checkpoint: usize) -> bool {
                     .iter()
                     .all(|element| value_uses_nominal_prefix(element, checkpoint))
         }
+        CheckedValue::Struct { ty, fields } => {
+            type_uses_nominal_prefix(*ty, checkpoint)
+                && fields
+                    .iter()
+                    .all(|field| value_uses_nominal_prefix(field, checkpoint))
+        }
         CheckedValue::Unit
         | CheckedValue::Bool(_)
         | CheckedValue::Integer { .. }

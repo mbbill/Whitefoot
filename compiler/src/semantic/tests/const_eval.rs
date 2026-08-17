@@ -19,10 +19,7 @@ use super::{LEX_LIMITS, PARSE_LIMITS, SOURCE_LIMITS};
 #[test]
 fn const_evaluation_covers_the_exact_u64_domain() {
     // In-domain results evaluate exactly.
-    assert_eq!(
-        evaluate_const_operation(ConstOperation::Add, 3, 4),
-        Some(7)
-    );
+    assert_eq!(evaluate_const_operation(ConstOperation::Add, 3, 4), Some(7));
     assert_eq!(
         evaluate_const_operation(ConstOperation::Subtract, 4, 3),
         Some(1)
@@ -66,10 +63,7 @@ fn const_evaluation_rejects_every_out_of_domain_result() {
         evaluate_const_operation(ConstOperation::Multiply, 1_u64 << 32, 1_u64 << 32),
         None
     );
-    assert_eq!(
-        evaluate_const_operation(ConstOperation::Divide, 1, 0),
-        None
-    );
+    assert_eq!(evaluate_const_operation(ConstOperation::Divide, 1, 0), None);
     assert_eq!(
         evaluate_const_operation(ConstOperation::Remainder, 1, 0),
         None

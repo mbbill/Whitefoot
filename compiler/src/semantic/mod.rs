@@ -32,6 +32,18 @@ pub(crate) use model::{
     NominalId, PropagationContext, TrapSite,
 };
 
+/// Master switch for the v0.31 candidate's gated semantic surface:
+/// struct-typed named consts [CONST-2 candidate] and the clause-conditional
+/// OWN-1 bare-affine repair [#35].
+///
+/// `false` ships exact v0.30 semantics; every gated path behaves
+/// byte-identically to the pre-candidate compiler. The lead flips this one
+/// constant to `true` in the same change that lands the v0.31 candidate
+/// specification bytes and the grammar tables regenerated from them — the
+/// const-arithmetic and construction-cvalue grammar shapes are additionally
+/// gated by those tables and need no switch of their own.
+pub(crate) const V031_CANDIDATE_SEMANTICS: bool = false;
+
 /// Numbered rule owning one post-resolution semantic rejection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SemanticRule {
