@@ -23,8 +23,8 @@ test:
 # also #[ignore] but belongs to its own `conformance-run` reporting flow and
 # must not ride along here.
 heavy:
-	$(CARGO) test --lib --locked --offline -- --ignored
-	$(CARGO) test --test programs --locked --offline -- --ignored
+	$(CARGO) test --profile heavy --lib --locked --offline -- --ignored
+	$(CARGO) test --profile heavy --test programs --locked --offline -- --ignored
 
 docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --no-deps --locked --offline

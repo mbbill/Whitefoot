@@ -32,3 +32,13 @@ unsafe_code = "forbid"
 
 [lints.clippy]
 all = "deny"
+
+# Heavy owning tests run compute-bound front-end analysis on real programs;
+# at the default unoptimized test profile that analysis was measured at 136s
+# per wfgrep pass. This profile keeps every debug assertion and overflow
+# check (release would drop them) and changes only code generation, so no
+# test's identity or meaning moves. Used by `make -C compiler heavy`.
+[profile.heavy]
+inherits = "release"
+debug-assertions = true
+overflow-checks = true
