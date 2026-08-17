@@ -386,6 +386,12 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// CLM-2]. Always true outside `check_semantics_dark`, the test-only
     /// observability hook.
     reject_entailment: bool,
+    /// The arithmetic-mode dissolution integration switch: whether a bare
+    /// `+`/`-`/`*` with a constant operand carries an [ENT-6] overflow
+    /// obligation instead of its runtime trap [OP-2]. Follows
+    /// [`ARITHMETIC_OVERFLOW_OBLIGATIONS`] outside the v0.31 candidate
+    /// tests.
+    arithmetic_obligations: bool,
     tree: TreeView<'unit, 'classified, 'lexed, 'source>,
     nominals: Vec<CheckedNominal>,
     nominal_nodes: Vec<Option<NodeId>>,
@@ -417,6 +423,16 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     contracts_by_declaration: HashMap<DeclarationId, usize>,
 }
 
+/// The arithmetic-mode dissolution integration switch [OP-2, ENT-6]: `false`
+/// under the active v0.30 specification, where every bare `+`/`-`/`*`
+/// retains its runtime overflow trap. The v0.31 activation change flips this
+/// one constant to `true`, which attaches the overflow obligation family to
+/// the constant-operand class, drops those sites' trap records and `traps`
+/// effect contribution, and rejects undischarged class sites citing OP-2.
+/// The complete judgment is implemented and tested behind this switch; no
+/// other change participates in activation.
+pub(crate) const ARITHMETIC_OVERFLOW_OBLIGATIONS: bool = false;
+
 /// Checks the currently implemented active-specification semantic family.
 ///
 /// Unsupported language families remain explicit compiler capability results;
@@ -425,7 +441,7 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
 pub fn check_semantics<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true)
+    check_semantics_with(resolved, true, ARITHMETIC_OVERFLOW_OBLIGATIONS)
 }
 
 /// [`check_semantics`] with the [OP-4]/[CLM-2] entailment rejection disabled,
@@ -438,23 +454,39 @@ pub fn check_semantics<'classified, 'lexed, 'source>(
 pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, false)
+    check_semantics_with(resolved, false, ARITHMETIC_OVERFLOW_OBLIGATIONS)
+}
+
+/// [`check_semantics`] with the arithmetic-mode dissolution switch forced
+/// on, so the v0.31 candidate judgment is testable while the shipped switch
+/// stays off under active v0.30. Test-only; the one shipped acceptance path
+/// reads [`ARITHMETIC_OVERFLOW_OBLIGATIONS`].
+#[cfg(test)]
+#[must_use]
+pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'source>(
+    resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+) -> SemanticOutcome<'classified, 'lexed, 'source> {
+    check_semantics_with(resolved, true, true)
 }
 
 fn check_semantics_with<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     reject_entailment: bool,
+    arithmetic_obligations: bool,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
     let preflight = if resolved.postconditions().is_empty() {
         Ok(())
     } else {
-        Checker::new(&resolved, reject_entailment).and_then(|mut checker| {
-            let items = checker.item_declarations()?;
-            checker.preflight_postcondition_selectors(&items)
-        })
+        Checker::new(&resolved, reject_entailment, arithmetic_obligations).and_then(
+            |mut checker| {
+                let items = checker.item_declarations()?;
+                checker.preflight_postcondition_selectors(&items)
+            },
+        )
     };
     let result = preflight.and_then(|()| {
-        Checker::new(&resolved, reject_entailment).and_then(|mut checker| checker.check_program())
+        Checker::new(&resolved, reject_entailment, arithmetic_obligations)
+            .and_then(|mut checker| checker.check_program())
     });
     match result {
         Ok(data) => SemanticOutcome::Complete(Box::new(CheckedProgram {
@@ -496,10 +528,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn new(
         resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
         reject_entailment: bool,
+        arithmetic_obligations: bool,
     ) -> Result<Self, CheckStop> {
         Ok(Self {
             resolved,
             reject_entailment,
+            arithmetic_obligations,
             tree: TreeView::new(resolved)?,
             nominals: Vec::new(),
             nominal_nodes: Vec::new(),
@@ -2207,7 +2241,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
             const fn rule(&self) -> SemanticRule {
                 match self {
-                    Self::Obligation(_) => SemanticRule::Op4,
+                    Self::Obligation(outcome) => match outcome.family {
+                        super::entailment::ObligationFamily::Bounds => SemanticRule::Op4,
+                        super::entailment::ObligationFamily::Overflow => SemanticRule::Op2,
+                    },
                     Self::Call(_) => SemanticRule::Fn8,
                     Self::Claim { .. } => SemanticRule::Clm2,
                 }
@@ -2263,15 +2300,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .tree
                         .node_with_path(&outcome.node_path)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    Err(CheckStop::source_issue(SemanticIssue {
-                        rule: SemanticRule::Op4,
-                        location: SemanticLocation::SourceNode(
-                            outcome.node_path.clone(),
-                            self.tree.coordinate(node)?,
-                        ),
-                        kind: SemanticIssueKind::UndischargedBoundsObligation {
-                            residual,
-                            mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it",
+                    let location = SemanticLocation::SourceNode(
+                        outcome.node_path.clone(),
+                        self.tree.coordinate(node)?,
+                    );
+                    Err(CheckStop::source_issue(match outcome.family {
+                        super::entailment::ObligationFamily::Bounds => SemanticIssue {
+                            rule: SemanticRule::Op4,
+                            location,
+                            kind: SemanticIssueKind::UndischargedBoundsObligation {
+                                residual,
+                                mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it",
+                            },
+                        },
+                        super::entailment::ObligationFamily::Overflow => SemanticIssue {
+                            rule: SemanticRule::Op2,
+                            location,
+                            kind: SemanticIssueKind::UndischargedOverflowObligation {
+                                residual,
+                                mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it, or respell the operation `wrap`, `checked`, or `sat`",
+                            },
                         },
                     }))
                 }

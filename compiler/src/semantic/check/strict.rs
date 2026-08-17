@@ -2,7 +2,8 @@
 //! unasserted entailment view.
 
 use super::super::entailment::{
-    CallGoalCounterfactual, CallGoalDisposition, ClaimDisposition, PostconditionSchedule,
+    CallGoalCounterfactual, CallGoalDisposition, ClaimDisposition, ObligationFamily,
+    PostconditionSchedule,
 };
 use super::super::goal::{first_ephemeral_argument, render_goal};
 use super::super::model::{
@@ -24,6 +25,7 @@ enum StrictFailure {
         function: FunctionId,
         node_path: NodePath,
         residual: String,
+        family: ObligationFamily,
     },
     Call {
         function: FunctionId,
@@ -54,7 +56,14 @@ impl StrictFailure {
 
     fn rule(&self) -> SemanticRule {
         match self {
-            Self::Bounds { .. } => SemanticRule::Op4,
+            Self::Bounds {
+                family: ObligationFamily::Bounds,
+                ..
+            } => SemanticRule::Op4,
+            Self::Bounds {
+                family: ObligationFamily::Overflow,
+                ..
+            } => SemanticRule::Op2,
             Self::Call { .. } | Self::ProgramStart { .. } => SemanticRule::Fn8,
         }
     }
@@ -416,6 +425,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             .residual
                             .clone()
                             .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                        family: outcome.family,
                     });
                 }
                 failures.extend(
@@ -551,19 +561,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let function = &functions[failure.function().0 as usize];
         let location = self.strict_location(failure.node_path())?;
         match failure {
-            StrictFailure::Bounds { residual, .. } => Err(CheckStop::source_issue(SemanticIssue {
-                rule: SemanticRule::Op4,
-                location,
-                kind: SemanticIssueKind::StrictUndischargedBounds(Box::new(
-                    crate::StrictUndischargedBoundsDetail {
-                        residual: residual.clone(),
-                        strict_root,
-                        concrete_function: function.symbol.clone(),
-                        view: crate::StrictProofView::Unasserted,
-                        mechanical_fix: STRICT_REPAIR,
+            StrictFailure::Bounds {
+                residual, family, ..
+            } => {
+                let detail = Box::new(crate::StrictUndischargedBoundsDetail {
+                    residual: residual.clone(),
+                    strict_root,
+                    concrete_function: function.symbol.clone(),
+                    view: crate::StrictProofView::Unasserted,
+                    mechanical_fix: STRICT_REPAIR,
+                });
+                Err(CheckStop::source_issue(match family {
+                    ObligationFamily::Bounds => SemanticIssue {
+                        rule: SemanticRule::Op4,
+                        location,
+                        kind: SemanticIssueKind::StrictUndischargedBounds(detail),
                     },
-                )),
-            })),
+                    ObligationFamily::Overflow => SemanticIssue {
+                        rule: SemanticRule::Op2,
+                        location,
+                        kind: SemanticIssueKind::StrictUndischargedOverflow(detail),
+                    },
+                }))
+            }
             StrictFailure::Call { node_path, .. } => {
                 let outcome = Self::strict_call_outcome(function, node_path)?;
                 let callee = &functions[outcome.callee.0 as usize];

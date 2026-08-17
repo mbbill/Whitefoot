@@ -45,8 +45,9 @@ use std::collections::{BTreeSet, HashMap};
 
 use super::goal::ConcreteGoal;
 use super::model::{
-    BindingId, CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFunction, CheckedMode,
-    CheckedNominal, CheckedSetTarget, CheckedStatement, CheckedType, FunctionId, IntegerType,
+    BindingId, CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFunction,
+    CheckedIntegerOperation, CheckedMode, CheckedNominal, CheckedSetTarget, CheckedStatement,
+    CheckedType, CheckedValue, FunctionId, IntegerType,
 };
 use super::postcondition::CheckedPostcondition;
 use crate::{DeclarationId, NodePath, SemanticCompilerFailure, SyntaxCoordinate};
@@ -148,18 +149,38 @@ impl EntailmentContext<'_> {
     }
 }
 
-/// [ENT-6] disposition of one bounds obligation, judged at its source node.
+/// The [ENT-6] obligation family one outcome belongs to. The bounds family
+/// rejects citing OP-4 at its `psuffix` node; the overflow family rejects
+/// citing OP-2 at its `infix` node. Both share one outcome inventory,
+/// derivation-root namespace, and strict U re-judgment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ObligationFamily {
+    /// A subscript bounds obligation `i < len(P)` [OP-4].
+    Bounds,
+    /// A constant-operand-class bare `+`/`-`/`*` overflow obligation [OP-2].
+    Overflow,
+}
+
+/// [ENT-6] disposition of one obligation conjunct, judged at its source node.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ObligationOutcome {
-    /// The subscript's `psuffix` node the obligation is attached to, by its
-    /// trap record's path — one record per subscript in a chain [ENT-6].
+    /// The subscript's `psuffix` node or the class call's `infix` node the
+    /// obligation is attached to — one record per subscript in a chain and
+    /// one per overflow conjunct [ENT-6].
     pub(crate) node_path: NodePath,
-    /// The current bounds obligation has one upper-bound conjunct, numbered
-    /// zero in the same source-subscript query namespace later tasks extend.
+    /// The obligation family this conjunct belongs to.
+    pub(crate) family: ObligationFamily,
+    /// The bounds obligation has one upper-bound conjunct at ordinal zero;
+    /// the overflow obligation has its upper conjunct at ordinal zero and
+    /// its lower conjunct at ordinal one [ENT-6].
     pub(crate) conjunct: u8,
-    /// Normalized `offset - len(base) <= -1`. `left` is absent only when the
-    /// checked offset is outside ENT-2's term vocabulary; the exact checked
-    /// expression remains recoverable from `node_path` in the same function.
+    /// The normalized conjunct as `left - right <= bound`: the bounds family
+    /// requests `offset - len(base) <= -1`; the overflow family requests
+    /// `operand - Z <= c` at ordinal zero and `Z - operand <= c` at ordinal
+    /// one, with both sides Z for a ground conjunct. `left` is absent only
+    /// when the checked operand is outside ENT-2's term vocabulary; the
+    /// exact checked expression remains recoverable from `node_path` in the
+    /// same function.
     pub(crate) requested: BoundsRequest,
     /// The closed fact state at the node derives the normalized relation.
     pub(crate) discharged: bool,
@@ -181,6 +202,240 @@ pub(crate) struct BoundsRequest {
     pub(crate) left: Option<TermId>,
     pub(crate) right: TermId,
     pub(crate) bound: i128,
+}
+
+/// The bare trapping operation of one [OP-2] constant-operand-class call.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OverflowClassOperation {
+    Add,
+    Subtract,
+    Multiply,
+}
+
+/// [OP-2] constant-operand-class decomposition of one bare trapping `+`,
+/// `-`, or `*` call: the overflow obligation is expressible exactly when at
+/// least one operand atom reads as an [ENT-2] constant. One shared
+/// classifier serves the checker's trap/effect classification and the
+/// flow's obligation judgment, so the two views cannot drift.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum OverflowOperandClass<'expression> {
+    /// One constant operand; the obligation folds onto the other operand.
+    Folded {
+        operation: OverflowClassOperation,
+        /// The constant operand's exact mathematical value.
+        constant: i128,
+        /// The constant occupies the left operand position (`c - t`); the
+        /// distinction matters only for subtraction.
+        constant_is_left: bool,
+        /// The non-constant operand the folded conjuncts bound.
+        operand: &'expression CheckedExpression,
+    },
+    /// Two constant operands; the obligation is ground.
+    Ground {
+        operation: OverflowClassOperation,
+        left: i128,
+        right: i128,
+    },
+}
+
+/// Classifies one integer operation for the [ENT-6] overflow obligation
+/// family. Returns `None` for every operation outside the bare trapping
+/// add/subtract/multiply family and for every such call with two
+/// non-constant operands — the retained trapping class.
+pub(crate) fn overflow_obligation_class(
+    operation: CheckedIntegerOperation,
+    arguments: &[CheckedExpression],
+) -> Option<OverflowOperandClass<'_>> {
+    let operation = match operation {
+        CheckedIntegerOperation::AddTrap => OverflowClassOperation::Add,
+        CheckedIntegerOperation::SubtractTrap => OverflowClassOperation::Subtract,
+        CheckedIntegerOperation::MultiplyTrap => OverflowClassOperation::Multiply,
+        _ => return None,
+    };
+    let [left, right] = arguments else {
+        return None;
+    };
+    let constant = |expression: &CheckedExpression| match expression {
+        CheckedExpression::Constant(CheckedValue::Integer { ty, bits })
+        | CheckedExpression::NamedConstant {
+            value: CheckedValue::Integer { ty, bits },
+            ..
+        } => Some(term::integer_value(*ty, *bits)),
+        _ => None,
+    };
+    match (constant(left), constant(right)) {
+        (Some(left), Some(right)) => Some(OverflowOperandClass::Ground {
+            operation,
+            left,
+            right,
+        }),
+        (Some(constant), None) => Some(OverflowOperandClass::Folded {
+            operation,
+            constant,
+            constant_is_left: true,
+            operand: right,
+        }),
+        (None, Some(constant)) => Some(OverflowOperandClass::Folded {
+            operation,
+            constant,
+            constant_is_left: false,
+            operand: left,
+        }),
+        (None, None) => None,
+    }
+}
+
+/// The two normalized [ENT-6] overflow conjuncts of one class call over one
+/// selected fragment type: ordinal zero the upper bound `operand - Z <=
+/// upper`, ordinal one the lower bound `Z - operand <= lower`. A ground
+/// obligation relates Z to Z on both sides with bound 0 (in range) or -1
+/// (inevitable overflow).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct OverflowConjuncts {
+    pub(crate) upper: i128,
+    pub(crate) lower: i128,
+    /// Both conjuncts relate Z to Z; no operand term participates.
+    pub(crate) ground: bool,
+    /// The exact decimal mathematical result of a ground obligation, for
+    /// the `z outside T` residual rendering.
+    pub(crate) ground_result: Option<GroundResult>,
+}
+
+/// Exact mathematical result of a two-constant class call. A multiply of
+/// two 64-bit magnitudes can exceed `i128`, so magnitude and sign are kept
+/// separately; every value is renderable in decimal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct GroundResult {
+    pub(crate) negative: bool,
+    pub(crate) magnitude: u128,
+}
+
+impl GroundResult {
+    fn from_value(value: i128) -> Self {
+        Self {
+            negative: value < 0,
+            magnitude: value.unsigned_abs(),
+        }
+    }
+
+    fn in_range(self, low: i128, high: i128) -> bool {
+        let Ok(magnitude) = i128::try_from(self.magnitude) else {
+            return false;
+        };
+        let value = if self.negative { -magnitude } else { magnitude };
+        low <= value && value <= high
+    }
+
+    pub(crate) fn render(self) -> String {
+        if self.negative && self.magnitude != 0 {
+            format!("-{}", self.magnitude)
+        } else {
+            format!("{}", self.magnitude)
+        }
+    }
+}
+
+/// Exact-quotient division rounding toward negative infinity.
+const fn floor_div(dividend: i128, divisor: i128) -> i128 {
+    let quotient = dividend / divisor;
+    if dividend % divisor != 0 && ((dividend < 0) != (divisor < 0)) {
+        quotient - 1
+    } else {
+        quotient
+    }
+}
+
+/// Exact-quotient division rounding toward positive infinity.
+const fn ceil_div(dividend: i128, divisor: i128) -> i128 {
+    let quotient = dividend / divisor;
+    if dividend % divisor != 0 && ((dividend < 0) == (divisor < 0)) {
+        quotient + 1
+    } else {
+        quotient
+    }
+}
+
+/// Folds one class call's overflow obligation into its two checker-computed
+/// conjunct constants over the selected fragment type, exactly as [ENT-6]
+/// tabulates: the fold is an equivalence over mathematical integers, never
+/// an approximation. Every intermediate fits `i128` because type extrema
+/// and operand constants are below `2^64` in magnitude, except a ground
+/// multiply, whose exact result keeps magnitude and sign separately.
+pub(crate) fn overflow_conjuncts(
+    class: &OverflowOperandClass<'_>,
+    ty: IntegerType,
+) -> OverflowConjuncts {
+    let (low, high) = term::type_range(ty);
+    let folded = |upper: i128, lower: i128| OverflowConjuncts {
+        upper,
+        lower,
+        ground: false,
+        ground_result: None,
+    };
+    match *class {
+        OverflowOperandClass::Folded {
+            operation: OverflowClassOperation::Add,
+            constant,
+            ..
+        } => folded(high - constant, constant - low),
+        OverflowOperandClass::Folded {
+            operation: OverflowClassOperation::Subtract,
+            constant,
+            constant_is_left: false,
+            ..
+        } => folded(high + constant, -low - constant),
+        OverflowOperandClass::Folded {
+            operation: OverflowClassOperation::Subtract,
+            constant,
+            constant_is_left: true,
+            ..
+        } => folded(constant - low, high - constant),
+        OverflowOperandClass::Folded {
+            operation: OverflowClassOperation::Multiply,
+            constant,
+            ..
+        } => {
+            if constant == 0 {
+                // Zero times anything is zero, in range for every type.
+                OverflowConjuncts {
+                    upper: 0,
+                    lower: 0,
+                    ground: true,
+                    ground_result: Some(GroundResult::from_value(0)),
+                }
+            } else if constant > 0 {
+                folded(floor_div(high, constant), -ceil_div(low, constant))
+            } else {
+                folded(floor_div(low, constant), -ceil_div(high, constant))
+            }
+        }
+        OverflowOperandClass::Ground {
+            operation,
+            left,
+            right,
+        } => {
+            let result = match operation {
+                OverflowClassOperation::Add => {
+                    left.checked_add(right).map(GroundResult::from_value)
+                }
+                OverflowClassOperation::Subtract => {
+                    left.checked_sub(right).map(GroundResult::from_value)
+                }
+                OverflowClassOperation::Multiply => Some(GroundResult {
+                    negative: (left < 0) != (right < 0) && left != 0 && right != 0,
+                    magnitude: left.unsigned_abs() * right.unsigned_abs(),
+                }),
+            }
+            .expect("class constants are below 2^64 in magnitude, so add and subtract fit i128");
+            let bound = if result.in_range(low, high) { 0 } else { -1 };
+            OverflowConjuncts {
+                upper: bound,
+                lower: bound,
+                ground: true,
+                ground_result: Some(result),
+            }
+        }
+    }
 }
 
 /// The two exact S11 proof points retained for one counted statement.
@@ -548,8 +803,11 @@ pub(crate) struct CallGoalCounterfactual {
 /// One bounds result retained from a non-complete ENT proof view [ENT-6].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ViewObligationOutcome {
-    /// The exact protected subscript occurrence consumed by provenance.
+    /// The exact protected subscript occurrence consumed by provenance, or
+    /// the overflow conjunct occurrence consumed by the strict U judgment.
     pub(crate) node_path: NodePath,
+    /// The obligation family this view outcome belongs to.
+    pub(crate) family: ObligationFamily,
     /// Whether the selected counterfactual fact sources discharge it.
     pub(crate) discharged: bool,
     /// The ordinary canonical residual when it remains undischarged.
@@ -684,6 +942,12 @@ impl FunctionEntailment {
     }
 
     /// Retains one already-successful protected-obligation U proof.
+    ///
+    /// An overflow obligation [OP-2] holds two conjunct outcomes at one
+    /// `infix` node path; registration runs only after the strict closure
+    /// reported no failure, so every same-path conjunct is discharged, and
+    /// the retained root carries the least conjunct's proof. The other
+    /// conjunct's U proof stays on its `ViewObligationOutcome`.
     pub(crate) fn register_strict_obligation(
         &mut self,
         node_path: &NodePath,
@@ -869,6 +1133,21 @@ pub(crate) fn build_claim_ledger(
                     continue;
                 }
                 let use_provenance = match root.kind {
+                    state::DerivationRootKind::BoundsObligation(ordinal)
+                        if function
+                            .entailment
+                            .obligations
+                            .get(ordinal as usize)
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                            .family
+                            == ObligationFamily::Overflow =>
+                    {
+                        // The overflow family attaches base discharge only:
+                        // no provenance judgment exists for its occurrences
+                        // [OP-2, ENT-6], so a supporting claim records the
+                        // use with no leaf disposition.
+                        ClaimUseProvenance::NotApplicable
+                    }
                     state::DerivationRootKind::BoundsObligation(ordinal) => {
                         let outcome = function
                             .entailment

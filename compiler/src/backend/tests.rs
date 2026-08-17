@@ -1,5 +1,6 @@
 #![allow(clippy::panic)]
 
+mod arithmetic_obligations;
 mod arrays;
 mod base64;
 mod buffers;
@@ -35,8 +36,8 @@ use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
     HOST_OPTIMIZATION_ARGUMENTS, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome,
     SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical,
-    check_semantics, classify_terminals, compile as compile_program, emit_llvm, finalize,
-    lower_checked, parse, resolve,
+    check_semantics, check_semantics_arithmetic_obligations, classify_terminals,
+    compile as compile_program, emit_llvm, finalize, lower_checked, parse, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -112,6 +113,47 @@ fn emit(source: &[u8]) -> String {
     };
     let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
         panic!("backend test source must check");
+    };
+    let ir = lower_checked(*checked).expect("checked program must lower");
+    emit_llvm(&ir)
+        .expect("lowered program must emit")
+        .into_string()
+}
+
+/// [`emit`] through the test-only checker entry that forces the
+/// arithmetic-mode dissolution switch on [OP-2, ENT-6], so the emitted
+/// module of the v0.31 candidate judgment can be compared against the
+/// default v0.30 emission of the same source.
+fn emit_arithmetic_obligations(source: &[u8]) -> String {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("backend test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("backend test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("backend test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("backend test source must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("backend test source must be canonical");
+    };
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+        panic!("backend test source must resolve");
+    };
+    let SemanticOutcome::Complete(checked) = check_semantics_arithmetic_obligations(resolved)
+    else {
+        panic!("backend test source must check under the arithmetic switch");
     };
     let ir = lower_checked(*checked).expect("checked program must lower");
     emit_llvm(&ir)
