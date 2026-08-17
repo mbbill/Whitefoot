@@ -136,12 +136,16 @@ unjustified `0..20` stability loop cut to two named re-analyses; the
 56-pair integer-conversion sweep sampled to 15 emitter classes with an
 add-an-arm-add-a-row sentinel; the duplicate DEFLATE provenance pass
 absorbed into the frozen-corpus walk with cross-referenced guards.
-Final: `make check` 1m28s cold-ish / 1m08s warm, `make check-heavy`
-2m38s, both exit 0 — from ~50 minutes combined. Zero tests deleted,
-zero assertions weakened; one test renamed to stop overclaiming. The
-rule is codified in WORKFLOW.md Evidence discipline. Base64's duplicate
-execution with `conformance-run` is a protected dedup left on the
-owner-decision list (#44).
+The owner then dissolved the split itself: with the repairs landed the
+former heavy population runs in ~2.5 minutes, so one unified gate at
+the optimized `gate` profile (debug assertions retained) replaced the
+fast/heavy pair — green means everything again, no footnote. Final:
+`make check` 3m40s including the one-time profile build, exit 0, zero
+ignored outside the conformance adapter — from ~50 minutes. Zero tests
+deleted, zero assertions weakened; one test renamed to stop
+overclaiming. The rule is codified in WORKFLOW.md Evidence discipline.
+Base64's duplicate execution with `conformance-run` is a protected
+dedup left on the owner-decision list (#44).
 
 ### Deferred deliberately
 
