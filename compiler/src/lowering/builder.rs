@@ -409,6 +409,12 @@ impl<'program> IrBuilder<'program> {
                     context,
                 )?,
                 CheckedStatement::Set { target, value, .. } => self.set(target, value)?,
+                CheckedStatement::Replace {
+                    binding,
+                    target,
+                    value,
+                    ..
+                } => self.replace(*binding, target, value)?,
                 CheckedStatement::Evaluate(expression) => {
                     self.expression(expression)?;
                 }
@@ -1145,6 +1151,48 @@ impl<'program> IrBuilder<'program> {
                 ))
             }
         }
+    }
+
+    /// [SET-2]: read the previous value out of the target place into the
+    /// fresh binding, then perform exactly the [SET-1] store of the
+    /// replacement. The read-out precedes the store, so no program point
+    /// observes an empty place, and nothing is dropped.
+    fn replace(
+        &mut self,
+        binding: BindingId,
+        target: &CheckedSetTarget,
+        value: &CheckedExpression,
+    ) -> Result<(), LoweringFailure> {
+        let root_binding = target.binding();
+        let storage = self
+            .bindings
+            .get(&root_binding)
+            .copied()
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let root = self.load_storage_value(storage)?;
+        let previous = match target {
+            CheckedSetTarget::Place(place) => {
+                if place.fields.is_empty() {
+                    root
+                } else {
+                    self.project_struct_path(root, &place.fields, false)?
+                }
+            }
+            // Element-position replacement requires an affine element type,
+            // which has no v0 constructor; the checker cannot produce these
+            // targets today [SET-2, TYPE-2].
+            CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::BufferIndex(_) => {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
+        };
+        if self.value_type(previous)? != lower_type(target.ty())? {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        if self.bindings.insert(binding, previous).is_some() {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        self.promote_binding_if_needed(binding)?;
+        self.set(target, value)
     }
 
     fn set(

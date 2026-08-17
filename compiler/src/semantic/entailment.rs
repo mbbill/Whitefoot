@@ -1144,7 +1144,8 @@ fn collect_statement_calls(
             CheckedStatement::PropagateLet { scrutinee, .. } => {
                 collect_expression_calls(caller, scrutinee, calls);
             }
-            CheckedStatement::Set { target, value, .. } => {
+            CheckedStatement::Set { target, value, .. }
+            | CheckedStatement::Replace { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
                     CheckedSetTarget::ArrayIndex(target) => {

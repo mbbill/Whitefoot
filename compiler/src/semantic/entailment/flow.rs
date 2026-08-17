@@ -2235,7 +2235,8 @@ impl Analyzer<'_, '_> {
             | CheckedStatement::PropagateLet {
                 scrutinee: value, ..
             } => self.expression_writes_place(value, place),
-            CheckedStatement::Set { target, value, .. } => {
+            CheckedStatement::Set { target, value, .. }
+            | CheckedStatement::Replace { target, value, .. } => {
                 self.expression_writes_place(value, place)
                     || self.set_target_writes_place(target, place)
             }
@@ -2277,6 +2278,7 @@ impl Analyzer<'_, '_> {
             CheckedStatement::Let { .. }
             | CheckedStatement::PropagateLet { .. }
             | CheckedStatement::Set { .. }
+            | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. }
             | CheckedStatement::Check { .. }
@@ -2547,6 +2549,13 @@ impl Analyzer<'_, '_> {
                 } => {
                     let summary = self.summary_mut(*binding);
                     summary.ty = Some(*ok_type);
+                    summary.delivery_carrier = true;
+                }
+                CheckedStatement::Replace {
+                    binding, target, ..
+                } => {
+                    let summary = self.summary_mut(*binding);
+                    summary.ty = Some(target.ty());
                     summary.delivery_carrier = true;
                 }
                 CheckedStatement::ValueMatchLet {
@@ -5165,6 +5174,22 @@ impl Analyzer<'_, '_> {
                 let _ = self.walk_set(node_path, target, value, false, state);
                 true
             }
+            CheckedStatement::Replace {
+                node_path,
+                binding,
+                target,
+                value,
+            } => {
+                // [SET-2, ENT-5]: the commit's kill events are exactly a Set
+                // commit's on the same resolved target — a whole-place
+                // replace kills the covered length facts and an
+                // element-position replace spares them — and the commit
+                // establishes nothing. The fresh old-value binding is
+                // declared and carries no fact.
+                let _ = self.walk_set(node_path, target, value, false, state);
+                self.declare(*binding);
+                true
+            }
             CheckedStatement::Evaluate(value) | CheckedStatement::DropExpression { value, .. } => {
                 let _ = self.expression_effects(value, state);
                 true
@@ -5754,6 +5779,7 @@ impl Analyzer<'_, '_> {
             CheckedStatement::Let { .. }
             | CheckedStatement::PropagateLet { .. }
             | CheckedStatement::Set { .. }
+            | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. }
             | CheckedStatement::Check { .. }
@@ -5859,6 +5885,12 @@ impl Analyzer<'_, '_> {
                 node_path,
                 target,
                 value,
+            }
+            | CheckedStatement::Replace {
+                node_path,
+                target,
+                value,
+                ..
             } => {
                 if normal_reaches {
                     self.collect_set_kills(node_path, target, value, kills);

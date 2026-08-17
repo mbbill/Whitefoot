@@ -49,7 +49,9 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
         topology.node(*child).is_some_and(|nested| {
             matches!(
                 nested.production,
-                Production::OrdinaryLetRhs | Production::PropagateLetRhs
+                Production::OrdinaryLetRhs
+                    | Production::PropagateLetRhs
+                    | Production::ReplaceLetRhs
             )
         })
     }))
