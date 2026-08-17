@@ -499,9 +499,10 @@ pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
 }
 
 /// [`check_semantics`] with the arithmetic-mode dissolution switch forced
-/// on, so the v0.31 candidate judgment is testable while the shipped switch
-/// stays off under active v0.30. Test-only; the one shipped acceptance path
-/// reads [`ARITHMETIC_OVERFLOW_OBLIGATIONS`].
+/// on. [`ARITHMETIC_OVERFLOW_OBLIGATIONS`] is now `true` under the v0.31
+/// candidate, so this entry selects the same judgment as the shipped path
+/// and the callers naming it record which judgment they mean. Test-only; the
+/// one shipped acceptance path reads that constant.
 #[cfg(test)]
 #[must_use]
 pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'source>(
@@ -510,10 +511,11 @@ pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'sourc
     check_semantics_with(resolved, true, true, REBORROW_EXTENSION_ACTIVE)
 }
 
-/// [`check_semantics`] with the v0.31-candidate reborrow extension admitted,
-/// so tests can exercise the implemented extension while the shipped switch
-/// [`REBORROW_EXTENSION_ACTIVE`] keeps v0.30 semantics. Test-only: the
-/// shipped acceptance behavior has exactly one path.
+/// [`check_semantics`] with the v0.31-candidate reborrow extension admitted.
+/// [`REBORROW_EXTENSION_ACTIVE`] is now `true`, so this entry selects the
+/// same judgment as the shipped path and the callers naming it record which
+/// judgment they mean. Test-only: the shipped acceptance behavior has exactly
+/// one path.
 #[cfg(test)]
 #[must_use]
 pub(crate) fn check_semantics_reborrow_extension<'classified, 'lexed, 'source>(

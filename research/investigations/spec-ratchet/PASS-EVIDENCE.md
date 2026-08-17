@@ -4,12 +4,14 @@ Batch 0070, W5. Base `spec/kernel-spec.md` at v0.30, SHA-256
 `5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1` (resolved
 with `shasum -a 256`, not copied forward).
 
-Disposition of this directory: `verify-delta.rs` is a one-shot pinned to that
-digest and to the hunks in `DELTA-DIAG1.md`. Delete the whole directory in the
-same change that integrates the deltas into the v0.31 candidate or abandons
-them; nothing outside it reads these files.
+Disposition of this directory: the ratchet deltas R1-R4 integrated into the
+v0.31 candidate, and `verify-delta.rs` — a one-shot pinned to the digest above
+and to those hunks — was deleted with them, as its own docstring required. The
+`DELTA-DIAG1.md` fences are the part still awaiting an owner decision, so this
+record and that file stay until it is made; delete both in the change that
+lands or abandons the fences. Nothing outside this directory reads these files.
 
-## Commands
+## Commands (as run, before the verifier was deleted)
 
 ```
 rustc -O --edition 2021 -o /tmp/verify-delta research/investigations/spec-ratchet/verify-delta.rs

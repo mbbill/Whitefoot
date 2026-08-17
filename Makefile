@@ -4,7 +4,8 @@
 # recorded chain. Everything else is guarded by AGENTS.md/CLAUDE.md. A green
 # gate states only what it exercises: `check` exercises corpus structure and
 # declared coverage, not every case's verdict. Verdicts are `conformance-run`,
-# which is reported independently and is not yet green.
+# which is reported independently and passes with no failing case; its exact
+# tally is printed by that run and is not baked into this file.
 
 PY := python3 -B
 

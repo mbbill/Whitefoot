@@ -20,11 +20,14 @@
 //! redirection, and the process's own exit status or abort is the verdict.
 //! Nothing about a case's identity, name, or family selects a path here.
 //!
-//! The corpus-wide run is `#[ignore]`d, and that is a reported blocker rather
-//! than a scoping choice — see the `#[ignore]` reason on the test itself and
-//! `docs/done/0014-first-slice-conformance-execution.md`. The adapter
-//! excludes no case, weakens no expectation, and skips nothing the manifest
-//! does not itself mark `pending`; running it prints the complete tally.
+//! The corpus-wide run is `#[ignore]`d for cost, not for a blocker: it drives
+//! every case through compilation, linking, and execution, so it is kept out
+//! of the default `cargo test` run and invoked by `make conformance-run` with
+//! `--ignored` — that wiring and the attribute are one unit. See the
+//! `#[ignore]` reason on the test itself for the current tally and the
+//! resolved former blocker. The adapter excludes no case, weakens no
+//! expectation, and skips nothing the manifest does not itself mark
+//! `pending`; running it prints the complete tally.
 
 use std::collections::BTreeMap;
 use std::io::Write;

@@ -1,7 +1,10 @@
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
 use super::super::model::{CheckedExpression, CheckedMode, CheckedSetTarget, CheckedStatement};
-use super::{assert_rule, assert_rule_extension, with_semantics, with_semantics_extension};
+use super::{
+    assert_rule, assert_rule_extension, assert_unsupported, with_semantics,
+    with_semantics_extension,
+};
 
 pub(super) const BORROWED_COLUMNS: &[u8] =
     include_bytes!("../../../../tests/conformance/cases/x-buffer-borrowed-columns-run.wf");
@@ -874,6 +877,53 @@ fn non_admitted_reborrow_forms_are_own14_hard_errors() {
         SemanticIssueKind::InvalidReborrowPosition {
             mechanical_fix: RESTRUCTURING,
         },
+    );
+}
+
+/// The companion to the OWN-14 rejections above: a `box` binding is own mode,
+/// so a borrow of its content is not a reborrow form at all and never reaches
+/// OWN-14's disposition. It is judged by [OWN-10]'s own-mode-binding case —
+/// the borrow region must be introduced within the binding's scope and never
+/// caller-supplied — and then stops explicitly, because the box binding lowers
+/// to the content pointer under the box's own IR type and nothing addresses
+/// the content itself. Before the dispatch fix these programs reported TYPE-7
+/// "deref requires a borrow holder" against source that wrote no holder.
+#[test]
+fn box_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
+    assert_unsupported(
+        br#"fn bump['r](n: &uniq 'r i32) -> own unit writes('r) {
+  set deref(n) = 42_i32;
+  return unit;
+}
+
+fn main() -> own unit allocates(heap), traps {
+  let b = box_new(4_i32);
+  region 'c {
+    bump<'c>(n: &uniq 'c deref(b));
+  }
+  return unit;
+}
+"#,
+        UnsupportedSemanticFeature::RegionsAndBorrows,
+    );
+    assert_rule(
+        br#"fn hold['s](n: &uniq 's i32) -> own unit writes('s) {
+  set deref(n) = 1_i32;
+  return unit;
+}
+
+fn outer['s]() -> own unit allocates(heap) {
+  let b = box_new(4_i32);
+  hold<'s>(n: &uniq 's deref(b));
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRule::Own10,
+        SemanticIssueKind::InvalidBorrowLifetime,
     );
 }
 
