@@ -1104,3 +1104,23 @@ ARCHIVE-SPEC: v0.8 d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba29532
 - process boundary: `docs/current-plan.md` is one owner-approved high-level undertaking that may decompose into many autonomous `planned` / `ongoing` / `done` tasks. The lead may register and execute bounded prerequisites, repairs, and research side tasks without another owner round when they support rather than change that plan. A material change to the plan's direction, boundary, acceptance, or stop condition returns to `PROPOSED` and owner review.
 - protected boundary: every specification batch and every addition or change to protected conformance or equivalent compliance evidence remains explanation-first and requires explicit owner approval of the named candidate boundary. Ordinary compiler implementation, ordinary tests, task lifecycle, integration, documentation, and closure inside the active plan do not.
 - historical effect: this replaces the rolling one-small-step interpretation that repeatedly sought owner selection for Stage-level execution items. Historical plan, specification, and protected-evidence approvals remain records of their own exact changes; this entry approves no new language or conformance byte.
+
+## 2026-08-17 — OWNER APPROVAL: batch 0068 merge, P1 gate wiring, batch-loop process law
+- owner: **the owner, in conversation, 2026-08-17** — "可以，开干吧。……不过在这之前似乎要把目前的分支提到main。我看了你之前给我的那个文档，感觉ok。" The reply followed the batch review
+  document (docs/done/0068) enumerating every commit and its approval class,
+  and the explain-code walkthrough page of the complete main..spec-rework
+  diff.
+- APPROVED: merging branch spec-rework to main at merge commit `657abaf`;
+  the P1 protected gate-wiring commits (`196ce0f` candidate mode,
+  `526225e` candidate composition, `75899f2` sub-id coverage semantics,
+  `d1cb4a1`/`09e4cff` gate collection changes ordered by the owner in
+  conversation); the root-entry law restoration (`4bf6f79`); the batch-loop
+  process law replacing per-task lifecycle coordination (`6f2e6f8`),
+  direction stated by the owner: 快速推进,轻流程,批尾对抗审计兜底.
+- NOT APPROVED BY THIS ENTRY: activation of the v0.30 candidate. The
+  candidate rides main as a declared candidate under the lineage rules; its
+  activation requires a separate exact-byte approval naming SHA-256
+  db2b4b6906f6309a4fe04568fa5c2beb0fecfae72405591872e6e9c6c70c5ef2.
+- boundary: the merge commit and the named commits; no conformance verdict
+  changed in this batch; the coverage-semantics commit restores the
+  pre-batch denominator (133) rather than altering it.
