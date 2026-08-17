@@ -1,6 +1,6 @@
 # Kernel Specification v0.31
 
-Status: CANDIDATE v0.31 supersedes v0.30 5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1 (2026-08-17; spec delta: rules +1 [SET-2], operations +1 `buffer_vacant`, tokens +2 `replace` `buffer_vacant`, spellings +1 `replace_let_rhs`, exceptions ±0 — the OWN-5 replace admission is a positive commit rule; evidence-selected: the recorded §5 take/replace collection blocker and the batch-0070 growable-vector, byte-string, and affine-element consumers).
+Status: CANDIDATE v0.31 supersedes v0.30 5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1 (2026-08-17; spec delta over five integrated batch-0070 workstreams — [SET-2] affine-place replacement, the [ENT-6] constant-operand overflow obligation family, the reborrow extension, [ENT-3] signed Boolean decomposition, and one-operation const arithmetic with struct-typed consts: numbered rules +1/-0 ([SET-2]), rule inventory 134; twenty-nine existing rules modified — FORM-2, GRAM-4, TYPE-2, TYPE-5, CONST-1, CONST-2, OWN-1, OWN-5, OWN-6, OWN-9, OWN-12, OWN-14, STOR-1, STOR-3, OP-1, OP-2, OP-9, FN-1, FN-8, EFF-2, DIAG-2, DIAG-3, CLM-2, CLM-3, ENT-1, ENT-3 (with S3, S4, S6, S7, S12), ENT-4, ENT-5, ENT-6; obligation families +1 (the constant-operand overflow family, upper conjunct at ordinal zero and lower at ordinal one, base discharge only); operations +1 `buffer_vacant`; tokens +2 `replace` `buffer_vacant`; fixed terminal spellings +1 `replace_let_rhs`; grammar productions +1 (`replace_let_rhs`; total 74), decisions +5 (total 96), terminal predicates +1 (total 99) — the `const` and `cvalue` fences change shape without adding a production; exceptions +2 (OWN-6's candidate-position result-mode and region exceptions); deferral items -3 (affine-element buffers, reborrows rooted at a call-result borrow, const arithmetic) with two narrowed (grandchild chains to the bound-direct-reborrow form; struct/enum-typed consts to enum-typed consts and written generic construction arguments); and four restatements in ENT-3.S3, ENT-3.S12, DIAG-2, and ENT-6 replaced by references to the rules that already own them, -547 B with no normative change; evidence-selected: the recorded §5 take/replace collection blocker with the batch-0070 growable-vector, byte-string, and affine-element consumers; the recorded obligation-discharge measurement that two thirds of live trapping sites carry a constant operand while two-variable accumulators are unprovable by any closure rule; the standing binary-trees recursive-arena revival candidate with the wfc through-holder census; the O11 Boolean-guard discharge corpus sweep; and finding #35 of the batch-0068 audit).
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -476,35 +476,41 @@ The checked program retains the exact target path, each discharged target check,
 [CONST-1] The grammar production `const` of the fence below is usable at `array<T, N>` sizes and `const` targs.
 
 ```wf-ebnf CONST-1
-const := "[0-9]+" | IDENT
+const := ("[0-9]+" | IDENT) (infix_op ("[0-9]+" | IDENT))?
 ```
 
 A decimal integer literal is bare and u64 by position; an IDENT names an in-scope integer-typed const-generic parameter [GRAM-2] or a top-level integer-typed named-const item [CONST-2].
-The set is closed and total: no operators, no calls, no in-language computation in v0.
+A const-expression is at most one operation over two terms, exactly the shape [GRAM-6] fixes for expressions: composition is by a named const or a forwarded const parameter, and no precedence, associativity, or parenthesization surface exists.
+The tail reuses `infix_op`, and its spelling must be one of the five bare operators `+`, `-`, `*`, `/`, `%`; a mode-suffixed spelling is a hard error citing CONST-1 at the `infix_op` node, because const evaluation has no runtime overflow mode — the grammar admits and the checker restricts, META-2-clean by the `break` precedent [GIVE-1].
 Constant-expressions are evaluated at monomorphization [FN-2].
 An IDENT resolving to a non-integer or array-typed const is a compile-time rejection [DIAG-1].
-This closes the const-generic forwarding path: `const N` is usable as an `array<T, N>` size and forwardable as a `const` targ.
-Const arithmetic is DEFERRED with recorded delta; when added it carries a distinct const-eval overflow-policy name, does not overload the runtime `.trap` OPNAMEs, and is excluded from EFF-2's exhibits-traps relation.
+Const evaluation is exact in the unsigned 64-bit domain under the const-eval overflow policy named `const-reject`: an operation whose mathematical result lies outside that domain, or whose divisor is zero, is a compile-time rejection citing CONST-1 at the complete `const` node.
+`const-reject` is disjoint from the runtime arithmetic modes: it never overloads a runtime `.trap` OPNAME or a bare infix trap row, an accepted const-expression executes no runtime check and cannot trap, and a const-expression never enters EFF-2's exhibits-traps relation.
+Inside a generic template an unevaluated const-expression is symbolic; two symbolic const-expressions are identical exactly when their operation and ordered terms are identical, with no commutation, constant folding, or reassociation, exactly as [FN-8] fixes goal identity.
+This keeps the const-generic forwarding path closed under the one operation: `const N` is usable as an `array<T, N>` size, and a derived expression such as `N * 2` is usable there and forwardable as a `const` targ, with each concrete instantiation evaluating it to one u64 value.
 
 [CONST-2] A `const IDENT: type = cvalue;` item declares an immutable, program-lifetime, read-only static value, with the `cvalue` production of the fence below.
 
 ```wf-ebnf CONST-2
-cvalue := literal | IDENT | "[" cvalue ("," cvalue)* "]"
+cvalue := literal | IDENT | "[" cvalue ("," cvalue)* "]" | TYPEID targs? "(" (IDENT ":" cvalue ("," IDENT ":" cvalue)*)? ")"
 ```
 
-`type` must be const-eligible: a primitive [TYPE-1], or `array<T, N>` of const-eligible T; `box`, `buffer`, `arena`, and `slice` are not const-eligible (a const is pure static rodata: no allocation, no region, no drop).
-The `cvalue` totally defines the value (T1): a primitive-typed const takes a FORM-5 numeric or unit literal or an IDENT naming an earlier const of that exact type; an `array<T, N>`-typed const takes `[cvalue, ..., cvalue]` with exactly N entries, each of type T.
+`type` must be const-eligible: a primitive [TYPE-1], `array<T, N>` of const-eligible T, or a source `struct` whose every field type is const-eligible; enums, `box`, `buffer`, `arena`, and `slice` are not const-eligible (a const is pure static rodata: no allocation, no region, no drop).
+The `cvalue` totally defines the value (T1): a primitive-typed const takes a FORM-5 numeric or unit literal or an IDENT naming an earlier const of that exact type; an `array<T, N>`-typed const takes `[cvalue, ..., cvalue]` with exactly N entries, each of type T, and a struct-typed const takes the construction form `TYPEID(field: cvalue, ...)` naming its exact struct and writing every declared field in declared order [GRAM-8], each field value a cvalue of the declared field type.
 The const-dependency graph is acyclic and declaration-before-use [TYPE-6]; evaluation is substitution and layout only.
 A const item is never `move`d, `set`, or `&uniq`-borrowed.
 It is read via subscript/`len` (copy-out for copy elements) or shared-borrowed `&'r p` in any region [OWN-10], so a const table may be `slice_of`-viewed and passed to a consumer.
-Struct/enum-typed consts are DEFERRED with recorded delta.
+A struct-typed const is additionally read via its field suffixes exactly as subscript reads: a copy-scalar selection copies out, and a composite selection keeps the whole-composite read rules.
+A struct-typed const is laid out as one read-only static aggregate in the nominal's ordinary representation.
+Enum-typed consts and written generic construction arguments in const position are DEFERRED with recorded delta: a payload-enum const has no non-consuming read path (a `match` scrutinee is an own place [OWN-13]), and a tag-only-enum const additionally needs a constant-value family no current program demands.
 
 ## 5. Ownership, regions, borrows (PROVISIONAL pending formal-calculus reconciliation)
 
 [OWN-1] Every value has exactly one owner.
 Values are classified copy or affine: primitives (TYPE-1), shared borrows, and tag-only enums (every variant nullary; `Bool` is the canonical case) copy on use; all other values (owned composites, `box`, `arena`, `slice` as `&uniq`, uniq borrows) are affine.
 An affine place rooted in a live own-mode binding is consumed exactly once by an explicit `move p`, by use as an own-place match scrutinee under [OWN-13], or by use as the direct bare affine `Result<T, E>` place operand of `propagate` under [ERR-3].
-Every other bare `place` expression of affine type is a hard error (write `move p`), and `move p` on a copy value is a hard error (copy values are used bare — one spelling per meaning, FORM-1).
+Every other bare `place` expression of affine type is a hard error, and `move p` on a copy value is a hard error (copy values are used bare — one spelling per meaning, FORM-1).
+The bare-affine mechanical fix is position-conditional: outside a `requires` block it is write `move p`, while inside a `requires` block, where [FN-8] rejects `move` itself, it is restate the clause over copy operands or non-consuming admitted reads, so the repair never instructs a spelling FN-8 forbids.
 Resolving and evaluating the target of SET-1 or SET-2 does not by itself read, copy, or move the selected value or its affine owner.
 After any consuming use, the whole binding rooting `p` is dead (partial moves kill the whole binding); any later use, write, or `set` of a dead binding is an error at the later use or target place — reinitialization requires a new `let`.
 The [SET-2] replace commit is not a consuming use: it exchanges the stored value, leaves the target root live, and initializes its fresh binding as the moved-out value's sole owner.
@@ -523,13 +529,13 @@ Distinct caller-supplied regions are incomparable: any rule requiring an order b
 It may be stored into a destination of declared region `'b`, passed to a parameter of region `'b`, or returned as `rtype` region `'b`, only if `'a` outlives-or-equals `'b`.
 
 [OWN-5] Resolved-place exclusivity.
-While `&uniq 'a p` is live and its holder is not suspended [OWN-6]: no place overlapping resolved(`p`) may be read, written, moved, or borrowed, except reads/writes through that borrow's holder and except the creation of a statement-scoped child reborrow, an arm-scoped child reborrow, or a returned reborrow of that holder [OWN-6, OWN-13, OWN-14].
-While a holder is suspended (a live statement-scoped child, arm-scoped child, or returned reborrow of it exists), its own read/write allowance is withdrawn: no read, write, move, copy, `set` commit, or call-transfer through it is admitted until its last child ends.
+While `&uniq 'a p` is live and its holder is not suspended [OWN-6]: no place overlapping resolved(`p`) may be read, written, moved, or borrowed, except reads/writes through that borrow's holder and except the creation of a statement-scoped child reborrow, an arm-scoped child reborrow, a candidate-position child reborrow, or a returned reborrow of that holder [OWN-6, OWN-13, OWN-14].
+While a holder is suspended (a live statement-scoped child, arm-scoped child, candidate-position child, or returned reborrow of it exists), its own read/write allowance is withdrawn: no read, write, move, copy, `set` commit, or call-transfer through it is admitted until its last child ends; a `&uniq` holder suspended by candidate-position child creation does not resume — its claim may survive in the bound call result [OWN-6].
 While any `&'a p` is live: no place overlapping resolved(`p`) may be written, moved, uniq-borrowed, or committed by `set`; reads are permitted.
 A SET-1 commit is one write to resolved(target), and a [SET-2] commit is one read and one write to resolved(target); each is judged against the complete loan state after right-hand-side evaluation.
 A commit through a live usable `&uniq` holder is a write through that holder; a commit through a shared holder is never admitted.
 Content reached through any borrow may never be moved: `move` requires a place rooted at an own-mode binding, and the [SET-2] replace commit is the sole exception, sound because the exchange leaves no program point at which the referent place lacks exactly one valid owner.
-Exclusivity invariant, checked unconditionally: no two live usable `&uniq` borrows have overlapping resolved places; a suspended holder is not usable, so the only overlapping pair, a suspended parent and its statement-scoped child, arm-scoped child, or returned reborrow, is never both-usable by construction.
+Exclusivity invariant, checked unconditionally: no two live usable `&uniq` borrows have overlapping resolved places; a suspended holder is not usable, so the only overlapping pairs — a suspended parent with its statement-scoped child, arm-scoped child, candidate-position child, bound call-result holder, or returned reborrow — are never both-usable by construction.
 
 Every `slice<'r, T>` value carries a finite set of possible ultimate storage origins.
 While one function body is checked, an origin is one resolved source place, the distinguished `immutable-const` origin, or a formal-slice origin naming one of that function's parameters whose direct written type is `slice<'r, T>`.
@@ -553,10 +559,18 @@ Under this specification's named-region liveness, moving or returning a descript
 [OWN-6] Holder, resolution, and statement-scoped child reborrow.
 The holder of a borrow is the binding its `borrow_expr` initializes (a borrow not bound by `let` is a call-scoped temporary, live until the end of the enclosing statement). resolved(place) rewrites a place rooted at a holder binding to the borrowed place plus the appended suffix, recursively.
 All OWN-5/OWN-7 judgments use resolved places.
-A statement-scoped child reborrow is the written form `&uniq 'c` or `&'c` over `deref(h)` followed by any written suffix chain, occurring as an argument atom of a `call` expression [GRAM-9], admitted only when: the receiving call's result mode is `own` or `unit`, never a borrow; `'c` is a locally-introduced region [OWN-3] whose block does not extend beyond the enclosing statement, and a caller-supplied region parameter is not admitted; the eligible holder `h` is a function parameter or a `let`-bound borrow, never a `match` binder; and a `uniq` child has a `uniq` parent, while a `shared` child is admitted from either [OWN-5]. resolved(child) = resolved(`h`) ++ suffix.
+A statement-scoped child reborrow is the written form `&uniq 'c` or `&'c` over `deref(h)` followed by any written suffix chain, occurring as an argument atom of a `call` expression [GRAM-9], admitted only when: the receiving call's result mode is `own` or `unit`, never a borrow — except in the receiving call's provenance-candidate position, where a borrow result is admitted; `'c` is a locally-introduced region [OWN-3] whose block does not extend beyond the enclosing statement, and a caller-supplied region parameter is not admitted — except in the provenance-candidate position, where `'c` is any live region that resolved(`h`)'s region outlives-or-equals, caller-supplied included; the eligible holder `h` is a function parameter or a `let`-bound borrow, never a `match` binder; and a `uniq` child has a `uniq` parent, while a `shared` child is admitted from either [OWN-5]. resolved(child) = resolved(`h`) ++ suffix.
 Creating a child suspends `h` for the enclosing statement [OWN-5]; while a holder is suspended by this statement-scoped creation, the sole operation admitted through a place overlapping resolved(`h`) is creating a further sibling child, siblings judged by OWN-7 with any overlapping pair containing a `uniq` child an error, and `h` resumes at the end of the statement after its last child ends.
+Creating a candidate-position child through a `&uniq` holder suspends that holder for the remainder of its life; there is no statement-end resumption, because the child's claim may survive in the bound call result.
+A shared holder needs no suspension: it admits no write through itself.
 A child is never bound, returned, `give`n, stored, or the whole call result, and its `'c` cannot outlive the statement, so no borrow derived from a child outlives its statement; with borrow-free storage [STOR-5] the child is non-escaping.
-Bound children, result-carrying children (reference-result provenance), `uniq`-to-`shared` downgrade, `match`-binder parents, and grandchild reborrow chains are DEFERRED with recorded delta; every written reborrow form outside this argument-atom position is dispositioned by [OWN-14], and the derived match-payload binder is [OWN-13]'s arm-scoped child reborrow.
+
+A `let` whose ordinary right-hand side is a user call with borrow-mode result is a borrow holder exactly when the callee signature determines one provenance-candidate parameter: the one parameter written as a borrow of the result's kind in the result's formal region, with no other parameter naming that formal region in its mode or written type and with a region-free result type.
+resolved(result holder) = the candidate actual's complete resolved place, even when the callee delivered a narrower suffix of it; the holder's borrow is otherwise ordinary — OWN-4 liveness in the substituted result region, OWN-5 exclusivity, OWN-6 child admission, OWN-14 returned reborrow.
+Binding a borrow-mode user-call result whose callee signature does not determine a candidate is a hard error citing OWN-6 with the restructuring `give the callee exactly one parameter written as a borrow of the result's mode and region and no other parameter naming that region, or bind the borrow from a direct borrow expression`.
+Nothing here narrows FN-1: the caller still judges the call by the signature alone.
+
+Bound children, result-carrying children (reference-result provenance), `uniq`-to-`shared` downgrade, `match`-binder parents, and written grandchild chains through a bound direct reborrow are DEFERRED with recorded delta; every written reborrow form outside this argument-atom position is dispositioned by [OWN-14], and the derived match-payload binder is [OWN-13]'s arm-scoped child reborrow.
 
 [OWN-7] Overlap: resolved `p` overlaps resolved `q` iff one is a prefix of the other.
 Two subscripted places with the same resolved base overlap iff their offsets are not both literals with unequal values.
@@ -567,7 +581,7 @@ Formal-slice origins are substituted before caller overlap checking [FN-1, OWN-1
 [OWN-8] Reject-when-unsure: the checker rejects any program it cannot prove conformant.
 Rejection of a sound-but-unprovable program is not a defect; the diagnostic names the rule and a restructuring.
 
-[OWN-9] Non-normative consequence for the optimizer: a live, usable `&uniq` borrow's resolved place is unaliased by any other usable access path (a suspended holder [OWN-6, OWN-13, OWN-14] is not usable; a statement-scoped child, arm-scoped child, or returned reborrow and its suspended ancestor, though both live, are never mutually noalias — the guarantee is one usable mutable path per place [OWN-5]); shared borrows are read-only for their duration; owned values are unaliased except by their own live shared borrows.
+[OWN-9] Non-normative consequence for the optimizer: a live, usable `&uniq` borrow's resolved place is unaliased by any other usable access path (a suspended holder [OWN-6, OWN-13, OWN-14] is not usable; a statement-scoped child, arm-scoped child, candidate-position child, bound call-result holder, or returned reborrow and its suspended ancestor, though both live, are never mutually noalias — the guarantee is one usable mutable path per place [OWN-5]); shared borrows are read-only for their duration; owned values are unaliased except by their own live shared borrows.
 
 [OWN-10] Borrow-storage duration: `&'a p` is legal only if `p`'s storage outlives `'a`.
 For `p` rooted at an own-mode binding b: `'a` must be introduced within b's scope (never a caller-supplied region, for locals and own parameters alike).
@@ -580,7 +594,7 @@ A counted binder may be copied and may be shared-borrowed only into a region int
 These restrictions are checked for each enclosing loop, so nesting never grants an outer binding or region to an inner body.
 
 [OWN-12] Calls (OWN-CALL cluster): at a call, declared region parameters are substituted with the caller's region arguments, which must be live; argument borrows are live accesses of their resolved places for the duration of the call and are judged under OWN-5 (two `&uniq` arguments whose resolved places overlap are an error); the callee's effect row, instantiated at the actual regions, is checked against the caller's live borrows under OWN-5.
-When an argument is a statement-scoped child reborrow [OWN-6], its suspended ancestor holder is excluded from this effect-row overlap check, since the child, not the ancestor, holds the claim for the call; every non-ancestor live borrow is still checked.
+When an argument is a statement-scoped or candidate-position child reborrow [OWN-6], its suspended ancestor holder is excluded from this effect-row overlap check, since the child, not the ancestor, holds the claim for the call; every non-ancestor live borrow is still checked.
 
 [OWN-13] Match ownership: a non-place expression scrutinee is an owned temporary (moved into the match).
 Matching a place of own mode moves it (the binding dies; binders receive `own` payloads); matching through `&'r` / `&uniq 'r` leaves the scrutinee live and binds payloads as `&'r` / `&uniq 'r` respectively.
@@ -600,7 +614,7 @@ A returned reborrow is the written form `&'b` or `&uniq 'b` over `deref(h)` foll
 Its region obligations are the existing borrow-rooted judgments, stated once elsewhere: creation obeys [OWN-10]'s borrow-rooted case, and the created borrow is an ordinary returned borrow judged by [OWN-4] against the written `rtype` region and by [FN-1] against the written `rtype`, so the caller judges the call result by the signature alone, exactly as for `return h;` — the callee body never narrows or widens that judgment.
 Creating a returned reborrow is judged under [OWN-5] and suspends `h` exactly as child creation does [OWN-6]; control leaves the function before the enclosing statement ends, so `h` never resumes and no program point observes `h` and the returned reborrow both usable.
 Every other occurrence of a reborrow form, and a `return`-position reborrow failing this admission, is a hard error citing OWN-14 with the restructuring `pass the reborrow as a statement-scoped child in argument position, return it as the complete return expression from a parameter or let-bound holder, or return the holder itself`.
-Bound reborrows, `give`-position and stored reborrows, `uniq`-to-`shared` downgrade, `match`-binder parents (the derived payload binder itself is [OWN-13]'s arm-scoped child, not a written reborrow form), and reborrows rooted at a call-result borrow remain DEFERRED with recorded delta [META-5]; return position is the sole non-argument position admitted because its creating statement is the function's last program point.
+Bound reborrows, `give`-position and stored reborrows, `uniq`-to-`shared` downgrade, and `match`-binder parents (the derived payload binder itself is [OWN-13]'s arm-scoped child, not a written reborrow form) remain DEFERRED with recorded delta [META-5]; return position is the sole non-argument position admitted because its creating statement is the function's last program point.
 
 ## 6. Storage
 
@@ -702,7 +716,7 @@ The table below is the normative inventory (columns: op, type domain, signature,
 | op | domain | signature | effects |
 |---|---|---|---|
 | `+wrap` `-wrap` `*wrap` | all int T | `(T, T) -> own T` | pure |
-| `+` `-` `*` | all int T | `(T, T) -> own T` | traps |
+| `+` `-` `*` | all int T | `(T, T) -> own T` | traps (outside OP-2's constant-operand class) |
 | `+checked` `-checked` `*checked` | all int T | `(T, T) -> own Result<T, Overflow>` | pure |
 | `/` `%` | all int T | `(T, T) -> own T` | traps |
 | `/checked` `%checked` | all int T | `(T, T) -> own Result<T, DivError>` | pure |
@@ -783,11 +797,16 @@ The operation returns `wrap_T(z)`.
 These operations are total and pure for all values of every integer T; they never trap and never produce a runtime overflow check.
 
 For `a + b`, `a - b`, and `a * b` over a common selected type T, let z be the same mathematical result.
-If z belongs to T's value set, the operation returns that exact value.
-Otherwise it traps for integer overflow before producing a result.
-Integer overflow in one of these bare-operator trapping operations is a contract violation [ERR-4, SCOPE-4], not a recoverable `Overflow` value, source rejection, wrapped result, saturation, truncation, or undefined behavior.
-A call whose constant operands make overflow inevitable remains a well-typed accepted call and traps when executed; constant folding may replace it only with the same attributed trap.
-Each such call syntactically exhibits `traps` under [EFF-2], even when a proof eliminates its runtime overflow test.
+A bare-operator call at least one of whose two operand atoms reads as an [ENT-2] constant — an integer literal or an integer-typed named const, judged per concrete [FN-2] instance — is in the constant-operand class.
+A constant-operand-class call carries the overflow obligation that z belongs to T's value set [ENT-6], judged by the same complete-state base discharge as a subscript bounds obligation.
+A discharged class call returns the exact value z with no runtime overflow check in any build mode, never traps, exhibits no `traps` under [EFF-2], and its checked-program disposition records the discharging derivation [DIAG-2].
+A class call whose obligation the complete fact state does not discharge is a compile-time rejection citing OP-2 at that call's `infix` node, carrying the residual obligation rendered exactly per [ENT-6]; it publishes no checked program.
+Its mechanical fix is a dominating `claim` of the residual [CLM-1], a dominating branch establishing it [ENT-3], or the explicit `wrap`, `checked`, or `sat` respelling.
+A class call whose two constant operands make overflow inevitable instantiates a ground false conjunct [ENT-6] and is therefore rejected at every non-contradictory point; there is no accepted always-trapping bare spelling.
+For a class call in a [CLM-3] demanded strict component, the same normalized obligation must additionally discharge in that function's already-computed unasserted U state [ENT-6]; a refuted or unproved strict judgment is a hard rejection citing OP-2 at the same `infix` node, carrying the same exact residual plus the strict root, concrete function instance, and `unasserted` view, and its mechanical repair is [OP-4]'s strict repair.
+A bare-operator call both of whose operand atoms are non-constant retains the trapping judgment: if z belongs to T's value set the operation returns that exact value, and otherwise it traps for integer overflow before producing a result.
+Integer overflow in one of these retained bare-operator trapping operations is a contract violation [ERR-4, SCOPE-4], not a recoverable `Overflow` value, source rejection, wrapped result, saturation, truncation, or undefined behavior.
+Each retained trapping call syntactically exhibits `traps` under [EFF-2], even when a proof eliminates its runtime overflow test.
 
 For `ieq(a, b)`, `ine(a, b)`, `ilt(a, b)`, `ile(a, b)`, `igt(a, b)`, and `ige(a, b)`, both operands denote their mathematical values in the selected T.
 The result is respectively `True()` exactly when `a=b`, `a≠b`, `a<b`, `a<=b`, `a>b`, or `a>=b`, and is `False()` otherwise.
@@ -1206,8 +1225,8 @@ The callee-instance identity and final-check NodePath identify the requirement o
 
 Two instantiated goals are identical exactly when these finite typed expression trees are identical.
 No equality step commutes operands, folds a named const or literal, reassociates, inverts a comparison, applies De Morgan, eliminates double negation, or otherwise rewrites an operation tree.
-In particular a complete `band`, `bor`, `bxor`, or `bnot` tree is one indivisible goal: evidence for its children establishes nothing about the whole, and evidence for the whole establishes nothing about a child.
-When the complete root is exactly one [ENT-3] comparison relation over admitted [ENT-2] terms or constants, [ENT-4] may additionally derive that one goal through its exact L0 projection; no Boolean subtree receives such a projection.
+In particular a complete `band`, `bor`, `bxor`, or `bnot` tree is one goal that no evidence for its children ever composes: discharging the whole requires the exact whole tree, while an established whole additionally establishes exactly its [ENT-3] signed decomposition set.
+When the complete root is exactly one [ENT-3] comparison relation over admitted [ENT-2] terms or constants, [ENT-4] may additionally derive that one goal through its exact L0 projection; a Boolean subtree projects only as an established member of a signed decomposition set, never toward its parent.
 
 At an ordinary source call, the checker first completes callee resolution, concrete generic instantiation, named-argument and exact-type checking, borrow feasibility, and every obligation belonging to an actual expression.
 It then substitutes each formal datum in the concrete GoalTemplate with that actual's pre-transfer value image; for a borrow formal this is the resolved referent place and projections, and for an own actual it is the value before any consuming transfer.
@@ -1221,7 +1240,7 @@ Only a call with no PRV-2 event then permits the existing transfer, call, and no
 An ordinary caller never receives a fallback runtime check, entry branch, or second callee body.
 A source call to the unlabelled `main` uses this ordinary judgment; a kind-declaring entry remains uncallable under [FN-7].
 
-The function body is checked with its one complete requirement goal established true as [ENT-3] source S4, together with the exact L0 relation only when that complete root has the projection above.
+The function body is checked with its one complete requirement goal established true as [ENT-3] source S4, together with the members of its signed decomposition set, and with the exact L0 relation of the complete root or of a member only where that root has the projection above.
 There is no executable ordinary-callee prologue.
 Direct recursion, mutual recursion, forward calls, and every concrete generic instance use the same finite rule: each written call edge must discharge its own instantiated goal, independently of declaration or traversal order.
 The S4 axiom authorizes source checking only; it creates no `llvm.assume`, optimizer fact, body clone, or alternate lowering path, and later body kills apply normally.
@@ -1394,7 +1413,8 @@ A source row consequently carries no resource origin, and no rule derives a disj
 The apostrophe- and at-prefixed lexical classes are untouched: REGIONID `'external` and LABEL `@blocks` remain well-formed spellings.
 
 [EFF-2] A concrete function declaration exhibits the union of exactly two contributions: its body-syntactic contribution and its release contribution.
-The body-syntactic contribution is syntactic over the complete function body: it exhibits `traps` iff the body contains any trapping-mode operation — a bare infix arithmetic operator (`+`, `-`, `*`, `/`, `%`) or a `.trap` OPNAME — `check`, `claim`, or a call to any operation or function whose effect row includes `traps` (even if later proven away); it exhibits reads/writes/allocates per the operation table and borrow modes the body uses; and it exhibits `external` or `blocks` iff the body contains a call to any operation or function whose effect row includes that category.
+The body-syntactic contribution is syntactic over the complete function body: it exhibits `traps` iff the body contains any trapping-mode operation — a bare `/` or `%`, a bare `+`, `-`, or `*` outside [OP-2]'s constant-operand class, or a `.trap` OPNAME — `check`, `claim`, or a call to any operation or function whose effect row includes `traps` (even if later proven away); it exhibits reads/writes/allocates per the operation table and borrow modes the body uses; and it exhibits `external` or `blocks` iff the body contains a call to any operation or function whose effect row includes that category.
+A bare operator inside a `const` [CONST-1] is const evaluation under `const-reject`, not a trapping-mode operation, and contributes nothing to any effect row.
 An optional `requires` block is a checked callable-boundary obligation [FN-8], and an optional `ensures` block is a verified normal-return relation [FN-9]; neither is an executed body occurrence, and neither contributes a read, write, allocation, external, blocking, or trapping category.
 The release contribution is defined below and has no syntactic occurrence anywhere in the declaration.
 A `for_stmt` endpoint and body contribute their ordinary source occurrences under these same clauses, and its body-exit cleanup contributes under the release rule below.
@@ -1959,7 +1979,7 @@ A Bq branch additionally carries the B aggregate parent and no same-view Gv pare
 A named or pending outcome, false `M(c,q)`, unavailable view, rejected call, killed support, or excluded receiver creates no fact root or pending metadata.
 
 For bounded `value_if` delivery, `PostconditionGive` records one eligible reaching edge, the already evaluated source value and relation root, then the forward `d ↦ x` substitution, then that edge's ordinary scope and event kills applied to every other support in that order.
-`PostconditionDeliveryJoin` orders all non-contradictory reaching delivery images by edge NodePath and applies exactly the ordinary L0 join: for each ordered term pair it retains the weakest largest-constant bound held by every image and each disequality held by every image.
+`PostconditionDeliveryJoin` orders all non-contradictory reaching delivery images by edge NodePath and applies exactly the ordinary [ENT-5] L0 delivery join.
 Its parents therefore need not state byte-identical relations; an `x < 8` image and an `x < 128` image may parent the joined `x < 128` root.
 Contradictory inputs use the existing contradiction root and are neutral when a non-contradictory input reaches.
 Missing edge evidence, a `value_match`, or no common joined relation creates no delivery root.
@@ -2008,7 +2028,7 @@ Fields occur in exactly the written order with no extra whitespace or fields.
 `rule_id` is the exact numbered rule whose runtime condition failed.
 `function` is the exact enclosing source function IDENT.
 `node_path` identifies the source production that introduced the failing checked condition: the `check_stmt` for [OP-5], including the final `check_stmt` whose complete goal fails at program start [FN-8, PROG-3]; the `claim_stmt` for [CLM-1]; and the operation `call` — or, for an operation spelled infix, the `infix` node — for a table-operation contract check and for the [SYS-8] range validation judged under [OP-4]'s retained operation-internal semantics.
-For an executed bare `+`, `-`, or `*` overflow, `rule_id` is `OP-2`, `message` is `integer overflow`, and `node_path` is the trapping `infix` node; a bare `/` or `%` contract violation is a table-operation contract check at its `infix` node.
+For an executed bare `+`, `-`, or `*` overflow, `rule_id` is `OP-2`, `message` is `integer overflow`, and `node_path` is the trapping `infix` node; such a record arises only outside [OP-2]'s constant-operand class, because a class call discharges at compile time and executes no overflow test; a bare `/` or `%` contract violation is a table-operation contract check at its `infix` node.
 
 For an explicit [OP-5] body check and for an [FN-8] program-start goal, `rule_id` is `OP-5` and `message` is the final `check_stmt`'s STRING value decoded by [FORM-5].
 For a [CLM-1] claim, `rule_id` is `CLM-1` and `message` is the claim's exact IDENT spelling; the justification STRING is compile-time data and does not appear in the record.
@@ -2600,7 +2620,7 @@ No predicate is illegal merely by operand provenance: a claim's own legality is 
 A claim supporting no protected obligation is ungated, and a claim whose external operand occurs only as a bound, base, or unrelated goal operand remains legal.
 
 [CLM-2] Claim lifecycle judgments are fixed by the entailment fragment under [ENT-1]'s monotonicity law, whose one enumerated non-monotone edge is this rule's refutation.
-Redundancy and refutation are judged only for a predicate with comparison origin [ENT-3]; a conforming claim whose predicate has none — a constructed `True()`, a `band` result — is neither redundant nor refutable, is accepted, and traps whenever it evaluates false at runtime, exactly as today's `check` on the same expression.
+Redundancy and refutation are judged only for a predicate with comparison origin [ENT-3]; a conforming claim whose predicate has none — a constructed `True()`, a `band` result — is neither redundant nor refutable, is accepted, and traps whenever it evaluates false at runtime, exactly as today's `check` on the same expression, even though the passed claim establishes the predicate's signed decomposition members [ENT-3].
 When the closed fact state at a `claim_stmt` [ENT-3] derives its predicate [ENT-4], the claim is redundant: the program remains accepted, the check still executes [CLM-1], and a conforming implementation reports one non-rejecting redundancy advisory naming the claim — an advisory is not a [DIAG-1] rejection, and a later specification version that proves more predicates therefore rejects no previously accepted program on that ground.
 When the fact state is non-contradictory [ENT-4] and derives the predicate's exact negation, the program is rejected with a hard error citing CLM-2 at the `claim_stmt` node, carrying the claim name, the predicate, and the derived negation: a refuted claim is a defect found at compile time.
 A claim whose trap record any execution produces is thereby demonstrated not to be a necessary truth; surfacing fired claims for reclassification is a toolchain contract in the [ERR-2] edit-list sense, not a language judgment.
@@ -2620,7 +2640,7 @@ In callee-before-caller order, `MayClaims(K)` is `DirectClaims(K)` union the `Ma
 Sets are ordered by stable concrete-instance order, then NodePath, then name.
 The closure of one strict root is exactly its root component plus every component reachable along outgoing edges; it includes the whole of each reached SCC and never follows an incoming edge into an unrelated caller.
 
-A demanded component succeeds strictly exactly when its `MayClaims` set is empty, every protected obligation owned by the component discharges in its owning function's existing unasserted U state [OP-4, ENT-6], every ordinary user-call requirement owned by the component discharges at that call in caller U [FN-8], and every strictly outgoing demanded callee component has a successful strict summary.
+A demanded component succeeds strictly exactly when its `MayClaims` set is empty, every protected obligation owned by the component discharges in its owning function's existing unasserted U state [OP-4, OP-2, ENT-6], every ordinary user-call requirement owned by the component discharges at that call in caller U [FN-8], and every strictly outgoing demanded callee component has a successful strict summary.
 Calls inside one SCC consume no same-SCC summary; all members succeed or fail atomically.
 These are finite queries over the already-produced view and DAG, not a body rewalk or another fixed point.
 Component summaries are silent.
@@ -2646,7 +2666,7 @@ The fragment joins the trusted computing base exactly as the type and ownership 
 Version monotonicity of fact-source and closure strengthening is law with one enumerated exception: a later specification version may add fact sources and closure rules, and that strengthening removes none, so it never converts a discharged obligation, call goal, or selected-return relation into an undischarged one and never converts a claim into a redundancy-ground rejection.
 The one exception is claim refutation: a strengthened fragment may newly derive a claim predicate's exact negation and reject under [CLM-2].
 Activating [PRV-2] or [PRV-3] for an already attached protected family, attaching a new protected family, changing a [SYS-2] component from internal to external, or adding a callable publication surface is an amendment-level accepted-set change, not implementation strengthening.
-Beyond those classes, this specification adds only FN-9/S12, the two stated unsigned S7 relations, and [ENT-5]'s value-if-only delivery, and retains the provenance gate.
+Beyond those classes, this specification adds only FN-9/S12, the two stated unsigned S7 relations, [ENT-6]'s constant-operand overflow obligation family, and [ENT-5]'s value-if-only delivery, and retains the provenance gate.
 No implementation may activate, expand, or reclassify any such judgment independently, and apart from an explicit specification amendment of those kinds no other entailment-fragment judgment may tighten acceptance across versions.
 
 The [CLM-3] strict partition is one additional fixed source-acceptance judgment over the same finite semantic result, not a fact source or optimizer family.
@@ -2701,7 +2721,7 @@ Provenance [PRV-1] is a separate judgment over finite value and storage componen
 
 A comparison origin is defined first.
 An expression has comparison origin R when (a) it is a call to one of `ieq`, `ine`, `ilt`, `ile`, `igt`, `ige` [OP-2] whose two operands are each a term or constant, R the corresponding relation over them; or (b) it is a bare IDENT naming a `let` binding of type `own Bool` whose initializer right-hand side satisfies (a) with relation R, no [ENT-5] kill event (a)–(d) applies to a fact supported by an operand term of R on any path from that initializer to the use, and the binding is the target of no `set` on any such path.
-No other shape has one: `band`, `bor`, `bxor`, `bnot`, `eeq`, `ene`, user-function results, and deeper indirection chains contribute no L0 comparison origin in this version.
+No other shape has one: `band`, `bor`, `bxor`, `bnot`, `eeq`, `ene`, user-function results, and deeper indirection chains contribute no L0 comparison origin in this version; an established Boolean goal contributes relations only through the members of its signed decomposition set.
 
 A Bool expression has a direct goal origin G when its completely typed expression consists only of non-consuming place datums, typed literals, named const datums, and calls to or infix spellings of pure, total, non-trapping operation-table rows, with exact tree identity as [FN-8] fixes.
 Construction, a user-function or system call, a subscript, a move or borrow, a trapping or partial operation, and any other expression shape has no goal origin.
@@ -2710,6 +2730,12 @@ Expansion continues to a fixed point and is all-or-nothing for every eligible le
 The goal-origin set is the direct goal plus that one complete valid expansion when it differs.
 Thus a condition binding's own Bool value and its still-valid computation origin are both retained: a later write to an origin place kills the expanded goal but not the already-computed binding goal, while a write to the binding kills the latter normally.
 Clause-local expansion in FN-8 is unconditional because the admitted block contains no mutation.
+
+Signed Boolean decomposition applies at every establishment of a signed goal fact by the sources below.
+The decomposition set of `+G` whose complete root is `band(A, B)` is `+A` and `+B` together with each member's own decomposition set; the decomposition set of `-G` whose complete root is `bor(A, B)` is `-A` and `-B` together with each member's own decomposition set; the decomposition set of `+G` or `-G` whose complete root is `bnot(A)` is respectively `-A` or `+A` together with that member's own decomposition set; a `bxor`, `eeq`, `ene`, comparison, datum, or non-Boolean root has the empty decomposition set — in particular `-band` and `+bor` carry only genuinely disjunctive content and establish nothing about a child.
+When a source establishes `+G` or `-G`, it establishes every member of that signed decomposition set at the same point; each member is one concrete goal under [FN-8]'s structural identity, and each member whose complete root is one comparison call admitted by comparison-origin shape (a), whose operands are each an admitted term, constant, or `len(P)` length term, independently establishes that exact relation under `+` and the relation's exact L0 negation under `-`.
+A member's support is the ordinary [ENT-5] signed-goal support of its own complete typed expression; kill events, scope exits, joins, and the loop rule apply to each member independently of its parent.
+Decomposition is a finite structural walk of the established goal's tree: it performs no algebraic rewrite and no children ever establish or derive a parent.
 
 The sources are:
 
@@ -2723,12 +2749,12 @@ L0 negation is exact over mathematical integers: the negation of `a - b <= c` is
 After `check e else trap "…";` [OP-5], each goal in `e`'s goal-origin set is established with positive sign on the normal continuation; when `e` also has comparison origin R, R is established there independently.
 [ENT-3.S3]
 - S3 (claim facts).
-After `claim n: e because "…";` [CLM-1], each goal in `e`'s goal-origin set is established with positive sign on the normal continuation; when `e` also has comparison origin R, R is established there independently.
+After `claim n: e because "…";` [CLM-1], establishment is exactly [ENT-3.S2]'s.
 [ENT-3.S4]
 - S4 (requires facts).
 At a concrete function-body entry, its complete instantiated [FN-8] goal G is established as `+G`.
 When and only when G's complete root is one comparison call admitted by comparison-origin shape (a), whose operands after template and call substitution are each an admitted term, constant, or `len(P)` length term, that exact relation R is also established.
-No child of any other goal is established.
+Beyond that projection, only the members of G's signed decomposition set and their projections are established; no other child of any goal is established.
 S4 is the admitted-body axiom justified by every ordinary caller's static discharge or the successful dynamic boundary check [PROG-3, GATE-1]; no callee-entry prologue executes.
 [ENT-3.S5]
 - S5 (copy and conversion equalities).
@@ -2741,7 +2767,7 @@ An `ordinary_let_rhs` establishes at its binding: for `let x = lit;`, x = value(
 [ENT-3.S7]
 - S7 (constant-offset arithmetic).
 For `let s = p +wrap k;` with p a term of type T and k a constant in either operand position, when the closed state at that point derives `min(T) <= p + k` and `p + k <= max(T)` (as bounds on p through Z), s = p + k is established; `p -wrap k` with constant k establishes s = p - k under the dual range condition.
-For `p + k` and `p - k` with constant k, s = p ± k is established on the normal continuation unconditionally: the executed contract check is the proof [OP-2].
+For `p + k` and `p - k` with constant k, s = p ± k is established on the normal continuation unconditionally: the site is a constant-operand-class call whose discharged overflow obligation is the proof [OP-2, ENT-6].
 For a `match` whose scrutinee is directly `p +checked k` or `p -checked k` with constant k, or a bare IDENT let-bound to one where no [ENT-5] kill event applies to a fact supported by p between the initializer and the match and that binding is no `set` target on that path, the `Ok(value: w)` arm establishes w = p ± k at arm entry; the `Err` arm establishes nothing.
 Additionally, for a direct ordinary binding `let r = iand(a, b);` at unsigned integer type T, establish `r <= a` when a is an admitted term or constant and independently establish `r <= b` when b is one, in operand order; signed `iand`, every other bit operation, a nonterm operand, and a result not introduced by that direct binding establish no such relation.
 For a direct ordinary binding `let r = ishl.wrap(one, count);` at unsigned integer type T, establish `r != Z` exactly when `one` is directly a checked typed literal or directly an earlier named const whose mathematical value is one.
@@ -2767,7 +2793,7 @@ The false header edge, every `break` edge, and the counted continuation establis
 [ENT-3.S12]
 - S12 (verified user normal results).
 For one call c and verified relation q, use exactly FN-9's `A0(c)`, per-relation `M(c,q)`, nonempty aggregate booleans Cq/Uq/Bq, and same-view call premise Gv(c).
-After ordinary transfer and every applicable consume, borrow, callee-effect, and target kill, candidate scratch establishes q in complete exactly when `A0(c) and M(c,q) and Cq`; in U exactly when `A0(c) and M(c,q)` and first Bq, otherwise only `Uq and GU(c)`; and in B exactly when `A0(c) and M(c,q)` and first Bq, otherwise only `Uq and GB(c)`.
+Candidate scratch establishes q in each proof view exactly as [FN-9] fixes, after ordinary transfer and every applicable consume, borrow, callee-effect, and target kill.
 This is FN-9's Bq-first evidence order, not a nondeterministic Boolean-parent choice.
 Each substituted formal is independent: a referenced actual that has no ENT-2 image makes only that q unavailable, while an unreferenced non-ENT-2 actual has no effect on q.
 FN-8 ephemeral actual-value datums never enter q.
@@ -2780,9 +2806,9 @@ The label S8 is retired, not reused: its midpoint family was struck as an owner-
 [ENT-4] The L0 component of the closed fact state is the least set containing its established and implicit facts and closed under exactly: (1) from `t1 - t2 <= c1` and `t2 - t3 <= c2`, derive `t1 - t3 <= c1 + c2`; (2) from `t1 - t2 <= 0` and a disequality between t1 and t2 in either orientation, derive `t1 - t2 <= -1`; (3) of two bounds on one ordered pair, the smaller constant subsumes.
 L0 derivability is exact: `a - b <= c` is derivable when the closed state contains `a - b <= c'` with c' <= c; `a = b` when both `a - b <= 0` and `b - a <= 0` are derivable; `a != b` when a disequality is present or `a - b <= -1` or `b - a <= -1` is derivable.
 
-The opaque component retains exactly the established signed facts and receives no closure, decomposition, composition, or implication rule.
+The opaque component retains exactly the established signed facts — Boolean decomposition happens at [ENT-3] establishment, never here — and receives no closure, composition, or implication rule.
 `+G` is derivable when that exact positive fact is present or when G has an exact comparison projection R and L0 derives R; `-G` is derivable when that exact negative fact is present or when G has that projection and L0 derives R's exact negation.
-Deriving the two children of a Boolean operation never derives its parent, and deriving the parent never derives either child.
+Deriving the two children of a Boolean operation never derives its parent, and derivability never decomposes: only an established parent establishes its members, at its establishment point.
 
 The combined state is contradictory when L0 derives `t - t <= -1` for any t or when both signs of one exact goal are derivable.
 At a contradictory point every L0 relation and both signs of every goal in the finite universe are derivable, every obligation, call goal, and FN-9 selected-return relation is discharged, and no call goal, selected-return relation, or claim is refuted.
@@ -2793,7 +2819,7 @@ These three dispositions are complete and exclusive [FN-8, FN-9].
 The least closure is unique and finite up to L0 subsumption because only the finite terms and goals [ENT-2] participate and the rules are monotone.
 Implementations may compute lazily or incrementally, but every derivability and disposition answer must equal this least-closure answer.
 
-[ENT-5] The support of an L0 fact is every tracked place occurring in its terms; every compiler-owned counted capture term occurring in its terms; for each length term len(P), the root binding of P but not P's element storage — an element write never kills a length fact, because a `buffer<T>` length is fixed at allocation and an `array<T, N>` or `slice<'r, T>` length is fixed by its type or creation [TYPE-2, OP-1]; and every borrow or box/arena holder binding any of its places reads through by `deref`.
+[ENT-5] The support of an L0 fact is every tracked place occurring in its terms; every compiler-owned counted capture term occurring in its terms; for each length term len(P), the root binding of P but not P's element storage — an element write never kills a length fact, because a `buffer<T>` length is fixed at allocation and an `array<T, N>` or `slice<'r, T>` length is fixed by its type or creation [TYPE-2, OP-1]; and every borrow or box/arena holder binding any of its places reads through by `deref`, a bound call-result holder included — its resolved place is the candidate actual's complete resolved place [OWN-6], so a `set` commit or projected callee write through the chain kills exactly the facts supported by that storage.
 Z, literals, and named const values have empty support and never die.
 A counted capture is immutable and can die only on an edge leaving its compiler-owned construct scope.
 
@@ -2880,8 +2906,21 @@ Therefore a continuing write to a mutable endpoint source kills the direct captu
 No other fact established inside one counted iteration survives to a later counted head.
 
 [ENT-6] An obligation is one normalized relation attached by a numbered rule to one source node, instantiated with that node's exact operands read as terms or constants; an operand that is not a term or constant leaves the relation underivable, never ill-formed.
-This version attaches exactly one obligation family: for every source subscript `P[i]` — read, write, and [SET-1] target position alike — the bounds obligation `i < len(P)`, normalized `i - len(P) <= -1`, at that subscript's `psuffix` node, one obligation per subscript in a chain, where `i` is the offset atom whose exact type [OP-4] fixes as `own u64`, so both sides are u64-typed and the relation is over their mathematical values.
-The complete-state base judgment discharges the obligation exactly when the closed complete fact state at that node derives it [ENT-4, ENT-5].
+This version attaches exactly two obligation families.
+The first family: for every source subscript `P[i]` — read, write, and [SET-1] target position alike — the bounds obligation `i < len(P)`, normalized `i - len(P) <= -1`, at that subscript's `psuffix` node, one obligation per subscript in a chain, where `i` is the offset atom whose exact type [OP-4] fixes as `own u64`, so both sides are u64-typed and the relation is over their mathematical values.
+The second family: for every bare-operator `+`, `-`, or `*` call in [OP-2]'s constant-operand class, the overflow obligation that the call's exact mathematical result belongs to the selected type T's value set, at that call's `infix` node.
+The overflow obligation normalizes to exactly two conjuncts — ordinal zero the upper bound and ordinal one the lower bound — each one difference bound between the non-constant operand read as a term and Z with one checker-computed constant, folded exactly as follows over mathematical integers, with floor and ceiling the exact-quotient roundings toward negative and positive infinity.
+For `t + c` and `c + t` with constant c: `t - Z <= max(T) - c` and `Z - t <= c - min(T)`.
+For `t - c`: `t - Z <= max(T) + c` and `Z - t <= -min(T) - c`.
+For `c - t`: `t - Z <= c - min(T)` and `Z - t <= max(T) - c`.
+For `t * c` with c > 0: `t - Z <= floor(max(T)/c)` and `Z - t <= -ceil(min(T)/c)`.
+For `t * c` with c = 0: both conjuncts are `Z - Z <= 0`.
+For `t * c` with c < 0: `t - Z <= floor(min(T)/c)` and `Z - t <= -ceil(max(T)/c)`.
+For two constant operands with exact mathematical result z: both conjuncts are `Z - Z <= 0` when z belongs to T's value set and `Z - Z <= -1` otherwise.
+The complete-state base judgment discharges a conjunct exactly when the closed complete fact state at that node derives it [ENT-4, ENT-5], and discharges the obligation exactly when both conjuncts discharge.
+Failure of that base judgment is the [OP-2] rejection; its diagnostic renders the residual of the least undischarged conjunct as exactly: the non-constant operand's canonical source bytes, then ` <= `, then the conjunct constant in decimal, for ordinal zero; the negated conjunct constant in decimal, then ` <= `, then the operand's canonical source bytes, for ordinal one; and, for a ground conjunct, the exact decimal mathematical result, then ` outside `, then the selected type's spelling.
+The overflow family attaches base discharge only: it creates no [PRV-2] or [PRV-3] protected demand, no provenance event, and no runtime operation in this version.
+An operand that is not a term or constant leaves each non-ground conjunct underivable, and the one-rebinding fallback stated below for a subscripted offset atom applies identically to a subscripted class operand.
 Failure of that base judgment is the [OP-4] rejection, forms no provenance demand or event, and publishes no checked program; its diagnostic renders the residual as exactly: the offset atom's canonical source bytes, then ` < len(`, then the base place's canonical source bytes, then `)`.
 The mechanical fix for a base failure is one dominating claim or branch establishing the relation — in canonical ANF, one `let` binding `len(P)` followed by one `claim` on, or `if` over, the admitted comparison [CLM-1, ENT-3].
 After base success, a [PRV-2] or [PRV-3] provenance rejection makes the assertion half unavailable: the writer uses a dominating value branch whose false edge takes the domain outcome, or restructures so the external value no longer occupies the constrained-subject position.
@@ -2889,7 +2928,7 @@ For an offset atom that is itself a subscripted place — legal under [GRAM-5]'s
 With at most that one rebinding step per nested offset, the fallback always closes base discharge, at a per-site cost from zero where facts already prove the bound to one retained runtime check where none do; it does not by itself satisfy the provenance gate.
 
 For checked metadata only, each concrete obligation has protected-leaf identity `(concrete function instance, exact obligation-occurrence NodePath, normalized conjunct ordinal)`.
-The sole current bounds relation has one conjunct at ordinal zero.
+The bounds relation has one conjunct at ordinal zero; the overflow relation has its upper conjunct at ordinal zero and its lower conjunct at ordinal one.
 A requirement occurrence has identity `(the same form of concrete function instance, final-check NodePath, 0)` [DIAG-2].
 These occurrence identities do not participate in goal equality [FN-8].
 The finite requirement-to-leaf bridge retained here is consumed by the active [PRV-2] and [PRV-3] judgments.
@@ -2971,7 +3010,7 @@ An unconditional-external bit is never replaced by or propagated as parameter-on
 At a kind-declaring `command` entry, each labelled input is unconditionally external [PRV-1]; a B-failing direct local leaf whose subject carries that bit is owned by PRV-3, while a B-failing inherited bridge whose selected actual carries that bit is owned by PRV-2 at that call's argument.
 This active bridge and gate add no runtime operation, fallback check, trusted assertion, or optimizer consequence.
 
-For [CLM-3], the unasserted U state is exactly the existing view that removes S2 body-check and S3 claim establishment while retaining S1, S4 after its independently proved incoming boundary, S5 through S12, every kill, join, loop rule, and [ENT-4] closure.
+For [CLM-3], the unasserted U state is exactly the unasserted state U above, retaining S4 after its independently proved incoming boundary.
 Each demanded protected leaf queries its existing normalized relation in U and each demanded ordinary-call goal queries its existing instantiated goal in caller U; successful queries retain their already-produced U derivation roots.
 A marked program-start requirement instead queries U before its wrapper check or S4 exists.
 These strict queries introduce no new obligation family, protected subject, provenance class, component dependency, direct demand, bridge, call target, fact source, or repair.

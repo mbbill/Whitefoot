@@ -11,6 +11,8 @@ fn vec_new() -> own ByteVec allocates(heap), traps {
 fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> own unit reads('a), writes('a), allocates(heap), traps {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
+  let cap_headroom = ilt(cap, 18446744073709551608_u64);
+  claim capacity_has_headroom: cap_headroom because "a byte vector capacity leaves room for one growth step";
   let full = ige(count, cap);
   if full {
     let ncap = cap + 8_u64;

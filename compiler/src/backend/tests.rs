@@ -722,13 +722,16 @@ fn main() -> own unit traps {
     assert!(output.stderr.is_empty());
 }
 
-/// [OP-2] bare infix arithmetic keeps the trapping semantics its named
-/// `.trap` spelling had: the required check is not lost to the shorter form.
+/// [OP-2] bare infix arithmetic outside the constant-operand class keeps the
+/// trapping semantics its named `.trap` spelling had: the required check is
+/// not lost to the shorter form. Both operands are bound rather than written
+/// as literals, so the site stays in the retained trapping class.
 #[test]
 fn bare_infix_overflow_traps_at_runtime() {
     let source = br#"fn main() -> own unit traps {
   let hi = 2147483647_i32;
-  let overflowed = hi + 1_i32;
+  let one = 1_i32;
+  let overflowed = hi + one;
   return unit;
 }
 "#;
@@ -1089,8 +1092,13 @@ fn a_diag3_record_preserves_the_exact_utf8_bytes_of_its_message() {
 
 #[test]
 fn integer_overflow_reports_op2_before_abort() {
+    // Both operands are bound, keeping the site in [OP-2]'s retained
+    // trapping class: a written literal operand would carry a compile-time
+    // overflow obligation instead and could never reach a runtime record.
     let source = br#"fn main() -> own unit traps {
-  let overflow = 127_i8 + 1_i8;
+  let hi = 127_i8;
+  let one = 1_i8;
+  let overflow = hi + one;
   return unit;
 }
 "#;

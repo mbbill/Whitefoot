@@ -336,13 +336,14 @@ fn a_subscripted_class_operand_is_underivable_and_rejects() {
     });
 }
 
-/// The shipped switch is off: under the active v0.30 specification the same
-/// sources keep their trapping judgment — the unbounded literal site is
-/// accepted with its runtime check under a `traps` row, rejects a `pure`
-/// row under EFF-2, and the inevitable constant overflow remains a
-/// well-typed accepted call.
+/// The shipped switch is on: the default `check_semantics` path is the
+/// candidate judgment, not a v0.30 fallback. A `traps` row whose only trap
+/// contributor was a constant-operand-class site now disagrees with the
+/// exhibited row under EFF-2, the `pure` spelling of the same body reaches
+/// the OP-2 rejection its undischarged obligation earns, and an inevitable
+/// constant overflow is no longer an accepted always-trapping call.
 #[test]
-fn the_default_switch_keeps_v030_acceptance() {
+fn the_shipped_switch_selects_the_candidate_judgment() {
     let traps_row = br#"fn bump(x: own u64) -> own u64 traps {
   let y = x + 1_u64;
   return y;
@@ -353,22 +354,11 @@ fn main() -> own unit pure {
 }
 "#;
     with_semantics(traps_row, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("v0.30 accepts the trapping literal site: {outcome:?}");
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the class site no longer exhibits traps: {outcome:?}");
         };
-        let bump = named(&checked.data.functions, "bump");
-        assert_eq!(
-            add_trap_records(bump),
-            vec![true],
-            "v0.30 keeps the runtime overflow check",
-        );
-        assert!(
-            bump.entailment
-                .obligations
-                .iter()
-                .all(|outcome| outcome.family == ObligationFamily::Bounds),
-            "v0.30 attaches no overflow obligation",
-        );
+        assert_eq!(issue.rule(), SemanticRule::Eff2);
+        assert_eq!(issue.kind(), &SemanticIssueKind::EffectMismatch);
     });
     let pure_row = br#"fn bump(x: own u64) -> own u64 pure {
   let y = x + 1_u64;
@@ -381,20 +371,30 @@ fn main() -> own unit pure {
 "#;
     with_semantics(pure_row, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("v0.30 bare arithmetic exhibits traps: {outcome:?}");
+            panic!("the unbounded class site must reject on OP-2: {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Eff2);
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert_eq!(
+            issue.kind(),
+            &SemanticIssueKind::UndischargedOverflowObligation {
+                residual: "x <= 18446744073709551614".to_owned(),
+                mechanical_fix: OVERFLOW_FIX,
+            },
+        );
     });
-    let ground = br#"fn main() -> own unit traps {
+    let ground = br#"fn main() -> own unit pure {
   let x = 255_u8 + 1_u8;
   return unit;
 }
 "#;
     with_semantics(ground, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "v0.30 keeps an inevitable constant overflow as an accepted call \
-             that traps when executed: {outcome:?}",
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an inevitable constant overflow must reject: {outcome:?}");
+        };
+        assert_eq!(
+            issue.rule(),
+            SemanticRule::Op2,
+            "there is no accepted always-trapping bare spelling",
         );
     });
 }

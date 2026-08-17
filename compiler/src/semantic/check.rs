@@ -390,14 +390,14 @@ enum PreludeType {
     NarrowError,
 }
 
-/// v0.31-candidate reborrow-extension switch. While the active specification
-/// is v0.30, the deferred forms — a reborrow argument to a borrow-returning
-/// call, a bound call-result borrow holder, and the grandchild chains they
-/// compose — keep their v0.30 dispositions, so this stays `false`. The
-/// integration switch for the approved v0.31 activation is flipping this one
-/// constant to `true`; until then only the test-only
-/// `check_semantics_reborrow_extension` entry exercises the extension.
-pub(crate) const REBORROW_EXTENSION_ACTIVE: bool = false;
+/// v0.31-candidate reborrow-extension switch. The candidate at
+/// `spec/kernel-spec.md` admits the previously deferred forms — a reborrow
+/// argument to a borrow-returning call, a bound call-result borrow holder,
+/// and the grandchild chains they compose [OWN-5, OWN-6, OWN-12, OWN-14] —
+/// so this is `true` and the branch implements its own candidate. The
+/// test-only `check_semantics_reborrow_extension` entry now selects the same
+/// judgment as the shipped path.
+pub(crate) const REBORROW_EXTENSION_ACTIVE: bool = true;
 
 struct Checker<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
@@ -456,15 +456,13 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     contracts_by_declaration: HashMap<DeclarationId, usize>,
 }
 
-/// The arithmetic-mode dissolution integration switch [OP-2, ENT-6]: `false`
-/// under the active v0.30 specification, where every bare `+`/`-`/`*`
-/// retains its runtime overflow trap. The v0.31 activation change flips this
-/// one constant to `true`, which attaches the overflow obligation family to
-/// the constant-operand class, drops those sites' trap records and `traps`
-/// effect contribution, and rejects undischarged class sites citing OP-2.
-/// The complete judgment is implemented and tested behind this switch; no
-/// other change participates in activation.
-pub(crate) const ARITHMETIC_OVERFLOW_OBLIGATIONS: bool = false;
+/// The arithmetic-mode dissolution integration switch [OP-2, ENT-6]: `true`
+/// under the v0.31 candidate at `spec/kernel-spec.md`, which attaches the
+/// overflow obligation family to the constant-operand class, drops those
+/// sites' trap records and `traps` effect contribution, and rejects
+/// undischarged class sites citing OP-2. A bare `+`/`-`/`*` with two
+/// non-constant operands keeps its runtime overflow trap.
+pub(crate) const ARITHMETIC_OVERFLOW_OBLIGATIONS: bool = true;
 
 /// Checks the currently implemented active-specification semantic family.
 ///

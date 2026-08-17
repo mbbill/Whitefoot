@@ -199,7 +199,12 @@ const HISTORICAL_DECISIONS: &[(usize, usize)] = &[
     (53, 0), // borrow_expr
     (54, 2), // atom_list
     (57, 0), // psuffix
-    (58, 0), // const
+    // v0.31 wraps `const`'s term choice in a concat with the optional
+    // one-operation tail, so the released term-choice decision sits one node
+    // inside the production root instead of at it. `cvalue`'s own offsets are
+    // unchanged: its choice is still the root and its array repetition still
+    // sits six nodes in, with the construction alternative appended after.
+    (58, 2), // const
     (59, 0), // cvalue
     (59, 6),
     (60, 0), // effects

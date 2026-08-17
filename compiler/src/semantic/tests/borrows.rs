@@ -626,10 +626,10 @@ fn bump['r](p: &uniq 'r i32) -> own unit writes('r) {
   return unit;
 }
 
-fn score['r](c: &'r Cell) -> own i32 reads('r), traps {
+fn score['r](c: &'r Cell) -> own i32 reads('r) {
   match deref(c) {
     Full(v: x) => {
-      return deref(x) + 1_i32;
+      return deref(x);
     }
     Void() => {
       return 0_i32;
@@ -1087,24 +1087,30 @@ fn extension_keeps_non_candidate_children_rejected() {
     );
 }
 
-/// The shipped switch keeps v0.30 semantics: the same sources the extension
-/// accepts stay rejected through the default checker — the candidate child
-/// argument at OWN-6 and the bare-holder-sourced binding at TYPE-5.
+/// The shipped switch is on, so the default checker and the extension entry
+/// are one judgment: the candidate child argument and the bare-holder-sourced
+/// binding that v0.30 rejected at OWN-6 and TYPE-5 are admitted through the
+/// ordinary `check_semantics` path, not only the test-only entry.
 #[test]
-fn default_checker_keeps_the_v030_dispositions_for_extension_shapes() {
+fn the_shipped_checker_admits_the_extension_shapes() {
     let mut chain = PASSTHRU.to_vec();
     chain.extend_from_slice(
         b"fn main() -> own unit pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru<'a>(x: &uniq 'a deref(h));\n    set deref(r) = 9_i32;\n  }\n  return unit;\n}\n",
     );
-    assert_rule(
-        &chain,
-        SemanticRule::Own6,
-        SemanticIssueKind::InvalidChildReborrow,
-    );
-    assert_rule(
+    with_semantics(&chain, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the candidate child argument is admitted on the shipped path: {outcome:?}",
+        );
+    });
+    with_semantics(
         b"fn source['r](x: &'r i32) -> &'r i32 pure {\n  return x;\n}\n\nfn main() -> own unit pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &'a v;\n    let r = source<'a>(x: h);\n    let w = deref(r);\n  }\n  return unit;\n}\n",
-        SemanticRule::Type5,
-        SemanticIssueKind::TypeMismatch,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "the bound call-result holder is an ordinary borrow holder: {outcome:?}",
+            );
+        },
     );
 }
 

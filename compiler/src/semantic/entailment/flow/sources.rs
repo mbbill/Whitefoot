@@ -261,8 +261,14 @@ impl Analyzer<'_, '_> {
         if let Some(relation) = self.scrutinee_relation(condition, state) {
             state.establish(&relation, &mut self.derivations, event);
         }
-        // [O11 candidate] Retained decomposition metadata only; no fact.
+        // [ENT-3] Signed Boolean decomposition of each established goal.
         for goal in goals {
+            self.establish_boolean_decomposition(
+                goal,
+                super::super::state::GoalSign::Positive,
+                state,
+                event,
+            );
             self.record_boolean_decomposition(goal, super::super::state::GoalSign::Positive, view);
         }
     }
@@ -287,12 +293,15 @@ impl Analyzer<'_, '_> {
         if let Some(relation) = self.goals.projection(goal).cloned() {
             state.establish(&relation, &mut self.derivations, event);
         }
-        // [O11 candidate] Retained decomposition metadata only; no fact.
-        self.record_boolean_decomposition(
+        // [ENT-3] Signed Boolean decomposition of the established body goal.
+        let view = state.proof_view();
+        self.establish_boolean_decomposition(
             goal,
             super::super::state::GoalSign::Positive,
-            state.proof_view(),
+            state,
+            event,
         );
+        self.record_boolean_decomposition(goal, super::super::state::GoalSign::Positive, view);
     }
 
     // ------------------------------------------------------------------

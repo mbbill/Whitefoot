@@ -3721,10 +3721,40 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// Records the O11 decomposition candidate for one signed-goal
-    /// establishment. Only the complete view records, entries deduplicate by
-    /// parent and sign, and establishment behavior is untouched: candidates
-    /// are retained metadata, never facts.
+    /// [ENT-3] Establishes the signed Boolean decomposition set of one
+    /// just-established signed goal, at that same point and in whatever proof
+    /// view the state carries.
+    ///
+    /// Each member enters as its own concrete opaque goal under [FN-8]
+    /// structural identity, and a member whose complete root is one admitted
+    /// comparison additionally delivers its exact L0 projection under `+` and
+    /// that projection's exact negation under `-`. Decomposition never runs
+    /// upward: this establishes children of an established parent only, so no
+    /// child ever establishes or derives a parent.
+    pub(super) fn establish_boolean_decomposition(
+        &mut self,
+        parent: GoalId,
+        sign: GoalSign,
+        state: &mut FactState,
+        event: FlowEventId,
+    ) {
+        for (member, member_sign) in self.signed_boolean_decomposition(parent, sign) {
+            state.establish_goal(member, member_sign, &mut self.derivations, event);
+            let Some(relation) = self.goals.projection(member).cloned() else {
+                continue;
+            };
+            let relation = match member_sign {
+                GoalSign::Positive => relation,
+                GoalSign::Negative => relation.negated(),
+            };
+            state.establish(&relation, &mut self.derivations, event);
+        }
+    }
+
+    /// Records the O11 decomposition inventory entry for one signed-goal
+    /// establishment. Only the complete view records and entries deduplicate
+    /// by parent and sign; this is retained metadata beside the facts
+    /// [`Self::establish_boolean_decomposition`] establishes.
     pub(super) fn record_boolean_decomposition(
         &mut self,
         parent: GoalId,
@@ -6031,7 +6061,13 @@ impl Analyzer<'_, '_> {
                     &mut self.derivations,
                     event.expect("goal arm has an S1 proof event"),
                 );
-                // [O11 candidate] Retained decomposition metadata; no fact.
+                // [ENT-3] Signed Boolean decomposition of the established goal.
+                self.establish_boolean_decomposition(
+                    *goal,
+                    GoalSign::Positive,
+                    state,
+                    event.expect("goal arm has an S1 proof event"),
+                );
                 self.record_boolean_decomposition(*goal, GoalSign::Positive, view);
             } else if arm.tag == 0 {
                 state.establish_goal(
@@ -6040,7 +6076,13 @@ impl Analyzer<'_, '_> {
                     &mut self.derivations,
                     event.expect("goal arm has an S1 proof event"),
                 );
-                // [O11 candidate] Retained decomposition metadata; no fact.
+                // [ENT-3] Signed Boolean decomposition of the established goal.
+                self.establish_boolean_decomposition(
+                    *goal,
+                    GoalSign::Negative,
+                    state,
+                    event.expect("goal arm has an S1 proof event"),
+                );
                 self.record_boolean_decomposition(*goal, GoalSign::Negative, view);
             }
         }
