@@ -74,8 +74,10 @@ uniq}, `'b` a formal region, T region-free):
   parameter names `'b` anywhere** — in its mode region or inside its written
   type (`slice<'b, _>`; every other storable type is region-free by STOR-5;
   an unsubstituted generic conservatively counts as naming every region);
-- a result whose own type carries a region (a borrow-mode direct-slice
-  result) forms no candidate (OWN-5 already rejects that result shape).
+- a slice-typed or otherwise region-carrying result forms no candidate,
+  whatever region the written slice names (OWN-5 already rejects the
+  borrow-mode direct-slice result shape; the candidate rule fails closed on
+  it independently).
 
 Soundness ground (the induction the caller relies on): inside the callee,
 distinct caller-supplied regions are incomparable (OWN-3 fails closed), and
