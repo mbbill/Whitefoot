@@ -237,3 +237,16 @@ enumeration to move.
 3. Whether the base file's numbered-list scaffold lines (a bare `1.` on its own
    line, as at 1548-1552) should be normalized wherever they occur. They are a
    v0.30 migration artifact; H1 removes three of them as a side effect.
+4. **A profile question these hunks force, flagged rather than assumed.** The
+   three fences are spelled `wf-diag location`, `wf-diag inventory-rank`, and
+   `wf-diag role-attribution` — a two-token info string. The base file's only
+   discriminated fences are `wf-ebnf <RULE-ID>` (seven of them), where the
+   second token is the *owner rule id*; that cannot discriminate here because
+   all three tables have the same owner. The base file's three `wf-sys` fences
+   are undiscriminated, and nothing extracts them today, so the convention for
+   several same-schema fences is genuinely unsettled. The alternatives are
+   (a) `wf-diag <table-name>` as written here, which lets a Stage 2 extractor
+   name the table it wants; (b) bare `wf-diag` three times, matching `wf-sys`,
+   with extraction keying on ordinal; or (c) three distinct schemas
+   (`wf-diag-location` and so on). Whichever the lead picks should be applied to
+   `wf-sys` in the same activation rather than leaving two conventions.
