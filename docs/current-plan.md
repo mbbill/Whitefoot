@@ -9,6 +9,8 @@ the owner's exact-byte morning approval.)
 
 Derived from Direction Outline revision 41 and the 2026-08-17 capability
 review. Supersedes the completed obligation-discharge plan in place.
+Active language authority: v0.30 at `spec/kernel-spec.md`, SHA-256
+`5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1`.
 
 ## Objective
 
@@ -76,6 +78,5 @@ than weaken any check; unfinished workstreams report honestly.
 
 ## Exclusions
 
-Task #44 owner rulings; DIAG-1 restructure and the conciseness ratchet;
-parallelism (outline:PAR-1 gates on flagship profiling); activation of any
+Task #44 owner rulings; parallelism (outline:PAR-1 gates on flagship profiling); activation of any
 candidate; merging to main.
