@@ -702,7 +702,7 @@ The table below is the normative inventory (columns: op, type domain, signature,
 | op | domain | signature | effects |
 |---|---|---|---|
 | `+wrap` `-wrap` `*wrap` | all int T | `(T, T) -> own T` | pure |
-| `+` `-` `*` | all int T | `(T, T) -> own T` | traps |
+| `+` `-` `*` | all int T | `(T, T) -> own T` | traps (outside OP-2's constant-operand class) |
 | `+checked` `-checked` `*checked` | all int T | `(T, T) -> own Result<T, Overflow>` | pure |
 | `/` `%` | all int T | `(T, T) -> own T` | traps |
 | `/checked` `%checked` | all int T | `(T, T) -> own Result<T, DivError>` | pure |
@@ -783,11 +783,16 @@ The operation returns `wrap_T(z)`.
 These operations are total and pure for all values of every integer T; they never trap and never produce a runtime overflow check.
 
 For `a + b`, `a - b`, and `a * b` over a common selected type T, let z be the same mathematical result.
-If z belongs to T's value set, the operation returns that exact value.
-Otherwise it traps for integer overflow before producing a result.
-Integer overflow in one of these bare-operator trapping operations is a contract violation [ERR-4, SCOPE-4], not a recoverable `Overflow` value, source rejection, wrapped result, saturation, truncation, or undefined behavior.
-A call whose constant operands make overflow inevitable remains a well-typed accepted call and traps when executed; constant folding may replace it only with the same attributed trap.
-Each such call syntactically exhibits `traps` under [EFF-2], even when a proof eliminates its runtime overflow test.
+A bare-operator call at least one of whose two operand atoms reads as an [ENT-2] constant — an integer literal or an integer-typed named const, judged per concrete [FN-2] instance — is in the constant-operand class.
+A constant-operand-class call carries the overflow obligation that z belongs to T's value set [ENT-6], judged by the same complete-state base discharge as a subscript bounds obligation.
+A discharged class call returns the exact value z with no runtime overflow check in any build mode, never traps, exhibits no `traps` under [EFF-2], and its checked-program disposition records the discharging derivation [DIAG-2].
+A class call whose obligation the complete fact state does not discharge is a compile-time rejection citing OP-2 at that call's `infix` node, carrying the residual obligation rendered exactly per [ENT-6]; it publishes no checked program.
+Its mechanical fix is a dominating `claim` of the residual [CLM-1], a dominating branch establishing it [ENT-3], or the explicit `wrap`, `checked`, or `sat` respelling.
+A class call whose two constant operands make overflow inevitable instantiates a ground false conjunct [ENT-6] and is therefore rejected at every non-contradictory point; there is no accepted always-trapping bare spelling.
+For a class call in a [CLM-3] demanded strict component, the same normalized obligation must additionally discharge in that function's already-computed unasserted U state [ENT-6]; a refuted or unproved strict judgment is a hard rejection citing OP-2 at the same `infix` node, carrying the same exact residual plus the strict root, concrete function instance, and `unasserted` view, and its mechanical repair is [OP-4]'s strict repair.
+A bare-operator call both of whose operand atoms are non-constant retains the trapping judgment: if z belongs to T's value set the operation returns that exact value, and otherwise it traps for integer overflow before producing a result.
+Integer overflow in one of these retained bare-operator trapping operations is a contract violation [ERR-4, SCOPE-4], not a recoverable `Overflow` value, source rejection, wrapped result, saturation, truncation, or undefined behavior.
+Each retained trapping call syntactically exhibits `traps` under [EFF-2], even when a proof eliminates its runtime overflow test.
 
 For `ieq(a, b)`, `ine(a, b)`, `ilt(a, b)`, `ile(a, b)`, `igt(a, b)`, and `ige(a, b)`, both operands denote their mathematical values in the selected T.
 The result is respectively `True()` exactly when `a=b`, `a≠b`, `a<b`, `a<=b`, `a>b`, or `a>=b`, and is `False()` otherwise.
@@ -1394,7 +1399,7 @@ A source row consequently carries no resource origin, and no rule derives a disj
 The apostrophe- and at-prefixed lexical classes are untouched: REGIONID `'external` and LABEL `@blocks` remain well-formed spellings.
 
 [EFF-2] A concrete function declaration exhibits the union of exactly two contributions: its body-syntactic contribution and its release contribution.
-The body-syntactic contribution is syntactic over the complete function body: it exhibits `traps` iff the body contains any trapping-mode operation — a bare infix arithmetic operator (`+`, `-`, `*`, `/`, `%`) or a `.trap` OPNAME — `check`, `claim`, or a call to any operation or function whose effect row includes `traps` (even if later proven away); it exhibits reads/writes/allocates per the operation table and borrow modes the body uses; and it exhibits `external` or `blocks` iff the body contains a call to any operation or function whose effect row includes that category.
+The body-syntactic contribution is syntactic over the complete function body: it exhibits `traps` iff the body contains any trapping-mode operation — a bare `/` or `%`, a bare `+`, `-`, or `*` outside [OP-2]'s constant-operand class, or a `.trap` OPNAME — `check`, `claim`, or a call to any operation or function whose effect row includes `traps` (even if later proven away); it exhibits reads/writes/allocates per the operation table and borrow modes the body uses; and it exhibits `external` or `blocks` iff the body contains a call to any operation or function whose effect row includes that category.
 An optional `requires` block is a checked callable-boundary obligation [FN-8], and an optional `ensures` block is a verified normal-return relation [FN-9]; neither is an executed body occurrence, and neither contributes a read, write, allocation, external, blocking, or trapping category.
 The release contribution is defined below and has no syntactic occurrence anywhere in the declaration.
 A `for_stmt` endpoint and body contribute their ordinary source occurrences under these same clauses, and its body-exit cleanup contributes under the release rule below.
@@ -2008,7 +2013,7 @@ Fields occur in exactly the written order with no extra whitespace or fields.
 `rule_id` is the exact numbered rule whose runtime condition failed.
 `function` is the exact enclosing source function IDENT.
 `node_path` identifies the source production that introduced the failing checked condition: the `check_stmt` for [OP-5], including the final `check_stmt` whose complete goal fails at program start [FN-8, PROG-3]; the `claim_stmt` for [CLM-1]; and the operation `call` — or, for an operation spelled infix, the `infix` node — for a table-operation contract check and for the [SYS-8] range validation judged under [OP-4]'s retained operation-internal semantics.
-For an executed bare `+`, `-`, or `*` overflow, `rule_id` is `OP-2`, `message` is `integer overflow`, and `node_path` is the trapping `infix` node; a bare `/` or `%` contract violation is a table-operation contract check at its `infix` node.
+For an executed bare `+`, `-`, or `*` overflow, `rule_id` is `OP-2`, `message` is `integer overflow`, and `node_path` is the trapping `infix` node; such a record arises only outside [OP-2]'s constant-operand class, because a class call discharges at compile time and executes no overflow test; a bare `/` or `%` contract violation is a table-operation contract check at its `infix` node.
 
 For an explicit [OP-5] body check and for an [FN-8] program-start goal, `rule_id` is `OP-5` and `message` is the final `check_stmt`'s STRING value decoded by [FORM-5].
 For a [CLM-1] claim, `rule_id` is `CLM-1` and `message` is the claim's exact IDENT spelling; the justification STRING is compile-time data and does not appear in the record.
@@ -2620,7 +2625,7 @@ In callee-before-caller order, `MayClaims(K)` is `DirectClaims(K)` union the `Ma
 Sets are ordered by stable concrete-instance order, then NodePath, then name.
 The closure of one strict root is exactly its root component plus every component reachable along outgoing edges; it includes the whole of each reached SCC and never follows an incoming edge into an unrelated caller.
 
-A demanded component succeeds strictly exactly when its `MayClaims` set is empty, every protected obligation owned by the component discharges in its owning function's existing unasserted U state [OP-4, ENT-6], every ordinary user-call requirement owned by the component discharges at that call in caller U [FN-8], and every strictly outgoing demanded callee component has a successful strict summary.
+A demanded component succeeds strictly exactly when its `MayClaims` set is empty, every protected obligation owned by the component discharges in its owning function's existing unasserted U state [OP-4, OP-2, ENT-6], every ordinary user-call requirement owned by the component discharges at that call in caller U [FN-8], and every strictly outgoing demanded callee component has a successful strict summary.
 Calls inside one SCC consume no same-SCC summary; all members succeed or fail atomically.
 These are finite queries over the already-produced view and DAG, not a body rewalk or another fixed point.
 Component summaries are silent.
@@ -2646,7 +2651,7 @@ The fragment joins the trusted computing base exactly as the type and ownership 
 Version monotonicity of fact-source and closure strengthening is law with one enumerated exception: a later specification version may add fact sources and closure rules, and that strengthening removes none, so it never converts a discharged obligation, call goal, or selected-return relation into an undischarged one and never converts a claim into a redundancy-ground rejection.
 The one exception is claim refutation: a strengthened fragment may newly derive a claim predicate's exact negation and reject under [CLM-2].
 Activating [PRV-2] or [PRV-3] for an already attached protected family, attaching a new protected family, changing a [SYS-2] component from internal to external, or adding a callable publication surface is an amendment-level accepted-set change, not implementation strengthening.
-Beyond those classes, this specification adds only FN-9/S12, the two stated unsigned S7 relations, and [ENT-5]'s value-if-only delivery, and retains the provenance gate.
+Beyond those classes, this specification adds only FN-9/S12, the two stated unsigned S7 relations, [ENT-6]'s constant-operand overflow obligation family, and [ENT-5]'s value-if-only delivery, and retains the provenance gate.
 No implementation may activate, expand, or reclassify any such judgment independently, and apart from an explicit specification amendment of those kinds no other entailment-fragment judgment may tighten acceptance across versions.
 
 The [CLM-3] strict partition is one additional fixed source-acceptance judgment over the same finite semantic result, not a fact source or optimizer family.
@@ -2741,7 +2746,7 @@ An `ordinary_let_rhs` establishes at its binding: for `let x = lit;`, x = value(
 [ENT-3.S7]
 - S7 (constant-offset arithmetic).
 For `let s = p +wrap k;` with p a term of type T and k a constant in either operand position, when the closed state at that point derives `min(T) <= p + k` and `p + k <= max(T)` (as bounds on p through Z), s = p + k is established; `p -wrap k` with constant k establishes s = p - k under the dual range condition.
-For `p + k` and `p - k` with constant k, s = p ± k is established on the normal continuation unconditionally: the executed contract check is the proof [OP-2].
+For `p + k` and `p - k` with constant k, s = p ± k is established on the normal continuation unconditionally: the site is a constant-operand-class call whose discharged overflow obligation is the proof [OP-2, ENT-6].
 For a `match` whose scrutinee is directly `p +checked k` or `p -checked k` with constant k, or a bare IDENT let-bound to one where no [ENT-5] kill event applies to a fact supported by p between the initializer and the match and that binding is no `set` target on that path, the `Ok(value: w)` arm establishes w = p ± k at arm entry; the `Err` arm establishes nothing.
 Additionally, for a direct ordinary binding `let r = iand(a, b);` at unsigned integer type T, establish `r <= a` when a is an admitted term or constant and independently establish `r <= b` when b is one, in operand order; signed `iand`, every other bit operation, a nonterm operand, and a result not introduced by that direct binding establish no such relation.
 For a direct ordinary binding `let r = ishl.wrap(one, count);` at unsigned integer type T, establish `r != Z` exactly when `one` is directly a checked typed literal or directly an earlier named const whose mathematical value is one.
@@ -2880,8 +2885,21 @@ Therefore a continuing write to a mutable endpoint source kills the direct captu
 No other fact established inside one counted iteration survives to a later counted head.
 
 [ENT-6] An obligation is one normalized relation attached by a numbered rule to one source node, instantiated with that node's exact operands read as terms or constants; an operand that is not a term or constant leaves the relation underivable, never ill-formed.
-This version attaches exactly one obligation family: for every source subscript `P[i]` — read, write, and [SET-1] target position alike — the bounds obligation `i < len(P)`, normalized `i - len(P) <= -1`, at that subscript's `psuffix` node, one obligation per subscript in a chain, where `i` is the offset atom whose exact type [OP-4] fixes as `own u64`, so both sides are u64-typed and the relation is over their mathematical values.
-The complete-state base judgment discharges the obligation exactly when the closed complete fact state at that node derives it [ENT-4, ENT-5].
+This version attaches exactly two obligation families.
+The first family: for every source subscript `P[i]` — read, write, and [SET-1] target position alike — the bounds obligation `i < len(P)`, normalized `i - len(P) <= -1`, at that subscript's `psuffix` node, one obligation per subscript in a chain, where `i` is the offset atom whose exact type [OP-4] fixes as `own u64`, so both sides are u64-typed and the relation is over their mathematical values.
+The second family: for every bare-operator `+`, `-`, or `*` call in [OP-2]'s constant-operand class, the overflow obligation that the call's exact mathematical result belongs to the selected type T's value set, at that call's `infix` node.
+The overflow obligation normalizes to exactly two conjuncts — ordinal zero the upper bound and ordinal one the lower bound — each one difference bound between the non-constant operand read as a term and Z with one checker-computed constant, folded exactly as follows over mathematical integers, with floor and ceiling the exact-quotient roundings toward negative and positive infinity.
+For `t + c` and `c + t` with constant c: `t - Z <= max(T) - c` and `Z - t <= c - min(T)`.
+For `t - c`: `t - Z <= max(T) + c` and `Z - t <= -min(T) - c`.
+For `c - t`: `t - Z <= c - min(T)` and `Z - t <= max(T) - c`.
+For `t * c` with c > 0: `t - Z <= floor(max(T)/c)` and `Z - t <= -ceil(min(T)/c)`.
+For `t * c` with c = 0: both conjuncts are `Z - Z <= 0`.
+For `t * c` with c < 0: `t - Z <= floor(min(T)/c)` and `Z - t <= -ceil(max(T)/c)`.
+For two constant operands with exact mathematical result z: both conjuncts are `Z - Z <= 0` when z belongs to T's value set and `Z - Z <= -1` otherwise.
+The complete-state base judgment discharges a conjunct exactly when the closed complete fact state at that node derives it [ENT-4, ENT-5], and discharges the obligation exactly when both conjuncts discharge.
+Failure of that base judgment is the [OP-2] rejection; its diagnostic renders the residual of the least undischarged conjunct as exactly: the non-constant operand's canonical source bytes, then ` <= `, then the conjunct constant in decimal, for ordinal zero; the negated conjunct constant in decimal, then ` <= `, then the operand's canonical source bytes, for ordinal one; and, for a ground conjunct, the exact decimal mathematical result, then ` outside `, then the selected type's spelling.
+The overflow family attaches base discharge only: it creates no [PRV-2] or [PRV-3] protected demand, no provenance event, and no runtime operation in this version.
+An operand that is not a term or constant leaves each non-ground conjunct underivable, and the one-rebinding fallback stated below for a subscripted offset atom applies identically to a subscripted class operand.
 Failure of that base judgment is the [OP-4] rejection, forms no provenance demand or event, and publishes no checked program; its diagnostic renders the residual as exactly: the offset atom's canonical source bytes, then ` < len(`, then the base place's canonical source bytes, then `)`.
 The mechanical fix for a base failure is one dominating claim or branch establishing the relation — in canonical ANF, one `let` binding `len(P)` followed by one `claim` on, or `if` over, the admitted comparison [CLM-1, ENT-3].
 After base success, a [PRV-2] or [PRV-3] provenance rejection makes the assertion half unavailable: the writer uses a dominating value branch whose false edge takes the domain outcome, or restructures so the external value no longer occupies the constrained-subject position.
@@ -2889,7 +2907,7 @@ For an offset atom that is itself a subscripted place — legal under [GRAM-5]'s
 With at most that one rebinding step per nested offset, the fallback always closes base discharge, at a per-site cost from zero where facts already prove the bound to one retained runtime check where none do; it does not by itself satisfy the provenance gate.
 
 For checked metadata only, each concrete obligation has protected-leaf identity `(concrete function instance, exact obligation-occurrence NodePath, normalized conjunct ordinal)`.
-The sole current bounds relation has one conjunct at ordinal zero.
+The bounds relation has one conjunct at ordinal zero; the overflow relation has its upper conjunct at ordinal zero and its lower conjunct at ordinal one.
 A requirement occurrence has identity `(the same form of concrete function instance, final-check NodePath, 0)` [DIAG-2].
 These occurrence identities do not participate in goal equality [FN-8].
 The finite requirement-to-leaf bridge retained here is consumed by the active [PRV-2] and [PRV-3] judgments.
