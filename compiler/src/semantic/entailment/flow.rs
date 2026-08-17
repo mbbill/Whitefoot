@@ -19,10 +19,10 @@ use std::collections::{HashMap, HashSet};
 
 use super::super::goal::{ConcreteGoal, GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
-    BindingId, CheckedArrayRoot, CheckedConst, CheckedConstructor, CheckedEnumType,
-    CheckedExpression, CheckedFloatOperation, CheckedFunction, CheckedLoopId, CheckedMatchArm,
-    CheckedMode, CheckedNominal, CheckedNominalKind, CheckedSetTarget, CheckedStatement,
-    CheckedType, CheckedValue, IntegerType, ValueInitializerKind,
+    BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedConst, CheckedConstructor,
+    CheckedEnumType, CheckedExpression, CheckedFloatOperation, CheckedFunction, CheckedLoopId,
+    CheckedMatchArm, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedSetTarget,
+    CheckedStatement, CheckedType, CheckedValue, IntegerType, ValueInitializerKind,
 };
 use super::super::postcondition::{
     NormalizedRelation, PostconditionPlaceRoot, PostconditionReturnDatum, PostconditionReturnPlace,
@@ -423,6 +423,7 @@ pub(super) fn analyze_candidate(
         counted_derivations: run.counted_derivations,
         s7_derivations: run.s7_derivations,
         postcondition: run.postcondition,
+        boolean_decompositions: run.boolean_decompositions,
         derivations: run.derivations,
         inventory: run.inventory,
     }
@@ -438,6 +439,7 @@ struct AnalysisRun {
     counted_derivations: Vec<CountedDerivationSet>,
     s7_derivations: Vec<S7Derivation>,
     postcondition: Option<super::FunctionPostconditionProof>,
+    boolean_decompositions: Vec<super::BooleanGoalDecomposition>,
     derivations: DerivationLedger,
     inventory: DerivationInventory,
 }
@@ -460,6 +462,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         counted_derivations: Vec::new(),
         s7_derivations: Vec::new(),
         postcondition: None,
+        boolean_decompositions: Vec::new(),
         entry_images: Vec::new(),
         encountered_counted: 0,
         completed_counted_roots: 0,
@@ -541,6 +544,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         counted_derivations: analyzer.counted_derivations,
         s7_derivations: analyzer.s7_derivations,
         postcondition: analyzer.postcondition,
+        boolean_decompositions: analyzer.boolean_decompositions,
         derivations: analyzer.derivations,
         inventory,
     }
@@ -725,6 +729,9 @@ struct Analyzer<'check, 'unit> {
     counted_derivations: Vec<CountedDerivationSet>,
     s7_derivations: Vec<S7Derivation>,
     postcondition: Option<super::FunctionPostconditionProof>,
+    /// O11 candidate decomposition sets, recorded at complete-view
+    /// signed-goal establishments and never established as facts.
+    boolean_decompositions: Vec<super::BooleanGoalDecomposition>,
     entry_images: Vec<EntryImageRecord>,
     encountered_counted: u32,
     completed_counted_roots: u32,
@@ -3639,6 +3646,89 @@ impl Analyzer<'_, '_> {
         self.goals.intern(expression, projection, support)
     }
 
+    /// [O11 candidate] The signed Boolean decomposition set of one
+    /// established goal: `+band` and `-bor` decompose into their signed
+    /// children recursively, `bnot` flips the sign, and every other root —
+    /// in particular `-band` and `+bor`, whose content is genuinely
+    /// disjunctive, and `bxor` on either sign — contributes nothing.
+    ///
+    /// Members are interned so their exact identities, projections, and
+    /// supports are retained in the inventory, but nothing establishes them
+    /// as facts in this version: v0.30 acceptance is untouched. Design:
+    /// `research/investigations/o11-composition/DESIGN.md`.
+    fn signed_boolean_decomposition(
+        &mut self,
+        parent: GoalId,
+        sign: GoalSign,
+    ) -> Vec<(GoalId, GoalSign)> {
+        let expression = self.goals.expression(parent).clone();
+        let mut members = Vec::new();
+        self.collect_decomposition_members(&expression, sign, &mut members);
+        members
+    }
+
+    fn collect_decomposition_members(
+        &mut self,
+        expression: &GoalExpression,
+        sign: GoalSign,
+        members: &mut Vec<(GoalId, GoalSign)>,
+    ) {
+        let GoalExpression::Operation {
+            row: GoalOperation::Boolean(operation),
+            arguments,
+            ..
+        } = expression
+        else {
+            return;
+        };
+        let child_sign = match (operation, sign) {
+            (CheckedBooleanOperation::And, GoalSign::Positive)
+            | (CheckedBooleanOperation::Or, GoalSign::Negative) => sign,
+            (CheckedBooleanOperation::Not, GoalSign::Positive) => GoalSign::Negative,
+            (CheckedBooleanOperation::Not, GoalSign::Negative) => GoalSign::Positive,
+            _ => return,
+        };
+        for argument in arguments {
+            let member = self.intern_goal_expression(argument.clone());
+            if !members.contains(&(member, child_sign)) {
+                members.push((member, child_sign));
+            }
+            self.collect_decomposition_members(argument, child_sign, members);
+        }
+    }
+
+    /// Records the O11 decomposition candidate for one signed-goal
+    /// establishment. Only the complete view records, entries deduplicate by
+    /// parent and sign, and establishment behavior is untouched: candidates
+    /// are retained metadata, never facts.
+    pub(super) fn record_boolean_decomposition(
+        &mut self,
+        parent: GoalId,
+        sign: GoalSign,
+        view: ProofView,
+    ) {
+        if view != ProofView::Complete {
+            return;
+        }
+        if self
+            .boolean_decompositions
+            .iter()
+            .any(|candidate| candidate.parent == parent && candidate.sign == sign)
+        {
+            return;
+        }
+        let members = self.signed_boolean_decomposition(parent, sign);
+        if members.is_empty() {
+            return;
+        }
+        self.boolean_decompositions
+            .push(super::BooleanGoalDecomposition {
+                parent,
+                sign,
+                members,
+            });
+    }
+
     fn collect_goal_support(
         &self,
         expression: &GoalExpression,
@@ -5694,6 +5784,7 @@ impl Analyzer<'_, '_> {
                 );
             }
         }
+        let view = state.proof_view();
         for goal in &facts.goals {
             if arm.tag == 1 {
                 state.establish_goal(
@@ -5702,6 +5793,8 @@ impl Analyzer<'_, '_> {
                     &mut self.derivations,
                     event.expect("goal arm has an S1 proof event"),
                 );
+                // [O11 candidate] Retained decomposition metadata; no fact.
+                self.record_boolean_decomposition(*goal, GoalSign::Positive, view);
             } else if arm.tag == 0 {
                 state.establish_goal(
                     *goal,
@@ -5709,6 +5802,8 @@ impl Analyzer<'_, '_> {
                     &mut self.derivations,
                     event.expect("goal arm has an S1 proof event"),
                 );
+                // [O11 candidate] Retained decomposition metadata; no fact.
+                self.record_boolean_decomposition(*goal, GoalSign::Negative, view);
             }
         }
         if let Some((tag, outcome)) = &facts.outcome
