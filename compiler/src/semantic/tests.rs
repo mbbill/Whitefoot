@@ -10,6 +10,7 @@ mod contracts;
 mod counted_ranges;
 mod derivation;
 mod entailment;
+mod entailment_sources;
 mod entry_form;
 mod float_conversion;
 mod floating;
