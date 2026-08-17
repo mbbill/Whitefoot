@@ -21,14 +21,30 @@
 //!   and no weaker operation is substituted for an unqualified one.
 
 use crate::{
-    ACTIVE_KERNEL_SPEC_VERSION, IrEntry, IrInstruction, IrNominalKind, IrOperation, IrProgram,
-    IrSystemOperation, SystemReleaseAction, SystemResourceContract, SystemResourceType,
+    IrEntry, IrInstruction, IrNominalKind, IrOperation, IrProgram, IrSystemOperation,
+    SystemReleaseAction, SystemResourceContract, SystemResourceType,
 };
 
 use super::emitter::BackendFailure;
 
 /// The number of [SYS-2] system operations, and therefore of semantic IDs.
 const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
+
+/// The specification version this qualification table was last reviewed
+/// against.
+///
+/// A deliberate per-activation review forcer, kept as one hand-written
+/// literal on purpose: when an activation changes
+/// `spec_identity::SPEC_VERSION`, `operation_row` reports every system
+/// facility unmapped until someone re-reviews this table against the new
+/// specification and bumps this constant inside the same reviewed change.
+/// Exactly one such tripwire exists — two sibling copies in `resource_row`
+/// and `command_entry_row` were deleted because every qualified program with
+/// system behavior reaches `operation_row`, so they forced no additional
+/// review, only additional bumps. Do not generate this constant from the
+/// specification (that would delete the review it exists to force), and do
+/// not add more copies.
+const REVIEWED_FOR: &str = "v0.30";
 
 /// The number of [SYS-2] opaque resource types.
 const RESOURCE_COUNT: usize = 7;
@@ -759,7 +775,9 @@ fn operation_row(
     kind: ProgramKind,
 ) -> Result<ApprovedImplementation, QualificationFailure> {
     let facility = Facility::Operation(operation);
-    if ACTIVE_KERNEL_SPEC_VERSION != "v0.29" || usize::from(operation) >= OPERATION_COUNT {
+    if crate::spec_identity::SPEC_VERSION != REVIEWED_FOR
+        || usize::from(operation) >= OPERATION_COUNT
+    {
         return Err(QualificationFailure::MissingMapping(facility));
     }
     // Every [SYS-2] operation exists only in a system-admitted unit, which is
@@ -801,9 +819,8 @@ fn resource_row(
     kind: ProgramKind,
 ) -> Result<ResourceImplementation, QualificationFailure> {
     let facility = Facility::Resource(contract.resource);
-    if ACTIVE_KERNEL_SPEC_VERSION != "v0.29" {
-        return Err(QualificationFailure::MissingMapping(facility));
-    }
+    // The single per-activation review tripwire lives in `operation_row`
+    // (`REVIEWED_FOR`); a duplicate version guard here forced no extra review.
     if kind != ProgramKind::Command {
         return Err(QualificationFailure::IncompatibleProgramKind(facility));
     }
@@ -859,9 +876,8 @@ fn resource_row(
 /// supplies command-lifetime argument backing; a target that can supply
 /// neither fails qualification for both IDs.
 fn command_entry_row(target: SystemTarget) -> Result<(), QualificationFailure> {
-    if ACTIVE_KERNEL_SPEC_VERSION != "v0.29" {
-        return Err(QualificationFailure::MissingMapping(Facility::CommandEntry));
-    }
+    // The single per-activation review tripwire lives in `operation_row`
+    // (`REVIEWED_FOR`); a duplicate version guard here forced no extra review.
     if !target.supplies(TargetGuarantee::CommandLifetimeArgumentBacking) {
         return Err(QualificationFailure::UnmetGuarantee {
             facility: Facility::CommandEntry,

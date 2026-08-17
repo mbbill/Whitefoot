@@ -357,7 +357,17 @@ pub(super) fn run_on_deterministic_host(
     arguments: &[&[u8]],
 ) -> DeterministicRun {
     let llvm = emit_for_deterministic_target(source);
-    let output = compile_link_and_run(&llvm, Some(&script.unit()), arguments);
+    run_emitted_on_deterministic_host(&llvm, script, arguments)
+}
+
+/// Runs an already-emitted deterministic-target module, so a caller holding a
+/// shared emission does not pay a second front-end pass for the same source.
+pub(super) fn run_emitted_on_deterministic_host(
+    llvm: &str,
+    script: &HostScript,
+    arguments: &[&[u8]],
+) -> DeterministicRun {
+    let output = compile_link_and_run(llvm, Some(&script.unit()), arguments);
     DeterministicRun { output }
 }
 

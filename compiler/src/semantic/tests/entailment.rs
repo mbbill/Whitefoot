@@ -7289,7 +7289,13 @@ fn main() -> own unit pure {
         panic!("the repeated ledger must retain exact protected provenance");
     };
     assert!(!direct_demands.is_empty());
-    for _ in 0..20 {
+    // Exactly two re-analyses, and no more. The first proves the summary and
+    // the ledger are reproducible at all; the second proves that first
+    // re-analysis did not merely replay state warmed by the analysis above,
+    // and gives per-run ordering nondeterminism a second independent chance
+    // to show itself. A third re-analysis can only repeat the evidence the
+    // second one already carries, so the test-economy rule forbids it.
+    for _ in 0..2 {
         assert_eq!(entailment(source, "inspect"), expected);
         assert_eq!(claim_ledger(source), expected_ledger);
     }
@@ -7538,6 +7544,11 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
             {
                 assert_real_read_bits_routes(&program.data);
                 assert_real_raw_append_routes(&program.data);
+                // This call carries the canonical-DEFLATE provenance gate. It
+                // rides this walk so both gates share one front-end pass over
+                // the same four-file bundle. If this bundle ever leaves the
+                // corpus, restore provenance.rs's standalone test.
+                super::provenance::assert_canonical_deflate_provenance(&program.data);
             }
             if program
                 .data

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for compiler-independent conformance coverage plumbing."""
 
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,14 +11,55 @@ import runner
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 SPEC = ROOT / runner.ACTIVE_SPEC
+APPROVALS = ROOT / runner.APPROVALS
+
+
+def copy_authorities(directory: Path) -> None:
+    """Copy the active specification and the approval ledger it is pinned by."""
+    active = directory / runner.ACTIVE_SPEC
+    active.parent.mkdir(parents=True, exist_ok=True)
+    active.write_bytes(SPEC.read_bytes())
+    approvals = directory / runner.APPROVALS
+    approvals.parent.mkdir(parents=True, exist_ok=True)
+    approvals.write_bytes(APPROVALS.read_bytes())
 
 
 class ActiveSpecificationTests(unittest.TestCase):
     def make_repository(self, directory: Path) -> None:
-        active = directory / runner.ACTIVE_SPEC
-        active.parent.mkdir(parents=True, exist_ok=True)
-        active.write_bytes(SPEC.read_bytes())
+        copy_authorities(directory)
         (directory / "spec").mkdir(exist_ok=True)
+
+    def make_active_repository(self, directory: Path) -> tuple[str, str]:
+        """Normalize the copied fixture to a synthetic ACTIVE state.
+
+        The real stable file may legitimately be a declared candidate — that
+        is the point of candidate mode — so a test that needs an ACTIVE
+        fixture must build one instead of assuming the working tree's state:
+        rewrite whatever status line the copy carries to a fresh synthetic
+        ACTIVE version and append a chain record naming the rewritten bytes,
+        the same accepted-extension pattern
+        test_expected_identity_is_the_approval_chain_tail exercises.
+        Returns the synthetic (version, digest).
+        """
+        active = directory / runner.ACTIVE_SPEC
+        text = active.read_text()
+        lines = text.split("\n")
+        status_indexes = [
+            i for i, line in enumerate(lines) if line.startswith("Status: ")
+        ]
+        self.assertTrue(status_indexes, "fixture spec has no status line")
+        version = "v99.8"
+        lines[status_indexes[0]] = f"Status: ACTIVE {version}"
+        rewritten = "\n".join(lines).encode()
+        active.write_bytes(rewritten)
+        _, old_digest = runner.activation_chain_tail(directory)
+        digest = hashlib.sha256(rewritten).hexdigest()
+        approvals = directory / runner.APPROVALS
+        approvals.write_bytes(
+            approvals.read_bytes()
+            + f"ACTIVE-SPEC: {version} {digest} {old_digest}\n".encode()
+        )
+        return version, digest
 
     def test_versioned_archive_cannot_change_coverage_authority(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -46,6 +88,7 @@ class ActiveSpecificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             self.make_repository(directory)
+            self.make_active_repository(directory)
             active = directory / runner.ACTIVE_SPEC
             active.write_bytes(active.read_bytes() + b"\n")
 
@@ -54,12 +97,104 @@ class ActiveSpecificationTests(unittest.TestCase):
             ):
                 runner.spec_rule_ids(directory)
 
+    def test_expected_identity_is_the_approval_chain_tail(self):
+        # The pin follows the ledger: appending a new activation record whose
+        # digest names the (modified) spec bytes is accepted with no runner
+        # edit, which is the point of reading the pin from the chain.
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            self.make_repository(directory)
+            active = directory / runner.ACTIVE_SPEC
+            _, old_digest = runner.activation_chain_tail(directory)
+            modified = active.read_bytes() + b"\n[ZZZ-1] appended rule.\n"
+            active.write_bytes(modified)
+            new_digest = hashlib.sha256(modified).hexdigest()
+            approvals = directory / runner.APPROVALS
+            approvals.write_bytes(
+                approvals.read_bytes()
+                + f"ACTIVE-SPEC: v99.0 {new_digest} {old_digest}\n".encode()
+            )
+
+            rules, _ = runner.spec_rule_ids(directory)
+
+            self.assertIn("ZZZ-1", rules)
+
+    def test_declared_candidate_superseding_the_chain_tail_is_accepted(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            self.make_repository(directory)
+            version, digest = self.make_active_repository(directory)
+            active = directory / runner.ACTIVE_SPEC
+            text = active.read_text()
+            marker = f"Status: ACTIVE {version}"
+            self.assertIn(marker, text)
+            active.write_text(
+                text.replace(
+                    marker,
+                    f"Status: CANDIDATE v99.9 supersedes {version} {digest}",
+                    1,
+                )
+            )
+
+            rules, name = runner.spec_rule_ids(directory)
+
+            self.assertEqual(name, runner.ACTIVE_SPEC.name)
+            self.assertIn("PROG-2", rules)
+
+    def test_declared_candidate_with_wrong_supersedes_digest_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            self.make_repository(directory)
+            version, _ = self.make_active_repository(directory)
+            active = directory / runner.ACTIVE_SPEC
+            text = active.read_text()
+            marker = f"Status: ACTIVE {version}"
+            self.assertIn(marker, text)
+            active.write_text(
+                text.replace(
+                    marker,
+                    f"Status: CANDIDATE v99.9 supersedes {version} {'0' * 64}",
+                    1,
+                )
+            )
+
+            with self.assertRaisesRegex(
+                ValueError, "active specification digest mismatch"
+            ):
+                runner.spec_rule_ids(directory)
+
+    def test_sub_rule_ids_are_recognized(self):
+        # Forward compatibility for the migration that introduces `[FAM-N.Sk]`
+        # sub-ids: the regex already reads them, so the corpus can cite them
+        # the release they exist.
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            self.make_repository(directory)
+            active = directory / runner.ACTIVE_SPEC
+            _, old_digest = runner.activation_chain_tail(directory)
+            modified = active.read_bytes() + b"\n[ENT-3.S10] sub-rule body.\n"
+            active.write_bytes(modified)
+            new_digest = hashlib.sha256(modified).hexdigest()
+            approvals = directory / runner.APPROVALS
+            approvals.write_bytes(
+                approvals.read_bytes()
+                + f"ACTIVE-SPEC: v99.0 {new_digest} {old_digest}\n".encode()
+            )
+
+            rules, _ = runner.spec_rule_ids(directory)
+
+            # A sub-id line is an addressable anchor, not a rule: it must not
+            # enter the coverage denominator, and a citation of it must fold
+            # onto its parent rule.
+            self.assertNotIn("ENT-3.S10", rules)
+            self.assertIn("ENT-3", rules)
+            self.assertEqual(runner.base_rule("ENT-3.S10"), "ENT-3")
+            self.assertEqual(runner.base_rule("ENT-3"), "ENT-3")
+
 
 class ManifestValidationTests(unittest.TestCase):
     def make_repository(self, directory: Path) -> Path:
-        active = directory / runner.ACTIVE_SPEC
-        active.parent.mkdir(parents=True, exist_ok=True)
-        active.write_bytes(SPEC.read_bytes())
+        copy_authorities(directory)
         cases = directory / "cases"
         cases.mkdir()
         return cases
@@ -137,9 +272,7 @@ class ArrangementTests(unittest.TestCase):
     expressible exactly."""
 
     def make_repository(self, directory: Path) -> Path:
-        active = directory / runner.ACTIVE_SPEC
-        active.parent.mkdir(parents=True, exist_ok=True)
-        active.write_bytes(SPEC.read_bytes())
+        copy_authorities(directory)
         cases = directory / "cases"
         cases.mkdir()
         return cases

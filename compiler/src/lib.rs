@@ -17,6 +17,7 @@ mod resolution;
 mod semantic;
 mod source;
 mod spec;
+pub mod spec_identity;
 mod syntax;
 
 pub use driver::*;

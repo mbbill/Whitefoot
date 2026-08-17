@@ -82,8 +82,12 @@
 
 use std::sync::OnceLock;
 
-use super::deterministic_target::{HostScript, run_on_deterministic_host};
-use super::{compile, host_optimized_module, optimized_main};
+use super::deterministic_target::{HostScript, run_emitted_on_deterministic_host};
+use super::system::with_ir;
+use super::{host_optimized_module, optimized_main};
+use crate::backend::emit_llvm;
+use crate::backend::emitter::emit_llvm_for_target;
+use crate::backend::qualification::SystemTarget;
 
 /// The first real Whitefoot program (task 0015), following the dossier's
 /// §10.1 witness trace step for step. It is the anchor for every row below:
@@ -91,10 +95,30 @@ use super::{compile, host_optimized_module, optimized_main};
 /// the program the project actually has to compile.
 const WFGREP: &[u8] = include_bytes!("../../../../tests/programs/wfgrep.wf");
 
+/// `wfgrep`'s two emitted modules — the host target's and the deterministic
+/// test target's — from one shared front-end pass. The checked program is
+/// identical for both targets; only the emission call differs, and a second
+/// full analysis of the same bytes was measured at 136s of pure setup. The
+/// module's own shape assertions are the differential guarding this merge.
+fn modules() -> &'static (String, String) {
+    static MODULES: OnceLock<(String, String)> = OnceLock::new();
+    MODULES.get_or_init(|| {
+        with_ir(WFGREP, |program| {
+            (
+                emit_llvm(program)
+                    .expect("lowered program must emit")
+                    .into_string(),
+                emit_llvm_for_target(program, SystemTarget::deterministic_test())
+                    .expect("the deterministic test target admits the program")
+                    .into_string(),
+            )
+        })
+    })
+}
+
 /// `wfgrep`'s module as the backend emits it.
 fn emitted() -> &'static str {
-    static MODULE: OnceLock<String> = OnceLock::new();
-    MODULE.get_or_init(|| compile(WFGREP))
+    &modules().0
 }
 
 /// `wfgrep`'s module as the host optimizer leaves it at the shipped level.
@@ -805,8 +829,8 @@ fn the_output_batch_costs_one_host_write_per_full_batch() {
         fixture.extend_from_slice(b"x\n");
     }
 
-    let run = run_on_deterministic_host(
-        WFGREP,
+    let run = run_emitted_on_deterministic_host(
+        &modules().1,
         &HostScript::new().file(&fixture),
         &[b"x", b"lines.txt"],
     );

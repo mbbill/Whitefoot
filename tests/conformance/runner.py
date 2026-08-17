@@ -77,7 +77,7 @@ ROOT = HERE.parent.parent
 CASES = HERE / "cases"
 MANIFEST = HERE / "manifest.jsonl"
 ACTIVE_SPEC = Path("spec/kernel-spec.md")
-ACTIVE_SPEC_SHA256 = "0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3"
+APPROVALS = Path("governance/APPROVALS.md")
 # The named native adapter is compiler/tests/conformance.rs, reached through
 # `make conformance-run`; this hook stays open for a future non-native
 # toolchain. Keeping it explicit prevents a missing compiler, crash, or broad
@@ -133,14 +133,58 @@ def run_cases(cases):
     return results
 
 
+def activation_chain_tail(root=ROOT):
+    """(version, digest) of the last `ACTIVE-SPEC:` record in the approval
+    ledger — the sole authority for the active specification's identity.
+    Reading the pin from the chain replaced a hardcoded digest constant here,
+    turning one hand edit per activation forever into none."""
+    tail = None
+    for line in (root / APPROVALS).read_text().splitlines():
+        if not line.startswith("ACTIVE-SPEC: "):
+            continue
+        fields = line.split(" ")
+        if len(fields) != 4 or not re.fullmatch(r"[0-9a-f]{64}", fields[2]):
+            raise ValueError(f"malformed activation record: {line}")
+        tail = (fields[1], fields[2])
+    if tail is None:
+        raise ValueError("governance/APPROVALS.md has no activation chain")
+    return tail
+
+
+def declared_candidate_supersedes(text):
+    """The supersedes digest of a `Status: CANDIDATE vM supersedes vN <sha>`
+    declaration, or None for any other status. A declared candidate is
+    accepted exactly when this digest equals the chain tail; every other
+    candidate property (version arithmetic, title, self-consistency) is judged
+    by the compiled `whitefoot-spec` gate, not re-implemented here."""
+    for line in text.splitlines():
+        if not line.startswith("Status: "):
+            continue
+        fields = line.split()
+        if len(fields) >= 6 and fields[1] == "CANDIDATE" and fields[3] == "supersedes":
+            return fields[5]
+        return None
+    return None
+
+
 def spec_rule_ids(root=ROOT):
     spec = root / ACTIVE_SPEC
     raw = spec.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
-    if digest != ACTIVE_SPEC_SHA256:
-        raise ValueError(f"active specification digest mismatch: {digest}")
+    _, expected = activation_chain_tail(root)
     text = raw.decode("utf-8")
-    return set(re.findall(r"^\[([A-Z]+-\d+[a-z]?)\]", text, re.M)), spec.name
+    if digest != expected and declared_candidate_supersedes(text) != expected:
+        raise ValueError(f"active specification digest mismatch: {digest}")
+    # Rule ids at line starts. A `[FAM-N.Sk]` sub-id line is an addressable
+    # citation anchor inside its parent rule, not a rule of its own: the
+    # coverage denominator stays the base rules, and a citation of a sub-id
+    # counts toward its parent (see base_rule below).
+    return set(re.findall(r"^\[([A-Z]+-\d+[a-z]?)(?:\.S\d+)?\]", text, re.M)), spec.name
+
+
+def base_rule(rule_id):
+    """Fold a `[FAM-N.Sk]` sub-id citation onto its parent rule id."""
+    return rule_id.split(".", 1)[0]
 
 
 HEX = re.compile(r"\A(?:[0-9a-f]{2})*\Z")
@@ -252,7 +296,9 @@ def validate_manifest(cases, annots, root=ROOT, cases_dir=CASES):
         if not isinstance(case_rules, list) or not case_rules:
             errors.append(f"{case_id}: rules must be a nonempty list")
             case_rules = []
-        unknown = sorted(set(case_rules) - rules)
+        unknown = sorted(
+            r for r in set(case_rules) if base_rule(r) not in rules
+        )
         if unknown:
             errors.append(f"{case_id}: unknown rules: {' '.join(unknown)}")
 
@@ -312,7 +358,7 @@ def coverage(cases, annots):
     rules, spec_name = spec_rule_ids()
     tagged, pos, neg = set(), set(), set()
     for c in cases:
-        tagged |= set(c["rules"])
+        tagged |= {base_rule(r) for r in c["rules"]}
         kind = c["expect"]["kind"]
         # Coverage measures the corpus against the specification, so every case
         # counts whatever its toolchain-readiness status is. An `unsupported`
@@ -321,7 +367,7 @@ def coverage(cases, annots):
         if kind == "reject":
             neg.add(c["expect"]["rule"])
         elif kind != "unsupported":
-            pos |= set(c["rules"])
+            pos |= {base_rule(r) for r in c["rules"]}
     annotated = {a["rule"] for a in annots} & rules
     by_case = tagged & rules
     covered = by_case | annotated

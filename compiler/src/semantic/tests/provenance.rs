@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use crate::{SemanticOutcome, SourceInput};
+use crate::SemanticOutcome;
 
 use super::super::entailment::CallGoalDisposition;
 use super::super::model::{CheckedProgramData, CheckedStatement, FunctionId};
@@ -10,7 +10,7 @@ use super::super::provenance::{
     ParameterDatum, ProvenanceDependency, ProvenanceGoalObservation, StructuralPredecessor,
     SubjectPredecessor, ValueDependencies, carrier_route_cmp,
 };
-use super::{with_semantics, with_semantics_inputs};
+use super::with_semantics;
 
 fn checked(source: &[u8], run: impl FnOnce(&CheckedProgramData)) {
     with_semantics(source, |outcome| {
@@ -1966,94 +1966,76 @@ command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(h
     });
 }
 
-#[test]
-fn canonical_deflate_retains_one_subject_bridge_and_three_unasserted_calls() {
-    let inputs = [
-        SourceInput::new(
-            "raw_deflate.wf",
-            include_bytes!("../../../../tests/programs/raw_deflate.wf"),
-        ),
-        SourceInput::new(
-            "raw_deflate_dynamic.wf",
-            include_bytes!("../../../../tests/programs/raw_deflate_dynamic.wf"),
-        ),
-        SourceInput::new(
-            "raw_deflate_dynamic_decode.wf",
-            include_bytes!("../../../../tests/programs/raw_deflate_dynamic_decode.wf"),
-        ),
-        SourceInput::new(
-            "raw_deflate_boundary.wf",
-            include_bytes!("../../../../tests/programs/raw_deflate_boundary.wf"),
-        ),
-    ];
-    with_semantics_inputs(&inputs, |outcome| {
-        let SemanticOutcome::Complete(program) = outcome else {
-            panic!("canonical raw-deflate bundle must remain accepted: {outcome:?}");
-        };
-        let store = function(&program.data, "store_dynamic_length");
-        let decode = function(&program.data, "decode_dynamic");
-        let metadata = &program.data.provenance;
+/// The canonical raw-DEFLATE provenance gate: one subject bridge and three
+/// unasserted downstream calls.
+///
+/// This runs inside `entailment.rs`'s frozen real-source corpus walk so the
+/// two gates share one front-end pass over the same 56 KB four-file bundle;
+/// the standalone `#[ignore]`d test that re-analyzed it was removed on
+/// 2026-08-16. If the DEFLATE bundle ever leaves that corpus, restore a
+/// standalone test here that analyzes the bundle and calls this function.
+pub(super) fn assert_canonical_deflate_provenance(program: &CheckedProgramData) {
+    let store = function(program, "store_dynamic_length");
+    let decode = function(program, "decode_dynamic");
+    let metadata = &program.provenance;
 
-        assert_eq!(metadata.structural_bridges.len(), 1);
-        assert_eq!(metadata.structural_bridges[0].requirement.function, store);
-        assert!(matches!(
-            metadata.structural_bridges[0].predecessor,
-            StructuralPredecessor::Local
-        ));
-        assert_eq!(metadata.subject_bridges.len(), 1);
-        assert_eq!(
-            metadata.subject_bridges[0].subject,
-            ParameterDatum {
-                ordinal: 3,
-                selector: DatumSelector::Plain,
-            }
-        );
-
-        let calls = metadata
-            .calls
-            .iter()
-            .filter(|call| call.caller == decode && call.downstream_requirement.function == store)
-            .collect::<Vec<_>>();
-        assert_eq!(calls.len(), 3);
-        for call in calls {
-            assert!(call.full.actual_obligations_ok);
-            assert!(call.unasserted.actual_obligations_ok);
-            assert!(call.s4_blinded.actual_obligations_ok);
-            assert_eq!(
-                call.unasserted.goal_disposition,
-                CallGoalDisposition::Discharged
-            );
-            assert_eq!(
-                call.s4_blinded.goal_disposition,
-                CallGoalDisposition::Discharged
-            );
-            assert!(call.upstream_requirement.is_none());
-            assert_eq!(call.subjects.len(), 1);
-            assert_eq!(call.subjects[0].argument, 3);
-            assert_eq!(call.subjects[0].callee_subject.ordinal, 3);
+    assert_eq!(metadata.structural_bridges.len(), 1);
+    assert_eq!(metadata.structural_bridges[0].requirement.function, store);
+    assert!(matches!(
+        metadata.structural_bridges[0].predecessor,
+        StructuralPredecessor::Local
+    ));
+    assert_eq!(metadata.subject_bridges.len(), 1);
+    assert_eq!(
+        metadata.subject_bridges[0].subject,
+        ParameterDatum {
+            ordinal: 3,
+            selector: DatumSelector::Plain,
         }
+    );
 
-        let store_function = program
-            .data
+    let calls = metadata
+        .calls
+        .iter()
+        .filter(|call| call.caller == decode && call.downstream_requirement.function == store)
+        .collect::<Vec<_>>();
+    assert_eq!(calls.len(), 3);
+    for call in calls {
+        assert!(call.full.actual_obligations_ok);
+        assert!(call.unasserted.actual_obligations_ok);
+        assert!(call.s4_blinded.actual_obligations_ok);
+        assert_eq!(
+            call.unasserted.goal_disposition,
+            CallGoalDisposition::Discharged
+        );
+        assert_eq!(
+            call.s4_blinded.goal_disposition,
+            CallGoalDisposition::Discharged
+        );
+        assert!(call.upstream_requirement.is_none());
+        assert_eq!(call.subjects.len(), 1);
+        assert_eq!(call.subjects[0].argument, 3);
+        assert_eq!(call.subjects[0].callee_subject.ordinal, 3);
+    }
+
+    let store_function = program
+        .functions
+        .iter()
+        .find(|function| function.id == store)
+        .expect("store_dynamic_length function");
+    assert!(
+        !store_function
+            .entailment
+            .claims
+            .iter()
+            .any(|claim| claim.name == "distance_position_in_lengths")
+    );
+    assert_eq!(
+        program
             .functions
             .iter()
-            .find(|function| function.id == store)
-            .expect("store_dynamic_length function");
-        assert!(
-            !store_function
-                .entailment
-                .claims
-                .iter()
-                .any(|claim| claim.name == "distance_position_in_lengths")
-        );
-        assert_eq!(
-            program
-                .data
-                .functions
-                .iter()
-                .map(|function| function.entailment.claims.len())
-                .sum::<usize>(),
-            12
-        );
-    });
+            .map(|function| function.entailment.claims.len())
+            .sum::<usize>(),
+        12
+    );
 }

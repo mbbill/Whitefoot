@@ -9,8 +9,14 @@ format:
 lint:
 	$(CARGO) clippy --all-targets --locked --offline -- -D warnings
 
+# The gate profile (Cargo.toml [profile.gate]) is release codegen with debug
+# assertions and overflow checks retained: the suite's owning tests analyze
+# real programs, ~16x faster there than at the unoptimized default, so the
+# whole suite runs in one gate with no fast/heavy split. A bare
+# `cargo test <filter>` during development still uses the default profile
+# and keeps incremental builds cheap.
 test:
-	$(CARGO) test --all-targets --locked --offline
+	$(CARGO) test --profile gate --all-targets --locked --offline
 
 docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --no-deps --locked --offline

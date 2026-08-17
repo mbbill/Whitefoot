@@ -1,7 +1,7 @@
 - There is exactly one spelling per semantic construct and one legal byte-level formatting; non-canonical input is a hard error and the toolchain never auto-formats.
 - There are no comments; documentation lives in a declaration doc field.
 - Computation is flat three-address form: calls and constructions appear only at expression position, every argument is an atom, and every intermediate is named by a let binding (GRAM-9). See [[binding-annotation]] for what that binder states.
-- Bounded traversal is an evidence-selected iteration class distinct from ordinary labelled loop control. See [[operation-spelling]] for how an operation is spelled and [[match-form]] for how a conditional is.
+- Bounded traversal is an evidence-selected iteration class distinct from ordinary labelled loop control. See [[iteration-forms]] for the two iteration forms, [[operation-spelling]] for how an operation is spelled, and [[match-form]] for how a conditional is.
 - Bool is a prelude enum with no boolean literals; numeric literals are decimal-only with a mandatory type suffix.
 
 ## Facts
