@@ -128,10 +128,17 @@ One numbered record per batch: registered in `docs/ongoing/` as
 sequence, `max(existing) + 1`, and are never reused. `docs/planned/` is
 retired; decomposition lives inside the batch record or the plan.
 
+A batch record opens only under an `ACTIVE` `docs/current-plan.md` item —
+never directly from a conversation. An owner direction in conversation is
+direction for the plan: it becomes a new `PROPOSED` plan or an
+owner-approved plan amendment first, and the batch opens under that.
+Planning work itself — refreshing the roadmap, drafting or revising the
+plan — is not a batch and gets no record; its output is those documents.
+
 A batch record is a boundary document, never a journal. It states the
-authority (plan item or owner direction), scope and exclusions, the approval
-classes the batch will touch, and — at closure — the outcome, landed
-commits, verification results, and dispositions of audit findings. Progress
+authority (the exact `ACTIVE` plan item), scope and exclusions, the
+approval classes the batch will touch, and — at closure — the outcome,
+landed commits, verification results, and dispositions of audit findings. Progress
 narration is forbidden: record updates ride the work commits they describe,
 and a docs-only commit is exceptional. Transient state belongs to the
 session; evidence belongs in the commit messages of the work itself.
@@ -160,7 +167,7 @@ Before changing code, answer:
 
 1. What concrete compiler capability, real program, or experiment does this
    unlock?
-2. Which `ACTIVE` plan item or owner direction authorizes it?
+2. Which `ACTIVE` plan item authorizes it?
 3. What is the smallest general implementation?
 4. Does it exercise the normal compiler path rather than a project, function,
    source-shape, corpus, or test special case?

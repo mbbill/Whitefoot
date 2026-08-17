@@ -120,8 +120,12 @@ narrow a deliverable. One live worktree has one writer.
 Each batch has one numbered record: `docs/ongoing/NNNN-short-slug.md` while
 live, moved unchanged in number to `docs/done/` in the integration change.
 Numbers continue one shared monotonic sequence and are never reused. A
-record is a boundary document — authority, scope, approval classes, and at
-closure the outcome, landed commits, verification, and audit dispositions.
+record opens only under an `ACTIVE` `docs/current-plan.md` item, never
+directly from a conversation: an owner direction becomes a plan or a plan
+amendment first, and planning work itself (roadmap or plan revision) is not
+a batch and gets no record. A record is a boundary document — the exact
+plan item, scope, approval classes, and at closure the outcome, landed
+commits, verification, and audit dispositions.
 Progress narration is forbidden; record updates ride the work commits they
 describe, and a docs-only commit is exceptional. A batch handed to another
 agent gets its record written before the handoff as the batch contract.
