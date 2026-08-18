@@ -1,5 +1,7 @@
 # O11 Boolean-goal composition — candidate design
 
+> Superseded 2026-08-18: applied at v0.31 activation (eb8e8634). Historical design evidence; the active spec owns the normative text.
+
 Batch 0070, workstream W5 item "O11 boolean composition (from its four
 recorded findings)". Authorized by the ACTIVE `docs/current-plan.md`
 (owner expansion, 2026-08-17). This document is design evidence for the

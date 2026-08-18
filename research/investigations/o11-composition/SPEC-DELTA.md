@@ -1,5 +1,7 @@
 # O11 signed Boolean decomposition — exact candidate delta text
 
+> Superseded 2026-08-18: applied at v0.31 activation (eb8e8634). Historical design evidence; the active spec owns the normative text.
+
 Candidate text for the single v0.31 candidate; the lead integrates it,
 and it lands only under the owner's exact-byte approval carrying the
 ruling-(2) conformance rewrite in the same sitting. Anchors quote the

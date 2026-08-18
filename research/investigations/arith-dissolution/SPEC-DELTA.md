@@ -1,5 +1,7 @@
 # Arithmetic-mode dissolution — exact v0.31 candidate rule edits
 
+> Superseded 2026-08-18: applied at v0.31 activation (eb8e8634). Historical design evidence; the active spec owns the normative text.
+
 Status: DELTA TEXT FOR LEAD INTEGRATION (batch 0070, task #13). This file
 is delta input to the single v0.31 candidate; the lead integrates it and it
 is superseded by the activated specification. Nothing here changes

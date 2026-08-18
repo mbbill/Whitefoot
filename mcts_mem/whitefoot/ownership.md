@@ -2,7 +2,7 @@
 - Regions are lexical and named; every borrow is written with its mode and region — there is no inference of modes, regions, or lifetimes anywhere in the language.
 - Two borrow modes exist beside ownership: shared and exclusive; exclusivity is judged over resolved places, and content reached through any borrow can never be moved.
 - Overlap is conservative: struct fields are disjoint by prefix; two indexed places are disjoint only when both indices are unequal literals; two fully substituted direct slices overlap when any pair of their finite resolved-place origins overlaps. An immutable-const origin needs no write conflict, while a formal-slice origin never proves disjointness before call substitution (OWN-7).
-- `set` overwrites only a writable copy-typed final place. Affine replacement remains absent: constructing a fresh owner under a new `let` is required until take/replace, failure, overlap, and old-value disposition have one selected semantics.
+- `set` overwrites only a writable copy-typed final place; `replace` ([[affine-replacement]], SET-2) atomically exchanges a writable region-free affine final place with a same-typed replacement, binding the old value under the new `let` — no temporary hole, no implicit destruction, and the sole admitted move of content reached through a `&uniq` holder.
 - The checker rejects when unsure: a sound-but-unprovable program is rejected with a diagnostic naming the rule and a restructuring, never accepted on trust.
 
 ## Facts
@@ -36,6 +36,7 @@
 - 2026-07-22 owner-approved specification: v0.13 makes a direct bare affine own-rooted Result place a consuming `propagate` operand, matching OWN-13's structural consumption while retaining explicit `move`; ordinary affine place uses still require `move`, and whole-root death and later-use rejection are unchanged. (sourced)
 - 2026-07-23 owner-approved specification: v0.17 gives every direct slice one finite static possible-origin set while each runtime descriptor still points to one actual origin. `slice_of` creates a singleton, movement preserves the complete set, and alias/effect judgments quantify over all members; under the deliberately unchanged named-region liveness, moving or returning the descriptor does not shorten its shared claim. (sourced)
 
+- 2026-08-18 (eb8e8634) rationale: v0.31 selects atomic replace for the take/replace question because the mandatory old-value binder is forced by the no-implicit-destruction constraint and the no-hole constraint is met by construction; typed holes and closed-scope holes were rejected as per-place flow state the D1a levers exclude, and swap-only as binding revival. (sourced)
 ## Moves
 
 - 2026-07-07 (7c1d7641) replaced [[inferred-borrow-checking]]: replicating rustc's borrow checker is unacceptable implementation effort — a normal compiler frontend is acceptable, rustc-scale inference is not — so D1 stands only on a simplified explicit-region, reject-when-unsure calculus (owner ruling D1a, 2026-07-02) (sourced)

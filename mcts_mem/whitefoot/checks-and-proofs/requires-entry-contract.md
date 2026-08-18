@@ -1,6 +1,6 @@
 - A function requirement admits zero or more copy-only local bindings followed by one final pure, total, non-trapping Boolean check on ordinary and generic declarations; alpha expansion yields one finite typed goal template.
 - Exact goal identity preserves selected operation semantics, concrete written type and const arguments, operand order, formal parameter ordinals and projections, named-constant declaration identity, and typed literals; it ignores local spelling, sharing, occurrence, and callee-instance identity.
-- Goal evidence is atomic: no algebraic or Boolean normalization, decomposition, or composition participates, and only an entire comparison root may project to the existing scalar relation fragment.
+- Goal evidence admits no algebraic normalization and no composition; establishment-site signed Boolean decomposition ([[goal-decomposition]]) is the sole structural rule, and only an entire comparison root may project to the existing scalar relation fragment.
 - [[requirement-enforcement]] governs ordinary calls and real process entries.
 - A proved ordinary call supplies the complete positive goal to the body and its exact scalar projection when present; ordinary support, kills, joins, and contradiction govern signed goal evidence.
 - A requirement is a signature obligation with no callee effect, not a trusted assertion or optimizer assumption.

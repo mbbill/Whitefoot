@@ -1,5 +1,7 @@
 # Take/replace for affine places — design decision (batch 0070, W2)
 
+> Superseded 2026-08-18: applied at v0.31 activation (eb8e8634). Historical design evidence; the active spec owns the normative text.
+
 Date: 2026-08-17. Authority: the ACTIVE `docs/current-plan.md` W2 under batch
 record `docs/ongoing/0070-gap-closure-and-take-replace.md`. This document is
 the decision record behind the v0.31 candidate. It selects semantics; the

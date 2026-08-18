@@ -1,5 +1,7 @@
 # Reborrow extension — exact v0.31-candidate rule edits (DRAFT, not a spec change)
 
+> Superseded 2026-08-18: applied at v0.31 activation (eb8e8634). Historical design evidence; the active spec owns the normative text.
+
 Status: DRAFT delta text for batch 0070 (W5 item "grandchild reborrows and
 call-result-borrow roots"), prepared for the lead's single-writer integration
 into the one v0.31 candidate. Nothing here edits `spec/kernel-spec.md`; every

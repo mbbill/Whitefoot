@@ -1,6 +1,8 @@
 # 0070 — Specified-language gap closure and take/replace resolution
 
 Owner: lead. Workspace: `caps-batch` branch. Base: main `d5e1897` (v0.30).
+Status: DONE (2026-08-18). Frozen coordination history.
+
 Registered: 2026-08-17, under the ACTIVE Current Plan (all four
 workstreams). 0069 was allocated and reverted unlanded; its number stays
 burned.
@@ -127,3 +129,25 @@ earlier digest quote is historical). Batch economics: ~50 commits,
 5 docs-only; three fable session-limit casualties fully salvaged by
 opus successors; two pre-existing compiler defect classes found and
 fixed by the audit loop itself.
+
+## Final disposition — DONE (2026-08-18)
+
+Owner batch approval 2026-08-18 ("好了。现在0070批准"), the single act
+recorded above. Landed: merge commit `4f71b224` (caps-batch to main),
+activation commit `eb8e8634` (v0.31 ACTIVE at digest `ea4b8ad4…97f1c`,
+v0.30 archived against the verified chain tail, chain at 23), and the
+closure commit carrying this move plus the four design appendices'
+mcts_mem deltas (affine-replacement with three weighed rivals,
+goal-decomposition superseding atomic goal evidence, no-reborrow and
+data-model item updates; lint clean, 87 nodes).
+
+Validation: full `make check` green at the activation tip — coverage
+134/134, lib 908/908, adapter Pass=460 Skip=1 Fail=0, 32 archived
+specifications hash as recorded, 23 unbroken activations. Folded
+decisions confirmed as prepared: DELTA-DIAG1 not applied; adapter
+`#[ignore]` wiring untouched; enum-const families stay DEFERRED.
+
+Follow-ups (next plan, not this record): wfgrep traversal + byte-string
+program, affine-element buffer lowering, check dissolution, division
+dissolution, declaration-site provenance rejection; Option niche layout
+and the generics+regions vector gap ride later evidence.

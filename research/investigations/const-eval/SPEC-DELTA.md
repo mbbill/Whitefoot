@@ -1,5 +1,7 @@
 # Const-evaluation and #35 rule deltas for the v0.31 candidate
 
+> Superseded 2026-08-18: applied at v0.31 activation (eb8e8634). Historical design evidence; the active spec owns the normative text.
+
 Batch 0070, W5 (CONST-1/CONST-2 deferred notes, OWN-1/FN-8 repair conflict
 #35). This file is delta text for the lead — the single writer of the v0.31
 candidate — to integrate; it edits no specification byte itself. Touched
