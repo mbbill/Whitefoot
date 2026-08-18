@@ -2,6 +2,8 @@
 
 Owner: lead. Workspace: `batch-0071` branch with executor worktrees on
 file-disjoint briefs. Base: main at the plan-activation commit.
+Status: DONE (2026-08-18). Frozen coordination history.
+
 Registered: 2026-08-18 under the ACTIVE Current Plan (W1, W2, W4).
 
 ## Authority
@@ -173,3 +175,31 @@ Recorded follow-ups (next plan, no approval needed now): the
 file-open-by-name operation (real searching wfgrep), Linux
 enumeration mapping, Option niche layout (#46), the OWN-6
 InvalidChildReborrow unpinned rejection surface.
+
+## Final disposition — DONE (2026-08-18)
+
+Owner batch approval 2026-08-18 ("批准"), the single act recorded above,
+with all six packet decisions approved as stated — including the
+traversal plan-expansion ratification and the #50 rule widening.
+
+Landed: merge commit `73ede975` (batch-0071 to main), activation commit
+`f8c81dfc` (v0.32 ACTIVE at digest `5ea3927a…6bf5`, v0.31 archived
+against the verified chain tail, chain at 24), and this closure
+carrying the design records: `writer-trap-surface` with the frozen
+`dual-check-and-claim` rival, `directory-enumeration` with the frozen
+`enumeration-cursor-window` rival, the declaration-provenance laws on
+`no-reborrow`, the division family on `obligation-discharge`, the
+system-interface status item, plus `docs/patterns.md` P12's
+check-to-claim rewrite and the new P13 decision-not-access idiom.
+Tree lint clean, 91 nodes.
+
+Validation at the activation tip: full `make check` green — lib 952/0,
+programs 46/46, adapter Pass=489 Skip=1 Fail=0, coverage 135/135,
+canonical corpus 3/3, 33 archived specifications hash as recorded, 24
+unbroken activations.
+
+Follow-ups opened by this batch (next plan): the file-open-by-name
+operation that a searching wfgrep needs, Linux enumeration mapping,
+retirement of the unreachable strict-in-U clauses, the
+`whitefoot-migrate` deletion ruling, deferred conformance case
+renames, and the OWN-6/OP-5 attribution questions.

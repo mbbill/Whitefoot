@@ -7,7 +7,7 @@
 - Every resource family has a compiler-owned contract covering states, aliases, owner disposition on every outcome, concurrency, cleanup, and a cross-platform floor, and carries one of three completion policies: release-complete, explicitly abandonable, or completion-required; traps keep whole-process abort with no language cleanup.
 - System operations carry target-independent semantic IDs bound by a static (spec version, ID, target, program kind) qualification table with direct native lowering; hot paths admit no per-call dispatch, handle-table lookup, target tag, or global lock.
 - System names resolve from a distinct compiler-owned declaration domain; [[declaration-home]] fixes it.
-- v0.18 is the active specification carrying the exact first command slice; the compiler parses the whole system surface and stops it as explicit unsupported capability pending the implementation tasks, and every later family remains an additive true subset.
+- The active specification carries the command slice and the directory-traversal surface ([[directory-enumeration]]) as executing capabilities rather than parsed-and-stopped ones; every later family remains an additive true subset, and a target with no enumeration facility fails qualification for those semantic IDs rather than emulating them.
 
 ## Facts
 

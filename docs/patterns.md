@@ -218,9 +218,9 @@ increment boilerplate for an exact half-open u64 walk.
 Problem: a protected storage access uses an offset derived from process or
 system input, so valid hostile input may falsify its bound. Pattern status:
 active v0.32 guidance. Test the relation with a real branch and return the
-domain's normal error value on the false edge. A body `check`, a `claim`, an
-ordinary callee requirement/prologue, or a process-entry wrapper check is not a
-repair: each turns expected external failure into a trap.
+domain's normal error value on the false edge. A `claim`, an ordinary callee
+requirement/prologue, or a process-entry wrapper check is not a repair: each
+turns expected external failure into a trap.
 
 Place the branch where the protected relation belongs. For a local protected
 access, branch in the function that owns that access. For a call rejection,
@@ -237,6 +237,46 @@ constrained subject.
 Replaces: assertion-backed bounds on malformed input, moving the same trap
 behind a helper, and relying on a checked entry wrapper to authorize a body
 access.
+
+## P13. Return the decision, not the access
+
+Problem: a helper must choose between two borrowed sources and hand the chosen
+one back, but the callable boundary cannot say which one it chose.
+`fn pick['r](a: &uniq 'r Node, b: &uniq 'r Node) -> &uniq 'r Node` is rejected
+at its own `rtype` [FN-1]: two parameters share the result's region and kind,
+so no caller can root the returned claim, and a result no caller can bind is
+the declaration's error rather than the caller's. Pattern status: active v0.32
+guidance.
+
+Decide which fix applies by asking why there are two sources. If the sources
+are structurally distinct — a node and its scratch buffer, a subject and its
+dictionary — give the non-source its own formal region:
+`fn pick['r, 's](a: &uniq 'r Node, b: &uniq 's Node) -> &uniq 'r Node` is
+accepted, and its result is an ordinary holder over `a`'s storage that the
+caller binds, writes through, and reborrows from. If instead the choice is
+data-dependent, no signature can name the source, and the access belongs to
+the caller: return the decision as an owned value — a two-variant enum, or an
+index into a pool (P2) — and let the caller re-borrow from the place the
+decision names.
+
+The worked shape for the data-dependent case is three parts. The callee
+`fn heavier(a: &'r Node, b: &'r Node) -> own Side reads('r)` reads both weights
+through its shared borrows and returns `Left()` or `Right()`; it takes shared
+borrows, so both sources may name one region and nothing is ambiguous — a
+returned owned value has no provenance. The caller binds
+`let side = heavier(a: &'a left, b: &'a right);`, and then `match side` takes
+the exclusive borrow it actually wants inside the taken arm, from `left` or
+from `right` by name. The result is longer than the rejected one-liner and
+that is the whole trade: the borrow is created where its source is a written
+place, so the checker sees one root per holder, and the caller keeps both
+sources usable until it commits.
+
+Fast because: the decision is a scalar. The read pass takes shared borrows
+that constrain nothing, and the write pass takes exactly one exclusive borrow
+at the place it names, so no facts are lost to a conservative merge.
+
+Replaces: an ambiguous-provenance borrow-returning signature, and the
+caller-side workaround of binding a result the language cannot root.
 
 ## Known gaps (findings, not yet patterns)
 
