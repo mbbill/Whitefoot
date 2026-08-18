@@ -2,7 +2,7 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
-the active v0.30 authority at `spec/kernel-spec.md`; released versioned
+the active v0.31 authority at `spec/kernel-spec.md`; released versioned
 files retain the superseded
 authorities. Requirement (owner + META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
@@ -1072,8 +1072,8 @@ selects the specification semantics above.
 
 ## v0.29 amendment — opt-in strict no-claim partition (activated 2026-08-15)
 
-Specification binding: active `spec/kernel-spec.md`, headed v0.30, at SHA-256
-`5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1`.
+Specification binding: active `spec/kernel-spec.md`, headed v0.31, at SHA-256
+`ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c`.
 The superseded v0.28 bytes are immutable at
 `spec/kernel-spec-v0.28.md`, SHA-256
 `08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`,

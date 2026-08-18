@@ -1149,3 +1149,56 @@ ARCHIVE-SPEC: v0.8 d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba29532
   constants and generated module, and the prose authority lines the
   digest-sync gate enumerates. No conformance verdict changes.
 ACTIVE-SPEC: v0.30 5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1 0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3
+
+## 2026-08-18 — OWNER APPROVAL: batch 0070 merge and its protected conformance candidates
+- owner: **the owner, in conversation, 2026-08-18** — "好了。现在0070批准",
+  replying after the batch review in docs/ongoing/0070 (morning review,
+  ten-agent exit audit with dispositions, final state lib 908/908, adapter
+  Pass=460 Skip=1 Fail=0, coverage 134/134) and the full explain-code
+  walkthrough page of the batch, with an extended design Q&A on SET-2,
+  OP-2, O11, and the reborrow extension conducted in conversation.
+- APPROVED: merging branch caps-batch to main at merge commit `4f71b224`;
+  the protected conformance candidate commits it carries — `915eeab3`
+  (repair three defective cases), `2db1a3cf` (op3-neg-exact-dotted verdict
+  corrected to cite OP-1), `a314189a` (promote verified pending cases to
+  runnable), `21434167` (migrate 14 cases to the v0.31 arithmetic rule),
+  `f53b52a6` (stor1 case rename off the now-reserved name), `1c8d873a`
+  (16 new v0.31 cases), and the O11 positive rewrite with its visible
+  `ent3-neg-bor-no-comparison-origin` removal — plus the spec-candidate
+  amendment `7ceb6ba2`.
+- DECISIONS FOLDED INTO THIS APPROVAL (defaults as prepared): DELTA-DIAG1
+  not applied (retained as a recorded research delta); the conformance
+  adapter `#[ignore]` wiring untouched (reason text corrected only);
+  enum-const families remain DEFERRED with recorded reasons.
+- NOT APPROVED BY THIS ENTRY: activation of the v0.31 candidate, which is
+  the separate exact-byte entry below.
+
+## 2026-08-18 — OWNER EXACT-BYTE APPROVAL: v0.31 batch-0070 capability delta
+- owner: **the owner, in conversation, 2026-08-18** — "好了。现在0070批准",
+  the batch approval whose recorded single act (docs/ongoing/0070, "Owner
+  batch approval = the merge") is the merge plus this activation, naming
+  candidate SHA-256
+  `6657c3420bef8678be2e43bdf941d6db0095a4ccfece46c557beba26d09b07f4`.
+- APPROVED BYTES: the v0.31 candidate at that digest. Content: [SET-2]
+  affine-place replacement (`replace_let_rhs`), the [ENT-6]
+  constant-operand overflow obligation family, the reborrow extension
+  (signature-determined provenance, grandchild composition), [ENT-3]
+  signed Boolean decomposition, one-operation const arithmetic with
+  struct-typed consts, and the #35 position-conditional repair; rule
+  inventory 134, grammar 74/96/99 two-path verified.
+- ACTIVATION DELTA: per the candidate-mode workflow, activation replaced
+  exactly the one declared status line
+  `Status: CANDIDATE v0.31 supersedes v0.30 5ed21019…` with
+  `Status: ACTIVE v0.31 (2026-08-18; batch-0070 capability delta: [SET-2]
+  affine-place replacement, the [ENT-6] constant-operand overflow
+  obligation family, the reborrow extension, [ENT-3] signed Boolean
+  decomposition, and one-operation const arithmetic with struct-typed
+  consts; rule inventory 134).` and changed nothing else; the resulting
+  active digest recorded in the chain is
+  `ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c`.
+- boundary: the stable file, its new v0.30 archive (verified against the
+  prior chain tail before installation), the chain line below, identity
+  constants and generated module, and the prose authority lines the
+  digest-sync gate enumerates. Conformance changes ride the batch-0070
+  merge entry above, not this entry.
+ACTIVE-SPEC: v0.31 ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c 5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1

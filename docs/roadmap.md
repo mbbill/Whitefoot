@@ -3,10 +3,10 @@
 Status: CANONICAL DIRECTION OUTLINE
 Revision: 42 (batch 0070: adapter fully green; v0.31 candidate prepared on branch)
 
-The active language authority is v0.30 at the stable path
+The active language authority is v0.31 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
-`5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1`.
-Exact v0.8 through v0.29 are immutable flat archives. The completed execution
+`ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c`.
+Exact v0.8 through v0.30 are immutable flat archives. The completed execution
 plan is [`docs/current-plan.md`](current-plan.md); a new undertaking requires a
 new owner-approved plan. Project law is the
 [`Constitution`](constitution.md), and the operational process is
@@ -54,7 +54,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.30]` `[current: safe-Rust compiler]`
+`[current: spec v0.31]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -66,7 +66,7 @@ The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
-active [v0.30 specification](../spec/kernel-spec.md) remains semantic authority.
+active [v0.31 specification](../spec/kernel-spec.md) remains semantic authority.
 The first-slice system interface compiles and runs end-to-end on the native
 macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
 remain ahead of any performance claim.
