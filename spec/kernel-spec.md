@@ -565,10 +565,10 @@ Creating a candidate-position child through a `&uniq` holder suspends that holde
 A shared holder needs no suspension: it admits no write through itself.
 A child is never bound, returned, `give`n, stored, or the whole call result, and its `'c` cannot outlive the statement, so no borrow derived from a child outlives its statement; with borrow-free storage [STOR-5] the child is non-escaping.
 
-A `let` whose ordinary right-hand side is a user call with borrow-mode result is a borrow holder exactly when the callee signature determines one provenance-candidate parameter: the one parameter written as a borrow of the result's kind in the result's formal region, with no other parameter naming that formal region in its mode or written type and with a region-free result type.
+A `let` whose ordinary right-hand side is a user call with borrow-mode result is a borrow holder rooted at the callee's provenance candidate [FN-1], and every accepted callee has one or has none.
 resolved(result holder) = the candidate actual's complete resolved place, even when the callee delivered a narrower suffix of it; the holder's borrow is otherwise ordinary — OWN-4 liveness in the substituted result region, OWN-5 exclusivity, OWN-6 child admission, OWN-14 returned reborrow.
-Binding a borrow-mode user-call result whose callee signature does not determine a candidate is a hard error citing OWN-6 with the restructuring `give the callee exactly one parameter written as a borrow of the result's mode and region and no other parameter naming that region, or bind the borrow from a direct borrow expression`.
 Nothing here narrows FN-1: the caller still judges the call by the signature alone.
+A borrow-mode call result with no candidate is rooted in named `const` storage [FN-1, CONST-2], which no accepted write or unique borrow reaches [OWN-5, OWN-7]; its holder claims no caller place and conflicts with nothing.
 
 Bound children, result-carrying children (reference-result provenance), `uniq`-to-`shared` downgrade, `match`-binder parents, and written grandchild chains through a bound direct reborrow are DEFERRED with recorded delta; every written reborrow form outside this argument-atom position is dispositioned by [OWN-14], and the derived match-payload binder is [OWN-13]'s arm-scoped child reborrow.
 
@@ -961,8 +961,12 @@ OWN-10 independently rejects a returned origin whose storage is too short-lived.
 A function whose written result mode is `&'d` or `&uniq 'd` and whose direct result type is `slice<'r, T>` is a hard error citing FN-1 at the complete `rtype`, with `SourceCoordinate` equal to that production's complete checked half-open source extent and the restructuring `return the direct own slice descriptor under its data region; do not return a borrow of a slice descriptor`.
 This specification has no signature summary that carries both the returned descriptor's source-place provenance and the underlying slice value's complete origin set.
 This rejection does not change any other returned-borrow judgment.
+A function whose written result mode is `&'b` or `&uniq 'b` determines the result's provenance from its written parameters alone: a parameter is a provenance candidate iff its written mode is a borrow of the result's kind in the result's formal region `'b` [OWN-6].
+Exactly one candidate is the result's debtor, and zero candidates is legal — OWN-10 admits no `'b`-region borrow rooted in callee-local storage, so the only remaining source is named `const` storage, whose immutable program-lifetime extent needs no claim [CONST-2].
+Two or more candidates, a same-region parameter of the other borrow kind, or any parameter whose written type names `'b` leaves the source undetermined and is a hard error citing FN-1 at the complete `rtype`, with `SourceCoordinate` equal to that production's complete checked half-open source extent and the restructuring `give the source parameter its own region so exactly one parameter shares the result's region and kind, or return the decision as a value and let the caller borrow from the source it names`.
+The declaration is the error and no call is required to reach it: [GRAM-9] admits a computed value only through a preceding `let`, so a result no caller can bind is unusable by construction.
 
-The signature-formation parts of these two slice-result judgments apply equally to a top-level `fn_decl` and a contract-member `fn_sig`: an `own slice` member has the same parameter-derived ceiling, and a borrow-mode direct-slice member is rejected at that member's complete `rtype`.
+The signature-formation parts of these two slice-result judgments and of the borrow-result provenance judgment apply equally to a top-level `fn_decl` and a contract-member `fn_sig`: an `own slice` member has the same parameter-derived ceiling, a borrow-mode direct-slice member is rejected at that member's complete `rtype`, and a borrow-result member whose source its own parameters leave undetermined is rejected there too.
 A `fn_sig` has no body returns to validate; any [FN-3] binding still requires its bound `fn_decl` to satisfy the complete body judgment independently.
 
 At a call, an `own slice` result's origin set is computed only from the callee's written signature.
