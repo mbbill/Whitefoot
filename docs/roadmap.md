@@ -6,9 +6,10 @@ Revision: 42 (batch 0070: adapter fully green; v0.31 candidate prepared on branc
 The active language authority is v0.31 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
 `ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c`.
-Exact v0.8 through v0.30 are immutable flat archives. The completed execution
-plan is [`docs/current-plan.md`](current-plan.md); a new undertaking requires a
-new owner-approved plan. Project law is the
+Exact v0.8 through v0.30 are immutable flat archives. The execution plan at
+[`docs/current-plan.md`](current-plan.md) is PROPOSED (wfgrep functional
+legs and trap-endpoint closure) and awaits owner approval; PROPOSED
+authorizes no execution. Project law is the
 [`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -824,8 +825,9 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
 Ripgrep is the owner-selected umbrella project. Selection fixes the external
 pressure source and the headline objective, **2x ripgrep**; it does not
 authorize a favorable subset, a monolithic rewrite, or any particular
-language, compiler, proof, runtime, or optimizer change. The completed
-`current-plan.md` closed the bounded outline:PROOF-8 undertaking. No next outline:CAND-8
+language, compiler, proof, runtime, or optimizer change. Completed plans
+through batch 0070 closed the bounded outline:PROOF-8 undertaking and the
+specified-gap/take-replace undertaking (v0.31 activated). No next outline:CAND-8
 slice is authorized until a new owner-approved high-level plan selects it and
 states how it returns to the unchanged product comparison.
 

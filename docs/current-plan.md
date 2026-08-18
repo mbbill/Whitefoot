@@ -1,83 +1,71 @@
-# Current Plan — close the specified-language gap; resolve take/replace
+# Current Plan — wfgrep functional legs and trap-endpoint closure
 
-Status: ACTIVE (owner direction in conversation, 2026-08-17: "把剩下所有事情
-都放进计划里面全都实现了吧……为了防止卡我审评，你就在分枝上搞就好了，这样
-spec修订也不卡。你可以开agent并行。" The direction authorizes this plan and
-its batches; every specification byte and every protected-compliance change
-this plan produces still lands only as a marked branch candidate awaiting
-the owner's exact-byte morning approval.)
+Status: PROPOSED (drafted 2026-08-18 after the batch-0070 plan completed
+with v0.31 activation at `eb8e8634`. Authorizes no execution; the owner
+approves this high-level plan before it becomes ACTIVE.)
 
-Derived from Direction Outline revision 41 and the 2026-08-17 capability
-review. Supersedes the completed obligation-discharge plan in place.
+Derived from Direction Outline revision 41 and the batch-0070 outcome.
+Supersedes the completed gap-closure/take-replace plan in place.
 Active language authority: v0.31 at `spec/kernel-spec.md`, SHA-256
-`ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c`
-(activated 2026-08-18 under this plan's batch-0070 approval).
+`ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c`.
 
 ## Objective
 
-Make the compiler implement the language the v0.30 specification
-already defines, then resolve the one recorded structural blocker in front
-of the flagship: §5 take/replace and the first collections layer. Both
-advance outline:CAND-8 (ripgrep-class search at 2.00x), whose every missing
-functional leg (regex, traversal queue, result buffers) is blocked on
-collections, which are blocked on take/replace.
+Two thrusts, both advancing outline:CAND-8 (ripgrep-class search) and the
+trap thesis. First, make wfgrep functionally real on the v0.31 collection
+layer: recursive directory traversal, byte-string handling, and the
+affine-element buffer lowering the searcher's result storage needs.
+Second, close the remaining designed-but-open language endpoints so that
+the accepted language matches its own doctrine: claim as the sole
+writer-reachable trap source, zero-divisor obligations, and
+declaration-site rejection of ambiguous-provenance borrow returns.
 
 ## Workstreams
 
-- **W1 — specified-but-unimplemented gap closure.** The 13 pending adapter
-  rows and the one runnable failure (own3 outlives-store,
-  RegionsAndBorrows): named-const array sizes, arena confinement and
-  arena-origin slices, float `.strict` rows, polymorphic-recursion
-  rejection, `propagate` execution, Result aggregate payloads,
-  borrow-affine payload match, nested direct slices, cross-region borrow
-  stores. Compiler-only; no spec bytes move. Evidence per gap: the pending
-  case compiled and run directly (manifest untouched); the status flips are
-  prepared as one marked protected candidate commit for morning approval.
-- **W2 — §5 take/replace and first collections.** Consult mcts_mem, weigh
-  the recorded alternatives, design the take/replace semantics against the
-  obligation-discharge model (the hole's interaction with facts and kills
-  is the novel part), draft the v0.31 candidate under candidate mode, run
-  the grammar verifier, implement the semantic core, and build the minimal
-  library layer (growable vector, byte-string over `buffer<T>`). Extend
-  generics beyond Copy exactly as far as the container design forces
-  (task #39's recorded trigger). Conformance case family prepared as a
-  marked protected candidate.
-- **W3 — wfgrep recursive-traversal slice** using W2's collections.
-- **W5 — every remaining deferred and parked item** (owner expansion,
-  2026-08-17: "之前所有'还没实现的'，包括pending的，deferred，以及其他各种
-  零碎的东西，都要实现"): const arithmetic and struct/enum consts
-  (CONST-1/2 deferred notes), the OWN-1/FN-8 repair conflict (#35),
-  arithmetic-mode dissolution (#13), grandchild reborrows and
-  call-result-borrow roots, non-ASCII diagnostics, escaped host-string
-  display, affine-element buffers (rides W2), DIAG-1 restructure and the
-  conciseness ratchet, representation Stage 2 extraction locks, O11
-  boolean composition (from its four recorded findings), a minimal
-  char/text slice over W2's byte-string, and wfgrep re-attribution (#17)
-  after W3. Research-grade items that cannot be closed soundly tonight
-  (complete-domain proof calculi; FN-3 contracts round-2, which gates on
-  writer-tier evidence) end as blocking analyses, not invented semantics.
-  All spec deltas integrate into the single v0.31 candidate through the
-  lead; the spec file has one writer.
-- **W4 — batch audit and morning packet:** adversarial audit, batch
-  economics, and one review document enumerating every approval the owner
-  owes.
+- **W1 — wfgrep functional legs (main).** The recursive-traversal slice
+  and the byte-string program over the landed growable-vector layer, plus
+  affine-element buffer lowering: `buffer_vacant` construction, element
+  replace/vacate lowering, and the per-element drop loop that closes the
+  recorded explicit-unsupported capability. Evidence: wfgrep compiles and
+  runs a real recursive search over a directory tree end to end.
+- **W2 — trap-endpoint spec batch (parallel; one v0.32 candidate).**
+  Three deltas through the lead into one candidate under candidate mode:
+  division/remainder zero-divisor obligations by the constant-operand
+  recipe (#48; the b != 0 goal is already expressible in the fragment);
+  check dissolution (#47) — retire OP-5 `check` so claim is literally the
+  sole writer-reachable trap source, S2 establishment migrating to the
+  richer S1/S3 sources; and declaration-site rejection of
+  ambiguous-provenance borrow returns (#50; owner-driven law: at most one
+  parameter may share the result borrow's region and kind — a declaration
+  whose result no caller can use is itself the error). Grammar verified
+  natively; conformance family prepared as marked protected candidates;
+  the #50 activation also records its mcts_mem decision and the
+  decision-not-access writer idiom in `docs/patterns.md`.
+- **W3 — evidence-gated follow-ups (claim only when triggered).** Option
+  niche layout (#46) after affine buffers land, measurement first; the
+  generic vector when the recorded generics+regions gap is designed;
+  nested-slice CheckedType interning if a consumer forces it.
+- **W4 — batch audit and owner packet.** Adversarial exit audit, batch
+  economics, and one review document enumerating every approval owed:
+  the v0.32 exact-byte packet and the protected conformance boundary.
 
 ## Boundaries and invariants
 
-Candidate mode for all spec work; no activation, no chain line, no
-`ACTIVE-SPEC:` append. No manifest row, verdict, status, or gate-wiring
-change outside commits marked as protected candidates. Facts-off
-acceptance, one normal path, no `unsafe`, English artifacts. Blockers stop
-and get reported in the batch record, never absorbed.
+Candidate mode for all spec work; no activation, no chain line without
+exact-byte owner approval. No protected conformance change outside marked
+candidate commits. Facts-off acceptance, one normal path, no `unsafe`,
+English artifacts. Blockers stop and are reported in the batch record.
 
 ## Acceptance and stop
 
-Gate green at the branch tip; each W1 gap carries direct-run evidence; W2's
-design is recorded in mcts_mem with rejected alternatives and its candidate
-verifies; the audit ran and its findings are dispositioned. Stop rather
-than weaken any check; unfinished workstreams report honestly.
+Gate green at every landing; wfgrep's traversal slice carries a real
+run over a directory tree as evidence; the v0.32 candidate verifies and
+the compiler implements it behind switches before the approval packet;
+the audit runs and its findings are dispositioned. Stop rather than
+weaken any check.
 
 ## Exclusions
 
-Task #44 owner rulings; parallelism (outline:PAR-1 gates on flagship profiling); activation of any
-candidate; merging to main.
+Task #44 owner rulings (separate owner session); #8 M4 packet; #17
+wfgrep re-attribution until the traversal slice lands; parallelism
+(outline:PAR-1 gates on flagship profiling); activation of any candidate.
