@@ -662,7 +662,7 @@ fn the_kind_declaring_judgment_gates_only_the_system_admission_decision() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("a kind-declaring unit must resolve system names: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 167);
+        assert_eq!(resolved.system_declarations().len(), 192);
         for (spelling, ordinal) in [("Args", 0), ("ExitStatus", 6)] {
             let usage = resolved
                 .lexical_uses()
@@ -685,7 +685,7 @@ fn the_kind_declaring_judgment_gates_only_the_system_admission_decision() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("a non-entry program_kind must still be kind-declaring: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 167);
+        assert_eq!(resolved.system_declarations().len(), 192);
     });
 }
 
@@ -726,7 +726,7 @@ fn fn8_admission_precedes_the_system_admission_decision() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("an admitted requires block must reach the SYS-3 decision: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 167);
+        assert_eq!(resolved.system_declarations().len(), 192);
     });
 }
 
@@ -818,24 +818,24 @@ fn outcomes(m: own ReadOutcome) -> own unit pure {
             expect(LexicalUseRole::Type, spelling, ordinal);
         }
         for (spelling, ordinal) in [
-            ("args_count", 117),
-            ("arg_get", 120),
-            ("host_bytes_len", 124),
-            ("host_copy_bytes", 127),
-            ("host_utf8_len", 134),
-            ("host_copy_utf8", 137),
-            ("relative_path", 144),
-            ("open_read", 146),
-            ("read_once", 151),
-            ("write_once", 158),
-            ("exit_status", 165),
+            ("args_count", 125),
+            ("arg_get", 128),
+            ("host_bytes_len", 132),
+            ("host_copy_bytes", 135),
+            ("host_utf8_len", 142),
+            ("host_copy_utf8", 145),
+            ("relative_path", 152),
+            ("open_read", 154),
+            ("read_once", 159),
+            ("write_once", 166),
+            ("exit_status", 173),
         ] {
             expect(LexicalUseRole::IdentifierCallee, spelling, ordinal);
         }
-        expect(LexicalUseRole::Construct, "NotFound", 27);
-        expect(LexicalUseRole::ArmVariant, "ReadBytes", 22);
-        expect(LexicalUseRole::ArmVariant, "ReadEnd", 24);
-        expect(LexicalUseRole::ArmVariant, "ReadFailed", 25);
+        expect(LexicalUseRole::Construct, "NotFound", 29);
+        expect(LexicalUseRole::ArmVariant, "ReadBytes", 24);
+        expect(LexicalUseRole::ArmVariant, "ReadEnd", 26);
+        expect(LexicalUseRole::ArmVariant, "ReadFailed", 27);
     });
 }
 
@@ -969,7 +969,7 @@ fn system_collisions_reject_deterministically_in_both_directions() {
             assert_eq!(conflicts[0].class(), DeclarationClass::Function);
             assert!(matches!(
                 conflicts[0].origin(),
-                DeclarationOrigin::System(id) if id.ordinal() == 117
+                DeclarationOrigin::System(id) if id.ordinal() == 125
             ));
         });
     }
@@ -1025,7 +1025,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::Constructor);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 24
+            DeclarationOrigin::System(id) if id.ordinal() == 26
         ));
     });
 
@@ -1050,7 +1050,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 124
+            DeclarationOrigin::System(id) if id.ordinal() == 132
         ));
     });
 }
@@ -1134,7 +1134,7 @@ fn system_resolution_is_deterministic_across_repeated_runs_and_paths() {
         first,
         vec![
             ("ExitStatus".to_owned(), 6),
-            ("exit_status".to_owned(), 165)
+            ("exit_status".to_owned(), 173)
         ]
     );
     assert_eq!(first, targets("first.wf"));

@@ -94,17 +94,17 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
     let rows = prov_rows();
     assert_eq!(
         rows.len(),
-        crate::system_operations(false).len(),
+        crate::system_operations(crate::TRAVERSAL_SURFACE).len(),
         "the wf-prov table has one row per SYS-2 operation"
     );
 
     let mut result_classes = std::collections::HashSet::new();
     let mut writing_rows = 0;
     for (ordinal, row) in rows.iter().enumerate() {
-        let index = u8::try_from(ordinal).expect("eleven operations fit a u8");
+        let index = u8::try_from(ordinal).expect("the operation inventory fits a u8");
         assert_eq!(
             row.operation,
-            crate::system_operations(false)[ordinal].spelling,
+            crate::system_operations(crate::TRAVERSAL_SURFACE)[ordinal].spelling,
             "wf-prov row {ordinal} and SYSTEM_OPERATIONS[{ordinal}] name different operations"
         );
 
@@ -116,7 +116,8 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
             "`Ok(value:)` internal; `Err(error:)` external" => {
                 SystemResultProvenance::ErrorPayloadOnly
             }
-            "`ReadBytes(count:)` internal; `ReadFailed(error:)` external; `ReadEnd()` carries no result component" => {
+            "`ReadBytes(count:)` internal; `ReadFailed(error:)` external; `ReadEnd()` carries no result component"
+            | "`ListBytes(count:, entries:)` internal; `ListFailed(error:)` external; `ListEnd()` carries no result component" => {
                 SystemResultProvenance::ReadFailedPayloadOnly
             }
             "plain result internal" => SystemResultProvenance::NoneExternal,
@@ -137,7 +138,7 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
         // The writable-parameter cell names the parameters by their declared
         // name, so the expected ordinals come from the operation's own
         // parameter list rather than from a second hand-written list.
-        let declared = crate::system_operations(false)[ordinal].parameters;
+        let declared = crate::system_operations(crate::TRAVERSAL_SURFACE)[ordinal].parameters;
         let expected_writes: Vec<usize> = if row.parameter_class == "—" {
             Vec::new()
         } else {
@@ -169,10 +170,11 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
         );
     }
 
-    // All four result classes and the four writing rows appear, so a table
-    // that collapsed to one class would not pass the loop vacuously.
+    // All four result classes appear, so a table that collapsed to one class
+    // would not pass the loop vacuously. [SYS-14] adds a fifth writing row:
+    // `list_once` writes both its destination buffer and its list handle.
     assert_eq!(result_classes.len(), 4);
-    assert_eq!(writing_rows, 4);
+    assert_eq!(writing_rows, 5);
     // An ordinal past every inventory fails closed rather than defaulting to
     // a class, in both directions the dispatch can be wrong.
     let past = u8::try_from(crate::SYSTEM_OPERATIONS.len()).expect("the inventory fits a u8");

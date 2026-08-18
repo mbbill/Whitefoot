@@ -71,7 +71,6 @@ fn retired_sources() -> BTreeSet<u8> {
 const fn event_source(kind: FlowEventKind) -> Option<u8> {
     match kind {
         FlowEventKind::S1 => Some(1),
-        FlowEventKind::S2 => Some(2),
         FlowEventKind::S3 => Some(3),
         FlowEventKind::S4 => Some(4),
         FlowEventKind::S5 => Some(5),
@@ -94,9 +93,8 @@ const fn event_source(kind: FlowEventKind) -> Option<u8> {
     }
 }
 
-const FLOW_EVENT_KINDS: [FlowEventKind; 18] = [
+const FLOW_EVENT_KINDS: [FlowEventKind; 17] = [
     FlowEventKind::S1,
-    FlowEventKind::S2,
     FlowEventKind::S3,
     FlowEventKind::S4,
     FlowEventKind::S5,
@@ -141,8 +139,8 @@ fn the_ent3_sub_rules_and_the_compilers_flow_events_name_the_same_sources() {
     let defined = defined_sources();
     assert_eq!(
         defined,
-        BTreeSet::from([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12]),
-        "ENT-3 defines eleven sources; S8 is retired"
+        BTreeSet::from([1, 3, 4, 5, 6, 7, 9, 10, 11, 12]),
+        "ENT-3 defines ten sources; S8 and S2 are retired"
     );
 
     let modelled: BTreeSet<u8> = FLOW_EVENT_KINDS
@@ -241,13 +239,13 @@ fn the_view_definitions_and_the_compilers_proof_views_agree() {
     let removed = source_numbers(removal);
     assert_eq!(
         removed,
-        BTreeSet::from([2, 3]),
-        "the unasserted state removes exactly S2 and S3"
+        BTreeSet::from([3]),
+        "the unasserted state removes exactly S3"
     );
 
     let retained = source_numbers(
         spec.split_once(
-            "The unasserted state removes exactly S2 body-check and S3 claim establishment.\n",
+            "The unasserted state removes exactly S3 claim establishment.\n",
         )
         .expect("the removal sentence is followed by the retention sentence")
         .1

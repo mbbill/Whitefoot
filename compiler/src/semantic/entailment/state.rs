@@ -67,7 +67,6 @@ pub(crate) enum ProofView {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum FlowEventKind {
     S1,
-    S2,
     S3,
     S4,
     S5,
@@ -2995,7 +2994,7 @@ mod tests {
             bound: -1,
         };
         let mut ledger = DerivationLedger::default();
-        let source_event = ledger.event(FlowEventKind::S2, None);
+        let source_event = ledger.event(FlowEventKind::S3, None);
         let mut state = FactState::for_view(ProofView::Complete);
         state.establish(&ordinary, &mut ledger, source_event);
         let call = ledger.intern_for(

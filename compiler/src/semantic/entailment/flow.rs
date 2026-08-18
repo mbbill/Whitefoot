@@ -5693,14 +5693,14 @@ impl Analyzer<'_, '_> {
                 let _ = self.expression_effects(value, state);
                 true
             }
-            CheckedStatement::Check { condition, trap } => {
+            // v0.32 has no body `check_stmt`: the production survives only
+            // as the contract final, which [FN-8] consumes into the
+            // requirement and [FN-9] into the postcondition rather than into
+            // a body statement list. [ENT-3.S2] retires with the statement,
+            // so no body statement establishes a passed condition; `claim`
+            // [CLM-1] is the sole writer-stated source, at S3.
+            CheckedStatement::Check { condition, .. } => {
                 let _ = self.expression_effects(condition, state);
-                self.establish_passed_condition(
-                    FlowEventKind::S2,
-                    &trap.node_path,
-                    condition,
-                    &mut state.complete,
-                );
                 true
             }
             CheckedStatement::Claim {

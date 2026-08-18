@@ -1149,8 +1149,8 @@ mod tests {
         DeclarationClass, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS, ReservedNameClass,
         SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemDeclarationId, SystemEntity,
         SystemParameterMode, SystemResultPayload, SystemTypeRef, operation_region_effects,
-        reserved_name, system_constructors, system_declarations, system_entity, system_nominals,
-        system_operations,
+        TRAVERSAL_SURFACE, reserved_name, system_constructors, system_declarations, system_entity,
+        system_nominals, system_operations,
     };
 
     #[test]
@@ -1447,9 +1447,9 @@ mod tests {
     fn system_inventory_matches_independent_extraction_from_exact() {
         let spec = crate::ACTIVE_KERNEL_SPEC_TEXT;
 
-        // The seven opaque nominal types, from the [SYS-2] prose sentence.
+        // The eight opaque nominal types, from the [SYS-2] prose sentence.
         let opaque_sentence = spec
-            .split_once("Seven opaque nominal types: ")
+            .split_once("Eight opaque nominal types: ")
             .expect("exact SYS-2 opaque sentence")
             .1
             .split_once('.')
@@ -1462,7 +1462,7 @@ mod tests {
             .collect();
         assert_eq!(
             opaque,
-            system_nominals(false)
+            system_nominals(TRAVERSAL_SURFACE)
                 .iter()
                 .filter(|nominal| nominal.opaque)
                 .map(|nominal| nominal.spelling)
@@ -1509,12 +1509,12 @@ mod tests {
                     .push((variant.to_owned(), fields));
             }
         }
-        let catalog_enums: Vec<ExtractedEnum> = system_nominals(false)
+        let catalog_enums: Vec<ExtractedEnum> = system_nominals(TRAVERSAL_SURFACE)
             .iter()
             .enumerate()
             .filter(|(_, nominal)| !nominal.opaque)
             .map(|(owner, nominal)| {
-                let variants = system_constructors(false)
+                let variants = system_constructors(TRAVERSAL_SURFACE)
                     .iter()
                     .filter(|constructor| usize::from(constructor.owner) == owner)
                     .map(|constructor| {
@@ -1531,7 +1531,7 @@ mod tests {
             .collect();
         assert_eq!(extracted_enums, catalog_enums);
 
-        // The eleven complete operation signatures, from the second [SYS-2]
+        // The fourteen complete operation signatures, from the second [SYS-2]
         // code block, including each written effect row.
         let operation_block = sys2
             .split_once("`fn_sig` shape:\n\n```\n")
@@ -1545,7 +1545,7 @@ mod tests {
             .map(|line| line.strip_prefix("fn ").expect("SYS-2 operation line"))
             .map(str::to_owned)
             .collect();
-        let catalog_operations: Vec<_> = system_operations(false)
+        let catalog_operations: Vec<_> = system_operations(TRAVERSAL_SURFACE)
             .iter()
             .map(render_operation)
             .collect();

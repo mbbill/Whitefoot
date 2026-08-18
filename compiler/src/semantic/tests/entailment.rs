@@ -432,7 +432,6 @@ fn assert_source_event(summary: &FunctionEntailment, id: FlowEventId, used: &mut
     assert!(matches!(
         event.kind,
         FlowEventKind::S1
-            | FlowEventKind::S2
             | FlowEventKind::S3
             | FlowEventKind::S4
             | FlowEventKind::S5
@@ -2696,9 +2695,9 @@ fn main() -> own unit pure {
         let DerivationNode::SourceBound { event, .. } =
             &directed.derivations.nodes[parent.0 as usize]
         else {
-            panic!("each directed equality parent comes from its passed check");
+            panic!("each directed equality parent comes from its passed claim");
         };
-        assert_eq!(retained_event(&directed, *event).kind, FlowEventKind::S2);
+        assert_eq!(retained_event(&directed, *event).kind, FlowEventKind::S3);
     }
 
     let reflexive = entailment(source, "reflexive");
