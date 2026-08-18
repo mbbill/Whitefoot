@@ -512,3 +512,13 @@ Per the mcts-mem-use skill, at v0.31 activation, in the same change:
   static origin sets and confinement; if a consumer ever needs slice
   rebinding, that is a separate origin-set-join design, not a relaxation of
   this rule.
+
+## Recorded optimization note (owner-flagged, 2026-08-18)
+
+The `buffer_vacant` design pays one discriminant per `Option<T>` slot under
+the current tag+payload enum layout. Owner-flagged follow-up: the general
+niche layout optimization — `None` occupies an invalid representation of
+the payload (null pointer for pointer-backed affine handles), making
+`Option<T>` the same size as `T` with a zero-byte tag. Pure representation
+change below the checked program; sequence it after affine-element buffer
+lowering lands, measurement first. Tracked as task #46.
