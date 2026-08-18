@@ -281,8 +281,10 @@ const LIST_OUTCOME: u8 = 15;
 /// records they saw before. `true` admits the candidate directory-enumeration
 /// surface — `DirectoryList`, `ListOutcome`, `open_directory`, `open_list`,
 /// and `list_once` — as the last row of each [SYS-2] table. The switch is read
-/// once, by `compile`; `compile_with_traversal_surface` selects the candidate
-/// inventory until activation flips this constant.
+/// once, by `compile`, and is now `true`, so `compile_with_traversal_surface`
+/// selects the same inventory when it is passed `true`; the parameter keeps
+/// the inventory an argument of the compilation rather than a global, and
+/// keeps `false` reachable as the differential against the base tables.
 pub const TRAVERSAL_SURFACE: bool = true;
 
 /// The v0.31 nominal-type count: the prefix of [`SYSTEM_NOMINALS`] the active

@@ -165,9 +165,9 @@ fn emit_arithmetic_obligations(source: &[u8]) -> String {
 }
 
 /// [`emit`] through the test-only checker entry that forces the division
-/// dissolution switch on [OP-2, ENT-6], so the emitted module of the v0.32
-/// candidate judgment can be compared against the default v0.31 emission of
-/// the same source.
+/// dissolution switch on [OP-2, ENT-6]. The shipped switch is on too, so this
+/// entry emits from the same judgment as [`emit`] and records which judgment
+/// its callers mean.
 fn emit_division_obligations(source: &[u8]) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
     let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
@@ -208,9 +208,10 @@ fn compile(source: &[u8]) -> String {
     compile_sources(&[("test.wf", source)])
 }
 
-/// [`emit`] through the test-only reborrow-extension checker, so execution
-/// tests can run the implemented v0.31-candidate chains while the shipped
-/// switch keeps v0.30 semantics [OWN-6, OWN-14].
+/// [`emit`] through the test-only reborrow-extension checker [OWN-6,
+/// OWN-14]. The shipped switch admits the same chains, so this entry emits
+/// from the same judgment as [`emit`] and records which judgment its callers
+/// mean.
 fn emit_reborrow_extension(source: &[u8]) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
     let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");

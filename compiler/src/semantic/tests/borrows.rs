@@ -1028,11 +1028,12 @@ fn same_node_return_rejections_cite_the_first_defined_rule() {
 }
 
 // ---------------------------------------------------------------------------
-// v0.31-candidate reborrow extension (test-only checker entry): bound
-// call-result borrow holders with unambiguous signature provenance, the
-// non-statement-scoped candidate-position child reborrow, and the grandchild
-// chains they compose. The shipped switch keeps every v0.30 disposition; the
-// paired default-checker tests below prove the gate.
+// The reborrow extension: bound call-result borrow holders with unambiguous
+// signature provenance, the non-statement-scoped candidate-position child
+// reborrow, and the grandchild chains they compose. The shipped switch is on,
+// so the extension entry these tests name selects the same judgment as the
+// default one; the default-checker tests below pin that the shipped path
+// admits the shapes v0.30 rejected.
 // ---------------------------------------------------------------------------
 
 const PASSTHRU: &[u8] = b"fn passthru['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {\n  return &uniq 'r0 deref(x);\n}\n\n";
@@ -1114,9 +1115,10 @@ fn extension_chains_suspend_the_candidate_parent_permanently() {
     );
 }
 
-/// Extension: a callee signature that does not determine one provenance
-/// candidate — two same-kind same-region borrow parameters — rejects the
-/// binding at OWN-6 with the ambiguity diagnostic, never infers a claim.
+/// A callee signature that does not determine one provenance candidate — two
+/// same-kind same-region borrow parameters — is rejected at its own boundary
+/// citing FN-1, so the reborrow-extension entry never reaches a call whose
+/// result it would have to infer a claim for.
 #[test]
 fn extension_rejects_ambiguous_result_provenance() {
     assert_rule_extension(

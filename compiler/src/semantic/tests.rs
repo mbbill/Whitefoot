@@ -178,9 +178,9 @@ fn with_semantics_dark<ResultValue>(
 }
 
 /// [`with_semantics`] through the test-only entry that forces the
-/// arithmetic-mode dissolution switch on, so the v0.31 candidate judgment
-/// [OP-2, ENT-6] is testable while the shipped switch stays off under the
-/// active v0.30 specification.
+/// arithmetic-mode dissolution switch on [OP-2, ENT-6]. The shipped switch is
+/// on too, so this entry selects the same judgment as the default one and
+/// records which judgment its callers mean.
 fn with_semantics_arithmetic<ResultValue>(
     source: &[u8],
     run: impl for<'classified, 'lexed, 'source> FnOnce(
@@ -221,9 +221,9 @@ fn with_semantics_arithmetic<ResultValue>(
 }
 
 /// [`with_semantics`] through the test-only entry that forces the division
-/// dissolution switch on, so the v0.32 candidate judgment [OP-2, ENT-6] is
-/// testable while the shipped switch stays off under the active v0.31
-/// specification.
+/// dissolution switch on [OP-2, ENT-6]. The shipped switch is on too, so this
+/// entry selects the same judgment as the default one and records which
+/// judgment its callers mean.
 fn with_semantics_division<ResultValue>(
     source: &[u8],
     run: impl for<'classified, 'lexed, 'source> FnOnce(
@@ -262,8 +262,9 @@ fn with_semantics_division<ResultValue>(
 }
 
 /// [`with_semantics`] through the test-only extension checker, which admits
-/// the v0.31-candidate reborrow extension while the shipped switch keeps
-/// v0.30 semantics [OWN-6, OWN-14].
+/// the reborrow extension [OWN-6, OWN-14]. The shipped switch admits it too,
+/// so this entry selects the same judgment as the default one and records
+/// which judgment its callers mean.
 fn with_semantics_extension<ResultValue>(
     source: &[u8],
     run: impl for<'classified, 'lexed, 'source> FnOnce(

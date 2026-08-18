@@ -569,11 +569,11 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
 /// non-constant operands keeps its runtime overflow trap.
 pub(crate) const ARITHMETIC_OVERFLOW_OBLIGATIONS: bool = true;
 
-/// The division dissolution integration switch [OP-2, ENT-6]: `false` under
-/// active v0.31, `true` under the v0.32 candidate, which attaches the
-/// division obligation family to [OP-2]'s divisor class, drops those sites'
-/// trap records and `traps` effect contribution, and rejects undischarged
-/// class sites citing OP-2. A bare `/` or `%` over a signed selected type
+/// The division dissolution integration switch [OP-2, ENT-6]: `true` under
+/// the v0.32 candidate at `spec/kernel-spec.md`, which attaches the division
+/// obligation family to [OP-2]'s divisor class, drops those sites' trap
+/// records and `traps` effect contribution, and rejects undischarged class
+/// sites citing OP-2. A bare `/` or `%` over a signed selected type
 /// with two non-constant operands stays outside the class and keeps its
 /// runtime trap, because its safe condition is the disjunction
 /// `dividend != iK::MIN or divisor != -1`, which the [ENT-4] conjunctive
@@ -653,10 +653,11 @@ pub(crate) fn check_semantics_reborrow_extension<'classified, 'lexed, 'source>(
     )
 }
 
-/// [`check_semantics`] with the v0.32-candidate division dissolution switch
-/// forced on, so the candidate's judgment can be tested while
-/// [`DIVISION_OBLIGATIONS`] stays `false` for the shipped path. Test-only;
-/// the one shipped acceptance path reads that constant.
+/// [`check_semantics`] with the division dissolution switch forced on.
+/// [`DIVISION_OBLIGATIONS`] is now `true` under the v0.32 candidate, so this
+/// entry selects the same judgment as the shipped path and the callers naming
+/// it record which judgment they mean. Test-only; the one shipped acceptance
+/// path reads that constant.
 #[cfg(test)]
 #[must_use]
 pub(crate) fn check_semantics_division_obligations<'classified, 'lexed, 'source>(

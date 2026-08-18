@@ -29,11 +29,13 @@ pub fn compile_programs(names: &[&str]) -> String {
     compile(&inputs, CompilerLimits::default()).expect("program corpus source must compile")
 }
 
-/// Compiles one corpus program against the v0.32-candidate [SYS-2] inventory.
+/// Compiles one corpus program against the traversal [SYS-2] inventory,
+/// named explicitly rather than read from `TRAVERSAL_SURFACE`.
 ///
-/// The traversal declarations are default-off, so a case exercising them
-/// selects the candidate inventory explicitly; every other case in this
-/// harness stays on the active specification's.
+/// The shipped inventory is the traversal one, so this selects the same
+/// inventory [`compile_program`] does; naming it keeps the traversal cases
+/// stating which inventory their declarations belong to, and keeps the
+/// inventory a parameter of the compilation rather than a global.
 pub fn compile_program_with_traversal_surface(name: &str) -> String {
     let source = read_program(name);
     let inputs = [SourceInput::new(name, &source)];
