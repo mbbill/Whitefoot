@@ -50,7 +50,7 @@ use super::provenance::{
 use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
 use borrows::{AccessKind, ResolvedPlace};
-use borrows::{BorrowInfo, SliceInfo, SliceLoan};
+use borrows::{BorrowInfo, BorrowKind, SliceInfo, SliceLoan};
 use control::{ControlCounters, ControlScope};
 use generics::{GenericParameter, GenericSubstitution};
 
@@ -118,6 +118,101 @@ fn derive_slice_return_ceiling(
     }
     ceiling
 }
+
+/// What a callable boundary alone says about where a borrow-mode result can
+/// be rooted [FN-1, OWN-6, OWN-10].
+///
+/// Distinct formal regions are incomparable inside the callee [OWN-3] and
+/// OWN-10 forbids rooting a result-region borrow in callee-local storage, so
+/// every borrow an accepted callee can deliver in the result's formal region
+/// derives from a parameter that names that region or from immutable named
+/// `const` storage. Counting the parameters that could supply it is therefore
+/// a complete provenance judgment over the signature.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ResultProvenance {
+    /// The written result type blocks the judgment: a borrow of a `slice`
+    /// carries descriptor and origin relations this judgment does not model
+    /// [OWN-5], and an unsubstituted generic conservatively names every
+    /// region. FN-1 rejects the slice shape at the boundary independently.
+    Unjudgeable,
+    /// Exactly one parameter can source the result: the debtor position.
+    Candidate(usize),
+    /// No parameter can source the result and none names its region, so
+    /// permanently read-only named-const storage is the only remaining
+    /// source [CONST-2, OWN-10] and provenance is unique by elimination.
+    ConstStorage,
+    /// Two or more parameters could source the result, or one names its
+    /// region in a written type. No caller can root the claim.
+    Ambiguous,
+}
+
+/// Whether a written parameter or result type carries the given formal
+/// region anywhere a borrow could be rooted through it. Storage is borrow-
+/// and region-free [STOR-5], so a direct `slice` type is the only written
+/// type region today; an unsubstituted generic is conservatively treated as
+/// carrying every region.
+fn type_carries_region(ty: CheckedType, region: DeclarationId) -> bool {
+    match ty {
+        CheckedType::Slice { region: slice, .. } => slice == region,
+        CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => true,
+        CheckedType::Unit
+        | CheckedType::Bool
+        | CheckedType::Integer(_)
+        | CheckedType::Float(_)
+        | CheckedType::Nominal(_)
+        | CheckedType::Buffer { .. }
+        | CheckedType::Array { .. } => false,
+    }
+}
+
+/// Judges a borrow-mode result's provenance from the callable boundary
+/// alone. `None` for an `own` result, which roots no caller claim.
+///
+/// A parameter supplies the result when it is written as a borrow of the
+/// result's kind in the result's formal region. A same-region parameter of
+/// the other kind is not a supplier but still defeats the judgment: no
+/// `uniq` result derives from a `shared` source, but a `shared` result can
+/// derive from a `uniq` parameter through a nested borrow-returning call,
+/// so the pair leaves two possible roots — reject-when-unsure [OWN-8].
+fn borrow_result_provenance(
+    parameters: &[ParameterSignature],
+    result_mode: CheckedMode,
+    result: CheckedType,
+) -> Option<ResultProvenance> {
+    let (result_kind, result_region) = match result_mode {
+        CheckedMode::Own => return None,
+        CheckedMode::Shared(region) => (BorrowKind::Shared, region),
+        CheckedMode::Unique(region) => (BorrowKind::Unique, region),
+    };
+    if matches!(result, CheckedType::Slice { .. }) || type_carries_region(result, result_region) {
+        return Some(ResultProvenance::Unjudgeable);
+    }
+    let mut candidate = None;
+    for (index, parameter) in parameters.iter().enumerate() {
+        if type_carries_region(parameter.ty, result_region) {
+            return Some(ResultProvenance::Ambiguous);
+        }
+        let (kind, region) = match parameter.mode {
+            CheckedMode::Own => continue,
+            CheckedMode::Shared(region) => (BorrowKind::Shared, region),
+            CheckedMode::Unique(region) => (BorrowKind::Unique, region),
+        };
+        if region != result_region {
+            continue;
+        }
+        if kind != result_kind || candidate.is_some() {
+            return Some(ResultProvenance::Ambiguous);
+        }
+        candidate = Some(index);
+    }
+    Some(candidate.map_or(ResultProvenance::ConstStorage, ResultProvenance::Candidate))
+}
+
+/// [FN-1]'s restructuring for a borrow-mode result whose source the callable
+/// boundary does not determine, shared by the `fn_decl` and `fn_sig` sites.
+const AMBIGUOUS_RESULT_PROVENANCE_RESTRUCTURING: &str = "give the source parameter its own region so exactly one parameter shares the result's \
+     region and kind, or return the decision as a value and let the caller borrow from the \
+     source it names";
 
 /// [STOR-4]'s restructuring for an arena value that would leave its region's
 /// block, shared by every site that establishes the escape.
@@ -399,6 +494,16 @@ enum PreludeType {
 /// judgment as the shipped path.
 pub(crate) const REBORROW_EXTENSION_ACTIVE: bool = true;
 
+/// v0.32-candidate declaration-site provenance switch [FN-1, OWN-6]. The
+/// candidate moves the ambiguity rejection from the binding to the callable
+/// boundary: a declaration whose borrow-mode result has no signature-
+/// determined source is itself the error, because GRAM-9's flat form makes
+/// every call result let-bound, so a result no caller can bind is unusable
+/// by construction. `false` keeps every v0.31 disposition byte for byte;
+/// the test-only `check_semantics_declaration_provenance` entry selects the
+/// candidate judgment until activation flips this constant.
+pub(crate) const DECLARATION_PROVENANCE: bool = false;
+
 struct Checker<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     /// Whether an undischarged obligation or refuted claim rejects [OP-4,
@@ -414,6 +519,9 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// Whether the v0.31-candidate reborrow extension is admitted; see
     /// [`REBORROW_EXTENSION_ACTIVE`].
     reborrow_extension: bool,
+    /// Whether the v0.32-candidate declaration-site provenance judgment is
+    /// live; see [`DECLARATION_PROVENANCE`].
+    declaration_provenance: bool,
     tree: TreeView<'unit, 'classified, 'lexed, 'source>,
     nominals: Vec<CheckedNominal>,
     nominal_nodes: Vec<Option<NodeId>>,
@@ -477,6 +585,7 @@ pub fn check_semantics<'classified, 'lexed, 'source>(
         true,
         ARITHMETIC_OVERFLOW_OBLIGATIONS,
         REBORROW_EXTENSION_ACTIVE,
+        DECLARATION_PROVENANCE,
     )
 }
 
@@ -495,6 +604,7 @@ pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
         false,
         ARITHMETIC_OVERFLOW_OBLIGATIONS,
         REBORROW_EXTENSION_ACTIVE,
+        DECLARATION_PROVENANCE,
     )
 }
 
@@ -508,7 +618,13 @@ pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
 pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true, true, REBORROW_EXTENSION_ACTIVE)
+    check_semantics_with(
+        resolved,
+        true,
+        true,
+        REBORROW_EXTENSION_ACTIVE,
+        DECLARATION_PROVENANCE,
+    )
 }
 
 /// [`check_semantics`] with the v0.31-candidate reborrow extension admitted.
@@ -521,7 +637,32 @@ pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'sourc
 pub(crate) fn check_semantics_reborrow_extension<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true, ARITHMETIC_OVERFLOW_OBLIGATIONS, true)
+    check_semantics_with(
+        resolved,
+        true,
+        ARITHMETIC_OVERFLOW_OBLIGATIONS,
+        true,
+        DECLARATION_PROVENANCE,
+    )
+}
+
+/// [`check_semantics`] with the v0.32-candidate declaration-site provenance
+/// judgment live [FN-1, OWN-6]. Test-only until [`DECLARATION_PROVENANCE`]
+/// flips at activation; the shipped acceptance behavior has exactly one
+/// path, and the paired default-checker tests pin the v0.31 dispositions of
+/// the same sources.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn check_semantics_declaration_provenance<'classified, 'lexed, 'source>(
+    resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+) -> SemanticOutcome<'classified, 'lexed, 'source> {
+    check_semantics_with(
+        resolved,
+        true,
+        ARITHMETIC_OVERFLOW_OBLIGATIONS,
+        REBORROW_EXTENSION_ACTIVE,
+        true,
+    )
 }
 
 fn check_semantics_with<'classified, 'lexed, 'source>(
@@ -529,6 +670,7 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
     reject_entailment: bool,
     arithmetic_obligations: bool,
     reborrow_extension: bool,
+    declaration_provenance: bool,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
     let preflight = if resolved.postconditions().is_empty() {
         Ok(())
@@ -538,6 +680,7 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
             reject_entailment,
             arithmetic_obligations,
             reborrow_extension,
+            declaration_provenance,
         )
         .and_then(|mut checker| {
             let items = checker.item_declarations()?;
@@ -550,6 +693,7 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
             reject_entailment,
             arithmetic_obligations,
             reborrow_extension,
+            declaration_provenance,
         )
         .and_then(|mut checker| checker.check_program())
     });
@@ -590,17 +734,49 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .contains(&declaration)
     }
 
+    /// [FN-1]'s declaration-site provenance judgment under the v0.32
+    /// candidate: a callable boundary whose borrow-mode result has no
+    /// signature-determined source is a hard error at its complete `rtype`,
+    /// whether or not the function is ever called. GRAM-9's flat form binds
+    /// every call result with a `let`, so such a result is unusable by
+    /// construction and the declaration, not the binding, is the error.
+    /// Shared by the top-level `fn_decl` and contract-member `fn_sig`
+    /// signature-formation sites, exactly as the slice-result judgments are.
+    fn reject_ambiguous_result_provenance(
+        &self,
+        parameters: &[ParameterSignature],
+        result_mode: CheckedMode,
+        result: CheckedType,
+        rtype: NodeId,
+    ) -> Result<(), CheckStop> {
+        if !self.declaration_provenance
+            || borrow_result_provenance(parameters, result_mode, result)
+                != Some(ResultProvenance::Ambiguous)
+        {
+            return Ok(());
+        }
+        self.issue_node(
+            SemanticRule::Fn1,
+            rtype,
+            SemanticIssueKind::AmbiguousResultProvenance {
+                mechanical_fix: AMBIGUOUS_RESULT_PROVENANCE_RESTRUCTURING,
+            },
+        )
+    }
+
     fn new(
         resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
         reject_entailment: bool,
         arithmetic_obligations: bool,
         reborrow_extension: bool,
+        declaration_provenance: bool,
     ) -> Result<Self, CheckStop> {
         Ok(Self {
             resolved,
             reject_entailment,
             arithmetic_obligations,
             reborrow_extension,
+            declaration_provenance,
             tree: TreeView::new(resolved)?,
             nominals: Vec::new(),
             nominal_nodes: Vec::new(),

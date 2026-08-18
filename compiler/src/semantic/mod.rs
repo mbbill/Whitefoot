@@ -737,6 +737,13 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by OWN-6.
         mechanical_fix: &'static str,
     },
+    /// A declared callable boundary returns a borrow whose source the
+    /// signature does not determine, so no caller can bind its result
+    /// (declaration-provenance candidate only).
+    AmbiguousResultProvenance {
+        /// Exact restructuring required by FN-1.
+        mechanical_fix: &'static str,
+    },
     /// A borrow holder was used without the required explicit dereference.
     MissingDereference {
         /// Exact mechanical repair selected by TYPE-7.

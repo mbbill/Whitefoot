@@ -15,7 +15,8 @@ use super::super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, places_overlap, push_slice_origin,
 };
 use super::super::super::{
-    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
+    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, ResultProvenance,
+    TypedExpression, borrow_result_provenance,
 };
 
 struct CallAccessClaim {
@@ -37,25 +38,6 @@ impl CallClaimOrigin {
     }
 }
 
-/// Whether a written parameter or result type carries the given formal
-/// region anywhere a borrow could be rooted through it. Storage is borrow-
-/// and region-free [STOR-5], so a direct `slice` type is the only written
-/// type region today; an unsubstituted generic is conservatively treated as
-/// carrying every region.
-fn type_carries_region(ty: CheckedType, region: crate::DeclarationId) -> bool {
-    match ty {
-        CheckedType::Slice { region: slice, .. } => slice == region,
-        CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => true,
-        CheckedType::Unit
-        | CheckedType::Bool
-        | CheckedType::Integer(_)
-        | CheckedType::Float(_)
-        | CheckedType::Nominal(_)
-        | CheckedType::Buffer { .. }
-        | CheckedType::Array { .. } => false,
-    }
-}
-
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     /// The single provenance-candidate parameter position of a
     /// borrow-returning callee signature under the reborrow extension: the
@@ -67,46 +49,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// can deliver in the result region is rooted in this parameter's actual
     /// or in immutable named-const storage; the candidate's resolved place
     /// therefore covers every mutable storage the result can reach.
+    ///
+    /// Every other disposition forms no candidate here. Under the
+    /// declaration-provenance candidate, FN-1 has already rejected the
+    /// ambiguous boundary at its `rtype`, so only the const-storage
+    /// disposition still reaches this call site.
     fn result_borrow_candidate(&self, signature: &FunctionSignature) -> Option<usize> {
         if !self.reborrow_extension {
             return None;
         }
-        let (result_kind, result_region) = match signature.result_mode {
-            CheckedMode::Own => return None,
-            CheckedMode::Shared(region) => (BorrowKind::Shared, region),
-            CheckedMode::Unique(region) => (BorrowKind::Unique, region),
-        };
-        // A borrow-mode direct-slice result carries descriptor and origin
-        // relations this rule does not model [OWN-5]; form no candidate for
-        // any slice-typed or region-carrying result, whatever region the
-        // written slice names.
-        if matches!(signature.result, CheckedType::Slice { .. })
-            || type_carries_region(signature.result, result_region)
-        {
-            return None;
+        match borrow_result_provenance(
+            &signature.parameters,
+            signature.result_mode,
+            signature.result,
+        ) {
+            Some(ResultProvenance::Candidate(index)) => Some(index),
+            Some(
+                ResultProvenance::Unjudgeable
+                | ResultProvenance::ConstStorage
+                | ResultProvenance::Ambiguous,
+            )
+            | None => None,
         }
-        let mut candidate = None;
-        for (index, parameter) in signature.parameters.iter().enumerate() {
-            if type_carries_region(parameter.ty, result_region) {
-                return None;
-            }
-            let (kind, region) = match parameter.mode {
-                CheckedMode::Own => continue,
-                CheckedMode::Shared(region) => (BorrowKind::Shared, region),
-                CheckedMode::Unique(region) => (BorrowKind::Unique, region),
-            };
-            if region != result_region {
-                continue;
-            }
-            // A same-region parameter of the other kind, or a second
-            // same-region parameter, leaves the provenance ambiguous:
-            // reject-when-unsure [OWN-8].
-            if kind != result_kind || candidate.is_some() {
-                return None;
-            }
-            candidate = Some(index);
-        }
-        candidate
     }
 
     pub(super) fn check_user_call(

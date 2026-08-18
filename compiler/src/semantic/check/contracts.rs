@@ -166,6 +166,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
+        self.reject_ambiguous_result_provenance(&parameters, result_mode, result, rtype)?;
         let slice_return_ceiling = derive_slice_return_ceiling(&parameters, result_mode, result);
         let effects_node = self
             .tree

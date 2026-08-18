@@ -657,6 +657,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             && value.borrow.is_none()
             && matches!(value.expression, CheckedExpression::UserCall { .. })
         {
+            // Under the declaration-provenance candidate this is no longer a
+            // source rejection: FN-1 rejects every boundary whose borrow
+            // result has no signature-determined source at its own `rtype`,
+            // so the binding is either usable or the declaration is already
+            // gone (bindable iff usable). What survives here is the
+            // const-storage disposition, whose claim needs a const-rooted
+            // holder the checker does not represent — an explicit capability
+            // stop, never an invalid-source verdict.
+            if self.declaration_provenance {
+                return self.unsupported(
+                    UnsupportedSemanticFeature::RegionsAndBorrows,
+                    expression_node,
+                );
+            }
             return self.issue_node(
                 SemanticRule::Own6,
                 expression_node,
