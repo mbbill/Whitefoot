@@ -19,6 +19,36 @@ fn growable_vector_grows_by_affine_replace_and_runs_its_checks() {
     assert!(output.stderr.is_empty());
 }
 
+/// The affine-element buffer layer [TYPE-2, SET-2, OP-9, STOR-3]: an
+/// `OptVec` over `buffer<Option<u32>>` built by `buffer_vacant`, filled and
+/// vacated by element-position replace through a `&uniq` holder, plus a
+/// `buffer<Option<box<u64>>>` section whose scope-exit drop is the
+/// per-element loop (one remaining `Some` box is freed by the loop). The
+/// program self-checks pop order, fill accounting, and the taken payload;
+/// a wrong value at any probe traps and fails the run.
+#[test]
+fn affine_slot_buffers_fill_replace_vacate_and_drop_per_element() {
+    let llvm = compile_program("option_slots.wf");
+    // The construction is the all-None allocation and the drop of the
+    // box-payload buffer is the derived per-element loop plus one free.
+    assert!(llvm.contains("buffer.vacant.head"));
+    let helper_start = llvm
+        .find("define private void @wf.drop.buffer.t")
+        .expect("box-payload elements must derive the buffer drop loop");
+    let helper_end = llvm[helper_start..]
+        .find("\n}\n")
+        .map(|offset| helper_start + offset)
+        .expect("buffer drop helper must be complete");
+    let helper = &llvm[helper_start..helper_end];
+    assert!(helper.contains("call void @wf.drop.t"));
+    assert_eq!(helper.matches("call void @free").count(), 1);
+
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
 #[test]
 fn recursively_boxed_tree_executes_with_derived_cleanup() {
     let llvm = compile_program("recursive_tree.wf");
