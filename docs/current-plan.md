@@ -5,8 +5,9 @@ approving this plan exactly as proposed at 6d9eb4bc.)
 
 Derived from Direction Outline revision 41 and the batch-0070 outcome.
 Supersedes the completed gap-closure/take-replace plan in place.
-Active language authority: v0.31 at `spec/kernel-spec.md`, SHA-256
-`ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c`.
+Active language authority: v0.32 at `spec/kernel-spec.md`, SHA-256
+`5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5`
+(activated 2026-08-18 under this plan's batch-0071 approval).
 
 ## Objective
 

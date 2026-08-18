@@ -3,10 +3,10 @@
 Status: CANONICAL DIRECTION OUTLINE
 Revision: 42 (batch 0070: adapter fully green; v0.31 candidate prepared on branch)
 
-The active language authority is v0.31 at the stable path
+The active language authority is v0.32 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
-`ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c`.
-Exact v0.8 through v0.30 are immutable flat archives. The execution plan at
+`5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5`.
+Exact v0.8 through v0.31 are immutable flat archives. The execution plan at
 [`docs/current-plan.md`](current-plan.md) is PROPOSED (wfgrep functional
 legs and trap-endpoint closure) and awaits owner approval; PROPOSED
 authorizes no execution. Project law is the

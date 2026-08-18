@@ -1202,3 +1202,62 @@ ACTIVE-SPEC: v0.30 5ed210190737b2aa53a91dc901f07d02344669eeb6d666022460287233120
   digest-sync gate enumerates. Conformance changes ride the batch-0070
   merge entry above, not this entry.
 ACTIVE-SPEC: v0.31 ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c 5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1
+
+## 2026-08-18 — OWNER APPROVAL: batch 0071 merge and its protected conformance candidates
+- owner: **the owner, in conversation, 2026-08-18** — "批准", replying to the
+  batch review and owner packet in docs/ongoing/0071 (morning review, the
+  four-finder adversarial exit audit with every disposition, final state
+  lib 952/0, adapter Pass=489 Skip=1 Fail=0, coverage 135/135, canonical
+  corpus 3/3). The overnight direction that authorized the work without
+  blocking was the owner's, 2026-08-18: "把代码,测试,所有的事情都推进到位".
+- APPROVED: merging branch batch-0071 to main at merge commit `73ede975`;
+  the protected conformance candidate commits it carries — `819850e9`
+  (138 leg-A migrations), `7e8d03f4` (EX-1 reproduced byte-for-byte),
+  `de91fffb` (OP-5 to CLM-1 citations), `7409c7cd` (11 subject + 6
+  trap-expecting decision cases), `6d1e7929` (7 refutation-guard repairs),
+  `951f8221` (26 new cases and the two verdict flips), `188306f3`,
+  `f55d4c13`, `6445b932`, `d2c1e209`, `39746f41` (audit repairs, SYS-14
+  observability, strict-in-U and borrowed-arena coverage).
+- DECISIONS APPROVED WITH THE PACKET: (1) ratification of the traversal
+  plan expansion — the ACTIVE plan's W2 authorized three deltas and W1 a
+  gap report, and the lead folded the [SYS-14] surface into the same
+  candidate under the overnight no-blocking direction; (2) the #50 rule
+  widening beyond the owner's literal sentence (a same-region parameter of
+  the other borrow kind, and any parameter whose written type names the
+  result region, also leave the source undetermined), on v0.31's own
+  soundness argument; (3) the five verdict flips and seventeen citation
+  rows enumerated as decision rows in the marked commit messages; (4) the
+  trap-case consolidation onto the one legal always-false claim spelling.
+- NOT APPROVED BY THIS ENTRY: activation of the v0.32 candidate, which is
+  the separate exact-byte entry below.
+
+## 2026-08-18 — OWNER EXACT-BYTE APPROVAL: v0.32 trap-endpoint and traversal delta
+- owner: **the owner, in conversation, 2026-08-18** — "批准", the batch
+  approval whose recorded single act (docs/ongoing/0071, "THE SINGLE ACT")
+  is the merge plus this activation, naming candidate SHA-256
+  `efaf0ec4e2d7c31518f4e817faa55fcb412f8a8cec542883b4c051917b06e1f3`.
+- APPROVED BYTES: the v0.32 candidate at that digest. Content: check
+  dissolution (#47) — the body `check_stmt` leaves the [GRAM-4] statement
+  alternation while the production survives as the contract final admitted
+  at `requires_entry`/`ensures_entry`, [OP-5] refits, [ENT-3.S2] retires
+  into a self-contained S3; the [ENT-6] divisor-class division obligation
+  family (#48) with signed two-variable sites retaining their trap because
+  the safe condition is a disjunction the fragment cannot state; the
+  [FN-1] declaration-site borrow-result provenance judgment (#50) with
+  [OWN-6]'s binding-side rejection deleted as unreachable; and the
+  [SYS-14] directory-traversal surface (nominals +2, constructors +3,
+  operations +3, 192 declaration records). Rule inventory 135 (+[SYS-14]);
+  grammar 74/96/99 two-path verified with three right-hand sides changed.
+- ACTIVATION DELTA: per the candidate-mode workflow, activation replaced
+  exactly the one declared status line
+  `Status: CANDIDATE v0.32 supersedes v0.31 ea4b8ad4…` with
+  `Status: ACTIVE v0.32 (2026-08-18; batch-0071 trap-endpoint and
+  traversal delta: …; rule inventory 135).` and changed nothing else; the
+  resulting active digest recorded in the chain is
+  `5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5`.
+- boundary: the stable file, its new v0.31 archive (verified against the
+  prior chain tail before installation), the chain line below, identity
+  constants and generated module, and the prose authority lines the
+  digest-sync gate enumerates. Conformance changes ride the batch entry
+  above, not this entry.
+ACTIVE-SPEC: v0.32 5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5 ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c

@@ -217,7 +217,7 @@ increment boilerplate for an exact half-open u64 walk.
 
 Problem: a protected storage access uses an offset derived from process or
 system input, so valid hostile input may falsify its bound. Pattern status:
-active v0.31 guidance. Test the relation with a real branch and return the
+active v0.32 guidance. Test the relation with a real branch and return the
 domain's normal error value on the false edge. A body `check`, a `claim`, an
 ordinary callee requirement/prologue, or a process-entry wrapper check is not a
 repair: each turns expected external failure into a trap.
