@@ -774,7 +774,7 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
 #[test]
 fn outer_region_borrows_may_be_held_under_inner_regions() {
     with_semantics(
-        b"fn main() -> own unit traps {\n  let a = 7_i32;\n  region 'r {\n    region 's {\n      region 't {\n        let q = &'r a;\n        check ieq(deref(q), 7_i32) else trap \"q\";\n      }\n    }\n  }\n  return unit;\n}\n",
+        b"fn main() -> own unit traps {\n  let a = 7_i32;\n  region 'r {\n    region 's {\n      region 't {\n        let q = &'r a;\n        claim q: ieq(deref(q), 7_i32) because \"q\";\n      }\n    }\n  }\n  return unit;\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
                 panic!("an outer-region borrow held two blocks deeper must check: {outcome:?}");

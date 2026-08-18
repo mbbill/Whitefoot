@@ -333,7 +333,7 @@ fn emit_success_case(
     let equality = format!("{domain}eq(success_value{conversion}, {destination_value})");
     writeln!(
         source,
-        "  let success{conversion} = cvt<{source_type}, {destination}>({source_value});\n  match move success{conversion} {{\n    Ok(value: success_value{conversion}) => {{\n      check {equality} else trap \"partial success value {conversion}\";\n    }}\n    Err(error: success_error{conversion}) => {{\n      check False() else trap \"partial success became error {conversion}\";\n    }}\n  }}",
+        "  let success{conversion} = cvt<{source_type}, {destination}>({source_value});\n  match move success{conversion} {{\n    Ok(value: success_value{conversion}) => {{\n      claim partial_success_value_{conversion}: {equality} because \"partial success value {conversion}\";\n    }}\n    Err(error: success_error{conversion}) => {{\n      claim partial_success_became_error_{conversion}: False() because \"partial success became error {conversion}\";\n    }}\n  }}",
         destination = destination_type.spelling,
         source_type = source_type.spelling,
     )
@@ -369,7 +369,7 @@ fn emit_failure_case(
     };
     writeln!(
         source,
-        "  let failure{conversion} = cvt<{source_type}, {destination}>({source_value});\n  match move failure{conversion} {{\n    Ok(value: failure_value{conversion}) => {{\n      check False() else trap \"inexact conversion succeeded {conversion}\";\n    }}\n    Err(error: failure_error{conversion}) => {{\n    }}\n  }}",
+        "  let failure{conversion} = cvt<{source_type}, {destination}>({source_value});\n  match move failure{conversion} {{\n    Ok(value: failure_value{conversion}) => {{\n      claim inexact_conversion_succeeded_{conversion}: False() because \"inexact conversion succeeded {conversion}\";\n    }}\n    Err(error: failure_error{conversion}) => {{\n    }}\n  }}",
         destination = destination_type.spelling,
         source_type = source_type.spelling,
     )

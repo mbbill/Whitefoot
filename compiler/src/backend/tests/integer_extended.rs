@@ -26,7 +26,7 @@ $BSWAP  return unit;
     ] {
         let bswap = swapped.map_or_else(String::new, |expected| {
             format!(
-                "  let swapped = ibswap(1_{ty});\n  check ieq(swapped, {expected}_{ty}) else trap \"byte swap\";\n"
+                "  let swapped = ibswap(1_{ty});\n  claim byte_swap: ieq(swapped, {expected}_{ty}) because \"byte swap\";\n"
             )
         });
         let source = template

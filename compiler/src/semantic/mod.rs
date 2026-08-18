@@ -771,6 +771,16 @@ pub enum SemanticIssueKind {
     InvalidOperation,
     /// An explicit check condition is not exactly `own Bool`.
     InvalidCheckCondition,
+    /// A body-position `check` statement under the check-dissolution
+    /// candidate (#47): `claim` is the sole writer-stated trap construct
+    /// and the body `check` statement retires. Reachable only through the
+    /// default-off dissolution switch; the final `check_stmt` of a
+    /// `requires`/`ensures` block is contract syntax and never forms this
+    /// issue.
+    RetiredCheckStatement {
+        /// The exact mechanical repair the dissolution recipe names.
+        mechanical_fix: &'static str,
+    },
     /// A conditional was written in a form GRAM-6 does not admit for its
     /// class: a Bool-scrutinee `match`, an empty `else`, or an `else` block
     /// holding exactly one `if`.

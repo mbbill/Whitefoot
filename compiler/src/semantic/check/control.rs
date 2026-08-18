@@ -267,6 +267,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 })
             }
             Production::CheckStmt => {
+                // The check-dissolution candidate (#47) removes the body
+                // `check` statement from the GRAM-4 `stmt` alternation;
+                // behind the default-off switch that removal is modeled as
+                // this rejection at the statement node. The contract final
+                // of a `requires`/`ensures` block never reaches this arm.
+                if self.check_dissolution {
+                    return Err(CheckStop::source_issue(SemanticIssue {
+                        rule: SemanticRule::Op5,
+                        location: SemanticLocation::SourceNode(
+                            self.tree.path(node)?.clone(),
+                            self.tree.coordinate(node)?,
+                        ),
+                        kind: SemanticIssueKind::RetiredCheckStatement {
+                            mechanical_fix: "state the predicate as a named `claim` with a \
+                                             justification, or test it with a real branch",
+                        },
+                    }));
+                }
                 let expression_node = self
                     .tree
                     .first_child_with(node, Production::Expr)?
