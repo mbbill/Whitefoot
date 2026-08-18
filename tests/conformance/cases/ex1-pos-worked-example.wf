@@ -28,7 +28,7 @@ fn main() -> own unit traps {
         return unit;
       }
     }
-    check ieq(v, 42_i32) else trap "arithmetic drift";
+    claim arithmetic_drift: ieq(v, 42_i32) because "arithmetic drift";
   }
   return unit;
 }
