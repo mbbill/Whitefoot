@@ -1544,6 +1544,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &mut bindings,
             &mut counters,
             ControlScope {
+                contract_clause: false,
                 loops: &[],
                 give_context: None,
             },

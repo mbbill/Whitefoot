@@ -79,6 +79,11 @@ pub(super) struct ControlCounters<'state> {
 
 #[derive(Clone, Copy)]
 pub(super) struct ControlScope<'state> {
+    /// Whether this statement sits inside a `requires`/`ensures` clause,
+    /// whose final `check` is FN-8/FN-9 contract syntax rather than a body
+    /// statement; the check-dissolution retirement (#47) judges only body
+    /// position.
+    pub(super) contract_clause: bool,
     pub(super) loops: &'state [LoopContext],
     pub(super) give_context: Option<&'state GiveContext>,
 }
@@ -271,8 +276,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // `check` statement from the GRAM-4 `stmt` alternation;
                 // behind the default-off switch that removal is modeled as
                 // this rejection at the statement node. The contract final
-                // of a `requires`/`ensures` block never reaches this arm.
-                if self.check_dissolution {
+                // of a `requires`/`ensures` clause reaches this arm too and
+                // is exempt: it is FN-8/FN-9 contract syntax, not a body
+                // statement.
+                if self.check_dissolution && !scope.contract_clause {
                     return Err(CheckStop::source_issue(SemanticIssue {
                         rule: SemanticRule::Op5,
                         location: SemanticLocation::SourceNode(
