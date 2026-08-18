@@ -1694,7 +1694,10 @@ fn read(values: own array<u8, count>, position: own u64) -> own u8 pure requires
 }
 
 fn counterfactual(values: own array<u8, count>, positions: own array<u64, count>, selector: own u64) -> own u8 traps {
-  claim unreachable_call: ilt(selector, 0_u64) because "unreachable call";
+  let below = ilt(selector, 1_u64);
+  let above = ige(selector, 2_u64);
+  let impossible = band(below, above);
+  claim unreachable_call: impossible because "unreachable call";
   return read(values: move values, position: positions[selector]);
 }
 
