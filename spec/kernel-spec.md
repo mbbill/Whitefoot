@@ -2167,7 +2167,7 @@ That ordinal is the entry's identity in a diagnostic origin [DIAG-1].
 
 The notation here is normative record notation and is not writable source.
 
-Seven opaque nominal types: `Args`, `HostString`, `RelativePath`, `DirectoryRead`, `ReadFile`, `Output`, and `ExitStatus`.
+Eight opaque nominal types: `Args`, `HostString`, `RelativePath`, `DirectoryRead`, `ReadFile`, `Output`, `ExitStatus`, and `DirectoryList`.
 Each contributes one nominal-type entry and no constructor entry.
 An opaque type has no writer-visible field, variant, literal, size, alignment, or representation.
 It is a complete written `type` under [GRAM-3] as a bare TYPEID with no `targs`, carries no region and no type parameter, and is therefore region-free under [STOR-5].
@@ -2175,7 +2175,7 @@ It is not const-eligible [CONST-2], is not a `cvt` or `reinterpret` domain [OP-6
 Its values are produced only by the operations in this rule and by the command entry's standard input bindings.
 Every value of an opaque type is affine under [OWN-1].
 
-Seven enum nominal types with thirty-nine variant constructors:
+Eight enum nominal types with forty-two variant constructors:
 
 ```
 enum ArgError {
@@ -2237,9 +2237,14 @@ enum IoError {
   DeviceFailure(code: u32, origin: u8);
   Other(code: u32, origin: u8);
 }
+enum ListOutcome {
+  ListBytes(count: u64, entries: u64);
+  ListEnd();
+  ListFailed(error: IoError);
+}
 ```
 
-Eleven operations, each one complete signature record in the [GRAM-2] `fn_sig` shape:
+Fourteen operations, each one complete signature record in the [GRAM-2] `fn_sig` shape:
 
 ```
 fn args_count['a](args: &'a Args) -> own u64 reads('a);
@@ -2253,9 +2258,12 @@ fn open_read['c, 'p](root: &'c DirectoryRead, path: &'p RelativePath) -> own Res
 fn read_once['f, 'd](file: &uniq 'f ReadFile, destination: &uniq 'd buffer<u8>, offset: own u64, capacity: own u64) -> own ReadOutcome reads('f 'd), writes('f 'd), external, blocks, traps;
 fn write_once['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, offset: own u64, count: own u64) -> own Result<u64, IoError> reads('o 's), writes('o), external, blocks, traps;
 fn exit_status(code: own u8) -> own ExitStatus pure;
+fn open_directory['c, 'n](root: &'c DirectoryRead, name: &'n buffer<u8>, offset: own u64, count: own u64) -> own Result<DirectoryRead, IoError> reads('c 'n), external, blocks, traps;
+fn open_list['c](directory: &'c DirectoryRead) -> own Result<DirectoryList, IoError> reads('c), external, blocks;
+fn list_once['l, 'd](list: &uniq 'l DirectoryList, destination: &uniq 'd buffer<u8>, offset: own u64, capacity: own u64) -> own ListOutcome reads('l 'd), writes('l 'd), external, blocks, traps;
 ```
 
-The inventory is therefore exactly fourteen nominal types, thirty-nine enum-variant constructors, sixty-four variant fields, eleven operations, fourteen operation region parameters, and twenty-five operation value parameters.
+The inventory is therefore exactly sixteen nominal types, forty-two enum-variant constructors, sixty-seven variant fields, fourteen operations, nineteen operation region parameters, and thirty-four operation value parameters.
 
 Each operation's declared region entries are fixed by its own signature: every borrow parameter of formal region `'r` contributes `reads('r)`, and every `&uniq 'r` parameter through which the operation changes the borrowed value additionally contributes `writes('r)`.
 The rows above are exactly that derivation together with each operation's fixed external, blocking, and trapping classification; a system operation's row is declaration data and is never derived from a body, narrowed by a proof, or selected by a call site [ERR-4].
@@ -2277,6 +2285,9 @@ No system operation allocates.
 | `read_once` | `ReadBytes(count:)` internal; `ReadFailed(error:)` external; `ReadEnd()` carries no result component | `destination` external; `file` external |
 | `write_once` | `Ok(value:)` internal; `Err(error:)` external | `output` external |
 | `exit_status` | plain result internal | — |
+| `open_directory` | `Ok(value:)` external; `Err(error:)` external | — |
+| `open_list` | `Ok(value:)` external; `Err(error:)` external | — |
+| `list_once` | `ListBytes(count:, entries:)` internal; `ListFailed(error:)` external; `ListEnd()` carries no result component | `destination` external; `list` external |
 ```
 
 A plain-result cell fixes that result's sole aggregate component.
@@ -2290,7 +2301,7 @@ A call whose callee resolves to a system operation writes its region arguments a
 Positional operands are not admitted.
 A system operation is not a contract member, is not the right IDENT of an [FN-3] `fn_bind`, and never satisfies [FN-4]'s bound-function premise; a conformance binds only a top-level source function.
 
-The inventory contributes exactly one hundred and sixty-seven declaration records in this preorder: each nominal type in table order; then each constructor in table order, and within one constructor each of its fields in declared order; then each operation in table order, and within one operation each of its region parameters in declared order followed by each of its value parameters in declared order.
+The inventory contributes exactly one hundred and ninety-two declaration records in this preorder: each nominal type in table order; then each constructor in table order, and within one constructor each of its fields in declared order; then each operation in table order, and within one operation each of its region parameters in declared order followed by each of its value parameters in declared order.
 Exactly the nominal types, the constructors, and the operations enter the source resolver's whole-unit lookup inventory of a system-admitted unit [SYS-1].
 The field and parameter records are owner-local: a field record enters only its owning constructor's table and a parameter record only its owning operation signature, and neither is visible to source lookup.
 
@@ -2356,6 +2367,7 @@ A path component type, an absolute path type, and every operation that decompose
 The first slice constructs one relative path from one host string and supplies it to a directory-relative operation [PATH-2].
 
 [PATH-2] A directory-read capability names one directory object, and a directory-relative operation resolves a relative path against it through the target's own directory-relative resolution.
+A directory-relative operation resolves either one relative path value or one caller-supplied single path component [SYS-14]; both are resolved through the target's own directory-relative facility and neither is concatenated onto a prefix.
 The capability bound to the command's working-directory entry input is process-equivalent: resolution follows `.` and `..` components, symbolic links, reparse points, and mount transitions exactly as the surrounding process namespace does, so a resolved object may lie outside the directory that capability names.
 That is the complete promise this type makes, and it is not a confinement claim.
 An implementation presents no stronger one: a target implements directory-relative resolution with its own directory-relative facility, never by concatenating a prefix onto a path and resolving the result against an ambient working directory, and a target with no directory-relative facility fails qualification for the directory-relative semantic IDs [QUAL-1] rather than emulating them.
@@ -2374,10 +2386,12 @@ An approved implementation may be replaced only within one semantic identity: a 
 The table is compiler-internal data; the language defines no registry, negotiation protocol, dynamic loading, or plugin interface [PROG-1].
 
 [QUAL-2] A target qualifies for a semantic ID exactly when it supplies every target guarantee that ID's record requires; when it cannot supply one, it fails qualification for that ID and compilation stops [QUAL-1] rather than admitting the operation under a weaker guarantee.
-Two guarantees are stated here because each is a property of the target with nothing in a program to check.
+Three guarantees are stated here because each is a property of the target with nothing in a program to check.
 The first is command-lifetime argument backing: a target qualified for the command entry and for argument access supplies immutable backing for every argument code unit that is valid from before entry until the command invocation ends, either as stable native argument backing or as one complete snapshot taken before any Whitefoot code runs.
 A target that can supply neither fails qualification for both IDs; a qualified target that cannot establish the backing for one invocation refuses startup before entry rather than entering with backing that does not meet this guarantee.
 The second is a lossless host-string code-unit family [HOST-1] for the host-string and path semantic IDs.
+The third is a directory-enumeration facility for the enumeration semantic IDs [SYS-14]: one host call that reports a bounded batch of the entries of an open directory and advances that directory's own enumeration position.
+A target with no such facility fails qualification for those IDs rather than emulating them, and in particular never substitutes a scan built out of other operations.
 Qualification failure and startup refusal both occur before entry [PROG-3], so neither is a source-returned status, a recoverable outcome, or a trap [TRAP-1].
 
 [QUAL-3] For a natively compiled command, selection is static for the whole build: [QUAL-1] fixes the approved implementation of each semantic ID at compile time, and the emitted program contains no runtime operation-ID switch, target tag, per-call dispatch table, instance handle table, or handle lookup that selects among implementations.
@@ -2412,11 +2426,13 @@ A stateful resource identifies one live stateful object; an operation that advan
 | `ReadFile` | stateful resource | yes | no |
 | `Output` | stateful resource | yes | no |
 | `ExitStatus` | immutable value | yes | yes |
+| `DirectoryList` | stateful resource | yes | no |
 ```
 
 `ExitStatus` is Sendable and Shareable because it is an immutable command code with no interior state.
 `HostString` and `RelativePath` are Sendable and Shareable because their backing is immutable and outlives the invocation [HOST-3, QUAL-2]; the judgment is a judgment about that backing, so a later string type with separately owned backing rederives both predicates from its own representation and inherits neither [SYS-9].
 `ReadFile` and `Output` are not Shareable because a file cursor and an output publication order each have exactly one mutable owner; a later contract may add explicit lanes or consume `Output` into a publisher, and neither retroactively makes an original type shared.
+`DirectoryList` is not Shareable on the same ground: an enumeration cursor has exactly one mutable owner, and two lanes over one enumeration would observe each other's advance.
 
 These are declared capability predicates.
 This specification defines no thread construct, so no program's acceptance depends on them; they fix what a concurrency layer may assume and what a later type may not inherit.
@@ -2428,7 +2444,7 @@ A family operation that duplicates, splits, or attenuates a resource exists only
 [SYS-5] Every system resource family declares one completion policy.
 This specification defines exactly one: release-complete.
 Under it, compiler-derived release is the complete language obligation for the type, and a source program needs no terminal operation to discharge ownership.
-`Args`, `HostString`, `RelativePath`, `DirectoryRead`, `ReadFile`, `Output`, and `ExitStatus` are all release-complete, so this specification defines no exact-use checking obligation.
+`Args`, `HostString`, `RelativePath`, `DirectoryRead`, `ReadFile`, `Output`, `ExitStatus`, and `DirectoryList` are all release-complete, so this specification defines no exact-use checking obligation.
 
 Two further policy classes are named and reserved without machinery.
 Explicitly-abandonable means the type exposes a consuming abandon operation whose contract permits loss of unfinished external work, so abandonment is a source action rather than an accidental affine discard.
@@ -2447,12 +2463,13 @@ The consuming release action of each system type is exactly:
 | `ReadFile` | at most one native close attempt | `external, blocks` |
 | `Output` | logical source detach | none |
 | `ExitStatus` | logical consume | none |
+| `DirectoryList` | at most one native close attempt | `external, blocks` |
 ```
 
 A logical consume performs no host call, no target call, no handle lookup, no byte copy, and no external effect.
 A native close attempt discards only the close diagnostic and never retries an ambiguous close: a consuming close invalidates the source handle on success and on error, because the native descriptor may already be closed and reusable.
 `Output`'s logical source detach neither closes nor flushes the host descriptor [SYS-12].
-Release of an outcome value is release of its components: `ArgError`, `Utf8Error`, `CopyError`, `Utf8CopyError`, `PathError`, `IoError`, and `ReadOutcome` have no release action and take no row above, and a `ReadOutcome` or `Result` carrying a system value releases that value by this table.
+Release of an outcome value is release of its components: `ArgError`, `Utf8Error`, `CopyError`, `Utf8CopyError`, `PathError`, `IoError`, `ReadOutcome`, and `ListOutcome` have no release action and take no row above, and a `ReadOutcome`, `ListOutcome`, or `Result` carrying a system value releases that value by this table.
 
 A release action is compiler-derived and explicit in the checked program [STOR-3, DIAG-2].
 `flush`, `sync`, directory sync, atomic commit, and final handle release are different semantic operations; this specification declares none of them, and release is never a substitute for one.
@@ -2460,7 +2477,7 @@ Whole-process abort performs no release: a trap runs no language cleanup and ret
 
 [SYS-6] Each system operation declares its own outcome type; there is no shared outcome union.
 An operation with exactly two outcomes returns a [PRE-1] `Result<T, E>` instantiation and declares no new constructor spelling.
-The one operation with more than two outcomes declares one enum whose variant spellings carry its operation prefix, so no two operations compete for a constructor name in the whole-unit constructor domain [TYPE-6].
+Each operation with more than two outcomes declares its own enum whose variant spellings carry that operation's prefix, so no two operations compete for a constructor name in the whole-unit constructor domain [TYPE-6].
 The complete inventory is:
 
 ```wf-sys
@@ -2477,6 +2494,9 @@ The complete inventory is:
 | `read_once` | `own ReadOutcome` |
 | `write_once` | `own Result<u64, IoError>` |
 | `exit_status` | `own ExitStatus`; total, no failure outcome |
+| `open_directory` | `own Result<DirectoryRead, IoError>` |
+| `open_list` | `own Result<DirectoryList, IoError>` |
+| `list_once` | `own ListOutcome` |
 ```
 
 `InvalidIndex` states that the requested argument index is not present and returns no value.
@@ -2485,10 +2505,11 @@ The complete inventory is:
 `Utf8CopyInvalid` states that the host string is not valid UTF-8.
 `PathInvalid` states that the consumed host string is not a valid relative path and returns no value.
 `ReadBytes(count)`, `ReadEnd`, and `ReadFailed(error)` are [SYS-8]'s three read outcomes.
+`ListBytes(count, entries)`, `ListEnd`, and `ListFailed(error)` are [SYS-8]'s three enumeration outcomes; `count` is the exact byte length of the portable entry-record prefix written into the requested range and `entries` is the exact number of complete records that prefix holds.
 On a successful `arg_get` the `Ok` payload is the requested `HostString`; on a successful length, copy, or write the `Ok` payload is the exact `u64` byte, encoded, or accepted length.
 
 These error types are distinct nominal types and do not convert into one another [TYPE-4].
-`propagate` [ERR-3] therefore chains only across operations that already share one error type: that is exactly `open_read` and `write_once` inside a function whose written result is `own Result<U, IoError>`.
+`propagate` [ERR-3] therefore chains only across operations that already share one error type: that is exactly `open_read`, `write_once`, `open_directory`, and `open_list` inside a function whose written result is `own Result<U, IoError>`.
 `PathError`'s `PathInvalid` and `IoError`'s `InvalidPath` are deliberately different failures and never substitute for each other.
 
 [SYS-7] `IoError` is the closed portable class set declared by [SYS-2].
@@ -2506,29 +2527,36 @@ The detail is copy data in the transfer sense: it allocates nothing, owns nothin
 A payload-carrying variant is affine under [OWN-1], so an `IoError` value, like a `ReadOutcome` value, is moved or matched rather than copied; that affinity is a consequence of the declared source form and is not a cleanup obligation.
 No class carries a message, a buffer, or any heap-backed payload.
 
-[SYS-8] `read_once`, `write_once`, `host_copy_bytes`, and `host_copy_utf8` are one-attempt operations over a caller-owned initialized `buffer<u8>` and a caller-written range.
+[SYS-8] `read_once`, `write_once`, `list_once`, `host_copy_bytes`, and `host_copy_utf8` are one-attempt operations over a caller-owned initialized `buffer<u8>` and a caller-written range.
 Each takes only call-scoped borrows, so every resource and buffer owner remains with the caller on every outcome.
 
 Range validation precedes every other action.
-For `read_once` the range is `offset` and `capacity`; for `write_once` it is `offset` and `count`; for the two copy operations it is `offset` and `capacity`.
+For `read_once` the range is `offset` and `capacity`; for `write_once` it is `offset` and `count`; for `list_once` the range is `offset` and `capacity`; for the two copy operations it is `offset` and `capacity`.
 Overflow of the mathematical sum of the two range values in u64, an offset beyond the buffer's runtime length, or a range extending past that length traps as the operation-internal contract check retained by [OP-4] [ERR-4], before any host transfer, before any read of the source value or resource, and before any write of the destination.
 A trap therefore leaves the resource, the source, and the buffer unchanged, and the target is never asked to validate a source pointer or a source range.
 
 For a zero-length range, `read_once` and `write_once` report a count of zero and issue no host transfer.
 A zero-length read is never reported as `ReadEnd`.
+For a zero-length range `list_once` reports `ListBytes(0, 0)` and issues no host transfer, and a zero-length enumeration is never reported as `ListEnd`.
 
-For a nonempty range, `read_once` and `write_once` make at most one host transfer attempt.
+For a nonempty range, `read_once`, `write_once`, and `list_once` make at most one host transfer attempt.
 If that attempt reports progress, the operation returns that progress immediately and never hides a later failure by attempting again; a reported interruption is returned as `Interrupted`.
 `read_once` returns `ReadBytes(count)` only for a count greater than zero, and `write_once` never returns `Ok(0)`: a host zero-length write is `Err(WriteZero())`.
 A short success is not end of input; only `ReadEnd` states that no byte was available at the observed end.
 Repetition, accumulation, and retry policy are ordinary source loops over these operations; this specification defines no read-exact, write-all, positioned, or vectored operation.
+`list_once` returns `ListBytes(count, entries)` for the records one attempt reported, `ListEnd` exactly when the host reported that the directory holds no further entry, and `ListFailed(error)` otherwise.
+A batch smaller than the requested range is not the end of the directory; only `ListEnd` states that.
+A range too small for the target's own next record is reported as a recoverable failure in that target's class rather than as a truncated or partial entry, and the cursor does not advance, so the same handle with a larger range reports the same entries.
+No entry is ever split across two attempts and no record is ever reported without its complete name.
 
 Buffer and cursor disposition is exact.
 On `ReadBytes(count)` exactly the first `count` bytes of the requested range may have changed, every other byte of the buffer is unchanged, and the file cursor advances by exactly `count`.
 On `ReadEnd` and on `ReadFailed` no byte of the buffer changes, because an attempt that made progress reports `ReadBytes` instead.
 On every recoverable failure of `write_once` and of both copy operations the whole buffer is unchanged.
+On `ListBytes(count, entries)` exactly the first `count` bytes of the requested range may have changed, every other byte of the buffer is unchanged, and the enumeration cursor advances past exactly the entries those records name.
+On `ListEnd` and on `ListFailed` no byte of the buffer changes and the cursor does not advance.
 Every successful count is bounded by the caller's validated range, and the checked program retains that bound as a fact about the returned value [DIAG-2].
-On `ReadBytes(count)` the count is at most the requested `capacity`; on a successful `write_once` the accepted length is at most the requested `count`; on a successful `host_copy_bytes` or `host_copy_utf8` the copied length is at most the requested `capacity`.
+On `ReadBytes(count)` the count is at most the requested `capacity`; on `ListBytes(count, entries)` the count is at most the requested `capacity`; on a successful `write_once` the accepted length is at most the requested `count`; on a successful `host_copy_bytes` or `host_copy_utf8` the copied length is at most the requested `capacity`.
 These are postconditions of the operations, not defensive obligations on source: a target returning a larger count violates its compiler-owned contract [QUAL-1], and source code neither checks nor branches on that possibility.
 
 The two copy operations differ only after range validation succeeds.
@@ -2561,7 +2589,7 @@ The one-host-string-type rule, the command-lifetime backing, the distinct owned-
 No system value stores an ordinary source borrow or needs a runtime handle-table lookup.
 
 [SYS-10] `DirectoryRead` is a shared capability with one state.
-It is live from its entry binding until its release and has no other transition: this specification declares no attenuation, duplicate, split, or explicit close operation for it, so no other state is reachable.
+It is live from its entry binding or from the `open_directory` that created it until its release, and has no other transition: this specification declares no attenuation, duplicate, split, or explicit close operation for it, so no other state is reachable.
 
 Opening creates aliases only downward.
 `open_read` creates an independent `ReadFile` with its own cursor domain and does not alias the capability.
@@ -2569,8 +2597,11 @@ Two `DirectoryRead` values may denote the same directory object, and nothing inf
 
 Its completion policy is release-complete [SYS-5], on the same ground as `ReadFile` [SYS-11]: losing a close diagnostic on a read-only directory capability cannot invalidate an already opened file and cannot promise durability.
 
-Any number of `open_read` calls may progress concurrently through shared borrows of one `DirectoryRead`, exposing no ordering relative to one another.
-Each either creates its own `ReadFile` or fails, and none observes another's effect.
+Any number of `open_read`, `open_directory`, and `open_list` calls may progress concurrently through shared borrows of one `DirectoryRead`, exposing no ordering relative to one another.
+Each either creates its own `ReadFile`, `DirectoryRead`, or `DirectoryList`, or fails, and none observes another's effect.
+`open_directory` creates an independent `DirectoryRead` naming the child directory object, and `open_list` creates an independent `DirectoryList` with its own entry cursor; neither aliases the capability it was opened against, and releasing either leaves that capability live.
+A capability `open_directory` returns names the object the target's own directory-relative resolution reached for that component, with the process equivalence and the deferred confinement [PATH-2] already fixes.
+Two `DirectoryRead` values may denote the same directory object however they were produced, and a program that descends must exclude the self and parent components itself: nothing in this specification detects a cycle.
 
 Resolution, process-equivalence, the no-emulation qualification rule, and the deferred confined root are [PATH-2]; the `command.cwd` instance is shareable for open operations.
 
@@ -2614,6 +2645,27 @@ There are no implicit conversions [TYPE-4] and every value's type is exactly wha
 
 The target maps the returned code exactly onto the host process status.
 Startup failure before entry and a trap are outside this mapping [PROG-3]: a trap performs no language cleanup and returns no status [EFF-4, SCOPE-4].
+
+[SYS-14] `DirectoryList` is a stateful resource with one state.
+`open_list` creates it live, with one entry-cursor domain over the directory object the capability it was opened against names.
+A separate `open_list` on the same capability creates a separate cursor and does not prove a separate directory object, and this specification declares no duplicate, split, rewind, or positioned-lane operation, so multiple lanes over one enumeration are not reachable.
+`list_once` is call-scoped and leaves both owners live on every outcome; its transfer, cursor, and buffer semantics are [SYS-8].
+It reports the entries the host reported, in the host's own order: this specification fixes no enumeration order, promises no stability across two enumerations of the same directory, and states no relationship to a concurrent change of that directory's content.
+A program that needs a deterministic order sorts what it collected.
+The reported entries are exactly what the target's directory holds, including the self and parent entries when the target's directory holds them.
+They are not filtered, because filtering them would cost a second host call in the batch that held only them [QUAL-3], and a program that descends must exclude them anyway to terminate.
+One entry record is one kind byte, one name-length byte, and exactly that many name bytes.
+The closed kind set is `0` unknown, `1` regular file, `2` directory, `3` symbolic link, and `4` other; `0` states that the target classified the entry at enumeration time as nothing more specific, not that the entry is absent or unreadable.
+A name is one path component: it is never empty, never longer than the target's component limit, and contains no NUL and no target separator, so no record a program reads can name more than one component.
+An entry name reaches source only as those bytes.
+This specification declares no operation turning an enumerated name into a `HostString` or a `RelativePath`, because a name's backing is not the command-lifetime argument snapshot [HOST-3] and a path value is an inline lease over that snapshot [PATH-1].
+`open_directory` therefore takes a caller-owned name range rather than a path value, and path composition remains the DEFERRED addition [PATH-1] states.
+`open_directory` validates that name range before any host call: a range that is empty, longer than the target's component limit, or containing a NUL or a target separator yields `InvalidPath` with both detail fields zero [SYS-7], no host call, and no capability.
+A valid range that names no directory yields the target's own failure class — `NotFound`, `NotDirectory`, `PermissionDenied`, and the rest of the closed set — exactly as `open_read` does.
+`DirectoryList` is release-complete [SYS-5].
+Compiler-derived release consumes the resource and may discard only a close diagnostic, which carries no guarantee about entries already observed.
+This specification declares no separate explicit-close operation, and a deep traversal therefore holds one descriptor per live level.
+Whole-process abort relies on operating-system teardown [SYS-5].
 
 ## 18. Obligation discharge: claims, entailment, and provenance (normative)
 
