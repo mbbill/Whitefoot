@@ -6,8 +6,6 @@
 //! program's address space: it opens, enumerates, and descends through the
 //! host's own facilities, exactly as a shipped command would.
 
-use std::path::Path;
-
 use super::support::{
     build_program, compile_program, compile_program_with_traversal_surface,
     compile_rejection_with_traversal_surface, fixture_directory,
@@ -98,18 +96,18 @@ fn an_unreadable_subdirectory_is_recorded_without_descending_into_it() {
     );
 }
 
-/// The same source is not a program under the active specification: with the
-/// candidate inventory off, every traversal spelling is an undeclared name,
-/// so the switch decides admission rather than the compiler recognizing a
-/// source shape.
+/// The shipped inventory and the test-only entry are one judgment: the
+/// traversal source is a program on the ordinary path and emits the same
+/// module the forced-on entry does. Under v0.31 every traversal spelling in
+/// it was an undeclared name, so admission is decided by the inventory the
+/// specification declares and never by the compiler recognizing a source
+/// shape — the property the off-switch rejection used to carry.
 #[test]
-fn the_traversal_source_is_undeclared_without_the_candidate_inventory() {
-    let source = std::fs::read(traversal_source()).expect("read the traversal program");
-    let inputs = [("dir_walk.wf", source.as_slice())];
-    let failure = super::support::compile_rejection(&inputs);
-    assert!(
-        failure.contains("Resolution"),
-        "expected a resolution rejection, got {failure}"
+fn the_traversal_source_is_admitted_on_the_shipped_path() {
+    assert_eq!(
+        compile_program("dir_walk.wf"),
+        compile_program_with_traversal_surface("dir_walk.wf"),
+        "the shipped inventory and the forced-on entry disagree"
     );
 }
 
@@ -257,13 +255,4 @@ fn the_component_validation_precedes_every_host_call() {
         !shim[invalid_block..].contains("@openat"),
         "the rejection path must make no host call"
     );
-}
-
-fn traversal_source() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("compiler package must live directly under the repository root")
-        .join("tests")
-        .join("programs")
-        .join("dir_walk.wf")
 }
