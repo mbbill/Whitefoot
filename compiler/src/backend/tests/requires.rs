@@ -112,9 +112,9 @@ fn ordinary_requirement_is_not_emitted_as_a_callee_prologue() {
 
 fn main() -> own unit traps {
   let value = 7_i32;
-  check ige(value, 0_i32) else trap "caller evidence";
+  claim caller_evidence: ige(value, 0_i32) because "caller evidence";
   let result = bounded(value: value);
-  check ieq(result, 7_i32) else trap "result drift";
+  claim result_drift: ieq(result, 7_i32) because "result drift";
   return unit;
 }
 "#,

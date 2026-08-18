@@ -1676,7 +1676,7 @@ fn main() -> own unit traps {
     let borrowed = &'r ordinary;
     let called = user<i32, 'r, one>(arg: borrowed);
     let view = move called;
-    check ieq(ordinary, two) else trap "bad";
+    claim bad: ieq(ordinary, two) because "bad";
   }
   loop @done {
     break @done;
@@ -1937,10 +1937,10 @@ fn conditional_branches_are_separate_lexical_scopes() {
     let sibling_branches = br#"fn get(pick: own Bool) -> own unit traps {
   if pick {
     let inside = 1_u64;
-    check ieq(inside, 1_u64) else trap "left";
+    claim left: ieq(inside, 1_u64) because "left";
   } else {
     let inside = 2_u64;
-    check ieq(inside, 2_u64) else trap "right";
+    claim right: ieq(inside, 2_u64) because "right";
   }
   return unit;
 }
@@ -1961,11 +1961,11 @@ fn get(pick: own Pick) -> own unit traps {
   match pick {
     Left() => {
       let inside = 1_u64;
-      check ieq(inside, 1_u64) else trap "left";
+      claim left: ieq(inside, 1_u64) because "left";
     }
     Right() => {
       let inside = 2_u64;
-      check ieq(inside, 2_u64) else trap "right";
+      claim right: ieq(inside, 2_u64) because "right";
     }
   }
   return unit;
@@ -1981,10 +1981,10 @@ fn get(pick: own Pick) -> own unit traps {
     let expired_then_enclosing = br#"fn get(pick: own Bool) -> own unit traps {
   if pick {
     let offset = 0_u64;
-    check ieq(offset, 0_u64) else trap "inner";
+    claim inner: ieq(offset, 0_u64) because "inner";
   }
   let offset = 1_u64;
-  check ieq(offset, 1_u64) else trap "outer";
+  claim outer: ieq(offset, 1_u64) because "outer";
   return unit;
 }
 "#;
@@ -1999,9 +1999,9 @@ fn get(pick: own Pick) -> own unit traps {
   let offset = 0_u64;
   if pick {
     let offset = 1_u64;
-    check ieq(offset, 1_u64) else trap "inner";
+    claim inner_2: ieq(offset, 1_u64) because "inner";
   }
-  check ieq(offset, 0_u64) else trap "outer";
+  claim outer_2: ieq(offset, 0_u64) because "outer";
   return unit;
 }
 "#;

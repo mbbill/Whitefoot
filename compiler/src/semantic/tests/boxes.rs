@@ -9,7 +9,7 @@ fn box_creation_dereference_and_cleanup_are_explicit() {
   let value = 41_u64;
   let owner = box_new(value);
   let loaded = deref(owner);
-  check ieq(loaded, 41_u64) else trap "box value";
+  claim box_value: ieq(loaded, 41_u64) because "box value";
   return unit;
 }
 "#;
@@ -77,7 +77,7 @@ fn box_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
   let b = box_new(4_i32);
   set deref(b) = 7_i32;
   let seen = deref(b);
-  check ieq(seen, 7_i32) else trap "box content set";
+  claim box_content_set: ieq(seen, 7_i32) because "box content set";
   return unit;
 }
 "#,

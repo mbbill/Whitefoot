@@ -30,7 +30,7 @@ fn arena_release_covers_loop_reentry_early_return_and_nested_regions() {
   region 'e {
     let a = arena_new<'e, i32>(5_i32);
     let v = deref(a);
-    check ieq(v, 5_i32) else trap "early read";
+    claim early_read: ieq(v, 5_i32) because "early read";
     return v;
   }
 }
@@ -42,23 +42,23 @@ fn main() -> own unit traps {
       let b = arena_new<'r, i32>(2_i32);
       let first = deref(a);
       let second = deref(b);
-      check ieq(first, 1_i32) else trap "loop first";
-      check ieq(second, 2_i32) else trap "loop second";
+      claim loop_first: ieq(first, 1_i32) because "loop first";
+      claim loop_second: ieq(second, 2_i32) because "loop second";
     }
   }
   let got = early();
-  check ieq(got, 5_i32) else trap "early return";
+  claim early_return: ieq(got, 5_i32) because "early return";
   region 'outer {
     let base = arena_new<'outer, i32>(7_i32);
     region 'inner {
       let extra = arena_new<'inner, i32>(30_i32);
       let left = deref(base);
       let right = deref(extra);
-      check ieq(left, 7_i32) else trap "nested outer read";
-      check ieq(right, 30_i32) else trap "nested inner read";
+      claim nested_outer_read: ieq(left, 7_i32) because "nested outer read";
+      claim nested_inner_read: ieq(right, 30_i32) because "nested inner read";
     }
     let after = deref(base);
-    check ieq(after, 7_i32) else trap "outer survives inner exit";
+    claim outer_survives_inner_exit: ieq(after, 7_i32) because "outer survives inner exit";
   }
   return unit;
 }
@@ -84,7 +84,7 @@ fn arena_release_covers_break_edges_and_enclosing_region_allocation() {
     region 'r {
       let a = arena_new<'r, i32>(9_i32);
       let v = deref(a);
-      check ieq(v, 9_i32) else trap "break read";
+      claim break_read: ieq(v, 9_i32) because "break read";
       break @turns;
     }
   }
@@ -94,8 +94,8 @@ fn arena_release_covers_break_edges_and_enclosing_region_allocation() {
       let b = arena_new<'inner, i32>(4_i32);
       let x = deref(a);
       let y = deref(b);
-      check ieq(x, 3_i32) else trap "enclosing alloc";
-      check ieq(y, 4_i32) else trap "inner alloc";
+      claim enclosing_alloc: ieq(x, 3_i32) because "enclosing alloc";
+      claim inner_alloc: ieq(y, 4_i32) because "inner alloc";
     }
   }
   return unit;
@@ -125,7 +125,7 @@ fn a_within_region_arena_delivery_executes() {
       give move b;
     }
     let v = deref(picked);
-    check ieq(v, 11_i32) else trap "delivered read";
+    claim delivered_read: ieq(v, 11_i32) because "delivered read";
   }
   return unit;
 }

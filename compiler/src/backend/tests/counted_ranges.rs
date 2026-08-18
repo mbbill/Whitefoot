@@ -46,7 +46,7 @@ fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
 
 command fn main() -> own ExitStatus traps {
   let result = exercise();
-  check ieq(result, 8_u64) else trap "counted range drift";
+  claim counted_range_drift: ieq(result, 8_u64) because "counted range drift";
   return exit_status(code: 0_u8);
 }
 "#;

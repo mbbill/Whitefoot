@@ -17,8 +17,8 @@ fn main() -> own unit allocates(heap), traps {
   claim sized_by_make: room because "make allocates n slots and main passes four";
   set values[2_u64] = replacement();
   let stored = values[2_u64];
-  check ieq(length, 4_u64) else trap "length drift";
-  check ieq(stored, 9_u16) else trap "store drift";
+  claim length_drift: ieq(length, 4_u64) because "length drift";
+  claim store_drift: ieq(stored, 9_u16) because "store drift";
   return unit;
 }
 "#;
@@ -112,7 +112,7 @@ fn an_out_of_bounds_buffer_set_is_an_op4_compile_rejection() {
     // The allocation-length equality proves 2 < 2 underivable, so the
     // program rejects at compile time with the residual [OP-4, ENT-6].
     let source = br#"fn replacement() -> own u8 traps {
-  check False() else trap "RHS evaluated";
+  claim rhs_evaluated: False() because "RHS evaluated";
   return 9_u8;
 }
 
@@ -132,7 +132,7 @@ fn empty_buffer_has_zero_length_and_a_normal_free() {
     let source = br#"fn main() -> own unit allocates(heap), traps {
   let values = buffer_new(0_u64, 7_u8);
   let length = len(values);
-  check ieq(length, 0_u64) else trap "length drift";
+  claim length_drift: ieq(length, 0_u64) because "length drift";
   return unit;
 }
 "#;
@@ -243,7 +243,7 @@ fn main() -> own unit allocates(heap), traps {
   }
   region 'read {
     let observed = observe<'read>(pool: &'read pool);
-    check ieq(observed, 14_u64) else trap "borrowed struct update drift";
+    claim borrowed_struct_update_drift: ieq(observed, 14_u64) because "borrowed struct update drift";
   }
   return unit;
 }
@@ -344,7 +344,7 @@ fn main() -> own unit allocates(heap), traps {
   let updated_ok = ilt(1_u64, updated_room);
   claim updated_sized: updated_ok because "update returns the two-slot columns";
   let value = updated.left[1_u64];
-  check ieq(value, 9_u16) else trap "projected store drift";
+  claim projected_store_drift: ieq(value, 9_u16) because "projected store drift";
   return unit;
 }
 "#;

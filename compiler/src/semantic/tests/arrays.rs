@@ -17,9 +17,9 @@ fn main() -> own unit traps {
   let length = len(values);
   let local = values[2_u64];
   let stored = table[2_u64];
-  check ieq(length, 4_u64) else trap "length drift";
-  check ieq(local, 7_i32) else trap "fill drift";
-  check ieq(stored, 30_u8) else trap "const drift";
+  claim length_drift: ieq(length, 4_u64) because "length drift";
+  claim fill_drift: ieq(local, 7_i32) because "fill drift";
+  claim const_drift: ieq(stored, 30_u8) because "const drift";
   return unit;
 }
 "#;
@@ -178,7 +178,7 @@ fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
   let values = array_new<u8, 2>(0_u8);
   set values[1_u64] = 9_u8;
   let stored = values[1_u64];
-  check ieq(stored, 9_u8) else trap "set drift";
+  claim set_drift: ieq(stored, 9_u8) because "set drift";
   return unit;
 }
 "#;
@@ -254,8 +254,8 @@ fn main() -> own unit traps {
   let length = len(outer.inner.values);
   set outer.inner.values[1_u64] = 9_u8;
   let stored = outer.inner.values[1_u64];
-  check ieq(length, 2_u64) else trap "length drift";
-  check ieq(stored, 9_u8) else trap "set drift";
+  claim length_drift: ieq(length, 2_u64) because "length drift";
+  claim set_drift: ieq(stored, 9_u8) because "set drift";
   return unit;
 }
 "#;

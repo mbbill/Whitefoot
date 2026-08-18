@@ -6,32 +6,32 @@ fn guards_every_integer_error_before_llvm() {
   let quotient = 84_$TYPE /checked 2_$TYPE;
   match move quotient {
     Ok(value: quotient_value) => {
-      check ieq(quotient_value, 42_$TYPE) else trap "quotient drift";
+      claim quotient_drift: ieq(quotient_value, 42_$TYPE) because "quotient drift";
     }
     Err(error: quotient_error) => {
-      check False() else trap "quotient took Err";
+      claim quotient_took_err: False() because "quotient took Err";
     }
   }
   let remainder = 85_$TYPE %checked 43_$TYPE;
   match move remainder {
     Ok(value: remainder_value) => {
-      check ieq(remainder_value, 42_$TYPE) else trap "remainder drift";
+      claim remainder_drift: ieq(remainder_value, 42_$TYPE) because "remainder drift";
     }
     Err(error: remainder_error) => {
-      check False() else trap "remainder took Err";
+      claim remainder_took_err: False() because "remainder took Err";
     }
   }
   let divide_zero = 42_$TYPE /checked 0_$TYPE;
   match move divide_zero {
     Ok(value: divide_zero_value) => {
-      check False() else trap "zero division took Ok";
+      claim zero_division_took_ok: False() because "zero division took Ok";
     }
     Err(error: divide_zero_error) => {
       match divide_zero_error {
         DivideByZero() => {
         }
         DivOverflow() => {
-          check False() else trap "zero division became overflow";
+          claim zero_division_became_overflow: False() because "zero division became overflow";
         }
       }
     }
@@ -39,14 +39,14 @@ fn guards_every_integer_error_before_llvm() {
   let remainder_zero = 42_$TYPE %checked 0_$TYPE;
   match move remainder_zero {
     Ok(value: remainder_zero_value) => {
-      check False() else trap "zero remainder took Ok";
+      claim zero_remainder_took_ok: False() because "zero remainder took Ok";
     }
     Err(error: remainder_zero_error) => {
       match remainder_zero_error {
         DivideByZero() => {
         }
         DivOverflow() => {
-          check False() else trap "zero remainder became overflow";
+          claim zero_remainder_became_overflow: False() because "zero remainder became overflow";
         }
       }
     }
@@ -69,12 +69,12 @@ $SIGNED_CASES  return unit;
                 r#"  let divide_overflow = {minimum}_{ty} /checked -1_{ty};
   match move divide_overflow {{
     Ok(value: divide_overflow_value) => {{
-      check False() else trap "division overflow took Ok";
+      claim division_overflow_took_ok: False() because "division overflow took Ok";
     }}
     Err(error: divide_overflow_error) => {{
       match divide_overflow_error {{
         DivideByZero() => {{
-          check False() else trap "division overflow became zero";
+          claim division_overflow_became_zero: False() because "division overflow became zero";
         }}
         DivOverflow() => {{
         }}
@@ -84,12 +84,12 @@ $SIGNED_CASES  return unit;
   let remainder_overflow = {minimum}_{ty} %checked -1_{ty};
   match move remainder_overflow {{
     Ok(value: remainder_overflow_value) => {{
-      check False() else trap "remainder overflow took Ok";
+      claim remainder_overflow_took_ok: False() because "remainder overflow took Ok";
     }}
     Err(error: remainder_overflow_error) => {{
       match remainder_overflow_error {{
         DivideByZero() => {{
-          check False() else trap "remainder overflow became zero";
+          claim remainder_overflow_became_zero: False() because "remainder overflow became zero";
         }}
         DivOverflow() => {{
         }}

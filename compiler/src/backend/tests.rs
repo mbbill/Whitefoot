@@ -441,7 +441,7 @@ fn emitted_module_retains_checks_and_avoids_undefined_overflow_flags() {
 
 fn main() -> own unit traps {
   let answer = add(x: 40_i32, y: 2_i32);
-  check ieq(answer, 42_i32) else trap "wrong answer";
+  claim wrong_answer: ieq(answer, 42_i32) because "wrong answer";
   return unit;
 }
 "#;
@@ -599,9 +599,9 @@ fn main() -> own unit traps {
     set outer.inner.value = number;
   }
   let observed = outer.inner.value;
-  check ieq(observed, 42_i32) else trap "nested set failed";
+  claim nested_set_failed: ieq(observed, 42_i32) because "nested set failed";
   let preserved = outer.other;
-  check ieq(preserved, 7_i32) else trap "sibling changed";
+  claim sibling_changed: ieq(preserved, 7_i32) because "sibling changed";
   let selected = if flag {
     set number = 43_i32;
     give number;
@@ -609,8 +609,8 @@ fn main() -> own unit traps {
     set number = 10_i32;
     give number;
   }
-  check ieq(selected, 43_i32) else trap "value match result failed";
-  check ieq(number, 43_i32) else trap "value match set failed";
+  claim value_match_result_failed: ieq(selected, 43_i32) because "value match result failed";
+  claim value_match_set_failed: ieq(number, 43_i32) because "value match set failed";
   return unit;
 }
 "#;
@@ -638,18 +638,18 @@ fn bool_conditionals_execute_through_the_existing_match_lowering() {
   if flag {
     set seen = True();
   }
-  check seen else trap "the else-free if did not run";
+  claim the_else_free_if_did_not_run: seen because "the else-free if did not run";
   let untouched = True();
   if other {
     set untouched = False();
   }
-  check untouched else trap "the else-free if ran when it should not";
+  claim the_else_free_if_ran_when_it_should_not: untouched because "the else-free if ran when it should not";
   let taken = if flag {
     give True();
   } else {
     give False();
   }
-  check taken else trap "the value_if took the wrong branch";
+  claim the_value_if_took_the_wrong_branch: taken because "the value_if took the wrong branch";
   let chained = if other {
     give False();
   } else if flag {
@@ -657,7 +657,7 @@ fn bool_conditionals_execute_through_the_existing_match_lowering() {
   } else {
     give False();
   }
-  check chained else trap "the else-if chain took the wrong branch";
+  claim the_else_if_chain_took_the_wrong_branch: chained because "the else-if chain took the wrong branch";
   return unit;
 }
 "#;
@@ -676,7 +676,7 @@ fn a_derived_box_nominal_allocates_reads_back_and_releases() {
   let flag = True();
   let owner = box_new(flag);
   let loaded = deref(owner);
-  check loaded else trap "the derived box did not read back";
+  claim the_derived_box_did_not_read_back: loaded because "the derived box did not read back";
   return unit;
 }
 "#;
@@ -697,27 +697,27 @@ fn infix_operators_execute_the_rows_they_name() {
   let b = a + 22_i32;
   let want = 42_i32;
   let sum_ok = ieq(b, want);
-  check sum_ok else trap "bare plus is the trapping add";
+  claim bare_plus_is_the_trapping_add: sum_ok because "bare plus is the trapping add";
   let hi = 2147483647_i32;
   let wrapped = hi +wrap 1_i32;
   let low = -2147483648_i32;
   let wrap_ok = ieq(wrapped, low);
-  check wrap_ok else trap "+wrap wraps";
+  claim wrap_wraps: wrap_ok because "+wrap wraps";
   let saturated = hi +sat 1_i32;
   let sat_ok = ieq(saturated, hi);
-  check sat_ok else trap "+sat saturates";
+  claim sat_saturates: sat_ok because "+sat saturates";
   let quotient = 43_i32 / 2_i32;
   let q_ok = ieq(quotient, 21_i32);
-  check q_ok else trap "bare slash divides";
+  claim bare_slash_divides: q_ok because "bare slash divides";
   let rest = 43_i32 % 2_i32;
   let r_ok = ieq(rest, 1_i32);
-  check r_ok else trap "bare percent remainders";
+  claim bare_percent_remainders: r_ok because "bare percent remainders";
   let differ = ine(a, b);
-  check differ else trap "not equal";
+  claim not_equal: differ because "not equal";
   let ordered = ile(a, b);
-  check ordered else trap "less equal";
+  claim less_equal: ordered because "less equal";
   let reversed = ige(b, a);
-  check reversed else trap "greater equal";
+  claim greater_equal: reversed because "greater equal";
   return unit;
 }
 "#;
@@ -747,13 +747,13 @@ fn eq(a: own i32, b: own i32) -> own Bool pure {
 fn main() -> own unit traps {
   let sum = add(a: 20_i32, b: 22_i32);
   let sum_ok = ieq(sum, 42_i32);
-  check sum_ok else trap "the returned sum is wrong";
+  claim the_returned_sum_is_wrong: sum_ok because "the returned sum is wrong";
   let same = eq(a: 7_i32, b: 7_i32);
-  check same else trap "the returned comparison is wrong";
+  claim the_returned_comparison_is_wrong: same because "the returned comparison is wrong";
   let differ = eq(a: 7_i32, b: 8_i32);
   let impossible = eq(a: 0_i32, b: 1_i32);
   if differ {
-    check impossible else trap "a false returned comparison must not be true";
+    claim a_false_returned_comparison_must_not_be_true: impossible because "a false returned comparison must not be true";
   }
   return unit;
 }
@@ -871,7 +871,7 @@ fn main() -> own unit traps {
   let arithmetic_result = 2147483647_i32 +checked 1_i32;
   match move arithmetic_result {
     Ok(value: sum) => {
-      check False() else trap "checked overflow took Ok";
+      claim checked_overflow_took_ok: False() because "checked overflow took Ok";
     }
     Err(error: overflow) => {
     }
@@ -879,7 +879,7 @@ fn main() -> own unit traps {
   let subtract_result = 0_u8 -checked 1_u8;
   match move subtract_result {
     Ok(value: difference) => {
-      check False() else trap "checked underflow took Ok";
+      claim checked_underflow_took_ok: False() because "checked underflow took Ok";
     }
     Err(error: underflow) => {
     }
@@ -887,25 +887,25 @@ fn main() -> own unit traps {
   let multiply_result = 6_i16 *checked 7_i16;
   match move multiply_result {
     Ok(value: product) => {
-      check ieq(product, 42_i16) else trap "checked product drift";
+      claim checked_product_drift: ieq(product, 42_i16) because "checked product drift";
     }
     Err(error: product_error) => {
-      check False() else trap "checked product took Err";
+      claim checked_product_took_err: False() because "checked product took Err";
     }
   }
   let success = forward(value: 7_i32);
   match move success {
     Ok(value: answer) => {
-      check ieq(answer, 42_i64) else trap "propagated Ok payload drift";
+      claim propagated_ok_payload_drift: ieq(answer, 42_i64) because "propagated Ok payload drift";
     }
     Err(error: failure_error) => {
-      check False() else trap "unexpected propagated Err";
+      claim unexpected_propagated_err: False() because "unexpected propagated Err";
     }
   }
   let failure = forward(value: -1_i32);
   match move failure {
     Ok(value: unexpected) => {
-      check False() else trap "propagated Err became Ok";
+      claim propagated_err_became_ok: False() because "propagated Err became Ok";
     }
     Err(error: forwarded_error) => {
     }
@@ -913,16 +913,16 @@ fn main() -> own unit traps {
   let field_success = forward_field(value: 7_i32);
   match move field_success {
     Ok(value: field_answer) => {
-      check ieq(field_answer, 42_i64) else trap "field propagation drift";
+      claim field_propagation_drift: ieq(field_answer, 42_i64) because "field propagation drift";
     }
     Err(error: field_failure) => {
-      check False() else trap "unexpected field propagation error";
+      claim unexpected_field_propagation_error: False() because "unexpected field propagation error";
     }
   }
   let field_failure = forward_field(value: -1_i32);
   match move field_failure {
     Ok(value: field_unexpected) => {
-      check False() else trap "field propagation lost Err";
+      claim field_propagation_lost_err: False() because "field propagation lost Err";
     }
     Err(error: field_forwarded_error) => {
     }
@@ -931,10 +931,10 @@ fn main() -> own unit traps {
   match move pair_result {
     Ok(value: pair) => {
       let total = pair.left +wrap pair.right;
-      check ieq(total, 42_i32) else trap "aggregate Result payload drift";
+      claim aggregate_result_payload_drift: ieq(total, 42_i32) because "aggregate Result payload drift";
     }
     Err(error: pair_error) => {
-      check False() else trap "unexpected aggregate Result error";
+      claim unexpected_aggregate_result_error: False() because "unexpected aggregate Result error";
     }
   }
   return unit;
@@ -983,7 +983,7 @@ fn nested_loop_labels_route_breaks_to_the_resolved_exit() {
       set inner = inner +wrap 1_i32;
     }
   }
-  check ieq(outer, 3_i32) else trap "wrong outer exit";
+  claim wrong_outer_exit: ieq(outer, 3_i32) because "wrong outer exit";
   return unit;
 }
 "#;
@@ -1040,20 +1040,20 @@ fn every_lowered_integer_mode_and_comparison_executes_with_exact_width_and_sign(
   let sut = 10_u32 - 3_u32;
   let mst = 6_i64 * 7_i64;
   let mut = 6_u64 * 7_u64;
-  check ieq(aw, -128_i8) else trap "signed add wrap drift";
-  check ieq(sw, 255_u8) else trap "unsigned subtract wrap drift";
-  check ieq(mw, 65534_u16) else trap "unsigned multiply wrap drift";
-  check ieq(ast, -7_i16) else trap "signed add trap drift";
-  check ieq(aut, 13_u16) else trap "unsigned add trap drift";
-  check ieq(sst, 7_i32) else trap "signed subtract trap drift";
-  check ieq(sut, 7_u32) else trap "unsigned subtract trap drift";
-  check ieq(mst, 42_i64) else trap "signed multiply trap drift";
-  check ieq(mut, 42_u64) else trap "unsigned multiply trap drift";
-  check ine(1_i32, 2_i32) else trap "ine drift";
-  check ilt(-1_i32, 0_i32) else trap "signed ilt drift";
-  check ile(1_u32, 1_u32) else trap "unsigned ile drift";
-  check igt(1_i32, -1_i32) else trap "signed igt drift";
-  check ige(1_u32, 1_u32) else trap "unsigned ige drift";
+  claim signed_add_wrap_drift: ieq(aw, -128_i8) because "signed add wrap drift";
+  claim unsigned_subtract_wrap_drift: ieq(sw, 255_u8) because "unsigned subtract wrap drift";
+  claim unsigned_multiply_wrap_drift: ieq(mw, 65534_u16) because "unsigned multiply wrap drift";
+  claim signed_add_trap_drift: ieq(ast, -7_i16) because "signed add trap drift";
+  claim unsigned_add_trap_drift: ieq(aut, 13_u16) because "unsigned add trap drift";
+  claim signed_subtract_trap_drift: ieq(sst, 7_i32) because "signed subtract trap drift";
+  claim unsigned_subtract_trap_drift: ieq(sut, 7_u32) because "unsigned subtract trap drift";
+  claim signed_multiply_trap_drift: ieq(mst, 42_i64) because "signed multiply trap drift";
+  claim unsigned_multiply_trap_drift: ieq(mut, 42_u64) because "unsigned multiply trap drift";
+  claim ine_drift: ine(1_i32, 2_i32) because "ine drift";
+  claim signed_ilt_drift: ilt(-1_i32, 0_i32) because "signed ilt drift";
+  claim unsigned_ile_drift: ile(1_u32, 1_u32) because "unsigned ile drift";
+  claim signed_igt_drift: igt(1_i32, -1_i32) because "signed igt drift";
+  claim unsigned_ige_drift: ige(1_u32, 1_u32) because "unsigned ige drift";
   return unit;
 }
 "#;

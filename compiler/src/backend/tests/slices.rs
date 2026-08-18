@@ -27,19 +27,19 @@ fn main() -> own unit allocates(heap), traps {
   region 'static_view {
     let view = slice_of(&'static_view bytes);
     let total = sum<'static_view>(values: move view);
-    check ieq(total, 10_u64) else trap "array slice";
+    claim array_slice: ieq(total, 10_u64) because "array slice";
   }
   let local = array_new<u8, 4>(3_u8);
   region 'local_view {
     let view = slice_of(&'local_view local);
     let total = sum<'local_view>(values: move view);
-    check ieq(total, 12_u64) else trap "local array slice";
+    claim local_array_slice: ieq(total, 12_u64) because "local array slice";
   }
   let runtime = buffer_new(4_u64, 2_u8);
   region 'runtime_view {
     let view = slice_of(&'runtime_view runtime);
     let total = sum<'runtime_view>(values: move view);
-    check ieq(total, 8_u64) else trap "buffer slice";
+    claim buffer_slice: ieq(total, 8_u64) because "buffer slice";
   }
   return unit;
 }
@@ -112,7 +112,7 @@ fn main() -> own unit traps {
     let borrowed_source = slice_of(&'view left);
     region 'descriptor {
       let borrowed_value = borrowed_first<'descriptor, 'view>(value: &'descriptor borrowed_source);
-      check ieq(borrowed_value, 11_u8) else trap "borrowed";
+      claim borrowed: ieq(borrowed_value, 11_u8) because "borrowed";
     }
     let initial = slice_of(&'view left);
     let passed = pass<'view>(value: move initial);
@@ -120,7 +120,7 @@ fn main() -> own unit traps {
     let passed_ok = ilt(0_u64, passed_room);
     claim passed_nonempty: passed_ok because "pass returns the two-byte view";
     let pass_value = passed[0_u64];
-    check ieq(pass_value, 11_u8) else trap "pass";
+    claim pass: ieq(pass_value, 11_u8) because "pass";
     let left_view = slice_of(&'view left);
     let right_view = slice_of(&'view right);
     let take_left = False();
@@ -129,13 +129,13 @@ fn main() -> own unit traps {
     let selected_ok = ilt(0_u64, selected_room);
     claim selected_nonempty: selected_ok because "choose returns one two-byte view";
     let selected_value = selected[0_u64];
-    check ieq(selected_value, 29_u8) else trap "choice";
+    claim choice: ieq(selected_value, 29_u8) because "choice";
     let constant = fixed_view<'view>();
     let constant_room = len(constant);
     let constant_ok = ilt(1_u64, constant_room);
     claim constant_sized: constant_ok because "fixed_view returns the two-byte constant view";
     let constant_value = constant[1_u64];
-    check ieq(constant_value, 13_u8) else trap "const";
+    claim const_holds: ieq(constant_value, 13_u8) because "const";
   }
   return unit;
 }

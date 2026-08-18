@@ -305,7 +305,7 @@ fn arena_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
     let a = arena_new<'r, i32>(4_i32);
     set deref(a) = 7_i32;
     let seen = deref(a);
-    check ieq(seen, 7_i32) else trap "arena content set";
+    claim arena_content_set: ieq(seen, 7_i32) because "arena content set";
   }
   return unit;
 }

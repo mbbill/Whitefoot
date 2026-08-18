@@ -61,7 +61,7 @@ fn main() -> own unit traps {
     let h = &'a v;
     source<'a>(x: h);
   }
-  check ieq(v, 5_i32) else trap "owner value changed";
+  claim owner_value_changed: ieq(v, 5_i32) because "owner value changed";
   return unit;
 }
 "#,
@@ -101,7 +101,7 @@ fn main() -> own unit traps {
       bump<'c>(n: &uniq 'c deref(r));
     }
   }
-  check ieq(v, 42_i32) else trap "chain write lost";
+  claim chain_write_lost: ieq(v, 42_i32) because "chain write lost";
   return unit;
 }
 "#,
@@ -127,7 +127,7 @@ fn main() -> own unit traps {
   region 'r {
     bump<'r>(n: &uniq 'r a);
   }
-  check ieq(a, 42_i32) else trap "callee write lost";
+  claim callee_write_lost: ieq(a, 42_i32) because "callee write lost";
   return unit;
 }
 "#,
@@ -177,10 +177,10 @@ fn main() -> own unit traps {
   region 'r {
     let held = &'r packet;
     let read = inspect<'r>(packet: held);
-    check ieq(read, 41_i32) else trap "payload left";
+    claim payload_left: ieq(read, 41_i32) because "payload left";
     let hollow = &'r fallback;
     let zero = inspect<'r>(packet: hollow);
-    check ieq(zero, 0_i32) else trap "empty arm";
+    claim empty_arm: ieq(zero, 0_i32) because "empty arm";
   }
   return unit;
 }

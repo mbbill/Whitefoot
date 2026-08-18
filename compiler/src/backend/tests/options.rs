@@ -38,20 +38,20 @@ fn main() -> own unit traps {
   let found = locate(offset: 3_u64, width: 4_u64);
   match move found {
     Ok(value: found_extent) => {
-      check ieq(found_extent.offset, 3_u64) else trap "offset drift";
-      check ieq(found_extent.width, 4_u64) else trap "width drift";
+      claim offset_drift: ieq(found_extent.offset, 3_u64) because "offset drift";
+      claim width_drift: ieq(found_extent.width, 4_u64) because "width drift";
     }
     Err(error: found_code) => {
-      check False() else trap "locate took Err";
+      claim locate_took_err: False() because "locate took Err";
     }
   }
   let absent = missing(code: 9_u64);
   match move absent {
     Ok(value: absent_extent) => {
-      check False() else trap "missing took Ok";
+      claim missing_took_ok: False() because "missing took Ok";
     }
     Err(error: absent_code) => {
-      check ieq(absent_code, 9_u64) else trap "error payload drift";
+      claim error_payload_drift: ieq(absent_code, 9_u64) because "error payload drift";
     }
   }
   return unit;

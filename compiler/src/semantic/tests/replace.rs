@@ -29,7 +29,7 @@ fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
   let second = buffer_new(2_u64, 9_u8);
   let old = replace holder.payload = move second;
   let size = len(old);
-  check ieq(size, 4_u64) else trap "previous buffer length";
+  claim previous_buffer_length: ieq(size, 4_u64) because "previous buffer length";
   return unit;
 }
 "#,
@@ -108,7 +108,7 @@ fn replace_kills_the_stale_length_fact_at_the_commit() {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len(holder.payload);
-  check ieq(size, 4_u64) else trap "allocated length";
+  claim allocated_length: ieq(size, 4_u64) because "allocated length";
   let second = buffer_new(2_u64, 9_u8);
   let old = replace holder.payload = move second;
   set holder.payload[3_u64] = 5_u8;
@@ -133,7 +133,7 @@ fn the_same_subscript_discharges_without_the_replace() {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len(holder.payload);
-  check ieq(size, 4_u64) else trap "allocated length";
+  claim allocated_length: ieq(size, 4_u64) because "allocated length";
   set holder.payload[3_u64] = 5_u8;
   return unit;
 }
@@ -163,7 +163,7 @@ fn main() -> own unit allocates(heap), traps {
   let old = replace holder.payload = move second;
   set holder.count = 1_u64;
   let observed = holder.count;
-  check ieq(observed, 1_u64) else trap "root stays live";
+  claim root_stays_live: ieq(observed, 1_u64) because "root stays live";
   let done = consume(h: move holder);
   return unit;
 }

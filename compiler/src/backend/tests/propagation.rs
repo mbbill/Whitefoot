@@ -33,16 +33,16 @@ fn main() -> own unit traps {
   let accepted = forward(x: 41_i32);
   match move accepted {
     Ok(value: accepted_value) => {
-      check ieq(accepted_value, 42_i32) else trap "Ok payload drift";
+      claim ok_payload_drift: ieq(accepted_value, 42_i32) because "Ok payload drift";
     }
     Err(error: accepted_error) => {
-      check False() else trap "Ok input took the error edge";
+      claim ok_input_took_the_error_edge: False() because "Ok input took the error edge";
     }
   }
   let rejected = forward(x: -1_i32);
   match move rejected {
     Ok(value: rejected_value) => {
-      check False() else trap "Err input took the normal edge";
+      claim err_input_took_the_normal_edge: False() because "Err input took the normal edge";
     }
     Err(error: rejected_error) => {
       match rejected_error {

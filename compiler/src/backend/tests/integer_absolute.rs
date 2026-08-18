@@ -4,22 +4,22 @@ use super::{compile, compile_and_run};
 fn executes_every_absolute_mode_for_every_signed_width() {
     let template = r#"fn main() -> own unit traps {
   let wrapped = iabs.wrap($MIN_$TYPE);
-  check ieq(wrapped, $MIN_$TYPE) else trap "wrapped absolute value drift";
+  claim wrapped_absolute_value_drift: ieq(wrapped, $MIN_$TYPE) because "wrapped absolute value drift";
   let trapped = iabs.trap(-42_$TYPE);
-  check ieq(trapped, 42_$TYPE) else trap "trapping absolute value drift";
+  claim trapping_absolute_value_drift: ieq(trapped, 42_$TYPE) because "trapping absolute value drift";
   let safe_result = iabs.checked(-42_$TYPE);
   match move safe_result {
     Ok(value: safe_value) => {
-      check ieq(safe_value, 42_$TYPE) else trap "checked absolute value drift";
+      claim checked_absolute_value_drift: ieq(safe_value, 42_$TYPE) because "checked absolute value drift";
     }
     Err(error: safe_error) => {
-      check False() else trap "safe absolute value took Err";
+      claim safe_absolute_value_took_err: False() because "safe absolute value took Err";
     }
   }
   let overflow_result = iabs.checked($MIN_$TYPE);
   match move overflow_result {
     Ok(value: overflow_value) => {
-      check False() else trap "minimum absolute value took Ok";
+      claim minimum_absolute_value_took_ok: False() because "minimum absolute value took Ok";
     }
     Err(error: overflow_error) => {
     }
