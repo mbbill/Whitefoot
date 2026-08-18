@@ -571,3 +571,86 @@ fn main() -> own unit traps {
         assert_eq!(issue.rule(), SemanticRule::Eff2);
     });
 }
+
+/// [OP-2]'s own mechanical fix must be writable at a signed type: the
+/// residual `d != 0` is discharged by the claim that spells it, and by the
+/// dominating branch that establishes it. Both routes state the divisor's
+/// disequality against a written `0_i32`, which is the same mathematical
+/// value as the zero term the conjunct is stated against and therefore the
+/// same [ENT-2] term; the unsigned routes, which reach the same conjunct
+/// through the type's own lower bound, are unchanged.
+#[test]
+fn the_signed_zero_divisor_conjunct_is_discharged_by_its_own_mechanical_fix() {
+    let claimed = br#"fn ratio(d: own i32) -> own i32 traps {
+  claim nonzero: ine(d, 0_i32) because "callers pass a nonzero divisor";
+  let q = 100_i32 / d;
+  return q;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(claimed, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the claimed disequality must discharge the conjunct: {outcome:?}");
+        };
+        let ratio = named(&checked.data.functions, "ratio");
+        assert_eq!(
+            division_trap_records(ratio),
+            vec![false],
+            "the claim carries the runtime check; the site itself has none",
+        );
+        assert!(
+            division_outcomes(ratio)
+                .iter()
+                .all(|outcome| outcome.discharged),
+        );
+    });
+    let branched = br#"fn ratio(d: own i32) -> own i32 pure {
+  if ine(d, 0_i32) {
+    let q = 100_i32 / d;
+    return q;
+  } else {
+    return 0_i32;
+  }
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(branched, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the dominating branch must discharge the conjunct: {outcome:?}");
+        };
+        // The site sits inside the taken arm, so the obligation outcomes,
+        // not the top-level statement walk, carry the verdict here.
+        let ratio = named(&checked.data.functions, "ratio");
+        let discharged = division_outcomes(ratio);
+        assert_eq!(discharged.len(), 2, "one obligation, two conjuncts");
+        assert!(discharged.iter().all(|outcome| outcome.discharged));
+    });
+    let unclaimed = br#"fn ratio(d: own i32) -> own i32 pure {
+  let q = 100_i32 / d;
+  return q;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(unclaimed, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("without either route the conjunct must stay undischarged: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert_eq!(
+            issue.kind(),
+            &SemanticIssueKind::UndischargedDivisionObligation {
+                residual: "d != 0".to_owned(),
+                mechanical_fix: DIVISION_FIX,
+            },
+        );
+    });
+}

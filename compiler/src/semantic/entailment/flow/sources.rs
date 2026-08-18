@@ -745,13 +745,23 @@ impl Analyzer<'_, '_> {
 
     /// Splits one operand pair into a base term and a constant offset.
     fn split_offset(&self, left: TermId, right: TermId, adding: bool) -> Option<(TermId, i128)> {
-        if let TermKind::Constant(value) = *self.terms.kind(right) {
+        if let Some(value) = self.constant_term_value(right) {
             return Some((left, if adding { value } else { -value }));
         }
-        if adding && let TermKind::Constant(value) = *self.terms.kind(left) {
+        if adding && let Some(value) = self.constant_term_value(left) {
             return Some((right, value));
         }
         None
+    }
+
+    /// The mathematical value of a constant term. Z is the interned form of
+    /// the written constant zero, so it reads as one here.
+    fn constant_term_value(&self, term: TermId) -> Option<i128> {
+        match *self.terms.kind(term) {
+            TermKind::Zero => Some(0),
+            TermKind::Constant(value) => Some(value),
+            _ => None,
+        }
     }
 
     /// [ENT-3] S9: `let x: own T = c[i];` where c is the bare IDENT of a

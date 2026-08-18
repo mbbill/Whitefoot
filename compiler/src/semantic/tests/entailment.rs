@@ -8847,14 +8847,23 @@ fn main() -> own unit pure {
     assert_eq!(admitted.obligations.len(), 1);
     assert!(admitted.obligations[0].discharged);
     let actual_root = obligation_root(&admitted, 0);
-    for kind in [ImplicitBoundKind::Constant, ImplicitBoundKind::ArrayLength] {
-        assert_root_contains(
-            &admitted,
-            actual_root,
-            |node| matches!(node, DerivationNode::ImplicitBound { kind: actual, .. } if *actual == kind),
-            "the concrete array actual's implicit bounds",
-        );
-    }
+    // The written `0_u64` index is the zero term itself, so the concrete
+    // actual's proof is its array-length bound against Z with no constant
+    // fold in between.
+    assert_root_contains(
+        &admitted,
+        actual_root,
+        |node| {
+            matches!(
+                node,
+                DerivationNode::ImplicitBound {
+                    kind: ImplicitBoundKind::ArrayLength,
+                    ..
+                }
+            )
+        },
+        "the concrete array actual's implicit length bound",
+    );
     assert_eq!(admitted.call_goals.len(), 1);
     assert_eq!(
         admitted.call_goals[0].disposition,
@@ -9194,14 +9203,23 @@ fn main() -> own unit pure {
             assert_eq!(summary.obligations.len(), 1);
             assert!(summary.obligations[0].discharged);
             let root = obligation_root(summary, 0);
-            for kind in [ImplicitBoundKind::Constant, ImplicitBoundKind::ArrayLength] {
-                assert_root_contains(
-                    summary,
-                    root,
-                    |node| matches!(node, DerivationNode::ImplicitBound { kind: actual, .. } if *actual == kind),
-                    "the concrete const instance's own implicit array proof",
-                );
-            }
+            // The written `0_u64` index is the zero term itself, so each
+            // instance proves its own subscript from its own array-length
+            // bound against Z.
+            assert_root_contains(
+                summary,
+                root,
+                |node| {
+                    matches!(
+                        node,
+                        DerivationNode::ImplicitBound {
+                            kind: ImplicitBoundKind::ArrayLength,
+                            ..
+                        }
+                    )
+                },
+                "the concrete const instance's own implicit array proof",
+            );
             let lengths: Vec<_> = summary
                 .inventory
                 .length_bounds

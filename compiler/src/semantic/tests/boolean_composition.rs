@@ -102,7 +102,12 @@ fn assert_comparison_member(
     );
     assert_eq!(
         summary.inventory.terms[right.0 as usize],
-        TermKind::Constant(constant)
+        // A written zero is the zero term: one term per mathematical value.
+        if constant == 0 {
+            TermKind::Zero
+        } else {
+            TermKind::Constant(constant)
+        }
     );
     assert_eq!(*held, bound);
 }
