@@ -9,6 +9,7 @@ mod checked_division;
 mod cost_shape;
 mod counted_ranges;
 mod deterministic_target;
+mod division_obligations;
 mod effect_attributes;
 mod float_conversion;
 mod floating;
@@ -37,8 +38,9 @@ use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
     HOST_OPTIMIZATION_ARGUMENTS, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome,
     SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical,
-    check_semantics, check_semantics_arithmetic_obligations, classify_terminals,
-    compile as compile_program, emit_llvm, finalize, lower_checked, parse, resolve,
+    check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
+    classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked, parse,
+    resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -155,6 +157,46 @@ fn emit_arithmetic_obligations(source: &[u8]) -> String {
     let SemanticOutcome::Complete(checked) = check_semantics_arithmetic_obligations(resolved)
     else {
         panic!("backend test source must check under the arithmetic switch");
+    };
+    let ir = lower_checked(*checked).expect("checked program must lower");
+    emit_llvm(&ir)
+        .expect("lowered program must emit")
+        .into_string()
+}
+
+/// [`emit`] through the test-only checker entry that forces the division
+/// dissolution switch on [OP-2, ENT-6], so the emitted module of the v0.32
+/// candidate judgment can be compared against the default v0.31 emission of
+/// the same source.
+fn emit_division_obligations(source: &[u8]) -> String {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("backend test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("backend test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("backend test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("backend test source must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("backend test source must be canonical");
+    };
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+        panic!("backend test source must resolve");
+    };
+    let SemanticOutcome::Complete(checked) = check_semantics_division_obligations(resolved) else {
+        panic!("backend test source must check under the division switch");
     };
     let ir = lower_checked(*checked).expect("checked program must lower");
     emit_llvm(&ir)

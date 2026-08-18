@@ -1490,11 +1490,15 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 seen_obligations[ordinal] = true;
                 assert!(outcome.discharged);
                 // [ENT-6] conjunct ordinals per family: the bounds relation
-                // has one conjunct at ordinal zero, the overflow relation an
-                // upper conjunct at zero and a lower conjunct at one.
+                // has one conjunct at ordinal zero; the overflow relation an
+                // upper conjunct at zero and a lower conjunct at one; the
+                // division relation a zero-divisor conjunct at zero and a
+                // signed-overflow conjunct at one.
                 match outcome.family {
                     ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
-                    ObligationFamily::Overflow => assert!(outcome.conjunct <= 1),
+                    ObligationFamily::Overflow | ObligationFamily::Division => {
+                        assert!(outcome.conjunct <= 1);
+                    }
                 }
                 assert_eq!(outcome.derivation, Some(root.node));
                 assert!(!outcome.node_path.components().is_empty());
@@ -1506,14 +1510,21 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                             .left
                             .expect("noncontradictory accepted bound has a tracked offset");
                         retained_term(summary, left);
-                        assert_eq!(
-                            relation,
-                            &Relation::Bound {
+                        // The division family requests a disequality; every
+                        // other family requests a difference bound.
+                        let requested = if outcome.requested.distinct {
+                            Relation::Distinct {
+                                left,
+                                right: outcome.requested.right,
+                            }
+                        } else {
+                            Relation::Bound {
                                 left,
                                 right: outcome.requested.right,
                                 bound: outcome.requested.bound,
                             }
-                        );
+                        };
+                        assert_eq!(relation, &requested);
                         assert!(!outcome.contradictory);
                     }
                     DerivationConclusion::Contradiction => assert!(outcome.contradictory),
