@@ -3,8 +3,8 @@ const table: array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 fn main() -> own unit traps {
   doc "A const array is read-only static rodata, indexed with copy-out [CONST-2].";
   let v = table[2_u64];
-  check ieq(v, 30_u8) else trap "const table drift";
+  claim const_table_drift: ieq(v, 30_u8) because "const table drift";
   let n = len(table);
-  check ieq(n, 4_u64) else trap "const len drift";
+  claim const_len_drift: ieq(n, 4_u64) because "const len drift";
   return unit;
 }

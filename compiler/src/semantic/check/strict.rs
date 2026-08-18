@@ -61,7 +61,7 @@ impl StrictFailure {
                 ..
             } => SemanticRule::Op4,
             Self::Bounds {
-                family: ObligationFamily::Overflow,
+                family: ObligationFamily::Overflow | ObligationFamily::Division,
                 ..
             } => SemanticRule::Op2,
             Self::Call { .. } | Self::ProgramStart { .. } => SemanticRule::Fn8,
@@ -581,6 +581,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         rule: SemanticRule::Op2,
                         location,
                         kind: SemanticIssueKind::StrictUndischargedOverflow(detail),
+                    },
+                    ObligationFamily::Division => SemanticIssue {
+                        rule: SemanticRule::Op2,
+                        location,
+                        kind: SemanticIssueKind::StrictUndischargedDivision(detail),
                     },
                 }))
             }

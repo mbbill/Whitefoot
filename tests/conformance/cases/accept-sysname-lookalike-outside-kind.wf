@@ -5,6 +5,6 @@ fn open_read(root: own u64, path: own u64) -> own u64 pure {
 
 fn main() -> own unit traps {
   let opened = open_read(root: 3_u64, path: 4_u64);
-  check ieq(opened, 3_u64) else trap "lookalike";
+  claim lookalike: ieq(opened, 3_u64) because "lookalike";
   return unit;
 }

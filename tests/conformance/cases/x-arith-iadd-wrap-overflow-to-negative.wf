@@ -1,7 +1,7 @@
 fn main() -> own unit traps {
-  doc "+wrap wraps two's-complement on overflow [OP-1]; i32::MAX + 1 wraps to a negative value, confirmed on the dominated path by a passed check [OP-5].";
+  doc "+wrap wraps two's-complement on overflow [OP-1]; i32::MAX + 1 wraps to a negative value, confirmed on the dominated path by a claim that holds [CLM-1].";
   let hi = 2147483647_i32;
   let w = hi +wrap 1_i32;
-  check ilt(w, 0_i32) else trap "wrap did not overflow to negative";
+  claim wrap_did_not_overflow_to_negative: ilt(w, 0_i32) because "wrap did not overflow to negative";
   return unit;
 }

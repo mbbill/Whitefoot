@@ -51,6 +51,6 @@ fn main() -> own unit traps {
       give 2_i32;
     }
   }
-  check ieq(code, 0_i32) else trap "cycle did not return to Red";
+  claim cycle_did_not_return_to_red: ieq(code, 0_i32) because "cycle did not return to Red";
   return unit;
 }

@@ -31,6 +31,6 @@ fn main() -> own unit traps {
   }
   let above_floor = fgt(measured, 0.5_f64);
   let below_ceiling = flt(measured, 1.5_f64);
-  check band(above_floor, below_ceiling) else trap "feedback controller failed to converge";
+  claim feedback_controller_failed_to_converge: band(above_floor, below_ceiling) because "feedback controller failed to converge";
   return unit;
 }

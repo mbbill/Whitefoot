@@ -107,6 +107,7 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
             collect_expression(length, bindings);
             collect_expression(value, bindings);
         }
+        CheckedExpression::BufferVacant { length, .. } => collect_expression(length, bindings),
         CheckedExpression::Constant(_)
         | CheckedExpression::NamedConstant { .. }
         | CheckedExpression::Binding { .. }

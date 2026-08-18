@@ -1,0 +1,12 @@
+fn modulo(n: own u64, d: own u64) -> own u64 pure {
+  doc "`%` carries the identical division obligation as `/` and discharges from the identical fact [OP-2, ENT-6]: one obligation family covers both spellings, so a dominating branch establishing the nonzero divisor makes the remainder site total and `pure`.";
+  if igt(d, 0_u64) {
+    let r = n % d;
+    return r;
+  }
+  return 0_u64;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

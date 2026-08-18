@@ -178,16 +178,16 @@ fn main() -> own unit allocates(heap), traps {
     let man_capacity = ile(man_required_input_length, man_required_covered_input);
     claim man_output_capacity: man_capacity because "the four-byte output covers the complete Man input";
     let man_length = encode<'man_region>(out: &uniq 'man_region man_output, input: move man_input);
-    check ieq(man_length, 4_u64) else trap "Man length drift";
+    claim man_length_drift: ieq(man_length, 4_u64) because "Man length drift";
   }
   let man_zero = man_output[0_u64];
   let man_one = man_output[1_u64];
   let man_two = man_output[2_u64];
   let man_three = man_output[3_u64];
-  check ieq(man_zero, 84_u8) else trap "Man[0] drift";
-  check ieq(man_one, 87_u8) else trap "Man[1] drift";
-  check ieq(man_two, 70_u8) else trap "Man[2] drift";
-  check ieq(man_three, 117_u8) else trap "Man[3] drift";
+  claim man_0_drift: ieq(man_zero, 84_u8) because "Man[0] drift";
+  claim man_1_drift: ieq(man_one, 87_u8) because "Man[1] drift";
+  claim man_2_drift: ieq(man_two, 70_u8) because "Man[2] drift";
+  claim man_3_drift: ieq(man_three, 117_u8) because "Man[3] drift";
   let m_input = buffer_new(1_u64, 77_u8);
   let m_output = buffer_new(4_u64, 0_u8);
   region 'm_region {
@@ -198,16 +198,16 @@ fn main() -> own unit allocates(heap), traps {
     let m_capacity = ile(m_required_input_length, m_required_covered_input);
     claim m_output_capacity: m_capacity because "the four-byte output covers the complete M input";
     let m_length = encode<'m_region>(out: &uniq 'm_region m_output, input: move m_input);
-    check ieq(m_length, 4_u64) else trap "M length drift";
+    claim m_length_drift: ieq(m_length, 4_u64) because "M length drift";
   }
   let m_zero = m_output[0_u64];
   let m_one = m_output[1_u64];
   let m_two = m_output[2_u64];
   let m_three = m_output[3_u64];
-  check ieq(m_zero, 84_u8) else trap "M[0] drift";
-  check ieq(m_one, 81_u8) else trap "M[1] drift";
-  check ieq(m_two, 61_u8) else trap "M[2] drift";
-  check ieq(m_three, 61_u8) else trap "M[3] drift";
+  claim m_0_drift: ieq(m_zero, 84_u8) because "M[0] drift";
+  claim m_1_drift: ieq(m_one, 81_u8) because "M[1] drift";
+  claim m_2_drift: ieq(m_two, 61_u8) because "M[2] drift";
+  claim m_3_drift: ieq(m_three, 61_u8) because "M[3] drift";
   let ma_input = buffer_new(2_u64, 0_u8);
   set ma_input[0_u64] = 77_u8;
   set ma_input[1_u64] = 97_u8;
@@ -220,15 +220,15 @@ fn main() -> own unit allocates(heap), traps {
     let ma_capacity = ile(ma_required_input_length, ma_required_covered_input);
     claim ma_output_capacity: ma_capacity because "the four-byte output covers the complete Ma input";
     let ma_length = encode<'ma_region>(out: &uniq 'ma_region ma_output, input: move ma_input);
-    check ieq(ma_length, 4_u64) else trap "Ma length drift";
+    claim ma_length_drift: ieq(ma_length, 4_u64) because "Ma length drift";
   }
   let ma_zero = ma_output[0_u64];
   let ma_one = ma_output[1_u64];
   let ma_two = ma_output[2_u64];
   let ma_three = ma_output[3_u64];
-  check ieq(ma_zero, 84_u8) else trap "Ma[0] drift";
-  check ieq(ma_one, 87_u8) else trap "Ma[1] drift";
-  check ieq(ma_two, 69_u8) else trap "Ma[2] drift";
-  check ieq(ma_three, 61_u8) else trap "Ma[3] drift";
+  claim ma_0_drift: ieq(ma_zero, 84_u8) because "Ma[0] drift";
+  claim ma_1_drift: ieq(ma_one, 87_u8) because "Ma[1] drift";
+  claim ma_2_drift: ieq(ma_two, 69_u8) because "Ma[2] drift";
+  claim ma_3_drift: ieq(ma_three, 61_u8) because "Ma[3] drift";
   return unit;
 }

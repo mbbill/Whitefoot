@@ -11,6 +11,6 @@ fn sumto(n: own i32) -> own i32 traps {
 
 fn main() -> own unit traps {
   let s = sumto(n: 4_i32);
-  check ieq(s, 10_i32) else trap "recursion drift";
+  claim recursion_drift: ieq(s, 10_i32) because "recursion drift";
   return unit;
 }

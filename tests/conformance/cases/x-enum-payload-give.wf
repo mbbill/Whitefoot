@@ -16,6 +16,6 @@ fn main() -> own unit traps {
       give 0_i32;
     }
   }
-  check ieq(r, 42_i32) else trap "payload drift";
+  claim payload_drift: ieq(r, 42_i32) because "payload drift";
   return unit;
 }

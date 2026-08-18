@@ -1,7 +1,7 @@
 fn main() -> own unit traps {
-  doc "A check is a runtime check in all build modes, never elided [OP-5]; the wrapped i32::MAX + 1 is negative, so an `igt 0` invariant is violated and the process traps and aborts [SCOPE-4].";
+  doc "A claim is a runtime check in all build modes, never elided [CLM-1]; the wrapped i32::MAX + 1 is negative, so an `igt 0` invariant is violated and the process traps and aborts [SCOPE-4]. The predicate is computed from a wrapping add, so no fact reaches it and CLM-2 neither proves nor refutes it.";
   let hi = 2147483647_i32;
   let w = hi +wrap 1_i32;
-  check igt(w, 0_i32) else trap "wrapped value is not positive";
+  claim wrapped_value_is_not_positive: igt(w, 0_i32) because "wrapped value is not positive";
   return unit;
 }

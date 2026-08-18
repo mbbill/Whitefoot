@@ -20,6 +20,6 @@ fn relay(outer: own i32, replacement: own i32) -> own i32 pure ensures result {
 
 fn main() -> own unit traps {
   let observed = relay(outer: 0_i32, replacement: 7_i32);
-  check ieq(observed, 7_i32) else trap "selected receiver drift";
+  claim selected_receiver_drift: ieq(observed, 7_i32) because "selected receiver drift";
   return unit;
 }

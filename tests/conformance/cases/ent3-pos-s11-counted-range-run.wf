@@ -15,6 +15,6 @@ fn main() -> own unit traps {
     set total = total +wrap value;
     break @local;
   }
-  check ieq(total, 110_u8) else trap "counted range conformance drift";
+  claim counted_range_conformance_drift: ieq(total, 110_u8) because "counted range conformance drift";
   return unit;
 }

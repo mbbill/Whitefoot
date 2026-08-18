@@ -83,6 +83,98 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
+    /// Emits the all-`None` affine-element constructor [OP-1, OP-9]: the
+    /// byte size is the u64 product of the length and sizeof(`Option<T>`)
+    /// with the same overflow trap as `buffer_new`, and every element is
+    /// initialized to the element nominal's tag-zero `None()` value, which
+    /// is exactly its `zeroinitializer`.
+    pub(super) fn emit_buffer_vacant(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        length: IrValueId,
+        trap: &IrTrapSite,
+        target_domains: IrRuntimeTargetObligations,
+    ) -> Result<(), BackendFailure> {
+        if !target_domains.is_complete() {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let IrType::Buffer { element } = ty else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        let IrFlatElement::Nominal(nominal) = element else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        if self.nominal(nominal)?.is_tag_only_enum() {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let u64_type = IrType::Integer {
+            width: 64,
+            signed: false,
+        };
+        if self.value_type(length) != Some(u64_type) {
+            return Err(BackendFailure::InvalidIr);
+        }
+
+        let intrinsic = "llvm.umul.with.overflow.i64";
+        self.intrinsics.insert(IntrinsicDeclaration::Overflow {
+            name: intrinsic.to_owned(),
+            ty: "i64".to_owned(),
+        });
+        let buffer_type = llvm_type(self.program, ty)?;
+        let element_type = llvm_type(self.program, element.ty())?;
+        // The element size is the target's own layout of the element
+        // aggregate, taken as an LLVM constant expression, so the OP-9
+        // product traps against exactly the bytes malloc is asked for.
+        let element_size =
+            format!("ptrtoint (ptr getelementptr ({element_type}, ptr null, i64 1) to i64)");
+        let product = self.next_temporary()?;
+        let bytes = self.next_temporary()?;
+        let overflow = self.next_temporary()?;
+        let target_in_range = self.next_temporary()?;
+        let pointer = self.next_temporary()?;
+        let zero_size = self.next_temporary()?;
+        let nonnull = self.next_temporary()?;
+        let usable = self.next_temporary()?;
+        let index = self.next_temporary()?;
+        let in_range = self.next_temporary()?;
+        let element_pointer = self.next_temporary()?;
+        let next_index = self.next_temporary()?;
+        let descriptor = self.next_temporary()?;
+        let trap_id = self.register_trap(trap)?;
+
+        writeln!(
+            self.output,
+            "  %{product} = call {{ i64, i1 }} @{intrinsic}(i64 {}, i64 {element_size})\n  %{bytes} = extractvalue {{ i64, i1 }} %{product}, 0\n  %{overflow} = extractvalue {{ i64, i1 }} %{product}, 1\n  br i1 %{overflow}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:\n  %{target_in_range} = icmp ule i64 %{bytes}, {}\n  br i1 %{target_in_range}, label %{}, label %{}\n{}:\n  call void @abort()\n  unreachable\n{}:\n  %{pointer} = call ptr @malloc(i64 %{bytes})\n  %{zero_size} = icmp eq i64 %{bytes}, 0\n  %{nonnull} = icmp ne ptr %{pointer}, null\n  %{usable} = or i1 %{zero_size}, %{nonnull}\n  br i1 %{usable}, label %{}, label %{}\n{}:\n  call void @abort()\n  unreachable\n{}:\n  %{index} = phi i64 [ 0, %{} ], [ %{next_index}, %{} ]\n  %{in_range} = icmp ult i64 %{index}, {}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 %{index}\n  store {element_type} zeroinitializer, ptr %{element_pointer}\n  %{next_index} = add i64 %{index}, 1\n  br label %{}\n{}:\n  %{descriptor} = insertvalue {buffer_type} zeroinitializer, ptr %{pointer}, 0\n  {} = insertvalue {buffer_type} %{descriptor}, i64 {}, 1",
+            self.value_name(length),
+            buffer_vacant_overflow_label(result),
+            buffer_vacant_target_check_label(result),
+            buffer_vacant_overflow_label(result),
+            self.traps[trap_id].len(),
+            buffer_vacant_target_check_label(result),
+            self.target.runtime_allocation_max(),
+            buffer_vacant_allocate_label(result),
+            buffer_vacant_target_failure_label(result),
+            buffer_vacant_target_failure_label(result),
+            buffer_vacant_allocate_label(result),
+            buffer_vacant_head_label(result),
+            buffer_vacant_oom_label(result),
+            buffer_vacant_oom_label(result),
+            buffer_vacant_head_label(result),
+            buffer_vacant_allocate_label(result),
+            buffer_vacant_body_label(result),
+            self.value_name(length),
+            buffer_vacant_body_label(result),
+            buffer_vacant_done_label(result),
+            buffer_vacant_body_label(result),
+            buffer_vacant_head_label(result),
+            buffer_vacant_done_label(result),
+            self.value_name(result),
+            self.value_name(length),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
     pub(super) fn emit_buffer_length(
         &mut self,
         result: IrValueId,
@@ -328,6 +420,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 };
                 Ok(if variants.len() <= 2 { 1 } else { 4 })
             }
+            // `buffer_new` fills only copy elements [OP-1]; an aggregate
+            // element reaches allocation through `buffer_vacant`, whose
+            // emission carries its own layout-derived size expression.
+            IrFlatElement::Nominal(_) => Err(BackendFailure::InvalidIr),
         }
     }
 }
@@ -362,6 +458,38 @@ pub(super) fn buffer_fill_body_label(value: IrValueId) -> String {
 
 pub(super) fn buffer_fill_done_label(value: IrValueId) -> String {
     format!("buffer.fill.done.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_vacant_overflow_label(value: IrValueId) -> String {
+    format!("buffer.vacant.overflow.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_vacant_target_check_label(value: IrValueId) -> String {
+    format!("buffer.vacant.target.check.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_vacant_target_failure_label(value: IrValueId) -> String {
+    format!("buffer.vacant.target.failure.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_vacant_allocate_label(value: IrValueId) -> String {
+    format!("buffer.vacant.allocate.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_vacant_oom_label(value: IrValueId) -> String {
+    format!("buffer.vacant.oom.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_vacant_head_label(value: IrValueId) -> String {
+    format!("buffer.vacant.head.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_vacant_body_label(value: IrValueId) -> String {
+    format!("buffer.vacant.body.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_vacant_done_label(value: IrValueId) -> String {
+    format!("buffer.vacant.done.v{}", value.ordinal())
 }
 
 pub(super) fn buffer_probe_room_label(value: IrValueId) -> String {

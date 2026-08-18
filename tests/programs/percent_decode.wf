@@ -107,7 +107,7 @@ fn main() -> own unit allocates(heap), traps {
   let output = buffer_new(11_u64, 204_u8);
   region 'decode_region {
     let produced = decode<'decode_region>(out: &uniq 'decode_region output, src: move input);
-    check ieq(produced, 7_u64) else trap "decoded length";
+    claim decoded_length: ieq(produced, 7_u64) because "decoded length";
   }
   let output_zero = output[0_u64];
   let output_one = output[1_u64];
@@ -117,13 +117,13 @@ fn main() -> own unit allocates(heap), traps {
   let output_five = output[5_u64];
   let output_six = output[6_u64];
   let output_tail = output[7_u64];
-  check ieq(output_zero, 65_u8) else trap "decoded byte zero";
-  check ieq(output_one, 66_u8) else trap "decoded byte one";
-  check ieq(output_two, 74_u8) else trap "decoded byte two";
-  check ieq(output_three, 37_u8) else trap "decoded byte three";
-  check ieq(output_four, 122_u8) else trap "decoded byte four";
-  check ieq(output_five, 122_u8) else trap "decoded byte five";
-  check ieq(output_six, 37_u8) else trap "decoded byte six";
-  check ieq(output_tail, 204_u8) else trap "output tail changed";
+  claim decoded_byte_zero: ieq(output_zero, 65_u8) because "decoded byte zero";
+  claim decoded_byte_one: ieq(output_one, 66_u8) because "decoded byte one";
+  claim decoded_byte_two: ieq(output_two, 74_u8) because "decoded byte two";
+  claim decoded_byte_three: ieq(output_three, 37_u8) because "decoded byte three";
+  claim decoded_byte_four: ieq(output_four, 122_u8) because "decoded byte four";
+  claim decoded_byte_five: ieq(output_five, 122_u8) because "decoded byte five";
+  claim decoded_byte_six: ieq(output_six, 37_u8) because "decoded byte six";
+  claim output_tail_changed: ieq(output_tail, 204_u8) because "output tail changed";
   return unit;
 }

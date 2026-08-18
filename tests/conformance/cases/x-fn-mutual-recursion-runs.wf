@@ -21,6 +21,6 @@ fn isodd(n: own i32) -> own i32 pure {
 fn main() -> own unit traps {
   doc "Mutual recursion resolves across two signatures; forward reference is legal [FN-1].";
   let r = iseven(n: 8_i32);
-  check ieq(r, 1_i32) else trap "8 is even";
+  claim c_8_is_even: ieq(r, 1_i32) because "8 is even";
   return unit;
 }

@@ -34,10 +34,10 @@ fn main() -> own unit allocates(heap), traps {
     let present = find_byte<'scan_region>(input: view, needle: 40_u8);
     match move present {
       None() => {
-        check False() else trap "present byte was absent";
+        claim present_byte_was_absent: False() because "present byte was absent";
       }
       Some(value: present_offset) => {
-        check ieq(present_offset, 3_u64) else trap "present byte offset";
+        claim present_byte_offset: ieq(present_offset, 3_u64) because "present byte offset";
       }
     }
     let missing = find_byte<'scan_region>(input: view, needle: 99_u8);
@@ -45,7 +45,7 @@ fn main() -> own unit allocates(heap), traps {
       None() => {
       }
       Some(value: missing_offset) => {
-        check False() else trap "missing byte was present";
+        claim missing_byte_was_present: False() because "missing byte was present";
       }
     }
   }

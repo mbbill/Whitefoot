@@ -9,6 +9,6 @@ fn main() -> own unit traps {
   let field_in_range = ile(c.n, 2147483646_i32);
   claim field_below_max: field_in_range because "the field was just set to 41";
   let v = c.n + 1_i32;
-  check ieq(v, 42_i32) else trap "set field drift";
+  claim set_field_drift: ieq(v, 42_i32) because "set field drift";
   return unit;
 }

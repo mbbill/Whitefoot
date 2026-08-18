@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::fmt::Write;
 
+use crate::IrFlatElement;
+
 use super::super::qualification::Qualification;
 use super::{
     BackendFailure, IrNominalId, IrNominalKind, IrProgram, IrType, llvm_type, nominal_symbol,
@@ -65,7 +67,80 @@ pub(super) fn emit_resource_drop_helpers(
 
         output.push_str("invalid:\n  call void @abort()\n  unreachable\ndone:\n  ret void\n}\n\n");
     }
+    for element in cleanup_buffer_element_nominals(program)? {
+        // The [STOR-3] affine-element buffer drop: each element's
+        // compiler-derived drop in ascending index order, then the one
+        // heap free the copy-element buffer already has.
+        let element_ty = IrType::Nominal(element);
+        let aggregate_ty = llvm_type(program, element_ty)?;
+        writeln!(
+            output,
+            "define private void @{}({{ ptr, i64 }} %value) {{\nentry:\n  %pointer = extractvalue {{ ptr, i64 }} %value, 0\n  %length = extractvalue {{ ptr, i64 }} %value, 1\n  br label %head\nhead:\n  %index = phi i64 [ 0, %entry ], [ %next, %body ]\n  %continue = icmp ult i64 %index, %length\n  br i1 %continue, label %body, label %done\nbody:\n  %element.pointer = getelementptr inbounds {aggregate_ty}, ptr %pointer, i64 %index\n  %element = load {aggregate_ty}, ptr %element.pointer",
+            buffer_drop_helper_symbol(element)
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        let mut temporary = 0_u32;
+        emit_value_cleanup(
+            program,
+            qualification,
+            &mut output,
+            &mut temporary,
+            element_ty,
+            "%element".to_owned(),
+        )?;
+        output.push_str(
+            "  %next = add i64 %index, 1\n  br label %head\ndone:\n  call void @free(ptr %pointer)\n  ret void\n}\n\n",
+        );
+    }
     Ok(output)
+}
+
+/// Every buffer element nominal in the program whose element drop derives an
+/// action, in deterministic nominal order. A buffer type occurs only as a
+/// defined value, parameter, or result type or as nominal content, so the
+/// flat enumeration below is complete.
+fn cleanup_buffer_element_nominals(
+    program: &IrProgram<'_, '_, '_>,
+) -> Result<Vec<IrNominalId>, BackendFailure> {
+    let mut types: Vec<IrType> = Vec::new();
+    for nominal in program.nominals() {
+        match nominal.kind() {
+            IrNominalKind::Struct { fields } => {
+                types.extend(fields.iter().map(|field| field.ty()));
+            }
+            IrNominalKind::Enum { variants } => {
+                types.extend(
+                    variants
+                        .iter()
+                        .flat_map(|variant| variant.fields())
+                        .map(|field| field.ty()),
+                );
+            }
+            IrNominalKind::Box { referent } => types.push(*referent),
+            IrNominalKind::Arena { content } => types.push(*content),
+            IrNominalKind::ArenaStorage | IrNominalKind::SystemResource(_) => {}
+        }
+    }
+    for function in program.functions() {
+        types.extend(function.value_types().iter().copied());
+        types.extend(function.parameters().iter().map(|(_, ty)| *ty));
+        types.push(function.result());
+    }
+    let mut needed = std::collections::BTreeMap::new();
+    for ty in types {
+        if let IrType::Buffer {
+            element: IrFlatElement::Nominal(id),
+        } = ty
+            && type_requires_cleanup(program, IrType::Nominal(id))?
+        {
+            needed.insert(id.ordinal(), id);
+        }
+    }
+    Ok(needed.into_values().collect())
+}
+
+pub(super) fn buffer_drop_helper_symbol(element: IrNominalId) -> String {
+    format!("wf.drop.buffer.t{}", element.ordinal())
 }
 
 pub(super) fn type_requires_cleanup(
@@ -194,14 +269,30 @@ fn emit_cleanup_jobs(
                 });
             }
             CleanupJob::Value { ty, operand } => match ty {
-                IrType::Buffer { .. } => {
-                    let pointer = next_temporary(temporary)?;
-                    writeln!(
-                        output,
-                        "  %{pointer} = extractvalue {} {operand}, 0\n  call void @free(ptr %{pointer})",
-                        llvm_type(program, ty)?
-                    )
-                    .map_err(|_| BackendFailure::TextEmission)?;
+                IrType::Buffer { element } => {
+                    // An element type whose own drop derives an action makes
+                    // the buffer drop the per-element loop plus the free
+                    // [STOR-3]; every other element leaves exactly the free.
+                    if type_requires_cleanup(program, element.ty())? {
+                        let IrFlatElement::Nominal(id) = element else {
+                            return Err(BackendFailure::InvalidIr);
+                        };
+                        writeln!(
+                            output,
+                            "  call void @{}({} {operand})",
+                            buffer_drop_helper_symbol(id),
+                            llvm_type(program, ty)?
+                        )
+                        .map_err(|_| BackendFailure::TextEmission)?;
+                    } else {
+                        let pointer = next_temporary(temporary)?;
+                        writeln!(
+                            output,
+                            "  %{pointer} = extractvalue {} {operand}, 0\n  call void @free(ptr %{pointer})",
+                            llvm_type(program, ty)?
+                        )
+                        .map_err(|_| BackendFailure::TextEmission)?;
+                    }
                 }
                 IrType::Nominal(id) => {
                     let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;

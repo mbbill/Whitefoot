@@ -6,6 +6,6 @@ fn inc(x: own i32) -> own i32 pure {
 fn main() -> own unit traps {
   doc "Canonical effect rows: `pure` (empty row) and `traps` [EFF-1].";
   let a = inc(x: 41_i32);
-  check ieq(a, 42_i32) else trap "drift";
+  claim drift: ieq(a, 42_i32) because "drift";
   return unit;
 }

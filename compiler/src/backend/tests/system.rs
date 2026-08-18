@@ -71,7 +71,7 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> own u
         Ok(value: count) => {
         }
         Err(error: problem) => {
-          check False() else trap "exact capacity must fit";
+          claim exact_capacity_must_fit: False() because "exact capacity must fit";
         }
       }
     }

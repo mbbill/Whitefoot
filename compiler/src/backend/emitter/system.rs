@@ -45,6 +45,28 @@ const OPEN_READ: u8 = 7;
 const READ_ONCE: u8 = 8;
 const WRITE_ONCE: u8 = 9;
 const EXIT_STATUS: u8 = 10;
+const OPEN_DIRECTORY: u8 = 11;
+const OPEN_LIST: u8 = 12;
+const LIST_ONCE: u8 = 13;
+
+/// The longest single path component the [SYS-14] name operations admit.
+///
+/// Both qualified families cap one component at this many bytes, so the
+/// bounded stack slot the directory-relative facility is handed is exactly
+/// this size plus its terminator. A longer name is rejected as an invalid
+/// component before any host call.
+const COMPONENT_LIMIT: u64 = 255;
+
+/// The portable [SYS-14] entry-kind values written into the destination.
+const KIND_UNKNOWN: u8 = 0;
+const KIND_REGULAR: u8 = 1;
+const KIND_DIRECTORY: u8 = 2;
+const KIND_SYMLINK: u8 = 3;
+const KIND_OTHER: u8 = 4;
+
+/// The portable [SYS-14] entry record header: one kind byte and one name
+/// length byte, ahead of the name bytes themselves.
+const ENTRY_HEADER: u64 = 2;
 
 /// The private symbol of the shared UTF-8 validator both text-route
 /// implementations use [HOST-2].
@@ -79,6 +101,9 @@ pub(super) fn emit_system_interface(
     let mut declarations: BTreeSet<String> = BTreeSet::new();
     let mut definitions = String::new();
     let mut needs_validator = false;
+    // The command bootstrap and `open_list` both name the self component, so
+    // the constant is emitted once for whichever of them the program uses.
+    let mut needs_working_directory = false;
 
     // [QUAL-3] establishes the emitted shape by inspection of emitted code and
     // symbols, so the module records which approved implementation each
@@ -167,9 +192,30 @@ pub(super) fn emit_system_interface(
                 definitions.push_str(&emit_write_once(program, implementation, &shape, target)?);
             }
             EXIT_STATUS => definitions.push_str(&emit_exit_status(implementation)),
+            OPEN_DIRECTORY => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                definitions.push_str(&emit_open_directory(
+                    program,
+                    implementation,
+                    &shape,
+                    target,
+                )?);
+            }
+            OPEN_LIST => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                needs_working_directory = true;
+                definitions.push_str(&emit_open_list(implementation, &shape, target)?);
+            }
+            LIST_ONCE => {
+                let shape = list_outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.failed_type)?;
+                definitions.push_str(&emit_list_once(program, implementation, &shape, target)?);
+            }
             _ => return Err(BackendFailure::InvalidIr),
         }
-        for declaration in operation_declarations(ordinal, target) {
+        for declaration in operation_declarations(ordinal, target)? {
             declarations.insert(declaration);
         }
     }
@@ -196,10 +242,13 @@ pub(super) fn emit_system_interface(
                 "declare i32 @{}(ptr, i32, ...)",
                 qualification.target().directory_open_symbol()
             ));
-            constants.push_str(&format!(
-                "{WORKING_DIRECTORY} = private unnamed_addr constant [2 x i8] c\".\\00\", align 1\n"
-            ));
+            needs_working_directory = true;
         }
+    }
+    if needs_working_directory {
+        constants.push_str(&format!(
+            "{WORKING_DIRECTORY} = private unnamed_addr constant [2 x i8] c\".\\00\", align 1\n"
+        ));
     }
 
     Ok(SystemEmission {
@@ -231,7 +280,10 @@ fn record_io_error(recorded: &mut Option<IrType>, ty: IrType) -> Result<(), Back
 /// target; the three facilities that reach a real operating-system object are
 /// the target column of their [QUAL-1] row, so their symbols come from the
 /// selected target.
-fn operation_declarations(ordinal: u8, target: SystemTarget) -> Vec<String> {
+fn operation_declarations(
+    ordinal: u8,
+    target: SystemTarget,
+) -> Result<Vec<String>, BackendFailure> {
     let fixed: &[&str] = match ordinal {
         ARG_GET => &["declare i64 @strlen(ptr)"],
         HOST_COPY_BYTES | HOST_COPY_UTF8 => {
@@ -241,27 +293,44 @@ fn operation_declarations(ordinal: u8, target: SystemTarget) -> Vec<String> {
         // [PATH-2]: the target's own directory-relative facility, never a
         // prefix concatenated onto a path and resolved against an ambient
         // working directory.
-        OPEN_READ => {
-            return vec![format!(
+        OPEN_READ | OPEN_LIST => {
+            return Ok(vec![format!(
                 "declare i32 @{}(i32, ptr, i32, ...)",
                 target.file_open_symbol()
-            )];
+            )]);
+        }
+        OPEN_DIRECTORY => {
+            return Ok(vec![
+                format!(
+                    "declare i32 @{}(i32, ptr, i32, ...)",
+                    target.file_open_symbol()
+                ),
+                "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)".to_owned(),
+            ]);
         }
         READ_ONCE => {
-            return vec![format!(
+            return Ok(vec![format!(
                 "declare i64 @{}(i32, ptr, i64)",
                 target.read_symbol()
-            )];
+            )]);
         }
         WRITE_ONCE => {
-            return vec![format!(
+            return Ok(vec![format!(
                 "declare i64 @{}(i32, ptr, i64)",
                 target.write_symbol()
-            )];
+            )]);
+        }
+        // The target's own enumeration facility [SYS-14]; qualification
+        // already refused a target that supplies none.
+        LIST_ONCE => {
+            let enumeration = target
+                .directory_enumeration()
+                .ok_or(BackendFailure::InvalidIr)?;
+            return Ok(vec![enumeration.declaration().to_owned()]);
         }
         _ => &[],
     };
-    fixed.iter().map(|text| (*text).to_owned()).collect()
+    Ok(fixed.iter().map(|text| (*text).to_owned()).collect())
 }
 
 /// The close facility this program's releases reach, when any release the
@@ -567,8 +636,19 @@ fn emit_host_utf8_len(
 /// `extent` its second range value, which [SYS-2] spells `capacity` for the
 /// two copies and for `read_once` and `count` for `write_once`.
 fn range_validation(buffer: &str, value: &str, extent: &str) -> String {
+    range_validation_after(buffer, value, extent, "")
+}
+
+/// [`range_validation`] with one prologue emitted ahead of it in the entry
+/// block.
+///
+/// A shim needing a bounded stack slot places its `alloca` there, because
+/// only an entry-block `alloca` is hoisted when the wrapper inlines [QUAL-3];
+/// an empty prologue emits exactly the text `range_validation` emits.
+fn range_validation_after(buffer: &str, value: &str, extent: &str, prologue: &str) -> String {
     format!(
-        "entry:\n  \
+        "entry:\n\
+         {prologue}  \
          %end = add i64 %offset, {extent}\n  \
          %wrapped = icmp ult i64 %end, %offset\n  \
          %exact = xor i1 %wrapped, true\n  \
@@ -1134,6 +1214,440 @@ fn emit_write_once(
          }}\n\n",
         symbol = implementation.symbol(),
         write = target.write_symbol()
+    ))
+}
+
+/// One [SYS-6] `ListOutcome` instantiation's tags and field positions.
+struct ListOutcomeShape {
+    llvm: String,
+    bytes_tag: u32,
+    /// The position of `ListBytes(count:)`; `entries:` is the next one.
+    bytes_index: usize,
+    end_tag: u32,
+    failed_tag: u32,
+    failed_index: usize,
+    failed_llvm: String,
+    failed_type: IrType,
+}
+
+/// Resolves the [SYS-14] enumeration outcome from the program's own IR.
+///
+/// `ListBytes(count: u64, entries: u64)` is the single two-count variant,
+/// `ListEnd()` the single empty one, and `ListFailed(error: IoError)` the
+/// single variant carrying a nominal payload, so the three are resolved by
+/// shape rather than by any spelling [QUAL-1].
+fn list_outcome_shape(
+    program: &IrProgram<'_, '_, '_>,
+    ty: IrType,
+) -> Result<ListOutcomeShape, BackendFailure> {
+    let variants = variants_of(program, ty)?;
+    if variants.len() != 3 {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let counted = IrType::Integer {
+        width: 64,
+        signed: false,
+    };
+    let mut measured = None;
+    let mut failed = None;
+    for variant in variants {
+        match variant.fields() {
+            [count, entries] if count.ty() == counted && entries.ty() == counted => {
+                if measured.replace(variant.tag()).is_some() {
+                    return Err(BackendFailure::InvalidIr);
+                }
+            }
+            [field] if matches!(field.ty(), IrType::Nominal(_)) => {
+                let previous = failed.replace((variant.tag(), field.ty()));
+                if previous.is_some() {
+                    return Err(BackendFailure::InvalidIr);
+                }
+            }
+            _ => {}
+        }
+    }
+    let bytes_tag = measured.ok_or(BackendFailure::InvalidIr)?;
+    let (failed_tag, failed_type) = failed.ok_or(BackendFailure::InvalidIr)?;
+    Ok(ListOutcomeShape {
+        llvm: llvm_type(program, ty)?,
+        bytes_tag,
+        bytes_index: variant_field_base(variants, bytes_tag)?,
+        end_tag: empty_variant_tag(program, ty)?,
+        failed_tag,
+        failed_index: variant_field_base(variants, failed_tag)?,
+        failed_llvm: llvm_type(program, failed_type)?,
+        failed_type,
+    })
+}
+
+/// The private [SYS-7] value one rejected component name produces.
+///
+/// No native facility ran, so both detail fields are zero [SYS-7]; the class
+/// is `InvalidPath` because the rejection is exactly that the supplied bytes
+/// are not one valid relative path component.
+fn invalid_component(
+    program: &IrProgram<'_, '_, '_>,
+    err_llvm: &str,
+    err_type: IrType,
+) -> Result<(String, String), BackendFailure> {
+    let classes = io_error_classes(program, err_type)?;
+    let class = classes
+        .iter()
+        .find(|class| class.spelling == "InvalidPath")
+        .ok_or(BackendFailure::InvalidIr)?;
+    Ok(io_error_value(
+        err_llvm,
+        class,
+        "invalid",
+        "0",
+        &ORIGIN_NONE.to_string(),
+    ))
+}
+
+/// Emits the component-name validation every [SYS-14] name operation shares.
+///
+/// The admitted bytes are exactly one relative path component: at least one
+/// byte, no more than the target family's component limit, no NUL, and no
+/// target separator — so no source-assembled multi-component path reaches the
+/// host and [PATH-1]'s deferral of path algebra stands. Validation precedes
+/// the copy and therefore precedes the host call.
+fn component_validation(buffer: &str, root: u32) -> String {
+    format!(
+        "measure:\n  \
+         %oversize = icmp ugt i64 %count, {COMPONENT_LIMIT}\n  \
+         %vacant = icmp eq i64 %count, 0\n  \
+         %unusable = or i1 %oversize, %vacant\n  \
+         br i1 %unusable, label %invalid, label %scan.entry\n\
+         scan.entry:\n  \
+         %base = extractvalue {buffer} %name, 0\n  \
+         %text = getelementptr inbounds i8, ptr %base, i64 %offset\n  \
+         br label %scan\n\
+         scan:\n  \
+         %index = phi i64 [ 0, %scan.entry ], [ %index.next, %scan.step ]\n  \
+         %at = getelementptr inbounds i8, ptr %text, i64 %index\n  \
+         %byte = load i8, ptr %at, align 1\n  \
+         %byte.value = zext i8 %byte to i32\n  \
+         %terminating = icmp eq i32 %byte.value, 0\n  \
+         %separating = icmp eq i32 %byte.value, {root}\n  \
+         %refused = or i1 %terminating, %separating\n  \
+         br i1 %refused, label %invalid, label %scan.step\n\
+         scan.step:\n  \
+         %index.next = add i64 %index, 1\n  \
+         %scanned = icmp uge i64 %index.next, %count\n  \
+         br i1 %scanned, label %open, label %scan\n"
+    )
+}
+
+/// Emits the approved implementation of `open_directory` [SYS-14].
+///
+/// The name arrives as caller-owned bytes and never becomes a path value, so
+/// [HOST-3]'s command-lifetime backing and [PATH-1]'s inline lease are
+/// untouched. The validated component is copied into one bounded stack slot
+/// only to terminate it for the target's own directory-relative facility,
+/// which then resolves it against the capability's directory object exactly
+/// as `open_read` does [PATH-2].
+fn emit_open_directory(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    let directory = representation(SystemResourceType::DirectoryRead);
+    let buffer = llvm_type(
+        program,
+        IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+    )?;
+    if shape.ok_llvm != directory {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let OutcomeShape {
+        llvm,
+        ok_tag,
+        ok_index,
+        err_tag,
+        err_index,
+        err_llvm,
+        err_type,
+        ..
+    } = shape;
+    let slot = COMPONENT_LIMIT + 1;
+    let validation = range_validation_after(
+        &buffer,
+        "%name",
+        "%count",
+        &format!("  %component = alloca [{slot} x i8], align 1\n"),
+    );
+    let component = component_validation(&buffer, u32::from(target.root_prefix()));
+    let (read_error, error) = native_error(target, "failure");
+    let (invalid_value, invalid_error) = invalid_component(program, err_llvm, *err_type)?;
+    Ok(format!(
+        "define private {llvm} @{symbol}({directory} %root, {buffer} %name, i64 %offset, \
+         i64 %count, ptr %record, i64 %record.length) alwaysinline {{\n\
+         {validation}\
+         {component}\
+         open:\n  \
+         call void @llvm.memcpy.p0.p0.i64(ptr %component, ptr %text, i64 %count, i1 false)\n  \
+         %terminator = getelementptr inbounds i8, ptr %component, i64 %count\n  \
+         store i8 0, ptr %terminator, align 1\n  \
+         %descriptor = call {directory} (i32, ptr, i32, ...) @{open}({directory} %root, \
+         ptr %component, i32 {flags})\n  \
+         %opened = icmp sge {directory} %descriptor, 0\n  \
+         br i1 %opened, label %live, label %failure\n\
+         live:\n  \
+         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %ok = insertvalue {llvm} %ok.tag, {directory} %descriptor, {ok_index}\n  \
+         ret {llvm} %ok\n\
+         failure:\n\
+         {read_error}  \
+         %failure.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 \
+         {ORIGIN_DIRECTORY_OPEN})\n  \
+         %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %err = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
+         ret {llvm} %err\n\
+         invalid:\n\
+         {invalid_value}  \
+         %rejected.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %rejected.outcome = insertvalue {llvm} %rejected.tag, {err_llvm} {invalid_error}, \
+         {err_index}\n  \
+         ret {llvm} %rejected.outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        open = target.file_open_symbol(),
+        flags = target.directory_open_flags()
+    ))
+}
+
+/// Emits the approved implementation of `open_list` [SYS-14].
+///
+/// One enumeration handle is an independent descriptor opened against the
+/// capability's own directory object through the same directory-relative
+/// facility [PATH-2], named by the self component. It therefore carries its
+/// own cursor and aliases the capability no more than `open_read`'s
+/// `ReadFile` does [SYS-10].
+fn emit_open_list(
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    let directory = representation(SystemResourceType::DirectoryRead);
+    let list = representation(SystemResourceType::DirectoryList);
+    if shape.ok_llvm != list {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let OutcomeShape {
+        llvm,
+        ok_tag,
+        ok_index,
+        err_tag,
+        err_index,
+        err_llvm,
+        ..
+    } = shape;
+    let (read_error, error) = native_error(target, "failure");
+    Ok(format!(
+        "define private {llvm} @{symbol}({directory} %directory) alwaysinline {{\n\
+         entry:\n  \
+         %descriptor = call {list} (i32, ptr, i32, ...) @{open}({directory} %directory, \
+         ptr {WORKING_DIRECTORY}, i32 {flags})\n  \
+         %opened = icmp sge {list} %descriptor, 0\n  \
+         br i1 %opened, label %live, label %failure\n\
+         live:\n  \
+         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %ok = insertvalue {llvm} %ok.tag, {list} %descriptor, {ok_index}\n  \
+         ret {llvm} %ok\n\
+         failure:\n\
+         {read_error}  \
+         %failure.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 \
+         {ORIGIN_DIRECTORY_OPEN})\n  \
+         %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %err = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
+         ret {llvm} %err\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        open = target.file_open_symbol(),
+        flags = target.directory_open_flags()
+    ))
+}
+
+/// Emits the approved implementation of `list_once` [SYS-14].
+///
+/// The shape is [SYS-8]'s: range validation first, then at most one host
+/// call, then one outcome check and a cold mapper [QUAL-3]. The one addition
+/// is normalization — the facility writes its own records into the caller's
+/// range, and the shim rewrites them in place as the portable
+/// `[kind][name length][name bytes]` sequence [SYS-14]. The rewrite moves
+/// every byte strictly toward the front, because a portable record's two-byte
+/// header is smaller than any native record's, so no unread byte is ever
+/// overwritten. Every native header field is validated against the reported
+/// extent before it is used, so a record the facility mis-sizes ends the walk
+/// instead of reading past the range.
+fn emit_list_once(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &ListOutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    let list = representation(SystemResourceType::DirectoryList);
+    let buffer = llvm_type(
+        program,
+        IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+    )?;
+    let enumeration = target
+        .directory_enumeration()
+        .ok_or(BackendFailure::InvalidIr)?;
+    let ListOutcomeShape {
+        llvm,
+        bytes_tag,
+        bytes_index,
+        end_tag,
+        failed_tag,
+        failed_index,
+        failed_llvm,
+        ..
+    } = shape;
+    let entries_index = bytes_index + 1;
+    let validation = range_validation_after(
+        &buffer,
+        "%destination",
+        "%capacity",
+        "  %position = alloca i64, align 8\n",
+    );
+    let (read_error, error) = native_error(target, "failure");
+    let name_offset = enumeration.name_offset();
+    let record_length_offset = enumeration.record_length_offset();
+    let name_length_offset = enumeration.name_length_offset();
+    let entry_type_offset = enumeration.entry_type_offset();
+    let native_regular = enumeration.native_regular();
+    let native_directory = enumeration.native_directory();
+    let native_symlink = enumeration.native_symlink();
+    let native_unknown = enumeration.native_unknown();
+    Ok(format!(
+        "define private {llvm} @{symbol}({list} %list, {buffer} %destination, i64 %offset, \
+         i64 %capacity, ptr %record, i64 %record.length) alwaysinline {{\n\
+         {validation}\
+         measure:\n  \
+         store i64 0, ptr %position, align 8\n  \
+         %empty.range = icmp eq i64 %capacity, 0\n  \
+         br i1 %empty.range, label %empty, label %transfer\n\
+         empty:\n  \
+         %empty.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
+         %empty.count = insertvalue {llvm} %empty.tag, i64 0, {bytes_index}\n  \
+         %empty.outcome = insertvalue {llvm} %empty.count, i64 0, {entries_index}\n  \
+         ret {llvm} %empty.outcome\n\
+         transfer:\n  \
+         %base = extractvalue {buffer} %destination, 0\n  \
+         %window = getelementptr inbounds i8, ptr %base, i64 %offset\n  \
+         %filled = call i64 @{enumerate}({list} %list, ptr %window, i64 %capacity, \
+         ptr %position)\n  \
+         %progress = icmp sgt i64 %filled, 0\n  \
+         br i1 %progress, label %normalize, label %quiet\n\
+         quiet:\n  \
+         %ended = icmp eq i64 %filled, 0\n  \
+         br i1 %ended, label %exhausted, label %failure\n\
+         exhausted:\n  \
+         %exhausted.outcome = insertvalue {llvm} zeroinitializer, i32 {end_tag}, 0\n  \
+         ret {llvm} %exhausted.outcome\n\
+         failure:\n\
+         {read_error}  \
+         %failure.error = call {failed_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 {ORIGIN_READ})\n  \
+         %failed.tag = insertvalue {llvm} zeroinitializer, i32 {failed_tag}, 0\n  \
+         %failed.outcome = insertvalue {llvm} %failed.tag, {failed_llvm} %failure.error, \
+         {failed_index}\n  \
+         ret {llvm} %failed.outcome\n\
+         normalize:\n  \
+         %overrun = icmp ugt i64 %filled, %capacity\n  \
+         %reported = select i1 %overrun, i64 %capacity, i64 %filled\n  \
+         br label %walk\n\
+         walk:\n  \
+         %source = phi i64 [ 0, %normalize ], [ %source.next, %step ]\n  \
+         %written = phi i64 [ 0, %normalize ], [ %written.next, %step ]\n  \
+         %entries = phi i64 [ 0, %normalize ], [ %entries.next, %step ]\n  \
+         %remaining = sub i64 %reported, %source\n  \
+         %headerless = icmp ult i64 %remaining, {name_offset}\n  \
+         br i1 %headerless, label %done, label %header\n\
+         header:\n  \
+         %entry.record = getelementptr inbounds i8, ptr %window, i64 %source\n  \
+         %extent.at = getelementptr inbounds i8, ptr %entry.record, i64 {record_length_offset}\n  \
+         %extent.native = load i16, ptr %extent.at, align 1\n  \
+         %extent = zext i16 %extent.native to i64\n  \
+         %named.at = getelementptr inbounds i8, ptr %entry.record, i64 {name_length_offset}\n  \
+         %named.native = load i16, ptr %named.at, align 1\n  \
+         %named = zext i16 %named.native to i64\n  \
+         %kind.at = getelementptr inbounds i8, ptr %entry.record, i64 {entry_type_offset}\n  \
+         %kind.native = load i8, ptr %kind.at, align 1\n  \
+         %kind.value = zext i8 %kind.native to i64\n  \
+         %needed = add i64 {name_offset}, %named\n  \
+         %sized = icmp uge i64 %extent, %needed\n  \
+         %bounded = icmp ule i64 %extent, %remaining\n  \
+         %advancing = icmp uge i64 %extent, 1\n  \
+         %nameable = icmp ule i64 %named, {COMPONENT_LIMIT}\n  \
+         %naming = icmp uge i64 %named, 1\n  \
+         %named.usable = and i1 %nameable, %naming\n  \
+         %consistent = and i1 %sized, %bounded\n  \
+         %progressive = and i1 %advancing, %named.usable\n  \
+         %usable = and i1 %consistent, %progressive\n  \
+         br i1 %usable, label %room, label %done\n\
+         room:\n  \
+         %portable = add i64 {ENTRY_HEADER}, %named\n  \
+         %after = add i64 %written, %portable\n  \
+         %fits = icmp ule i64 %after, %capacity\n  \
+         br i1 %fits, label %record.header, label %done\n\
+         record.header:\n  \
+         %regular = icmp eq i64 %kind.value, {native_regular}\n  \
+         %directory = icmp eq i64 %kind.value, {native_directory}\n  \
+         %symlink = icmp eq i64 %kind.value, {native_symlink}\n  \
+         %unclassified = icmp eq i64 %kind.value, {native_unknown}\n  \
+         %kind.other = select i1 %regular, i8 {KIND_REGULAR}, i8 {KIND_OTHER}\n  \
+         %kind.directory = select i1 %directory, i8 {KIND_DIRECTORY}, i8 %kind.other\n  \
+         %kind.symlink = select i1 %symlink, i8 {KIND_SYMLINK}, i8 %kind.directory\n  \
+         %kind.portable = select i1 %unclassified, i8 {KIND_UNKNOWN}, i8 %kind.symlink\n  \
+         %target.record = getelementptr inbounds i8, ptr %window, i64 %written\n  \
+         store i8 %kind.portable, ptr %target.record, align 1\n  \
+         %target.named = getelementptr inbounds i8, ptr %target.record, i64 1\n  \
+         %named.byte = trunc i64 %named to i8\n  \
+         store i8 %named.byte, ptr %target.named, align 1\n  \
+         %target.name = getelementptr inbounds i8, ptr %target.record, i64 {ENTRY_HEADER}\n  \
+         %source.name = getelementptr inbounds i8, ptr %entry.record, i64 {name_offset}\n  \
+         br label %copy\n\
+         copy:\n  \
+         %copied = phi i64 [ 0, %record.header ], [ %copied.next, %copy.step ]\n  \
+         %copy.done = icmp uge i64 %copied, %named\n  \
+         br i1 %copy.done, label %step, label %copy.step\n\
+         copy.step:\n  \
+         %copy.from = getelementptr inbounds i8, ptr %source.name, i64 %copied\n  \
+         %copy.byte = load i8, ptr %copy.from, align 1\n  \
+         %copy.to = getelementptr inbounds i8, ptr %target.name, i64 %copied\n  \
+         store i8 %copy.byte, ptr %copy.to, align 1\n  \
+         %copied.next = add i64 %copied, 1\n  \
+         br label %copy\n\
+         step:\n  \
+         %source.next = add i64 %source, %extent\n  \
+         %written.next = add i64 %written, %portable\n  \
+         %entries.next = add i64 %entries, 1\n  \
+         br label %walk\n\
+         done:\n  \
+         %final.written = phi i64 [ %written, %walk ], [ %written, %header ], \
+         [ %written, %room ]\n  \
+         %final.entries = phi i64 [ %entries, %walk ], [ %entries, %header ], \
+         [ %entries, %room ]\n  \
+         %bytes.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
+         %bytes.count = insertvalue {llvm} %bytes.tag, i64 %final.written, {bytes_index}\n  \
+         %bytes.outcome = insertvalue {llvm} %bytes.count, i64 %final.entries, \
+         {entries_index}\n  \
+         ret {llvm} %bytes.outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        enumerate = enumeration.symbol()
     ))
 }
 

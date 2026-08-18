@@ -6,10 +6,10 @@ fn guard(value: own i32) -> own unit pure requires {
 
 fn choose(value: own i32, narrow: own Bool) -> own i32 traps {
   let picked = if narrow {
-    check ilt(value, 8_i32) else trap "narrow bound";
+    claim narrow_bound: ilt(value, 8_i32) because "narrow bound";
     give value;
   } else {
-    check ilt(value, 128_i32) else trap "wide bound";
+    claim wide_bound: ilt(value, 128_i32) because "wide bound";
     give value;
   }
   guard(value: picked);
@@ -19,9 +19,9 @@ fn choose(value: own i32, narrow: own Bool) -> own i32 traps {
 fn main() -> own unit traps {
   let take_narrow = True();
   let narrow = choose(value: 7_i32, narrow: take_narrow);
-  check ieq(narrow, 7_i32) else trap "narrow delivery drift";
+  claim narrow_delivery_drift: ieq(narrow, 7_i32) because "narrow delivery drift";
   let take_wide = False();
   let wide = choose(value: 127_i32, narrow: take_wide);
-  check ieq(wide, 127_i32) else trap "wide delivery drift";
+  claim wide_delivery_drift: ieq(wide, 127_i32) because "wide delivery drift";
   return unit;
 }

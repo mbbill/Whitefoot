@@ -6,6 +6,6 @@ fn f['r, 's](x: own i32) -> own i32 reads('r), reads('s) {
 fn main() -> own unit traps {
   doc "Driver.";
   let a = f(x: 7_i32);
-  check ieq(a, 7_i32) else trap "x";
+  claim x: ieq(a, 7_i32) because "x";
   return unit;
 }

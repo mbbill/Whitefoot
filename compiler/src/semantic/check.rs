@@ -50,7 +50,7 @@ use super::provenance::{
 use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
 use borrows::{AccessKind, ResolvedPlace};
-use borrows::{BorrowInfo, SliceInfo, SliceLoan};
+use borrows::{BorrowInfo, BorrowKind, SliceInfo, SliceLoan};
 use control::{ControlCounters, ControlScope};
 use generics::{GenericParameter, GenericSubstitution};
 
@@ -118,6 +118,101 @@ fn derive_slice_return_ceiling(
     }
     ceiling
 }
+
+/// What a callable boundary alone says about where a borrow-mode result can
+/// be rooted [FN-1, OWN-6, OWN-10].
+///
+/// Distinct formal regions are incomparable inside the callee [OWN-3] and
+/// OWN-10 forbids rooting a result-region borrow in callee-local storage, so
+/// every borrow an accepted callee can deliver in the result's formal region
+/// derives from a parameter that names that region or from immutable named
+/// `const` storage. Counting the parameters that could supply it is therefore
+/// a complete provenance judgment over the signature.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ResultProvenance {
+    /// The written result type blocks the judgment: a borrow of a `slice`
+    /// carries descriptor and origin relations this judgment does not model
+    /// [OWN-5], and an unsubstituted generic conservatively names every
+    /// region. FN-1 rejects the slice shape at the boundary independently.
+    Unjudgeable,
+    /// Exactly one parameter can source the result: the debtor position.
+    Candidate(usize),
+    /// No parameter can source the result and none names its region, so
+    /// permanently read-only named-const storage is the only remaining
+    /// source [CONST-2, OWN-10] and provenance is unique by elimination.
+    ConstStorage,
+    /// Two or more parameters could source the result, or one names its
+    /// region in a written type. No caller can root the claim.
+    Ambiguous,
+}
+
+/// Whether a written parameter or result type carries the given formal
+/// region anywhere a borrow could be rooted through it. Storage is borrow-
+/// and region-free [STOR-5], so a direct `slice` type is the only written
+/// type region today; an unsubstituted generic is conservatively treated as
+/// carrying every region.
+fn type_carries_region(ty: CheckedType, region: DeclarationId) -> bool {
+    match ty {
+        CheckedType::Slice { region: slice, .. } => slice == region,
+        CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => true,
+        CheckedType::Unit
+        | CheckedType::Bool
+        | CheckedType::Integer(_)
+        | CheckedType::Float(_)
+        | CheckedType::Nominal(_)
+        | CheckedType::Buffer { .. }
+        | CheckedType::Array { .. } => false,
+    }
+}
+
+/// Judges a borrow-mode result's provenance from the callable boundary
+/// alone. `None` for an `own` result, which roots no caller claim.
+///
+/// A parameter supplies the result when it is written as a borrow of the
+/// result's kind in the result's formal region. A same-region parameter of
+/// the other kind is not a supplier but still defeats the judgment: no
+/// `uniq` result derives from a `shared` source, but a `shared` result can
+/// derive from a `uniq` parameter through a nested borrow-returning call,
+/// so the pair leaves two possible roots — reject-when-unsure [OWN-8].
+fn borrow_result_provenance(
+    parameters: &[ParameterSignature],
+    result_mode: CheckedMode,
+    result: CheckedType,
+) -> Option<ResultProvenance> {
+    let (result_kind, result_region) = match result_mode {
+        CheckedMode::Own => return None,
+        CheckedMode::Shared(region) => (BorrowKind::Shared, region),
+        CheckedMode::Unique(region) => (BorrowKind::Unique, region),
+    };
+    if matches!(result, CheckedType::Slice { .. }) || type_carries_region(result, result_region) {
+        return Some(ResultProvenance::Unjudgeable);
+    }
+    let mut candidate = None;
+    for (index, parameter) in parameters.iter().enumerate() {
+        if type_carries_region(parameter.ty, result_region) {
+            return Some(ResultProvenance::Ambiguous);
+        }
+        let (kind, region) = match parameter.mode {
+            CheckedMode::Own => continue,
+            CheckedMode::Shared(region) => (BorrowKind::Shared, region),
+            CheckedMode::Unique(region) => (BorrowKind::Unique, region),
+        };
+        if region != result_region {
+            continue;
+        }
+        if kind != result_kind || candidate.is_some() {
+            return Some(ResultProvenance::Ambiguous);
+        }
+        candidate = Some(index);
+    }
+    Some(candidate.map_or(ResultProvenance::ConstStorage, ResultProvenance::Candidate))
+}
+
+/// [FN-1]'s restructuring for a borrow-mode result whose source the callable
+/// boundary does not determine, shared by the `fn_decl` and `fn_sig` sites.
+const AMBIGUOUS_RESULT_PROVENANCE_RESTRUCTURING: &str = "give the source parameter its own region so exactly one parameter shares the result's \
+     region and kind, or return the decision as a value and let the caller borrow from the \
+     source it names";
 
 /// [STOR-4]'s restructuring for an arena value that would leave its region's
 /// block, shared by every site that establishes the escape.
@@ -414,6 +509,11 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// Whether the v0.31-candidate reborrow extension is admitted; see
     /// [`REBORROW_EXTENSION_ACTIVE`].
     reborrow_extension: bool,
+    /// The division dissolution integration switch: whether a bare `/` or
+    /// `%` in [OP-2]'s divisor class carries an [ENT-6] division obligation
+    /// instead of its runtime trap [OP-2]. Follows [`DIVISION_OBLIGATIONS`]
+    /// outside the v0.32-candidate tests.
+    division_obligations: bool,
     tree: TreeView<'unit, 'classified, 'lexed, 'source>,
     nominals: Vec<CheckedNominal>,
     nominal_nodes: Vec<Option<NodeId>>,
@@ -448,6 +548,11 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// symbolic validation instance is checked; every concrete instantiation
     /// evaluates entries away, so no id reaches lowering.
     derived_consts: RefCell<Vec<DerivedConst>>,
+    /// [EFF-2] the body-syntactic contribution of each generic template's
+    /// written body, recorded by its symbolic validation instance and reused
+    /// by every concrete instance of the same declaration; see
+    /// [`Checker::written_body_effects`].
+    written_body_effect_rows: RefCell<HashMap<DeclarationId, EffectSet>>,
     generic_requirements: Vec<CheckedGenericRequirement>,
     postcondition_selectors: Vec<CheckedPostconditionSelector>,
     postcondition_unavailable_declarations: Vec<DeclarationId>,
@@ -464,6 +569,16 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
 /// non-constant operands keeps its runtime overflow trap.
 pub(crate) const ARITHMETIC_OVERFLOW_OBLIGATIONS: bool = true;
 
+/// The division dissolution integration switch [OP-2, ENT-6]: `true` under
+/// the v0.32 candidate at `spec/kernel-spec.md`, which attaches the division
+/// obligation family to [OP-2]'s divisor class, drops those sites' trap
+/// records and `traps` effect contribution, and rejects undischarged class
+/// sites citing OP-2. A bare `/` or `%` over a signed selected type
+/// with two non-constant operands stays outside the class and keeps its
+/// runtime trap, because its safe condition is the disjunction
+/// `dividend != iK::MIN or divisor != -1`, which the [ENT-4] conjunctive
+/// fragment cannot state.
+pub(crate) const DIVISION_OBLIGATIONS: bool = true;
 /// Checks the currently implemented active-specification semantic family.
 ///
 /// Unsupported language families remain explicit compiler capability results;
@@ -477,6 +592,7 @@ pub fn check_semantics<'classified, 'lexed, 'source>(
         true,
         ARITHMETIC_OVERFLOW_OBLIGATIONS,
         REBORROW_EXTENSION_ACTIVE,
+        DIVISION_OBLIGATIONS,
     )
 }
 
@@ -495,6 +611,7 @@ pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
         false,
         ARITHMETIC_OVERFLOW_OBLIGATIONS,
         REBORROW_EXTENSION_ACTIVE,
+        DIVISION_OBLIGATIONS,
     )
 }
 
@@ -508,7 +625,13 @@ pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
 pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true, true, REBORROW_EXTENSION_ACTIVE)
+    check_semantics_with(
+        resolved,
+        true,
+        true,
+        REBORROW_EXTENSION_ACTIVE,
+        DIVISION_OBLIGATIONS,
+    )
 }
 
 /// [`check_semantics`] with the v0.31-candidate reborrow extension admitted.
@@ -521,7 +644,32 @@ pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'sourc
 pub(crate) fn check_semantics_reborrow_extension<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true, ARITHMETIC_OVERFLOW_OBLIGATIONS, true)
+    check_semantics_with(
+        resolved,
+        true,
+        ARITHMETIC_OVERFLOW_OBLIGATIONS,
+        true,
+        DIVISION_OBLIGATIONS,
+    )
+}
+
+/// [`check_semantics`] with the division dissolution switch forced on.
+/// [`DIVISION_OBLIGATIONS`] is now `true` under the v0.32 candidate, so this
+/// entry selects the same judgment as the shipped path and the callers naming
+/// it record which judgment they mean. Test-only; the one shipped acceptance
+/// path reads that constant.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn check_semantics_division_obligations<'classified, 'lexed, 'source>(
+    resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+) -> SemanticOutcome<'classified, 'lexed, 'source> {
+    check_semantics_with(
+        resolved,
+        true,
+        ARITHMETIC_OVERFLOW_OBLIGATIONS,
+        REBORROW_EXTENSION_ACTIVE,
+        true,
+    )
 }
 
 fn check_semantics_with<'classified, 'lexed, 'source>(
@@ -529,6 +677,7 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
     reject_entailment: bool,
     arithmetic_obligations: bool,
     reborrow_extension: bool,
+    division_obligations: bool,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
     let preflight = if resolved.postconditions().is_empty() {
         Ok(())
@@ -538,6 +687,7 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
             reject_entailment,
             arithmetic_obligations,
             reborrow_extension,
+            division_obligations,
         )
         .and_then(|mut checker| {
             let items = checker.item_declarations()?;
@@ -550,6 +700,7 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
             reject_entailment,
             arithmetic_obligations,
             reborrow_extension,
+            division_obligations,
         )
         .and_then(|mut checker| checker.check_program())
     });
@@ -575,6 +726,15 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// Which [SYS-2] inventory this unit was resolved against.
+    ///
+    /// Every ordinal-to-index lookup must use the state the resolver built
+    /// the records from; reading it from the resolved unit keeps the two
+    /// stages from disagreeing about the inventory.
+    const fn traversal_surface(&self) -> bool {
+        self.resolved.traversal_surface()
+    }
+
     fn mark_postcondition_unavailable(&mut self, declaration: DeclarationId) {
         if !self
             .postcondition_unavailable_declarations
@@ -590,17 +750,87 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .contains(&declaration)
     }
 
+    /// [EFF-2] the body-syntactic contribution of one checked function,
+    /// judged once on the written body.
+    ///
+    /// Two classes read the selected type of a bare operator call, and one
+    /// of them — [OP-2]'s divisor class, which a written generic type
+    /// parameter enters or leaves with the instance's signedness — therefore
+    /// contributes differently to two concrete instances of one written
+    /// body. The specification resolves that on the written body: a bare `/`
+    /// or `%` whose written selected type is a generic type parameter and
+    /// whose operand atoms are non-constant is outside the class for this
+    /// contribution and exhibits `traps`, while the obligation and its
+    /// discharge stay per concrete instance, so a discharged unsigned
+    /// instance under that row simply executes no test.
+    ///
+    /// The written body is exactly what the symbolic validation instance
+    /// checks, so its contribution is recorded there and reused by every
+    /// instance of the same declaration. The release contribution is not
+    /// syntactic and stays per instance [STOR-3].
+    fn written_body_effects(
+        &self,
+        signature: &FunctionSignature,
+        syntactic: EffectSet,
+    ) -> EffectSet {
+        if signature.substitution.is_symbolic() {
+            self.written_body_effect_rows
+                .borrow_mut()
+                .insert(signature.declaration, syntactic.clone());
+            return syntactic;
+        }
+        if signature.substitution.len() == 0 {
+            return syntactic;
+        }
+        self.written_body_effect_rows
+            .borrow()
+            .get(&signature.declaration)
+            .cloned()
+            .unwrap_or(syntactic)
+    }
+
+    /// [FN-1]'s declaration-site provenance judgment under the v0.32
+    /// candidate: a callable boundary whose borrow-mode result has no
+    /// signature-determined source is a hard error at its complete `rtype`,
+    /// whether or not the function is ever called. GRAM-9's flat form binds
+    /// every call result with a `let`, so such a result is unusable by
+    /// construction and the declaration, not the binding, is the error.
+    /// Shared by the top-level `fn_decl` and contract-member `fn_sig`
+    /// signature-formation sites, exactly as the slice-result judgments are.
+    fn reject_ambiguous_result_provenance(
+        &self,
+        parameters: &[ParameterSignature],
+        result_mode: CheckedMode,
+        result: CheckedType,
+        rtype: NodeId,
+    ) -> Result<(), CheckStop> {
+        if borrow_result_provenance(parameters, result_mode, result)
+            != Some(ResultProvenance::Ambiguous)
+        {
+            return Ok(());
+        }
+        self.issue_node(
+            SemanticRule::Fn1,
+            rtype,
+            SemanticIssueKind::AmbiguousResultProvenance {
+                mechanical_fix: AMBIGUOUS_RESULT_PROVENANCE_RESTRUCTURING,
+            },
+        )
+    }
+
     fn new(
         resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
         reject_entailment: bool,
         arithmetic_obligations: bool,
         reborrow_extension: bool,
+        division_obligations: bool,
     ) -> Result<Self, CheckStop> {
         Ok(Self {
             resolved,
             reject_entailment,
             arithmetic_obligations,
             reborrow_extension,
+            division_obligations,
             tree: TreeView::new(resolved)?,
             nominals: Vec::new(),
             nominal_nodes: Vec::new(),
@@ -624,6 +854,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             constants: HashMap::new(),
             checked_constants: Vec::new(),
             derived_consts: RefCell::new(Vec::new()),
+            written_body_effect_rows: RefCell::new(HashMap::new()),
             generic_requirements: Vec::new(),
             postcondition_selectors: Vec::new(),
             postcondition_unavailable_declarations: Vec::new(),
@@ -1285,7 +1516,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // contribution of every compiler-derived release recorded on a normal
         // body edge [STOR-3]. A requirement is a signature obligation, not an
         // executed declaration occurrence.
-        let syntactic = checked.effects.clone();
+        let syntactic = self.written_body_effects(signature, checked.effects.clone());
         let mut release_sites = Vec::new();
         self.collect_release_sites(&checked.statements, &mut release_sites)?;
         let mut release = EffectSet::NONE;
@@ -1710,6 +1941,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.install_expression_call_requirements(length, requirements)?;
                 self.install_expression_call_requirements(value, requirements)?;
             }
+            CheckedExpression::BufferVacant { length, .. } => {
+                self.install_expression_call_requirements(length, requirements)?;
+            }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
@@ -1924,7 +2158,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Float(ty) => CheckedFlatElement::Float(ty),
             CheckedType::GenericInt(declaration) => CheckedFlatElement::GenericInt(declaration),
             CheckedType::GenericFloat(declaration) => CheckedFlatElement::GenericFloat(declaration),
-            CheckedType::Nominal(nominal) => CheckedFlatElement::TagOnlyNominal(nominal),
+            CheckedType::Nominal(nominal) => {
+                if self.nominal(nominal)?.is_copy() {
+                    CheckedFlatElement::TagOnlyNominal(nominal)
+                } else {
+                    CheckedFlatElement::Nominal(nominal)
+                }
+            }
             CheckedType::Generic(_)
             | CheckedType::Array { .. }
             | CheckedType::Slice { .. }
@@ -2497,7 +2737,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 match self {
                     Self::Obligation(outcome) => match outcome.family {
                         super::entailment::ObligationFamily::Bounds => SemanticRule::Op4,
-                        super::entailment::ObligationFamily::Overflow => SemanticRule::Op2,
+                        super::entailment::ObligationFamily::Overflow
+                        | super::entailment::ObligationFamily::Division => SemanticRule::Op2,
                     },
                     Self::Call(_) => SemanticRule::Fn8,
                     Self::Claim { .. } => SemanticRule::Clm2,
@@ -2573,6 +2814,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             kind: SemanticIssueKind::UndischargedOverflowObligation {
                                 residual,
                                 mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it, or respell the operation `wrap`, `checked`, or `sat`",
+                            },
+                        },
+                        super::entailment::ObligationFamily::Division => SemanticIssue {
+                            rule: SemanticRule::Op2,
+                            location,
+                            kind: SemanticIssueKind::UndischargedDivisionObligation {
+                                residual,
+                                mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it, or respell the operation `checked`",
                             },
                         },
                     }))

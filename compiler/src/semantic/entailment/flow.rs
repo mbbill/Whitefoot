@@ -41,13 +41,13 @@ use super::term::{
 };
 use super::{
     BoundsRequest, CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome,
-    ClaimDisposition, ClaimOutcome, CountedDerivationSet, EntailmentContext, FunctionEntailment,
-    FunctionEntailmentView, FunctionPostconditionProof, ObligationFamily, ObligationOutcome,
-    OverflowOperandClass, PostconditionAggregate, PostconditionDisposition,
-    PostconditionEntryImage, PostconditionEntryImageOutcome, PostconditionExit,
-    PostconditionViewExit, S7Derivation, VerifiedPostconditionSummary,
-    VerifiedPostconditionSummaryRef, ViewObligationOutcome, fragment_type, overflow_conjuncts,
-    overflow_obligation_class,
+    ClaimDisposition, ClaimOutcome, CountedDerivationSet, DivisionOperandClass,
+    DivisionOverflowConjunct, EntailmentContext, FunctionEntailment, FunctionEntailmentView,
+    FunctionPostconditionProof, ObligationFamily, ObligationOutcome, OverflowOperandClass,
+    PostconditionAggregate, PostconditionDisposition, PostconditionEntryImage,
+    PostconditionEntryImageOutcome, PostconditionExit, PostconditionViewExit, S7Derivation,
+    VerifiedPostconditionSummary, VerifiedPostconditionSummaryRef, ViewObligationOutcome,
+    division_obligation_class, fragment_type, overflow_conjuncts, overflow_obligation_class,
 };
 use crate::{SYSTEM_OPERATIONS, SystemParameterMode};
 
@@ -3460,6 +3460,7 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::SystemCall { .. }
             | CheckedExpression::ArrayIndex { .. }
             | CheckedExpression::BufferFill { .. }
+            | CheckedExpression::BufferVacant { .. }
             | CheckedExpression::BufferIndex { .. }
             | CheckedExpression::SliceOf { .. }
             | CheckedExpression::SliceIndex { .. }
@@ -4361,6 +4362,16 @@ impl Analyzer<'_, '_> {
                 {
                     self.judge_overflow_obligation(&class, *operand_type, carrier, states);
                 }
+                // A trap-free bare divide/remainder is exactly a divisor-class
+                // site the checker classified under the division-obligation
+                // switch; with the switch off, every such operation retains
+                // its trap record and no obligation exists [OP-2, ENT-6].
+                if trap.is_none()
+                    && let Some(class) =
+                        division_obligation_class(*operation, *operand_type, arguments)
+                {
+                    self.judge_division_obligation(&class, carrier, states);
+                }
                 None
             }
             _ => {
@@ -4584,6 +4595,7 @@ impl Analyzer<'_, '_> {
                 left: offset_term,
                 right: length_term,
                 bound: -1,
+                distinct: false,
             },
             discharged,
             contradictory: closed.contradictory(),
@@ -4764,6 +4776,7 @@ impl Analyzer<'_, '_> {
                     },
                     right,
                     bound,
+                    distinct: false,
                 },
                 discharged,
                 contradictory,
@@ -4797,6 +4810,159 @@ impl Analyzer<'_, '_> {
                 family: ObligationFamily::Overflow,
                 discharged: blinded_discharged,
                 residual: (!blinded_discharged).then(|| residual_text(&rendered_operand)),
+                derivation: blinded_discharged.then_some(blinded_proof).flatten(),
+            });
+        }
+    }
+
+    /// [ENT-6] the division obligation of one [OP-2] divisor-class call: two
+    /// conjuncts, judged in the complete, unasserted, and S4-blinded views
+    /// exactly as a bounds obligation is. Ordinal zero is the zero-divisor
+    /// disequality `d != 0`, expressible for every divisor the fragment
+    /// reads. Ordinal one is the signed-overflow conjunct, which the
+    /// classifier reduces to one expressible disequality or to the ground
+    /// true relation; the inexpressible disjunctive case never reaches the
+    /// class. The site reaches this judgment only when the checker
+    /// classified it and dropped its trap record, so the discharge verdict
+    /// is the sole remaining authority over the site's acceptance.
+    fn judge_division_obligation(
+        &mut self,
+        class: &DivisionOperandClass<'_>,
+        node_path: &crate::NodePath,
+        states: &ViewStates,
+    ) {
+        struct Conjunct {
+            ordinal: u8,
+            left: Option<TermId>,
+            right: TermId,
+            distinct: bool,
+            residual: String,
+        }
+
+        let divisor_text = self.render_expression(class.divisor);
+        let zero_divisor = Conjunct {
+            ordinal: 0,
+            left: self.read_operand(class.divisor),
+            right: ZERO,
+            distinct: true,
+            residual: format!("{divisor_text} != 0"),
+        };
+        let signed_overflow = match class.overflow {
+            DivisionOverflowConjunct::Vacuous => Conjunct {
+                ordinal: 1,
+                // The ground true relation `Z - Z <= 0`, derivable at every
+                // point, exactly as a ground overflow conjunct is.
+                left: Some(ZERO),
+                right: ZERO,
+                distinct: false,
+                residual: String::new(),
+            },
+            DivisionOverflowConjunct::Distinct { operand, constant } => {
+                let operand_text = self.render_expression(operand);
+                Conjunct {
+                    ordinal: 1,
+                    left: self.read_operand(operand),
+                    right: self.terms.intern(TermKind::Constant(constant)),
+                    distinct: true,
+                    residual: format!("{operand_text} != {constant}"),
+                }
+            }
+        };
+
+        for conjunct in [zero_divisor, signed_overflow] {
+            let judge = |closed: &ClosedState, derivations: &mut DerivationLedger| {
+                match conjunct.left {
+                    Some(left) => {
+                        let relation = if conjunct.distinct {
+                            Relation::Distinct {
+                                left,
+                                right: conjunct.right,
+                            }
+                        } else {
+                            Relation::Bound {
+                                left,
+                                right: conjunct.right,
+                                bound: 0,
+                            }
+                        };
+                        (
+                            closed.derives(&relation),
+                            closed.relation_proof(&relation, derivations),
+                        )
+                    }
+                    // A non-term divisor or dividend leaves the conjunct
+                    // underivable, never ill-formed [ENT-6], except in a
+                    // contradictory state, where every obligation
+                    // discharges [ENT-4].
+                    None => (closed.contradictory(), closed.contradiction_proof()),
+                }
+            };
+            let closed = close(
+                &states.complete,
+                &self.terms,
+                &self.goals,
+                &mut self.derivations,
+            );
+            let contradictory = closed.contradictory();
+            let (discharged, proof) = judge(&closed, &mut self.derivations);
+            let derivation = discharged.then_some(proof).flatten();
+            let ordinal = u32::try_from(self.obligations.len())
+                .expect("ENT obligation-root ordinal exceeds the u32 identity space");
+            if let Some(root) = derivation {
+                self.derivations
+                    .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
+            }
+            // A disequality's retained derivation normalizes its term pair
+            // by identity order, so the recorded request is the exact
+            // relation proven [ENT-4].
+            let (recorded_left, recorded_right) = match conjunct.left {
+                Some(left) if conjunct.distinct && conjunct.right < left => {
+                    (Some(conjunct.right), left)
+                }
+                _ => (conjunct.left, conjunct.right),
+            };
+            self.obligations.push(ObligationOutcome {
+                node_path: node_path.clone(),
+                family: ObligationFamily::Division,
+                conjunct: conjunct.ordinal,
+                requested: BoundsRequest {
+                    left: recorded_left,
+                    right: recorded_right,
+                    bound: 0,
+                    distinct: conjunct.distinct,
+                },
+                discharged,
+                contradictory,
+                residual: (!discharged).then(|| conjunct.residual.clone()),
+                derivation,
+            });
+            let unasserted = close(
+                &states.unasserted,
+                &self.terms,
+                &self.goals,
+                &mut self.derivations,
+            );
+            let (unasserted_discharged, unasserted_proof) =
+                judge(&unasserted, &mut self.derivations);
+            self.unasserted_obligations.push(ViewObligationOutcome {
+                node_path: node_path.clone(),
+                family: ObligationFamily::Division,
+                discharged: unasserted_discharged,
+                residual: (!unasserted_discharged).then(|| conjunct.residual.clone()),
+                derivation: unasserted_discharged.then_some(unasserted_proof).flatten(),
+            });
+            let blinded = close(
+                &states.s4_blinded,
+                &self.terms,
+                &self.goals,
+                &mut self.derivations,
+            );
+            let (blinded_discharged, blinded_proof) = judge(&blinded, &mut self.derivations);
+            self.s4_blinded_obligations.push(ViewObligationOutcome {
+                node_path: node_path.clone(),
+                family: ObligationFamily::Division,
+                discharged: blinded_discharged,
+                residual: (!blinded_discharged).then(|| conjunct.residual.clone()),
                 derivation: blinded_discharged.then_some(blinded_proof).flatten(),
             });
         }
@@ -5527,14 +5693,14 @@ impl Analyzer<'_, '_> {
                 let _ = self.expression_effects(value, state);
                 true
             }
-            CheckedStatement::Check { condition, trap } => {
+            // v0.32 has no body `check_stmt`: the production survives only
+            // as the contract final, which [FN-8] consumes into the
+            // requirement and [FN-9] into the postcondition rather than into
+            // a body statement list. [ENT-3.S2] retires with the statement,
+            // so no body statement establishes a passed condition; `claim`
+            // [CLM-1] is the sole writer-stated source, at S3.
+            CheckedStatement::Check { condition, .. } => {
                 let _ = self.expression_effects(condition, state);
-                self.establish_passed_condition(
-                    FlowEventKind::S2,
-                    &trap.node_path,
-                    condition,
-                    &mut state.complete,
-                );
                 true
             }
             CheckedStatement::Claim {
@@ -6785,6 +6951,7 @@ pub(super) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         CheckedExpression::BufferFill { length, value, .. } => {
             vec![length.as_ref(), value.as_ref()]
         }
+        CheckedExpression::BufferVacant { length, .. } => vec![length.as_ref()],
         CheckedExpression::BufferIndex { offset, .. }
         | CheckedExpression::SliceIndex { offset, .. } => vec![offset.as_ref()],
         CheckedExpression::ConstructStruct { fields, .. }

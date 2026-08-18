@@ -4,7 +4,7 @@
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
-use super::super::model::{CheckedSetTarget, CheckedStatement};
+use super::super::model::{CheckedFlatElement, CheckedSetTarget, CheckedStatement};
 use super::{assert_rule, with_semantics};
 
 const HOLDER: &[u8] = br#"struct Holder {
@@ -29,7 +29,7 @@ fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
   let second = buffer_new(2_u64, 9_u8);
   let old = replace holder.payload = move second;
   let size = len(old);
-  check ieq(size, 4_u64) else trap "previous buffer length";
+  claim previous_buffer_length: ieq(size, 4_u64) because "previous buffer length";
   return unit;
 }
 "#,
@@ -108,7 +108,7 @@ fn replace_kills_the_stale_length_fact_at_the_commit() {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len(holder.payload);
-  check ieq(size, 4_u64) else trap "allocated length";
+  claim allocated_length: ieq(size, 4_u64) because "allocated length";
   let second = buffer_new(2_u64, 9_u8);
   let old = replace holder.payload = move second;
   set holder.payload[3_u64] = 5_u8;
@@ -133,7 +133,7 @@ fn the_same_subscript_discharges_without_the_replace() {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len(holder.payload);
-  check ieq(size, 4_u64) else trap "allocated length";
+  claim allocated_length: ieq(size, 4_u64) because "allocated length";
   set holder.payload[3_u64] = 5_u8;
   return unit;
 }
@@ -163,7 +163,7 @@ fn main() -> own unit allocates(heap), traps {
   let old = replace holder.payload = move second;
   set holder.count = 1_u64;
   let observed = holder.count;
-  check ieq(observed, 1_u64) else trap "root stays live";
+  claim root_stays_live: ieq(observed, 1_u64) because "root stays live";
   let done = consume(h: move holder);
   return unit;
 }
@@ -223,6 +223,163 @@ fn replace_through_a_shared_borrow_rejects() {
         };
         assert_eq!(issue.rule(), SemanticRule::Own5);
     });
+}
+
+#[test]
+fn element_position_replace_accepts_an_affine_element_and_keeps_its_checks() {
+    let source = br#"fn main() -> own unit allocates(heap), traps {
+  let slots = buffer_vacant<u32>(4_u64);
+  let filled = Some<u32>(value: 7_u32);
+  let vacant = replace slots[2_u64] = move filled;
+  let taken = replace slots[2_u64] = None<u32>();
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("an affine element replace must check: {outcome:?}");
+        };
+        let main = &checked.data.functions[0];
+        let CheckedStatement::Replace { target, .. } = &main.body[2] else {
+            panic!("the third statement must be the SET-2 element commit");
+        };
+        let CheckedSetTarget::BufferIndex(target) = target else {
+            panic!("an element replace target retains its buffer root");
+        };
+        let CheckedFlatElement::Nominal(element) = target.root.element else {
+            panic!("the element is the affine Option instance");
+        };
+        assert_eq!(
+            checked.data.nominals[element.0 as usize].name,
+            "Option<u32>"
+        );
+        assert_eq!(target.trap.rule_id, "OP-4");
+        assert!(matches!(
+            &main.body[3],
+            CheckedStatement::Replace {
+                target: CheckedSetTarget::BufferIndex(_),
+                ..
+            }
+        ));
+    });
+}
+
+#[test]
+fn element_position_replace_through_a_unique_holder_accepts() {
+    // The DESIGN walkthrough shape: the commit through a live usable `&uniq`
+    // holder is [SET-2]'s sole admitted move of content reached through a
+    // borrow, and the OP-4 obligation discharges against the held buffer's
+    // length fact.
+    let source = br#"struct OptVec {
+  buf: buffer<Option<u32>>;
+  fill: u64;
+}
+
+fn push['a](v: &uniq 'a OptVec, x: own u32) -> own unit reads('a), writes('a), traps {
+  let count = deref(v).fill;
+  let cap = len(deref(v).buf);
+  let has_room = ilt(count, cap);
+  claim capacity_exhausted: has_room because "capacity exhausted";
+  let filled = Some<u32>(value: x);
+  let vacant = replace deref(v).buf[count] = move filled;
+  return unit;
+}
+
+fn main() -> own unit allocates(heap), traps {
+  let empty = buffer_vacant<u32>(2_u64);
+  let v = OptVec(buf: move empty, fill: 0_u64);
+  region 'p {
+    push<'p>(v: &uniq 'p v, x: 5_u32);
+  }
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("a held element replace must check: {outcome:?}");
+        };
+    });
+}
+
+#[test]
+fn element_position_replace_keeps_the_bounds_obligation() {
+    let source = br#"fn hollow(n: own u64) -> own unit allocates(heap), traps {
+  let slots = buffer_vacant<u32>(n);
+  let taken = replace slots[0_u64] = None<u32>();
+  return unit;
+}
+
+fn main() -> own unit allocates(heap), traps {
+  hollow(n: 2_u64);
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an undischarged element replace must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op4);
+    });
+}
+
+#[test]
+fn element_replacement_rhs_must_be_the_exact_element_type() {
+    let source = br#"fn main() -> own unit allocates(heap), traps {
+  let slots = buffer_vacant<u32>(4_u64);
+  let taken = replace slots[0_u64] = 3_u32;
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a payload-typed replacement must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Type5);
+    });
+}
+
+#[test]
+fn affine_elements_leave_their_slots_only_through_replace() {
+    // SET-1 on an affine element names replace [STOR-1].
+    assert_rule(
+        br#"fn main() -> own unit allocates(heap), traps {
+  let slots = buffer_vacant<u32>(4_u64);
+  set slots[0_u64] = None<u32>();
+  return unit;
+}
+"#,
+        SemanticRule::Stor1,
+        SemanticIssueKind::AffineSetTarget {
+            target_type: "Option<u32>".to_owned(),
+            mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
+        },
+    );
+    // A bare element read would mint a second owner [OWN-1].
+    assert_rule(
+        br#"fn main() -> own unit allocates(heap), traps {
+  let slots = buffer_vacant<u32>(4_u64);
+  let observed = slots[0_u64];
+  return unit;
+}
+"#,
+        SemanticRule::Own1,
+        SemanticIssueKind::BareAffineUse {
+            mechanical_fix: "exchange the element with `let old = replace p = e;`",
+        },
+    );
+    // `move` out of a slot is not an admitted element exit [TYPE-2].
+    assert_rule(
+        br#"fn main() -> own unit allocates(heap), traps {
+  let slots = buffer_vacant<u32>(4_u64);
+  let observed = move slots[0_u64];
+  return unit;
+}
+"#,
+        SemanticRule::Type2,
+        SemanticIssueKind::AffineElementMove {
+            mechanical_fix: "exchange the element with `let old = replace p = e;`",
+        },
+    );
 }
 
 #[test]

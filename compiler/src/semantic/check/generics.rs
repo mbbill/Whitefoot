@@ -88,6 +88,26 @@ impl GenericSubstitution {
             })
     }
 
+    /// Whether this is the symbolic validation substitution of its own
+    /// template: every parameter stands for itself, which is the shape
+    /// [`Checker::validate_generic_templates`] builds to check a written
+    /// generic body once.
+    pub(super) fn is_symbolic(&self) -> bool {
+        !self.bindings.is_empty()
+            && self
+                .bindings
+                .iter()
+                .all(|(declaration, argument)| match argument {
+                    GenericArgument::Type(
+                        CheckedType::Generic(bound)
+                        | CheckedType::GenericInt(bound)
+                        | CheckedType::GenericFloat(bound),
+                    ) => bound == declaration,
+                    GenericArgument::Const(CheckedConst::Parameter(bound)) => bound == declaration,
+                    GenericArgument::Type(_) | GenericArgument::Const(_) => false,
+                })
+    }
+
     pub(super) fn is_concrete(&self) -> bool {
         self.bindings.iter().all(|(_, argument)| match argument {
             GenericArgument::Type(ty) => ty.is_concrete(),
@@ -689,6 +709,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if !self.borrowable_type(result)? {
                 return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, rtype);
             }
+            self.reject_ambiguous_result_provenance(&parameters, result_mode, result, rtype)?;
         }
         let slice_return_ceiling = derive_slice_return_ceiling(&parameters, result_mode, result);
         let effects = self
@@ -1369,7 +1390,9 @@ fn type_uses_nominal_prefix(ty: CheckedType, checkpoint: usize) -> bool {
 
 fn flat_element_uses_nominal_prefix(element: CheckedFlatElement, checkpoint: usize) -> bool {
     match element {
-        CheckedFlatElement::TagOnlyNominal(id) => (id.0 as usize) < checkpoint,
+        CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id) => {
+            (id.0 as usize) < checkpoint
+        }
         CheckedFlatElement::Unit
         | CheckedFlatElement::Bool
         | CheckedFlatElement::Integer(_)

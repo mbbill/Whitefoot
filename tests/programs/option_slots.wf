@@ -1,0 +1,108 @@
+struct OptVec {
+  buf: buffer<Option<u32>>;
+  fill: u64;
+}
+
+fn optvec_new(capacity: own u64) -> own OptVec allocates(heap), traps {
+  let empty = buffer_vacant<u32>(capacity);
+  return OptVec(buf: move empty, fill: 0_u64);
+}
+
+fn optvec_push['a](v: &uniq 'a OptVec, x: own u32) -> own unit reads('a), writes('a), traps {
+  let count = deref(v).fill;
+  let cap = len(deref(v).buf);
+  let has_room = ilt(count, cap);
+  claim capacity_exhausted: has_room because "capacity exhausted";
+  let filled = Some<u32>(value: x);
+  let displaced = replace deref(v).buf[count] = move filled;
+  match displaced {
+    None() => {
+      claim unreachable: True() because "unreachable";
+    }
+    Some(value: stray) => {
+      claim occupied_slot_on_push: False() because "occupied slot on push";
+    }
+  }
+  let bumped = count + 1_u64;
+  set deref(v).fill = bumped;
+  return unit;
+}
+
+fn optvec_pop['a](v: &uniq 'a OptVec) -> own u32 reads('a), writes('a), traps {
+  let count = deref(v).fill;
+  let nonempty = igt(count, 0_u64);
+  claim empty_vector: nonempty because "empty vector";
+  let last = count - 1_u64;
+  let cap = len(deref(v).buf);
+  let in_range = ilt(last, cap);
+  claim fill_exceeds_capacity: in_range because "fill exceeds capacity";
+  let taken = replace deref(v).buf[last] = None<u32>();
+  set deref(v).fill = last;
+  match taken {
+    None() => {
+      claim vacant_occupied_slot: False() because "vacant occupied slot";
+    }
+    Some(value: w) => {
+      return w;
+    }
+  }
+  return 0_u32;
+}
+
+fn boxed_slots() -> own unit allocates(heap), traps {
+  let slots = buffer_vacant<box<u64>>(3_u64);
+  let first = box_new(11_u64);
+  let wrapped = Some<box<u64>>(value: move first);
+  let vacant = replace slots[0_u64] = move wrapped;
+  match vacant {
+    None() => {
+      claim unreachable: True() because "unreachable";
+    }
+    Some(value: stray) => {
+      claim fresh_slot_must_be_vacant: False() because "fresh slot must be vacant";
+    }
+  }
+  let second = box_new(22_u64);
+  let wrapped2 = Some<box<u64>>(value: move second);
+  let vacant2 = replace slots[2_u64] = move wrapped2;
+  match vacant2 {
+    None() => {
+      claim unreachable_2: True() because "unreachable";
+    }
+    Some(value: stray2) => {
+      claim fresh_slot_must_be_vacant_2: False() because "fresh slot must be vacant";
+    }
+  }
+  let taken = replace slots[0_u64] = None<box<u64>>();
+  match taken {
+    None() => {
+      claim slot_zero_must_be_full: False() because "slot zero must be full";
+    }
+    Some(value: payload) => {
+      let observed = deref(payload);
+      claim boxed_payload: ieq(observed, 11_u64) because "boxed payload";
+    }
+  }
+  return unit;
+}
+
+fn main() -> own unit allocates(heap), traps {
+  let v = optvec_new(capacity: 4_u64);
+  region 'p {
+    optvec_push<'p>(v: &uniq 'p v, x: 10_u32);
+  }
+  region 'q {
+    optvec_push<'q>(v: &uniq 'q v, x: 20_u32);
+  }
+  region 'r {
+    optvec_push<'r>(v: &uniq 'r v, x: 30_u32);
+  }
+  region 's {
+    let top = optvec_pop<'s>(v: &uniq 's v);
+    claim pop_order: ieq(top, 30_u32) because "pop order";
+  }
+  let remaining = v.fill;
+  claim fill_after_pop: ieq(remaining, 2_u64) because "fill after pop";
+  boxed_slots();
+  return unit;
+}

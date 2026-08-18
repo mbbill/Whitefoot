@@ -7,12 +7,14 @@ mod boolean_composition;
 mod borrows;
 mod boxes;
 mod buffers;
+mod check_dissolution;
 mod checked_division;
 mod conditionals;
 mod const_eval;
 mod contracts;
 mod counted_ranges;
 mod derivation;
+mod division_obligations;
 mod entailment;
 mod entailment_sources;
 mod entry_form;
@@ -176,9 +178,9 @@ fn with_semantics_dark<ResultValue>(
 }
 
 /// [`with_semantics`] through the test-only entry that forces the
-/// arithmetic-mode dissolution switch on, so the v0.31 candidate judgment
-/// [OP-2, ENT-6] is testable while the shipped switch stays off under the
-/// active v0.30 specification.
+/// arithmetic-mode dissolution switch on [OP-2, ENT-6]. The shipped switch is
+/// on too, so this entry selects the same judgment as the default one and
+/// records which judgment its callers mean.
 fn with_semantics_arithmetic<ResultValue>(
     source: &[u8],
     run: impl for<'classified, 'lexed, 'source> FnOnce(
@@ -218,10 +220,11 @@ fn with_semantics_arithmetic<ResultValue>(
     ))
 }
 
-/// [`with_semantics`] through the test-only extension checker, which admits
-/// the v0.31-candidate reborrow extension while the shipped switch keeps
-/// v0.30 semantics [OWN-6, OWN-14].
-fn with_semantics_extension<ResultValue>(
+/// [`with_semantics`] through the test-only entry that forces the division
+/// dissolution switch on [OP-2, ENT-6]. The shipped switch is on too, so this
+/// entry selects the same judgment as the default one and records which
+/// judgment its callers mean.
+fn with_semantics_division<ResultValue>(
     source: &[u8],
     run: impl for<'classified, 'lexed, 'source> FnOnce(
         SemanticOutcome<'classified, 'lexed, 'source>,
@@ -255,7 +258,68 @@ fn with_semantics_extension<ResultValue>(
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("semantic test source must resolve");
     };
-    run(super::check::check_semantics_reborrow_extension(resolved))
+    run(super::check::check_semantics_division_obligations(resolved))
+}
+
+/// [`with_semantics`] through the test-only extension checker, which admits
+/// the reborrow extension [OWN-6, OWN-14]. The shipped switch admits it too,
+/// so this entry selects the same judgment as the default one and records
+/// which judgment its callers mean.
+fn with_semantics_extension<ResultValue>(
+    source: &[u8],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        SemanticOutcome<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    with_semantics_entry(
+        source,
+        super::check::check_semantics_reborrow_extension,
+        run,
+    )
+}
+
+/// One single-source frontend pass delivered to the named checker entry.
+/// The pipeline values borrow one another down the stack, so the entry is
+/// selected by parameter rather than by returning the resolved unit.
+fn with_semantics_entry<ResultValue>(
+    source: &[u8],
+    check: for<'classified, 'lexed, 'source> fn(
+        crate::ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+    )
+        -> SemanticOutcome<'classified, 'lexed, 'source>,
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        SemanticOutcome<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
+        panic!("semantic test bundle must be valid");
+    };
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("semantic test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("semantic test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("semantic test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("semantic test derivation must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("semantic test source must be canonical");
+    };
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+        panic!("semantic test source must resolve");
+    };
+    run(check(resolved))
 }
 
 fn assert_rule(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
@@ -371,7 +435,7 @@ fn add(x: own i32, y: own i32) -> own i32 pure {
 
 fn main() -> own unit traps {
   let result = add(x: base, y: 2_i32);
-  check ieq(result, 42_i32) else trap "wrong answer";
+  claim wrong_answer: ieq(result, 42_i32) because "wrong answer";
   return unit;
 }
 "#;
@@ -397,12 +461,12 @@ fn semantic_rule_owners_remain_distinct() {
         SemanticIssueKind::ReturnMismatch,
     );
     assert_rule(
-        b"fn main() -> own unit traps {\n  check 1_i32 else trap \"bad\";\n  return unit;\n}\n",
-        SemanticRule::Op5,
+        b"fn main() -> own unit traps {\n  claim bad: 1_i32 because \"bad\";\n  return unit;\n}\n",
+        SemanticRule::Clm1,
         SemanticIssueKind::InvalidCheckCondition,
     );
     assert_rule(
-        b"fn main() -> own unit pure {\n  check True() else trap \"bad\";\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  claim bad: True() because \"bad\";\n  return unit;\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
@@ -603,7 +667,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
 #[test]
 fn effect_mismatch_is_located_at_the_written_effect_row() {
     let source =
-        b"fn main() -> own unit pure {\n  check True() else trap \"bad\";\n  return unit;\n}\n";
+        b"fn main() -> own unit pure {\n  claim bad: True() because \"bad\";\n  return unit;\n}\n";
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("expected EFF-2 mismatch, got {outcome:?}");
@@ -708,7 +772,7 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // control exists to demonstrate — set a struct field, read it back — is
     // unaffected.
     with_semantics(
-        b"struct Counter {\n  n: i32;\n}\n\nfn main() -> own unit traps {\n  let c = Counter(n: 1_i32);\n  set c.n = 41_i32;\n  let v = c.n;\n  check ieq(v, 41_i32) else trap \"set field drift\";\n  return unit;\n}\n",
+        b"struct Counter {\n  n: i32;\n}\n\nfn main() -> own unit traps {\n  let c = Counter(n: 1_i32);\n  set c.n = 41_i32;\n  let v = c.n;\n  claim set_field_drift: ieq(v, 41_i32) because \"set field drift\";\n  return unit;\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     // Borrow-mode parameters and `let` borrows of scalars and enums, and the
@@ -721,7 +785,7 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // borrow-matched through `&'r` whose scrutinee stays live for a second
     // read, with each derived binder explicitly dereferenced.
     with_semantics(
-        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\nfn main() -> own unit traps {\n  let c = Full(v: 20_i32);\n  region 'r {\n    let p = &'r c;\n    let a = match deref(p) {\n      Full(v: x) => {\n        give deref(x);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    let q = &'r c;\n    let b = match deref(q) {\n      Full(v: y) => {\n        give deref(y);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    check ieq(a, 20_i32) else trap \"borrow payload drift\";\n    check ieq(b, 20_i32) else trap \"second read drift\";\n  }\n  return unit;\n}\n",
+        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\nfn main() -> own unit traps {\n  let c = Full(v: 20_i32);\n  region 'r {\n    let p = &'r c;\n    let a = match deref(p) {\n      Full(v: x) => {\n        give deref(x);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    let q = &'r c;\n    let b = match deref(q) {\n      Full(v: y) => {\n        give deref(y);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    claim borrow_payload_drift: ieq(a, 20_i32) because \"borrow payload drift\";\n    claim second_read_drift: ieq(b, 20_i32) because \"second read drift\";\n  }\n  return unit;\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_unsupported(

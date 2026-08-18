@@ -6,6 +6,6 @@ fn add(x: own i32, y: own i32) -> own i32 traps {
 fn main() -> own unit traps {
   doc "Caller relies only on add's signature [FN-1].";
   let s = add(x: 40_i32, y: 2_i32);
-  check ieq(s, 42_i32) else trap "sig drift";
+  claim sig_drift: ieq(s, 42_i32) because "sig drift";
   return unit;
 }

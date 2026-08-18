@@ -43,9 +43,9 @@ fn checked_requires_retains_one_goal_and_trap_without_a_second_expression_tree()
 
 fn main() -> own unit traps {
   let x = 7_i32;
-  check ige(x, 0_i32) else trap "caller evidence";
+  claim caller_evidence: ige(x, 0_i32) because "caller evidence";
   let value = bounded(x: x);
-  check ieq(value, 7_i32) else trap "result drift";
+  claim result_drift: ieq(value, 7_i32) because "result drift";
   return unit;
 }
 "#;
@@ -262,9 +262,9 @@ fn requires_locals_are_distinct_from_same_named_body_locals() {
 
 fn main() -> own unit traps {
   let x = 7_i32;
-  check ige(x, 0_i32) else trap "caller evidence";
+  claim caller_evidence: ige(x, 0_i32) because "caller evidence";
   let value = increment(x: x);
-  check ieq(value, 8_i32) else trap "result drift";
+  claim result_drift: ieq(value, 8_i32) because "result drift";
   return unit;
 }
 "#;
@@ -570,10 +570,10 @@ fn called_generic_keeps_concrete_instances_and_one_symbolic_requirement() {
 
 fn main() -> own unit traps {
   let narrow = 1_i32;
-  check igt(narrow, 0_i32) else trap "narrow evidence";
+  claim narrow_evidence: igt(narrow, 0_i32) because "narrow evidence";
   let narrow_result = positive<i32>(value: narrow);
   let wide = 1_i64;
-  check igt(wide, 0_i64) else trap "wide evidence";
+  claim wide_evidence: igt(wide, 0_i64) because "wide evidence";
   let wide_result = positive<i64>(value: wide);
   return unit;
 }

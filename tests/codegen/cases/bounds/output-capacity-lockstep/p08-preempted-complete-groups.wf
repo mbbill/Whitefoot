@@ -17,7 +17,7 @@ fn probe ['r] (out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 writes(
       False() => {
       }
     }
-    check False() else trap "preempt full group";
+    claim preempt_full_group: False() because "preempt full group";
     let o1: own u64 = iadd.wrap<u64>(o, 1_u64);
     let o2: own u64 = iadd.wrap<u64>(o, 2_u64);
     let o3: own u64 = iadd.wrap<u64>(o, 3_u64);
@@ -31,7 +31,7 @@ fn probe ['r] (out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 writes(
   let tail: own u64 = isub.wrap<u64>(n, i);
   match ieq<u64>(tail, 1_u64) {
     True() => {
-      check False() else trap "preempt tail one";
+      claim preempt_tail_one: False() because "preempt tail one";
       let a1: own u64 = iadd.wrap<u64>(o, 1_u64);
       let a2: own u64 = iadd.wrap<u64>(o, 2_u64);
       let a3: own u64 = iadd.wrap<u64>(o, 3_u64);
@@ -46,7 +46,7 @@ fn probe ['r] (out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 writes(
   }
   match ieq<u64>(tail, 2_u64) {
     True() => {
-      check False() else trap "preempt tail two";
+      claim preempt_tail_two: False() because "preempt tail two";
       let b1: own u64 = iadd.wrap<u64>(o, 1_u64);
       let b2: own u64 = iadd.wrap<u64>(o, 2_u64);
       let b3: own u64 = iadd.wrap<u64>(o, 3_u64);

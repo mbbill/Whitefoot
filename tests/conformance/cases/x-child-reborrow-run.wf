@@ -44,8 +44,8 @@ fn main() -> own unit allocates(heap), traps {
   }
   let first = output[0_u64];
   let second = output[1_u64];
-  check ieq(first, 7_u8) else trap "child buffer write";
-  check ieq(second, 9_u8) else trap "resumed buffer parent";
-  check ieq(counter.value, 42_u64) else trap "resumed struct parent";
+  claim child_buffer_write: ieq(first, 7_u8) because "child buffer write";
+  claim resumed_buffer_parent: ieq(second, 9_u8) because "resumed buffer parent";
+  claim resumed_struct_parent: ieq(counter.value, 42_u64) because "resumed struct parent";
   return unit;
 }

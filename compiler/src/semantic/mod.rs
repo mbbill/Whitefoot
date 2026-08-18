@@ -22,6 +22,8 @@ pub use check::check_semantics;
 #[cfg(test)]
 pub(crate) use check::check_semantics_arithmetic_obligations;
 #[cfg(test)]
+pub(crate) use check::check_semantics_division_obligations;
+#[cfg(test)]
 pub(crate) use check::check_semantics_reborrow_extension;
 
 pub(crate) use goal::{GoalDatum, GoalExpression, GoalOperation, GoalProjection};
@@ -713,6 +715,12 @@ pub enum SemanticIssueKind {
         /// Exact mechanical repair required by OWN-1.
         mechanical_fix: &'static str,
     },
+    /// An affine buffer element was moved out of its slot; elements leave
+    /// and enter their slots only through [SET-2] replacement [TYPE-2].
+    AffineElementMove {
+        /// Exact restructuring required by TYPE-2.
+        mechanical_fix: &'static str,
+    },
     /// A binding was used after ownership had already been consumed.
     UseAfterMove {
         /// Exact restructuring required by OWN-1.
@@ -730,11 +738,10 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by OWN-14.
         mechanical_fix: &'static str,
     },
-    /// A borrow-mode call result was bound, but the callee signature does not
-    /// determine one provenance-candidate parameter for it (reborrow
-    /// extension only).
-    AmbiguousResultBorrow {
-        /// Exact restructuring required by OWN-6.
+    /// A declared callable boundary returns a borrow whose source the
+    /// signature does not determine, so no caller can bind its result.
+    AmbiguousResultProvenance {
+        /// Exact restructuring required by FN-1.
         mechanical_fix: &'static str,
     },
     /// A borrow holder was used without the required explicit dereference.
@@ -786,12 +793,24 @@ pub enum SemanticIssueKind {
         /// The mechanical fix OP-2 names.
         mechanical_fix: &'static str,
     },
+    /// A divisor-class bare `/`/`%` division obligation is not derivable
+    /// from the closed fact state at its node [OP-2, ENT-6].
+    UndischargedDivisionObligation {
+        /// The exact ENT-6 residual rendering of the least undischarged
+        /// conjunct: `divisor != 0` or `operand != c`.
+        residual: String,
+        /// The mechanical fix OP-2 names.
+        mechanical_fix: &'static str,
+    },
     /// A demanded strict component's protected obligation is not discharged
     /// in the existing unasserted U view [OP-4, CLM-3].
     StrictUndischargedBounds(Box<StrictUndischargedBoundsDetail>),
     /// A demanded strict component's overflow obligation is not discharged
     /// in the existing unasserted U view [OP-2, CLM-3].
     StrictUndischargedOverflow(Box<StrictUndischargedBoundsDetail>),
+    /// A demanded strict component's division obligation is not discharged
+    /// in the existing unasserted U view [OP-2, CLM-3].
+    StrictUndischargedDivision(Box<StrictUndischargedBoundsDetail>),
     /// The complete instantiated requirement at an ordinary call is refuted
     /// or unproved in the caller's pre-transfer state [FN-8].
     UndischargedCallRequirement(Box<UndischargedCallRequirementDetail>),

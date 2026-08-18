@@ -20,7 +20,7 @@ fn main() -> own unit traps {
   }
   match s {
     Neg() => {
-      check ieq(c, 42_i32) else trap "drift";
+      claim drift: ieq(c, 42_i32) because "drift";
     }
     Zero() => {
       return unit;

@@ -1,9 +1,9 @@
 fn get(b: own buffer<u8>, start: own u64) -> own u8 traps {
-  doc "Loops carry no induction: the fact state at each iteration head removes every fact a continuing kill event may kill [ENT-5]. The `set` later in the body kills the checked bound and an else-free false edge can carry that kill to the next head, so the subscript is undischarged [OP-4] even on the first iteration, where the check still dominates it.";
+  doc "Loops carry no induction: the fact state at each iteration head removes every fact a continuing kill event may kill [ENT-5]. The `set` later in the body kills the claimed bound and an else-free false edge can carry that kill to the next head, so the subscript is undischarged [OP-4] even on the first iteration, where the claim still dominates it.";
   let room = len(b);
   let offset = 0_u64;
   let inside = ilt(offset, room);
-  check inside else trap "the buffer is empty";
+  claim the_buffer_is_empty: inside because "the buffer is empty";
   let sample = 0_u8;
   loop @walk {
     set sample = b[offset];

@@ -53,14 +53,14 @@ fn main() -> own unit allocates(heap), traps {
     set b = b +wrap 7_u8;
   }
   let total = v.fill;
-  check ieq(total, 20_u64) else trap "vector length";
+  claim vector_length: ieq(total, 20_u64) because "vector length";
   let cap_now = len(v.buf);
-  check ieq(cap_now, 24_u64) else trap "vector capacity";
+  claim vector_capacity: ieq(cap_now, 24_u64) because "vector capacity";
   if ilt(3_u64, cap_now) {
     let third = v.buf[3_u64];
-    check ieq(third, 28_u8) else trap "vector content at 3";
+    claim vector_content_at_3: ieq(third, 28_u8) because "vector content at 3";
   } else {
-    check False() else trap "vector capacity too small";
+    claim vector_capacity_too_small: False() because "vector capacity too small";
   }
   let s = vec_new();
   region 'first {
@@ -71,15 +71,15 @@ fn main() -> own unit allocates(heap), traps {
     bytes_append<'grow, 'grow>(dst: &uniq 'grow s, src: &'grow raw);
   }
   let stored = s.fill;
-  check ieq(stored, 6_u64) else trap "byte string length";
+  claim byte_string_length: ieq(stored, 6_u64) because "byte string length";
   let scap = len(s.buf);
   if ilt(5_u64, scap) {
     let last = s.buf[5_u64];
-    check ieq(last, 33_u8) else trap "byte string tail";
+    claim byte_string_tail: ieq(last, 33_u8) because "byte string tail";
     let head = s.buf[0_u64];
-    check ieq(head, 65_u8) else trap "byte string head";
+    claim byte_string_head: ieq(head, 65_u8) because "byte string head";
   } else {
-    check False() else trap "byte string capacity too small";
+    claim byte_string_capacity_too_small: False() because "byte string capacity too small";
   }
   return unit;
 }

@@ -9,7 +9,7 @@ fn missing_effect() -> own unit pure {
   doc "A caller-executed check still exhibits traps even though the callee requirement is an effectless proof goal [EFF-2/FN-8].";
   let x = 7_i32;
   let permitted = ige(x, 0_i32);
-  check permitted else trap "caller evidence";
+  claim caller_evidence: permitted because "caller evidence";
   let value = bounded(x: x);
   let same = ieq(value, 7_i32);
   claim expected: same because "the helper returns its input";

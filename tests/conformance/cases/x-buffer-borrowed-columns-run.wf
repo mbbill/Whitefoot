@@ -63,7 +63,7 @@ fn main() -> own unit allocates(heap), traps {
     let left_in = &'fold_region columns.left;
     let right_in = &'fold_region columns.right;
     let total = fold<'fold_region>(left: left_in, right: right_in, length: length);
-    check ieq(total, 52_u64) else trap "borrowed columns";
+    claim borrowed_columns: ieq(total, 52_u64) because "borrowed columns";
   }
   return unit;
 }

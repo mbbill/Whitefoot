@@ -97,7 +97,7 @@ fn body_checks_and_s4_are_routed_to_the_fixed_postcondition_views() {
     let body_check = br#"fn guarded(value: own i32) -> own i32 traps ensures result {
   check ieq(result, 1_i32) else trap "post";
 } {
-  check ieq(value, 1_i32) else trap "body";
+  claim body: ieq(value, 1_i32) because "body";
   return value;
 }
 
@@ -745,7 +745,7 @@ fn caller() -> own unit allocates(heap), traps {
   let owner = box_new(1_i32);
   let expected = deref(owner);
   let observed = observe(value: deref(owner));
-  check ieq(observed, deref(owner)) else trap "ordinary fallback";
+  claim ordinary_fallback: ieq(observed, deref(owner)) because "ordinary fallback";
   sink(owner: move owner);
   guard(left: observed, right: expected);
   return unit;

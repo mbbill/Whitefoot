@@ -56,7 +56,7 @@ fn named<'functions>(
 #[test]
 fn a_dominating_check_discharges_the_literal_site_and_drops_its_check() {
     let source = br#"fn bump(x: own u64) -> own u64 traps {
-  check ilt(x, 1000_u64) else trap "bounded input";
+  claim bounded_input: ilt(x, 1000_u64) because "bounded input";
   let y = x + 1_u64;
   return y;
 }

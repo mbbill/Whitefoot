@@ -9,7 +9,7 @@ fn main() -> own unit traps {
     set sum = sum + i;
     set i = i + 1_i32;
   }
-  check ieq(sum, 10_i32) else trap "sum drift";
+  claim sum_drift: ieq(sum, 10_i32) because "sum drift";
   let doubled = match sum *checked 2_i32 {
     Ok(value: d) => {
       give d;
@@ -18,6 +18,6 @@ fn main() -> own unit traps {
       return unit;
     }
   }
-  check ieq(doubled, 20_i32) else trap "double drift";
+  claim double_drift: ieq(doubled, 20_i32) because "double drift";
   return unit;
 }

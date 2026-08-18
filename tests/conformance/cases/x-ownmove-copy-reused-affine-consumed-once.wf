@@ -8,13 +8,13 @@ fn main() -> own unit traps {
   let n = 14_i32;
   let s = n + n;
   let t = s + n;
-  check ieq(t, 42_i32) else trap "copy drift";
+  claim copy_drift: ieq(t, 42_i32) because "copy drift";
   let f = A();
   match f {
     A() => {
     }
     B() => {
-      check ieq(0_i32, 1_i32) else trap "b";
+      claim b: False() because "b";
     }
   }
   return unit;

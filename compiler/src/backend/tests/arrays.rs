@@ -63,9 +63,9 @@ fn read(values: own array<u16, 4>, offset: own u64) -> own u16 traps {
 fn main() -> own unit traps {
   let values = make();
   let length = len(values);
-  check ieq(length, 4_u64) else trap "length drift";
+  claim length_drift: ieq(length, 4_u64) because "length drift";
   let value = read(values: move values, offset: 3_u64);
-  check ieq(value, 42_u16) else trap "fill drift";
+  claim fill_drift: ieq(value, 42_u16) because "fill drift";
   return unit;
 }
 "#;
@@ -143,7 +143,7 @@ fn compiler_independent_array_checksum_executes() {
 #[test]
 fn indexed_set_checks_before_rhs_and_updates_the_array() {
     let source = br#"fn replacement() -> own u8 traps {
-  check True() else trap "replacement drift";
+  claim replacement_drift: True() because "replacement drift";
   return 9_u8;
 }
 
@@ -151,7 +151,7 @@ fn main() -> own unit traps {
   let values = array_new<u8, 2>(0_u8);
   set values[1_u64] = replacement();
   let stored = values[1_u64];
-  check ieq(stored, 9_u8) else trap "set drift";
+  claim set_drift: ieq(stored, 9_u8) because "set drift";
   return unit;
 }
 "#;
@@ -184,7 +184,7 @@ fn an_out_of_bounds_indexed_set_is_an_op4_compile_rejection() {
     // A target whose obligation is underivable cannot reach runtime: the
     // program rejects at the subscript with the residual [OP-4, ENT-6].
     let source = br#"fn replacement() -> own u8 traps {
-  check False() else trap "RHS evaluated";
+  claim rhs_evaluated: False() because "RHS evaluated";
   return 9_u8;
 }
 
@@ -231,8 +231,8 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
     set cursor = next_cursor;
     set step = step + 1_u64;
   }
-  check ieq(step, 200000_u64) else trap "stream length drift";
-  check ieq(cursor, 0_u64) else trap "stream cursor drift";
+  claim stream_length_drift: ieq(step, 200000_u64) because "stream length drift";
+  claim stream_cursor_drift: ieq(cursor, 0_u64) because "stream cursor drift";
   return unit;
 }
 "#;
@@ -281,7 +281,7 @@ struct Outer {
 }
 
 fn replacement() -> own u8 traps {
-  check True() else trap "replacement drift";
+  claim replacement_drift: True() because "replacement drift";
   return 9_u8;
 }
 
@@ -291,9 +291,9 @@ fn main() -> own unit traps {
   let outer = Outer(prefix: 123_u32, inner: move inner);
   set outer.inner.values[1_u64] = replacement();
   let stored = outer.inner.values[1_u64];
-  check ieq(stored, 9_u8) else trap "array update";
-  check ieq(outer.inner.sibling, 77_u16) else trap "inner sibling";
-  check ieq(outer.prefix, 123_u32) else trap "outer sibling";
+  claim array_update: ieq(stored, 9_u8) because "array update";
+  claim inner_sibling: ieq(outer.inner.sibling, 77_u16) because "inner sibling";
+  claim outer_sibling: ieq(outer.prefix, 123_u32) because "outer sibling";
   return unit;
 }
 "#;

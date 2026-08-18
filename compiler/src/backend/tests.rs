@@ -9,6 +9,7 @@ mod checked_division;
 mod cost_shape;
 mod counted_ranges;
 mod deterministic_target;
+mod division_obligations;
 mod effect_attributes;
 mod float_conversion;
 mod floating;
@@ -37,8 +38,9 @@ use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
     HOST_OPTIMIZATION_ARGUMENTS, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome,
     SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical,
-    check_semantics, check_semantics_arithmetic_obligations, classify_terminals,
-    compile as compile_program, emit_llvm, finalize, lower_checked, parse, resolve,
+    check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
+    classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked, parse,
+    resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -162,13 +164,54 @@ fn emit_arithmetic_obligations(source: &[u8]) -> String {
         .into_string()
 }
 
+/// [`emit`] through the test-only checker entry that forces the division
+/// dissolution switch on [OP-2, ENT-6]. The shipped switch is on too, so this
+/// entry emits from the same judgment as [`emit`] and records which judgment
+/// its callers mean.
+fn emit_division_obligations(source: &[u8]) -> String {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("backend test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("backend test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("backend test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("backend test source must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("backend test source must be canonical");
+    };
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+        panic!("backend test source must resolve");
+    };
+    let SemanticOutcome::Complete(checked) = check_semantics_division_obligations(resolved) else {
+        panic!("backend test source must check under the division switch");
+    };
+    let ir = lower_checked(*checked).expect("checked program must lower");
+    emit_llvm(&ir)
+        .expect("lowered program must emit")
+        .into_string()
+}
+
 fn compile(source: &[u8]) -> String {
     compile_sources(&[("test.wf", source)])
 }
 
-/// [`emit`] through the test-only reborrow-extension checker, so execution
-/// tests can run the implemented v0.31-candidate chains while the shipped
-/// switch keeps v0.30 semantics [OWN-6, OWN-14].
+/// [`emit`] through the test-only reborrow-extension checker [OWN-6,
+/// OWN-14]. The shipped switch admits the same chains, so this entry emits
+/// from the same judgment as [`emit`] and records which judgment its callers
+/// mean.
 fn emit_reborrow_extension(source: &[u8]) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
     let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
@@ -399,7 +442,7 @@ fn emitted_module_retains_checks_and_avoids_undefined_overflow_flags() {
 
 fn main() -> own unit traps {
   let answer = add(x: 40_i32, y: 2_i32);
-  check ieq(answer, 42_i32) else trap "wrong answer";
+  claim wrong_answer: ieq(answer, 42_i32) because "wrong answer";
   return unit;
 }
 "#;
@@ -557,9 +600,9 @@ fn main() -> own unit traps {
     set outer.inner.value = number;
   }
   let observed = outer.inner.value;
-  check ieq(observed, 42_i32) else trap "nested set failed";
+  claim nested_set_failed: ieq(observed, 42_i32) because "nested set failed";
   let preserved = outer.other;
-  check ieq(preserved, 7_i32) else trap "sibling changed";
+  claim sibling_changed: ieq(preserved, 7_i32) because "sibling changed";
   let selected = if flag {
     set number = 43_i32;
     give number;
@@ -567,8 +610,8 @@ fn main() -> own unit traps {
     set number = 10_i32;
     give number;
   }
-  check ieq(selected, 43_i32) else trap "value match result failed";
-  check ieq(number, 43_i32) else trap "value match set failed";
+  claim value_match_result_failed: ieq(selected, 43_i32) because "value match result failed";
+  claim value_match_set_failed: ieq(number, 43_i32) because "value match set failed";
   return unit;
 }
 "#;
@@ -596,18 +639,18 @@ fn bool_conditionals_execute_through_the_existing_match_lowering() {
   if flag {
     set seen = True();
   }
-  check seen else trap "the else-free if did not run";
+  claim the_else_free_if_did_not_run: seen because "the else-free if did not run";
   let untouched = True();
   if other {
     set untouched = False();
   }
-  check untouched else trap "the else-free if ran when it should not";
+  claim the_else_free_if_ran_when_it_should_not: untouched because "the else-free if ran when it should not";
   let taken = if flag {
     give True();
   } else {
     give False();
   }
-  check taken else trap "the value_if took the wrong branch";
+  claim the_value_if_took_the_wrong_branch: taken because "the value_if took the wrong branch";
   let chained = if other {
     give False();
   } else if flag {
@@ -615,7 +658,7 @@ fn bool_conditionals_execute_through_the_existing_match_lowering() {
   } else {
     give False();
   }
-  check chained else trap "the else-if chain took the wrong branch";
+  claim the_else_if_chain_took_the_wrong_branch: chained because "the else-if chain took the wrong branch";
   return unit;
 }
 "#;
@@ -634,7 +677,7 @@ fn a_derived_box_nominal_allocates_reads_back_and_releases() {
   let flag = True();
   let owner = box_new(flag);
   let loaded = deref(owner);
-  check loaded else trap "the derived box did not read back";
+  claim the_derived_box_did_not_read_back: loaded because "the derived box did not read back";
   return unit;
 }
 "#;
@@ -655,27 +698,27 @@ fn infix_operators_execute_the_rows_they_name() {
   let b = a + 22_i32;
   let want = 42_i32;
   let sum_ok = ieq(b, want);
-  check sum_ok else trap "bare plus is the trapping add";
+  claim bare_plus_is_the_trapping_add: sum_ok because "bare plus is the trapping add";
   let hi = 2147483647_i32;
   let wrapped = hi +wrap 1_i32;
   let low = -2147483648_i32;
   let wrap_ok = ieq(wrapped, low);
-  check wrap_ok else trap "+wrap wraps";
+  claim wrap_wraps: wrap_ok because "+wrap wraps";
   let saturated = hi +sat 1_i32;
   let sat_ok = ieq(saturated, hi);
-  check sat_ok else trap "+sat saturates";
+  claim sat_saturates: sat_ok because "+sat saturates";
   let quotient = 43_i32 / 2_i32;
   let q_ok = ieq(quotient, 21_i32);
-  check q_ok else trap "bare slash divides";
+  claim bare_slash_divides: q_ok because "bare slash divides";
   let rest = 43_i32 % 2_i32;
   let r_ok = ieq(rest, 1_i32);
-  check r_ok else trap "bare percent remainders";
+  claim bare_percent_remainders: r_ok because "bare percent remainders";
   let differ = ine(a, b);
-  check differ else trap "not equal";
+  claim not_equal: differ because "not equal";
   let ordered = ile(a, b);
-  check ordered else trap "less equal";
+  claim less_equal: ordered because "less equal";
   let reversed = ige(b, a);
-  check reversed else trap "greater equal";
+  claim greater_equal: reversed because "greater equal";
   return unit;
 }
 "#;
@@ -705,13 +748,13 @@ fn eq(a: own i32, b: own i32) -> own Bool pure {
 fn main() -> own unit traps {
   let sum = add(a: 20_i32, b: 22_i32);
   let sum_ok = ieq(sum, 42_i32);
-  check sum_ok else trap "the returned sum is wrong";
+  claim the_returned_sum_is_wrong: sum_ok because "the returned sum is wrong";
   let same = eq(a: 7_i32, b: 7_i32);
-  check same else trap "the returned comparison is wrong";
+  claim the_returned_comparison_is_wrong: same because "the returned comparison is wrong";
   let differ = eq(a: 7_i32, b: 8_i32);
   let impossible = eq(a: 0_i32, b: 1_i32);
   if differ {
-    check impossible else trap "a false returned comparison must not be true";
+    claim a_false_returned_comparison_must_not_be_true: impossible because "a false returned comparison must not be true";
   }
   return unit;
 }
@@ -829,7 +872,7 @@ fn main() -> own unit traps {
   let arithmetic_result = 2147483647_i32 +checked 1_i32;
   match move arithmetic_result {
     Ok(value: sum) => {
-      check False() else trap "checked overflow took Ok";
+      claim checked_overflow_took_ok: False() because "checked overflow took Ok";
     }
     Err(error: overflow) => {
     }
@@ -837,7 +880,7 @@ fn main() -> own unit traps {
   let subtract_result = 0_u8 -checked 1_u8;
   match move subtract_result {
     Ok(value: difference) => {
-      check False() else trap "checked underflow took Ok";
+      claim checked_underflow_took_ok: False() because "checked underflow took Ok";
     }
     Err(error: underflow) => {
     }
@@ -845,25 +888,25 @@ fn main() -> own unit traps {
   let multiply_result = 6_i16 *checked 7_i16;
   match move multiply_result {
     Ok(value: product) => {
-      check ieq(product, 42_i16) else trap "checked product drift";
+      claim checked_product_drift: ieq(product, 42_i16) because "checked product drift";
     }
     Err(error: product_error) => {
-      check False() else trap "checked product took Err";
+      claim checked_product_took_err: False() because "checked product took Err";
     }
   }
   let success = forward(value: 7_i32);
   match move success {
     Ok(value: answer) => {
-      check ieq(answer, 42_i64) else trap "propagated Ok payload drift";
+      claim propagated_ok_payload_drift: ieq(answer, 42_i64) because "propagated Ok payload drift";
     }
     Err(error: failure_error) => {
-      check False() else trap "unexpected propagated Err";
+      claim unexpected_propagated_err: False() because "unexpected propagated Err";
     }
   }
   let failure = forward(value: -1_i32);
   match move failure {
     Ok(value: unexpected) => {
-      check False() else trap "propagated Err became Ok";
+      claim propagated_err_became_ok: False() because "propagated Err became Ok";
     }
     Err(error: forwarded_error) => {
     }
@@ -871,16 +914,16 @@ fn main() -> own unit traps {
   let field_success = forward_field(value: 7_i32);
   match move field_success {
     Ok(value: field_answer) => {
-      check ieq(field_answer, 42_i64) else trap "field propagation drift";
+      claim field_propagation_drift: ieq(field_answer, 42_i64) because "field propagation drift";
     }
     Err(error: field_failure) => {
-      check False() else trap "unexpected field propagation error";
+      claim unexpected_field_propagation_error: False() because "unexpected field propagation error";
     }
   }
   let field_failure = forward_field(value: -1_i32);
   match move field_failure {
     Ok(value: field_unexpected) => {
-      check False() else trap "field propagation lost Err";
+      claim field_propagation_lost_err: False() because "field propagation lost Err";
     }
     Err(error: field_forwarded_error) => {
     }
@@ -889,10 +932,10 @@ fn main() -> own unit traps {
   match move pair_result {
     Ok(value: pair) => {
       let total = pair.left +wrap pair.right;
-      check ieq(total, 42_i32) else trap "aggregate Result payload drift";
+      claim aggregate_result_payload_drift: ieq(total, 42_i32) because "aggregate Result payload drift";
     }
     Err(error: pair_error) => {
-      check False() else trap "unexpected aggregate Result error";
+      claim unexpected_aggregate_result_error: False() because "unexpected aggregate Result error";
     }
   }
   return unit;
@@ -941,7 +984,7 @@ fn nested_loop_labels_route_breaks_to_the_resolved_exit() {
       set inner = inner +wrap 1_i32;
     }
   }
-  check ieq(outer, 3_i32) else trap "wrong outer exit";
+  claim wrong_outer_exit: ieq(outer, 3_i32) because "wrong outer exit";
   return unit;
 }
 "#;
@@ -998,20 +1041,20 @@ fn every_lowered_integer_mode_and_comparison_executes_with_exact_width_and_sign(
   let sut = 10_u32 - 3_u32;
   let mst = 6_i64 * 7_i64;
   let mut = 6_u64 * 7_u64;
-  check ieq(aw, -128_i8) else trap "signed add wrap drift";
-  check ieq(sw, 255_u8) else trap "unsigned subtract wrap drift";
-  check ieq(mw, 65534_u16) else trap "unsigned multiply wrap drift";
-  check ieq(ast, -7_i16) else trap "signed add trap drift";
-  check ieq(aut, 13_u16) else trap "unsigned add trap drift";
-  check ieq(sst, 7_i32) else trap "signed subtract trap drift";
-  check ieq(sut, 7_u32) else trap "unsigned subtract trap drift";
-  check ieq(mst, 42_i64) else trap "signed multiply trap drift";
-  check ieq(mut, 42_u64) else trap "unsigned multiply trap drift";
-  check ine(1_i32, 2_i32) else trap "ine drift";
-  check ilt(-1_i32, 0_i32) else trap "signed ilt drift";
-  check ile(1_u32, 1_u32) else trap "unsigned ile drift";
-  check igt(1_i32, -1_i32) else trap "signed igt drift";
-  check ige(1_u32, 1_u32) else trap "unsigned ige drift";
+  claim signed_add_wrap_drift: ieq(aw, -128_i8) because "signed add wrap drift";
+  claim unsigned_subtract_wrap_drift: ieq(sw, 255_u8) because "unsigned subtract wrap drift";
+  claim unsigned_multiply_wrap_drift: ieq(mw, 65534_u16) because "unsigned multiply wrap drift";
+  claim signed_add_trap_drift: ieq(ast, -7_i16) because "signed add trap drift";
+  claim unsigned_add_trap_drift: ieq(aut, 13_u16) because "unsigned add trap drift";
+  claim signed_subtract_trap_drift: ieq(sst, 7_i32) because "signed subtract trap drift";
+  claim unsigned_subtract_trap_drift: ieq(sut, 7_u32) because "unsigned subtract trap drift";
+  claim signed_multiply_trap_drift: ieq(mst, 42_i64) because "signed multiply trap drift";
+  claim unsigned_multiply_trap_drift: ieq(mut, 42_u64) because "unsigned multiply trap drift";
+  claim ine_drift: ine(1_i32, 2_i32) because "ine drift";
+  claim signed_ilt_drift: ilt(-1_i32, 0_i32) because "signed ilt drift";
+  claim unsigned_ile_drift: ile(1_u32, 1_u32) because "unsigned ile drift";
+  claim signed_igt_drift: igt(1_i32, -1_i32) because "signed igt drift";
+  claim unsigned_ige_drift: ige(1_u32, 1_u32) because "unsigned ige drift";
   return unit;
 }
 "#;
@@ -1038,15 +1081,47 @@ fn main() -> own unit pure {
     assert!(output.stderr.is_empty());
 }
 
+/// The [OP-5] record shape, including the exact [FORM-5] decoding of a
+/// message carrying an embedded quote and newline.
+///
+/// v0.32 retires the body `check` statement, so the entry requirement's
+/// final `check_stmt` is the sole remaining [OP-5] record carrier whose
+/// `message` is a writer-chosen STRING — a migrated body check becomes a
+/// [CLM-1] record whose `message` is an IDENT and can carry neither byte.
+/// The record shape and the message decoding are unchanged across the
+/// version, which is what this pins.
 #[test]
-fn explicit_check_failure_emits_the_exact_mandatory_record_shape() {
-    let source = b"fn main() -> own unit traps {\n  check False() else trap \"bad \\\"quote\\\"\\nline\";\n  return unit;\n}\n";
+fn a_failing_entry_requirement_emits_the_exact_mandatory_record_shape() {
+    let source = b"fn main() -> own unit pure requires {\n  check ieq(0_u8, 1_u8) else trap \"bad \\\"quote\\\"\\nline\";\n} {\n  return unit;\n}\n";
     let output = compile_and_run(&compile(source));
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(stderr.starts_with(
-        "{\"rule_id\":\"OP-5\",\"message\":\"bad \\\"quote\\\"\\nline\",\"function\":\"main\",\"node_path\":["
-    ));
+    assert!(
+        stderr.starts_with(
+            "{\"rule_id\":\"OP-5\",\"message\":\"bad \\\"quote\\\"\\nline\",\"function\":\"main\",\"node_path\":["
+        ),
+        "unexpected record: {stderr}"
+    );
+    assert!(stderr.ends_with("]}\n"));
+    assert_eq!(stderr.lines().count(), 1);
+}
+
+/// The [CLM-1] record a migrated body check now emits: same mandatory
+/// [DIAG-3] field order and framing, `rule_id` `CLM-1`, and `message` the
+/// claim's IDENT spelling rather than its `because` justification.
+#[test]
+fn a_failing_claim_emits_the_exact_mandatory_record_shape() {
+    let source =
+        b"fn main() -> own unit traps {\n  claim bad_quote_line: False() because \"bad \\\"quote\\\"\\nline\";\n  return unit;\n}\n";
+    let output = compile_and_run(&compile(source));
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
+    assert!(
+        stderr.starts_with(
+            "{\"rule_id\":\"CLM-1\",\"message\":\"bad_quote_line\",\"function\":\"main\",\"node_path\":["
+        ),
+        "unexpected record: {stderr}"
+    );
     assert!(stderr.ends_with("]}\n"));
     assert_eq!(stderr.lines().count(), 1);
 }
@@ -1130,7 +1205,7 @@ fn required_check_survives_host_optimization_of_an_unfoldable_loop() {
     set state = mixed *wrap 1099511628211_u64;
     set step = step + 1_u64;
   }
-  check ieq(state, 1_u64) else trap "mixing chain drift";
+  claim mixing_chain_drift: ieq(state, 1_u64) because "mixing chain drift";
   return unit;
 }
 "#;
@@ -1162,7 +1237,7 @@ fn required_check_survives_host_optimization_of_an_unfoldable_loop() {
     );
     assert_eq!(
         output.stderr,
-        b"{\"rule_id\":\"OP-5\",\"message\":\"mixing chain drift\",\"function\":\"main\",\"node_path\":[0,0,6,0]}\n"
+        b"{\"rule_id\":\"CLM-1\",\"message\":\"mixing_chain_drift\",\"function\":\"main\",\"node_path\":[0,0,6,0]}\n"
     );
     assert!(output.stdout.is_empty());
 }

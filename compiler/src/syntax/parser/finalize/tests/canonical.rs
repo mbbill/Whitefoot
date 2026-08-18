@@ -66,7 +66,7 @@ fn nested_blocks_arms_and_requires_follow_tree_depth() {
 } {
   match value {
     Some(payload: item) => {
-      check ieq(item, payload) else trap "drift";
+      claim drift: ieq(item, payload) because "drift";
     }
     None() => {
       return unit;
@@ -406,13 +406,13 @@ fn rendering_normalizes_any_parseable_layout_onto_canonical_bytes() {
         // `if`/`else` from a `match` produces the close and the `else` with no
         // idea they share a line; the renderer is what puts them there.
         (
-            b"fn main() -> own unit traps {\nlet flag = True();\nif flag {\ncheck flag else trap \"then\";\n}\nelse\n{\ncheck flag else trap \"else\";\n}\nreturn unit;\n}\n".as_slice(),
-            b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    check flag else trap \"then\";\n  } else {\n    check flag else trap \"else\";\n  }\n  return unit;\n}\n".as_slice(),
+            b"fn main() -> own unit traps {\nlet flag = True();\nif flag {\nclaim then: flag because \"then\";\n}\nelse\n{\nclaim else_claim: flag because \"else\";\n}\nreturn unit;\n}\n".as_slice(),
+            b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    claim then: flag because \"then\";\n  } else {\n    claim else_claim: flag because \"else\";\n  }\n  return unit;\n}\n".as_slice(),
         ),
         // A flattened `else if` chain, likewise joined by the renderer.
         (
-            b"fn main() -> own unit traps {\nlet flag = True();\nif flag {\ncheck flag else trap \"a\";\n} else if flag {\ncheck flag else trap \"b\";\n} else {\ncheck flag else trap \"c\";\n}\nreturn unit;\n}\n".as_slice(),
-            b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    check flag else trap \"a\";\n  } else if flag {\n    check flag else trap \"b\";\n  } else {\n    check flag else trap \"c\";\n  }\n  return unit;\n}\n".as_slice(),
+            b"fn main() -> own unit traps {\nlet flag = True();\nif flag {\nclaim a: flag because \"a\";\n} else if flag {\nclaim b: flag because \"b\";\n} else {\nclaim c: flag because \"c\";\n}\nreturn unit;\n}\n".as_slice(),
+            b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    claim a: flag because \"a\";\n  } else if flag {\n    claim b: flag because \"b\";\n  } else {\n    claim c: flag because \"c\";\n  }\n  return unit;\n}\n".as_slice(),
         ),
     ] {
         assert!(!reaches_canonical_syntax(sloppy));
@@ -436,16 +436,16 @@ fn an_item_free_source_renders_as_one_newline() {
 fn if_else_renders_its_join_line_and_indents_both_blocks() {
     // An else-free `if`: one block, ordinary break after the close.
     only_these_trivia_bytes_render(
-        b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    check flag else trap \"then\";\n  }\n  return unit;\n}\n",
+        b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    claim then: flag because \"then\";\n  }\n  return unit;\n}\n",
     );
     // A braced `else`: two blocks joined by `} else {` on one line.
     only_these_trivia_bytes_render(
-        b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    check flag else trap \"then\";\n  } else {\n    check flag else trap \"else\";\n  }\n  return unit;\n}\n",
+        b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    claim then: flag because \"then\";\n  } else {\n    claim else_claim: flag because \"else\";\n  }\n  return unit;\n}\n",
     );
     // An `else if` chain: the nested `if_stmt` owns the second block, so the
     // outer node has one pair plus an `else`, and still suppresses its break.
     only_these_trivia_bytes_render(
-        b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    check flag else trap \"then\";\n  } else if flag {\n    check flag else trap \"chain\";\n  } else {\n    check flag else trap \"else\";\n  }\n  return unit;\n}\n",
+        b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    claim then: flag because \"then\";\n  } else if flag {\n    claim chain: flag because \"chain\";\n  } else {\n    claim else_claim: flag because \"else\";\n  }\n  return unit;\n}\n",
     );
     // A `value_if` initializer delivers from both branches.
     only_these_trivia_bytes_render(
@@ -460,7 +460,7 @@ fn if_else_renders_its_join_line_and_indents_both_blocks() {
     // brace. Do not add a special case here: depth would then accumulate and
     // this fixture would indent each arm one level deeper.
     only_these_trivia_bytes_render(
-        b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    check flag else trap \"a\";\n  } else if flag {\n    check flag else trap \"b\";\n  } else if flag {\n    check flag else trap \"c\";\n  } else {\n    check flag else trap \"d\";\n  }\n  return unit;\n}\n",
+        b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    claim a: flag because \"a\";\n  } else if flag {\n    claim b: flag because \"b\";\n  } else if flag {\n    claim c: flag because \"c\";\n  } else {\n    claim d: flag because \"d\";\n  }\n  return unit;\n}\n",
     );
 }
 

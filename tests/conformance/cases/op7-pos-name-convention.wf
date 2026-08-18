@@ -8,6 +8,6 @@ fn main() -> own unit traps {
       return unit;
     }
   }
-  check ieq(r, 42_i32) else trap "name drift";
+  claim name_drift: ieq(r, 42_i32) because "name drift";
   return unit;
 }

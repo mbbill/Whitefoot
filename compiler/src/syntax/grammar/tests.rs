@@ -15,7 +15,7 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 fn complete_inventory_is_pinned() {
     assert_eq!(productions().len(), 74);
     assert_eq!(DECISIONS.len(), 96);
-    assert_eq!(SELECT_ROWS.len(), 3_897);
+    assert_eq!(SELECT_ROWS.len(), 3_788);
     assert_eq!(diagnostic_terminal_order().len(), 99);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[12], Production::EnsuresBlock);
@@ -75,7 +75,9 @@ fn v028_decision_slots_retain_their_exact_shapes() {
         shape!(FnDecl, Optional, Ordinary, 2),
         shape!(FnDecl, Repeat0, ConstructEntry, 2),
         shape!(RequiresBlock, Repeat0, ConstructEntry, 2),
-        shape!(RequiresEntry, Choice, ConstructEntry, 2),
+        // v0.32 admits the contract final `check_stmt` directly at the
+        // entry, so this choice carries `doc | stmt | check_stmt`.
+        shape!(RequiresEntry, Choice, ConstructEntry, 3),
         shape!(ContractDecl, Optional, Ordinary, 2),
         shape!(ContractDecl, Optional, Ordinary, 2),
         shape!(ContractDecl, Repeat0, Ordinary, 2),
@@ -99,7 +101,9 @@ fn v028_decision_slots_retain_their_exact_shapes() {
         shape!(Mode, Choice, Ordinary, 3),
         shape!(Targs, Repeat0, Ordinary, 2),
         shape!(Targ, Choice, Ordinary, 3),
-        shape!(Stmt, Choice, ConstructEntry, 13),
+        // v0.32 retires the body `check` statement: `check_stmt` left
+        // this alternation for the two contract entries.
+        shape!(Stmt, Choice, ConstructEntry, 12),
         shape!(InfixOp, Choice, Ordinary, 16),
         shape!(Callee, Choice, Ordinary, 2),
         shape!(Place, Repeat0, Ordinary, 2),
@@ -148,7 +152,7 @@ fn v028_decision_slots_retain_their_exact_shapes() {
         shape!(EnsuresBlock, Repeat0, ConstructEntry, 2),
         shape!(EnsuresSelector, Choice, Ordinary, 2),
         shape!(EnsuresSelector, Optional, Ordinary, 2),
-        shape!(EnsuresEntry, Choice, ConstructEntry, 2),
+        shape!(EnsuresEntry, Choice, ConstructEntry, 3),
     ];
     assert_eq!(expected.len(), 90);
     for (slot, expected) in expected.into_iter().enumerate() {
@@ -332,6 +336,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
             }
         }
     }
-    assert_eq!(total_rows, 3_897);
+    assert_eq!(total_rows, 3_788);
     assert!(saw_atom_only);
 }

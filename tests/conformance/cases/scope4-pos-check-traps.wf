@@ -1,5 +1,5 @@
 fn main() -> own unit traps {
-  doc "A contract violation at runtime traps and aborts; no unwinding [SCOPE-4].";
-  check ieq(2_i32, 3_i32) else trap "contract violated";
+  doc "A contract violation at runtime traps and aborts; no unwinding [SCOPE-4]. The violated obligation is a named claim whose constructed predicate has no comparison origin, so it survives CLM-2 and fails only at runtime.";
+  claim contract_violated: False() because "contract violated";
   return unit;
 }

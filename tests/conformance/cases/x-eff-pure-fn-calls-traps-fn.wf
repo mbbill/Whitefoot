@@ -1,6 +1,6 @@
 fn guarded(x: own i32) -> own i32 traps {
-  doc "Declares traps and exhibits a check.";
-  check ilt(x, 100_i32) else trap "range";
+  doc "Declares traps and exhibits a claim.";
+  claim range: ilt(x, 100_i32) because "range";
   return x;
 }
 
@@ -13,6 +13,6 @@ fn f(x: own i32) -> own i32 pure {
 fn main() -> own unit traps {
   doc "Driver.";
   let a = f(x: 7_i32);
-  check ieq(a, 7_i32) else trap "x";
+  claim x: ieq(a, 7_i32) because "x";
   return unit;
 }

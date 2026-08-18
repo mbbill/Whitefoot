@@ -8,6 +8,6 @@ fn main() -> own unit traps {
   let left = OneFirst();
   let right = OneSecond();
   let same = eeq<OneEq>(left, right);
-  check same else trap "unequal";
+  claim unequal: same because "unequal";
   return unit;
 }

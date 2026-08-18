@@ -1,0 +1,9 @@
+fn divide(p: own i32, q: own i32) -> own i32 pure {
+  doc "A retained signed two-variable site is the body's only trap contributor, and it still syntactically exhibits `traps` [OP-2, EFF-2]. The declared `pure` row therefore rejects: the dissolution narrows the traps-free class, it does not make every division site traps-free.";
+  let r = p / q;
+  return r;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

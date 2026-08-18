@@ -217,6 +217,11 @@ pub(crate) enum CheckedFlatElement {
     GenericInt(DeclarationId),
     GenericFloat(DeclarationId),
     TagOnlyNominal(NominalId),
+    /// One affine aggregate element type: a region-free non-copy nominal
+    /// stored by value. [TYPE-2] admits this element domain for `buffer`
+    /// formation only; arrays and slices keep the flat copy domain, so
+    /// their element constructors never produce this variant.
+    Nominal(NominalId),
 }
 
 impl CheckedFlatElement {
@@ -228,7 +233,7 @@ impl CheckedFlatElement {
             Self::Float(ty) => CheckedType::Float(ty),
             Self::GenericInt(declaration) => CheckedType::GenericInt(declaration),
             Self::GenericFloat(declaration) => CheckedType::GenericFloat(declaration),
-            Self::TagOnlyNominal(id) => CheckedType::Nominal(id),
+            Self::TagOnlyNominal(id) | Self::Nominal(id) => CheckedType::Nominal(id),
         }
     }
 }
@@ -906,6 +911,17 @@ pub(crate) enum CheckedExpression {
         trap: TrapSite,
         target_domains: CheckedRuntimeTargetObligations,
     },
+    /// One `buffer_vacant<T>(n)` allocation [OP-1, OP-9]: a flat buffer of
+    /// the u64 length whose every element is the compiler-minted `None()`
+    /// of the named `Option<T>` instance; no source value is duplicated.
+    BufferVacant {
+        carrier: NodePath,
+        /// The interned `Option<T>` element instance.
+        element: NominalId,
+        length: Box<CheckedExpression>,
+        trap: TrapSite,
+        target_domains: CheckedRuntimeTargetObligations,
+    },
     BufferLength {
         root: CheckedBufferRoot,
     },
@@ -1045,6 +1061,7 @@ impl CheckedExpression {
             | Self::ArrayFill { carrier, .. }
             | Self::ArrayIndex { carrier, .. }
             | Self::BufferFill { carrier, .. }
+            | Self::BufferVacant { carrier, .. }
             | Self::BufferIndex { carrier, .. }
             | Self::SliceOf { carrier, .. }
             | Self::SliceIndex { carrier, .. }
@@ -1086,6 +1103,9 @@ impl CheckedExpression {
             Self::ArrayLength { .. } => CheckedType::Integer(IntegerType::U64),
             Self::ArrayIndex { element_type, .. } => *element_type,
             Self::BufferFill { element, .. } => CheckedType::Buffer { element: *element },
+            Self::BufferVacant { element, .. } => CheckedType::Buffer {
+                element: CheckedFlatElement::Nominal(*element),
+            },
             Self::BufferLength { .. } => CheckedType::Integer(IntegerType::U64),
             Self::BufferIndex { root, .. } => root.element.ty(),
             Self::SliceOf {

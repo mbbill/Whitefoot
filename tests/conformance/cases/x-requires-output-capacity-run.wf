@@ -27,9 +27,9 @@ fn main() -> own unit allocates(heap), traps {
   region 'copy_region {
     let destination = &uniq 'copy_region output;
     let written = copy_bytes<'copy_region>(out: move destination, source: move source);
-    check ieq(written, length) else trap "copy length";
+    claim copy_length: ieq(written, length) because "copy length";
   }
   let last = output[3_u64];
-  check ieq(last, 7_u8) else trap "copy content";
+  claim copy_content: ieq(last, 7_u8) because "copy content";
   return unit;
 }

@@ -4,6 +4,6 @@ fn main() -> own unit traps {
   let peak = 2147483647_i32;
   let step = 1_i32;
   set v = peak + step;
-  check ige(v, 0_i32) else trap "x";
+  claim x: ige(v, 0_i32) because "x";
   return unit;
 }

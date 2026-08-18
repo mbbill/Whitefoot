@@ -28,7 +28,7 @@ fn main() -> own unit traps {
         return unit;
       }
     }
-    check ieq(v, 42_i32) else trap "arithmetic drift";
+    claim arithmetic_drift: ieq(v, 42_i32) because "arithmetic drift";
     let sg = sign_of(x: v);
     match sg {
       Neg() => {
@@ -38,7 +38,7 @@ fn main() -> own unit traps {
         return unit;
       }
       Pos() => {
-        check ieq(v, 42_i32) else trap "sign drift";
+        claim sign_drift: ieq(v, 42_i32) because "sign drift";
       }
     }
   }

@@ -3,12 +3,12 @@ fn main() -> own unit traps {
   let a = 5_i32;
   region 'r {
     let s = &'r a;
-    check ieq(deref(s), 5_i32) else trap "read";
+    claim read: ieq(deref(s), 5_i32) because "read";
   }
   region 'q {
     let u = &uniq 'q a;
     set deref(u) = 9_i32;
   }
-  check ieq(a, 9_i32) else trap "write";
+  claim write: ieq(a, 9_i32) because "write";
   return unit;
 }

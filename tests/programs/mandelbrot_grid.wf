@@ -58,6 +58,6 @@ fn main() -> own unit traps {
     }
     set y = y +wrap 1_u32;
   }
-  check ieq(escaped_points, 2437_u32) else trap "mandelbrot grid mismatch";
+  claim mandelbrot_grid_mismatch: ieq(escaped_points, 2437_u32) because "mandelbrot grid mismatch";
   return unit;
 }

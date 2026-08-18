@@ -292,7 +292,28 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 if result_type != operand_type {
                     return Err(BackendFailure::InvalidIr);
                 }
-                let trap = trap.ok_or(BackendFailure::InvalidIr)?;
+                let opcode = match (operation, signed) {
+                    (IrIntegerOperation::DivideTrap, true) => "sdiv",
+                    (IrIntegerOperation::DivideTrap, false) => "udiv",
+                    (IrIntegerOperation::RemainderTrap, true) => "srem",
+                    (IrIntegerOperation::RemainderTrap, false) => "urem",
+                    _ => return Err(BackendFailure::InvalidIr),
+                };
+                let Some(trap) = trap else {
+                    // A divisor-class site whose division obligation is
+                    // discharged retains no trap record: both the
+                    // zero-divisor test and, where the class admits it, the
+                    // signed-overflow test are proven unreachable, so the
+                    // exact quotient or remainder needs no branch in any
+                    // build mode [ENT-6, DIAG-2].
+                    writeln!(
+                        self.output,
+                        "  {} = {opcode} {ty} {left}, {right}",
+                        self.value_name(result)
+                    )
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                    return Ok(());
+                };
                 let is_zero = self.next_temporary()?;
                 writeln!(self.output, "  %{is_zero} = icmp eq {ty} {right}, 0")
                     .map_err(|_| BackendFailure::TextEmission)?;
@@ -310,13 +331,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     is_failure
                 } else {
                     is_zero
-                };
-                let opcode = match (operation, signed) {
-                    (IrIntegerOperation::DivideTrap, true) => "sdiv",
-                    (IrIntegerOperation::DivideTrap, false) => "udiv",
-                    (IrIntegerOperation::RemainderTrap, true) => "srem",
-                    (IrIntegerOperation::RemainderTrap, false) => "urem",
-                    _ => return Err(BackendFailure::InvalidIr),
                 };
                 let trap_id = self.register_trap(trap)?;
                 writeln!(

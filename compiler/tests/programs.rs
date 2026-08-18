@@ -12,6 +12,7 @@ mod programs {
     mod signal;
     mod support;
     mod text;
+    mod traversal;
     mod wfgrep;
     mod wide_scan;
 }

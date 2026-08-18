@@ -662,7 +662,7 @@ fn the_kind_declaring_judgment_gates_only_the_system_admission_decision() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("a kind-declaring unit must resolve system names: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 167);
+        assert_eq!(resolved.system_declarations().len(), 192);
         for (spelling, ordinal) in [("Args", 0), ("ExitStatus", 6)] {
             let usage = resolved
                 .lexical_uses()
@@ -685,7 +685,7 @@ fn the_kind_declaring_judgment_gates_only_the_system_admission_decision() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("a non-entry program_kind must still be kind-declaring: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 167);
+        assert_eq!(resolved.system_declarations().len(), 192);
     });
 }
 
@@ -726,7 +726,7 @@ fn fn8_admission_precedes_the_system_admission_decision() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("an admitted requires block must reach the SYS-3 decision: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 167);
+        assert_eq!(resolved.system_declarations().len(), 192);
     });
 }
 
@@ -818,24 +818,24 @@ fn outcomes(m: own ReadOutcome) -> own unit pure {
             expect(LexicalUseRole::Type, spelling, ordinal);
         }
         for (spelling, ordinal) in [
-            ("args_count", 117),
-            ("arg_get", 120),
-            ("host_bytes_len", 124),
-            ("host_copy_bytes", 127),
-            ("host_utf8_len", 134),
-            ("host_copy_utf8", 137),
-            ("relative_path", 144),
-            ("open_read", 146),
-            ("read_once", 151),
-            ("write_once", 158),
-            ("exit_status", 165),
+            ("args_count", 125),
+            ("arg_get", 128),
+            ("host_bytes_len", 132),
+            ("host_copy_bytes", 135),
+            ("host_utf8_len", 142),
+            ("host_copy_utf8", 145),
+            ("relative_path", 152),
+            ("open_read", 154),
+            ("read_once", 159),
+            ("write_once", 166),
+            ("exit_status", 173),
         ] {
             expect(LexicalUseRole::IdentifierCallee, spelling, ordinal);
         }
-        expect(LexicalUseRole::Construct, "NotFound", 27);
-        expect(LexicalUseRole::ArmVariant, "ReadBytes", 22);
-        expect(LexicalUseRole::ArmVariant, "ReadEnd", 24);
-        expect(LexicalUseRole::ArmVariant, "ReadFailed", 25);
+        expect(LexicalUseRole::Construct, "NotFound", 29);
+        expect(LexicalUseRole::ArmVariant, "ReadBytes", 24);
+        expect(LexicalUseRole::ArmVariant, "ReadEnd", 26);
+        expect(LexicalUseRole::ArmVariant, "ReadFailed", 27);
     });
 }
 
@@ -969,7 +969,7 @@ fn system_collisions_reject_deterministically_in_both_directions() {
             assert_eq!(conflicts[0].class(), DeclarationClass::Function);
             assert!(matches!(
                 conflicts[0].origin(),
-                DeclarationOrigin::System(id) if id.ordinal() == 117
+                DeclarationOrigin::System(id) if id.ordinal() == 125
             ));
         });
     }
@@ -1025,7 +1025,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::Constructor);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 24
+            DeclarationOrigin::System(id) if id.ordinal() == 26
         ));
     });
 
@@ -1050,7 +1050,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 124
+            DeclarationOrigin::System(id) if id.ordinal() == 132
         ));
     });
 }
@@ -1134,7 +1134,7 @@ fn system_resolution_is_deterministic_across_repeated_runs_and_paths() {
         first,
         vec![
             ("ExitStatus".to_owned(), 6),
-            ("exit_status".to_owned(), 165)
+            ("exit_status".to_owned(), 173)
         ]
     );
     assert_eq!(first, targets("first.wf"));
@@ -1676,7 +1676,7 @@ fn main() -> own unit traps {
     let borrowed = &'r ordinary;
     let called = user<i32, 'r, one>(arg: borrowed);
     let view = move called;
-    check ieq(ordinary, two) else trap "bad";
+    claim bad: ieq(ordinary, two) because "bad";
   }
   loop @done {
     break @done;
@@ -1937,10 +1937,10 @@ fn conditional_branches_are_separate_lexical_scopes() {
     let sibling_branches = br#"fn get(pick: own Bool) -> own unit traps {
   if pick {
     let inside = 1_u64;
-    check ieq(inside, 1_u64) else trap "left";
+    claim left: ieq(inside, 1_u64) because "left";
   } else {
     let inside = 2_u64;
-    check ieq(inside, 2_u64) else trap "right";
+    claim right: ieq(inside, 2_u64) because "right";
   }
   return unit;
 }
@@ -1961,11 +1961,11 @@ fn get(pick: own Pick) -> own unit traps {
   match pick {
     Left() => {
       let inside = 1_u64;
-      check ieq(inside, 1_u64) else trap "left";
+      claim left: ieq(inside, 1_u64) because "left";
     }
     Right() => {
       let inside = 2_u64;
-      check ieq(inside, 2_u64) else trap "right";
+      claim right: ieq(inside, 2_u64) because "right";
     }
   }
   return unit;
@@ -1981,10 +1981,10 @@ fn get(pick: own Pick) -> own unit traps {
     let expired_then_enclosing = br#"fn get(pick: own Bool) -> own unit traps {
   if pick {
     let offset = 0_u64;
-    check ieq(offset, 0_u64) else trap "inner";
+    claim inner: ieq(offset, 0_u64) because "inner";
   }
   let offset = 1_u64;
-  check ieq(offset, 1_u64) else trap "outer";
+  claim outer: ieq(offset, 1_u64) because "outer";
   return unit;
 }
 "#;
@@ -1999,9 +1999,9 @@ fn get(pick: own Pick) -> own unit traps {
   let offset = 0_u64;
   if pick {
     let offset = 1_u64;
-    check ieq(offset, 1_u64) else trap "inner";
+    claim inner_2: ieq(offset, 1_u64) because "inner";
   }
-  check ieq(offset, 0_u64) else trap "outer";
+  claim outer_2: ieq(offset, 0_u64) because "outer";
   return unit;
 }
 "#;
@@ -2240,64 +2240,73 @@ fn system_index_helpers_agree_with_the_preorder_entity_map() {
     // ordinal-to-entity map, across every one of the 167 records.
     use super::SystemDeclarationId;
     use super::catalog::{
-        SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemEntity,
-        system_constructor_declaration, system_constructor_index, system_entity,
-        system_nominal_index, system_operation_index, system_release_row,
+        SYSTEM_NOMINALS, SystemEntity, system_constructor_declaration, system_constructor_index,
+        system_constructors, system_entity, system_nominal_index, system_nominals,
+        system_operation_index, system_operations, system_release_row,
     };
 
-    let mut nominals = 0_usize;
-    let mut constructors = 0_usize;
-    let mut operations = 0_usize;
-    for ordinal in 0..=u8::MAX {
-        let id = SystemDeclarationId::new(ordinal);
-        match system_entity(id) {
-            Some(SystemEntity::Nominal(nominal)) => {
-                let index = system_nominal_index(id).expect("nominal index");
-                assert_eq!(
-                    SYSTEM_NOMINALS[usize::from(index)].spelling,
-                    nominal.spelling
-                );
-                assert!(system_constructor_index(id).is_none());
-                assert!(system_operation_index(id).is_none());
-                nominals += 1;
-            }
-            Some(SystemEntity::Constructor(constructor)) => {
-                let index = system_constructor_index(id).expect("constructor index");
-                assert_eq!(
-                    SYSTEM_CONSTRUCTORS[usize::from(index)].spelling,
-                    constructor.spelling
-                );
-                assert_eq!(system_constructor_declaration(index), Some(id));
-                assert!(system_nominal_index(id).is_none());
-                assert!(system_operation_index(id).is_none());
-                constructors += 1;
-            }
-            Some(SystemEntity::Operation(operation)) => {
-                let index = system_operation_index(id).expect("operation index");
-                assert_eq!(
-                    SYSTEM_OPERATIONS[usize::from(index)].spelling,
-                    operation.spelling
-                );
-                assert!(system_nominal_index(id).is_none());
-                assert!(system_constructor_index(id).is_none());
-                operations += 1;
-            }
-            None => {
-                assert!(system_constructor_index(id).is_none());
-                assert!(system_operation_index(id).is_none());
+    // Both inventory states: the traversal-surface candidate's two extra
+    // nominal types shift every constructor and operation ordinal, so the
+    // helpers must agree with the entity map under each state separately.
+    for surface in [false, true] {
+        let mut nominals = 0_usize;
+        let mut constructors = 0_usize;
+        let mut operations = 0_usize;
+        for ordinal in 0..=u8::MAX {
+            let id = SystemDeclarationId::new(ordinal);
+            match system_entity(id, surface) {
+                Some(SystemEntity::Nominal(nominal)) => {
+                    let index = system_nominal_index(id, surface).expect("nominal index");
+                    assert_eq!(
+                        system_nominals(surface)[usize::from(index)].spelling,
+                        nominal.spelling
+                    );
+                    assert!(system_constructor_index(id, surface).is_none());
+                    assert!(system_operation_index(id, surface).is_none());
+                    nominals += 1;
+                }
+                Some(SystemEntity::Constructor(constructor)) => {
+                    let index = system_constructor_index(id, surface).expect("constructor index");
+                    assert_eq!(
+                        system_constructors(surface)[usize::from(index)].spelling,
+                        constructor.spelling
+                    );
+                    assert_eq!(system_constructor_declaration(index, surface), Some(id));
+                    assert!(system_nominal_index(id, surface).is_none());
+                    assert!(system_operation_index(id, surface).is_none());
+                    constructors += 1;
+                }
+                Some(SystemEntity::Operation(operation)) => {
+                    let index = system_operation_index(id, surface).expect("operation index");
+                    assert_eq!(
+                        system_operations(surface)[usize::from(index)].spelling,
+                        operation.spelling
+                    );
+                    assert!(system_nominal_index(id, surface).is_none());
+                    assert!(system_constructor_index(id, surface).is_none());
+                    operations += 1;
+                }
+                None => {
+                    assert!(system_constructor_index(id, surface).is_none());
+                    assert!(system_operation_index(id, surface).is_none());
+                }
             }
         }
+        assert_eq!(nominals, system_nominals(surface).len());
+        assert_eq!(constructors, system_constructors(surface).len());
+        assert_eq!(operations, system_operations(surface).len());
     }
-    assert_eq!(nominals, SYSTEM_NOMINALS.len());
-    assert_eq!(constructors, SYSTEM_CONSTRUCTORS.len());
-    assert_eq!(operations, SYSTEM_OPERATIONS.len());
 
-    // The [SYS-5] release table: exactly DirectoryRead and ReadFile release
-    // with `external, blocks`; every other system nominal's row is empty.
+    // The [SYS-5] release table: exactly DirectoryRead, ReadFile, and the
+    // candidate DirectoryList release with `external, blocks`; every other
+    // system nominal's row is empty.
     for (index, nominal) in SYSTEM_NOMINALS.iter().enumerate() {
         let index = u8::try_from(index).expect("nominal table fits u8");
         let row = system_release_row(index);
-        let expected = matches!(nominal.spelling, "DirectoryRead" | "ReadFile");
+        let expected = matches!(
+            nominal.spelling,
+            "DirectoryRead" | "ReadFile" | "DirectoryList"
+        );
         assert_eq!(row.external, expected, "external for {}", nominal.spelling);
         assert_eq!(row.blocks, expected, "blocks for {}", nominal.spelling);
     }
@@ -2355,6 +2364,15 @@ fn the_system_resource_contracts_equal_the_release_and_backing_tables() {
             "ExitStatus",
             SystemResourceType::ExitStatus,
             SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::Opaque,
+        ),
+        // The traversal-surface candidate's enumeration handle: an opaque
+        // stateful resource whose release is one native close attempt, on the
+        // same ground as `ReadFile` [SYS-14].
+        (
+            "DirectoryList",
+            SystemResourceType::DirectoryList,
+            SystemReleaseAction::NativeCloseAttempt,
             SystemResourceBacking::Opaque,
         ),
     ];

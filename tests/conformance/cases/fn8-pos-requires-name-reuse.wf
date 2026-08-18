@@ -9,6 +9,6 @@ fn increment(x: own i32) -> own i32 pure requires {
 
 fn main() -> own unit traps {
   let value = increment(x: 7_i32);
-  check ieq(value, 8_i32) else trap "requires scope drift";
+  claim requires_scope_drift: ieq(value, 8_i32) because "requires scope drift";
   return unit;
 }

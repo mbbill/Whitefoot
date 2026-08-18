@@ -4,7 +4,7 @@ fn main() -> own unit traps {
   region 'r {
     let p = &'r a;
     let v = deref(p);
-    check ieq(v, 42_i32) else trap "deref drift";
+    claim deref_drift: ieq(v, 42_i32) because "deref drift";
   }
   return unit;
 }

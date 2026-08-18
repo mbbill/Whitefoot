@@ -6,9 +6,9 @@ enum Packet {
 fn score(packet: own Packet) -> own i32 traps {
   match move packet {
     Data(left: left_value, right: right_value, ready: ready_value) => {
-      check ieq(left_value, 20_i32) else trap "left payload drift";
-      check ieq(right_value, 22_u64) else trap "right payload drift";
-      check ready_value else trap "Bool payload drift";
+      claim left_payload_drift: ieq(left_value, 20_i32) because "left payload drift";
+      claim right_payload_drift: ieq(right_value, 22_u64) because "right payload drift";
+      claim bool_payload_drift: ready_value because "Bool payload drift";
       return left_value + 22_i32;
     }
     Empty() => {
@@ -22,6 +22,6 @@ fn main() -> own unit traps {
   let ready = True();
   let packet = Data(left: 20_i32, right: 22_u64, ready: ready);
   let result = score(packet: move packet);
-  check ieq(result, 42_i32) else trap "multi-field payload drift";
+  claim multi_field_payload_drift: ieq(result, 42_i32) because "multi-field payload drift";
   return unit;
 }

@@ -78,9 +78,17 @@ impl IrConstantId {
 pub enum IrFlatElement {
     Unit,
     Bool,
-    Integer { width: u8, signed: bool },
-    Float { width: u8 },
+    Integer {
+        width: u8,
+        signed: bool,
+    },
+    Float {
+        width: u8,
+    },
     TagOnlyNominal(IrNominalId),
+    /// One affine aggregate element: a non-copy nominal stored by value.
+    /// Only `buffer` element positions carry this variant [TYPE-2].
+    Nominal(IrNominalId),
 }
 
 impl IrFlatElement {
@@ -90,7 +98,7 @@ impl IrFlatElement {
             Self::Bool => IrType::Bool,
             Self::Integer { width, signed } => IrType::Integer { width, signed },
             Self::Float { width } => IrType::Float { width },
-            Self::TagOnlyNominal(id) => IrType::Nominal(id),
+            Self::TagOnlyNominal(id) | Self::Nominal(id) => IrType::Nominal(id),
         }
     }
 }
@@ -166,6 +174,7 @@ const fn lower_flat_element(value: CheckedFlatElement) -> Result<IrFlatElement, 
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         CheckedFlatElement::TagOnlyNominal(id) => IrFlatElement::TagOnlyNominal(IrNominalId(id.0)),
+        CheckedFlatElement::Nominal(id) => IrFlatElement::Nominal(IrNominalId(id.0)),
     })
 }
 
@@ -688,6 +697,14 @@ pub enum IrOperation {
         trap: IrTrapSite,
         target_domains: IrRuntimeTargetObligations,
     },
+    /// One `buffer_vacant<T>(n)` allocation [OP-1, OP-9]: the defined value's
+    /// buffer type names the `Option<T>` element instance, and every element
+    /// is initialized to the compiler-minted `None()` of that instance.
+    BufferVacant {
+        length: IrValueId,
+        trap: IrTrapSite,
+        target_domains: IrRuntimeTargetObligations,
+    },
     BufferLength {
         buffer: IrValueId,
     },
@@ -934,6 +951,11 @@ impl IrFunction {
         self.values
             .iter()
             .any(|ty| matches!(ty, IrType::Buffer { .. }))
+    }
+
+    /// Every defined value's type, for whole-program type enumeration.
+    pub(crate) fn value_types(&self) -> &[IrType] {
+        &self.values
     }
 
     pub(crate) fn value_type(&self, value: IrValueId) -> Option<IrType> {

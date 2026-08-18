@@ -214,7 +214,9 @@ fn validate_target_obligation(
     match operation {
         IrOperation::ArrayFill { target_domain, .. }
             if *target_domain == IrTargetDomainObligation::ElementAddress => {}
-        IrOperation::BufferFill { target_domains, .. } if target_domains.is_complete() => {}
+        IrOperation::BufferFill { target_domains, .. }
+        | IrOperation::BufferVacant { target_domains, .. }
+            if target_domains.is_complete() => {}
         IrOperation::ArrayIndex {
             root,
             target_domain,
@@ -237,6 +239,7 @@ fn validate_target_obligation(
             if *target_domain == IrTargetDomainObligation::ElementAddress => {}
         IrOperation::ArrayFill { .. }
         | IrOperation::BufferFill { .. }
+        | IrOperation::BufferVacant { .. }
         | IrOperation::ArrayIndex { .. }
         | IrOperation::BufferIndex { .. }
         | IrOperation::SliceIndex { .. } => {
@@ -313,6 +316,7 @@ fn instruction_trap(instruction: &IrInstruction) -> Option<&IrTrapSite> {
                 trap: Some(trap), ..
             }
             | IrOperation::BufferFill { trap, .. }
+            | IrOperation::BufferVacant { trap, .. }
             | IrOperation::SystemCall {
                 trap: Some(trap), ..
             } => Some(trap),

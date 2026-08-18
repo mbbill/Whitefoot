@@ -80,15 +80,15 @@ fn main() -> own unit allocates(heap), traps {
     match parsed {
       Ok(value: output) => {
         let consumed = output.next;
-        check ieq(consumed, 5_u64) else trap "prefix parser left trailing input";
+        claim prefix_parser_left_trailing_input: ieq(consumed, 5_u64) because "prefix parser left trailing input";
         let root = move output.node;
         region 'tree {
           let value = evaluate<'tree>(expression: &'tree root);
-          check ieq(value, 9_u64) else trap "prefix expression result";
+          claim prefix_expression_result: ieq(value, 9_u64) because "prefix expression result";
         }
       }
       Err(error: parse_error) => {
-        check False() else trap "valid prefix expression rejected";
+        claim valid_prefix_expression_rejected: False() because "valid prefix expression rejected";
       }
     }
   }
@@ -99,7 +99,7 @@ fn main() -> own unit allocates(heap), traps {
     let incomplete_result = parse_expression<'incomplete>(input: &'incomplete incomplete, offset: 0_u64);
     match incomplete_result {
       Ok(value: unexpected_output) => {
-        check False() else trap "truncated prefix expression accepted";
+        claim truncated_prefix_expression_accepted: False() because "truncated prefix expression accepted";
       }
       Err(error: expected_error) => {
       }

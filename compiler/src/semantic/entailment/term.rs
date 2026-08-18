@@ -141,7 +141,23 @@ impl TermTable {
         self.length_bounds.get(&term).copied()
     }
 
+    /// Interns one term, canonicalizing the written constant zero to Z.
+    ///
+    /// Relations are over mathematical values [ENT-2], so a written `0_T`
+    /// and the distinguished zero term denote the same value and must be
+    /// one term. Kept apart, a disequality reaches Z only by a bound
+    /// strengthened through the constant's implicit equality, which exists
+    /// only where the fragment already bounds the operand on that side: a
+    /// `claim ine(d, 0_i32)` then could not discharge an obligation stated
+    /// against Z at a signed type, and [OP-2]'s own mechanical fix would be
+    /// unwritable. Z carries exactly the bounds the constant zero would
+    /// have contributed, so the merge loses no fact.
     pub(crate) fn intern(&mut self, kind: TermKind) -> TermId {
+        let kind = if matches!(kind, TermKind::Constant(0)) {
+            TermKind::Zero
+        } else {
+            kind
+        };
         if let Some(id) = self.ids.get(&kind) {
             return *id;
         }

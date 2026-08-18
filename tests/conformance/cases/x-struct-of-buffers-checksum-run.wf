@@ -41,6 +41,6 @@ fn main() -> own unit allocates(heap), traps {
     set total = total +wrap right_value;
     set cursor = cursor +wrap 1_u64;
   }
-  check ieq(total, 45_u64) else trap "struct-of-buffers checksum drift";
+  claim struct_of_buffers_checksum_drift: ieq(total, 45_u64) because "struct-of-buffers checksum drift";
   return unit;
 }

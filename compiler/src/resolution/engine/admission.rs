@@ -126,23 +126,31 @@ fn clause_entry_kind(
     let selected_record = topology
         .node(*selected)
         .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
-    if selected_record.production != Production::Stmt {
-        return Ok(ClauseEntryKind::Other);
-    }
-    let [statement] = topology
-        .node_children(*selected)
-        .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
-    else {
-        return Err(ResolutionCompilerFailure::InvalidCanonicalTree);
+    // v0.32 [GRAM-2] spells the contract entry `doc | stmt | check_stmt`, so
+    // the final check is the entry's own selected child with no `stmt`
+    // wrapper — `check_stmt` left the [GRAM-4] `stmt` alternation with the
+    // body statement. An ordinary clause `let` still arrives through `stmt`.
+    let statement = match selected_record.production {
+        Production::CheckStmt => *selected,
+        Production::Stmt => {
+            let [statement] = topology
+                .node_children(*selected)
+                .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
+            else {
+                return Err(ResolutionCompilerFailure::InvalidCanonicalTree);
+            };
+            *statement
+        }
+        _ => return Ok(ClauseEntryKind::Other),
     };
     let statement_record = topology
-        .node(*statement)
+        .node(statement)
         .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
     match statement_record.production {
         Production::CheckStmt => Ok(ClauseEntryKind::Check),
         Production::LetStmt => {
             let ordinary = topology
-                .node_children(*statement)
+                .node_children(statement)
                 .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
                 .iter()
                 .any(|child| {

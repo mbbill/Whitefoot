@@ -644,13 +644,13 @@ fn main() -> own unit traps {
   let a = 5_i32;
   region 'r {
     let s = &'r a;
-    check ieq(deref(s), 5_i32) else trap "read";
+    claim read: ieq(deref(s), 5_i32) because "read";
   }
   region 'q {
     let u = &uniq 'q a;
     set deref(u) = 7_i32;
   }
-  check ieq(a, 7_i32) else trap "write";
+  claim write: ieq(a, 7_i32) because "write";
   return unit;
 }
 "#;
@@ -774,7 +774,7 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
 #[test]
 fn outer_region_borrows_may_be_held_under_inner_regions() {
     with_semantics(
-        b"fn main() -> own unit traps {\n  let a = 7_i32;\n  region 'r {\n    region 's {\n      region 't {\n        let q = &'r a;\n        check ieq(deref(q), 7_i32) else trap \"q\";\n      }\n    }\n  }\n  return unit;\n}\n",
+        b"fn main() -> own unit traps {\n  let a = 7_i32;\n  region 'r {\n    region 's {\n      region 't {\n        let q = &'r a;\n        claim q: ieq(deref(q), 7_i32) because \"q\";\n      }\n    }\n  }\n  return unit;\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
                 panic!("an outer-region borrow held two blocks deeper must check: {outcome:?}");
@@ -864,11 +864,16 @@ fn non_admitted_reborrow_forms_are_own14_hard_errors() {
             mechanical_fix: RESTRUCTURING,
         },
     );
+    // A `shared` result may derive from a `uniq` parameter, so this widening
+    // signature has no same-kind candidate and one other parameter naming the
+    // result region. v0.32 refuses that boundary at its own `rtype` [FN-1]
+    // before OWN-14 judges the return position: the form stays a hard error,
+    // and the rule that owns it moves to the declaration.
     assert_rule(
         b"fn down['r0](x: &uniq 'r0 i32) -> &'r0 i32 pure {\n  return &'r0 deref(x);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
-        SemanticRule::Own14,
-        SemanticIssueKind::InvalidReborrowPosition {
-            mechanical_fix: RESTRUCTURING,
+        SemanticRule::Fn1,
+        SemanticIssueKind::AmbiguousResultProvenance {
+            mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
         },
     );
     assert_rule(
@@ -1023,11 +1028,12 @@ fn same_node_return_rejections_cite_the_first_defined_rule() {
 }
 
 // ---------------------------------------------------------------------------
-// v0.31-candidate reborrow extension (test-only checker entry): bound
-// call-result borrow holders with unambiguous signature provenance, the
-// non-statement-scoped candidate-position child reborrow, and the grandchild
-// chains they compose. The shipped switch keeps every v0.30 disposition; the
-// paired default-checker tests below prove the gate.
+// The reborrow extension: bound call-result borrow holders with unambiguous
+// signature provenance, the non-statement-scoped candidate-position child
+// reborrow, and the grandchild chains they compose. The shipped switch is on,
+// so the extension entry these tests name selects the same judgment as the
+// default one; the default-checker tests below pin that the shipped path
+// admits the shapes v0.30 rejected.
 // ---------------------------------------------------------------------------
 
 const PASSTHRU: &[u8] = b"fn passthru['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {\n  return &uniq 'r0 deref(x);\n}\n\n";
@@ -1109,18 +1115,17 @@ fn extension_chains_suspend_the_candidate_parent_permanently() {
     );
 }
 
-/// Extension: a callee signature that does not determine one provenance
-/// candidate — two same-kind same-region borrow parameters — rejects the
-/// binding at OWN-6 with the ambiguity diagnostic, never infers a claim.
+/// A callee signature that does not determine one provenance candidate — two
+/// same-kind same-region borrow parameters — is rejected at its own boundary
+/// citing FN-1, so the reborrow-extension entry never reaches a call whose
+/// result it would have to infer a claim for.
 #[test]
 fn extension_rejects_ambiguous_result_provenance() {
     assert_rule_extension(
         b"fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\nfn main() -> own unit pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    let r = pick<'a>(a: &uniq 'a x, b: &uniq 'a y);\n  }\n  return unit;\n}\n",
-        SemanticRule::Own6,
-        SemanticIssueKind::AmbiguousResultBorrow {
-            mechanical_fix: "give the callee exactly one parameter written as a borrow \
-                     of the result's mode and region and no other parameter naming that region, \
-                     or bind the borrow from a direct borrow expression",
+        SemanticRule::Fn1,
+        SemanticIssueKind::AmbiguousResultProvenance {
+            mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
         },
     );
 }
@@ -1194,4 +1199,152 @@ fn extension_writes_through_result_holders_kill_source_facts() {
             panic!("without the write the fact must survive and discharge: {outcome:?}");
         };
     });
+}
+
+// ---------------------------------------------------------------------------
+// Declaration-site borrow-result provenance [FN-1]: a callable boundary whose
+// borrow-mode result has no signature-determined source is rejected at its own
+// `rtype`, whether or not it is ever called. The judgment is a boundary rule
+// and does not wait for a caller, so OWN-6's binding-side ambiguity rejection
+// has no reachable source and no longer exists.
+// ---------------------------------------------------------------------------
+
+/// The exact [FN-1] restructuring the boundary judgment names.
+const AMBIGUOUS_PROVENANCE_FIX: &str = "give the source parameter its own region so exactly one parameter shares the result's \
+     region and kind, or return the decision as a value and let the caller borrow from the \
+     source it names";
+
+/// Two same-kind parameters in the result's region, never called: the
+/// declaration itself is the error, because GRAM-9 binds every call result
+/// and no caller could bind this one.
+#[test]
+fn declaration_provenance_rejects_two_same_region_sources_at_the_declaration() {
+    assert_rule(
+        b"fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Fn1,
+        SemanticIssueKind::AmbiguousResultProvenance {
+            mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
+        },
+    );
+}
+
+/// The same boundary judgment covers every other shape that leaves two
+/// possible roots: a same-region parameter of the other borrow kind (a
+/// `shared` result may derive from a `uniq` source through a nested
+/// borrow-returning call), and a parameter whose written type names the
+/// result's region.
+#[test]
+fn declaration_provenance_rejects_every_undetermined_source_shape() {
+    assert_rule(
+        b"fn either['r](a: &uniq 'r i32, b: &'r i32) -> &'r i32 pure {\n  return &'r deref(b);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Fn1,
+        SemanticIssueKind::AmbiguousResultProvenance {
+            mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
+        },
+    );
+    assert_rule(
+        b"fn viewed['r](a: &'r i32, s: own slice<'r, i32>) -> &'r i32 pure {\n  return &'r deref(a);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Fn1,
+        SemanticIssueKind::AmbiguousResultProvenance {
+            mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
+        },
+    );
+}
+
+/// The named mechanical fix works: giving the second parameter its own
+/// region leaves exactly one candidate, and the boundary is then accepted
+/// with its result fully usable — bound, and written through.
+#[test]
+fn declaration_provenance_admits_distinct_region_sources_and_keeps_them_usable() {
+    with_semantics(
+        b"fn pick['r, 's](a: &uniq 'r i32, b: &uniq 's i32) -> &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\nfn main() -> own unit pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    region 'b {\n      let r = pick<'a, 'b>(a: &uniq 'a x, b: &uniq 'b y);\n      set deref(r) = 9_i32;\n      let w = deref(r);\n    }\n  }\n  return unit;\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("one candidate per region must check and stay usable: {outcome:?}");
+            };
+        },
+    );
+}
+
+/// A borrow-mode result with no candidate parameter at all keeps its
+/// boundary: permanently read-only named-const storage is the only source
+/// left [CONST-2, OWN-10], so provenance is unique by elimination and FN-1
+/// forms no rejection here. The body then meets the checker's missing
+/// const-rooted borrow as an explicit capability stop — never an
+/// invalid-source verdict, and never the ambiguity rejection.
+#[test]
+fn declaration_provenance_admits_the_zero_candidate_boundary() {
+    with_semantics(
+        b"const anchor: i32 = 7_i32;\n\nfn sourced['r](n: own i32) -> &'r i32 pure {\n  return &'r anchor;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        |outcome| {
+            let SemanticOutcome::Unsupported { unsupported } = outcome else {
+                panic!("a zero-candidate boundary is legal, not rejected: {outcome:?}");
+            };
+            assert_eq!(
+                unsupported.feature(),
+                UnsupportedSemanticFeature::RegionsAndBorrows,
+            );
+        },
+    );
+}
+
+/// [FN-1]'s v0.32 conjunct over a result whose written type is not
+/// region-free reaches no source through this order. Every written
+/// region-bearing type is a `slice` or an `arena` [STOR-5]: the slice shape
+/// is FN-1's own borrowed-descriptor rejection above, an arena result is
+/// STOR-4's escape — the rule this specification defines first, which the
+/// same-node ordering selects — and a borrow-mode arena parameter never
+/// reaches a result judgment at all, because borrowing an arena is an
+/// explicit capability stop rather than a source rejection. This test pins
+/// that order, so restating the arena result as an FN-1 provenance
+/// rejection cannot happen silently.
+#[test]
+fn a_region_bearing_borrow_result_is_owned_by_the_rules_stated_before_it() {
+    assert_rule(
+        b"fn held['b, 'r](n: own i32) -> &'b arena<'r, i32> pure {\n  return n;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Stor4,
+        SemanticIssueKind::ArenaEscape {
+            mechanical_fix: "keep the arena value inside its region's block; return or deliver its content, or a borrow OWN-10 admits, instead",
+        },
+    );
+    assert_unsupported(
+        b"fn held['b, 'r](a: &'b arena<'r, i32>) -> own i32 pure {\n  return 1_i32;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        UnsupportedSemanticFeature::RegionsAndBorrows,
+    );
+}
+
+/// The boundary judgment is added to the existing signature-formation order,
+/// not ahead of it: a borrowed-slice result still cites FN-1's own
+/// slice-descriptor rejection, and a zero-candidate boundary whose body
+/// roots the result in callee-local storage still cites OWN-10 at the body.
+#[test]
+fn declaration_provenance_keeps_the_established_boundary_judgment_order() {
+    assert_rule(
+        b"fn borrowed_slice['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> &'descriptor slice<'data, u8> pure {\n  return value;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Fn1,
+        SemanticIssueKind::BorrowedSliceResult {
+            mechanical_fix: "return the direct own slice descriptor under its data region; do not return a borrow of a slice descriptor",
+        },
+    );
+    assert_rule(
+        b"fn dangle['r0](x: own i32) -> &'r0 i32 pure {\n  return &'r0 x;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Own10,
+        SemanticIssueKind::InvalidBorrowLifetime,
+    );
+}
+
+/// With the boundary judgment live, the call-site ambiguity state is
+/// unreachable: the identical program that v0.31 accepts at the declaration
+/// and rejects at the binding is now rejected at the declaration, and the
+/// OWN-6 binding diagnostic never runs. Bindable iff usable.
+#[test]
+fn declaration_provenance_makes_the_binding_side_ambiguity_unreachable() {
+    const AMBIGUOUS_CALL: &[u8] = b"fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\nfn main() -> own unit pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    let r = pick<'a>(a: &uniq 'a x, b: &uniq 'a y);\n  }\n  return unit;\n}\n";
+    assert_rule(
+        AMBIGUOUS_CALL,
+        SemanticRule::Fn1,
+        SemanticIssueKind::AmbiguousResultProvenance {
+            mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
+        },
+    );
 }

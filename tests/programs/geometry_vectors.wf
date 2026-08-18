@@ -18,10 +18,10 @@ fn main() -> own unit traps {
   let left32 = Vector3<f32>(x: 1.0_f32, y: 2.0_f32, z: 3.0_f32);
   let right32 = Vector3<f32>(x: 4.0_f32, y: 5.0_f32, z: 6.0_f32);
   let product32 = dot3<f32>(left: move left32, right: move right32);
-  check feq(product32, 32.0_f32) else trap "f32 vector dot product";
+  claim f32_vector_dot_product: feq(product32, 32.0_f32) because "f32 vector dot product";
   let left64 = Vector3<f64>(x: -2.0_f64, y: 3.0_f64, z: 5.0_f64);
   let right64 = Vector3<f64>(x: 7.0_f64, y: 11.0_f64, z: 13.0_f64);
   let product64 = dot3<f64>(left: move left64, right: move right64);
-  check feq(product64, 84.0_f64) else trap "f64 vector dot product";
+  claim f64_vector_dot_product: feq(product64, 84.0_f64) because "f64 vector dot product";
   return unit;
 }

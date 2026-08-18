@@ -11,7 +11,7 @@ use super::{emit, emit_arithmetic_obligations};
 /// non-constant operands and keeps its trap. The `check` keeps the `traps`
 /// effect row correct under both switches.
 const BOTH_CLASSES: &[u8] = br#"fn combine(x: own u64, y: own u64) -> own u64 traps {
-  check ilt(x, 1000_u64) else trap "bounded input";
+  claim bounded_input: ilt(x, 1000_u64) because "bounded input";
   let stepped = x + 1_u64;
   let joined = y + stepped;
   return joined;
@@ -19,7 +19,7 @@ const BOTH_CLASSES: &[u8] = br#"fn combine(x: own u64, y: own u64) -> own u64 tr
 
 fn main() -> own unit traps {
   let total = combine(x: 6_u64, y: 7_u64);
-  check ieq(total, 14_u64) else trap "combined total";
+  claim combined_total: ieq(total, 14_u64) because "combined total";
   return unit;
 }
 "#;

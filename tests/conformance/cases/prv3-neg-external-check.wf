@@ -1,12 +1,17 @@
 command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
-  doc "A body check may establish complete-state bounds but cannot authorize a protected subscript whose constrained subject comes from an external system result.";
+  doc "Assertion evidence laundered through signed Boolean decomposition is still assertion evidence. One claim over a `band` of two bounds establishes both members in the complete state [ENT-3], but the S3-blinded state removes the establishment and its decomposition together, so PRV-3 still rejects the first protected subscript whose constrained subject is the external args_count result.";
   region 'a {
     let index = args_count<'a>(args: &'a args);
     let bytes = buffer_new(4_u64, 0_u8);
+    let other = buffer_new(4_u64, 0_u8);
     let room = len(bytes);
+    let other_room = len(other);
     let inside = ilt(index, room);
-    check inside else trap "external index";
+    let also_inside = ilt(index, other_room);
+    let both = band(inside, also_inside);
+    claim index_within_both_buffers: both because "the conjunction is deliberately not proof";
     let value = bytes[index];
+    let other_value = other[index];
     return exit_status(code: 0_u8);
   }
 }

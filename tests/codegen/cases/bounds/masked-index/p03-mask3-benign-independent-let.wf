@@ -8,6 +8,6 @@ fn lookup (x: own u64) -> own u8 traps {
 
 fn main () -> own unit traps {
   let value: own u8 = lookup(x: 5_u64);
-  check ieq<u8>(value, 22_u8) else trap "benign let drift";
+  claim benign_let_drift: ieq<u8>(value, 22_u8) because "benign let drift";
   return unit;
 }

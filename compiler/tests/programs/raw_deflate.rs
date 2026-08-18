@@ -226,24 +226,24 @@ fn main() -> own unit allocates(heap), traps {{
     let text = slice_of(&'empty_text_view empty_text);
     region 'empty_destination_view {{
       let result = append_slice<'empty_destination_view, 'empty_text_view>(destination: &uniq 'empty_destination_view empty_destination, filled: 4_u64, text: move text);
-      check ieq(result, 4_u64) else trap "empty result";
+      claim empty_result: ieq(result, 4_u64) because "empty result";
     }}
   }}
-  check ieq(empty_destination[0_u64], 9_u8) else trap "empty byte zero";
-  check ieq(empty_destination[1_u64], 9_u8) else trap "empty byte one";
-  check ieq(empty_destination[2_u64], 9_u8) else trap "empty byte two";
+  claim empty_byte_zero: ieq(empty_destination[0_u64], 9_u8) because "empty byte zero";
+  claim empty_byte_one: ieq(empty_destination[1_u64], 9_u8) because "empty byte one";
+  claim empty_byte_two: ieq(empty_destination[2_u64], 9_u8) because "empty byte two";
   let nonempty_text = buffer_new(2_u64, 1_u8);
   let nonempty_destination = buffer_new(3_u64, 9_u8);
   region 'nonempty_text_view {{
     let text = slice_of(&'nonempty_text_view nonempty_text);
     region 'nonempty_destination_view {{
       let result = append_slice<'nonempty_destination_view, 'nonempty_text_view>(destination: &uniq 'nonempty_destination_view nonempty_destination, filled: 4_u64, text: move text);
-      check ieq(result, 4_u64) else trap "nonempty result";
+      claim nonempty_result: ieq(result, 4_u64) because "nonempty result";
     }}
   }}
-  check ieq(nonempty_destination[0_u64], 9_u8) else trap "nonempty byte zero";
-  check ieq(nonempty_destination[1_u64], 9_u8) else trap "nonempty byte one";
-  check ieq(nonempty_destination[2_u64], 9_u8) else trap "nonempty byte two";
+  claim nonempty_byte_zero: ieq(nonempty_destination[0_u64], 9_u8) because "nonempty byte zero";
+  claim nonempty_byte_one: ieq(nonempty_destination[1_u64], 9_u8) because "nonempty byte one";
+  claim nonempty_byte_two: ieq(nonempty_destination[2_u64], 9_u8) because "nonempty byte two";
   return unit;
 }}
 "#

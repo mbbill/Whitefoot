@@ -12,8 +12,8 @@ fn explicit_int_generic_function_builds_each_reachable_concrete_instance() {
 fn main() -> own unit traps {
   let first = identity<u32>(value: 7_u32);
   let second = identity<i64>(value: -9_i64);
-  check ieq(first, 7_u32) else trap "u32 generic instance";
-  check ieq(second, -9_i64) else trap "i64 generic instance";
+  claim u32_generic_instance: ieq(first, 7_u32) because "u32 generic instance";
+  claim i64_generic_instance: ieq(second, -9_i64) because "i64 generic instance";
   return unit;
 }
 "#;
@@ -35,8 +35,8 @@ fn int_bound_selects_the_same_operation_row_for_every_concrete_instance() {
 fn main() -> own unit traps {
   let small = maximum<u8>(left: 4_u8, right: 9_u8);
   let signed = maximum<i64>(left: -7_i64, right: -2_i64);
-  check ieq(small, 9_u8) else trap "u8 generic maximum";
-  check ieq(signed, -2_i64) else trap "i64 generic maximum";
+  claim u8_generic_maximum: ieq(small, 9_u8) because "u8 generic maximum";
+  claim i64_generic_maximum: ieq(signed, -2_i64) because "i64 generic maximum";
   return unit;
 }
 "#;
@@ -60,8 +60,8 @@ fn float_bound_selects_operations_and_identities_for_every_concrete_instance() {
 fn main() -> own unit traps {
   let single = affine<f32>(value: 2.0_f32);
   let double = affine<f64>(value: 4.0_f64);
-  check feq(single, 3.0_f32) else trap "f32 generic operation";
-  check feq(double, 5.0_f64) else trap "f64 generic operation";
+  claim f32_generic_operation: feq(single, 3.0_f32) because "f32 generic operation";
+  claim f64_generic_operation: feq(double, 5.0_f64) because "f64 generic operation";
   return unit;
 }
 "#;
@@ -108,7 +108,7 @@ fn int_bound_identity_is_concretized_before_lowering() {
 
 fn main() -> own unit traps {
   let value = one<u16>();
-  check ieq(value, 1_u16) else trap "generic integer identity";
+  claim generic_integer_identity: ieq(value, 1_u16) because "generic integer identity";
   return unit;
 }
 "#;
@@ -295,8 +295,8 @@ fn forward<T: Int>(value: own T) -> own T pure {
 fn main() -> own unit traps {
   let small = forward<u8>(value: 7_u8);
   let signed = forward<i64>(value: -9_i64);
-  check ieq(small, 7_u8) else trap "nested u8 instance";
-  check ieq(signed, -9_i64) else trap "nested i64 instance";
+  claim nested_u8_instance: ieq(small, 7_u8) because "nested u8 instance";
+  claim nested_i64_instance: ieq(signed, -9_i64) because "nested i64 instance";
   return unit;
 }
 "#;
@@ -326,8 +326,8 @@ fn main() -> own unit traps {
   let large = forward<5>(value: move large_input);
   let first = small[1_u64];
   let second = large[4_u64];
-  check ieq(first, 7_u8) else trap "small const instance";
-  check ieq(second, 9_u8) else trap "large const instance";
+  claim small_const_instance: ieq(first, 7_u8) because "small const instance";
+  claim large_const_instance: ieq(second, 9_u8) because "large const instance";
   return unit;
 }
 "#;
@@ -424,8 +424,8 @@ fn main() -> own unit traps {
   let wide = duplicate<i64>(value: -9_i64);
   let small_left = small.left;
   let wide_right = wide.right;
-  check ieq(small_left, 7_u8) else trap "small generic struct";
-  check ieq(wide_right, -9_i64) else trap "wide generic struct";
+  claim small_generic_struct: ieq(small_left, 7_u8) because "small generic struct";
+  claim wide_generic_struct: ieq(wide_right, -9_i64) because "wide generic struct";
   return unit;
 }
 "#;
@@ -456,19 +456,19 @@ fn main() -> own unit traps {
   let small = Present<u8>(value: 3_u8);
   match small {
     Missing() => {
-      check False() else trap "unexpected missing";
+      claim unexpected_missing: False() because "unexpected missing";
     }
     Present(value: observed) => {
-      check ieq(observed, 3_u8) else trap "wrong payload";
+      claim wrong_payload: ieq(observed, 3_u8) because "wrong payload";
     }
   }
   let wide = Present<i64>(value: -5_i64);
   match wide {
     Missing() => {
-      check False() else trap "unexpected missing";
+      claim unexpected_missing_2: False() because "unexpected missing";
     }
     Present(value: observed) => {
-      check ieq(observed, -5_i64) else trap "wrong payload";
+      claim wrong_payload_2: ieq(observed, -5_i64) because "wrong payload";
     }
   }
   return unit;
@@ -694,11 +694,11 @@ fn main() -> own unit allocates(heap), traps {
   let weights_ok = ilt(1_u64, weights_room);
   claim weights_sized: weights_ok because "filled_float_buffer allocates its length argument";
   let weight = weights[1_u64];
-  check ieq(byte, 7_u8) else trap "generic array";
-  check ieq(word, -5_i64) else trap "generic const array";
-  check ieq(buffered, 9_u16) else trap "generic buffer";
-  check feq(sample, 1.5_f32) else trap "generic float array";
-  check feq(weight, 2.5_f64) else trap "generic float buffer";
+  claim generic_array: ieq(byte, 7_u8) because "generic array";
+  claim generic_const_array: ieq(word, -5_i64) because "generic const array";
+  claim generic_buffer: ieq(buffered, 9_u16) because "generic buffer";
+  claim generic_float_array: feq(sample, 1.5_f32) because "generic float array";
+  claim generic_float_buffer: feq(weight, 2.5_f64) because "generic float buffer";
   return unit;
 }
 "#;

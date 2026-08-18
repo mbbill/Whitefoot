@@ -16,7 +16,7 @@ fn main() -> own unit traps {
   let p = Even(n: d);
   match p {
     Even(n: v) => {
-      check ieq(d, 14_i32) else trap "drift";
+      claim drift: ieq(d, 14_i32) because "drift";
     }
     Odd(n: v) => {
       return unit;

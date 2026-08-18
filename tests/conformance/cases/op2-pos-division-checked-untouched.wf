@@ -1,0 +1,21 @@
+fn main() -> own unit traps {
+  doc "The dissolution attaches obligations to the bare divisor class only [OP-2]. The explicit `/checked` respelling is untouched: it needs no discharge, is pure, and returns `Err(DivideByZero())` for a zero divisor [OP-1].";
+  let n = 10_i32;
+  let d = 0_i32;
+  let outcome = n /checked d;
+  match outcome {
+    Ok(value: q) => {
+      claim expected_divide_by_zero: False() because "expected DivideByZero";
+    }
+    Err(error: e) => {
+      match e {
+        DivideByZero() => {
+        }
+        DivOverflow() => {
+          claim wrong_div_error: False() because "wrong DivError variant";
+        }
+      }
+    }
+  }
+  return unit;
+}

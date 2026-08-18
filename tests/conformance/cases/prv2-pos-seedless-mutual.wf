@@ -25,7 +25,7 @@ command fn main(command.args as args: own Args) -> own ExitStatus traps {
   region 'a {
     let index = args_count<'a>(args: &'a args);
     let permitted = ile(index, 8_u64);
-    check permitted else trap "entry call precondition";
+    claim entry_call_precondition: permitted because "entry call precondition";
     let value = seedless_right(index: index, limit: 8_u64, remaining: 0_u64);
     return exit_status(code: 0_u8);
   }

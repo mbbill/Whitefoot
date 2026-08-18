@@ -1,0 +1,28 @@
+command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
+  doc "`list_once` advances the cursor of the `DirectoryList` it borrows uniquely, and this specification declares no duplicate, split, rewind, or positioned-lane operation, so multiple lanes over one enumeration are not reachable [SYS-14]. Two simultaneously live unique borrows of one handle are the one way source could try to build a second lane, and ordinary exclusivity rejects it.";
+  let entries = buffer_new(1024_u64, 0_u8);
+  region 'c {
+    match open_list<'c>(directory: &'c cwd) {
+      Ok(value: list) => {
+        region 'b {
+          let first = &uniq 'b list;
+          let second = &uniq 'b list;
+          match list_once<'b, 'b>(list: &uniq 'b deref(first), destination: &uniq 'b entries, offset: 0_u64, capacity: 1024_u64) {
+            ListBytes(count: bytes, entries: reported) => {
+              return exit_status(code: 0_u8);
+            }
+            ListEnd() => {
+              return exit_status(code: 0_u8);
+            }
+            ListFailed(error: problem) => {
+              return exit_status(code: 3_u8);
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        return exit_status(code: 4_u8);
+      }
+    }
+  }
+}

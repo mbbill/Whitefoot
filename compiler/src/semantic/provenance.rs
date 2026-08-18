@@ -490,9 +490,10 @@ pub(super) enum SystemResultProvenance {
     /// Exactly the second variant's first payload — `Err(error:)` — is
     /// external; the `Ok` success count is program-bounded and internal.
     ErrorPayloadOnly,
-    /// Exactly the third variant's first payload — `ReadFailed(error:)` — is
-    /// external. `ReadBytes(count:)` is internal and `ReadEnd()` carries no
-    /// component at all.
+    /// Exactly the third variant's first payload — `ReadFailed(error:)`, and
+    /// the candidate `ListFailed(error:)` — is external. The transferred
+    /// counts of the first variant are program-bounded and internal, and the
+    /// end variant carries no component at all.
     ReadFailedPayloadOnly,
     /// No component is external.
     NoneExternal,
@@ -506,11 +507,13 @@ pub(super) enum SystemResultProvenance {
 pub(super) const fn system_result_provenance(operation: u8) -> Option<SystemResultProvenance> {
     Some(match operation {
         // args_count, arg_get, host_bytes_len, host_utf8_len, relative_path,
-        // open_read.
-        0 | 1 | 2 | 4 | 6 | 7 => SystemResultProvenance::AllExternal,
+        // open_read, and the candidate open_directory and open_list: every
+        // component of an opened capability or handle comes from outside.
+        0 | 1 | 2 | 4 | 6 | 7 | 11 | 12 => SystemResultProvenance::AllExternal,
         // host_copy_bytes, host_copy_utf8, write_once.
         3 | 5 | 9 => SystemResultProvenance::ErrorPayloadOnly,
-        8 => SystemResultProvenance::ReadFailedPayloadOnly,
+        // read_once, and the candidate list_once.
+        8 | 13 => SystemResultProvenance::ReadFailedPayloadOnly,
         // exit_status.
         10 => SystemResultProvenance::NoneExternal,
         _ => return None,
@@ -549,9 +552,11 @@ fn system_result_dependencies(
 pub(super) fn system_external_writes(operation: u8) -> ProvenanceResult<&'static [usize]> {
     Ok(match operation {
         3 | 5 => &[1],
-        8 => &[0, 1],
+        // read_once, and the candidate list_once: the handle advances and the
+        // destination receives host bytes.
+        8 | 13 => &[0, 1],
         9 => &[0],
-        0..=2 | 4 | 6 | 7 | 10 => &[],
+        0..=2 | 4 | 6 | 7 | 10..=12 => &[],
         _ => return Err(SemanticCompilerFailure::InvalidResolution),
     })
 }
@@ -1243,6 +1248,10 @@ impl<'check> FunctionPass<'check> {
             CheckedExpression::BufferFill { length, value, .. } => {
                 let mut aggregate = self.expression(length, summaries)?.aggregate();
                 aggregate.union(&self.expression(value, summaries)?.aggregate());
+                ValueDependencies::from_aggregate(expression.ty(), &aggregate, self.nominals)
+            }
+            CheckedExpression::BufferVacant { length, .. } => {
+                let aggregate = self.expression(length, summaries)?.aggregate();
                 ValueDependencies::from_aggregate(expression.ty(), &aggregate, self.nominals)
             }
             CheckedExpression::BufferIndex { root, offset, .. } => {
@@ -1960,6 +1969,7 @@ fn expression_children(expression: &CheckedExpression) -> Vec<&CheckedExpression
         | CheckedExpression::BufferIndex { offset, .. }
         | CheckedExpression::SliceIndex { offset, .. } => vec![offset],
         CheckedExpression::BufferFill { length, value, .. } => vec![length, value],
+        CheckedExpression::BufferVacant { length, .. } => vec![length.as_ref()],
     }
 }
 
@@ -2391,6 +2401,9 @@ impl<'check> CarrierReconstructor<'check> {
                     self.route_expression_aggregate(function, value, goal, visited)?,
                 );
                 route
+            }
+            CheckedExpression::BufferVacant { length, .. } => {
+                self.route_expression_aggregate(function, length, goal, visited)?
             }
             CheckedExpression::BufferIndex { root, offset, .. } => {
                 let mut route = self.route_storage(function, root.binding, goal, visited)?;

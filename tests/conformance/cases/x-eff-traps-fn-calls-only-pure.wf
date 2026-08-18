@@ -12,6 +12,6 @@ fn f(x: own i32) -> own i32 traps {
 fn main() -> own unit traps {
   doc "Driver.";
   let a = f(x: 7_i32);
-  check ieq(a, 8_i32) else trap "x";
+  claim x: ieq(a, 8_i32) because "x";
   return unit;
 }

@@ -13,7 +13,7 @@ use crate::{
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
 };
 
-use super::super::super::entailment::overflow_obligation_class;
+use super::super::super::entailment::{division_obligation_class, overflow_obligation_class};
 use super::super::super::model::{
     CheckedBooleanOperation, CheckedExpression, CheckedIntegerArgument,
     CheckedIntegerArgumentSource, CheckedIntegerErrorClass, CheckedIntegerOperation, CheckedMode,
@@ -52,7 +52,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.check_operation(node, operation, function, bindings, loop_depth)
             }
             ResolvedTarget::System(id) => {
-                let operation = crate::system_operation_index(id)
+                let operation = crate::system_operation_index(id, self.traversal_surface())
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 self.check_system_call(node, operation, function, bindings, loop_depth)
             }
@@ -95,12 +95,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.check_buffer_new(node, function, bindings, loop_depth);
         }
         if spelling == "buffer_vacant" {
-            // The v0.31 all-`None` affine-element constructor [OP-1, OP-9].
-            // The affine-element representation (aggregate buffer elements
-            // through checked IR and the backend) is not implemented yet, so
-            // the admitted operation stops as an explicit unsupported
-            // capability rather than misreporting valid source.
-            return self.unsupported(UnsupportedSemanticFeature::OperationFamily, node);
+            return self.check_buffer_vacant(node, function, bindings, loop_depth);
         }
         if spelling == "box_new" {
             return self.check_box_new(node, function, bindings, loop_depth);
@@ -275,10 +270,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // the switch off, v0.30 behavior is byte-identical.
         let overflow_obligation_site = self.arithmetic_obligations
             && overflow_obligation_class(operation, &arguments).is_some();
-        if operation.traps() && !overflow_obligation_site {
+        // Under the division dissolution switch, a bare `/` or `%` in the
+        // divisor class carries an [ENT-6] division obligation instead of a
+        // runtime trap, on exactly the same terms. A signed selected type
+        // with two non-constant operands stays outside the class, because
+        // its `iK::MIN / -1` safe condition is a disjunction the fragment
+        // cannot state, and keeps its complete trap [OP-2].
+        let division_obligation_site = self.division_obligations
+            && division_obligation_class(operation, operand_type, &arguments).is_some();
+        let obligation_site = overflow_obligation_site || division_obligation_site;
+        if operation.traps() && !obligation_site {
             effects = effects.union(EffectSet::TRAPS);
         }
-        let trap = if operation.traps() && !overflow_obligation_site {
+        let trap = if operation.traps() && !obligation_site {
             Some(TrapSite {
                 rule_id: if matches!(
                     operation,
@@ -768,7 +772,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let ResolvedTarget::System(id) = usage.target() else {
                 continue;
             };
-            let Some(crate::SystemEntity::Operation(operation)) = crate::system_entity(id) else {
+            let Some(crate::SystemEntity::Operation(operation)) =
+                crate::system_entity(id, self.traversal_surface())
+            else {
                 continue;
             };
             let callee = self

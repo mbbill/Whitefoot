@@ -31,7 +31,7 @@ use crate::{
     IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator, IrTrapSite, IrType,
     IrValueId, SystemResourceType,
 };
-use buffer::{buffer_fill_done_label, buffer_probe_join_label};
+use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -759,6 +759,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 trap,
                 target_domains,
             } => self.emit_buffer_fill(result, ty, *length, *value, trap, *target_domains),
+            IrOperation::BufferVacant {
+                length,
+                trap,
+                target_domains,
+            } => self.emit_buffer_vacant(result, ty, *length, trap, *target_domains),
             IrOperation::BufferLength { buffer } => self.emit_buffer_length(result, ty, *buffer),
             IrOperation::BufferIndex {
                 buffer,
@@ -1281,6 +1286,11 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock) -> String {
                 operation: IrOperation::BufferFill { .. },
                 ..
             } => label = buffer_fill_done_label(*result),
+            IrInstruction::Define {
+                result,
+                operation: IrOperation::BufferVacant { .. },
+                ..
+            } => label = buffer_vacant_done_label(*result),
             IrInstruction::Define {
                 result,
                 operation: IrOperation::BufferProbeSkip { .. },

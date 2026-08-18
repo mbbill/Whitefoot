@@ -107,7 +107,7 @@ fn sha256_abc_word_zero() -> own u32 pure {
 
 fn main() -> own unit traps {
   let direct_digest_word = sha256_abc_word_zero();
-  check ieq(direct_digest_word, 3128432319_u32) else trap "sha256 abc digest word zero";
+  claim sha256_abc_digest_word_zero: ieq(direct_digest_word, 3128432319_u32) because "sha256 abc digest word zero";
   let iteration = 0_u64;
   let accumulated = 0_u32;
   loop @sustained_hashing {
@@ -119,6 +119,6 @@ fn main() -> own unit traps {
     set accumulated = accumulated +wrap digest_word;
     set iteration = iteration +wrap 1_u64;
   }
-  check ieq(accumulated, 3764059136_u32) else trap "sha256 sustained workload";
+  claim sha256_sustained_workload: ieq(accumulated, 3764059136_u32) because "sha256 sustained workload";
   return unit;
 }

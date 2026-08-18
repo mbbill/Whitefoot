@@ -184,7 +184,20 @@ impl From<ResolutionCompilerFailure> for BuildStop {
 pub fn resolve<'classified, 'lexed, 'source>(
     syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> ResolutionOutcome<'classified, 'lexed, 'source> {
-    match build_tables(&syntax) {
+    resolve_with_traversal_surface(syntax, crate::TRAVERSAL_SURFACE)
+}
+
+/// [`resolve`] against one selected [SYS-2] inventory state.
+///
+/// `traversal_surface` selects the v0.32-candidate directory-enumeration
+/// inventory; `false` is the active specification's and is what [`resolve`]
+/// passes outside the candidate path.
+#[must_use]
+pub fn resolve_with_traversal_surface<'classified, 'lexed, 'source>(
+    syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
+    traversal_surface: bool,
+) -> ResolutionOutcome<'classified, 'lexed, 'source> {
+    match build_tables(&syntax, traversal_surface) {
         Ok(tables) => ResolutionOutcome::Complete(ResolvedSyntaxUnit {
             syntax,
             scopes: tables.scopes,
@@ -195,6 +208,7 @@ pub fn resolve<'classified, 'lexed, 'source>(
             lexical_uses: tables.lexical_uses,
             deferred_uses: tables.deferred_uses,
             postconditions: tables.postconditions,
+            traversal_surface,
         }),
         Err(BuildStop::Issue(issue)) => ResolutionOutcome::SourceIssue {
             syntax,
@@ -204,7 +218,10 @@ pub fn resolve<'classified, 'lexed, 'source>(
     }
 }
 
-fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, BuildStop> {
+fn build_tables(
+    syntax: &CanonicalSyntaxUnit<'_, '_, '_>,
+    traversal_surface: bool,
+) -> Result<Tables, BuildStop> {
     let topology = &syntax.finalized.topology;
     let scopes = ScopeBuild::build(topology)?;
     // [DIAG-1] fixes this order: only complete unit-wide FN-8 admission
@@ -220,7 +237,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
     // third declaration source ([SYS-1]); every other unit admits none of it,
     // so a system spelling there is an ordinary undeclared or source name.
     let system = if unit_program_kind(topology).is_some() {
-        system_declarations()
+        system_declarations(traversal_surface)
     } else {
         Vec::new()
     };

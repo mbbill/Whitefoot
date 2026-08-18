@@ -10,6 +10,6 @@ fn lookup (x: own u64) -> own u8 traps {
 
 fn main () -> own unit traps {
   let value: own u8 = lookup(x: 10_u64);
-  check ieq<u8>(value, 16_u8) else trap "two-read drift";
+  claim two_read_drift: ieq<u8>(value, 16_u8) because "two-read drift";
   return unit;
 }

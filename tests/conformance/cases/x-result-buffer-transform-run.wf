@@ -49,12 +49,12 @@ fn main() -> own unit allocates(heap), traps {
       let middle_ok = ilt(1_u64, length);
       claim middle_in_transformed: middle_ok because "a three-byte input transforms to three bytes";
       let middle = transformed[1_u64];
-      check ieq(length, 3_u64) else trap "success length";
-      check ieq(first, 2_u8) else trap "success first byte";
-      check ieq(middle, 5_u8) else trap "success middle byte";
+      claim success_length: ieq(length, 3_u64) because "success length";
+      claim success_first_byte: ieq(first, 2_u8) because "success first byte";
+      claim success_middle_byte: ieq(middle, 5_u8) because "success middle byte";
     }
     Err(error: success_error) => {
-      check False() else trap "success became error";
+      claim success_became_error: False() because "success became error";
     }
   }
   let failure_input = buffer_new(2_u64, 8_u8);
@@ -62,7 +62,7 @@ fn main() -> own unit allocates(heap), traps {
   let failure = transform(input: move failure_input);
   match move failure {
     Ok(value: failure_value) => {
-      check False() else trap "zero byte succeeded";
+      claim zero_byte_succeeded: False() because "zero byte succeeded";
     }
     Err(error: failure_error) => {
       match failure_error {

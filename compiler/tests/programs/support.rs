@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use whitefoot::{CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, SourceInput, compile};
+use whitefoot::{
+    CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, SourceInput, compile,
+    compile_with_traversal_surface,
+};
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
 
@@ -26,12 +29,76 @@ pub fn compile_programs(names: &[&str]) -> String {
     compile(&inputs, CompilerLimits::default()).expect("program corpus source must compile")
 }
 
+/// Compiles one corpus program against the traversal [SYS-2] inventory,
+/// named explicitly rather than read from `TRAVERSAL_SURFACE`.
+///
+/// The shipped inventory is the traversal one, so this selects the same
+/// inventory [`compile_program`] does; naming it keeps the traversal cases
+/// stating which inventory their declarations belong to, and keeps the
+/// inventory a parameter of the compilation rather than a global.
+pub fn compile_program_with_traversal_surface(name: &str) -> String {
+    let source = read_program(name);
+    let inputs = [SourceInput::new(name, &source)];
+    compile_with_traversal_surface(&inputs, CompilerLimits::default(), true)
+        .expect("traversal program source must compile under the candidate inventory")
+}
+
+/// Compiles one corpus program against the base [SYS-2] inventory: the
+/// tables without the traversal rows appended.
+///
+/// This is the other side of every inventory differential — the traversal
+/// spellings are undeclared names here, and every earlier program must keep
+/// its exact emitted module.
+pub fn compile_program_without_traversal_surface(name: &str) -> String {
+    let source = read_program(name);
+    let inputs = [SourceInput::new(name, &source)];
+    compile_with_traversal_surface(&inputs, CompilerLimits::default(), false)
+        .expect("program corpus source must compile under the base inventory")
+}
+
+/// [`compile_program_without_traversal_surface`]'s rejection direction.
+pub fn compile_program_rejection_without_traversal_surface(name: &str) -> String {
+    let source = read_program(name);
+    let inputs = [SourceInput::new(name, &source)];
+    match compile_with_traversal_surface(&inputs, CompilerLimits::default(), false) {
+        Ok(_) => panic!("source that must be rejected compiled"),
+        Err(failure) => failure.to_string(),
+    }
+}
+
+/// [`compile_program_with_traversal_surface`]'s rejection direction.
+pub fn compile_rejection_with_traversal_surface(sources: &[(&str, &[u8])]) -> String {
+    let inputs = sources
+        .iter()
+        .map(|(name, source)| SourceInput::new(name, source))
+        .collect::<Vec<_>>();
+    match compile_with_traversal_surface(&inputs, CompilerLimits::default(), true) {
+        Ok(_) => panic!("source that must be rejected compiled"),
+        Err(failure) => failure.to_string(),
+    }
+}
+
 pub fn compile_sources(sources: &[(&str, &[u8])]) -> String {
     let inputs = sources
         .iter()
         .map(|(name, source)| SourceInput::new(name, source))
         .collect::<Vec<_>>();
     compile(&inputs, CompilerLimits::default()).expect("integration source must compile")
+}
+
+/// Compiles sources that must be rejected and returns the rendered failure.
+///
+/// A negative direction over a real corpus program needs the compiler's own
+/// diagnostic, not a panic, so the case can pin the rule and the residual.
+pub fn compile_rejection(sources: &[(&str, &[u8])]) -> String {
+    let inputs = sources
+        .iter()
+        .map(|(name, source)| SourceInput::new(name, source))
+        .collect::<Vec<_>>();
+    match compile(&inputs, CompilerLimits::default()) {
+        Ok(_) => panic!("source that must be rejected compiled"),
+        Err(failure) => failure.to_string(),
+    }
 }
 
 pub fn compile_and_run(llvm: &str) -> Output {
@@ -185,6 +252,27 @@ impl FixtureDirectory {
     pub fn write(&self, name: &[u8], bytes: &[u8]) -> PathBuf {
         let path = self.path.join(OsStr::from_bytes(name));
         std::fs::write(&path, bytes).expect("write fixture file");
+        path
+    }
+
+    /// Creates one nested fixture directory and returns its path.
+    ///
+    /// A traversal case needs a real directory tree under the invocation
+    /// directory, because the program walks it with the host's own
+    /// enumeration facility rather than with anything the harness injects.
+    pub fn directory(&self, relative: &str) -> PathBuf {
+        let path = self.path.join(relative);
+        std::fs::create_dir_all(&path).expect("create nested fixture directory");
+        path
+    }
+
+    /// Writes one fixture file at a relative path, creating its parents.
+    pub fn write_nested(&self, relative: &str, bytes: &[u8]) -> PathBuf {
+        let path = self.path.join(relative);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create nested fixture parent");
+        }
+        std::fs::write(&path, bytes).expect("write nested fixture file");
         path
     }
 

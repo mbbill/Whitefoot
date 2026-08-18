@@ -1,10 +1,10 @@
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
 use super::super::model::{
     CheckedExpression, CheckedFlatElement, CheckedSetTarget, CheckedStatement,
     CheckedTargetDomainObligation, CheckedType, IntegerType, NominalId,
 };
-use super::{assert_rule, with_semantics};
+use super::{assert_rule, assert_unsupported, with_semantics};
 
 #[test]
 fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
@@ -19,8 +19,8 @@ fn main() -> own unit allocates(heap), traps {
   claim sized_by_make: ok because "make allocates n slots and main passes four";
   set values[2_u64] = 9_u16;
   let stored = values[2_u64];
-  check ieq(length, 4_u64) else trap "length drift";
-  check ieq(stored, 9_u16) else trap "store drift";
+  claim length_drift: ieq(length, 4_u64) because "length drift";
+  claim store_drift: ieq(stored, 9_u16) because "store drift";
   return unit;
 }
 "#;
@@ -115,6 +115,159 @@ fn buffer_effect_rows_are_checked_both_ways() {
 }
 
 #[test]
+fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
+    let source = br#"fn main() -> own unit allocates(heap), traps {
+  let slots = buffer_vacant<box<u64>>(3_u64);
+  let count = len(slots);
+  claim vacant_length: ieq(count, 3_u64) because "vacant length";
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("buffer_vacant must check: {outcome:?}");
+        };
+        let main = &checked.data.functions[0];
+        let CheckedStatement::Let { value, .. } = &main.body[0] else {
+            panic!("the first statement binds the vacant buffer");
+        };
+        let CheckedExpression::BufferVacant {
+            element,
+            trap,
+            target_domains,
+            ..
+        } = value
+        else {
+            panic!("buffer_vacant retains its own OP-9 allocation record");
+        };
+        assert_eq!(
+            checked.data.nominals[element.0 as usize].name,
+            "Option<box<u64>>"
+        );
+        assert_eq!(trap.rule_id, "OP-9");
+        assert_eq!(
+            target_domains.allocation(),
+            CheckedTargetDomainObligation::RuntimeSizedAllocation
+        );
+        assert_eq!(
+            target_domains.element_address(),
+            CheckedTargetDomainObligation::ElementAddress
+        );
+        assert_eq!(
+            value.ty(),
+            CheckedType::Buffer {
+                element: CheckedFlatElement::Nominal(*element),
+            }
+        );
+        // The [ENT-5] length fact from the allocation discharges the ieq
+        // check's operands without a claim, which acceptance already proves.
+        assert!(matches!(
+            &main.body[1],
+            CheckedStatement::Let {
+                value: CheckedExpression::BufferLength { .. },
+                ..
+            }
+        ));
+    });
+}
+
+#[test]
+fn buffer_vacant_requires_its_written_payload_and_effect_row() {
+    // [TYPE-5]: the element payload type is a retained written argument.
+    assert_rule(
+        b"fn main() -> own unit allocates(heap), traps {\n  let slots = buffer_vacant(3_u64);\n  return unit;\n}\n",
+        SemanticRule::Type5,
+        SemanticIssueKind::InvalidOperation,
+    );
+    // [EFF-2]: the row is allocates(heap), traps, both directions.
+    assert_rule(
+        b"fn main() -> own unit traps {\n  let slots = buffer_vacant<u32>(3_u64);\n  return unit;\n}\n",
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
+    );
+    assert_rule(
+        b"fn main() -> own unit allocates(heap) {\n  let slots = buffer_vacant<u32>(3_u64);\n  return unit;\n}\n",
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
+    );
+    // [TYPE-5]: the one operand is the own u64 length.
+    assert_rule(
+        b"fn main() -> own unit allocates(heap), traps {\n  let slots = buffer_vacant<u32>(3_u32);\n  return unit;\n}\n",
+        SemanticRule::Type5,
+        SemanticIssueKind::TypeMismatch,
+    );
+}
+
+#[test]
+fn buffer_vacant_rejects_a_region_bearing_payload_under_stor5() {
+    assert_rule(
+        br#"fn invalid['r](value: own slice<'r, u8>) -> own unit allocates(heap), traps {
+  let slots = buffer_vacant<slice<'r, u8>>(2_u64);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRule::Stor5,
+        SemanticIssueKind::RegionBearingStorage {
+            mechanical_fix: "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
+        },
+    );
+}
+
+#[test]
+fn affine_element_views_and_structural_composites_stop_explicitly() {
+    // A slice over an affine-element buffer has no implemented in-place
+    // read; it stops as capability, not as a source rejection.
+    assert_unsupported(
+        br#"fn main() -> own unit allocates(heap), traps {
+  let slots = buffer_vacant<u32>(4_u64);
+  region 'v {
+    let view = slice_of(&'v slots);
+  }
+  return unit;
+}
+"#,
+        UnsupportedSemanticFeature::CompositeValues,
+    );
+    // A structural affine element (a nested buffer) is spec-formable
+    // [TYPE-2] but has no implemented representation.
+    assert_unsupported(
+        br#"fn keep(value: own buffer<buffer<u8>>) -> own unit pure {
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        UnsupportedSemanticFeature::CompositeValues,
+    );
+}
+
+#[test]
+fn array_elements_stay_copy_only_under_type2() {
+    with_semantics(
+        br#"fn keep(value: own array<Option<u32>, 2>) -> own unit pure {
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        |outcome| {
+            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("an affine array element must reject: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Type2);
+        },
+    );
+}
+
+#[test]
 fn buffer_new_keeps_its_primitive_only_operation_domain() {
     assert_rule(
         b"fn main() -> own unit allocates(heap), traps {\n  let initial = False();\n  let values = buffer_new(2_u64, initial);\n  return unit;\n}\n",
@@ -140,8 +293,8 @@ fn main() -> own unit allocates(heap), traps {
   set columns.left[2_u64] = 7_u64;
   let length = len(columns.right);
   let value = columns.left[2_u64];
-  check ieq(length, 4_u64) else trap "length drift";
-  check ieq(value, 7_u64) else trap "value drift";
+  claim length_drift: ieq(length, 4_u64) because "length drift";
+  claim value_drift: ieq(value, 7_u64) because "value drift";
   return unit;
 }
 "#;

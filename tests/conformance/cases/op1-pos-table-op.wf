@@ -1,6 +1,6 @@
 fn main() -> own unit traps {
   doc "Every computation is a call naming one operation from the table [OP-1]: a wrapping add and an integer compare, nothing overloaded.";
   let x = 20_i32 +wrap 22_i32;
-  check ieq(x, 42_i32) else trap "op drift";
+  claim op_drift: ieq(x, 42_i32) because "op drift";
   return unit;
 }

@@ -569,7 +569,7 @@ fn releases_keep_reverse_declaration_order_and_never_sit_on_a_trapping_edge() {
     let source = format!(
         "fn ordered(first: own ReadFile, second: own ReadFile, ready: own Bool) \
          -> own unit external, blocks, traps {{\n  \
-         check ready else trap \"ordering probe\";\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
+         claim ordering_probe: ready because \"ordering probe\";\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let function = function(program, "ordered");
@@ -713,7 +713,7 @@ fn ordinary_requires_is_not_lowered_as_a_callee_prologue() {
 
 fn main() -> own unit traps {
   let value = 4_u64;
-  check ilt(value, 8_u64) else trap "caller evidence";
+  claim caller_evidence: ilt(value, 8_u64) because "caller evidence";
   let result = bounded(value: value);
   return unit;
 }
@@ -778,7 +778,7 @@ fn a_memory_only_release_carries_no_system_action_or_row() {
 /// and `{STEP}` varied per case.
 fn byte_walk_source(middle: &str, step: &str) -> Vec<u8> {
     format!(
-        "fn main() -> own unit allocates(heap), traps {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = ige(cursor, stop);\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  check ilt(seen, 1000_u64) else trap \"walk drift\";\n  return unit;\n}}\n"
+        "fn main() -> own unit allocates(heap), traps {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = ige(cursor, stop);\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  claim walk_drift: ilt(seen, 1000_u64) because \"walk drift\";\n  return unit;\n}}\n"
     )
     .into_bytes()
 }
