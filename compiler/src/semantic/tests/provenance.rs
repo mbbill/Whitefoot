@@ -94,7 +94,7 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
     let rows = prov_rows();
     assert_eq!(
         rows.len(),
-        crate::SYSTEM_OPERATIONS.len(),
+        crate::system_operations(false).len(),
         "the wf-prov table has one row per SYS-2 operation"
     );
 
@@ -104,7 +104,7 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
         let index = u8::try_from(ordinal).expect("eleven operations fit a u8");
         assert_eq!(
             row.operation,
-            crate::SYSTEM_OPERATIONS[ordinal].spelling,
+            crate::system_operations(false)[ordinal].spelling,
             "wf-prov row {ordinal} and SYSTEM_OPERATIONS[{ordinal}] name different operations"
         );
 
@@ -137,7 +137,7 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
         // The writable-parameter cell names the parameters by their declared
         // name, so the expected ordinals come from the operation's own
         // parameter list rather than from a second hand-written list.
-        let declared = crate::SYSTEM_OPERATIONS[ordinal].parameters;
+        let declared = crate::system_operations(false)[ordinal].parameters;
         let expected_writes: Vec<usize> = if row.parameter_class == "—" {
             Vec::new()
         } else {
@@ -173,11 +173,47 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
     // that collapsed to one class would not pass the loop vacuously.
     assert_eq!(result_classes.len(), 4);
     assert_eq!(writing_rows, 4);
-    // An ordinal past the inventory fails closed rather than defaulting to a
-    // class, in both directions the dispatch can be wrong.
-    let past = u8::try_from(crate::SYSTEM_OPERATIONS.len()).expect("eleven fits a u8");
+    // An ordinal past every inventory fails closed rather than defaulting to
+    // a class, in both directions the dispatch can be wrong.
+    let past = u8::try_from(crate::SYSTEM_OPERATIONS.len()).expect("the inventory fits a u8");
     assert_eq!(system_result_provenance(past), None);
     assert!(system_external_writes(past).is_err());
+
+    // The rows above are the active specification's. The traversal-surface
+    // candidate's three operations have no `wf-prov` row to extract yet, so
+    // their classes are pinned here against the delta they will be written
+    // from: an opened capability or handle is external in every component,
+    // and `list_once` matches `read_once` exactly.
+    for (ordinal, spelling, expected, writes) in [
+        (
+            11_u8,
+            "open_directory",
+            SystemResultProvenance::AllExternal,
+            &[] as &[usize],
+        ),
+        (
+            12,
+            "open_list",
+            SystemResultProvenance::AllExternal,
+            &[] as &[usize],
+        ),
+        (
+            13,
+            "list_once",
+            SystemResultProvenance::ReadFailedPayloadOnly,
+            &[0, 1],
+        ),
+    ] {
+        assert_eq!(
+            crate::SYSTEM_OPERATIONS[usize::from(ordinal)].spelling,
+            spelling
+        );
+        assert_eq!(system_result_provenance(ordinal), Some(expected));
+        assert_eq!(
+            system_external_writes(ordinal).expect("a declared operation ordinal"),
+            writes
+        );
+    }
 }
 
 fn checked(source: &[u8], run: impl FnOnce(&CheckedProgramData)) {

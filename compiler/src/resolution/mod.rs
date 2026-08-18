@@ -14,15 +14,16 @@ mod tests;
 
 use crate::{CanonicalSyntaxUnit, NodePath, SyntaxCoordinate};
 
-pub use engine::resolve;
+pub use engine::{resolve, resolve_with_traversal_surface};
 
 pub use catalog::{
     SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemConstructor, SystemEntity,
     SystemField, SystemNominal, SystemOperation, SystemParameter, SystemParameterMode,
     SystemRelease, SystemReleaseAction, SystemReleaseRow, SystemResourceBacking,
     SystemResourceContract, SystemResourceType, SystemResultPayload, SystemTypeRef,
-    operation_region_effects, system_constructor_declaration, system_constructor_index,
-    system_entity, system_nominal_index, system_operation_index, system_release_row,
+    TRAVERSAL_SURFACE, operation_region_effects, system_constructor_declaration,
+    system_constructor_index, system_constructors, system_entity, system_nominal_index,
+    system_nominals, system_operation_index, system_operations, system_release_row,
     system_resource_contract,
 };
 
@@ -921,6 +922,7 @@ pub struct ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
     lexical_uses: Vec<LexicalUseRecord>,
     deferred_uses: Vec<DeferredUseRecord>,
     postconditions: Vec<PostconditionResolutionRecord>,
+    traversal_surface: bool,
 }
 
 impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
@@ -965,6 +967,17 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
     #[must_use]
     pub fn system_declaration(&self, id: SystemDeclarationId) -> Option<&SystemDeclarationRecord> {
         self.system.get(usize::from(id.ordinal()))
+    }
+
+    /// Which [SYS-2] inventory this unit's system records came from.
+    ///
+    /// Every later stage that turns a [SYS-2] declaration ordinal back into a
+    /// nominal, constructor, or operation index must read the same inventory
+    /// state the records were built from, because the candidate's two extra
+    /// nominal types shift every constructor and operation ordinal.
+    #[must_use]
+    pub const fn traversal_surface(&self) -> bool {
+        self.traversal_surface
     }
 
     /// Returns all source declaration events D01 through D15.

@@ -2240,64 +2240,73 @@ fn system_index_helpers_agree_with_the_preorder_entity_map() {
     // ordinal-to-entity map, across every one of the 167 records.
     use super::SystemDeclarationId;
     use super::catalog::{
-        SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemEntity,
-        system_constructor_declaration, system_constructor_index, system_entity,
-        system_nominal_index, system_operation_index, system_release_row,
+        SYSTEM_NOMINALS, SystemEntity, system_constructor_declaration, system_constructor_index,
+        system_constructors, system_entity, system_nominal_index, system_nominals,
+        system_operation_index, system_operations, system_release_row,
     };
 
-    let mut nominals = 0_usize;
-    let mut constructors = 0_usize;
-    let mut operations = 0_usize;
-    for ordinal in 0..=u8::MAX {
-        let id = SystemDeclarationId::new(ordinal);
-        match system_entity(id) {
-            Some(SystemEntity::Nominal(nominal)) => {
-                let index = system_nominal_index(id).expect("nominal index");
-                assert_eq!(
-                    SYSTEM_NOMINALS[usize::from(index)].spelling,
-                    nominal.spelling
-                );
-                assert!(system_constructor_index(id).is_none());
-                assert!(system_operation_index(id).is_none());
-                nominals += 1;
-            }
-            Some(SystemEntity::Constructor(constructor)) => {
-                let index = system_constructor_index(id).expect("constructor index");
-                assert_eq!(
-                    SYSTEM_CONSTRUCTORS[usize::from(index)].spelling,
-                    constructor.spelling
-                );
-                assert_eq!(system_constructor_declaration(index), Some(id));
-                assert!(system_nominal_index(id).is_none());
-                assert!(system_operation_index(id).is_none());
-                constructors += 1;
-            }
-            Some(SystemEntity::Operation(operation)) => {
-                let index = system_operation_index(id).expect("operation index");
-                assert_eq!(
-                    SYSTEM_OPERATIONS[usize::from(index)].spelling,
-                    operation.spelling
-                );
-                assert!(system_nominal_index(id).is_none());
-                assert!(system_constructor_index(id).is_none());
-                operations += 1;
-            }
-            None => {
-                assert!(system_constructor_index(id).is_none());
-                assert!(system_operation_index(id).is_none());
+    // Both inventory states: the traversal-surface candidate's two extra
+    // nominal types shift every constructor and operation ordinal, so the
+    // helpers must agree with the entity map under each state separately.
+    for surface in [false, true] {
+        let mut nominals = 0_usize;
+        let mut constructors = 0_usize;
+        let mut operations = 0_usize;
+        for ordinal in 0..=u8::MAX {
+            let id = SystemDeclarationId::new(ordinal);
+            match system_entity(id, surface) {
+                Some(SystemEntity::Nominal(nominal)) => {
+                    let index = system_nominal_index(id, surface).expect("nominal index");
+                    assert_eq!(
+                        system_nominals(surface)[usize::from(index)].spelling,
+                        nominal.spelling
+                    );
+                    assert!(system_constructor_index(id, surface).is_none());
+                    assert!(system_operation_index(id, surface).is_none());
+                    nominals += 1;
+                }
+                Some(SystemEntity::Constructor(constructor)) => {
+                    let index = system_constructor_index(id, surface).expect("constructor index");
+                    assert_eq!(
+                        system_constructors(surface)[usize::from(index)].spelling,
+                        constructor.spelling
+                    );
+                    assert_eq!(system_constructor_declaration(index, surface), Some(id));
+                    assert!(system_nominal_index(id, surface).is_none());
+                    assert!(system_operation_index(id, surface).is_none());
+                    constructors += 1;
+                }
+                Some(SystemEntity::Operation(operation)) => {
+                    let index = system_operation_index(id, surface).expect("operation index");
+                    assert_eq!(
+                        system_operations(surface)[usize::from(index)].spelling,
+                        operation.spelling
+                    );
+                    assert!(system_nominal_index(id, surface).is_none());
+                    assert!(system_constructor_index(id, surface).is_none());
+                    operations += 1;
+                }
+                None => {
+                    assert!(system_constructor_index(id, surface).is_none());
+                    assert!(system_operation_index(id, surface).is_none());
+                }
             }
         }
+        assert_eq!(nominals, system_nominals(surface).len());
+        assert_eq!(constructors, system_constructors(surface).len());
+        assert_eq!(operations, system_operations(surface).len());
     }
-    assert_eq!(nominals, SYSTEM_NOMINALS.len());
-    assert_eq!(constructors, SYSTEM_CONSTRUCTORS.len());
-    assert_eq!(operations, SYSTEM_OPERATIONS.len());
 
-    // The [SYS-5] release table: exactly DirectoryRead and ReadFile release
-    // with `external, blocks`; every other system nominal's row is empty.
+    // The [SYS-5] release table: exactly DirectoryRead, ReadFile, and the
+    // candidate DirectoryList release with `external, blocks`; every other
+    // system nominal's row is empty.
     for (index, nominal) in SYSTEM_NOMINALS.iter().enumerate() {
         let index = u8::try_from(index).expect("nominal table fits u8");
         let row = system_release_row(index);
-        let expected = matches!(nominal.spelling, "DirectoryRead" | "ReadFile");
+        let expected = matches!(
+            nominal.spelling,
+            "DirectoryRead" | "ReadFile" | "DirectoryList"
+        );
         assert_eq!(row.external, expected, "external for {}", nominal.spelling);
         assert_eq!(row.blocks, expected, "blocks for {}", nominal.spelling);
     }
@@ -2355,6 +2364,15 @@ fn the_system_resource_contracts_equal_the_release_and_backing_tables() {
             "ExitStatus",
             SystemResourceType::ExitStatus,
             SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::Opaque,
+        ),
+        // The traversal-surface candidate's enumeration handle: an opaque
+        // stateful resource whose release is one native close attempt, on the
+        // same ground as `ReadFile` [SYS-14].
+        (
+            "DirectoryList",
+            SystemResourceType::DirectoryList,
+            SystemReleaseAction::NativeCloseAttempt,
             SystemResourceBacking::Opaque,
         ),
     ];

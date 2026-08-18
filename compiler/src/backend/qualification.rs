@@ -50,8 +50,9 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // below is unchanged and remains valid as reviewed.
 const REVIEWED_FOR: &str = "v0.31";
 
-/// The number of [SYS-2] opaque resource types.
-const RESOURCE_COUNT: usize = 7;
+/// The number of [SYS-2] opaque resource types, including the
+/// traversal-surface candidate's `DirectoryList`.
+const RESOURCE_COUNT: usize = 8;
 
 /// The [HOST-1] code-unit family a qualified target's host strings belong to.
 ///
@@ -275,7 +276,120 @@ pub(crate) enum TargetGuarantee {
     /// The target's own directory-relative resolution facility [PATH-2],
     /// never a prefix concatenated onto a path.
     DirectoryRelativeResolution,
+    /// The target's own directory-enumeration facility [SYS-14]: one host
+    /// call that reports a bounded batch of entry records against an open
+    /// directory descriptor and advances that descriptor's own position.
+    DirectoryEnumeration,
 }
+
+/// One target's directory-enumeration facility and the exact record layout it
+/// fills [SYS-14, QUAL-1].
+///
+/// Every field is target data read only by the `list_once` implementation:
+/// the emitted shim walks the native records this facility wrote and
+/// normalizes them into the portable `[kind][name length][name bytes]` form
+/// [SYS-14] fixes. A target with no such facility supplies no record here and
+/// fails qualification for the enumeration semantic IDs rather than emulating
+/// them with a directory-reading loop of its own.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DirectoryEnumeration {
+    /// The one host call a `list_once` attempt makes.
+    symbol: &'static str,
+    /// That symbol's declaration.
+    declaration: &'static str,
+    /// Byte offset of the native record's own length, a `u16`.
+    record_length_offset: u64,
+    /// Byte offset of the entry name's length, a `u16`.
+    name_length_offset: u64,
+    /// Byte offset of the native entry-type discriminant, a `u8`.
+    entry_type_offset: u64,
+    /// Byte offset of the entry name's first byte.
+    name_offset: u64,
+    /// The native entry-type value naming a regular file.
+    native_regular: u64,
+    /// The native entry-type value naming a directory.
+    native_directory: u64,
+    /// The native entry-type value naming a symbolic link.
+    native_symlink: u64,
+    /// The native entry-type value meaning the target did not classify the
+    /// entry.
+    native_unknown: u64,
+}
+
+impl DirectoryEnumeration {
+    /// The one host call a `list_once` attempt makes.
+    pub(crate) const fn symbol(self) -> &'static str {
+        self.symbol
+    }
+
+    /// That symbol's declaration.
+    pub(crate) const fn declaration(self) -> &'static str {
+        self.declaration
+    }
+
+    /// Byte offset of the native record's own length, a `u16`.
+    pub(crate) const fn record_length_offset(self) -> u64 {
+        self.record_length_offset
+    }
+
+    /// Byte offset of the entry name's length, a `u16`.
+    pub(crate) const fn name_length_offset(self) -> u64 {
+        self.name_length_offset
+    }
+
+    /// Byte offset of the native entry-type discriminant, a `u8`.
+    pub(crate) const fn entry_type_offset(self) -> u64 {
+        self.entry_type_offset
+    }
+
+    /// Byte offset of the entry name's first byte.
+    pub(crate) const fn name_offset(self) -> u64 {
+        self.name_offset
+    }
+
+    /// The native entry-type value naming a regular file.
+    pub(crate) const fn native_regular(self) -> u64 {
+        self.native_regular
+    }
+
+    /// The native entry-type value naming a directory.
+    pub(crate) const fn native_directory(self) -> u64 {
+        self.native_directory
+    }
+
+    /// The native entry-type value naming a symbolic link.
+    pub(crate) const fn native_symlink(self) -> u64 {
+        self.native_symlink
+    }
+
+    /// The native entry-type value meaning the target did not classify the
+    /// entry.
+    pub(crate) const fn native_unknown(self) -> u64 {
+        self.native_unknown
+    }
+}
+
+/// The Darwin-family enumeration facility.
+///
+/// `__getdirentries64` is the one libSystem entry that reports a batch of
+/// 64-bit-inode directory records against an open descriptor and advances it;
+/// `getdirentries` is unavailable on a 64-bit-inode target and `opendir`
+/// plus `readdir` is two calls with an allocation, which [QUAL-3] excludes.
+/// The offsets are `struct dirent`'s measured Darwin layout: `d_ino` 0,
+/// `d_seekoff` 8, `d_reclen` 16, `d_namlen` 18, `d_type` 20, `d_name` 21.
+const DARWIN_ENUMERATION: DirectoryEnumeration = DirectoryEnumeration {
+    symbol: "__getdirentries64",
+    declaration: "declare i64 @__getdirentries64(i32, ptr, i64, ptr)",
+    record_length_offset: 16,
+    name_length_offset: 18,
+    entry_type_offset: 20,
+    name_offset: 21,
+    // `DT_REG`, `DT_DIR`, `DT_LNK`, `DT_UNKNOWN`.
+    native_regular: 8,
+    native_directory: 4,
+    native_symlink: 10,
+    native_unknown: 0,
+};
 
 /// The thing a qualification row is about.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -438,6 +552,9 @@ pub(crate) struct SystemTarget {
     /// than entering under a weaker guarantee.
     argument_backing: bool,
     directory_relative: bool,
+    /// The target's own directory-enumeration facility, when it has one
+    /// [SYS-14].
+    directory_enumeration: Option<DirectoryEnumeration>,
     /// Which host facilities this target's approved implementations call.
     host: HostFacilities,
     root_prefix: u8,
@@ -527,11 +644,20 @@ impl SystemTarget {
         self.invalid_disposition
     }
 
+    /// The target's own directory-enumeration facility [SYS-14].
+    ///
+    /// Emission may read it directly only after qualification accepted the
+    /// program, which is exactly when the enumeration guarantee held.
+    pub(crate) const fn directory_enumeration(self) -> Option<DirectoryEnumeration> {
+        self.directory_enumeration
+    }
+
     fn supplies(self, guarantee: TargetGuarantee) -> bool {
         match guarantee {
             TargetGuarantee::CommandLifetimeArgumentBacking => self.argument_backing,
             TargetGuarantee::LosslessCodeUnits => self.family.is_some(),
             TargetGuarantee::DirectoryRelativeResolution => self.directory_relative,
+            TargetGuarantee::DirectoryEnumeration => self.directory_enumeration.is_some(),
         }
     }
 
@@ -543,22 +669,37 @@ impl SystemTarget {
     /// outlives the invocation, the Unix code-unit family, and `openat`-style
     /// directory-relative resolution.
     pub(crate) fn for_triple(triple: &str) -> Option<Self> {
-        let (directory_open_flags, errno_location, errno_declaration, error_classes) = match triple
-        {
+        let (
+            directory_open_flags,
+            errno_location,
+            errno_declaration,
+            error_classes,
+            directory_enumeration,
+        ) = match triple {
             // `O_RDONLY | O_DIRECTORY` on the Darwin ABI.
             "aarch64-apple-darwin" | "x86_64-apple-darwin" => (
                 0x0010_0000,
                 "__error",
                 "declare ptr @__error()",
                 &DARWIN_ERROR_CLASSES,
+                Some(DARWIN_ENUMERATION),
             ),
             // `O_RDONLY | O_DIRECTORY` on the Linux asm-generic ABI, which
             // both supported architectures use.
+            //
+            // The Linux enumeration facility is deliberately absent rather
+            // than transcribed: `getdents64` has a different arity and a
+            // different record layout from the Darwin call, and no evidence
+            // in this tree exercises either. A qualification row is a
+            // promise, so this target fails qualification for the [SYS-14]
+            // enumeration IDs — a target-qualification failure, not a source
+            // rejection [QUAL-1] — until a Linux host can run the same tests.
             "aarch64-unknown-linux-gnu" | "x86_64-unknown-linux-gnu" => (
                 0o200_000,
                 "__errno_location",
                 "declare ptr @__errno_location()",
                 &LINUX_ERROR_CLASSES,
+                None,
             ),
             _ => return None,
         };
@@ -566,6 +707,7 @@ impl SystemTarget {
             family: Some(CodeUnitFamily::Unix),
             argument_backing: true,
             directory_relative: true,
+            directory_enumeration,
             host: HostFacilities::Native,
             root_prefix: b'/',
             directory_open_flags,
@@ -707,9 +849,13 @@ pub(crate) const fn qualified_representation(
         SystemResourceType::HostString | SystemResourceType::RelativePath => {
             ResourceRepresentation::InlineLease
         }
+        // A directory enumeration is one native descriptor whose whole cursor
+        // state is the descriptor's own file position, so it needs no value
+        // component of its own [SYS-14].
         SystemResourceType::DirectoryRead
         | SystemResourceType::ReadFile
-        | SystemResourceType::Output => ResourceRepresentation::Descriptor,
+        | SystemResourceType::Output
+        | SystemResourceType::DirectoryList => ResourceRepresentation::Descriptor,
         SystemResourceType::ExitStatus => ResourceRepresentation::CommandCode,
     }
 }
@@ -723,19 +869,22 @@ const fn resource_index(resource: SystemResourceType) -> usize {
         SystemResourceType::ReadFile => 4,
         SystemResourceType::Output => 5,
         SystemResourceType::ExitStatus => 6,
+        SystemResourceType::DirectoryList => 7,
     }
 }
 
 /// The [QUAL-2] guarantees one semantic identity's record requires.
 fn operation_guarantees(operation: u8) -> &'static [TargetGuarantee] {
     use TargetGuarantee::{
-        CommandLifetimeArgumentBacking, DirectoryRelativeResolution, LosslessCodeUnits,
+        CommandLifetimeArgumentBacking, DirectoryEnumeration, DirectoryRelativeResolution,
+        LosslessCodeUnits,
     };
     const ARGUMENTS: &[TargetGuarantee] = &[CommandLifetimeArgumentBacking];
     const ARGUMENT_STRING: &[TargetGuarantee] =
         &[CommandLifetimeArgumentBacking, LosslessCodeUnits];
     const STRINGS: &[TargetGuarantee] = &[LosslessCodeUnits];
     const DIRECTORY: &[TargetGuarantee] = &[LosslessCodeUnits, DirectoryRelativeResolution];
+    const ENUMERATION: &[TargetGuarantee] = &[DirectoryRelativeResolution, DirectoryEnumeration];
     match operation {
         // `args_count` reads the command-lifetime argument backing.
         0 => ARGUMENTS,
@@ -747,6 +896,12 @@ fn operation_guarantees(operation: u8) -> &'static [TargetGuarantee] {
         // `open_read` resolves a relative path through the target's own
         // directory-relative facility [PATH-2].
         7 => DIRECTORY,
+        // `open_directory` resolves one component name through the same
+        // facility [SYS-14].
+        11 => DIRECTORY,
+        // `open_list` and `list_once` additionally require the target's own
+        // enumeration facility [SYS-14].
+        12 | 13 => ENUMERATION,
         // `read_once`, `write_once`, and `exit_status` require neither.
         _ => &[],
     }
@@ -766,6 +921,10 @@ fn resource_guarantees(resource: SystemResourceType) -> &'static [TargetGuarante
         // its command-lifetime backing strictly outlives it [HOST-3].
         SystemResourceType::HostString | SystemResourceType::RelativePath => LEASE,
         SystemResourceType::DirectoryRead => DIRECTORY,
+        // An enumeration handle names one directory object it was opened
+        // against, so it inherits the same directory-relative guarantee
+        // [PATH-2, SYS-14].
+        SystemResourceType::DirectoryList => DIRECTORY,
         SystemResourceType::ReadFile
         | SystemResourceType::Output
         | SystemResourceType::ExitStatus => &[],
@@ -810,6 +969,9 @@ fn operation_row(
         8 => "wf.sys.read_once.v1",
         9 => "wf.sys.write_once.v1",
         10 => "wf.sys.exit_status.v1",
+        11 => "wf.sys.open_directory.v1",
+        12 => "wf.sys.open_list.v1",
+        13 => "wf.sys.list_once.v1",
         // The ordinal bound above admits no other value.
         _ => return Err(QualificationFailure::MissingMapping(facility)),
     };
@@ -841,7 +1003,9 @@ fn resource_row(
         // At most one direct native close attempt; `Output` detaches the
         // source capability without closing or flushing the descriptor
         // [SYS-12], and every other type releases with a logical consume.
-        SystemResourceType::DirectoryRead | SystemResourceType::ReadFile => {
+        SystemResourceType::DirectoryRead
+        | SystemResourceType::ReadFile
+        | SystemResourceType::DirectoryList => {
             ReleaseImplementation::NativeClose(target.host.close())
         }
         SystemResourceType::Args

@@ -11,7 +11,7 @@ use crate::{
     FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
     ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
     TerminalOutcome, audit_canonical, check_semantics, classify_terminals, emit_llvm, finalize,
-    lex, lower_checked, parse, resolve,
+    lex, lower_checked, parse, resolve_with_traversal_surface,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -231,6 +231,21 @@ pub fn compile(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
 ) -> Result<String, CompilationFailure> {
+    compile_with_traversal_surface(inputs, limits, crate::TRAVERSAL_SURFACE)
+}
+
+/// [`compile`] against one selected [SYS-2] inventory state.
+///
+/// `traversal_surface` admits the v0.32-candidate directory-enumeration
+/// declarations. It exists so an end-to-end test can compile and run a real
+/// traversal program before activation; the shipped compilation path reads
+/// [`crate::TRAVERSAL_SURFACE`] and has exactly one inventory. At activation
+/// this entry and the constant it exists to override both go away.
+pub fn compile_with_traversal_surface(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    traversal_surface: bool,
+) -> Result<String, CompilationFailure> {
     let bundle = SourceBundle::with_limits(inputs, limits.source).map_err(|failure| {
         CompilationFailure::new(
             CompilationStage::SourceEnvelope,
@@ -365,7 +380,7 @@ pub fn compile(
             ));
         }
     };
-    let resolved = match resolve(canonical) {
+    let resolved = match resolve_with_traversal_surface(canonical, traversal_surface) {
         ResolutionOutcome::Complete(complete) => complete,
         ResolutionOutcome::SourceIssue { issue, .. } => {
             return Err(CompilationFailure::source(

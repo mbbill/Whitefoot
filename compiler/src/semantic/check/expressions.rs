@@ -1195,7 +1195,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             },
             ResolvedTarget::System(id) => {
-                let index = crate::system_constructor_index(id)
+                let index = crate::system_constructor_index(id, self.traversal_surface())
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let record = crate::SYSTEM_CONSTRUCTORS
                     .get(usize::from(index))

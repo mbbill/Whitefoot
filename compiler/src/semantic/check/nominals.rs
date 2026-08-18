@@ -281,7 +281,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 let declaration = u8::try_from(constructor_index)
                     .ok()
-                    .and_then(crate::system_constructor_declaration)
+                    .and_then(|index| {
+                        crate::system_constructor_declaration(index, self.traversal_surface())
+                    })
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let tag = u32::try_from(variants.len())
                     .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
