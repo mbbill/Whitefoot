@@ -10,16 +10,16 @@ fn main() -> own unit traps {
   let a = half_checked(x: 20_i64);
   match a {
     Ok(value: v) => {
-      check ieq(v, 41_i64) else trap "ok path drift";
+      claim ok_path_drift: ieq(v, 41_i64) because "ok path drift";
     }
     Err(error: e) => {
-      check ieq(0_i64, 1_i64) else trap "unexpected err";
+      claim unexpected_err: False() because "unexpected err";
     }
   }
   let b = half_checked(x: big);
   match b {
     Ok(value: v) => {
-      check ieq(0_i64, 1_i64) else trap "expected err";
+      claim expected_err: False() because "expected err";
     }
     Err(error: e) => {
     }
