@@ -2248,7 +2248,7 @@ struct Pair {
 fn below(value: own u64) -> own unit traps requires {
   check ilt(value, 4_u64) else trap "small";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -2383,7 +2383,7 @@ fn a_projected_bool_scrutinee_retains_its_exact_s1_carrier() {
 fn need_ready(value: own Bool) -> own unit traps requires {
   check value else trap "ready";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -2437,14 +2437,14 @@ fn s1_true_and_false_edges_retain_their_exact_comparison_roots() {
     let source = br#"fn need_below(value: own u64) -> own unit traps requires {
   check ilt(value, 4_u64) else trap "below";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
 fn need_at_least(value: own u64) -> own unit traps requires {
   check ige(value, 4_u64) else trap "at least";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -2663,13 +2663,13 @@ fn equality_retains_both_directed_parents_and_reflexive_implicit_support() {
     let source = br#"fn need_equal(left: own u64, right: own u64) -> own unit traps requires {
   check ieq(left, right) else trap "equal";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
 fn directed(left: own u64, right: own u64) -> own unit traps {
-  check ile(left, right) else trap "forward";
-  check ile(right, left) else trap "reverse";
+  claim forward: ile(left, right) because "forward";
+  claim reverse: ile(right, left) because "reverse";
   need_equal(left: left, right: right);
   return unit;
 }
@@ -2999,9 +2999,9 @@ fn need_right_below_left(left: own u64, right: own u64) -> own unit pure require
 
 fn caller(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   if choose {
-    check ilt(left, right) else trap "left below right";
+    claim left_below_right: ilt(left, right) because "left below right";
   } else {
-    check ilt(right, left) else trap "right below left";
+    claim right_below_left: ilt(right, left) because "right below left";
   }
   need_distinct(left: left, right: right);
   need_left_below_right(left: left, right: right);
@@ -3056,11 +3056,11 @@ fn a_joined_derived_disequality_strengthens_a_later_weak_bound() {
 
 fn caller(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   if choose {
-    check ilt(left, right) else trap "left below right";
+    claim left_below_right: ilt(left, right) because "left below right";
   } else {
-    check ilt(right, left) else trap "right below left";
+    claim right_below_left: ilt(right, left) because "right below left";
   }
-  check ile(left, right) else trap "later weak bound";
+  claim later_weak_bound: ile(left, right) because "later weak bound";
   need_left_below_right(left: left, right: right);
   return unit;
 }
@@ -3102,9 +3102,9 @@ fn a_write_kills_a_disequality_materialized_by_a_join() {
 
 fn kept(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   if choose {
-    check ilt(left, right) else trap "left below right";
+    claim left_below_right: ilt(left, right) because "left below right";
   } else {
-    check ilt(right, left) else trap "right below left";
+    claim right_below_left: ilt(right, left) because "right below left";
   }
   need_distinct(left: left, right: right);
   return unit;
@@ -3112,9 +3112,9 @@ fn kept(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
 
 fn killed(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   if choose {
-    check ilt(left, right) else trap "left below right";
+    claim left_below_right: ilt(left, right) because "left below right";
   } else {
-    check ilt(right, left) else trap "right below left";
+    claim right_below_left: ilt(right, left) because "right below left";
   }
   set left = left +wrap 1_u64;
   need_distinct(left: left, right: right);
@@ -3161,9 +3161,9 @@ fn joins_keep_disequality_across_same_strict_explicit_and_mixed_grounds() {
 
 fn same_strict(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   if choose {
-    check ilt(left, right) else trap "first strict";
+    claim first_strict: ilt(left, right) because "first strict";
   } else {
-    check ilt(left, right) else trap "second strict";
+    claim second_strict: ilt(left, right) because "second strict";
   }
   need_distinct(left: left, right: right);
   return unit;
@@ -3171,9 +3171,9 @@ fn same_strict(left: own u64, right: own u64, choose: own Bool) -> own unit trap
 
 fn both_explicit(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   if choose {
-    check ine(left, right) else trap "first distinct";
+    claim first_distinct: ine(left, right) because "first distinct";
   } else {
-    check ine(right, left) else trap "second distinct";
+    claim second_distinct: ine(right, left) because "second distinct";
   }
   need_distinct(left: left, right: right);
   return unit;
@@ -3181,9 +3181,9 @@ fn both_explicit(left: own u64, right: own u64, choose: own Bool) -> own unit tr
 
 fn mixed(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   if choose {
-    check ine(left, right) else trap "explicit";
+    claim explicit: ine(left, right) because "explicit";
   } else {
-    check ilt(right, left) else trap "strict";
+    claim strict: ilt(right, left) because "strict";
   }
   need_distinct(left: left, right: right);
   return unit;
@@ -3237,13 +3237,13 @@ fn a_many_way_join_keeps_mixed_disequality_and_ignores_a_contradictory_input() {
 
 fn caller(left: own u64, right: own u64, first: own Bool, second: own Bool, third: own Bool) -> own unit traps {
   if first {
-    check ilt(left, right) else trap "left below right";
+    claim left_below_right: ilt(left, right) because "left below right";
   } else if second {
-    check ine(left, right) else trap "explicit distinct";
+    claim explicit_distinct: ine(left, right) because "explicit distinct";
   } else if third {
-    check ilt(right, left) else trap "right below left";
+    claim right_below_left: ilt(right, left) because "right below left";
   } else {
-    check ilt(0_u64, 0_u64) else trap "contradictory input";
+    claim contradictory_input: ilt(0_u64, 0_u64) because "contradictory input";
   }
   need_distinct(left: left, right: right);
   return unit;
@@ -3286,9 +3286,9 @@ fn equality_missing_relation_and_a_kill_each_prevent_disequality_survival() {
 
 fn equality_input(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   if choose {
-    check ilt(left, right) else trap "strict";
+    claim strict: ilt(left, right) because "strict";
   } else {
-    check ieq(left, right) else trap "equal";
+    claim equal: ieq(left, right) because "equal";
   }
   need_distinct(left: left, right: right);
   return unit;
@@ -3296,9 +3296,9 @@ fn equality_input(left: own u64, right: own u64, choose: own Bool) -> own unit t
 
 fn missing_input(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   if choose {
-    check ilt(left, right) else trap "strict";
+    claim strict: ilt(left, right) because "strict";
   } else {
-    check True() else trap "no relation";
+    claim no_relation: True() because "no relation";
   }
   need_distinct(left: left, right: right);
   return unit;
@@ -3306,10 +3306,10 @@ fn missing_input(left: own u64, right: own u64, choose: own Bool) -> own unit tr
 
 fn killed_input(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   if choose {
-    check ilt(left, right) else trap "strict then killed";
+    claim strict_then_killed: ilt(left, right) because "strict then killed";
     set left = left +wrap 1_u64;
   } else {
-    check ilt(right, left) else trap "other strict";
+    claim other_strict: ilt(right, left) because "other strict";
   }
   need_distinct(left: left, right: right);
   return unit;
@@ -3342,24 +3342,24 @@ fn derived_disequality_closure_preserves_contradiction_and_no_loop_induction() {
 }
 
 fn reverse_weak_transitivity_control(left: own u64, right: own u64) -> own unit traps {
-  check ile(left, right) else trap "weak";
-  check ilt(right, left) else trap "strict reverse";
+  claim weak: ile(left, right) because "weak";
+  claim strict_reverse: ilt(right, left) because "strict reverse";
   impossible();
   return unit;
 }
 
 fn both_strict(left: own u64, right: own u64) -> own unit traps {
-  check ilt(left, right) else trap "first strict";
-  check ilt(right, left) else trap "second strict";
+  claim first_strict: ilt(left, right) because "first strict";
+  claim second_strict: ilt(right, left) because "second strict";
   impossible();
   return unit;
 }
 
 fn all_contradictory(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   if choose {
-    check ilt(left, left) else trap "left contradiction";
+    claim left_contradiction: ilt(left, left) because "left contradiction";
   } else {
-    check ilt(right, right) else trap "right contradiction";
+    claim right_contradiction: ilt(right, right) because "right contradiction";
   }
   impossible();
   return unit;
@@ -3368,7 +3368,7 @@ fn all_contradictory(left: own u64, right: own u64, choose: own Bool) -> own uni
 fn no_induction(left: own u64, right: own u64, leave: own Bool) -> own unit traps {
   loop @again {
     need_distinct(left: left, right: right);
-    check ilt(left, right) else trap "inside only";
+    claim inside_only: ilt(left, right) because "inside only";
     if leave {
       break @again;
     }
@@ -3624,10 +3624,10 @@ fn value_if_delivery_joins_unequal_bounds_through_direct_edge_parents() {
 
 fn choose(value: own i32, narrow: own Bool) -> own unit traps {
   let picked = if narrow {
-    check ilt(value, 8_i32) else trap "narrow";
+    claim narrow: ilt(value, 8_i32) because "narrow";
     give value;
   } else {
-    check ilt(value, 128_i32) else trap "wide";
+    claim wide: ilt(value, 128_i32) because "wide";
     give value;
   }
   guard(value: picked);
@@ -3765,7 +3765,7 @@ fn missing_value_if_evidence_and_value_match_create_no_delivery_roots() {
 
 fn missing(value: own i32, narrow: own Bool) -> own i32 traps {
   let picked = if narrow {
-    check ilt(value, 8_i32) else trap "narrow";
+    claim narrow: ilt(value, 8_i32) because "narrow";
     give value;
   } else {
     give value;
@@ -3776,11 +3776,11 @@ fn missing(value: own i32, narrow: own Bool) -> own i32 traps {
 fn matched(value: own i32, choice: own Choice) -> own i32 traps {
   let picked = match choice {
     Narrow() => {
-      check ilt(value, 8_i32) else trap "narrow";
+      claim narrow: ilt(value, 8_i32) because "narrow";
       give value;
     }
     Wide() => {
-      check ilt(value, 128_i32) else trap "wide";
+      claim wide: ilt(value, 128_i32) because "wide";
       give value;
     }
   }
@@ -3818,10 +3818,10 @@ fn main() -> own unit pure {
 fn nonbare_carriers_and_branch_local_support_create_no_delivery_roots() {
     let source = br#"fn computed(value: own i32, narrow: own Bool) -> own i32 traps {
   let picked = if narrow {
-    check ilt(value, 8_i32) else trap "narrow";
+    claim narrow: ilt(value, 8_i32) because "narrow";
     give value +wrap 0_i32;
   } else {
-    check ilt(value, 128_i32) else trap "wide";
+    claim wide: ilt(value, 128_i32) because "wide";
     give value +wrap 0_i32;
   }
   return picked;
@@ -3830,11 +3830,11 @@ fn nonbare_carriers_and_branch_local_support_create_no_delivery_roots() {
 fn scoped(value: own i32, narrow: own Bool) -> own i32 traps {
   let picked = if narrow {
     let limit = ixor(value, 1_i32);
-    check ine(value, limit) else trap "narrow";
+    claim narrow: ine(value, limit) because "narrow";
     give value;
   } else {
     let limit = ixor(value, 2_i32);
-    check ine(value, limit) else trap "wide";
+    claim wide: ine(value, limit) because "wide";
     give value;
   }
   return picked;
@@ -3871,10 +3871,10 @@ fn main() -> own unit pure {
 fn a_contradictory_first_delivery_edge_cannot_launder_the_fresh_receiver() {
     let source = br#"fn choose(value: own i32, impossible: own Bool) -> own i32 traps {
   let picked = if impossible {
-    check ilt(value, value) else trap "contradiction";
+    claim contradiction: ilt(value, value) because "contradiction";
     give value;
   } else {
-    check ilt(value, 128_i32) else trap "bound";
+    claim bound: ilt(value, 128_i32) because "bound";
     give value;
   }
   return picked;
@@ -4699,9 +4699,9 @@ fn counted_roots_cover_contradictory_preheaders_and_neutral_join_predecessors() 
 
 fn contradictory(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   if choose {
-    check ilt(left, left) else trap "left contradiction";
+    claim left_contradiction: ilt(left, left) because "left contradiction";
   } else {
-    check ilt(right, right) else trap "right contradiction";
+    claim right_contradiction: ilt(right, right) because "right contradiction";
   }
   for @impossible i in 0_u64..1_u64 {
   }
@@ -5343,13 +5343,13 @@ fn a_passed_check_establishes_its_comparison_on_the_continuation() {
     let source = br#"const count: u64 = 4_u64;
 
 fn direct(values: own array<i32, count>, i: own u64) -> own i32 traps {
-  check ilt(i, 4_u64) else trap "i must be in range";
+  claim i_must_be_in_range: ilt(i, 4_u64) because "i must be in range";
   return values[i];
 }
 
 fn through_origin(values: own array<i32, count>, i: own u64) -> own i32 traps {
   let ok = ilt(i, 4_u64);
-  check ok else trap "i must be in range";
+  claim i_must_be_in_range: ok because "i must be in range";
   return values[i];
 }
 
@@ -5376,7 +5376,7 @@ fn a_check_on_a_band_establishes_its_conjuncts_not_a_whole_tree_relation() {
 fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
   let low = ilt(i, 4_u64);
   let high = ige(i, 0_u64);
-  check band(low, high) else trap "i must be in range";
+  claim i_must_be_in_range: band(low, high) because "i must be in range";
   return values[i];
 }
 
@@ -8250,7 +8250,7 @@ fn whole_goal_sources_discharge_atomically_while_children_do_not() {
   let complete = band(positive, small);
   check complete else trap "complete";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8270,7 +8270,7 @@ fn from_check(value: own u64) -> own unit traps {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
-  check complete else trap "complete";
+  claim complete: complete because "complete";
   guarded(value: value);
   return unit;
 }
@@ -8342,7 +8342,7 @@ fn an_exact_comparison_call_retains_every_positive_derivation_ground() {
     let source = br#"fn below(value: own u64) -> own unit traps requires {
   check ilt(value, 10_u64) else trap "small";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8411,7 +8411,7 @@ fn joined_whole_goals_require_the_same_sign_on_every_reachable_input() {
   let complete = band(positive, small);
   check complete else trap "complete";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8420,9 +8420,9 @@ fn both(value: own u64, choose: own Bool) -> own unit traps {
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
   if choose {
-    check complete else trap "left";
+    claim left: complete because "left";
   } else {
-    check complete else trap "right";
+    claim right: complete because "right";
   }
   guarded(value: value);
   return unit;
@@ -8433,9 +8433,9 @@ fn one(value: own u64, choose: own Bool) -> own unit traps {
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
   if choose {
-    check complete else trap "left";
+    claim left: complete because "left";
   } else {
-    check True() else trap "other";
+    claim other: True() because "other";
   }
   guarded(value: value);
   return unit;
@@ -8469,14 +8469,14 @@ fn a_computed_bool_truth_survives_an_origin_write_but_its_expansion_does_not() {
     let source = br#"fn need_true(value: own Bool) -> own unit traps requires {
   check value else trap "true";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
 fn below(value: own u64) -> own unit traps requires {
   check ilt(value, 10_u64) else trap "small";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8512,7 +8512,7 @@ fn a_copy_referent_read_through_an_affine_box_is_an_exact_goal_origin() {
   check complete else trap "complete";
 } {
   let seen = deref(deref(value));
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8554,7 +8554,7 @@ fn setting_an_intermediate_bool_binding_stops_later_origin_expansion() {
     let source = br#"fn guarded(value: own u64) -> own unit traps requires {
   check igt(value, 0_u64) else trap "positive";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8588,7 +8588,7 @@ fn resolved_writes_stop_future_expansion_of_the_written_origin_binding() {
   let complete = band(first, second);
   check complete else trap "complete";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8650,7 +8650,7 @@ fn combined_contradiction_is_absorbing_before_goal_and_l0_support_kills() {
   let complete = band(positive, small);
   check complete else trap "complete";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8658,7 +8658,7 @@ fn signed(value: own u64) -> own unit traps {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
-  check complete else trap "first";
+  claim first: complete because "first";
   if complete {
     return unit;
   } else {
@@ -8670,8 +8670,8 @@ fn signed(value: own u64) -> own unit traps {
 }
 
 fn l0(value: own u64) -> own unit traps {
-  check ilt(value, 5_u64) else trap "low";
-  check ige(value, 5_u64) else trap "high";
+  claim low: ilt(value, 5_u64) because "low";
+  claim high: ige(value, 5_u64) because "high";
   set value = 20_u64;
   guarded(value: value);
   return unit;
@@ -8717,7 +8717,7 @@ fn a_discharged_whole_goal_is_accepted_on_the_ordinary_path() {
   let complete = band(positive, small);
   check complete else trap "complete";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8763,7 +8763,7 @@ fn fn8_call_rejection_carries_the_complete_deterministic_payload() {
   let complete = band(positive, small);
   check complete else trap "complete";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8810,7 +8810,7 @@ fn actual_obligations_precede_fn8_and_ephemeral_goals_use_the_stronger_fix() {
     let admitted_actual = br#"fn positive(value: own u8) -> own unit traps requires {
   check ilt(value, 10_u8) else trap "small";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8866,7 +8866,7 @@ fn main() -> own unit pure {
     let failed_actual = br#"fn positive(value: own u8) -> own unit traps requires {
   check ilt(value, 10_u8) else trap "small";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8909,7 +8909,7 @@ fn a_call_is_judged_before_its_callee_write_and_that_write_kills_the_second_call
 } {
   let old = deref(value);
   set deref(value) = old;
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8960,7 +8960,7 @@ fn s4_discharges_the_body_call_until_a_body_write_kills_it() {
   check ilt(deref(value), 10_u64) else trap "small";
 } {
   let seen = deref(value);
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -8975,7 +8975,7 @@ fn update['r](value: &uniq 'r u64) -> own unit reads('r), writes('r), traps requ
   region 'second {
     observe<'second>(value: &'second deref(value));
   }
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -9004,7 +9004,7 @@ fn an_element_write_keeps_a_whole_goal_supported_only_by_length() {
   let complete = band(exact, exact);
   check complete else trap "sized";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -9042,7 +9042,7 @@ fn array_fill_participates_only_in_body_origin_expansion() {
     let source = br#"fn need_true(value: own Bool) -> own unit traps requires {
   check value else trap "true";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -9083,7 +9083,7 @@ fn s4_is_independent_of_forward_and_mutually_recursive_traversal_order() {
   check ilt(value, 10_u64) else trap "small";
 } {
   second(value: value);
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -9091,7 +9091,7 @@ fn second(value: own u64) -> own unit traps requires {
   check ilt(value, 10_u64) else trap "small";
 } {
   first(value: value);
-  check True() else trap "body";
+  claim body: True() because "body";
   return unit;
 }
 
@@ -9137,7 +9137,7 @@ fn caller(value: own i32) -> own unit traps {
 fn guarded<T: Int>(value: own T) -> own T traps requires {
   check igt(value, 0_T) else trap "positive";
 } {
-  check True() else trap "body";
+  claim body: True() because "body";
   return value;
 }
 "#;

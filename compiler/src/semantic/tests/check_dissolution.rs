@@ -1,51 +1,25 @@
-//! The check-dissolution candidate behind its default-off integration
-//! switch (#47): with the switch on, a body `check_stmt` is rejected
-//! because `claim` [CLM-1] is the sole writer-stated trap construct, while
-//! the contract finals of `requires`/`ensures` blocks [FN-8, FN-9] are
-//! untouched in either switch position. S3 claim establishment carries the
-//! signed Boolean decomposition without any body check, so goal
-//! decomposition survives S2 retirement.
+//! Check dissolution (#47): `claim` [CLM-1] is the sole writer-stated trap
+//! construct, and the body `check` statement retires.
+//!
+//! v0.32 removes `check_stmt` from the [GRAM-4] `stmt` alternation, so the
+//! retirement is a parse rejection rather than a semantic one; that half is
+//! pinned in `syntax::parser::tests`. What remains checkable here is the two
+//! things the grammar removal must *not* have broken: the contract finals of
+//! `requires`/`ensures` blocks, which [GRAM-2] now admits directly at
+//! `requires_entry`/`ensures_entry`, and S3 claim establishment, which
+//! carries the signed Boolean decomposition that retired [ENT-3.S2] used to.
 //! Design: `research/investigations/check-dissolution/SPEC-DELTA.md`.
 
 use crate::SemanticOutcome;
 
-use super::super::{SemanticIssueKind, SemanticRule};
-use super::{with_semantics, with_semantics_check_dissolution};
+use super::with_semantics;
 
-/// The one v0.31/v0.32-candidate acceptance flip: a body check is accepted
-/// with the switch off and retires at its exact statement node with the
-/// switch on.
+/// The `requires` and `ensures` finals are contract syntax owned by FN-8 and
+/// FN-9, not body statements. `check_stmt` survives as exactly that form, so
+/// a requirement-bearing, postcondition-bearing program stays accepted even
+/// though no body may spell `check`.
 #[test]
-fn a_body_check_is_accepted_off_switch_and_retires_on_switch() {
-    let source = br#"fn main() -> own unit traps {
-  let flag = True();
-  check flag else trap "body check";
-  return unit;
-}
-"#;
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "the shipped v0.31 path must keep accepting a body check: {outcome:?}"
-        );
-    });
-    with_semantics_check_dissolution(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("the dissolution switch must retire the body check: {outcome:?}");
-        };
-        assert_eq!(issue.rule, SemanticRule::Op5);
-        assert!(matches!(
-            issue.kind,
-            SemanticIssueKind::RetiredCheckStatement { .. }
-        ));
-    });
-}
-
-/// The `requires` and `ensures` finals are contract syntax owned by FN-8
-/// and FN-9, not body statements; the dissolution switch must leave a
-/// requirement-bearing, postcondition-bearing program accepted.
-#[test]
-fn contract_final_checks_survive_the_dissolution_switch() {
+fn contract_final_checks_survive_the_body_statement_retirement() {
     let source = br#"fn pick(table: own array<u8, 8>, index: own u64) -> own u8 pure requires {
   let admitted = ilt(index, 8_u64);
   check admitted else trap "index in range";
@@ -64,19 +38,19 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    with_semantics_check_dissolution(source, |outcome| {
+    with_semantics(source, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),
-            "contract finals must stay accepted under dissolution: {outcome:?}"
+            "contract finals must stay accepted after the body check retires: {outcome:?}"
         );
     });
 }
 
 /// S3 claim establishment carries the signed Boolean decomposition: the
 /// `band` claim's positive conjuncts discharge both guarded subscripts with
-/// no body check anywhere, in both switch positions. This is the recorded
-/// S2-retirement condition — decomposition attaches at establishment
-/// sources, not at the retired statement form.
+/// no body check anywhere. This is the recorded S2-retirement condition —
+/// decomposition attaches at establishment sources, not at the retired
+/// statement form.
 #[test]
 fn a_band_claim_discharges_decomposed_bounds_without_any_body_check() {
     let source =
@@ -98,12 +72,6 @@ fn main() -> own unit pure {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),
             "the S3 band claim must discharge both subscripts: {outcome:?}"
-        );
-    });
-    with_semantics_check_dissolution(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "S3 decomposition must survive the dissolution switch: {outcome:?}"
         );
     });
 }

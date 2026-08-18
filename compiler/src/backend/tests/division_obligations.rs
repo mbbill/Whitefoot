@@ -13,7 +13,7 @@ use super::{emit, emit_division_obligations};
 /// site keep the `traps` effect row correct under both switches.
 const BOTH_CLASSES: &[u8] =
     br#"fn combine(n: own u64, d: own u64, p: own i32, q: own i32) -> own u64 traps {
-  check igt(d, 0_u64) else trap "positive divisor";
+  claim positive_divisor: igt(d, 0_u64) because "positive divisor";
   let quotient = n / d;
   let signed = p / q;
   return quotient;
@@ -21,7 +21,7 @@ const BOTH_CLASSES: &[u8] =
 
 fn main() -> own unit traps {
   let total = combine(n: 12_u64, d: 4_u64, p: 9_i32, q: 3_i32);
-  check ieq(total, 3_u64) else trap "combined total";
+  claim combined_total: ieq(total, 3_u64) because "combined total";
   return unit;
 }
 "#;
@@ -90,7 +90,7 @@ fn a_constant_divisor_site_emits_one_plain_instruction() {
 
 fn main() -> own unit traps {
   let half = halve(n: 9_i32);
-  check ieq(half, 4_i32) else trap "halved";
+  claim halved: ieq(half, 4_i32) because "halved";
   return unit;
 }
 "#;

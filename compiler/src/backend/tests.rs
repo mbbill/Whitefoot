@@ -1080,15 +1080,47 @@ fn main() -> own unit pure {
     assert!(output.stderr.is_empty());
 }
 
+/// The [OP-5] record shape, including the exact [FORM-5] decoding of a
+/// message carrying an embedded quote and newline.
+///
+/// v0.32 retires the body `check` statement, so the entry requirement's
+/// final `check_stmt` is the sole remaining [OP-5] record carrier whose
+/// `message` is a writer-chosen STRING — a migrated body check becomes a
+/// [CLM-1] record whose `message` is an IDENT and can carry neither byte.
+/// The record shape and the message decoding are unchanged across the
+/// version, which is what this pins.
 #[test]
-fn explicit_check_failure_emits_the_exact_mandatory_record_shape() {
-    let source = b"fn main() -> own unit traps {\n  check False() else trap \"bad \\\"quote\\\"\\nline\";\n  return unit;\n}\n";
+fn a_failing_entry_requirement_emits_the_exact_mandatory_record_shape() {
+    let source = b"fn main() -> own unit pure requires {\n  check False() else trap \"bad \\\"quote\\\"\\nline\";\n} {\n  return unit;\n}\n";
     let output = compile_and_run(&compile(source));
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(stderr.starts_with(
-        "{\"rule_id\":\"OP-5\",\"message\":\"bad \\\"quote\\\"\\nline\",\"function\":\"main\",\"node_path\":["
-    ));
+    assert!(
+        stderr.starts_with(
+            "{\"rule_id\":\"OP-5\",\"message\":\"bad \\\"quote\\\"\\nline\",\"function\":\"main\",\"node_path\":["
+        ),
+        "unexpected record: {stderr}"
+    );
+    assert!(stderr.ends_with("]}\n"));
+    assert_eq!(stderr.lines().count(), 1);
+}
+
+/// The [CLM-1] record a migrated body check now emits: same mandatory
+/// [DIAG-3] field order and framing, `rule_id` `CLM-1`, and `message` the
+/// claim's IDENT spelling rather than its `because` justification.
+#[test]
+fn a_failing_claim_emits_the_exact_mandatory_record_shape() {
+    let source =
+        b"fn main() -> own unit traps {\n  claim bad_quote_line: False() because \"bad \\\"quote\\\"\\nline\";\n  return unit;\n}\n";
+    let output = compile_and_run(&compile(source));
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
+    assert!(
+        stderr.starts_with(
+            "{\"rule_id\":\"CLM-1\",\"message\":\"bad_quote_line\",\"function\":\"main\",\"node_path\":["
+        ),
+        "unexpected record: {stderr}"
+    );
     assert!(stderr.ends_with("]}\n"));
     assert_eq!(stderr.lines().count(), 1);
 }
@@ -1172,7 +1204,7 @@ fn required_check_survives_host_optimization_of_an_unfoldable_loop() {
     set state = mixed *wrap 1099511628211_u64;
     set step = step + 1_u64;
   }
-  check ieq(state, 1_u64) else trap "mixing chain drift";
+  claim mixing_chain_drift: ieq(state, 1_u64) because "mixing chain drift";
   return unit;
 }
 "#;

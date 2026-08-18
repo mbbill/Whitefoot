@@ -86,7 +86,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let local_give_context = value_delivery.then(|| GiveContext::empty(&base_key_set, scope));
         let arm_scope = ControlScope {
-            contract_clause: false,
             loops: scope.loops,
             give_context: local_give_context.as_ref().or(scope.give_context),
         };
@@ -272,7 +271,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let base_key_set = base_keys.iter().copied().collect::<HashSet<_>>();
         let local_give_context = opens_delivery.then(|| GiveContext::empty(&base_key_set, scope));
         let arm_scope = ControlScope {
-            contract_clause: false,
             loops: scope.loops,
             give_context: local_give_context.as_ref().or(scope.give_context),
         };

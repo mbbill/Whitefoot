@@ -273,7 +273,7 @@ fn read(values: own array<u8, count>, position: own u64) -> own u8 pure requires
 
 fn from_check(values: own array<u8, count>, position: own u64) -> own u8 traps {
   let room = len(values);
-  check ilt(position, room) else trap "checked";
+  claim checked: ilt(position, room) because "checked";
   return read(values: move values, position: position);
 }
 
@@ -589,7 +589,7 @@ fn a_bridge_converts_to_direct_and_crosses_a_requirement_free_call() {
 
 fn wrapper(values: own array<u8, 4>, position: own u64) -> own u8 traps {
   let room = len(values);
-  check ilt(position, room) else trap "wrapper assertion";
+  claim wrapper_assertion: ilt(position, room) because "wrapper assertion";
   return leaf(values: move values, position: position);
 }
 
@@ -1692,7 +1692,7 @@ fn read(values: own array<u8, count>, position: own u64) -> own u8 pure requires
 }
 
 fn counterfactual(values: own array<u8, count>, positions: own array<u64, count>, selector: own u64) -> own u8 traps {
-  check ilt(selector, 0_u64) else trap "unreachable call";
+  claim unreachable_call: ilt(selector, 0_u64) because "unreachable call";
   return read(values: move values, position: positions[selector]);
 }
 

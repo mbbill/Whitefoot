@@ -119,7 +119,7 @@ fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
     let source = br#"fn main() -> own unit allocates(heap), traps {
   let slots = buffer_vacant<box<u64>>(3_u64);
   let count = len(slots);
-  check ieq(count, 3_u64) else trap "vacant length";
+  claim vacant_length: ieq(count, 3_u64) because "vacant length";
   return unit;
 }
 "#;

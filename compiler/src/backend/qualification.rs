@@ -44,11 +44,18 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 /// review, only additional bumps. Do not generate this constant from the
 /// specification (that would delete the review it exists to force), and do
 /// not add more copies.
-// v0.31 review (2026-08-17): the candidate adds [SET-2] replacement, the
-// `buffer_vacant` row, and affine buffer-element formation; it touches no
-// [SYS-2] operation, resource, guarantee, or entry contract, so every row
-// below is unchanged and remains valid as reviewed.
-const REVIEWED_FOR: &str = "v0.31";
+// v0.32 review (2026-08-18): three of the candidate's four deltas — check
+// dissolution, the [ENT-6] division obligation family, and [FN-1]
+// declaration-site borrow-result provenance — touch no [SYS-2] operation,
+// resource, guarantee, or entry contract, so their rows below are unchanged
+// and remain valid as reviewed. The fourth, the [SYS-14] traversal surface,
+// adds the `DirectoryList` resource and the `open_directory`, `open_list`,
+// and `list_once` operations at ordinals 11, 12, and 13; each has a symbol
+// row, `open_directory` requires the directory-relative facility already
+// reviewed for `open_read`, and the two enumeration operations additionally
+// require `DirectoryEnumeration`. No path value is ever formed, so no new
+// argument-backing guarantee arises. Entry contracts are unchanged.
+const REVIEWED_FOR: &str = "v0.32";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectoryList`.

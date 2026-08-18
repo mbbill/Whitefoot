@@ -527,13 +527,6 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// instead of its runtime trap [OP-2]. Follows [`DIVISION_OBLIGATIONS`]
     /// outside the v0.32-candidate tests.
     division_obligations: bool,
-    /// The check-dissolution integration switch: whether a body-position
-    /// `check_stmt` is rejected because `claim` is the sole writer-stated
-    /// trap construct (v0.32 candidate, #47). Follows [`CHECK_DISSOLUTION`]
-    /// outside the candidate tests. The final `check_stmt` of a
-    /// `requires`/`ensures` block is contract syntax owned by FN-8/FN-9 and
-    /// is never affected.
-    check_dissolution: bool,
     tree: TreeView<'unit, 'classified, 'lexed, 'source>,
     nominals: Vec<CheckedNominal>,
     nominal_nodes: Vec<Option<NodeId>>,
@@ -594,17 +587,6 @@ pub(crate) const ARITHMETIC_OVERFLOW_OBLIGATIONS: bool = true;
 /// `dividend != iK::MIN or divisor != -1`, which the [ENT-4] conjunctive
 /// fragment cannot state.
 pub(crate) const DIVISION_OBLIGATIONS: bool = true;
-/// The check-dissolution integration switch (v0.32 candidate, #47): `false`
-/// under ACTIVE v0.31, whose grammar and OP-5 admit the body `check`
-/// statement unchanged. When the candidate activates, the body statement
-/// leaves the GRAM-4 `stmt` alternation and `claim` [CLM-1] is the sole
-/// writer-stated trap construct; this switch models that removal as a
-/// semantic rejection at the body `check_stmt` node so the rejection path
-/// is ready before the grammar change lands. Contract finals inside
-/// `requires`/`ensures` blocks are FN-8/FN-9 surfaces and stay accepted in
-/// both positions of the switch.
-pub(crate) const CHECK_DISSOLUTION: bool = true;
-
 /// Checks the currently implemented active-specification semantic family.
 ///
 /// Unsupported language families remain explicit compiler capability results;
@@ -620,7 +602,6 @@ pub fn check_semantics<'classified, 'lexed, 'source>(
         REBORROW_EXTENSION_ACTIVE,
         DECLARATION_PROVENANCE,
         DIVISION_OBLIGATIONS,
-        CHECK_DISSOLUTION,
     )
 }
 
@@ -641,7 +622,6 @@ pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
         REBORROW_EXTENSION_ACTIVE,
         DECLARATION_PROVENANCE,
         DIVISION_OBLIGATIONS,
-        CHECK_DISSOLUTION,
     )
 }
 
@@ -662,7 +642,6 @@ pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'sourc
         REBORROW_EXTENSION_ACTIVE,
         DECLARATION_PROVENANCE,
         DIVISION_OBLIGATIONS,
-        CHECK_DISSOLUTION,
     )
 }
 
@@ -683,7 +662,6 @@ pub(crate) fn check_semantics_reborrow_extension<'classified, 'lexed, 'source>(
         true,
         DECLARATION_PROVENANCE,
         DIVISION_OBLIGATIONS,
-        CHECK_DISSOLUTION,
     )
 }
 
@@ -704,7 +682,6 @@ pub(crate) fn check_semantics_declaration_provenance<'classified, 'lexed, 'sourc
         REBORROW_EXTENSION_ACTIVE,
         true,
         DIVISION_OBLIGATIONS,
-        CHECK_DISSOLUTION,
     )
 }
 
@@ -724,27 +701,6 @@ pub(crate) fn check_semantics_division_obligations<'classified, 'lexed, 'source>
         REBORROW_EXTENSION_ACTIVE,
         DECLARATION_PROVENANCE,
         true,
-        CHECK_DISSOLUTION,
-    )
-}
-
-/// [`check_semantics`] with the check-dissolution switch forced on, so the
-/// v0.32-candidate rejection of a body `check_stmt` is exercised while
-/// [`CHECK_DISSOLUTION`] stays `false` under ACTIVE v0.31. Test-only; the
-/// one shipped acceptance path reads that constant.
-#[cfg(test)]
-#[must_use]
-pub(crate) fn check_semantics_check_dissolution<'classified, 'lexed, 'source>(
-    resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
-) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(
-        resolved,
-        true,
-        ARITHMETIC_OVERFLOW_OBLIGATIONS,
-        REBORROW_EXTENSION_ACTIVE,
-        DECLARATION_PROVENANCE,
-        DIVISION_OBLIGATIONS,
-        true,
     )
 }
 
@@ -755,7 +711,6 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
     reborrow_extension: bool,
     declaration_provenance: bool,
     division_obligations: bool,
-    check_dissolution: bool,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
     let preflight = if resolved.postconditions().is_empty() {
         Ok(())
@@ -767,7 +722,6 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
             reborrow_extension,
             declaration_provenance,
             division_obligations,
-            check_dissolution,
         )
         .and_then(|mut checker| {
             let items = checker.item_declarations()?;
@@ -782,7 +736,6 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
             reborrow_extension,
             declaration_provenance,
             division_obligations,
-            check_dissolution,
         )
         .and_then(|mut checker| checker.check_program())
     });
@@ -869,7 +822,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         reborrow_extension: bool,
         declaration_provenance: bool,
         division_obligations: bool,
-        check_dissolution: bool,
     ) -> Result<Self, CheckStop> {
         Ok(Self {
             resolved,
@@ -878,7 +830,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             reborrow_extension,
             declaration_provenance,
             division_obligations,
-            check_dissolution,
             tree: TreeView::new(resolved)?,
             nominals: Vec::new(),
             nominal_nodes: Vec::new(),
@@ -1544,7 +1495,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &mut bindings,
             &mut counters,
             ControlScope {
-                contract_clause: false,
                 loops: &[],
                 give_context: None,
             },

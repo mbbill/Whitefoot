@@ -79,11 +79,6 @@ pub(super) struct ControlCounters<'state> {
 
 #[derive(Clone, Copy)]
 pub(super) struct ControlScope<'state> {
-    /// Whether this statement sits inside a `requires`/`ensures` clause,
-    /// whose final `check` is FN-8/FN-9 contract syntax rather than a body
-    /// statement; the check-dissolution retirement (#47) judges only body
-    /// position.
-    pub(super) contract_clause: bool,
     pub(super) loops: &'state [LoopContext],
     pub(super) give_context: Option<&'state GiveContext>,
 }
@@ -271,27 +266,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     break_states: Vec::new(),
                 })
             }
+            // v0.32 [GRAM-4] holds no `check_stmt`, so this arm is reached
+            // only for the final `check_stmt` of a `requires`/`ensures`
+            // block: FN-8/FN-9 contract syntax, not a body statement. A body
+            // `check` is a [FORM-3] parse rejection and never gets here.
             Production::CheckStmt => {
-                // The check-dissolution candidate (#47) removes the body
-                // `check` statement from the GRAM-4 `stmt` alternation;
-                // behind the default-off switch that removal is modeled as
-                // this rejection at the statement node. The contract final
-                // of a `requires`/`ensures` clause reaches this arm too and
-                // is exempt: it is FN-8/FN-9 contract syntax, not a body
-                // statement.
-                if self.check_dissolution && !scope.contract_clause {
-                    return Err(CheckStop::source_issue(SemanticIssue {
-                        rule: SemanticRule::Op5,
-                        location: SemanticLocation::SourceNode(
-                            self.tree.path(node)?.clone(),
-                            self.tree.coordinate(node)?,
-                        ),
-                        kind: SemanticIssueKind::RetiredCheckStatement {
-                            mechanical_fix: "state the predicate as a named `claim` with a \
-                                             justification, or test it with a real branch",
-                        },
-                    }));
-                }
                 let expression_node = self
                     .tree
                     .first_child_with(node, Production::Expr)?

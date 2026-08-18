@@ -258,21 +258,21 @@ command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(h
   region 'measure {
     set total = bs_len<'measure>(s: &'measure subject);
   }
-  check ieq(total, 43_u64) else trap "concatenated byte string length";
+  claim concatenated_byte_string_length: ieq(total, 43_u64) because "concatenated byte string length";
   region 'probe_head {
     match bs_byte<'probe_head>(s: &'probe_head subject, index: 10_u64) {
       Some(value: observed) => {
-        check ieq(observed, 98_u8) else trap "byte at the needle position";
+        claim byte_at_the_needle_position: ieq(observed, 98_u8) because "byte at the needle position";
       }
       None() => {
-        check False() else trap "missing byte at the needle position";
+        claim missing_byte_at_the_needle_position: False() because "missing byte at the needle position";
       }
     }
   }
   region 'probe_past {
     match bs_byte<'probe_past>(s: &'probe_past subject, index: 43_u64) {
       Some(value: observed) => {
-        check False() else trap "byte beyond the stored length";
+        claim byte_beyond_the_stored_length: False() because "byte beyond the stored length";
       }
       None() => {
       }
@@ -304,8 +304,8 @@ command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(h
       }
     }
   }
-  check ieq(present_found, 1_u8) else trap "present needle must be found";
-  check ieq(present_at, 10_u64) else trap "present needle position";
+  claim present_needle_must_be_found: ieq(present_found, 1_u8) because "present needle must be found";
+  claim present_needle_position: ieq(present_at, 10_u64) because "present needle position";
   let absent_found = 0_u8;
   region 'search_absent {
     match bs_find<'search_absent, 'search_absent>(haystack: &'search_absent subject, needle: &'search_absent absent) {
@@ -316,7 +316,7 @@ command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(h
       }
     }
   }
-  check ieq(absent_found, 0_u8) else trap "absent needle must not be found";
+  claim absent_needle_must_not_be_found: ieq(absent_found, 0_u8) because "absent needle must not be found";
   let report = bs_new();
   region 'length_view {
     let view = slice_of(&'length_view label_length);
@@ -364,7 +364,7 @@ command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(h
   region 'report_measure {
     set published = bs_len<'report_measure>(s: &'report_measure report);
   }
-  check ieq(published, 28_u64) else trap "report length";
+  claim report_length: ieq(published, 28_u64) because "report length";
   region 'publish {
     match publish_all<'publish, 'publish>(output: &uniq 'publish out, source: &'publish report.buf, length: published) {
       Ok(value: done) => {

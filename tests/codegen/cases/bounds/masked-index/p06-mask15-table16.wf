@@ -7,6 +7,6 @@ fn lookup (x: own u64) -> own u8 traps {
 
 fn main () -> own unit traps {
   let value: own u8 = lookup(x: 31_u64);
-  check ieq<u8>(value, 15_u8) else trap "mask fifteen drift";
+  claim mask_fifteen_drift: ieq<u8>(value, 15_u8) because "mask fifteen drift";
   return unit;
 }

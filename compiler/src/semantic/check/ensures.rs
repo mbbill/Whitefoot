@@ -446,7 +446,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     bindings,
                     counters,
                     ControlScope {
-                        contract_clause: true,
                         loops: &[],
                         give_context: None,
                     },

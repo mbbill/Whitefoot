@@ -8,6 +8,6 @@ fn lookup (x: own u64) -> own u8 traps {
 
 fn main () -> own unit traps {
   let value: own u8 = lookup(x: 14_u64);
-  check ieq<u8>(value, 6_u8) else trap "copied mask drift";
+  claim copied_mask_drift: ieq<u8>(value, 6_u8) because "copied mask drift";
   return unit;
 }

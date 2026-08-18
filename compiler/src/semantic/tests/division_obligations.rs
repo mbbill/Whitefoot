@@ -65,7 +65,7 @@ fn division_outcomes(
 #[test]
 fn a_dominating_check_discharges_an_unsigned_site_and_drops_its_check() {
     let source = br#"fn ratio(n: own u64, d: own u64) -> own u64 traps {
-  check igt(d, 0_u64) else trap "positive divisor";
+  claim positive_divisor: igt(d, 0_u64) because "positive divisor";
   let q = n / d;
   return q;
 }
@@ -241,7 +241,7 @@ fn a_constant_zero_divisor_is_rejected_everywhere() {
     let source = br#"fn main() -> own unit traps {
   let x = 10_i32;
   let q = x / 0_i32;
-  check igt(q, 0_i32) else trap "unreachable";
+  claim unreachable: igt(q, 0_i32) because "unreachable";
   return unit;
 }
 "#;
@@ -295,7 +295,7 @@ fn main() -> own unit pure {
 #[test]
 fn a_bounded_dividend_over_minus_one_discharges() {
     let source = br#"fn negate(n: own i32) -> own i32 traps {
-  check igt(n, -100_i32) else trap "bounded input";
+  claim bounded_input: igt(n, -100_i32) because "bounded input";
   let q = n / -1_i32;
   return q;
 }
@@ -437,7 +437,7 @@ fn the_default_switch_still_accepts_a_constant_zero_divisor() {
     let source = br#"fn main() -> own unit traps {
   let x = 10_i32;
   let q = x / 0_i32;
-  check igt(q, 0_i32) else trap "unreachable";
+  claim unreachable: igt(q, 0_i32) because "unreachable";
   return unit;
 }
 "#;

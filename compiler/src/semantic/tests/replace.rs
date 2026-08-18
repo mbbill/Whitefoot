@@ -279,7 +279,7 @@ fn push['a](v: &uniq 'a OptVec, x: own u32) -> own unit reads('a), writes('a), t
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
   let has_room = ilt(count, cap);
-  check has_room else trap "capacity exhausted";
+  claim capacity_exhausted: has_room because "capacity exhausted";
   let filled = Some<u32>(value: x);
   let vacant = replace deref(v).buf[count] = move filled;
   return unit;

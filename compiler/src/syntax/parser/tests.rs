@@ -2,6 +2,7 @@
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::syntax::grammar::{Production, productions};
+use crate::syntax::NodeId;
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::{ACTIVE_KERNEL_SPEC_HASH, SourceBundle, SourceId, SourceInput, SourceLimits};
 
@@ -528,10 +529,10 @@ return unit;
 loop @again { break @again; }
 for @range index in 0_u64..1_u64 { break @range; }
 region 'inner { give ordinary; }
-check ordinary else trap "check";
+claim check_claim: ordinary because "check";
 claim named: ordinary because "claim";
 match ordinary { Some(value: payload) => { give payload; } }
-if compared { check ordinary else trap "then"; } else if chosen { break @again; } else { return unit; }
+if compared { claim then_branch: ordinary because "then"; } else if chosen { break @again; } else { return unit; }
 }
 fn main() -> own unit pure {}
 "#;
@@ -602,6 +603,11 @@ const CLAIM_STATEMENT: &[u8] = b"fn probe() -> own unit traps {\n  let flag = Tr
 
 const CLAIM_SPELLINGS_AS_IDENTIFIERS: &[u8] =
     b"fn probe() -> own unit pure {\n  let claim = 0_i32;\n  return unit;\n}\n";
+
+const BODY_CHECK_STATEMENT: &[u8] =
+    b"fn probe() -> own unit traps {\n  let flag = True();\n  check flag else trap \"held\";\n  return unit;\n}\n";
+
+const CONTRACT_FINAL_CHECK: &[u8] = b"fn probe(value: own i32) -> own i32 pure requires {\n  let admitted = ieq(value, value);\n  check admitted else trap \"pre\";\n} {\n  return value;\n}\n";
 
 const COUNTED_RANGE_STATEMENT: &[u8] = b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for @range index in lower..upper {\n    break @range;\n  }\n  return unit;\n}\n";
 
@@ -678,6 +684,66 @@ fn active_contract_reserves_the_claim_spellings() {
         panic!("claim/because must be reserved spellings excluded from IDENT: {outcome:?}");
     };
     assert_eq!(issue.rule(), SyntaxRule::Form3);
+}
+
+/// Check dissolution (#47): `check_stmt` left the [GRAM-4] `stmt`
+/// alternation, so a body `check` no longer selects any statement and the
+/// parser rejects it under [FORM-3]. `claim` [CLM-1] is the sole
+/// writer-stated trap construct a body may spell.
+#[test]
+fn active_contract_rejects_a_body_check_statement() {
+    let outcome = parse_active("body-check.wf", BODY_CHECK_STATEMENT);
+    let ParseOutcome::SourceIssue(issue) = outcome else {
+        panic!("a body check must not parse once check_stmt leaves stmt: {outcome:?}");
+    };
+    assert_eq!(issue.rule(), SyntaxRule::Form3);
+    let start = usize::try_from(issue.coordinate().start().value()).unwrap_or(usize::MAX);
+    let end = usize::try_from(issue.coordinate().end().value()).unwrap_or(usize::MAX);
+    assert_eq!(&BODY_CHECK_STATEMENT[start..end], b"check");
+}
+
+/// The same `check_stmt` production survives as the contract final, which
+/// [GRAM-2] now admits directly at `requires_entry`: with `check_stmt` gone
+/// from `stmt`, no `stmt` wrapper can select it, so the final check is the
+/// entry's own selected child while an ordinary clause `let` still arrives
+/// through `stmt`.
+#[test]
+fn active_contract_parses_the_contract_final_as_a_direct_entry_child() {
+    let outcome = parse_active("contract-final.wf", CONTRACT_FINAL_CHECK);
+    let ParseOutcome::Complete(parsed) = outcome else {
+        panic!("the contract final check must still parse: {outcome:?}");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(
+        parsed,
+        FinalizeLimits {
+            max_work: 4_000_000,
+            max_roots: 65_536,
+            max_shape_tasks: 65_536,
+            max_nodes: 65_536,
+            max_child_edges: 65_536,
+            max_terminals: 65_536,
+            max_sources: 16,
+        },
+    ) else {
+        panic!("the contract final fixture must finalize");
+    };
+    let topology = &finalized.topology;
+    let mut selected = Vec::new();
+    for (index, node) in topology.nodes.iter().enumerate() {
+        if node.production != Production::RequiresEntry {
+            continue;
+        }
+        let id = NodeId::from_index(index).expect("entry node id");
+        let [child] = topology.node_children(id).expect("entry has one child") else {
+            panic!("a requires entry selects exactly one child");
+        };
+        selected.push(topology.node(*child).expect("child record").production);
+    }
+    assert_eq!(
+        selected,
+        vec![Production::Stmt, Production::CheckStmt],
+        "the clause let arrives through `stmt`; the final check is direct"
+    );
 }
 
 #[test]

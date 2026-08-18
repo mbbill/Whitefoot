@@ -117,7 +117,7 @@ fn passed_band_check_establishes_positive_conjuncts_and_discharges_both() {
   let low_ok = ilt(low, 8_u64);
   let high_ok = ilt(high, 8_u64);
   let both = band(low_ok, high_ok);
-  check both else trap "pair in range";
+  claim pair_in_range: both because "pair in range";
   let first = table[low];
   let second = table[high];
   return second;
@@ -309,7 +309,7 @@ fn caller(table: own array<u8, 8>, low: own u64, high: own u64) -> own u8 traps 
   let low_ok = ilt(low, 8_u64);
   let high_ok = ilt(high, 8_u64);
   let both = band(low_ok, high_ok);
-  check both else trap "caller proof";
+  claim caller_proof: both because "caller proof";
   let value = pick(table: move table, low: low, high: high);
   return value;
 }

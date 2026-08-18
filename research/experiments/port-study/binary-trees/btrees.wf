@@ -92,7 +92,7 @@ fn main () -> own unit allocates(heap), traps {
     let sbits: own u32 = iadd.trap<u32>(sd, 1_u32);
     let sn: own u64 = ishl.wrap<u64>(1_u64, sbits);
     let sexp: own u64 = isub.trap<u64>(sn, 1_u64);
-    check ieq<u64>(sc, sexp) else trap "stretch checksum drift";
+    claim stretch_checksum_drift: ieq<u64>(sc, sexp) because "stretch checksum drift";
     set poola.cnt = 1_u64;
     let lroot: own u64 = build(s: &uniq 'm poola, d: maxd);
     let d: own u32 = mind;
@@ -129,14 +129,14 @@ fn main () -> own unit allocates(heap), traps {
         set k = iadd.trap<u64>(k, 1_u64);
       }
       let want: own u64 = imul.trap<u64>(iters, exp);
-      check ieq<u64>(sum, want) else trap "iteration checksum drift";
+      claim iteration_checksum_drift: ieq<u64>(sum, want) because "iteration checksum drift";
       set d = iadd.trap<u32>(d, 2_u32);
     }
     let lc: own u64 = chk(s: &'m poola, i: lroot);
     let lbits: own u32 = iadd.trap<u32>(maxd, 1_u32);
     let ln: own u64 = ishl.wrap<u64>(1_u64, lbits);
     let lexp: own u64 = isub.trap<u64>(ln, 1_u64);
-    check ieq<u64>(lc, lexp) else trap "long-lived checksum drift";
+    claim long_lived_checksum_drift: ieq<u64>(lc, lexp) because "long-lived checksum drift";
   }
   return unit;
 }

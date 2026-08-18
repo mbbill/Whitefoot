@@ -122,7 +122,7 @@ fn inflate_huffman_literals ['s, 'o] (src: &'s buffer<u8>, out: &uniq 'o buffer<
       True() => {
       }
       False() => {
-        check ieq<u64>(0_u64, 1_u64) else trap "non-literal fixed code";
+        claim non_literal_fixed_code: ieq<u64>(0_u64, 1_u64) because "non-literal fixed code";
       }
     }
     match cvt<u32, u8>(symbol_word) {
@@ -130,7 +130,7 @@ fn inflate_huffman_literals ['s, 'o] (src: &'s buffer<u8>, out: &uniq 'o buffer<
         set index<u8>(deref(out), output_pos) = symbol;
       }
       Err(error: error) => {
-        check ieq<u64>(0_u64, 1_u64) else trap "invalid literal table entry";
+        claim invalid_literal_table_entry: ieq<u64>(0_u64, 1_u64) because "invalid literal table entry";
       }
     }
     set hold = ishr.wrap<u64>(hold, used);

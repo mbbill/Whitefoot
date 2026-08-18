@@ -464,10 +464,10 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
   let vacant = replace slots[0_u64] = move wrapped;
   match vacant {
     None() => {
-      check True() else trap "unreachable";
+      claim unreachable: True() because "unreachable";
     }
     Some(value: stray) => {
-      check False() else trap "fresh slot must be vacant";
+      claim fresh_slot_must_be_vacant: False() because "fresh slot must be vacant";
     }
   }
   let second = box_new(22_u64);
@@ -475,20 +475,20 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
   let vacant2 = replace slots[2_u64] = move wrapped2;
   match vacant2 {
     None() => {
-      check True() else trap "unreachable";
+      claim unreachable_2: True() because "unreachable";
     }
     Some(value: stray2) => {
-      check False() else trap "fresh slot must be vacant";
+      claim fresh_slot_must_be_vacant_2: False() because "fresh slot must be vacant";
     }
   }
   let taken = replace slots[0_u64] = None<box<u64>>();
   match taken {
     None() => {
-      check False() else trap "slot zero must be full";
+      claim slot_zero_must_be_full: False() because "slot zero must be full";
     }
     Some(value: payload) => {
       let observed = deref(payload);
-      check ieq(observed, 11_u64) else trap "payload zero";
+      claim payload_zero: ieq(observed, 11_u64) because "payload zero";
     }
   }
   return unit;

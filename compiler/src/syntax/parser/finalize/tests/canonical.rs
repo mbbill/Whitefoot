@@ -66,7 +66,7 @@ fn nested_blocks_arms_and_requires_follow_tree_depth() {
 } {
   match value {
     Some(payload: item) => {
-      check ieq(item, payload) else trap "drift";
+      claim drift: ieq(item, payload) because "drift";
     }
     None() => {
       return unit;

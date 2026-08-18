@@ -142,7 +142,7 @@ fn a_body_check_cannot_discharge_a_strict_bounds_query_in_u() {
         br#"deny_claims fn read(values: own array<u8, 4>, index: own u64) -> own u8 traps {
   let room = len(values);
   let inside = ilt(index, room);
-  check inside else trap "body authorization";
+  claim body_authorization: inside because "body authorization";
   return values[index];
 }
 
@@ -173,7 +173,7 @@ fn a_body_check_cannot_discharge_a_strict_required_call_in_u() {
 
 deny_claims fn forward(value: own u64, limit: own u64) -> own unit traps {
   let allowed = ilt(value, limit);
-  check allowed else trap "body authorization";
+  claim body_authorization: allowed because "body authorization";
   required(value: value, limit: limit);
   return unit;
 }
@@ -204,7 +204,7 @@ fn a_downstream_check_only_bounds_failure_is_reported_only_at_the_real_leaf() {
     let source = br#"fn leaf(values: own array<u8, 4>, index: own u64) -> own u8 traps {
   let room = len(values);
   let inside = ilt(index, room);
-  check inside else trap "leaf authorization";
+  claim leaf_authorization: inside because "leaf authorization";
   return values[index];
 }
 
@@ -278,7 +278,7 @@ fn an_outside_caller_must_prove_a_marked_root_requirement_in_its_own_u_view() {
 
 fn ordinary(value: own u64, limit: own u64) -> own unit traps {
   let allowed = ilt(value, limit);
-  check allowed else trap "ordinary authorization";
+  claim ordinary_authorization: allowed because "ordinary authorization";
   guarded(value: value, limit: limit);
   return unit;
 }
@@ -313,7 +313,7 @@ fn an_outside_call_does_not_demand_its_actual_expression_obligations_in_u() {
 fn ordinary(values: own array<u8, 4>, index: own u64) -> own unit traps {
   let room = len(values);
   let inside = ilt(index, room);
-  check inside else trap "ordinary actual authorization";
+  claim ordinary_actual_authorization: inside because "ordinary actual authorization";
   sink(value: values[index]);
   return unit;
 }
@@ -467,7 +467,7 @@ fn removing_the_marker_preserves_the_ordinary_diagnostic_and_dark_observability(
     let source = br#"fn read(values: own array<u8, 4>, index: own u64) -> own u8 traps {
   let room = len(values);
   let inside = ilt(index, room);
-  check inside else trap "ordinary authorization";
+  claim ordinary_authorization: inside because "ordinary authorization";
   return values[index];
 }
 

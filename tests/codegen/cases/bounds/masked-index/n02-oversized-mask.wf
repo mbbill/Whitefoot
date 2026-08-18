@@ -7,6 +7,6 @@ fn lookup (x: own u64) -> own u8 traps {
 
 fn main () -> own unit traps {
   let value: own u8 = lookup(x: 7_u64);
-  check ieq<u8>(value, 7_u8) else trap "oversized mask drift";
+  claim oversized_mask_drift: ieq<u8>(value, 7_u8) because "oversized mask drift";
   return unit;
 }

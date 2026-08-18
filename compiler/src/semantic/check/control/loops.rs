@@ -104,7 +104,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &mut body_bindings,
             counters,
             ControlScope {
-                contract_clause: false,
                 loops: &nested_loops,
                 give_context: scope.give_context,
             },
@@ -307,7 +306,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &mut body_bindings,
             counters,
             ControlScope {
-                contract_clause: false,
                 loops: &nested_loops,
                 give_context: scope.give_context,
             },
