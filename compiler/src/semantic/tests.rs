@@ -277,22 +277,6 @@ fn with_semantics_extension<ResultValue>(
     )
 }
 
-/// [`with_semantics`] through the test-only declaration-provenance checker,
-/// which selects the v0.32-candidate FN-1 boundary judgment while the
-/// shipped switch keeps v0.31 semantics [FN-1, OWN-6].
-fn with_semantics_declaration_provenance<ResultValue>(
-    source: &[u8],
-    run: impl for<'classified, 'lexed, 'source> FnOnce(
-        SemanticOutcome<'classified, 'lexed, 'source>,
-    ) -> ResultValue,
-) -> ResultValue {
-    with_semantics_entry(
-        source,
-        super::check::check_semantics_declaration_provenance,
-        run,
-    )
-}
-
 /// One single-source frontend pass delivered to the named checker entry.
 /// The pipeline values borrow one another down the stack, so the entry is
 /// selected by parameter rather than by returning the resolved unit.
@@ -350,17 +334,6 @@ fn assert_rule(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
 /// [`assert_rule`] under the reborrow extension [OWN-6, OWN-14].
 fn assert_rule_extension(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
     with_semantics_extension(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("expected {rule:?}/{kind:?}, got {outcome:?}");
-        };
-        assert_eq!(issue.rule(), rule);
-        assert_eq!(issue.kind(), &kind);
-    });
-}
-
-/// [`assert_rule`] under the declaration-provenance candidate [FN-1].
-fn assert_rule_declaration_provenance(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
-    with_semantics_declaration_provenance(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("expected {rule:?}/{kind:?}, got {outcome:?}");
         };

@@ -652,37 +652,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 expression_node,
             );
         }
-        // Reborrow extension: binding a borrow-mode call result requires the
-        // callee signature to determine its one provenance-candidate
-        // parameter; without one the caller cannot root the claim and the
-        // binding is rejected, not inferred [OWN-6, OWN-8].
+        // Binding a borrow-mode call result requires the callee signature to
+        // determine its one provenance-candidate parameter. [FN-1] rejects
+        // every boundary whose borrow result has no signature-determined
+        // source at its own `rtype`, so a bound result is either usable or
+        // its declaration is already gone — bindable iff usable. What
+        // reaches here is the const-storage disposition, whose claim needs a
+        // const-rooted holder the checker does not represent: an explicit
+        // capability stop, never an invalid-source verdict [OWN-6, OWN-8].
         if self.reborrow_extension
             && mode != CheckedMode::Own
             && value.borrow.is_none()
             && matches!(value.expression, CheckedExpression::UserCall { .. })
         {
-            // Under the declaration-provenance candidate this is no longer a
-            // source rejection: FN-1 rejects every boundary whose borrow
-            // result has no signature-determined source at its own `rtype`,
-            // so the binding is either usable or the declaration is already
-            // gone (bindable iff usable). What survives here is the
-            // const-storage disposition, whose claim needs a const-rooted
-            // holder the checker does not represent — an explicit capability
-            // stop, never an invalid-source verdict.
-            if self.declaration_provenance {
-                return self.unsupported(
-                    UnsupportedSemanticFeature::RegionsAndBorrows,
-                    expression_node,
-                );
-            }
-            return self.issue_node(
-                SemanticRule::Own6,
+            return self.unsupported(
+                UnsupportedSemanticFeature::RegionsAndBorrows,
                 expression_node,
-                SemanticIssueKind::AmbiguousResultBorrow {
-                    mechanical_fix: "give the callee exactly one parameter written as a borrow \
-                     of the result's mode and region and no other parameter naming that region, \
-                     or bind the borrow from a direct borrow expression",
-                },
             );
         }
         if !self.borrow_holder_scope_supported(declaration_id, mode)? {

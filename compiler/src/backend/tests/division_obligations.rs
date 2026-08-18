@@ -106,7 +106,8 @@ fn main() -> own unit traps {
 /// and keeps its complete zero, minimum, and minus-one test around `sdiv`.
 #[test]
 fn a_generic_divisor_site_emits_a_guard_only_at_the_retained_instance() {
-    const GENERIC_DIVISION: &[u8] = br#"fn ratio<T: Int>(n: own T, d: own T) -> own T traps requires {
+    const GENERIC_DIVISION: &[u8] =
+        br#"fn ratio<T: Int>(n: own T, d: own T) -> own T traps requires {
   check ine(d, 0_T) else trap "nonzero divisor";
 } {
   let q = n / d;

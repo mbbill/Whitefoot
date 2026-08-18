@@ -494,16 +494,6 @@ enum PreludeType {
 /// judgment as the shipped path.
 pub(crate) const REBORROW_EXTENSION_ACTIVE: bool = true;
 
-/// v0.32-candidate declaration-site provenance switch [FN-1, OWN-6]. The
-/// candidate moves the ambiguity rejection from the binding to the callable
-/// boundary: a declaration whose borrow-mode result has no signature-
-/// determined source is itself the error, because GRAM-9's flat form makes
-/// every call result let-bound, so a result no caller can bind is unusable
-/// by construction. `false` keeps every v0.31 disposition byte for byte;
-/// the test-only `check_semantics_declaration_provenance` entry selects the
-/// candidate judgment until activation flips this constant.
-pub(crate) const DECLARATION_PROVENANCE: bool = true;
-
 struct Checker<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     /// Whether an undischarged obligation or refuted claim rejects [OP-4,
@@ -519,9 +509,6 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// Whether the v0.31-candidate reborrow extension is admitted; see
     /// [`REBORROW_EXTENSION_ACTIVE`].
     reborrow_extension: bool,
-    /// Whether the v0.32-candidate declaration-site provenance judgment is
-    /// live; see [`DECLARATION_PROVENANCE`].
-    declaration_provenance: bool,
     /// The division dissolution integration switch: whether a bare `/` or
     /// `%` in [OP-2]'s divisor class carries an [ENT-6] division obligation
     /// instead of its runtime trap [OP-2]. Follows [`DIVISION_OBLIGATIONS`]
@@ -605,7 +592,6 @@ pub fn check_semantics<'classified, 'lexed, 'source>(
         true,
         ARITHMETIC_OVERFLOW_OBLIGATIONS,
         REBORROW_EXTENSION_ACTIVE,
-        DECLARATION_PROVENANCE,
         DIVISION_OBLIGATIONS,
     )
 }
@@ -625,7 +611,6 @@ pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
         false,
         ARITHMETIC_OVERFLOW_OBLIGATIONS,
         REBORROW_EXTENSION_ACTIVE,
-        DECLARATION_PROVENANCE,
         DIVISION_OBLIGATIONS,
     )
 }
@@ -645,7 +630,6 @@ pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'sourc
         true,
         true,
         REBORROW_EXTENSION_ACTIVE,
-        DECLARATION_PROVENANCE,
         DIVISION_OBLIGATIONS,
     )
 }
@@ -665,27 +649,6 @@ pub(crate) fn check_semantics_reborrow_extension<'classified, 'lexed, 'source>(
         true,
         ARITHMETIC_OVERFLOW_OBLIGATIONS,
         true,
-        DECLARATION_PROVENANCE,
-        DIVISION_OBLIGATIONS,
-    )
-}
-
-/// [`check_semantics`] with the v0.32-candidate declaration-site provenance
-/// judgment live [FN-1, OWN-6]. Test-only until [`DECLARATION_PROVENANCE`]
-/// flips at activation; the shipped acceptance behavior has exactly one
-/// path, and the paired default-checker tests pin the v0.31 dispositions of
-/// the same sources.
-#[cfg(test)]
-#[must_use]
-pub(crate) fn check_semantics_declaration_provenance<'classified, 'lexed, 'source>(
-    resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
-) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(
-        resolved,
-        true,
-        ARITHMETIC_OVERFLOW_OBLIGATIONS,
-        REBORROW_EXTENSION_ACTIVE,
-        true,
         DIVISION_OBLIGATIONS,
     )
 }
@@ -704,7 +667,6 @@ pub(crate) fn check_semantics_division_obligations<'classified, 'lexed, 'source>
         true,
         ARITHMETIC_OVERFLOW_OBLIGATIONS,
         REBORROW_EXTENSION_ACTIVE,
-        DECLARATION_PROVENANCE,
         true,
     )
 }
@@ -714,7 +676,6 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
     reject_entailment: bool,
     arithmetic_obligations: bool,
     reborrow_extension: bool,
-    declaration_provenance: bool,
     division_obligations: bool,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
     let preflight = if resolved.postconditions().is_empty() {
@@ -725,7 +686,6 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
             reject_entailment,
             arithmetic_obligations,
             reborrow_extension,
-            declaration_provenance,
             division_obligations,
         )
         .and_then(|mut checker| {
@@ -739,7 +699,6 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
             reject_entailment,
             arithmetic_obligations,
             reborrow_extension,
-            declaration_provenance,
             division_obligations,
         )
         .and_then(|mut checker| checker.check_program())
@@ -844,9 +803,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         result: CheckedType,
         rtype: NodeId,
     ) -> Result<(), CheckStop> {
-        if !self.declaration_provenance
-            || borrow_result_provenance(parameters, result_mode, result)
-                != Some(ResultProvenance::Ambiguous)
+        if borrow_result_provenance(parameters, result_mode, result)
+            != Some(ResultProvenance::Ambiguous)
         {
             return Ok(());
         }
@@ -864,7 +822,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         reject_entailment: bool,
         arithmetic_obligations: bool,
         reborrow_extension: bool,
-        declaration_provenance: bool,
         division_obligations: bool,
     ) -> Result<Self, CheckStop> {
         Ok(Self {
@@ -872,7 +829,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             reject_entailment,
             arithmetic_obligations,
             reborrow_extension,
-            declaration_provenance,
             division_obligations,
             tree: TreeView::new(resolved)?,
             nominals: Vec::new(),

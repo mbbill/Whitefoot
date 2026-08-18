@@ -738,16 +738,8 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by OWN-14.
         mechanical_fix: &'static str,
     },
-    /// A borrow-mode call result was bound, but the callee signature does not
-    /// determine one provenance-candidate parameter for it (reborrow
-    /// extension only).
-    AmbiguousResultBorrow {
-        /// Exact restructuring required by OWN-6.
-        mechanical_fix: &'static str,
-    },
     /// A declared callable boundary returns a borrow whose source the
-    /// signature does not determine, so no caller can bind its result
-    /// (declaration-provenance candidate only).
+    /// signature does not determine, so no caller can bind its result.
     AmbiguousResultProvenance {
         /// Exact restructuring required by FN-1.
         mechanical_fix: &'static str,
