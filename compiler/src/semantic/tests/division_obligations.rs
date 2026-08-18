@@ -449,3 +449,33 @@ fn the_default_switch_still_accepts_a_constant_zero_divisor() {
         assert_eq!(division_trap_records(main), vec![true]);
     });
 }
+
+/// The one direction in which the candidate accepts more: a body whose only
+/// trap contributor was a divisor-class bare site can now write the narrower
+/// `pure` row, which the active specification rejects under EFF-2. This is
+/// the exact converse of the effect-row rejection the acceptance-set
+/// analysis records, and it is the only newly accepted class.
+#[test]
+fn the_default_switch_rejects_a_pure_row_the_candidate_accepts() {
+    let source = br#"fn halve(n: own i32) -> own i32 pure {
+  let q = n / 2_i32;
+  return q;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("v0.31 makes every bare division exhibit traps: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Eff2);
+    });
+    with_semantics_division(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the discharged class site contributes no traps, so `pure` is correct",
+        );
+    });
+}

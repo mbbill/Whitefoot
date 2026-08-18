@@ -315,11 +315,21 @@ Programs that change acceptance under this delta, exactly:
    effect row lists `traps` where the only body trap contributor was a
    divisor-class bare site now has a written/exhibited [EFF-2] disagreement
    and rejects at its `effects` node until `traps` is removed from the row.
-3. **NEWLY ACCEPTED**: none. Attaching obligations only rejects more; no fact
-   source or closure rule is added, so no other judgment changes. (Note that
-   the converse effect-row move — a body whose only trap contributor was a
-   class site and whose row already says `pure` — was already a rejection
-   before, so nothing becomes newly accepted there either.)
+3. **NEWLY ACCEPTED**: exactly one class, and it is an [EFF-2] consequence
+   rather than an entailment one. A program v0.31 rejected *only* because a
+   divisor-class bare site forced `traps` into a body whose written row omits
+   it is accepted once that site's obligation discharges, since a discharged
+   class call exhibits no `traps`. `fn halve(n: own i32) -> own i32 pure {
+   let q = n / 2_i32; return q; }` is the minimal witness: v0.31 rejects it
+   under EFF-2, v0.32 accepts it. Nothing else becomes accepted — no fact
+   source and no closure rule is added, so every entailment judgment on a
+   program v0.31 already accepted is unchanged.
+
+   Note for the lead: the superseded v0.31 arith-dissolution delta recorded
+   "NEWLY ACCEPTED: none" for the structurally identical constant-operand
+   family, which appears to have been inaccurate for the same reason. Worth a
+   line in the v0.32 packet so the owner is not told the accepted set only
+   ever shrinks.
 4. **UNCHANGED**: every `/checked` and `%checked` spelling; every `.wrap`,
    `.checked`, `.sat`, `ineg.*`, `iabs.*`, shift, comparison, and bare
    `+`/`-`/`*` judgment; every signed bare `/` or `%` with two non-constant
@@ -380,6 +390,7 @@ New cases:
 | `x-arith-idiv-trap-signed-two-variable-traps` | `["OP-2", "SCOPE-4", "ENT-6"]` | `{"kind": "trap"}` — the retained class: a signed `p / q` with two non-constant operands attaches no obligation, keeps its runtime test, and aborts on a zero divisor (replaces the runtime-trap coverage the modified case above gives up) |
 | `op2-pos-division-checked-untouched` | `["OP-2", "OP-1"]` | `{"kind": "run", "exit": 0}` — the dissolution attaches obligations to the bare divisor class only; `/checked` is untouched, needs no discharge, and returns `Err(DivideByZero())` for a zero divisor |
 | `eff2-neg-division-class-site-pure-row` | `["EFF-2", "OP-2"]` | `{"kind": "reject", "rule": "EFF-2"}` — a body whose only trap contributor is a retained signed two-variable site still exhibits `traps`, so a `pure` row rejects |
+| `eff2-pos-discharged-division-site-pure-row` | `["EFF-2", "OP-2", "ENT-6"]` | `{"kind": "run", "exit": 0}` — the newly accepted class: a discharged divisor-class site exhibits no `traps`, so the narrower `pure` row is the correct one |
 
 ## Non-goals
 
@@ -405,8 +416,9 @@ default off, so the tree stays green under active v0.31:
   nothing else.
 - With the switch off, every bare `/` and `%` keeps its `TrapSite`, its
   `traps` effect contribution, its complete guard set, and no obligation is
-  attached — byte-identical v0.31 behavior. Two default-switch control tests
-  pin this.
+  attached — byte-identical v0.31 behavior. Three default-switch control
+  tests pin this, including the one that pins the newly accepted `pure`-row
+  class in both directions.
 - With the switch on: the checker classifies class sites once through the
   shared `division_obligation_class` predicate (also read by the flow, so the
   two views cannot drift), drops their `TrapSite` and `traps` contribution;
@@ -415,6 +427,9 @@ default off, so the tree stays green under active v0.31:
   OP-2 with `UndischargedDivisionObligation`; strict components re-judge in U
   citing OP-2 with `StrictUndischargedDivision`; and the backend emits the
   plain `udiv`/`sdiv`/`urem`/`srem` for a trap-free class site.
+- Fifteen tests cover the family: thirteen in
+  `compiler/src/semantic/tests/division_obligations.rs` and two backend
+  emission tests in `compiler/src/backend/tests/division_obligations.rs`.
 - The one shared structure this delta widened is `ObligationOutcome`'s
   `BoundsRequest`, which gains a `distinct` cell because the division family's
   normalized conjunct is a disequality rather than a difference bound. Both
