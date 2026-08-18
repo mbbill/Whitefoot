@@ -1,6 +1,6 @@
 # Kernel Specification v0.32
 
-Status: CANDIDATE v0.32 supersedes v0.31 ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c (2026-08-18; spec delta over four integrated batch-0071 workstreams — check dissolution (OP-5 refitted to the condition judgment, contract finals, and program-start semantics; the body `check_stmt` leaves the GRAM-4 `stmt` alternation while the production survives as the contract final admitted at `requires_entry` and `ensures_entry`; [ENT-3.S2] retired with S3 re-homed self-contained), the [ENT-6] divisor-class division obligation family ([OP-2]: unsigned or constant-operand bare `/` `%` carry the two-conjunct division obligation, base discharge only; signed two-variable sites retain the trapping judgment — the safe condition is a disjunction the fragment cannot state), the [FN-1] declaration-site borrow-result provenance judgment (at most one same-kind same-region candidate parameter and no other parameter naming the result region; two or more candidates reject at the declaration's complete `rtype`; zero candidates is const-sourced by elimination; [OWN-6]'s binding-side ambiguity rejection deleted as unreachable), and the directory-traversal system surface ([SYS-14] family contract; nominals +2 `DirectoryList` `ListOutcome`, constructors +3, operations +3 `open_directory` `open_list` `list_once`; inventory 16/42/67/14 with 192 declaration records; no path value is ever formed): numbered rules +1/-0 ([SYS-14]), rule inventory 135; grammar productions +0/-0 with three right-hand sides changed (`stmt`, `requires_entry`, `ensures_entry`); tokens +0/-0; fixed terminals +0/-0; obligation families +1 (division: zero-divisor conjunct at ordinal zero, signed-overflow conjunct at ordinal one); exceptions +1/-1 (FN-1's boundary provenance rejection replaces OWN-6's binding-side rejection); the accepted byte set narrows at body check statements and at ambiguous-provenance borrow-returning declarations, and widens at discharged divisor-class division (a divisor-class function may now declare a traps-free row) and at the enumeration surface; evidence-selected: the recorded #47/#48 dissolution mandates, the owner-driven declaration-site provenance law of 2026-08-18, and the batch-0071 traversal-surface reconnaissance gap table with the running dir_walk consumer).
+Status: CANDIDATE v0.32 supersedes v0.31 ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c (2026-08-18; spec delta over four integrated batch-0071 workstreams — check dissolution (OP-5 refitted to the condition judgment, contract finals, and program-start semantics; the body `check_stmt` leaves the GRAM-4 `stmt` alternation while the production survives as the contract final admitted at `requires_entry` and `ensures_entry`; [ENT-3.S2] retired with S3 re-homed self-contained), the [ENT-6] divisor-class division obligation family ([OP-2]: unsigned or constant-operand bare `/` `%` carry the two-conjunct division obligation, base discharge only; signed two-variable sites retain the trapping judgment — the safe condition is a disjunction the fragment cannot state), the [FN-1] declaration-site borrow-result provenance judgment (at most one same-kind same-region candidate parameter and no other parameter naming the result region; two or more candidates reject at the declaration's complete `rtype`; zero candidates is const-sourced by elimination; [OWN-6]'s binding-side ambiguity rejection deleted as unreachable), and the directory-traversal system surface ([SYS-14] family contract; nominals +2 `DirectoryList` `ListOutcome`, constructors +3, operations +3 `open_directory` `open_list` `list_once`; inventory 16/42/67/14 with 192 declaration records; no path value is ever formed): numbered rules +1/-0 ([SYS-14]), rule inventory 135; grammar productions +0/-0 with three right-hand sides changed (`stmt`, `requires_entry`, `ensures_entry`); tokens +0/-0; fixed terminals +0/-0; obligation families +1 (division: zero-divisor conjunct at ordinal zero, signed-overflow conjunct at ordinal one); exceptions +1/-1 (FN-1's boundary provenance rejection replaces OWN-6's binding-side rejection); the accepted byte set narrows at body check statements, at ambiguous-provenance borrow-returning declarations, and at undischarged divisor-class division sites (a v0.31 in-class runtime zero-divisor trap becomes a compile-time rejection), and widens at discharged divisor-class division (a divisor-class function may now declare a traps-free row) and at the enumeration surface; evidence-selected: the recorded #47/#48 dissolution mandates, the owner-driven declaration-site provenance law of 2026-08-18, and the batch-0071 traversal-surface reconnaissance gap table with the running dir_walk consumer).
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -843,6 +843,7 @@ No operand value or expected result type selects the negation mode, changes its 
 There are no wrap modes for division/remainder because no sound modular semantics exists for divisor-zero; this is table data, not an exception clause.
 (Negation has a wrap mode: two's-complement wrapping negation is sound modular arithmetic — ledger fix 2026-07-07.) Integer division and remainder have two checkable failures: a zero divisor for all int T, and, for signed T, the single signed-overflow case `iK::MIN / -1` (LLVM sdiv/srem are UB on both); `/checked` and `%checked` return `Err(DivideByZero())` for a zero divisor and `Err(DivOverflow())` for signed minimum divided by negative one, else `Ok`.
 A bare-operator `/` or `%` call whose selected type T is unsigned, or at least one of whose two operand atoms reads as an [ENT-2] constant — an integer literal or an integer-typed named const, judged per concrete [FN-2] instance — is in the divisor class.
+The [EFF-2] body-syntactic contribution is judged once on the written body: a bare `/` or `%` whose written selected type is a generic type parameter and whose operand atoms are non-constant is outside the class for that contribution and exhibits `traps`, while the obligation and its discharge remain per concrete instance, so a discharged unsigned instance under such a row simply executes no test.
 A divisor-class call carries the division obligation that its divisor is nonzero and that it is not the signed-overflow case [ENT-6], judged by the same complete-state base discharge as a subscript bounds obligation.
 A discharged class call returns the exact quotient or remainder with no runtime zero-divisor or signed-overflow check in any build mode, never traps, exhibits no `traps` under [EFF-2], and its checked-program disposition records the discharging derivation [DIAG-2].
 A class call whose obligation the complete fact state does not discharge is a compile-time rejection citing OP-2 at that call's `infix` node, carrying the residual obligation rendered exactly per [ENT-6]; it publishes no checked program.
@@ -963,7 +964,7 @@ This specification has no signature summary that carries both the returned descr
 This rejection does not change any other returned-borrow judgment.
 A function whose written result mode is `&'b` or `&uniq 'b` determines the result's provenance from its written parameters alone: a parameter is a provenance candidate iff its written mode is a borrow of the result's kind in the result's formal region `'b` [OWN-6].
 Exactly one candidate is the result's debtor, and zero candidates is legal — OWN-10 admits no `'b`-region borrow rooted in callee-local storage, so the only remaining source is named `const` storage, whose immutable program-lifetime extent needs no claim [CONST-2].
-Two or more candidates, a same-region parameter of the other borrow kind, or any parameter whose written type names `'b` leaves the source undetermined and is a hard error citing FN-1 at the complete `rtype`, with `SourceCoordinate` equal to that production's complete checked half-open source extent and the restructuring `give the source parameter its own region so exactly one parameter shares the result's region and kind, or return the decision as a value and let the caller borrow from the source it names`.
+Two or more candidates, a same-region parameter of the other borrow kind, any parameter whose written type names `'b`, or a result whose written type is not region-free leaves the source undetermined and is a hard error citing FN-1 at the complete `rtype`, with `SourceCoordinate` equal to that production's complete checked half-open source extent and the restructuring `give the source parameter its own region so exactly one parameter shares the result's region and kind, or return the decision as a value and let the caller borrow from the source it names`.
 The declaration is the error and no call is required to reach it: [GRAM-9] admits a computed value only through a preceding `let`, so a result no caller can bind is unusable by construction.
 
 The signature-formation parts of these two slice-result judgments and of the borrow-result provenance judgment apply equally to a top-level `fn_decl` and a contract-member `fn_sig`: an `own slice` member has the same parameter-derived ceiling, a borrow-mode direct-slice member is rejected at that member's complete `rtype`, and a borrow-result member whose source its own parameters leave undetermined is rejected there too.
@@ -1214,7 +1215,7 @@ The marked four-input command header is the preceding canonical header with exac
 Each marked concrete entry is one strict root while all ordinary FN-7 entry, callability, effect, result, label, and start judgments remain in force.
 
 [FN-8] Any source `fn_decl`, generic or nongeneric, may carry one `requires` block after its effect row; the fixed grammar terminal `requires` is ineligible for IDENT under [FORM-3].
-The grammar deliberately admits every `doc` or `stmt` as the selected child of a direct `requires_entry`; syntax formation does not encode the block's semantic subset.
+The grammar deliberately admits every `doc`, `stmt`, or `check_stmt` as the selected child of a direct `requires_entry`; syntax formation does not encode the block's semantic subset.
 Before recursively checking any entry, an early FN-8 structural pass requires those selected children to form zero or more `let_stmt` nodes whose selected right-hand side is `ordinary_let_rhs`, followed by exactly one final `check_stmt`, and nothing else.
 The pass examines direct entries from left to right: every entry before the final position must select an admitted ordinary let, and the final entry must select a check.
 The first entry that violates that shape is reported; an empty block or an all-let sequence instead reports the `requires_block` node for its missing final check.
@@ -1283,7 +1284,7 @@ The fixed grammar terminal `ensures` is ineligible for IDENT under [FORM-3].
 The block declares one verified normal-return relation.
 It is neither an executable epilogue nor a trusted assertion, and it is absent from `fn_sig`, contract members, system-operation declarations, and every dynamic-boundary surface.
 
-The grammar deliberately admits every `doc` or `stmt` as a direct `ensures_entry`.
+The grammar deliberately admits every `doc`, `stmt`, or `check_stmt` as a direct `ensures_entry`.
 Before recursively checking any entry, an early FN-9 structural pass requires zero or more `let_stmt` nodes whose selected right-hand side is `ordinary_let_rhs`, followed by exactly one final `check_stmt`, and nothing else.
 It examines direct entries left to right and reports the first entry that violates that shape; an empty or all-let block instead reports the `ensures_block` for its missing final check.
 A nonfinal or repeated check, `doc`, `propagate_let_rhs`, `value_match`, `value_if`, `claim`, user or system call, construction, `move`, borrow, subscript, mutation, control flow, allocation, and every trapping or partial operation are inadmissible.
@@ -1335,7 +1336,7 @@ The complete state, unasserted state U, and S4-blinded state B each judge the sa
 Complete, then U, then B is the fixed per-return view order.
 Complete discharge at every selected return is mandatory; the first source-ordered selected return whose complete relation is refuted or unproved is a hard FN-9 rejection with that exact disposition and no runtime fallback.
 For each of U and B, retain the ordered per-exit dispositions and mark the aggregate discharged exactly when every selected return discharges in that view; U or B failure does not reject the declaration.
-A complete-only summary may therefore depend on a body check or claim, while a U-but-not-B summary may depend on the proved function requirement.
+A complete-only summary may therefore depend on a claim, while a U-but-not-B summary may depend on the proved function requirement.
 Those distinctions are checked metadata, never writer annotations.
 
 Postcondition verification introduces no summary fixed point.
@@ -1908,7 +1909,7 @@ If one of these `.trap` calls makes a function's written effect row disagree wit
 An [FN-8] ordinary-call requirement judgment begins only after every earlier callee, concrete-instantiation, argument, type, borrow-feasibility, and actual-expression-obligation judgment named by FN-8 succeeds.
 An unproved or refuted instantiated goal is one hard rejection citing FN-8 with `SourceNode` at that existing `call` node and `SourceCoordinate` equal to the call node's complete checked half-open source extent.
 Its deterministic payload contains the concrete callee instance, the requirement occurrence's final-check NodePath, the complete instantiated typed goal, and exactly one disposition, `unproved` or `refuted`; it does not select a predicate by clause-local spelling.
-The required restructuring is `establish the complete callee requirement with one dominating branch, check, or claim before the call`.
+The required restructuring is `establish the complete callee requirement with one dominating branch or claim before the call`.
 When the payload contains an ephemeral actual-value datum, it additionally renders that datum as `argument #N pre-transfer value`, with N the zero-based argument ordinal, and replaces the restructuring with `bind that argument or referent value with one preceding ordinary let, establish the complete requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow`.
 A concrete generic instance that changes a substituted type, const, or datum changes the payload goal and is judged independently.
 This rejection is never replaced with a runtime fallback or reported at the callee declaration.
@@ -2593,17 +2594,18 @@ It is live from its entry binding or from the `open_directory` that created it u
 
 Opening creates aliases only downward.
 `open_read` creates an independent `ReadFile` with its own cursor domain and does not alias the capability.
+`open_directory` creates an independent `DirectoryRead` naming the child directory object, and `open_list` creates an independent `DirectoryList` with its own entry cursor; neither aliases the capability it was opened against, and releasing either leaves that capability live.
 Two `DirectoryRead` values may denote the same directory object, and nothing infers separateness from a native handle or from a separate open.
 
 Its completion policy is release-complete [SYS-5], on the same ground as `ReadFile` [SYS-11]: losing a close diagnostic on a read-only directory capability cannot invalidate an already opened file and cannot promise durability.
 
 Any number of `open_read`, `open_directory`, and `open_list` calls may progress concurrently through shared borrows of one `DirectoryRead`, exposing no ordering relative to one another.
 Each either creates its own `ReadFile`, `DirectoryRead`, or `DirectoryList`, or fails, and none observes another's effect.
-`open_directory` creates an independent `DirectoryRead` naming the child directory object, and `open_list` creates an independent `DirectoryList` with its own entry cursor; neither aliases the capability it was opened against, and releasing either leaves that capability live.
-A capability `open_directory` returns names the object the target's own directory-relative resolution reached for that component, with the process equivalence and the deferred confinement [PATH-2] already fixes.
-Two `DirectoryRead` values may denote the same directory object however they were produced, and a program that descends must exclude the self and parent components itself: nothing in this specification detects a cycle.
 
 Resolution, process-equivalence, the no-emulation qualification rule, and the deferred confined root are [PATH-2]; the `command.cwd` instance is shareable for open operations.
+
+A capability `open_directory` returns names the object the target's own directory-relative resolution reached for that component, with the process equivalence and the deferred confinement [PATH-2] already fixes.
+Two `DirectoryRead` values may denote the same directory object however they were produced, and a program that descends must exclude the self and parent components itself: nothing in this specification detects a cycle.
 
 [SYS-11] `ReadFile` is a stateful resource with one state.
 `open_read` creates it live, with one cursor domain and one conservative filesystem-object alias domain.
@@ -2649,19 +2651,26 @@ Startup failure before entry and a trap are outside this mapping [PROG-3]: a tra
 [SYS-14] `DirectoryList` is a stateful resource with one state.
 `open_list` creates it live, with one entry-cursor domain over the directory object the capability it was opened against names.
 A separate `open_list` on the same capability creates a separate cursor and does not prove a separate directory object, and this specification declares no duplicate, split, rewind, or positioned-lane operation, so multiple lanes over one enumeration are not reachable.
+
 `list_once` is call-scoped and leaves both owners live on every outcome; its transfer, cursor, and buffer semantics are [SYS-8].
 It reports the entries the host reported, in the host's own order: this specification fixes no enumeration order, promises no stability across two enumerations of the same directory, and states no relationship to a concurrent change of that directory's content.
 A program that needs a deterministic order sorts what it collected.
+
 The reported entries are exactly what the target's directory holds, including the self and parent entries when the target's directory holds them.
 They are not filtered, because filtering them would cost a second host call in the batch that held only them [QUAL-3], and a program that descends must exclude them anyway to terminate.
+
+The target shim may rewrite the transferred records in place within the caller's validated range into the portable form; that rewrite is part of the one transfer, not a copy of the transferred data [QUAL-3].
 One entry record is one kind byte, one name-length byte, and exactly that many name bytes.
 The closed kind set is `0` unknown, `1` regular file, `2` directory, `3` symbolic link, and `4` other; `0` states that the target classified the entry at enumeration time as nothing more specific, not that the entry is absent or unreadable.
 A name is one path component: it is never empty, never longer than the target's component limit, and contains no NUL and no target separator, so no record a program reads can name more than one component.
+
 An entry name reaches source only as those bytes.
 This specification declares no operation turning an enumerated name into a `HostString` or a `RelativePath`, because a name's backing is not the command-lifetime argument snapshot [HOST-3] and a path value is an inline lease over that snapshot [PATH-1].
 `open_directory` therefore takes a caller-owned name range rather than a path value, and path composition remains the DEFERRED addition [PATH-1] states.
-`open_directory` validates that name range before any host call: a range that is empty, longer than the target's component limit, or containing a NUL or a target separator yields `InvalidPath` with both detail fields zero [SYS-7], no host call, and no capability.
+`open_directory`'s name range (`offset`, `count`) over the caller's buffer is validated exactly as a [SYS-8] range — overflow of the mathematical sum, an offset past the buffer's runtime length, or a range extending past it traps as the operation-internal contract check [OP-4, ERR-4] before any content validation and before any host call — and that retained check is the operation's sole trap and backs its `traps` row [EFF-2].
+`open_directory` then validates the range's content before any host call: a component that is empty, longer than the target's component limit, or containing a NUL or a target separator yields `InvalidPath` with both detail fields zero [SYS-7], no host call, and no capability.
 A valid range that names no directory yields the target's own failure class — `NotFound`, `NotDirectory`, `PermissionDenied`, and the rest of the closed set — exactly as `open_read` does.
+
 `DirectoryList` is release-complete [SYS-5].
 Compiler-derived release consumes the resource and may discard only a close diagnostic, which carries no guarantee about entries already observed.
 This specification declares no separate explicit-close operation, and a deep traversal therefore holds one descriptor per live level.
