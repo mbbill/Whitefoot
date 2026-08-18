@@ -19,10 +19,10 @@ use std::collections::{HashMap, HashSet};
 
 use super::super::goal::{ConcreteGoal, GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
-    BindingId, CheckedArrayRoot, CheckedConst, CheckedConstructor, CheckedEnumType,
-    CheckedExpression, CheckedFloatOperation, CheckedFunction, CheckedLoopId, CheckedMatchArm,
-    CheckedMode, CheckedNominal, CheckedNominalKind, CheckedSetTarget, CheckedStatement,
-    CheckedType, CheckedValue, IntegerType, ValueInitializerKind,
+    BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedConst, CheckedConstructor,
+    CheckedEnumType, CheckedExpression, CheckedFloatOperation, CheckedFunction, CheckedLoopId,
+    CheckedMatchArm, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedSetTarget,
+    CheckedStatement, CheckedType, CheckedValue, IntegerType, ValueInitializerKind,
 };
 use super::super::postcondition::{
     NormalizedRelation, PostconditionPlaceRoot, PostconditionReturnDatum, PostconditionReturnPlace,
@@ -37,15 +37,17 @@ use super::state::{
 };
 use super::term::{
     CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm,
-    TermId, TermKind, TermTable, integer_value,
+    TermId, TermKind, TermTable, ZERO, integer_value,
 };
 use super::{
     BoundsRequest, CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome,
     ClaimDisposition, ClaimOutcome, CountedDerivationSet, EntailmentContext, FunctionEntailment,
-    FunctionEntailmentView, FunctionPostconditionProof, ObligationOutcome, PostconditionAggregate,
-    PostconditionDisposition, PostconditionEntryImage, PostconditionEntryImageOutcome,
-    PostconditionExit, PostconditionViewExit, S7Derivation, VerifiedPostconditionSummary,
-    VerifiedPostconditionSummaryRef, ViewObligationOutcome, fragment_type,
+    FunctionEntailmentView, FunctionPostconditionProof, ObligationFamily, ObligationOutcome,
+    OverflowOperandClass, PostconditionAggregate, PostconditionDisposition,
+    PostconditionEntryImage, PostconditionEntryImageOutcome, PostconditionExit,
+    PostconditionViewExit, S7Derivation, VerifiedPostconditionSummary,
+    VerifiedPostconditionSummaryRef, ViewObligationOutcome, fragment_type, overflow_conjuncts,
+    overflow_obligation_class,
 };
 use crate::{SYSTEM_OPERATIONS, SystemParameterMode};
 
@@ -423,6 +425,7 @@ pub(super) fn analyze_candidate(
         counted_derivations: run.counted_derivations,
         s7_derivations: run.s7_derivations,
         postcondition: run.postcondition,
+        boolean_decompositions: run.boolean_decompositions,
         derivations: run.derivations,
         inventory: run.inventory,
     }
@@ -438,6 +441,7 @@ struct AnalysisRun {
     counted_derivations: Vec<CountedDerivationSet>,
     s7_derivations: Vec<S7Derivation>,
     postcondition: Option<super::FunctionPostconditionProof>,
+    boolean_decompositions: Vec<super::BooleanGoalDecomposition>,
     derivations: DerivationLedger,
     inventory: DerivationInventory,
 }
@@ -460,6 +464,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         counted_derivations: Vec::new(),
         s7_derivations: Vec::new(),
         postcondition: None,
+        boolean_decompositions: Vec::new(),
         entry_images: Vec::new(),
         encountered_counted: 0,
         completed_counted_roots: 0,
@@ -541,6 +546,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         counted_derivations: analyzer.counted_derivations,
         s7_derivations: analyzer.s7_derivations,
         postcondition: analyzer.postcondition,
+        boolean_decompositions: analyzer.boolean_decompositions,
         derivations: analyzer.derivations,
         inventory,
     }
@@ -725,6 +731,9 @@ struct Analyzer<'check, 'unit> {
     counted_derivations: Vec<CountedDerivationSet>,
     s7_derivations: Vec<S7Derivation>,
     postcondition: Option<super::FunctionPostconditionProof>,
+    /// O11 candidate decomposition sets, recorded at complete-view
+    /// signed-goal establishments and never established as facts.
+    boolean_decompositions: Vec<super::BooleanGoalDecomposition>,
     entry_images: Vec<EntryImageRecord>,
     encountered_counted: u32,
     completed_counted_roots: u32,
@@ -1120,12 +1129,18 @@ impl Analyzer<'_, '_> {
         };
         if let CheckedType::Array { length, .. } = ty {
             let bound = match length {
-                CheckedConst::Value(value) => LengthBound::Constant(i128::from(value)),
-                CheckedConst::Parameter(declaration) => {
-                    LengthBound::Equal(self.terms.intern(TermKind::ConstParameter(declaration)))
-                }
+                CheckedConst::Value(value) => Some(LengthBound::Constant(i128::from(value))),
+                CheckedConst::Parameter(declaration) => Some(LengthBound::Equal(
+                    self.terms.intern(TermKind::ConstParameter(declaration)),
+                )),
+                // A symbolic derived length has no [ENT-2] term form; the
+                // template states no bound and the concrete instance, whose
+                // length is a value, restates the constant bound.
+                CheckedConst::Derived(_) => None,
             };
-            self.terms.set_length_bound(term, bound);
+            if let Some(bound) = bound {
+                self.terms.set_length_bound(term, bound);
+            }
         } else if !matches!(ty, CheckedType::Buffer { .. } | CheckedType::Slice { .. }) {
             return None;
         }
@@ -1196,6 +1211,7 @@ impl Analyzer<'_, '_> {
             // do not create a second consume, but M must retain the holder on
             // which the resulting caller image depends.
             CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.collect_checked_argument_holders(value, holders);
             }
@@ -2235,7 +2251,8 @@ impl Analyzer<'_, '_> {
             | CheckedStatement::PropagateLet {
                 scrutinee: value, ..
             } => self.expression_writes_place(value, place),
-            CheckedStatement::Set { target, value, .. } => {
+            CheckedStatement::Set { target, value, .. }
+            | CheckedStatement::Replace { target, value, .. } => {
                 self.expression_writes_place(value, place)
                     || self.set_target_writes_place(target, place)
             }
@@ -2277,6 +2294,7 @@ impl Analyzer<'_, '_> {
             CheckedStatement::Let { .. }
             | CheckedStatement::PropagateLet { .. }
             | CheckedStatement::Set { .. }
+            | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. }
             | CheckedStatement::Check { .. }
@@ -2547,6 +2565,13 @@ impl Analyzer<'_, '_> {
                 } => {
                     let summary = self.summary_mut(*binding);
                     summary.ty = Some(*ok_type);
+                    summary.delivery_carrier = true;
+                }
+                CheckedStatement::Replace {
+                    binding, target, ..
+                } => {
+                    let summary = self.summary_mut(*binding);
+                    summary.ty = Some(target.ty());
                     summary.delivery_carrier = true;
                 }
                 CheckedStatement::ValueMatchLet {
@@ -3103,7 +3128,8 @@ impl Analyzer<'_, '_> {
                 root: PlaceRoot::Binding(*binding),
                 projections: vec![PlaceProjection::Deref],
             }),
-            CheckedExpression::BoxDeref { value, .. } => {
+            CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. } => {
                 let mut path = self.read_place_path(value)?;
                 path.projections.push(PlaceProjection::Deref);
                 Some(path)
@@ -3245,6 +3271,9 @@ impl Analyzer<'_, '_> {
             } if self.is_copy(*referent) => self
                 .direct_goal_expression(value)?
                 .with_projection(GoalProjection::Deref, *referent),
+            CheckedExpression::ArenaDeref { content, value, .. } if self.is_copy(*content) => self
+                .direct_goal_expression(value)?
+                .with_projection(GoalProjection::Deref, *content),
             CheckedExpression::ProjectValue {
                 value, field, ty, ..
             } if self.is_copy(*ty) => self
@@ -3435,6 +3464,8 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::SliceOf { .. }
             | CheckedExpression::SliceIndex { .. }
             | CheckedExpression::BoxNew { .. }
+            | CheckedExpression::ArenaNew { .. }
+            | CheckedExpression::ArenaDeref { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
@@ -3639,6 +3670,119 @@ impl Analyzer<'_, '_> {
         self.goals.intern(expression, projection, support)
     }
 
+    /// [O11 candidate] The signed Boolean decomposition set of one
+    /// established goal: `+band` and `-bor` decompose into their signed
+    /// children recursively, `bnot` flips the sign, and every other root —
+    /// in particular `-band` and `+bor`, whose content is genuinely
+    /// disjunctive, and `bxor` on either sign — contributes nothing.
+    ///
+    /// Members are interned so their exact identities, projections, and
+    /// supports are retained in the inventory, but nothing establishes them
+    /// as facts in this version: v0.30 acceptance is untouched. Design:
+    /// `research/investigations/o11-composition/DESIGN.md`.
+    fn signed_boolean_decomposition(
+        &mut self,
+        parent: GoalId,
+        sign: GoalSign,
+    ) -> Vec<(GoalId, GoalSign)> {
+        let expression = self.goals.expression(parent).clone();
+        let mut members = Vec::new();
+        self.collect_decomposition_members(&expression, sign, &mut members);
+        members
+    }
+
+    fn collect_decomposition_members(
+        &mut self,
+        expression: &GoalExpression,
+        sign: GoalSign,
+        members: &mut Vec<(GoalId, GoalSign)>,
+    ) {
+        let GoalExpression::Operation {
+            row: GoalOperation::Boolean(operation),
+            arguments,
+            ..
+        } = expression
+        else {
+            return;
+        };
+        let child_sign = match (operation, sign) {
+            (CheckedBooleanOperation::And, GoalSign::Positive)
+            | (CheckedBooleanOperation::Or, GoalSign::Negative) => sign,
+            (CheckedBooleanOperation::Not, GoalSign::Positive) => GoalSign::Negative,
+            (CheckedBooleanOperation::Not, GoalSign::Negative) => GoalSign::Positive,
+            _ => return,
+        };
+        for argument in arguments {
+            let member = self.intern_goal_expression(argument.clone());
+            if !members.contains(&(member, child_sign)) {
+                members.push((member, child_sign));
+            }
+            self.collect_decomposition_members(argument, child_sign, members);
+        }
+    }
+
+    /// [ENT-3] Establishes the signed Boolean decomposition set of one
+    /// just-established signed goal, at that same point and in whatever proof
+    /// view the state carries.
+    ///
+    /// Each member enters as its own concrete opaque goal under [FN-8]
+    /// structural identity, and a member whose complete root is one admitted
+    /// comparison additionally delivers its exact L0 projection under `+` and
+    /// that projection's exact negation under `-`. Decomposition never runs
+    /// upward: this establishes children of an established parent only, so no
+    /// child ever establishes or derives a parent.
+    pub(super) fn establish_boolean_decomposition(
+        &mut self,
+        parent: GoalId,
+        sign: GoalSign,
+        state: &mut FactState,
+        event: FlowEventId,
+    ) {
+        for (member, member_sign) in self.signed_boolean_decomposition(parent, sign) {
+            state.establish_goal(member, member_sign, &mut self.derivations, event);
+            let Some(relation) = self.goals.projection(member).cloned() else {
+                continue;
+            };
+            let relation = match member_sign {
+                GoalSign::Positive => relation,
+                GoalSign::Negative => relation.negated(),
+            };
+            state.establish(&relation, &mut self.derivations, event);
+        }
+    }
+
+    /// Records the O11 decomposition inventory entry for one signed-goal
+    /// establishment. Only the complete view records and entries deduplicate
+    /// by parent and sign; this is retained metadata beside the facts
+    /// [`Self::establish_boolean_decomposition`] establishes.
+    pub(super) fn record_boolean_decomposition(
+        &mut self,
+        parent: GoalId,
+        sign: GoalSign,
+        view: ProofView,
+    ) {
+        if view != ProofView::Complete {
+            return;
+        }
+        if self
+            .boolean_decompositions
+            .iter()
+            .any(|candidate| candidate.parent == parent && candidate.sign == sign)
+        {
+            return;
+        }
+        let members = self.signed_boolean_decomposition(parent, sign);
+        if members.is_empty() {
+            return;
+        }
+        self.boolean_decompositions
+            .push(super::BooleanGoalDecomposition {
+                parent,
+                sign,
+                members,
+            });
+    }
+
     fn collect_goal_support(
         &self,
         expression: &GoalExpression,
@@ -3768,12 +3912,18 @@ impl Analyzer<'_, '_> {
                 };
                 if let GoalOperation::ArrayLength { length, .. } = row {
                     let bound = match length {
-                        CheckedConst::Value(value) => LengthBound::Constant(i128::from(*value)),
-                        CheckedConst::Parameter(declaration) => LengthBound::Equal(
+                        CheckedConst::Value(value) => {
+                            Some(LengthBound::Constant(i128::from(*value)))
+                        }
+                        CheckedConst::Parameter(declaration) => Some(LengthBound::Equal(
                             self.terms.intern(TermKind::ConstParameter(*declaration)),
-                        ),
+                        )),
+                        // A symbolic derived length has no [ENT-2] term form.
+                        CheckedConst::Derived(_) => None,
                     };
-                    self.terms.set_length_bound(term, bound);
+                    if let Some(bound) = bound {
+                        self.terms.set_length_bound(term, bound);
+                    }
                 }
                 Some(term)
             }
@@ -3950,7 +4100,9 @@ impl Analyzer<'_, '_> {
             // These wrappers are checked reads of one place. Their nested
             // expression preserves source spelling and lowering structure;
             // it is not a second consuming evaluation of an affine holder.
-            CheckedExpression::BoxDeref { .. } | CheckedExpression::ProjectValue { .. } => {}
+            CheckedExpression::BoxDeref { .. }
+            | CheckedExpression::ArenaDeref { .. }
+            | CheckedExpression::ProjectValue { .. } => {}
             CheckedExpression::UserCall {
                 function,
                 call,
@@ -4188,6 +4340,29 @@ impl Analyzer<'_, '_> {
                 self.judge_obligation(base, None, offset, node_path, states);
                 None
             }
+            CheckedExpression::IntegerOperation {
+                carrier,
+                operation,
+                operand_type,
+                arguments,
+                trap,
+                ..
+            } => {
+                for argument in arguments {
+                    let _ = self.judge_expression(argument, states);
+                }
+                // A trap-free bare add/subtract/multiply is exactly a
+                // constant-operand-class site the checker classified under
+                // the arithmetic-obligation switch; with the switch off,
+                // every such operation retains its trap record and no
+                // obligation exists [OP-2, ENT-6].
+                if trap.is_none()
+                    && let Some(class) = overflow_obligation_class(*operation, arguments)
+                {
+                    self.judge_overflow_obligation(&class, *operand_type, carrier, states);
+                }
+                None
+            }
             _ => {
                 for child in expression_children(expression) {
                     let _ = self.judge_expression(child, states);
@@ -4333,12 +4508,18 @@ impl Analyzer<'_, '_> {
         let length_term = self.terms.intern(TermKind::Length(base));
         if let Some(length) = array_length {
             let bound = match length {
-                CheckedConst::Value(value) => LengthBound::Constant(i128::from(value)),
-                CheckedConst::Parameter(declaration) => {
-                    LengthBound::Equal(self.terms.intern(TermKind::ConstParameter(declaration)))
-                }
+                CheckedConst::Value(value) => Some(LengthBound::Constant(i128::from(value))),
+                CheckedConst::Parameter(declaration) => Some(LengthBound::Equal(
+                    self.terms.intern(TermKind::ConstParameter(declaration)),
+                )),
+                // A symbolic derived length has no [ENT-2] term form; the
+                // template registers no implicit equality and each concrete
+                // instance, whose length is a value, registers the constant.
+                CheckedConst::Derived(_) => None,
             };
-            self.terms.set_length_bound(length_term, bound);
+            if let Some(bound) = bound {
+                self.terms.set_length_bound(length_term, bound);
+            }
         }
         length_term
     }
@@ -4397,6 +4578,7 @@ impl Analyzer<'_, '_> {
         }
         self.obligations.push(ObligationOutcome {
             node_path: node_path.clone(),
+            family: ObligationFamily::Bounds,
             conjunct: 0,
             requested: BoundsRequest {
                 left: offset_term,
@@ -4430,6 +4612,7 @@ impl Analyzer<'_, '_> {
         };
         self.unasserted_obligations.push(ViewObligationOutcome {
             node_path: node_path.clone(),
+            family: ObligationFamily::Bounds,
             discharged: unasserted_discharged,
             residual: (!unasserted_discharged).then(|| rendered_residual.clone()),
             derivation: unasserted_derivation,
@@ -4454,10 +4637,169 @@ impl Analyzer<'_, '_> {
         };
         self.s4_blinded_obligations.push(ViewObligationOutcome {
             node_path,
+            family: ObligationFamily::Bounds,
             discharged: blinded_discharged,
             residual: (!blinded_discharged).then_some(rendered_residual),
             derivation: blinded_derivation,
         });
+    }
+
+    /// [ENT-6] the overflow obligation of one [OP-2] constant-operand-class
+    /// call: two conjuncts, judged in the complete, unasserted, and
+    /// S4-blinded views exactly as a bounds obligation is. The site reaches
+    /// this judgment only when the checker classified it into the class and
+    /// dropped its trap record, so the discharge verdict is the sole
+    /// remaining authority over the site's acceptance.
+    fn judge_overflow_obligation(
+        &mut self,
+        class: &OverflowOperandClass<'_>,
+        operand_type: CheckedType,
+        node_path: &crate::NodePath,
+        states: &ViewStates,
+    ) {
+        let Some(fragment) = fragment_type(operand_type) else {
+            // A class site always carries one concrete fragment type by
+            // [OP-2]'s operand agreement; fail closed rather than trust an
+            // inconsistent checked expression.
+            debug_assert!(false, "overflow class site without a fragment type");
+            return;
+        };
+        let conjuncts = overflow_conjuncts(class, fragment);
+        let operand_term = if conjuncts.ground {
+            Some(ZERO)
+        } else {
+            match class {
+                OverflowOperandClass::Folded { operand, .. } => self.read_operand(operand),
+                OverflowOperandClass::Ground { .. } => Some(ZERO),
+            }
+        };
+        let rendered_operand = match class {
+            OverflowOperandClass::Folded { operand, .. } if !conjuncts.ground => {
+                Some(self.render_expression(operand))
+            }
+            _ => None,
+        };
+        let ground_residual = || {
+            let result = conjuncts
+                .ground_result
+                .expect("a ground overflow obligation retains its exact result");
+            format!(
+                "{} outside {}",
+                result.render(),
+                integer_type_name(fragment)
+            )
+        };
+        // Conjunct ordinal zero: `operand - Z <= upper` (`Z - Z <= upper`
+        // when ground). Conjunct ordinal one: `Z - operand <= lower`.
+        let requests = [
+            (
+                0_u8,
+                operand_term,
+                conjuncts.ground.then_some(ZERO).or(operand_term),
+                ZERO,
+                conjuncts.upper,
+            ),
+            (
+                1_u8,
+                operand_term,
+                Some(ZERO),
+                if conjuncts.ground {
+                    ZERO
+                } else {
+                    operand_term.unwrap_or(ZERO)
+                },
+                conjuncts.lower,
+            ),
+        ];
+        for (conjunct, operand_term, left, right, bound) in requests {
+            let residual_text = |rendered: &Option<String>| match rendered {
+                Some(operand) => {
+                    if conjunct == 0 {
+                        format!("{operand} <= {bound}")
+                    } else {
+                        format!("{} <= {operand}", -bound)
+                    }
+                }
+                None => ground_residual(),
+            };
+            let judge = |closed: &ClosedState, derivations: &mut DerivationLedger| {
+                match (operand_term, left) {
+                    (Some(_), Some(left)) => (
+                        closed.derives_bound(left, right, bound),
+                        closed.bound_proof(left, right, bound, derivations),
+                    ),
+                    // A non-term operand leaves the conjunct underivable,
+                    // never ill-formed [ENT-6], except in a contradictory
+                    // state, where every obligation discharges [ENT-4].
+                    _ => (closed.contradictory(), closed.contradiction_proof()),
+                }
+            };
+            let closed = close(
+                &states.complete,
+                &self.terms,
+                &self.goals,
+                &mut self.derivations,
+            );
+            let contradictory = closed.contradictory();
+            let (discharged, proof) = judge(&closed, &mut self.derivations);
+            let derivation = discharged.then_some(proof).flatten();
+            let ordinal = u32::try_from(self.obligations.len())
+                .expect("ENT obligation-root ordinal exceeds the u32 identity space");
+            if let Some(root) = derivation {
+                self.derivations
+                    .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
+            }
+            self.obligations.push(ObligationOutcome {
+                node_path: node_path.clone(),
+                family: ObligationFamily::Overflow,
+                conjunct,
+                requested: BoundsRequest {
+                    // A non-term operand records no left term, signalling
+                    // the underivable relation exactly as a non-term
+                    // subscript offset does [ENT-6].
+                    left: match (conjuncts.ground, operand_term) {
+                        (true, _) => Some(ZERO),
+                        (false, Some(_)) => left,
+                        (false, None) => None,
+                    },
+                    right,
+                    bound,
+                },
+                discharged,
+                contradictory,
+                residual: (!discharged).then(|| residual_text(&rendered_operand)),
+                derivation,
+            });
+            let unasserted = close(
+                &states.unasserted,
+                &self.terms,
+                &self.goals,
+                &mut self.derivations,
+            );
+            let (unasserted_discharged, unasserted_proof) =
+                judge(&unasserted, &mut self.derivations);
+            self.unasserted_obligations.push(ViewObligationOutcome {
+                node_path: node_path.clone(),
+                family: ObligationFamily::Overflow,
+                discharged: unasserted_discharged,
+                residual: (!unasserted_discharged).then(|| residual_text(&rendered_operand)),
+                derivation: unasserted_discharged.then_some(unasserted_proof).flatten(),
+            });
+            let blinded = close(
+                &states.s4_blinded,
+                &self.terms,
+                &self.goals,
+                &mut self.derivations,
+            );
+            let (blinded_discharged, blinded_proof) = judge(&blinded, &mut self.derivations);
+            self.s4_blinded_obligations.push(ViewObligationOutcome {
+                node_path: node_path.clone(),
+                family: ObligationFamily::Overflow,
+                discharged: blinded_discharged,
+                residual: (!blinded_discharged).then(|| residual_text(&rendered_operand)),
+                derivation: blinded_discharged.then_some(blinded_proof).flatten(),
+            });
+        }
     }
 
     fn judge_set_target(&mut self, target: &CheckedSetTarget, states: &ViewStates) {
@@ -5165,6 +5507,22 @@ impl Analyzer<'_, '_> {
                 let _ = self.walk_set(node_path, target, value, false, state);
                 true
             }
+            CheckedStatement::Replace {
+                node_path,
+                binding,
+                target,
+                value,
+            } => {
+                // [SET-2, ENT-5]: the commit's kill events are exactly a Set
+                // commit's on the same resolved target — a whole-place
+                // replace kills the covered length facts and an
+                // element-position replace spares them — and the commit
+                // establishes nothing. The fresh old-value binding is
+                // declared and carries no fact.
+                let _ = self.walk_set(node_path, target, value, false, state);
+                self.declare(*binding);
+                true
+            }
             CheckedStatement::Evaluate(value) | CheckedStatement::DropExpression { value, .. } => {
                 let _ = self.expression_effects(value, state);
                 true
@@ -5694,6 +6052,7 @@ impl Analyzer<'_, '_> {
                 );
             }
         }
+        let view = state.proof_view();
         for goal in &facts.goals {
             if arm.tag == 1 {
                 state.establish_goal(
@@ -5702,6 +6061,14 @@ impl Analyzer<'_, '_> {
                     &mut self.derivations,
                     event.expect("goal arm has an S1 proof event"),
                 );
+                // [ENT-3] Signed Boolean decomposition of the established goal.
+                self.establish_boolean_decomposition(
+                    *goal,
+                    GoalSign::Positive,
+                    state,
+                    event.expect("goal arm has an S1 proof event"),
+                );
+                self.record_boolean_decomposition(*goal, GoalSign::Positive, view);
             } else if arm.tag == 0 {
                 state.establish_goal(
                     *goal,
@@ -5709,6 +6076,14 @@ impl Analyzer<'_, '_> {
                     &mut self.derivations,
                     event.expect("goal arm has an S1 proof event"),
                 );
+                // [ENT-3] Signed Boolean decomposition of the established goal.
+                self.establish_boolean_decomposition(
+                    *goal,
+                    GoalSign::Negative,
+                    state,
+                    event.expect("goal arm has an S1 proof event"),
+                );
+                self.record_boolean_decomposition(*goal, GoalSign::Negative, view);
             }
         }
         if let Some((tag, outcome)) = &facts.outcome
@@ -5754,6 +6129,7 @@ impl Analyzer<'_, '_> {
             CheckedStatement::Let { .. }
             | CheckedStatement::PropagateLet { .. }
             | CheckedStatement::Set { .. }
+            | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. }
             | CheckedStatement::Check { .. }
@@ -5859,6 +6235,12 @@ impl Analyzer<'_, '_> {
                 node_path,
                 target,
                 value,
+            }
+            | CheckedStatement::Replace {
+                node_path,
+                target,
+                value,
+                ..
             } => {
                 if normal_reaches {
                     self.collect_set_kills(node_path, target, value, kills);
@@ -6232,7 +6614,8 @@ impl Analyzer<'_, '_> {
             CheckedExpression::DerefAddressed { binding, .. } => {
                 format!("deref({})", self.binding_name(*binding))
             }
-            CheckedExpression::BoxDeref { value, .. } => {
+            CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. } => {
                 format!("deref({})", self.render_expression(value))
             }
             CheckedExpression::ProjectValue {
@@ -6314,7 +6697,19 @@ fn holder_from_value(value: &CheckedExpression) -> Option<HolderReferent> {
         CheckedExpression::ReborrowAddressed { binding, .. } => {
             Some(HolderReferent::Holder(*binding))
         }
-        CheckedExpression::BoxNew { .. } => Some(HolderReferent::Opaque),
+        // A bound borrow-mode call result reads and writes through the
+        // provenance-candidate actual's storage, so a write through it must
+        // kill exactly the facts on that storage [ENT-5, OWN-6].
+        CheckedExpression::UserCall {
+            result_borrow: Some(result_borrow),
+            ..
+        } => Some(HolderReferent::Place {
+            binding: result_borrow.binding,
+            fields: result_borrow.fields.clone(),
+        }),
+        CheckedExpression::BoxNew { .. } | CheckedExpression::ArenaNew { .. } => {
+            Some(HolderReferent::Opaque)
+        }
         _ => None,
     }
 }
@@ -6348,6 +6743,10 @@ const fn value_has_implicit_deref(value: &CheckedExpression) -> bool {
             | CheckedExpression::BorrowBox { .. }
             | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::ReborrowAddressed { .. }
+            | CheckedExpression::UserCall {
+                result_borrow: Some(_),
+                ..
+            }
     )
 }
 
@@ -6379,6 +6778,8 @@ pub(super) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         | CheckedExpression::ArrayFill { value, .. }
         | CheckedExpression::BoxNew { value, .. }
         | CheckedExpression::BoxDeref { value, .. }
+        | CheckedExpression::ArenaNew { value, .. }
+        | CheckedExpression::ArenaDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => vec![value.as_ref()],
         CheckedExpression::ArrayIndex { offset, .. } => vec![offset.as_ref()],
         CheckedExpression::BufferFill { length, value, .. } => {

@@ -1,0 +1,17 @@
+fn read_pair(table: own array<u8, 8>, low: own u64, high: own u64) -> own u8 traps {
+  doc "ENT-3 signed Boolean decomposition [O11], the positive-sign half: a passed `check` establishes the positive sign of its goal, and decomp of a positive `band(A, B)` is {+A, +B}. The check therefore establishes +ilt(low, 8) and +ilt(high, 8) with their comparison projections, and both subscript obligations discharge from the one conjoined check. Each member's ENT-5 support is the ordinary support of its own subtree, so kills, scope exits, and joins need no new machinery.";
+  let low_ok = ilt(low, 8_u64);
+  let high_ok = ilt(high, 8_u64);
+  let both = band(low_ok, high_ok);
+  check both else trap "pair out of range";
+  let first = table[low];
+  let second = table[high];
+  return second;
+}
+
+fn main() -> own unit traps {
+  let table = array_new<u8, 8>(3_u8);
+  let value = read_pair(table: move table, low: 1_u64, high: 2_u64);
+  check ieq(value, 3_u8) else trap "conjoined read";
+  return unit;
+}

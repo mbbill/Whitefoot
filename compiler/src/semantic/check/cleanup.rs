@@ -42,7 +42,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 CheckedNominalKind::Struct { .. }
                 | CheckedNominalKind::Enum { .. }
-                | CheckedNominalKind::Box { .. } => None,
+                | CheckedNominalKind::Box { .. }
+                | CheckedNominalKind::Arena { .. }
+                | CheckedNominalKind::ArenaStorage => None,
             },
             _ => None,
         };
@@ -72,6 +74,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
                 .collect(),
             CheckedNominalKind::Box { referent } => vec![*referent],
+            // The region release walks the arena content exactly as an owner
+            // drop walks a box referent, so a contained resource row still
+            // reaches [EFF-2]'s release contribution.
+            CheckedNominalKind::Arena { content, .. } => vec![*content],
+            // The allocation list frees flat memory only [STOR-3]; content
+            // with its own release action is gated before arena_new admits it.
+            CheckedNominalKind::ArenaStorage => Vec::new(),
         };
         let mut row = SystemReleaseRow::EMPTY;
         for ty in component_types {
@@ -105,7 +114,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.collect_expression_release_sites(scrutinee, sites)?;
                     self.collect_drop_release_sites(error_drops, sites)?;
                 }
-                CheckedStatement::Set { target, value, .. } => {
+                CheckedStatement::Set { target, value, .. }
+                | CheckedStatement::Replace { target, value, .. } => {
+                    // A [SET-2] commit derives no release of its own
+                    // [STOR-3]; only its offset and right-hand side can
+                    // carry release sites, exactly as for a Set commit.
                     match target {
                         CheckedSetTarget::Place(_) => {}
                         CheckedSetTarget::ArrayIndex(target) => {
@@ -180,6 +193,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Region {
                     body,
                     fallthrough_drops,
+                    ..
                 } => {
                     self.collect_release_sites(body, sites)?;
                     self.collect_drop_release_sites(fallthrough_drops, sites)?;
@@ -250,6 +264,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ArrayFill { value, .. }
             | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaNew { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.collect_expression_release_sites(value, sites)?;
             }
@@ -349,9 +365,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                         CheckedNominalKind::Enum { .. }
                         | CheckedNominalKind::Box { .. }
-                        | CheckedNominalKind::SystemResource { .. } => {
+                        | CheckedNominalKind::SystemResource { .. }
+                        // The region's allocation list drops at the region
+                        // block's exits, and that drop IS the region's
+                        // storage release [STOR-3].
+                        | CheckedNominalKind::ArenaStorage => {
                             drops.push((path, current));
                         }
+                        // An arena value's storage is released with its
+                        // region, never with an owner scope [STOR-3, STOR-4],
+                        // so the value derives no drop here.
+                        CheckedNominalKind::Arena { .. } => {}
                     }
                 }
             }

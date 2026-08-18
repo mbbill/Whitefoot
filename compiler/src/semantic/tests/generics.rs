@@ -149,10 +149,97 @@ fn main() -> own unit pure {
     assert_rule(source, SemanticRule::Fn3, SemanticIssueKind::TypeMismatch);
 }
 
+/// The negative control for the three [FN-6] rejections below: a cycle whose
+/// every call does instantiate the callee at exactly the caller's own type
+/// parameters is *permitted* by FN-6, so it must not reach that rule. It stops
+/// as an unimplemented capability instead, which is what this compiler owes a
+/// legal program it cannot yet monomorphize.
 #[test]
 fn generic_call_cycle_stops_before_concrete_instance_enumeration() {
     let source = br#"fn recursive<T: Int>(value: own T) -> own T pure {
   return recursive<T>(value: value);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_unsupported(source, UnsupportedSemanticFeature::Generics);
+}
+
+/// [FN-6] recursion is permitted; polymorphic recursion is rejected by a
+/// syntactic rule. A green run here establishes only that these three written
+/// shapes are attributed to FN-6 at the offending call with the cycle named;
+/// it says nothing about monomorphizing the cycles FN-6 permits, which the
+/// control above still reports as unimplemented.
+#[test]
+fn polymorphic_recursion_is_rejected_at_the_call_that_leaves_the_caller_parameters() {
+    let fixed_type = SemanticIssueKind::PolymorphicRecursion {
+        cycle: "poly -> poly".to_owned(),
+        mechanical_fix: "instantiate every call on the cycle at exactly the caller's own type parameters, or move the differently instantiated call off the cycle",
+    };
+    // The conformance corpus's own case bytes: the recursive call instantiates
+    // the callee at a fixed `i32` instead of the caller's `T`.
+    assert_rule(
+        include_bytes!("../../../../tests/conformance/cases/fn6-neg-polymorphic-recursion.wf"),
+        SemanticRule::Fn6,
+        fixed_type.clone(),
+    );
+    // A growing argument is the shape that would actually diverge: each
+    // instance would demand a strictly larger one.
+    assert_rule(
+        br#"fn poly<T>(x: own T) -> own T pure {
+  let y = poly<array<T, 2>>(x: x);
+  return x;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRule::Fn6,
+        fixed_type,
+    );
+    // A permutation cycle terminates, and FN-6 is deliberately stronger than
+    // finiteness requires, so it is rejected all the same.
+    assert_rule(
+        br#"fn left<A, B>(first: own A, second: own B) -> own A pure {
+  let swapped = right<B, A>(first: second, second: first);
+  return first;
+}
+
+fn right<A, B>(first: own A, second: own B) -> own A pure {
+  let back = left<A, B>(first: first, second: second);
+  return first;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRule::Fn6,
+        SemanticIssueKind::PolymorphicRecursion {
+            cycle: "left -> right -> left".to_owned(),
+            mechanical_fix: "instantiate every call on the cycle at exactly the caller's own type parameters, or move the differently instantiated call off the cycle",
+        },
+    );
+}
+
+/// A cycle through a nongeneric participant is not a cycle *among generic
+/// functions*, and it cannot diverge: a nongeneric caller has no type
+/// parameter to write, so its written argument is fixed and the instance set
+/// is finite. FN-6 therefore forms no candidate, and the stop stays the
+/// unimplemented-capability report.
+#[test]
+fn a_cycle_through_a_nongeneric_caller_is_not_polymorphic_recursion() {
+    let source = br#"fn poly<T>(x: own T) -> own T pure {
+  let back = trampoline();
+  return x;
+}
+
+fn trampoline() -> own i32 pure {
+  let forward = poly<i32>(x: 0_i32);
+  return forward;
 }
 
 fn main() -> own unit pure {

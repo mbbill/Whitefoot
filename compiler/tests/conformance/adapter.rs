@@ -20,11 +20,14 @@
 //! redirection, and the process's own exit status or abort is the verdict.
 //! Nothing about a case's identity, name, or family selects a path here.
 //!
-//! The corpus-wide run is `#[ignore]`d, and that is a reported blocker rather
-//! than a scoping choice — see the `#[ignore]` reason on the test itself and
-//! `docs/done/0014-first-slice-conformance-execution.md`. The adapter
-//! excludes no case, weakens no expectation, and skips nothing the manifest
-//! does not itself mark `pending`; running it prints the complete tally.
+//! The corpus-wide run is `#[ignore]`d for cost, not for a blocker: it drives
+//! every case through compilation, linking, and execution, so it is kept out
+//! of the default `cargo test` run and invoked by `make conformance-run` with
+//! `--ignored` — that wiring and the attribute are one unit. See the
+//! `#[ignore]` reason on the test itself for the current tally and the
+//! resolved former blocker. The adapter excludes no case, weakens no
+//! expectation, and skips nothing the manifest does not itself mark
+//! `pending`; running it prints the complete tally.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -250,15 +253,16 @@ fn outcome(case: &Case, reached: &Verdict) -> Outcome {
 }
 
 #[test]
-#[ignore = "BLOCKED, not scoped out: 1 runnable case does not reach its declared verdict \
-            through this compiler. own3-pos-outlives-store expects exit 0 for an \
-            enclosing-region borrow stored into an inner-region destination under \
-            OWN-3, but the compiler stops as Unsupported(RegionsAndBorrows). This is \
-            the retained A3 counterexample and open capability/wording question, not a \
-            source rejection or an expectation to rewrite. Run `make conformance-run` \
-            for the complete tally; the current evidence and migration history are in \
-            governance/APPROVALS.md and \
-            docs/done/0038-floor5-semantic-and-migration.md."]
+#[ignore = "Cost, not a blocker: the corpus is green (Pass=460 Skip=1 Fail=0 at the \
+            v0.31 candidate), and this drives every case through compilation, linking, \
+            and execution, so it costs roughly 200s and is kept out of the default \
+            `cargo test` run. `make conformance-run` invokes it with `--ignored`; that \
+            wiring and this attribute are one unit, so removing the attribute without \
+            dropping `--ignored` from the Makefile target would leave the target \
+            selecting no test and reporting success. The former blocker recorded here \
+            (own3-pos-outlives-store stopping as Unsupported(RegionsAndBorrows)) is \
+            resolved: the outer-region borrow fix landed and the case now reaches \
+            run exit 0."]
 fn the_corpus_reaches_its_declared_verdict_through_the_ordinary_compiler_path() {
     let cases = corpus::load();
     assert!(

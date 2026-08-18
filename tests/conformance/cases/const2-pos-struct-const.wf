@@ -1,0 +1,15 @@
+struct Window {
+  width: u64;
+  height: u64;
+}
+
+const frame: Window = Window(width: 3_u64, height: 2_u64);
+
+fn main() -> own unit traps {
+  doc "CONST-2 struct-typed consts: a source struct whose every field type is const-eligible is itself const-eligible. The cvalue takes the construction form naming its exact struct and writing every declared field in declared order, and the const is laid out as one read-only static aggregate in the nominal's ordinary representation. It is read via its field suffixes exactly as subscript reads, so a copy-scalar selection copies out.";
+  let width = frame.width;
+  check ieq(width, 3_u64) else trap "struct const width";
+  let height = frame.height;
+  check ieq(height, 2_u64) else trap "struct const height";
+  return unit;
+}

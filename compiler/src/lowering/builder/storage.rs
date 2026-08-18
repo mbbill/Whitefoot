@@ -30,7 +30,8 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
             CheckedStatement::PropagateLet { scrutinee, .. } => {
                 collect_expression(scrutinee, bindings);
             }
-            CheckedStatement::Set { target, value, .. } => {
+            CheckedStatement::Set { target, value, .. }
+            | CheckedStatement::Replace { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
                     CheckedSetTarget::ArrayIndex(target) => {
@@ -96,6 +97,8 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::ArrayFill { value, .. }
         | CheckedExpression::BoxNew { value, .. }
         | CheckedExpression::BoxDeref { value, .. }
+        | CheckedExpression::ArenaNew { value, .. }
+        | CheckedExpression::ArenaDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => collect_expression(value, bindings),
         CheckedExpression::ArrayIndex { offset, .. }
         | CheckedExpression::BufferIndex { offset, .. }

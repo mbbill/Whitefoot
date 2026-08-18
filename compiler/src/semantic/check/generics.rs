@@ -1,4 +1,5 @@
 use crate::syntax::NodeId;
+use crate::syntax::terminal::TerminalPredicate;
 use crate::{
     DeclarationClass, DeclarationId, DeclarationRole, FixedTerminal, LexicalUseRole,
     PreludeDeclarationId, Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind,
@@ -393,25 +394,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         for constant in self.tree.descendants_with(targs, Production::Const)? {
-            if self
-                .tree
-                .direct_token_with(constant, crate::TerminalPredicate::Identifier)?
-                .is_some()
-            {
+            let identifiers = self.tree.direct_identifiers(constant)?;
+            if !identifiers.is_empty() {
                 let path = self.tree.path(constant)?;
-                let usage = self.resolved.lexical_uses().iter().find(|usage| {
-                    usage.role() == LexicalUseRole::Const && usage.origin().node() == path
-                });
-                let Some(usage) = usage else {
+                let uses = self
+                    .resolved
+                    .lexical_uses()
+                    .iter()
+                    .filter(|usage| {
+                        usage.role() == LexicalUseRole::Const && usage.origin().node() == path
+                    })
+                    .collect::<Vec<_>>();
+                if uses.len() != identifiers.len() {
                     return Ok(false);
-                };
-                if let ResolvedTarget::Source {
-                    declaration,
-                    class: DeclarationClass::NamedConst,
-                } = usage.target()
-                    && !self.constants.contains_key(&declaration)
-                {
-                    return Ok(false);
+                }
+                for usage in uses {
+                    if let ResolvedTarget::Source {
+                        declaration,
+                        class: DeclarationClass::NamedConst,
+                    } = usage.target()
+                        && !self.constants.contains_key(&declaration)
+                    {
+                        return Ok(false);
+                    }
                 }
             }
         }
@@ -614,15 +619,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             for constant in self.tree.descendants_with(node, Production::Const)? {
-                if self
-                    .tree
-                    .direct_token_with(constant, crate::TerminalPredicate::Identifier)?
-                    .is_some()
-                {
+                let identifiers = self.tree.direct_identifiers(constant)?;
+                if !identifiers.is_empty() {
                     let path = self.tree.path(constant)?;
-                    if !self.resolved.lexical_uses().iter().any(|usage| {
-                        usage.role() == LexicalUseRole::Const && usage.origin().node() == path
-                    }) {
+                    let uses = self
+                        .resolved
+                        .lexical_uses()
+                        .iter()
+                        .filter(|usage| {
+                            usage.role() == LexicalUseRole::Const && usage.origin().node() == path
+                        })
+                        .count();
+                    if uses != identifiers.len() {
                         return Ok(false);
                     }
                 }
@@ -656,6 +664,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .first_child_with(template.node, Production::Rtype)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let (result_mode, result) = self.parse_rtype_with(rtype, &substitution)?;
+        // [STOR-4] a value of type `arena<'r, T>` may not be returned, so a
+        // result type naming an arena has no legal producing return and is
+        // rejected at the callable boundary.
+        if self.arena_instance(result)?.is_some() {
+            return self.issue_node(
+                SemanticRule::Stor4,
+                rtype,
+                SemanticIssueKind::ArenaEscape {
+                    mechanical_fix: super::ARENA_ESCAPE_RESTRUCTURING,
+                },
+            );
+        }
         if result_mode != super::super::model::CheckedMode::Own {
             if matches!(result, super::super::model::CheckedType::Slice { .. }) {
                 return self.issue_node(
@@ -796,14 +816,191 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn reject_generic_call_cycles(&self) -> Result<(), CheckStop> {
-        let (_, first) = self.generic_cycle_analysis()?;
-        if let Some(call) = first {
+        let edges = self.generic_call_edges()?;
+        // [FN-6] recursion is permitted, and polymorphic recursion is rejected
+        // by a syntactic rule. That source judgment is asked before the
+        // capability report below so that a program the language rejects is
+        // never reported as an unimplemented capability instead.
+        if let Some((call, cycle)) = self.first_polymorphic_recursion(&edges)? {
+            return self.issue_node(
+                SemanticRule::Fn6,
+                call,
+                SemanticIssueKind::PolymorphicRecursion {
+                    cycle,
+                    mechanical_fix:
+                        "instantiate every call on the cycle at exactly the caller's own type parameters, or move the differently instantiated call off the cycle",
+                },
+            );
+        }
+        if let Some(call) = self.generic_cycle_components(&edges).1 {
             return self.unsupported(UnsupportedSemanticFeature::Generics, call);
         }
         Ok(())
     }
 
-    fn generic_cycle_analysis(&self) -> Result<(Vec<bool>, Option<NodeId>), CheckStop> {
+    /// The first [FN-6] polymorphic-recursion violation in call order, with
+    /// the cycle the rule requires the diagnostic to name.
+    ///
+    /// FN-6 constrains a call cycle *among generic functions*, so an edge is
+    /// judged when its caller and callee are both generic and the callee
+    /// reaches the caller again. A cycle through a nongeneric participant is
+    /// left to the ordinary path: a nongeneric caller has no type parameter to
+    /// write, so every argument it writes is fixed and the cycle's instance
+    /// set is finite by construction.
+    fn first_polymorphic_recursion(
+        &self,
+        edges: &[Vec<(usize, NodeId)>],
+    ) -> Result<Option<(NodeId, String)>, CheckStop> {
+        for (caller, outgoing) in edges.iter().enumerate() {
+            let caller_parameters = Self::type_parameters(&self.function_templates[caller]);
+            if caller_parameters.is_empty() {
+                continue;
+            }
+            for (callee, call) in outgoing {
+                let callee_parameters = &self.function_templates[*callee].generic_parameters;
+                if callee_parameters.is_empty() || !Self::graph_reaches(*callee, caller, edges) {
+                    continue;
+                }
+                if self.call_instantiates_caller_parameters(
+                    *call,
+                    &caller_parameters,
+                    callee_parameters,
+                )? {
+                    continue;
+                }
+                return Ok(Some((
+                    *call,
+                    self.render_call_cycle(caller, *callee, edges),
+                )));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Whether one call writes exactly the caller's own type parameters, in
+    /// order, at the callee's type-parameter positions [FN-6].
+    ///
+    /// The judgment is syntactic, as FN-6 states it is: a written `targ`
+    /// satisfies it only as a bare TYPEID carrying no arguments of its own
+    /// that resolves to the caller's type parameter at the same position, and
+    /// the two type-parameter counts must agree for the lists to be equal at
+    /// all. An absent or short argument list is [FN-2]'s violation rather than
+    /// this rule's, so it is not attributed here.
+    fn call_instantiates_caller_parameters(
+        &self,
+        call: NodeId,
+        caller_parameters: &[DeclarationId],
+        callee_parameters: &[GenericParameter],
+    ) -> Result<bool, CheckStop> {
+        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+            return Ok(true);
+        };
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
+        if arguments.len() < callee_parameters.len() {
+            return Ok(true);
+        }
+        let mut position = 0;
+        for (parameter, argument) in callee_parameters.iter().zip(&arguments) {
+            if !matches!(parameter, GenericParameter::Type { .. }) {
+                continue;
+            }
+            let Some(expected) = caller_parameters.get(position) else {
+                return Ok(false);
+            };
+            position += 1;
+            if !self.targ_names_type_parameter(*argument, *expected)? {
+                return Ok(false);
+            }
+        }
+        Ok(position == caller_parameters.len())
+    }
+
+    /// Whether one `targ` is written as exactly the named type parameter.
+    fn targ_names_type_parameter(
+        &self,
+        argument: NodeId,
+        expected: DeclarationId,
+    ) -> Result<bool, CheckStop> {
+        let Some(ty) = self.tree.first_child_with(argument, Production::Type)? else {
+            return Ok(false);
+        };
+        if self
+            .tree
+            .direct_token_with(ty, TerminalPredicate::TypeIdentifier)?
+            .is_none()
+            || self.tree.first_child_with(ty, Production::Targs)?.is_some()
+        {
+            return Ok(false);
+        }
+        let path = self.tree.path(ty)?;
+        Ok(self.resolved.lexical_uses().iter().any(|usage| {
+            usage.role() == LexicalUseRole::Type
+                && usage.origin().node() == path
+                && matches!(
+                    usage.target(),
+                    ResolvedTarget::Source {
+                        declaration,
+                        class: DeclarationClass::GenericType,
+                    } if declaration == expected
+                )
+        }))
+    }
+
+    fn type_parameters(template: &FunctionTemplate) -> Vec<DeclarationId> {
+        template
+            .generic_parameters
+            .iter()
+            .filter_map(|parameter| match parameter {
+                GenericParameter::Type { declaration, .. } => Some(*declaration),
+                GenericParameter::Const { .. } => None,
+            })
+            .collect()
+    }
+
+    /// The cycle FN-6 requires the diagnostic to name: the caller, the
+    /// shortest call path from this call's callee back to it, and the caller
+    /// again, so the reader sees where the offending instantiation sits.
+    fn render_call_cycle(
+        &self,
+        caller: usize,
+        callee: usize,
+        edges: &[Vec<(usize, NodeId)>],
+    ) -> String {
+        let mut previous = vec![None; edges.len()];
+        let mut seen = vec![false; edges.len()];
+        let mut pending = std::collections::VecDeque::from([callee]);
+        seen[callee] = true;
+        while let Some(node) = pending.pop_front() {
+            if node == caller {
+                break;
+            }
+            for (next, _) in &edges[node] {
+                if !seen[*next] {
+                    seen[*next] = true;
+                    previous[*next] = Some(node);
+                    pending.push_back(*next);
+                }
+            }
+        }
+        // The predecessor chain runs backwards from the caller to the callee,
+        // so the rendered cycle reverses it and closes on the caller.
+        let mut chain = vec![caller];
+        let mut cursor = caller;
+        while let Some(node) = previous[cursor] {
+            chain.push(node);
+            cursor = node;
+        }
+        let mut names = vec![self.function_templates[caller].name.clone()];
+        names.extend(
+            chain
+                .into_iter()
+                .rev()
+                .map(|index| self.function_templates[index].name.clone()),
+        );
+        names.join(" -> ")
+    }
+
+    fn generic_call_edges(&self) -> Result<Vec<Vec<(usize, NodeId)>>, CheckStop> {
         let mut edges = vec![Vec::new(); self.function_templates.len()];
         for (caller, template) in self.function_templates.iter().enumerate() {
             for call in self
@@ -819,16 +1016,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 edges[caller].push((callee, call));
             }
         }
+        Ok(edges)
+    }
+
+    fn generic_cycle_analysis(&self) -> Result<(Vec<bool>, Option<NodeId>), CheckStop> {
+        let edges = self.generic_call_edges()?;
+        Ok(self.generic_cycle_components(&edges))
+    }
+
+    fn generic_cycle_components(
+        &self,
+        edges: &[Vec<(usize, NodeId)>],
+    ) -> (Vec<bool>, Option<NodeId>) {
         let mut unavailable = vec![false; self.function_templates.len()];
         let mut first = None;
         for (caller, outgoing) in edges.iter().enumerate() {
             for (callee, call) in outgoing {
-                if !Self::graph_reaches(*callee, caller, &edges) {
+                if !Self::graph_reaches(*callee, caller, edges) {
                     continue;
                 }
                 let generic_component = (0..self.function_templates.len()).any(|candidate| {
-                    Self::graph_reaches(caller, candidate, &edges)
-                        && Self::graph_reaches(candidate, caller, &edges)
+                    Self::graph_reaches(caller, candidate, edges)
+                        && Self::graph_reaches(candidate, caller, edges)
                         && !self.function_templates[candidate]
                             .generic_parameters
                             .is_empty()
@@ -838,8 +1047,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         first = Some(*call);
                     }
                     for (candidate, slot) in unavailable.iter_mut().enumerate() {
-                        if Self::graph_reaches(caller, candidate, &edges)
-                            && Self::graph_reaches(candidate, caller, &edges)
+                        if Self::graph_reaches(caller, candidate, edges)
+                            && Self::graph_reaches(candidate, caller, edges)
                         {
                             *slot = true;
                         }
@@ -847,7 +1056,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
         }
-        Ok((unavailable, first))
+        (unavailable, first)
     }
 
     pub(super) fn call_is_inside_postcondition(&self, call: NodeId) -> Result<bool, CheckStop> {
@@ -1128,6 +1337,12 @@ fn value_uses_nominal_prefix(value: &CheckedValue, checkpoint: usize) -> bool {
                 && elements
                     .iter()
                     .all(|element| value_uses_nominal_prefix(element, checkpoint))
+        }
+        CheckedValue::Struct { ty, fields } => {
+            type_uses_nominal_prefix(*ty, checkpoint)
+                && fields
+                    .iter()
+                    .all(|field| value_uses_nominal_prefix(field, checkpoint))
         }
         CheckedValue::Unit
         | CheckedValue::Bool(_)

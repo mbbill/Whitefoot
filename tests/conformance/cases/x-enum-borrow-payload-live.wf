@@ -10,6 +10,8 @@ fn main() -> own unit traps {
     let p = &'r c;
     let a = match deref(p) {
       Full(v: x) => {
+        let x_in_range = ile(deref(x), 2147483646_i32);
+        claim x_below_max: x_in_range because "the constructed payload is 20";
         give deref(x) + 1_i32;
       }
       Void() => {
@@ -19,6 +21,10 @@ fn main() -> own unit traps {
     let q = &'r c;
     let b = match deref(q) {
       Full(v: y) => {
+        let y_below = ile(deref(y), 1073741823_i32);
+        claim y_below_half_max: y_below because "the constructed payload is 20";
+        let y_above = ige(deref(y), -1073741824_i32);
+        claim y_above_half_min: y_above because "the constructed payload is 20";
         give deref(y) * 2_i32;
       }
       Void() => {

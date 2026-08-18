@@ -411,7 +411,10 @@ impl LayoutComputer<'_, '_, '_, '_> {
             self.nominal.insert(id, layout);
             return Ok(layout);
         }
-        let layout = if matches!(nominal.kind(), IrNominalKind::Box { .. }) {
+        let layout = if matches!(
+            nominal.kind(),
+            IrNominalKind::Box { .. } | IrNominalKind::Arena { .. } | IrNominalKind::ArenaStorage
+        ) {
             Layout { size: 8, align: 8 }
         } else if nominal.is_tag_only_enum() {
             let IrNominalKind::Enum { variants } = nominal.kind() else {
@@ -440,10 +443,14 @@ impl LayoutComputer<'_, '_, '_, '_> {
                             .map(|field| field.ty()),
                     );
                 }
-                // A box has its own layout above, and an opaque system
-                // resource returned with its qualified representation before
-                // this match; neither reaches the field walk.
-                IrNominalKind::Box { .. } | IrNominalKind::SystemResource(_) => {
+                // A box, arena, or allocation list has its own pointer
+                // layout above, and an opaque system resource returned with
+                // its qualified representation before this match; none
+                // reaches the field walk.
+                IrNominalKind::Box { .. }
+                | IrNominalKind::Arena { .. }
+                | IrNominalKind::ArenaStorage
+                | IrNominalKind::SystemResource(_) => {
                     return Err(TargetLayoutFailure::InvalidIr);
                 }
             }

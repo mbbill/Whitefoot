@@ -34,6 +34,15 @@ impl IrBuilder<'_> {
                 }
                 IrOperation::SliceFromBuffer { buffer }
             }
+            // The arena runtime lowering is not implemented. Two semantic
+            // capability stops together keep this source out of every
+            // published checked program: a view over a local arena stops
+            // where it is formed, and a view over an arena parameter stops
+            // at the arena-parameter gate that ends the whole function. So
+            // reaching it is an invariant failure, not a silent miscompile.
+            CheckedSliceSource::ArenaContent { .. } => {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
         };
         self.define(IrType::Slice { element }, operation)
     }

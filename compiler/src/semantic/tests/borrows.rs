@@ -1,7 +1,10 @@
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
 use super::super::model::{CheckedExpression, CheckedMode, CheckedSetTarget, CheckedStatement};
-use super::{assert_rule, with_semantics};
+use super::{
+    assert_rule, assert_rule_extension, assert_unsupported, with_semantics,
+    with_semantics_extension,
+};
 
 pub(super) const BORROWED_COLUMNS: &[u8] =
     include_bytes!("../../../../tests/conformance/cases/x-buffer-borrowed-columns-run.wf");
@@ -626,10 +629,10 @@ fn bump['r](p: &uniq 'r i32) -> own unit writes('r) {
   return unit;
 }
 
-fn score['r](c: &'r Cell) -> own i32 reads('r), traps {
+fn score['r](c: &'r Cell) -> own i32 reads('r) {
   match deref(c) {
     Full(v: x) => {
-      return deref(x) + 1_i32;
+      return deref(x);
     }
     Void() => {
       return 0_i32;
@@ -763,6 +766,31 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
     );
 }
 
+/// [OWN-3, OWN-4] an enclosing region outlives an inner one, so a borrow of
+/// an outer region is legally held by a binding declared any number of
+/// blocks deeper: the borrow value stays live for the holder's whole scope.
+/// The judgment is the outlives relation over region blocks, not a fixed
+/// holder-directly-inside-its-region shape.
+#[test]
+fn outer_region_borrows_may_be_held_under_inner_regions() {
+    with_semantics(
+        b"fn main() -> own unit traps {\n  let a = 7_i32;\n  region 'r {\n    region 's {\n      region 't {\n        let q = &'r a;\n        check ieq(deref(q), 7_i32) else trap \"q\";\n      }\n    }\n  }\n  return unit;\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("an outer-region borrow held two blocks deeper must check: {outcome:?}");
+            };
+        },
+    );
+    with_semantics(
+        b"fn main() -> own unit pure {\n  let a = 7_i32;\n  region 'r {\n    region 's {\n      let u = &uniq 'r a;\n      set deref(u) = 8_i32;\n    }\n  }\n  return unit;\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("an outer-region uniq borrow held one block deeper must check: {outcome:?}");
+            };
+        },
+    );
+}
+
 /// [EFF-2] §9.1 attributes reads and writes through an incoming borrow
 /// parameter to that parameter's formal region, both ways.
 #[test]
@@ -849,6 +877,53 @@ fn non_admitted_reborrow_forms_are_own14_hard_errors() {
         SemanticIssueKind::InvalidReborrowPosition {
             mechanical_fix: RESTRUCTURING,
         },
+    );
+}
+
+/// The companion to the OWN-14 rejections above: a `box` binding is own mode,
+/// so a borrow of its content is not a reborrow form at all and never reaches
+/// OWN-14's disposition. It is judged by [OWN-10]'s own-mode-binding case —
+/// the borrow region must be introduced within the binding's scope and never
+/// caller-supplied — and then stops explicitly, because the box binding lowers
+/// to the content pointer under the box's own IR type and nothing addresses
+/// the content itself. Before the dispatch fix these programs reported TYPE-7
+/// "deref requires a borrow holder" against source that wrote no holder.
+#[test]
+fn box_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
+    assert_unsupported(
+        br#"fn bump['r](n: &uniq 'r i32) -> own unit writes('r) {
+  set deref(n) = 42_i32;
+  return unit;
+}
+
+fn main() -> own unit allocates(heap), traps {
+  let b = box_new(4_i32);
+  region 'c {
+    bump<'c>(n: &uniq 'c deref(b));
+  }
+  return unit;
+}
+"#,
+        UnsupportedSemanticFeature::RegionsAndBorrows,
+    );
+    assert_rule(
+        br#"fn hold['s](n: &uniq 's i32) -> own unit writes('s) {
+  set deref(n) = 1_i32;
+  return unit;
+}
+
+fn outer['s]() -> own unit allocates(heap) {
+  let b = box_new(4_i32);
+  hold<'s>(n: &uniq 's deref(b));
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRule::Own10,
+        SemanticIssueKind::InvalidBorrowLifetime,
     );
 }
 
@@ -945,4 +1020,178 @@ fn same_node_return_rejections_cite_the_first_defined_rule() {
             mechanical_fix: "write `move p` for the affine place",
         },
     );
+}
+
+// ---------------------------------------------------------------------------
+// v0.31-candidate reborrow extension (test-only checker entry): bound
+// call-result borrow holders with unambiguous signature provenance, the
+// non-statement-scoped candidate-position child reborrow, and the grandchild
+// chains they compose. The shipped switch keeps every v0.30 disposition; the
+// paired default-checker tests below prove the gate.
+// ---------------------------------------------------------------------------
+
+const PASSTHRU: &[u8] = b"fn passthru['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {\n  return &uniq 'r0 deref(x);\n}\n\n";
+
+/// Extension: a borrow-returning call with one same-kind same-region borrow
+/// parameter has unambiguous provenance, so its bound result is an ordinary
+/// holder over the candidate actual's storage: deref reads and set commits
+/// through it check, and a statement-scoped grandchild of the bound result
+/// rides the existing OWN-6 child rule.
+#[test]
+fn extension_binds_call_result_borrows_and_composes_grandchild_chains() {
+    // Bind from a candidate-position child reborrow, then write through it.
+    let mut chain = PASSTHRU.to_vec();
+    chain.extend_from_slice(
+        b"fn main() -> own unit pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru<'a>(x: &uniq 'a deref(h));\n    set deref(r) = 9_i32;\n  }\n  return unit;\n}\n",
+    );
+    with_semantics_extension(&chain, |outcome| {
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("a bound call-result borrow with one candidate must check: {outcome:?}");
+        };
+    });
+    // A statement-scoped grandchild of the bound result feeds an
+    // own-returning callee under the unchanged v0.7 child rule.
+    let mut grandchild = PASSTHRU.to_vec();
+    grandchild.extend_from_slice(
+        b"fn bump['r](n: &uniq 'r i32) -> own unit writes('r) {\n  set deref(n) = 42_i32;\n  return unit;\n}\n\nfn main() -> own unit pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru<'a>(x: &uniq 'a deref(h));\n    region 'c {\n      bump<'c>(n: &uniq 'c deref(r));\n    }\n  }\n  return unit;\n}\n",
+    );
+    with_semantics_extension(&grandchild, |outcome| {
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("a grandchild chain through a bound result must check: {outcome:?}");
+        };
+    });
+    // A shared bare-holder actual sources a shared result the same way.
+    with_semantics_extension(
+        b"fn source['r](x: &'r i32) -> &'r i32 pure {\n  return x;\n}\n\nfn main() -> own unit pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &'a v;\n    let r = source<'a>(x: h);\n    let w = deref(r);\n  }\n  return unit;\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("a shared bare-holder-sourced result must check: {outcome:?}");
+            };
+        },
+    );
+    // The recursive composition: a candidate child in the caller-supplied
+    // parameter region, its bound result, and a returned reborrow of that
+    // result — the chain a recursive traversal threads through its frames.
+    let mut recursive = PASSTHRU.to_vec();
+    recursive.extend_from_slice(
+        b"fn twice['q0](x: &uniq 'q0 i32) -> &uniq 'q0 i32 pure {\n  let r = passthru<'q0>(x: &uniq 'q0 deref(x));\n  return &uniq 'q0 deref(r);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+    );
+    with_semantics_extension(&recursive, |outcome| {
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("a caller-supplied-region chain must check: {outcome:?}");
+        };
+    });
+}
+
+/// Extension: creating the chain suspends the candidate parent holder for
+/// the remainder of its life — the claim may outlive the statement inside
+/// the bound result — so a later use through the parent, or a second chain
+/// from it, is the OWN-5 suspension rejection.
+#[test]
+fn extension_chains_suspend_the_candidate_parent_permanently() {
+    let mut later_use = PASSTHRU.to_vec();
+    later_use.extend_from_slice(
+        b"fn main() -> own unit pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru<'a>(x: &uniq 'a deref(h));\n    let w = deref(h);\n  }\n  return unit;\n}\n",
+    );
+    assert_rule_extension(
+        &later_use,
+        SemanticRule::Own5,
+        SemanticIssueKind::BorrowConflict,
+    );
+    let mut second_chain = PASSTHRU.to_vec();
+    second_chain.extend_from_slice(
+        b"fn main() -> own unit pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru<'a>(x: &uniq 'a deref(h));\n    let s = passthru<'a>(x: &uniq 'a deref(h));\n  }\n  return unit;\n}\n",
+    );
+    assert_rule_extension(
+        &second_chain,
+        SemanticRule::Own5,
+        SemanticIssueKind::BorrowConflict,
+    );
+}
+
+/// Extension: a callee signature that does not determine one provenance
+/// candidate — two same-kind same-region borrow parameters — rejects the
+/// binding at OWN-6 with the ambiguity diagnostic, never infers a claim.
+#[test]
+fn extension_rejects_ambiguous_result_provenance() {
+    assert_rule_extension(
+        b"fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\nfn main() -> own unit pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    let r = pick<'a>(a: &uniq 'a x, b: &uniq 'a y);\n  }\n  return unit;\n}\n",
+        SemanticRule::Own6,
+        SemanticIssueKind::AmbiguousResultBorrow {
+            mechanical_fix: "give the callee exactly one parameter written as a borrow \
+                     of the result's mode and region and no other parameter naming that region, \
+                     or bind the borrow from a direct borrow expression",
+        },
+    );
+}
+
+/// Extension: only the candidate position of a borrow-returning call admits
+/// a written child reborrow; a child in a non-candidate position keeps
+/// OWN-6's own/unit-result rejection.
+#[test]
+fn extension_keeps_non_candidate_children_rejected() {
+    assert_rule_extension(
+        b"fn mix['p2, 'q2](p: &uniq 'p2 i32, q: &'q2 i32) -> &'q2 i32 pure {\n  return &'q2 deref(q);\n}\n\nfn main() -> own unit pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    let hx = &uniq 'a x;\n    region 'b {\n      let r = mix<'a, 'b>(p: &uniq 'a deref(hx), q: &'b y);\n    }\n  }\n  return unit;\n}\n",
+        SemanticRule::Own6,
+        SemanticIssueKind::InvalidChildReborrow,
+    );
+}
+
+/// The shipped switch is on, so the default checker and the extension entry
+/// are one judgment: the candidate child argument and the bare-holder-sourced
+/// binding that v0.30 rejected at OWN-6 and TYPE-5 are admitted through the
+/// ordinary `check_semantics` path, not only the test-only entry.
+#[test]
+fn the_shipped_checker_admits_the_extension_shapes() {
+    let mut chain = PASSTHRU.to_vec();
+    chain.extend_from_slice(
+        b"fn main() -> own unit pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &uniq 'a v;\n    let r = passthru<'a>(x: &uniq 'a deref(h));\n    set deref(r) = 9_i32;\n  }\n  return unit;\n}\n",
+    );
+    with_semantics(&chain, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the candidate child argument is admitted on the shipped path: {outcome:?}",
+        );
+    });
+    with_semantics(
+        b"fn source['r](x: &'r i32) -> &'r i32 pure {\n  return x;\n}\n\nfn main() -> own unit pure {\n  let v = 5_i32;\n  region 'a {\n    let h = &'a v;\n    let r = source<'a>(x: h);\n    let w = deref(r);\n  }\n  return unit;\n}\n",
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "the bound call-result holder is an ordinary borrow holder: {outcome:?}",
+            );
+        },
+    );
+}
+
+/// [ENT-5] a write through a bound call-result holder kills exactly the
+/// facts on the candidate actual's storage: the stale bound no longer
+/// discharges a later subscript, while the identical program without the
+/// write keeps the discharge (the deliberate negative control).
+#[test]
+fn extension_writes_through_result_holders_kill_source_facts() {
+    const HELPER: &[u8] = b"fn passthru['r0](x: &uniq 'r0 u64) -> &uniq 'r0 u64 pure {\n  return &uniq 'r0 deref(x);\n}\n\n";
+    let mut killed = HELPER.to_vec();
+    killed.extend_from_slice(
+        b"fn main() -> own unit allocates(heap), traps {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region 'a {\n    let r = passthru<'a>(x: &uniq 'a i);\n    set deref(r) = 9_u64;\n  }\n  let e = b[i];\n  return unit;\n}\n",
+    );
+    with_semantics_extension(&killed, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("the killed bound must not discharge the subscript: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op4);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedBoundsObligation { .. }
+        ));
+    });
+    let mut control = HELPER.to_vec();
+    control.extend_from_slice(
+        b"fn main() -> own unit allocates(heap), traps {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region 'a {\n    let r = passthru<'a>(x: &uniq 'a i);\n  }\n  let e = b[i];\n  return unit;\n}\n",
+    );
+    with_semantics_extension(&control, |outcome| {
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("without the write the fact must survive and discharge: {outcome:?}");
+        };
+    });
 }

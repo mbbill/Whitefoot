@@ -13,20 +13,21 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 /// `committed_tables_are_derived_from_the_active_grammar`.
 #[test]
 fn complete_inventory_is_pinned() {
-    assert_eq!(productions().len(), 73);
-    assert_eq!(DECISIONS.len(), 91);
-    assert_eq!(SELECT_ROWS.len(), 3_564);
-    assert_eq!(diagnostic_terminal_order().len(), 98);
+    assert_eq!(productions().len(), 74);
+    assert_eq!(DECISIONS.len(), 96);
+    assert_eq!(SELECT_ROWS.len(), 3_897);
+    assert_eq!(diagnostic_terminal_order().len(), 99);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[12], Production::EnsuresBlock);
     assert_eq!(productions()[13], Production::EnsuresSelector);
     assert_eq!(productions()[14], Production::EnsuresEntry);
-    assert_eq!(productions()[44], Production::ForStmt);
-    assert_eq!(productions()[72], Production::Effect);
+    assert_eq!(productions()[45], Production::ForStmt);
+    assert_eq!(productions()[73], Production::Effect);
     assert_eq!(Production::ForStmt.index(), 69);
     assert_eq!(Production::EnsuresBlock.index(), 70);
     assert_eq!(Production::EnsuresSelector.index(), 71);
     assert_eq!(Production::EnsuresEntry.index(), 72);
+    assert_eq!(Production::ReplaceLetRhs.index(), 73);
     assert_eq!(DECISIONS[84].production(), Production::ForStmt);
     assert_eq!(DECISIONS[84].kind(), DecisionKind::Repeat0);
     assert_eq!(DECISIONS[85].production(), Production::FnDecl);
@@ -103,7 +104,9 @@ fn v028_decision_slots_retain_their_exact_shapes() {
         shape!(Callee, Choice, Ordinary, 2),
         shape!(Place, Repeat0, Ordinary, 2),
         shape!(Pbase, Choice, Ordinary, 2),
-        shape!(LetStmt, Choice, Ordinary, 4),
+        // v0.31 adds `replace_let_rhs` as a fifth let_stmt alternative;
+        // the decision slot and shape are otherwise the v0.28 record.
+        shape!(LetStmt, Choice, Ordinary, 5),
         shape!(IfStmt, Repeat0, ConstructEntry, 2),
         shape!(IfStmt, Optional, Ordinary, 2),
         shape!(IfStmt, Choice, Ordinary, 2),
@@ -131,7 +134,7 @@ fn v028_decision_slots_retain_their_exact_shapes() {
         shape!(AtomList, Repeat0, Ordinary, 2),
         shape!(Psuffix, Choice, Ordinary, 2),
         shape!(Const, Choice, Ordinary, 2),
-        shape!(Cvalue, Choice, Ordinary, 3),
+        shape!(Cvalue, Choice, Ordinary, 4),
         shape!(Cvalue, Repeat0, Ordinary, 2),
         shape!(Effects, Choice, Ordinary, 2),
         shape!(Effects, Repeat0, Ordinary, 2),
@@ -199,7 +202,7 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 91);
+    assert_eq!(decisions, 96);
 }
 
 #[test]
@@ -285,7 +288,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 91);
+    assert_eq!(DECISIONS.len(), 96);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -329,6 +332,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
             }
         }
     }
-    assert_eq!(total_rows, 3_564);
+    assert_eq!(total_rows, 3_897);
     assert!(saw_atom_only);
 }

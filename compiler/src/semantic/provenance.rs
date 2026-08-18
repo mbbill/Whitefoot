@@ -474,51 +474,79 @@ fn selectors(ty: CheckedType, nominals: &[CheckedNominal]) -> Vec<DatumSelector>
     }
 }
 
+/// Which result components one system operation's [SYS-2] `wf-prov` row
+/// classifies as external.
+///
+/// The row is declaration data, so the classification is data too, named once
+/// here rather than spread through the dependency construction below. An
+/// extraction lock compares each case against the specification's own cell;
+/// before it existed the whole PRV-1 provenance table was hand-transcribed as
+/// bare numeric ordinals with nothing checking it.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) enum SystemResultProvenance {
+    /// Every component of the result carries an external class: a plain
+    /// external result, or both `Ok` and `Err` payloads.
+    AllExternal,
+    /// Exactly the second variant's first payload — `Err(error:)` — is
+    /// external; the `Ok` success count is program-bounded and internal.
+    ErrorPayloadOnly,
+    /// Exactly the third variant's first payload — `ReadFailed(error:)` — is
+    /// external. `ReadBytes(count:)` is internal and `ReadEnd()` carries no
+    /// component at all.
+    ReadFailedPayloadOnly,
+    /// No component is external.
+    NoneExternal,
+}
+
+/// The `wf-prov` result-component class of each [SYS-2] operation, by its
+/// index in `SYSTEM_OPERATIONS`.
+///
+/// `None` for an index no operation occupies; the caller turns that into a
+/// compiler failure, because the checked model cannot normally contain one.
+pub(super) const fn system_result_provenance(operation: u8) -> Option<SystemResultProvenance> {
+    Some(match operation {
+        // args_count, arg_get, host_bytes_len, host_utf8_len, relative_path,
+        // open_read.
+        0 | 1 | 2 | 4 | 6 | 7 => SystemResultProvenance::AllExternal,
+        // host_copy_bytes, host_copy_utf8, write_once.
+        3 | 5 | 9 => SystemResultProvenance::ErrorPayloadOnly,
+        8 => SystemResultProvenance::ReadFailedPayloadOnly,
+        // exit_status.
+        10 => SystemResultProvenance::NoneExternal,
+        _ => return None,
+    })
+}
+
 fn system_result_dependencies(
     operation: u8,
     ty: CheckedType,
     nominals: &[CheckedNominal],
 ) -> ProvenanceResult<ValueDependencies> {
     let mut value = ValueDependencies::empty(ty, nominals);
-    match operation {
-        // Complete external results or both Result payloads.
-        0 | 1 | 2 | 4 | 6 | 7 => {
+    let mut mark = |variant, field| -> ProvenanceResult<()> {
+        value
+            .component_mut(DatumSelector::EnumPayload { variant, field })
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .dependency
+            .unconditional_external = true;
+        Ok(())
+    };
+    match system_result_provenance(operation).ok_or(SemanticCompilerFailure::InvalidResolution)? {
+        SystemResultProvenance::AllExternal => {
             for component in &mut value.components {
                 component.dependency.unconditional_external = true;
             }
         }
-        // host_copy_bytes / host_copy_utf8 / write_once: only Err(error:).
-        3 | 5 | 9 => {
-            value
-                .component_mut(DatumSelector::EnumPayload {
-                    variant: 1,
-                    field: 0,
-                })
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                .dependency
-                .unconditional_external = true
-        }
-        // read_once: ReadBytes(count:) is internal and ReadEnd has no payload;
-        // only ReadFailed(error:) is external.
-        8 => {
-            value
-                .component_mut(DatumSelector::EnumPayload {
-                    variant: 2,
-                    field: 0,
-                })
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                .dependency
-                .unconditional_external = true
-        }
-        // exit_status is internal. Unknown operation ids fail closed as a
-        // compiler failure; the checked model cannot normally contain one.
-        10 => {}
-        _ => return Err(SemanticCompilerFailure::InvalidResolution),
+        SystemResultProvenance::ErrorPayloadOnly => mark(1, 0)?,
+        SystemResultProvenance::ReadFailedPayloadOnly => mark(2, 0)?,
+        SystemResultProvenance::NoneExternal => {}
     }
     Ok(value)
 }
 
-fn system_external_writes(operation: u8) -> ProvenanceResult<&'static [usize]> {
+/// The `wf-prov` writable-`&uniq`-parameter column: the parameter ordinals one
+/// operation writes with an external class.
+pub(super) fn system_external_writes(operation: u8) -> ProvenanceResult<&'static [usize]> {
     Ok(match operation {
         3 | 5 => &[1],
         8 => &[0, 1],
@@ -644,6 +672,7 @@ impl<'check> FunctionPass<'check> {
             | CheckedExpression::DerefAddressed { binding, .. }
             | CheckedExpression::Project { binding, .. } => Some(HolderRoot::Holder(*binding)),
             CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => Self::match_holder(value),
             _ => None,
         }
@@ -665,7 +694,17 @@ impl<'check> FunctionPass<'check> {
                         CheckedExpression::ReborrowAddressed { binding, .. } => {
                             Some(HolderRoot::Holder(*binding))
                         }
-                        CheckedExpression::BoxNew { .. } => Some(HolderRoot::Opaque),
+                        // A bound borrow-mode call result is a holder over
+                        // the provenance-candidate actual's storage root
+                        // [OWN-6]; provenance retains the whole root exactly
+                        // as it does for a matched holder's payload binder.
+                        CheckedExpression::UserCall {
+                            result_borrow: Some(result_borrow),
+                            ..
+                        } => Some(HolderRoot::Place(result_borrow.binding)),
+                        CheckedExpression::BoxNew { .. } | CheckedExpression::ArenaNew { .. } => {
+                            Some(HolderRoot::Opaque)
+                        }
                         _ => None,
                     };
                     if let Some(holder) = holder {
@@ -699,6 +738,7 @@ impl<'check> FunctionPass<'check> {
                 | CheckedStatement::Region { body, .. } => self.collect_holders(body)?,
                 CheckedStatement::PropagateLet { .. }
                 | CheckedStatement::Set { .. }
+                | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
                 | CheckedStatement::Check { .. }
@@ -918,6 +958,37 @@ impl<'check> FunctionPass<'check> {
                             self.set_binding(resolved, place.ty, &value)?;
                         }
                     }
+                }
+                CheckedStatement::Replace {
+                    binding,
+                    target,
+                    value,
+                    ..
+                } => {
+                    // [SET-2]: the write half is exactly a Set commit's
+                    // dependency flow; the fresh binding additionally owns
+                    // the target's previous value, represented conservatively
+                    // by the complete resolved-root dependency (union-only,
+                    // so the fixed point stays monotone and fail-closed).
+                    self.scan_set_target(target, summaries)?;
+                    let value = self.expression(value, summaries)?;
+                    let aggregate = value.aggregate();
+                    let root = target.binding();
+                    let seed_every_value_component =
+                        self.set_seeds_every_value_component(target)?;
+                    self.add_root_write(root, &aggregate, seed_every_value_component)?;
+                    if let CheckedSetTarget::Place(place) = target
+                        && place.fields.is_empty()
+                    {
+                        let resolved = self.resolve_root(place.binding)?;
+                        if resolved == place.binding {
+                            self.set_binding(resolved, place.ty, &value)?;
+                        }
+                    }
+                    let previous = self.root(root)?;
+                    let previous =
+                        ValueDependencies::from_aggregate(target.ty(), &previous, self.nominals);
+                    self.set_binding(*binding, target.ty(), &previous)?;
                 }
                 CheckedStatement::Evaluate(value)
                 | CheckedStatement::DropExpression { value, .. } => {
@@ -1148,7 +1219,9 @@ impl<'check> FunctionPass<'check> {
             }
             CheckedExpression::Reinterpret { value, .. }
             | CheckedExpression::BoxNew { value, .. }
-            | CheckedExpression::BoxDeref { value, .. } => {
+            | CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaNew { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. } => {
                 let value = self.expression(value, summaries)?;
                 let aggregate = value.aggregate();
                 ValueDependencies::from_aggregate(expression.ty(), &aggregate, self.nominals)
@@ -1181,6 +1254,7 @@ impl<'check> FunctionPass<'check> {
                 let aggregate = match source {
                     CheckedSliceSource::Array { root, .. } => self.array_root(root)?,
                     CheckedSliceSource::Buffer(root) => self.root(root.binding)?,
+                    CheckedSliceSource::ArenaContent { binding, .. } => self.root(*binding)?,
                 };
                 ValueDependencies::from_aggregate(expression.ty(), &aggregate, self.nominals)
             }
@@ -1315,7 +1389,8 @@ fn binding_maximum(statements: &[CheckedStatement], maximum: &mut Option<u32>) {
     for statement in statements {
         match statement {
             CheckedStatement::Let { binding, .. }
-            | CheckedStatement::PropagateLet { binding, .. } => {
+            | CheckedStatement::PropagateLet { binding, .. }
+            | CheckedStatement::Replace { binding, .. } => {
                 include_binding(maximum, *binding);
             }
             CheckedStatement::Match { arms, .. } => {
@@ -1727,7 +1802,8 @@ fn collect_block_sites(
                     }
                 }
             }
-            CheckedStatement::Set { target, value, .. } => {
+            CheckedStatement::Set { target, value, .. }
+            | CheckedStatement::Replace { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
                     CheckedSetTarget::ArrayIndex(target) => {
@@ -1877,6 +1953,8 @@ fn expression_children(expression: &CheckedExpression) -> Vec<&CheckedExpression
         | CheckedExpression::ArrayFill { value, .. }
         | CheckedExpression::BoxNew { value, .. }
         | CheckedExpression::BoxDeref { value, .. }
+        | CheckedExpression::ArenaNew { value, .. }
+        | CheckedExpression::ArenaDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => vec![value],
         CheckedExpression::ArrayIndex { offset, .. }
         | CheckedExpression::BufferIndex { offset, .. }
@@ -2288,6 +2366,8 @@ impl<'check> CarrierReconstructor<'check> {
             | CheckedExpression::ArrayFill { value, .. }
             | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaNew { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.route_expression_aggregate(function, value, goal, visited)?
             }
@@ -2337,6 +2417,9 @@ impl<'check> CarrierReconstructor<'check> {
                 },
                 CheckedSliceSource::Buffer(root) => {
                     self.route_storage(function, root.binding, goal, visited)?
+                }
+                CheckedSliceSource::ArenaContent { binding, .. } => {
+                    self.route_storage(function, *binding, goal, visited)?
                 }
             },
             CheckedExpression::ConstructEnum {
@@ -2640,9 +2723,13 @@ impl<'check> CarrierReconstructor<'check> {
                         function, body, binding, selector, goal, visited, route,
                     )?;
                 }
+                // A replace-bound value's origin is storage, not an
+                // expression; yielding no carrier route here is the
+                // fail-closed disposition [PRV-1].
                 CheckedStatement::Let { .. }
                 | CheckedStatement::PropagateLet { .. }
                 | CheckedStatement::Set { .. }
+                | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
                 | CheckedStatement::Check { .. }
@@ -2703,6 +2790,7 @@ impl<'check> CarrierReconstructor<'check> {
                 CheckedStatement::Let { .. }
                 | CheckedStatement::PropagateLet { .. }
                 | CheckedStatement::Set { .. }
+                | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
                 | CheckedStatement::Check { .. }
@@ -2884,6 +2972,12 @@ impl<'check> CarrierReconstructor<'check> {
                     node_path,
                     target,
                     value,
+                }
+                | CheckedStatement::Replace {
+                    node_path,
+                    target,
+                    value,
+                    ..
                 } => {
                     if pass.resolve_root(target.binding())? == root {
                         choose_carrier_route(
@@ -3237,6 +3331,7 @@ impl<'check> CarrierReconstructor<'check> {
                 CheckedStatement::Let { .. }
                 | CheckedStatement::PropagateLet { .. }
                 | CheckedStatement::Set { .. }
+                | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
                 | CheckedStatement::Check { .. }
@@ -3328,6 +3423,12 @@ impl<'check> CarrierReconstructor<'check> {
                     node_path,
                     target,
                     value,
+                }
+                | CheckedStatement::Replace {
+                    node_path,
+                    target,
+                    value,
+                    ..
                 } => {
                     let resolved = pass.resolve_root(target.binding())?;
                     let seeds_every_value_component =

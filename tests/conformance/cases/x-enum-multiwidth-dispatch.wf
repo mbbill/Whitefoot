@@ -8,6 +8,8 @@ fn classify(v: own Val) -> own i32 traps {
   doc "Match each variant of an enum whose payload slot is sized to the widest variant (u64); each payload is copied out at its own declared width [TYPE-2, TYPE-6, GRAM-10].";
   match v {
     Small(a: n) => {
+      let n_in_range = ile(n, 2147483646_i32);
+      claim small_below_max: n_in_range because "the constructed Small payload is 40";
       return n + 1_i32;
     }
     Big(b: m) => {

@@ -249,9 +249,10 @@ impl Analyzer<'_, '_> {
     ) {
         let event = self.proof_event(event_kind, Some(node_path));
         let goals = self.goal_origin_set(condition, state);
-        for goal in goals {
+        let view = state.proof_view();
+        for goal in &goals {
             state.establish_goal(
-                goal,
+                *goal,
                 super::super::state::GoalSign::Positive,
                 &mut self.derivations,
                 event,
@@ -259,6 +260,16 @@ impl Analyzer<'_, '_> {
         }
         if let Some(relation) = self.scrutinee_relation(condition, state) {
             state.establish(&relation, &mut self.derivations, event);
+        }
+        // [ENT-3] Signed Boolean decomposition of each established goal.
+        for goal in goals {
+            self.establish_boolean_decomposition(
+                goal,
+                super::super::state::GoalSign::Positive,
+                state,
+                event,
+            );
+            self.record_boolean_decomposition(goal, super::super::state::GoalSign::Positive, view);
         }
     }
 
@@ -282,6 +293,15 @@ impl Analyzer<'_, '_> {
         if let Some(relation) = self.goals.projection(goal).cloned() {
             state.establish(&relation, &mut self.derivations, event);
         }
+        // [ENT-3] Signed Boolean decomposition of the established body goal.
+        let view = state.proof_view();
+        self.establish_boolean_decomposition(
+            goal,
+            super::super::state::GoalSign::Positive,
+            state,
+            event,
+        );
+        self.record_boolean_decomposition(goal, super::super::state::GoalSign::Positive, view);
     }
 
     // ------------------------------------------------------------------
@@ -436,6 +456,21 @@ impl Analyzer<'_, '_> {
                             fields: root.fields.clone(),
                         },
                         None,
+                    ),
+                    // Content reached in an arena through one explicit deref
+                    // [OWN-5]; the viewed array's constant length still
+                    // equates to the formed slice's length.
+                    CheckedSliceSource::ArenaContent {
+                        binding,
+                        fields,
+                        length,
+                    } => (
+                        PlaceTerm {
+                            root: PlaceRoot::Binding(*binding),
+                            deref: true,
+                            fields: fields.clone(),
+                        },
+                        Some(*length),
                     ),
                 };
                 let source_length = self.length_term(place, array_length);

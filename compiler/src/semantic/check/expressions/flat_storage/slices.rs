@@ -7,7 +7,7 @@ use crate::{
 };
 
 use super::super::super::super::model::{
-    CheckedExpression, CheckedMode, CheckedSliceOrigin, CheckedSliceSource,
+    CheckedExpression, CheckedMode, CheckedSliceOrigin, CheckedSliceSource, CheckedType,
 };
 use super::super::super::borrows::{AccessKind, ResolvedPlace, SliceInfo, SliceLoan};
 use super::super::super::{
@@ -84,7 +84,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .first_child_with(place_node, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
-            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
+            return self.check_arena_content_slice_of(
+                node, borrow, place_node, pbase, region, function, bindings, loop_depth,
+            );
         }
         let root_use = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
         let ResolvedTarget::Source { declaration, class } = root_use.target() else {
@@ -189,6 +191,158 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             reference_value: false,
             effects: EffectSet::NONE,
             accesses,
+        })
+    }
+
+    /// [OWN-5] `slice_of` over a place reached in arena content: the operand
+    /// `&'a deref(storage)` views the content array of an own `arena<'r, T>`
+    /// binding. Its region obeys [OWN-10]'s arena case — the arena's `'r`
+    /// must outlive-or-equals the borrow's region — and the created slice's
+    /// origin retains the complete resolved place, so [FN-1]'s return-origin
+    /// ceiling excludes it exactly as it excludes every other raw callee
+    /// place: an `arena<'r, U>` parameter is not an input-slice supplier.
+    #[allow(clippy::too_many_arguments)]
+    fn check_arena_content_slice_of(
+        &self,
+        node: NodeId,
+        borrow: NodeId,
+        place_node: NodeId,
+        pbase: NodeId,
+        region: DeclarationId,
+        function: &FunctionSignature,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<TypedExpression, CheckStop> {
+        if !self.borrow_region_is_inside_current_loops(region, borrow, loop_depth)? {
+            return self.issue_node(
+                SemanticRule::Own11,
+                borrow,
+                SemanticIssueKind::BorrowRegionOutsideLoop {
+                    mechanical_fix: "introduce the borrow region inside the enclosing loop body",
+                },
+            );
+        }
+        let inner_place = self
+            .tree
+            .first_child_with(pbase, Production::Place)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let inner_pbase = self
+            .tree
+            .first_child_with(inner_place, Production::Pbase)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        // The implemented fragment reaches content through one deref of a
+        // directly named binding; deeper chains and projected content stay
+        // explicit capability stops.
+        if self.has_fixed(inner_pbase, FixedTerminal::Deref)?
+            || !self.tree.children(inner_pbase)?.is_empty()
+            || !self
+                .tree
+                .children_with(inner_place, Production::Psuffix)?
+                .is_empty()
+            || !self
+                .tree
+                .children_with(place_node, Production::Psuffix)?
+                .is_empty()
+        {
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
+        }
+        let root_use = self.use_at(inner_pbase, LexicalUseRole::PlaceBase)?;
+        let ResolvedTarget::Source {
+            declaration,
+            class: DeclarationClass::Value,
+        } = root_use.target()
+        else {
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
+        };
+        let local = bindings
+            .get(&declaration)
+            .cloned()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        if !local.live {
+            return self.issue_node(
+                SemanticRule::Own1,
+                place_node,
+                SemanticIssueKind::UseAfterMove {
+                    mechanical_fix: "introduce a new `let` binding before reuse",
+                },
+            );
+        }
+        let Some((arena_region, content)) = self.arena_instance(local.ty)? else {
+            // A deref over anything but an own arena binding stays a
+            // capability stop rather than a fabricated source verdict.
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
+        };
+        if local.mode != CheckedMode::Own {
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
+        }
+        // [OWN-10] for a place rooted in arena<'r, T> content: 'r must
+        // outlive-or-equals the borrow's region.
+        if !self.region_outlives(arena_region, region)? {
+            return self.issue_node(
+                SemanticRule::Own10,
+                borrow,
+                SemanticIssueKind::InvalidBorrowLifetime,
+            );
+        }
+        // TEMPORARY capability stop, judged after the [OWN-1] and [OWN-10]
+        // source rejections above: no lowering builds a slice over arena
+        // content. A view over an arena *parameter* still checks on, because
+        // the whole function then stops at the arena-parameter gate, and the
+        // [FN-1] return-origin judgment must reach its verdict first. A view
+        // over a *local* arena has no such later gate, so without this stop
+        // it would publish a checked program the IR builder cannot lower.
+        if !function
+            .parameters
+            .iter()
+            .any(|parameter| parameter.declaration == declaration)
+        {
+            return self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, place_node);
+        }
+        let CheckedType::Array { element, length } = content else {
+            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place_node);
+        };
+        let resolved = ResolvedPlace {
+            root: declaration,
+            fields: Vec::new(),
+        };
+        self.check_loan_access(bindings, None, &resolved, AccessKind::SharedBorrow, borrow)?;
+        bindings
+            .get_mut(&declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .push_slice_loan(SliceLoan {
+                region,
+                place: resolved.clone(),
+            });
+        // The origin is the complete resolved place reached in arena content
+        // [OWN-5]; reads through the formed view stay reads of storage this
+        // function owns, so the formation carries no boundary effect.
+        let origins = vec![CheckedSliceOrigin::SourcePlace {
+            root: declaration,
+            fields: Vec::new(),
+            origin_region: None,
+        }];
+        Ok(TypedExpression {
+            expression: CheckedExpression::SliceOf {
+                carrier: self.tree.path(node)?.clone(),
+                source: CheckedSliceSource::ArenaContent {
+                    binding: local.binding,
+                    fields: Vec::new(),
+                    length,
+                },
+                region,
+                element,
+                origins: origins.clone(),
+            },
+            mode: CheckedMode::Own,
+            borrow: None,
+            slice: Some(SliceInfo { region, origins }),
+            holder: None,
+            reference_value: false,
+            effects: EffectSet::NONE,
+            accesses: vec![PlaceAccess {
+                place: resolved,
+                kind: AccessKind::SharedBorrow,
+            }],
         })
     }
 }

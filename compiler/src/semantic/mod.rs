@@ -19,6 +19,10 @@ mod tests;
 use crate::{BundleSourceExtent, NodePath, ResolutionIssue, ResolvedSyntaxUnit, SyntaxCoordinate};
 
 pub use check::check_semantics;
+#[cfg(test)]
+pub(crate) use check::check_semantics_arithmetic_obligations;
+#[cfg(test)]
+pub(crate) use check::check_semantics_reborrow_extension;
 
 pub(crate) use goal::{GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 pub(crate) use model::{
@@ -31,6 +35,16 @@ pub(crate) use model::{
     CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue, IntegerType,
     NominalId, PropagationContext, TrapSite,
 };
+
+/// Master switch for the v0.31 candidate's gated semantic surface:
+/// struct-typed named consts [CONST-2 candidate] and the clause-conditional
+/// OWN-1 bare-affine repair [#35].
+///
+/// `true` selects the candidate semantics, matched in the same change by the
+/// v0.31 candidate specification bytes and the grammar tables regenerated
+/// from them — the const-arithmetic and construction-cvalue grammar shapes
+/// are additionally gated by those tables and need no switch of their own.
+pub(crate) const V031_CANDIDATE_SEMANTICS: bool = true;
 
 /// Numbered rule owning one post-resolution semantic rejection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,6 +63,8 @@ pub enum SemanticRule {
     Type5,
     /// Copy-place assignment target formation and writability.
     Set1,
+    /// Affine-place replacement target class and commit.
+    Set2,
     /// Copy-versus-affine use spelling.
     Own1,
     /// Borrow liveness and region ordering.
@@ -69,10 +85,15 @@ pub enum SemanticRule {
     Type7,
     /// Storage-class and affine replacement restrictions.
     Stor1,
+    /// Arena confinement to its region's block.
+    Stor4,
     /// Borrow-free and region-free stored-content formation.
     Stor5,
     /// Operation-table row selection.
     Op1,
+    /// Exact integer arithmetic semantics and the constant-operand-class
+    /// overflow-obligation discharge.
+    Op2,
     /// Subscript bounds-obligation discharge and offset typing.
     Op4,
     /// Exact conversion-pair result classification.
@@ -87,6 +108,8 @@ pub enum SemanticRule {
     Fn3,
     /// Closed source-law declaration and discharge.
     Fn4,
+    /// Polymorphic recursion in a call cycle among generic functions.
+    Fn6,
     /// Closed-program `main` contract.
     Fn7,
     /// Finite atomic function requirement goal.
@@ -144,6 +167,7 @@ impl SemanticRule {
             Self::Const2 => "CONST-2",
             Self::Type5 => "TYPE-5",
             Self::Set1 => "SET-1",
+            Self::Set2 => "SET-2",
             Self::Own1 => "OWN-1",
             Self::Own4 => "OWN-4",
             Self::Own5 => "OWN-5",
@@ -154,8 +178,10 @@ impl SemanticRule {
             Self::Own14 => "OWN-14",
             Self::Type7 => "TYPE-7",
             Self::Stor1 => "STOR-1",
+            Self::Stor4 => "STOR-4",
             Self::Stor5 => "STOR-5",
             Self::Op1 => "OP-1",
+            Self::Op2 => "OP-2",
             Self::Op4 => "OP-4",
             Self::Op6 => "OP-6",
             Self::Op5 => "OP-5",
@@ -163,6 +189,7 @@ impl SemanticRule {
             Self::Fn2 => "FN-2",
             Self::Fn3 => "FN-3",
             Self::Fn4 => "FN-4",
+            Self::Fn6 => "FN-6",
             Self::Fn7 => "FN-7",
             Self::Fn8 => "FN-8",
             Self::Fn9 => "FN-9",
@@ -215,7 +242,8 @@ impl SemanticRule {
             Self::Type5 => Self::Type6,
             Self::Type6 => Self::Type7,
             Self::Type7 => Self::Set1,
-            Self::Set1 => Self::Const1,
+            Self::Set1 => Self::Set2,
+            Self::Set2 => Self::Const1,
             Self::Const1 => Self::Const2,
             Self::Const2 => Self::Own1,
             Self::Own1 => Self::Own4,
@@ -226,16 +254,19 @@ impl SemanticRule {
             Self::Own11 => Self::Own12,
             Self::Own12 => Self::Own14,
             Self::Own14 => Self::Stor1,
-            Self::Stor1 => Self::Stor5,
+            Self::Stor1 => Self::Stor4,
+            Self::Stor4 => Self::Stor5,
             Self::Stor5 => Self::Op1,
-            Self::Op1 => Self::Op4,
+            Self::Op1 => Self::Op2,
+            Self::Op2 => Self::Op4,
             Self::Op4 => Self::Op5,
             Self::Op5 => Self::Op6,
             Self::Op6 => Self::Fn1,
             Self::Fn1 => Self::Fn2,
             Self::Fn2 => Self::Fn3,
             Self::Fn3 => Self::Fn4,
-            Self::Fn4 => Self::Fn7,
+            Self::Fn4 => Self::Fn6,
+            Self::Fn6 => Self::Fn7,
             Self::Fn7 => Self::Fn8,
             Self::Fn8 => Self::Fn9,
             Self::Fn9 => Self::Eff1,
@@ -276,40 +307,44 @@ impl SemanticRule {
             Self::Type6 => 9,
             Self::Type7 => 10,
             Self::Set1 => 11,
-            Self::Const1 => 12,
-            Self::Const2 => 13,
-            Self::Own1 => 14,
-            Self::Own4 => 15,
-            Self::Own5 => 16,
-            Self::Own6 => 17,
-            Self::Own10 => 18,
-            Self::Own11 => 19,
-            Self::Own12 => 20,
-            Self::Own14 => 21,
-            Self::Stor1 => 22,
-            Self::Stor5 => 23,
-            Self::Op1 => 24,
-            Self::Op4 => 25,
-            Self::Op5 => 26,
-            Self::Op6 => 27,
-            Self::Fn1 => 28,
-            Self::Fn2 => 29,
-            Self::Fn3 => 30,
-            Self::Fn4 => 31,
-            Self::Fn7 => 32,
-            Self::Fn8 => 33,
-            Self::Fn9 => 34,
-            Self::Eff1 => 35,
-            Self::Eff2 => 36,
-            Self::Err2 => 37,
-            Self::Err3 => 38,
-            Self::Sys2 => 39,
-            Self::Clm1 => 40,
-            Self::Clm2 => 41,
-            Self::Clm3 => 42,
-            Self::Ent2 => 43,
-            Self::Prv2 => 44,
-            Self::Prv3 => 45,
+            Self::Set2 => 12,
+            Self::Const1 => 13,
+            Self::Const2 => 14,
+            Self::Own1 => 15,
+            Self::Own4 => 16,
+            Self::Own5 => 17,
+            Self::Own6 => 18,
+            Self::Own10 => 19,
+            Self::Own11 => 20,
+            Self::Own12 => 21,
+            Self::Own14 => 22,
+            Self::Stor1 => 23,
+            Self::Stor4 => 24,
+            Self::Stor5 => 25,
+            Self::Op1 => 26,
+            Self::Op2 => 27,
+            Self::Op4 => 28,
+            Self::Op5 => 29,
+            Self::Op6 => 30,
+            Self::Fn1 => 31,
+            Self::Fn2 => 32,
+            Self::Fn3 => 33,
+            Self::Fn4 => 34,
+            Self::Fn6 => 35,
+            Self::Fn7 => 36,
+            Self::Fn8 => 37,
+            Self::Fn9 => 38,
+            Self::Eff1 => 39,
+            Self::Eff2 => 40,
+            Self::Err2 => 41,
+            Self::Err3 => 42,
+            Self::Sys2 => 43,
+            Self::Clm1 => 44,
+            Self::Clm2 => 45,
+            Self::Clm3 => 46,
+            Self::Ent2 => 47,
+            Self::Prv2 => 48,
+            Self::Prv3 => 49,
         }
     }
 }
@@ -627,6 +662,21 @@ pub enum SemanticIssueKind {
     InvalidFloatLiteral,
     /// A named constant value does not exactly inhabit its written type.
     InvalidConstValue,
+    /// A const-expression's compile-time evaluation has no u64 result: the
+    /// mathematical result lies outside the domain or the divisor is zero.
+    /// This is the const-eval overflow policy's rejection [CONST-1]; it is
+    /// never a runtime trap and never enters EFF-2's exhibits-traps relation.
+    ConstEvalOverflow {
+        /// Bare spelling of the rejected const operation.
+        operation: &'static str,
+    },
+    /// A const-expression names a runtime arithmetic mode; const evaluation
+    /// has exactly the five bare spellings under the const-eval overflow
+    /// policy [CONST-1].
+    ConstRuntimeArithmeticMode {
+        /// Exact mechanical repair selected by CONST-1.
+        mechanical_fix: &'static str,
+    },
     /// Two exact written modes or types disagree.
     TypeMismatch,
     /// A constant was selected as an assignment target.
@@ -643,6 +693,14 @@ pub enum SemanticIssueKind {
         /// Exact selected affine type.
         target_type: String,
         /// Required STOR-1 restructuring.
+        mechanical_fix: &'static str,
+    },
+    /// A `replace` target's final selected type is not an admitted
+    /// region-free affine type [SET-2].
+    InvalidReplaceTarget {
+        /// Exact selected type.
+        target_type: String,
+        /// Required SET-2 restructuring.
         mechanical_fix: &'static str,
     },
     /// `move` was written for a copy value.
@@ -670,6 +728,13 @@ pub enum SemanticIssueKind {
     /// or a return-position reborrow failed OWN-14's admission.
     InvalidReborrowPosition {
         /// Exact restructuring required by OWN-14.
+        mechanical_fix: &'static str,
+    },
+    /// A borrow-mode call result was bound, but the callee signature does not
+    /// determine one provenance-candidate parameter for it (reborrow
+    /// extension only).
+    AmbiguousResultBorrow {
+        /// Exact restructuring required by OWN-6.
         mechanical_fix: &'static str,
     },
     /// A borrow holder was used without the required explicit dereference.
@@ -712,9 +777,21 @@ pub enum SemanticIssueKind {
         /// The mechanical fix ENT-6 names.
         mechanical_fix: &'static str,
     },
+    /// A constant-operand-class bare `+`/`-`/`*` overflow obligation is not
+    /// derivable from the closed fact state at its node [OP-2, ENT-6].
+    UndischargedOverflowObligation {
+        /// The exact ENT-6 residual rendering of the least undischarged
+        /// conjunct: `operand <= c`, `c <= operand`, or `z outside T`.
+        residual: String,
+        /// The mechanical fix OP-2 names.
+        mechanical_fix: &'static str,
+    },
     /// A demanded strict component's protected obligation is not discharged
     /// in the existing unasserted U view [OP-4, CLM-3].
     StrictUndischargedBounds(Box<StrictUndischargedBoundsDetail>),
+    /// A demanded strict component's overflow obligation is not discharged
+    /// in the existing unasserted U view [OP-2, CLM-3].
+    StrictUndischargedOverflow(Box<StrictUndischargedBoundsDetail>),
     /// The complete instantiated requirement at an ordinary call is refuted
     /// or unproved in the caller's pre-transfer state [FN-8].
     UndischargedCallRequirement(Box<UndischargedCallRequirementDetail>),
@@ -759,9 +836,25 @@ pub enum SemanticIssueKind {
         /// Required FN-2 restructuring.
         mechanical_fix: &'static str,
     },
+    /// A call on a cycle among generic functions instantiates its callee at
+    /// something other than exactly the caller's own type parameters [FN-6].
+    PolymorphicRecursion {
+        /// The cycle FN-6 requires the diagnostic to name: the function
+        /// spellings along the shortest cycle through this call, in call
+        /// order, joined by ` -> ` and closed on the caller.
+        cycle: String,
+        /// Required FN-6 restructuring.
+        mechanical_fix: &'static str,
+    },
     /// A stored-content position contains a region-bearing value.
     RegionBearingStorage {
         /// Required STOR-5 restructuring.
+        mechanical_fix: &'static str,
+    },
+    /// An arena value would leave its region's block [STOR-4]: it may not be
+    /// returned, stored into a field, or moved to an outside destination.
+    ArenaEscape {
+        /// Required STOR-4 restructuring.
         mechanical_fix: &'static str,
     },
     /// A slice-valued value match would require an unselected origin join.
@@ -1014,6 +1107,10 @@ pub enum UnsupportedSemanticFeature {
     DuplicateMatchArm,
     /// An OP-1 family outside the implemented scalar and nominal-tag families.
     OperationFamily,
+    /// Arena values at runtime: the region-tied allocation and release
+    /// lowering [STOR-2, STOR-3] is not implemented yet, so a checked
+    /// function that would carry an arena value to execution stops here.
+    ArenaRuntime,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

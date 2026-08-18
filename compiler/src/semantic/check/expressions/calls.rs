@@ -13,10 +13,11 @@ use crate::{
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
 };
 
+use super::super::super::entailment::overflow_obligation_class;
 use super::super::super::model::{
     CheckedBooleanOperation, CheckedExpression, CheckedIntegerArgument,
-    CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMode, CheckedNominalKind,
-    CheckedNumericType, CheckedType, TrapSite,
+    CheckedIntegerArgumentSource, CheckedIntegerErrorClass, CheckedIntegerOperation, CheckedMode,
+    CheckedNominalKind, CheckedNumericType, CheckedType, TrapSite,
 };
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PendingNominal, PreludeType,
@@ -85,14 +86,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.check_float_operation(node, spelling, function, bindings, loop_depth);
         }
         if spelling == "arena_new" {
-            self.reject_region_bearing_storage_operation_argument(node, spelling, function, 2, 1)?;
-            return self.unsupported(UnsupportedSemanticFeature::OperationFamily, node);
+            return self.check_arena_new(node, function, bindings, loop_depth);
         }
         if spelling == "array_new" {
             return self.check_array_new(node, function, bindings, loop_depth);
         }
         if spelling == "buffer_new" {
             return self.check_buffer_new(node, function, bindings, loop_depth);
+        }
+        if spelling == "buffer_vacant" {
+            // The v0.31 all-`None` affine-element constructor [OP-1, OP-9].
+            // The affine-element representation (aggregate buffer elements
+            // through checked IR and the backend) is not implemented yet, so
+            // the admitted operation stops as an explicit unsupported
+            // capability rather than misreporting valid source.
+            return self.unsupported(UnsupportedSemanticFeature::OperationFamily, node);
         }
         if spelling == "box_new" {
             return self.check_box_new(node, function, bindings, loop_depth);
@@ -200,11 +208,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let mut arguments = Vec::with_capacity(operand_count);
         let mut argument_metadata = Vec::with_capacity(operand_count);
-        let mut effects = if operation.traps() {
-            EffectSet::TRAPS
-        } else {
-            EffectSet::NONE
-        };
+        let mut effects = EffectSet::NONE;
         // [OP-2] the selected type is derived from the operands: the first
         // operand's exact type is it, and every later operand must be
         // exactly the row's argument type for that selection — which for the
@@ -263,7 +267,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // `operation_atoms` already rejected a wrong operand count, and no
         // integer row is nullary, so the selection is always made by here.
         let operand_type = operand_type.ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let trap = if operation.traps() {
+        // Under the arithmetic-mode dissolution switch, a bare trapping
+        // add/subtract/multiply with a constant operand carries an [ENT-6]
+        // overflow obligation instead of a runtime trap: it contributes no
+        // `traps` effect [EFF-2] and retains no trap record, and the
+        // entailment flow judges the obligation at this site [OP-2]. With
+        // the switch off, v0.30 behavior is byte-identical.
+        let overflow_obligation_site = self.arithmetic_obligations
+            && overflow_obligation_class(operation, &arguments).is_some();
+        if operation.traps() && !overflow_obligation_site {
+            effects = effects.union(EffectSet::TRAPS);
+        }
+        let trap = if operation.traps() && !overflow_obligation_site {
             Some(TrapSite {
                 rule_id: if matches!(
                     operation,
@@ -290,17 +305,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         } else {
             None
         };
-        let checked_error =
-            match operation {
-                CheckedIntegerOperation::AddChecked
-                | CheckedIntegerOperation::SubtractChecked
-                | CheckedIntegerOperation::MultiplyChecked => Some(PreludeType::Overflow),
-                CheckedIntegerOperation::DivideChecked
-                | CheckedIntegerOperation::RemainderChecked => Some(PreludeType::DivError),
-                CheckedIntegerOperation::AbsoluteChecked
-                | CheckedIntegerOperation::NegateChecked => Some(PreludeType::Overflow),
-                _ => None,
-            };
+        // The row's own `signature` cell decides this, so the mapping lives
+        // once on the operation and an extraction lock compares it against the
+        // specification's cell.
+        let checked_error = operation.checked_error().map(|class| match class {
+            CheckedIntegerErrorClass::Overflow => PreludeType::Overflow,
+            CheckedIntegerErrorClass::DivError => PreludeType::DivError,
+        });
         let result = if let Some(error) = checked_error {
             CheckedType::Nominal(self.prelude_nominal(PreludeType::Result(
                 operand_type,
@@ -381,6 +392,87 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         parsed
             .try_into()
             .map_err(|_| SemanticCompilerFailure::InvalidCanonicalTree.into())
+    }
+
+    /// [STOR-2] `arena_new<'r, T>(v)` returns `own arena<'r, T>`: the content
+    /// moves into storage owned by region `'r` and registered on that
+    /// region's allocation list, which the region's exits release [STOR-3].
+    fn check_arena_new(
+        &self,
+        node: NodeId,
+        function: &FunctionSignature,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<TypedExpression, CheckStop> {
+        // GRAM-11 named-argument rejection plus [STOR-5] on the written
+        // content argument.
+        self.reject_region_bearing_storage_operation_argument(node, "arena_new", function, 2, 1)?;
+        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        };
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
+        let [region_argument, content_argument] = arguments.as_slice() else {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        };
+        if self
+            .tree
+            .first_child_with(*region_argument, Production::Type)?
+            .is_some()
+        {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        }
+        let region_use = self.use_at(*region_argument, LexicalUseRole::TypeArgumentRegion)?;
+        let ResolvedTarget::Source {
+            declaration: region,
+            class: DeclarationClass::Region,
+        } = region_use.target()
+        else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        let Some(content_node) = self
+            .tree
+            .first_child_with(*content_argument, Production::Type)?
+        else {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        };
+        let content = self.parse_type_with(content_node, &function.substitution)?;
+        // The implemented content fragment carries no release action of its
+        // own [STOR-3]: flat scalars and arrays of them. Wider content stays
+        // an explicit capability stop rather than a silent storage leak.
+        if self.flat_element(content)?.is_none() && !matches!(content, CheckedType::Array { .. }) {
+            return self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, content_node);
+        }
+        let atoms = self.operation_atoms(node, 1)?;
+        let value = self.check_atom(function, atoms[0], bindings, loop_depth)?;
+        if value.mode != CheckedMode::Own || value.expression.ty() != content {
+            return self.issue_node(
+                SemanticRule::Type5,
+                atoms[0],
+                SemanticIssueKind::TypeMismatch,
+            );
+        }
+        // The region's allocation list exists exactly for the local region
+        // blocks this checker opened [STOR-3]. A caller-supplied region has
+        // no local list; allocation into it is the explicit unimplemented
+        // remainder of the arena runtime.
+        let Some(list) = bindings.get(&region).map(|local| local.binding) else {
+            return self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, node);
+        };
+        let Some(nominal) = self.arena_nominals.get(&(region, content)).copied() else {
+            self.pending_nominals
+                .borrow_mut()
+                .push(PendingNominal::Arena(region, content));
+            return Err(CheckStop::DeferredNominal);
+        };
+        Ok(TypedExpression::owned(
+            CheckedExpression::ArenaNew {
+                carrier: self.tree.path(node)?.clone(),
+                nominal,
+                list,
+                value: Box::new(value.expression),
+            },
+            value.effects,
+        ))
     }
 
     fn check_box_new(

@@ -21,6 +21,33 @@ pub(super) enum BorrowKind {
     Unique,
 }
 
+/// The owned indirection a `deref` place base reaches when its root binding
+/// is own-mode rather than a borrow holder [OWN-14]. Each arm names the
+/// storage class the root owns [STOR-1] and the content type the written
+/// suffix chain continues from; a borrow position additionally reads the arm
+/// as the [OWN-10] case that governs it.
+#[derive(Clone, Copy)]
+pub(super) enum OwnedContent {
+    /// `box<T>` content: heap storage this binding owns [STOR-1], so
+    /// [OWN-10]'s own-mode-binding case governs a borrow of it.
+    Boxed(CheckedType),
+    /// `arena<'r, T>` content: arena-owned storage bounded by `'r`
+    /// [STOR-1, STOR-4], so [OWN-10]'s arena case governs a borrow of it
+    /// with source region `'r`.
+    Arena {
+        source: DeclarationId,
+        content: CheckedType,
+    },
+}
+
+impl OwnedContent {
+    pub(super) const fn ty(self) -> CheckedType {
+        match self {
+            Self::Boxed(content) | Self::Arena { content, .. } => content,
+        }
+    }
+}
+
 /// The syntactic position of a `borrow_expr`, which decides the written
 /// reborrow form admitted there: the statement-scoped child in call-argument
 /// position [OWN-6] and the returned reborrow as the complete return
@@ -34,6 +61,12 @@ pub(super) enum ReborrowPosition {
     CallArgument {
         /// Whether the receiving call's result mode is `own` or `unit`.
         own_result: bool,
+        /// Under the reborrow extension only: this argument position is the
+        /// receiving borrow-returning call's single provenance candidate, so
+        /// a written reborrow here may outlive the statement inside the
+        /// bound result and its parent holder is suspended for the remainder
+        /// of its life. Always `false` with the extension off.
+        result_candidate: bool,
     },
     /// The complete `expr` of a `return_stmt` [OWN-14].
     ReturnExpression,
@@ -332,6 +365,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         if self.has_fixed(pbase, crate::FixedTerminal::Deref)? {
+            // [OWN-14] defines a reborrow form by its root binding's *mode*,
+            // not by the `deref` spelling: only a place rooted at a borrow
+            // holder is one. A `deref` over an own-mode `box` or `arena`
+            // binding reaches content that binding owns [STOR-1], so the
+            // borrow is an ordinary borrow judged by [OWN-10]'s own-mode and
+            // arena-content cases. Dispatching it as a reborrow demanded a
+            // borrow holder the source never wrote and reported spec-legal
+            // programs as OWN-6/OWN-14/TYPE-7 violations.
+            if let Some(root) = self.owned_content_deref_root(pbase, bindings)? {
+                return self.check_owned_content_borrow(
+                    node, place_node, region, function, loop_depth, root,
+                );
+            }
             return self.check_child_reborrow(
                 node, place_node, pbase, region, kind, bindings, loop_depth, position,
             );
@@ -489,6 +535,134 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// The own-mode `box` or `arena` binding a `deref` place base is rooted
+    /// at, when it is one. `None` means the base is not that shape — a
+    /// borrow-holder root, a chained or suffixed holder place, or a nonvalue
+    /// target — and the position keeps its holder disposition: [OWN-14]'s
+    /// reborrow judgment for a borrow, and [SET-1]'s live usable `&uniq`
+    /// referent for a mutation target.
+    pub(super) fn owned_content_deref_root(
+        &self,
+        pbase: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<Option<(LocalBinding, OwnedContent)>, CheckStop> {
+        let root_place = self
+            .tree
+            .first_child_with(pbase, Production::Place)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let root_base = self
+            .tree
+            .first_child_with(root_place, Production::Pbase)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        if !self.tree.children(root_base)?.is_empty()
+            || !self
+                .tree
+                .children_with(root_place, Production::Psuffix)?
+                .is_empty()
+        {
+            return Ok(None);
+        }
+        let usage = self.use_at(root_base, LexicalUseRole::PlaceBase)?;
+        let ResolvedTarget::Source {
+            declaration,
+            class: DeclarationClass::Value,
+        } = usage.target()
+        else {
+            return Ok(None);
+        };
+        let Some(local) = bindings.get(&declaration).cloned() else {
+            return Ok(None);
+        };
+        if local.mode != CheckedMode::Own || local.borrow.is_some() {
+            return Ok(None);
+        }
+        let CheckedType::Nominal(nominal) = local.ty else {
+            return Ok(None);
+        };
+        let content = match self.nominal(nominal)?.kind {
+            CheckedNominalKind::Box { referent } => OwnedContent::Boxed(referent),
+            CheckedNominalKind::Arena { region, content } => OwnedContent::Arena {
+                source: region,
+                content,
+            },
+            _ => return Ok(None),
+        };
+        Ok(Some((local, content)))
+    }
+
+    /// An ordinary borrow whose place reaches through owned indirection. The
+    /// judgment order is [OWN-11]'s loop restriction, [OWN-1]'s liveness, then
+    /// [OWN-10]'s storage-duration case for the root's storage class, exactly
+    /// as for a borrow of the binding itself; only the region relation
+    /// differs, because arena content outlives its region rather than its
+    /// binding [STOR-4].
+    fn check_owned_content_borrow(
+        &self,
+        node: NodeId,
+        place_node: NodeId,
+        region: DeclarationId,
+        function: &FunctionSignature,
+        loop_depth: usize,
+        root: (LocalBinding, OwnedContent),
+    ) -> Result<TypedExpression, CheckStop> {
+        let (local, content) = root;
+        if !self.borrow_region_is_inside_current_loops(region, node, loop_depth)? {
+            return self.issue_node(
+                SemanticRule::Own11,
+                node,
+                SemanticIssueKind::BorrowRegionOutsideLoop {
+                    mechanical_fix: "introduce the borrow region inside the enclosing loop body",
+                },
+            );
+        }
+        if !local.live {
+            return self.issue_node(
+                SemanticRule::Own1,
+                place_node,
+                SemanticIssueKind::UseAfterMove {
+                    mechanical_fix: "introduce a new `let` binding before reuse",
+                },
+            );
+        }
+        let admitted = match content {
+            OwnedContent::Arena { source, .. } => self.region_outlives(source, region)?,
+            OwnedContent::Boxed(_) => {
+                !function.region_parameters.contains(&region)
+                    && self.scope_is_within(
+                        self.region_declaration(region)?.scope(),
+                        self.declaration_scope(local.declaration)?,
+                    )?
+            }
+        };
+        if !admitted {
+            return self.issue_node(
+                SemanticRule::Own10,
+                node,
+                SemanticIssueKind::InvalidBorrowLifetime,
+            );
+        }
+        // The written suffix chain still selects a real field of the content
+        // type, so a wrong spelling stays a source rejection rather than being
+        // masked by the capability stop below [DIAG-1].
+        let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
+        let (_fields, _ty) = self.resolve_struct_path(&suffixes, content.ty())?;
+        // TEMPORARY capability stop, judged after the [OWN-1], [OWN-10], and
+        // [OWN-11] source rejections above. No checked expression addresses
+        // owned indirection content: a `box` binding lowers to the content
+        // pointer with the box's own IR type and arena storage has no runtime
+        // at all, so there is nothing for the IR builder to take the address
+        // of. This is the same explicit stop the arena-content `slice_of`
+        // path takes rather than publishing an unlowerable checked program.
+        match content {
+            OwnedContent::Arena { .. } => {
+                self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, place_node)
+            }
+            OwnedContent::Boxed(_) => {
+                self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node)
+            }
+        }
+    }
+
     pub(super) fn check_direct_slice_borrow_lifetime(
         &self,
         function: &FunctionSignature,
@@ -551,7 +725,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 );
             }
-            ReborrowPosition::CallArgument { own_result } if !own_result => {
+            // A reborrow argument to a borrow-returning call is admitted
+            // only in the call's single provenance-candidate position under
+            // the reborrow extension; every other borrow-returning receiver
+            // keeps OWN-6's own/unit-result condition.
+            ReborrowPosition::CallArgument {
+                own_result,
+                result_candidate,
+            } if !own_result && !result_candidate => {
                 return self.issue_node(
                     SemanticRule::Own6,
                     node,
@@ -569,16 +750,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        if matches!(position, ReborrowPosition::CallArgument { .. }) {
-            let region_declaration = self.region_declaration(region)?;
-            if region_declaration.role() != DeclarationRole::LocalRegion
-                || !self.child_region_is_statement_scoped(region_declaration, node)?
-            {
-                return self.issue_node(
-                    SemanticRule::Own6,
-                    node,
-                    SemanticIssueKind::InvalidChildReborrow,
-                );
+        if let ReborrowPosition::CallArgument {
+            result_candidate, ..
+        } = position
+        {
+            // In the provenance-candidate position of a borrow-returning
+            // call, the child's loan survives in the bound result, so the
+            // statement-scoped-region condition is replaced by the parent's
+            // permanent suspension [OWN-6]; a caller-supplied region is
+            // admitted there because the claim is carried by the result
+            // holder, never by a resumed parent. Every other argument child
+            // stays statement-scoped.
+            if !result_candidate {
+                let region_declaration = self.region_declaration(region)?;
+                if region_declaration.role() != DeclarationRole::LocalRegion
+                    || !self.child_region_is_statement_scoped(region_declaration, node)?
+                {
+                    return self.issue_node(
+                        SemanticRule::Own6,
+                        node,
+                        SemanticIssueKind::InvalidChildReborrow,
+                    );
+                }
             }
         }
         let (holder, local, parent) = self.resolve_dereference_holder(node, pbase, bindings)?;
@@ -724,7 +917,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Err(SemanticCompilerFailure::InvalidCanonicalTree.into())
     }
 
-    fn borrow_region_is_inside_current_loops(
+    pub(in crate::semantic::check) fn borrow_region_is_inside_current_loops(
         &self,
         region: DeclarationId,
         borrow: NodeId,
@@ -923,6 +1116,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Some(borrow))
     }
 
+    /// A borrow-mode `let` holder is supported when its lexical scope lies
+    /// within its borrow's region block, so the borrow value [OWN-4] is live
+    /// for the holder's whole scope. The region may enclose the holder any
+    /// number of blocks up (an outer region's borrow legally stored under an
+    /// inner region), and a caller-supplied region encloses the entire body
+    /// [OWN-3]. A holder that would outlive its borrow's region stays an
+    /// explicit capability stop.
     pub(super) fn borrow_holder_scope_supported(
         &self,
         holder: DeclarationId,
@@ -932,13 +1132,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedMode::Own => return Ok(true),
             CheckedMode::Shared(region) | CheckedMode::Unique(region) => region,
         };
-        let holder_scope = self.declaration_scope(holder)?;
-        let holder_scope = self
-            .resolved
-            .scopes()
-            .get(holder_scope.index())
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        Ok(holder_scope.parent() == Some(self.region_declaration(region)?.scope()))
+        self.scope_is_within(
+            self.declaration_scope(holder)?,
+            self.region_declaration(region)?.scope(),
+        )
+    }
+
+    /// Whether `declaration`'s owning lexical scope lies within `region`'s
+    /// block — the [STOR-4] destination judgment for a value confined to that
+    /// region. A caller-supplied region's block encloses the whole body.
+    pub(super) fn declaration_is_within_region_block(
+        &self,
+        declaration: DeclarationId,
+        region: DeclarationId,
+    ) -> Result<bool, CheckStop> {
+        self.scope_is_within(
+            self.declaration_scope(declaration)?,
+            self.region_declaration(region)?.scope(),
+        )
     }
 
     pub(super) fn check_loan_access(

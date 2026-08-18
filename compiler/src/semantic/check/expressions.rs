@@ -12,11 +12,11 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConst, CheckedExpression, CheckedIntegerOperation, CheckedMode, CheckedNominalKind,
-    CheckedProjectedDrop, CheckedSetTarget, CheckedType, CheckedValue, CheckedWritablePlace,
-    FloatType, IntegerType,
+    CheckedConst, CheckedConstant, CheckedExpression, CheckedIntegerOperation, CheckedMode,
+    CheckedNominalKind, CheckedProjectedDrop, CheckedSetTarget, CheckedType, CheckedValue,
+    CheckedWritablePlace, FloatType, IntegerType,
 };
-use super::borrows::{AccessKind, ReborrowPosition, ResolvedPlace};
+use super::borrows::{AccessKind, OwnedContent, ReborrowPosition, ResolvedPlace};
 use super::{
     CheckStop, Checker, Constructor, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
 };
@@ -35,12 +35,38 @@ struct PlaceUseOptions {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// [SET-2] target formation: exactly [SET-1]'s relation with the
+    /// copy/affine class judgment inverted and the region-free demand added.
+    pub(super) fn check_replace_target(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+        self.check_mutation_target(function, node, bindings, loop_depth, true)
+    }
+
     pub(super) fn check_set_target(
         &self,
         function: &FunctionSignature,
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
+    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+        self.check_mutation_target(function, node, bindings, loop_depth, false)
+    }
+
+    /// One judgment of a place's [SET-1]/[SET-2] mutation-target class: the
+    /// two statements share the complete writability relation and differ only
+    /// in the final selected type's required [OWN-1] class.
+    fn check_mutation_target(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        for_replace: bool,
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
         let pbase = self
             .tree
@@ -70,11 +96,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let suffixes = self.tree.children_with(node, Production::Psuffix)?;
         if let Some(subscript) = self.last_subscript(&suffixes)? {
             return self.check_indexed_set_target(
-                function, node, &suffixes, subscript, bindings, loop_depth,
+                function,
+                node,
+                &suffixes,
+                subscript,
+                bindings,
+                loop_depth,
+                for_replace,
             );
         }
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
-            return self.check_dereferenced_set_target(node, pbase, bindings);
+            return self.check_dereferenced_set_target(node, pbase, bindings, for_replace);
         }
         if !self.tree.children(pbase)?.is_empty() {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
@@ -143,17 +175,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             node,
         )?;
 
-        if !self.is_copy_type(ty)? {
-            return self.issue_node(
-                SemanticRule::Stor1,
-                node,
-                SemanticIssueKind::AffineSetTarget {
-                    target_type: self.checked_type_name(ty)?,
-                    mechanical_fix:
-                        "construct a fresh owner under a new let; do not replace an affine place",
-                },
-            );
-        }
+        self.check_mutation_target_class(node, ty, for_replace)?;
 
         Ok((
             declaration,
@@ -164,6 +186,52 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }),
             EffectSet::NONE,
         ))
+    }
+
+    /// The final selected type's [OWN-1] class judgment shared by the
+    /// [SET-1] and [SET-2] target paths: `set` demands copy [STOR-1], and
+    /// `replace` demands region-free affine [SET-2].
+    fn check_mutation_target_class(
+        &self,
+        node: NodeId,
+        ty: CheckedType,
+        for_replace: bool,
+    ) -> Result<(), CheckStop> {
+        if for_replace {
+            if self.is_copy_type(ty)? {
+                return self.issue_node(
+                    SemanticRule::Set2,
+                    node,
+                    SemanticIssueKind::InvalidReplaceTarget {
+                        target_type: self.checked_type_name(ty)?,
+                        mechanical_fix: "use set for a copy place; read the previous value bare",
+                    },
+                );
+            }
+            if matches!(ty, CheckedType::Slice { .. }) {
+                return self.issue_node(
+                    SemanticRule::Set2,
+                    node,
+                    SemanticIssueKind::InvalidReplaceTarget {
+                        target_type: self.checked_type_name(ty)?,
+                        mechanical_fix: "a slice's static origin set is fixed at initialization; \
+                                         bind a new slice under a new let",
+                    },
+                );
+            }
+            return Ok(());
+        }
+        if !self.is_copy_type(ty)? {
+            return self.issue_node(
+                SemanticRule::Stor1,
+                node,
+                SemanticIssueKind::AffineSetTarget {
+                    target_type: self.checked_type_name(ty)?,
+                    mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
+                },
+            );
+        }
+        Ok(())
     }
 
     pub(super) fn checked_type_name(&self, ty: CheckedType) -> Result<String, CheckStop> {
@@ -197,12 +265,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedType::Nominal(id) => self.nominal(id)?.name.clone(),
             CheckedType::Array { element, length } => {
-                let length = match length {
-                    CheckedConst::Value(value) => value.to_string(),
-                    CheckedConst::Parameter(declaration) => {
-                        format!("<const-parameter:{}>", declaration.index())
-                    }
-                };
+                let length = self.checked_const_name(length)?;
                 format!("array<{}, {length}>", self.checked_type_name(element.ty())?)
             }
             CheckedType::Slice { region, element } => format!(
@@ -212,6 +275,70 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ),
             CheckedType::Buffer { element } => {
                 format!("buffer<{}>", self.checked_type_name(element.ty())?)
+            }
+        })
+    }
+
+    /// A field-suffix chain rooted at a struct-typed const [CONST-2
+    /// candidate]. The path is resolved by the ordinary projection judgment,
+    /// then folded against the constant's total value: a copy scalar
+    /// selection copies out as a constant, and a composite selection keeps
+    /// the whole-composite read rules.
+    fn check_struct_constant_projection(
+        &self,
+        use_node: NodeId,
+        constant: &CheckedConstant,
+        suffixes: &[NodeId],
+    ) -> Result<TypedExpression, CheckStop> {
+        let (fields, ty) = self.resolve_struct_path(suffixes, constant.ty)?;
+        let mut value = &constant.value;
+        for index in &fields {
+            let CheckedValue::Struct { fields: values, .. } = value else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            value = values
+                .get(*index as usize)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        }
+        if value.ty() != ty {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        match value {
+            CheckedValue::Struct { .. } => self.issue_node(
+                SemanticRule::Own1,
+                use_node,
+                SemanticIssueKind::BareAffineUse {
+                    mechanical_fix: "read a const struct through its fields",
+                },
+            ),
+            CheckedValue::Array { .. } => self.issue_node(
+                SemanticRule::Own1,
+                use_node,
+                SemanticIssueKind::BareAffineUse {
+                    mechanical_fix: "read a const array through `index` or `len`",
+                },
+            ),
+            scalar => Ok(TypedExpression::owned(
+                CheckedExpression::Constant(scalar.clone()),
+                EffectSet::NONE,
+            )),
+        }
+    }
+
+    pub(super) fn checked_const_name(&self, value: CheckedConst) -> Result<String, CheckStop> {
+        Ok(match value {
+            CheckedConst::Value(value) => value.to_string(),
+            CheckedConst::Parameter(declaration) => {
+                format!("<const-parameter:{}>", declaration.index())
+            }
+            CheckedConst::Derived(id) => {
+                let derived = self.derived_const(id)?;
+                format!(
+                    "{} {} {}",
+                    self.checked_const_name(derived.left)?,
+                    derived.operation.spelling(),
+                    self.checked_const_name(derived.right)?
+                )
             }
         })
     }
@@ -446,6 +573,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
         own_result: bool,
+        result_candidate: bool,
     ) -> Result<TypedExpression, CheckStop> {
         self.check_atom_in_context(
             function,
@@ -453,7 +581,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             loop_depth,
             PlaceUseContext::Ordinary,
-            ReborrowPosition::CallArgument { own_result },
+            ReborrowPosition::CallArgument {
+                own_result,
+                result_candidate,
+            },
         )
     }
 
@@ -798,15 +929,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                if !suffixes.is_empty() {
-                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
-                }
                 let constant = self
                     .constants
                     .get(&declaration)
                     .copied()
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let constant = self.constant(constant)?;
+                if !suffixes.is_empty() {
+                    // A field-suffix chain rooted at a struct-typed const
+                    // [CONST-2 candidate] copies the selected value out; the
+                    // selection is total at compile time, so the read folds
+                    // to the selected constant.
+                    if matches!(constant.value, CheckedValue::Struct { .. }) {
+                        return self
+                            .check_struct_constant_projection(use_node, constant, &suffixes);
+                    }
+                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+                }
                 if matches!(
                     constant.ty,
                     CheckedType::Array { .. }
@@ -818,6 +957,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         use_node,
                         SemanticIssueKind::BareAffineUse {
                             mechanical_fix: "read a const array through `index` or `len`",
+                        },
+                    );
+                }
+                if matches!(constant.value, CheckedValue::Struct { .. }) {
+                    return self.issue_node(
+                        SemanticRule::Own1,
+                        use_node,
+                        SemanticIssueKind::BareAffineUse {
+                            mechanical_fix: "read a const struct through its fields",
                         },
                     );
                 }
@@ -833,12 +981,87 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    /// A [SET-1] or [SET-2] target whose `deref` reaches storage the root
+    /// binding owns rather than a referent behind a holder. [SET-1]'s
+    /// writability relation admits both roots, and this one directly: the
+    /// target is rooted in a live own-mode value binding whose storage is
+    /// box-owned or arena-owned [STOR-1]. There is no holder here to be live,
+    /// usable, `&uniq`, or unsuspended, so the judgment is the ordinary
+    /// own-rooted one — liveness [OWN-1], the loan state [OWN-5], then the
+    /// final selected type's class.
+    ///
+    /// Past the judgment nothing writes owned indirection content: the target
+    /// names the root binding, which lowers to the content pointer under the
+    /// box's own IR type, and arena storage has no runtime at all. The target
+    /// therefore stops at an explicit capability gate rather than publishing a
+    /// checked program whose single store would overwrite the pointer.
+    fn check_owned_content_set_target(
+        &self,
+        node: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        for_replace: bool,
+        root: (LocalBinding, OwnedContent),
+    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+        let (local, content) = root;
+        if !local.live {
+            return self.issue_node(
+                SemanticRule::Own1,
+                node,
+                SemanticIssueKind::UseAfterMove {
+                    mechanical_fix: "introduce a new `let` binding before reuse",
+                },
+            );
+        }
+        // The written suffix chain still selects a real field of the content
+        // type, so a wrong spelling stays a source rejection rather than being
+        // masked by the capability stop below [DIAG-1].
+        let suffixes = self.tree.children_with(node, Production::Psuffix)?;
+        let (fields, ty) = self.resolve_struct_path(&suffixes, content.ty())?;
+        // Owned indirection content is reached from the owning binding, so the
+        // resolved place is that root plus the selected field path — the same
+        // place the read path resolves for a `deref` of this binding.
+        self.check_loan_access(
+            bindings,
+            None,
+            &ResolvedPlace {
+                root: local.declaration,
+                fields,
+            },
+            AccessKind::Write,
+            node,
+        )?;
+        self.check_mutation_target_class(node, ty, for_replace)?;
+        // TEMPORARY capability stop, judged after every [OWN-1], [OWN-5], and
+        // [STOR-1] source rejection above.
+        match content {
+            OwnedContent::Arena { .. } => {
+                self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, node)
+            }
+            OwnedContent::Boxed(_) => {
+                self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node)
+            }
+        }
+    }
+
     fn check_dereferenced_set_target(
         &self,
         node: NodeId,
         pbase: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
+        for_replace: bool,
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+        // [SET-1] makes a `deref` target writable through either of two roots:
+        // an explicit `deref` of a live usable `&uniq` holder, or a live
+        // own-mode binding whose storage the `deref` reaches [STOR-1]. Only
+        // the first has a holder to resolve. Routing every `deref` target
+        // through `resolve_dereference_holder` demanded one of an own-mode
+        // `box` or `arena` binding and cited TYPE-7 `MissingDereference`
+        // against source that wrote no holder — a compiler capability gap
+        // misreported as invalid source, and the mutation-target twin of the
+        // same defect in the borrow dispatch.
+        if let Some(root) = self.owned_content_deref_root(pbase, bindings)? {
+            return self.check_owned_content_set_target(node, bindings, for_replace, root);
+        }
         let (declaration, local, borrow) =
             self.resolve_dereference_holder(node, pbase, bindings)?;
         // [SET-1] states the shared-borrow referent as an [OWN-5] violation
@@ -859,20 +1082,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             AccessKind::Write,
             node,
         )?;
-        if !self.is_copy_type(ty)? {
-            return self.issue_node(
-                SemanticRule::Stor1,
-                node,
-                SemanticIssueKind::AffineSetTarget {
-                    target_type: self.checked_type_name(ty)?,
-                    mechanical_fix:
-                        "construct a fresh owner under a new let; do not replace an affine place",
-                },
-            );
-        }
+        self.check_mutation_target_class(node, ty, for_replace)?;
         let mut effects = EffectSet::NONE;
         if let Some(region) = borrow.origin_region {
             effects.add_write(region);
+            if for_replace {
+                // [SET-2, EFF-2]: the commit is one read and one write of
+                // the target's ultimate storage origin.
+                effects.add_read(region);
+            }
         }
         Ok((
             declaration,

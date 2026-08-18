@@ -21,6 +21,7 @@ use crate::syntax::NodeId;
 use crate::{
     DeclarationId, DeclarationRole, Production, ResolvedSyntaxUnit, SemanticCompilerFailure,
     SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule,
+    UnsupportedSemanticFeature,
 };
 
 use super::entailment::{
@@ -37,8 +38,8 @@ use super::model::{
     BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract,
     CheckedExpression, CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode,
     CheckedNominal, CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedSliceOrigin,
-    CheckedStatement, CheckedType, CheckedValue, ClaimAdvisory, FunctionId, NominalId,
-    ValueInitializerKind,
+    CheckedStatement, CheckedType, CheckedValue, ClaimAdvisory, DerivedConst, DerivedConstId,
+    FunctionId, NominalId, ValueInitializerKind, evaluate_const_operation,
 };
 use super::postcondition::CheckedPostconditionSelector;
 use super::provenance::{
@@ -118,6 +119,11 @@ fn derive_slice_return_ceiling(
     ceiling
 }
 
+/// [STOR-4]'s restructuring for an arena value that would leave its region's
+/// block, shared by every site that establishes the escape.
+const ARENA_ESCAPE_RESTRUCTURING: &str = "keep the arena value inside its region's block; \
+     return or deliver its content, or a borrow OWN-10 admits, instead";
+
 struct ContractInfo {
     checked: CheckedContract,
     members: Vec<contracts::ContractMemberInfo>,
@@ -145,6 +151,10 @@ struct NominalTemplate {
 enum PendingNominal {
     /// [STOR-2] a box over this referent.
     Box(CheckedType),
+    /// [STOR-2] an `arena<'r, T>` instance over this region and content.
+    Arena(DeclarationId, CheckedType),
+    /// The one compiler-owned region allocation-list nominal [STOR-3].
+    ArenaStorage,
     /// A prelude instance, such as the `Result<T, E>` a checked row produces.
     Prelude(PreludeType),
 }
@@ -380,18 +390,42 @@ enum PreludeType {
     NarrowError,
 }
 
+/// v0.31-candidate reborrow-extension switch. The candidate at
+/// `spec/kernel-spec.md` admits the previously deferred forms — a reborrow
+/// argument to a borrow-returning call, a bound call-result borrow holder,
+/// and the grandchild chains they compose [OWN-5, OWN-6, OWN-12, OWN-14] —
+/// so this is `true` and the branch implements its own candidate. The
+/// test-only `check_semantics_reborrow_extension` entry now selects the same
+/// judgment as the shipped path.
+pub(crate) const REBORROW_EXTENSION_ACTIVE: bool = true;
+
 struct Checker<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     /// Whether an undischarged obligation or refuted claim rejects [OP-4,
     /// CLM-2]. Always true outside `check_semantics_dark`, the test-only
     /// observability hook.
     reject_entailment: bool,
+    /// The arithmetic-mode dissolution integration switch: whether a bare
+    /// `+`/`-`/`*` with a constant operand carries an [ENT-6] overflow
+    /// obligation instead of its runtime trap [OP-2]. Follows
+    /// [`ARITHMETIC_OVERFLOW_OBLIGATIONS`] outside the v0.31 candidate
+    /// tests.
+    arithmetic_obligations: bool,
+    /// Whether the v0.31-candidate reborrow extension is admitted; see
+    /// [`REBORROW_EXTENSION_ACTIVE`].
+    reborrow_extension: bool,
     tree: TreeView<'unit, 'classified, 'lexed, 'source>,
     nominals: Vec<CheckedNominal>,
     nominal_nodes: Vec<Option<NodeId>>,
     nominal_states: Vec<u8>,
     source_nominal_instances: Vec<Option<(usize, GenericSubstitution)>>,
     box_nominals: HashMap<CheckedType, NominalId>,
+    /// `arena<'r, T>` instances by (region declaration, content type): the
+    /// region is part of the type's identity [OWN-3, STOR-4].
+    arena_nominals: HashMap<(DeclarationId, CheckedType), NominalId>,
+    /// The one compiler-owned region allocation-list nominal, interned on
+    /// first use [STOR-3].
+    arena_storage_nominal: Option<NominalId>,
     /// Nominal instances a derived type named that were not interned yet.
     /// Written by the `&self` checking path and drained by the `&mut self`
     /// driver between attempts at one function.
@@ -409,6 +443,11 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     functions_by_declaration: HashMap<DeclarationId, Vec<FunctionId>>,
     constants: HashMap<DeclarationId, CheckedConstantId>,
     checked_constants: Vec<CheckedConstant>,
+    /// Hash-consed symbolic const operations [CONST-1 candidate]. Written by
+    /// the `&self` const-expression parse while a generic template or
+    /// symbolic validation instance is checked; every concrete instantiation
+    /// evaluates entries away, so no id reaches lowering.
+    derived_consts: RefCell<Vec<DerivedConst>>,
     generic_requirements: Vec<CheckedGenericRequirement>,
     postcondition_selectors: Vec<CheckedPostconditionSelector>,
     postcondition_unavailable_declarations: Vec<DeclarationId>,
@@ -416,6 +455,14 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     contracts: Vec<ContractInfo>,
     contracts_by_declaration: HashMap<DeclarationId, usize>,
 }
+
+/// The arithmetic-mode dissolution integration switch [OP-2, ENT-6]: `true`
+/// under the v0.31 candidate at `spec/kernel-spec.md`, which attaches the
+/// overflow obligation family to the constant-operand class, drops those
+/// sites' trap records and `traps` effect contribution, and rejects
+/// undischarged class sites citing OP-2. A bare `+`/`-`/`*` with two
+/// non-constant operands keeps its runtime overflow trap.
+pub(crate) const ARITHMETIC_OVERFLOW_OBLIGATIONS: bool = true;
 
 /// Checks the currently implemented active-specification semantic family.
 ///
@@ -425,7 +472,12 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
 pub fn check_semantics<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true)
+    check_semantics_with(
+        resolved,
+        true,
+        ARITHMETIC_OVERFLOW_OBLIGATIONS,
+        REBORROW_EXTENSION_ACTIVE,
+    )
 }
 
 /// [`check_semantics`] with the [OP-4]/[CLM-2] entailment rejection disabled,
@@ -438,23 +490,68 @@ pub fn check_semantics<'classified, 'lexed, 'source>(
 pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, false)
+    check_semantics_with(
+        resolved,
+        false,
+        ARITHMETIC_OVERFLOW_OBLIGATIONS,
+        REBORROW_EXTENSION_ACTIVE,
+    )
+}
+
+/// [`check_semantics`] with the arithmetic-mode dissolution switch forced
+/// on. [`ARITHMETIC_OVERFLOW_OBLIGATIONS`] is now `true` under the v0.31
+/// candidate, so this entry selects the same judgment as the shipped path
+/// and the callers naming it record which judgment they mean. Test-only; the
+/// one shipped acceptance path reads that constant.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'source>(
+    resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+) -> SemanticOutcome<'classified, 'lexed, 'source> {
+    check_semantics_with(resolved, true, true, REBORROW_EXTENSION_ACTIVE)
+}
+
+/// [`check_semantics`] with the v0.31-candidate reborrow extension admitted.
+/// [`REBORROW_EXTENSION_ACTIVE`] is now `true`, so this entry selects the
+/// same judgment as the shipped path and the callers naming it record which
+/// judgment they mean. Test-only: the shipped acceptance behavior has exactly
+/// one path.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn check_semantics_reborrow_extension<'classified, 'lexed, 'source>(
+    resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+) -> SemanticOutcome<'classified, 'lexed, 'source> {
+    check_semantics_with(resolved, true, ARITHMETIC_OVERFLOW_OBLIGATIONS, true)
 }
 
 fn check_semantics_with<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     reject_entailment: bool,
+    arithmetic_obligations: bool,
+    reborrow_extension: bool,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
     let preflight = if resolved.postconditions().is_empty() {
         Ok(())
     } else {
-        Checker::new(&resolved, reject_entailment).and_then(|mut checker| {
+        Checker::new(
+            &resolved,
+            reject_entailment,
+            arithmetic_obligations,
+            reborrow_extension,
+        )
+        .and_then(|mut checker| {
             let items = checker.item_declarations()?;
             checker.preflight_postcondition_selectors(&items)
         })
     };
     let result = preflight.and_then(|()| {
-        Checker::new(&resolved, reject_entailment).and_then(|mut checker| checker.check_program())
+        Checker::new(
+            &resolved,
+            reject_entailment,
+            arithmetic_obligations,
+            reborrow_extension,
+        )
+        .and_then(|mut checker| checker.check_program())
     });
     match result {
         Ok(data) => SemanticOutcome::Complete(Box::new(CheckedProgram {
@@ -496,16 +593,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn new(
         resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
         reject_entailment: bool,
+        arithmetic_obligations: bool,
+        reborrow_extension: bool,
     ) -> Result<Self, CheckStop> {
         Ok(Self {
             resolved,
             reject_entailment,
+            arithmetic_obligations,
+            reborrow_extension,
             tree: TreeView::new(resolved)?,
             nominals: Vec::new(),
             nominal_nodes: Vec::new(),
             nominal_states: Vec::new(),
             source_nominal_instances: Vec::new(),
             box_nominals: HashMap::new(),
+            arena_nominals: HashMap::new(),
+            arena_storage_nominal: None,
             pending_nominals: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             system_nominals: HashMap::new(),
@@ -520,6 +623,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             functions_by_declaration: HashMap::new(),
             constants: HashMap::new(),
             checked_constants: Vec::new(),
+            derived_consts: RefCell::new(Vec::new()),
             generic_requirements: Vec::new(),
             postcondition_selectors: Vec::new(),
             postcondition_unavailable_declarations: Vec::new(),
@@ -539,11 +643,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // drop records — is implemented below, so no capability stop
         // remains at this stage; an accepted system program stops later, at
         // lowering, as an explicit unsupported capability.
-        let entry = self.check_entry_form(&items)?;
+        let entry = match self.check_entry_form(&items) {
+            Ok(entry) => entry,
+            Err(stop) => return Err(self.reject_missing_main_last(&items, stop)),
+        };
         self.check_system_call_arguments()?;
         self.declare_nominals(&items)?;
         self.collect_constants(&items)?;
         self.complete_nominals()?;
+        self.collect_deferred_nominal_constants(&items)?;
         self.collect_function_signatures(&items)?;
         self.admit_postcondition_selectors()?;
         let nominal_count_before_function_checking = self.nominals.len();
@@ -770,6 +878,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.collect_concrete_function_signatures()
     }
 
+    /// Collects every non-nominal-typed const declaration. Runs before
+    /// nominal completion because a nominal field's array length may name an
+    /// earlier const; nominal-typed const declarations [CONST-2 candidate]
+    /// need completed field inventories and are collected by the second pass
+    /// below.
     fn collect_constants(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
         let nodes = items
             .iter()
@@ -781,9 +894,50 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             })
             .collect::<Vec<_>>();
         for node in nodes {
+            if self.constant_declaration_is_deferred(node)? {
+                continue;
+            }
             self.collect_constant(node)?;
         }
         Ok(())
+    }
+
+    /// Collects the nominal-typed const declarations deferred by the first
+    /// pass, in item order, after `complete_nominals` has filled the field
+    /// inventories they are checked against. CONST-2's declaration-before-use
+    /// rule is unaffected: a non-nominal const can never reference a
+    /// nominal-typed one (a cvalue reference must have the exact expected
+    /// type), so the two passes never reorder a legal dependency.
+    fn collect_deferred_nominal_constants(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
+        let nodes = items
+            .iter()
+            .copied()
+            .filter(|node| {
+                self.tree
+                    .production(*node)
+                    .is_ok_and(|production| production == Production::ConstDecl)
+            })
+            .collect::<Vec<_>>();
+        for node in nodes {
+            if self.constant_declaration_is_deferred(node)? {
+                self.collect_constant(node)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn constant_declaration_is_deferred(&self, node: NodeId) -> Result<bool, CheckStop> {
+        if !super::V031_CANDIDATE_SEMANTICS {
+            return Ok(false);
+        }
+        let ty = self
+            .tree
+            .first_child_with(node, Production::Type)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        Ok(self
+            .tree
+            .direct_token_with(ty, crate::TerminalPredicate::TypeIdentifier)?
+            .is_some())
     }
 
     pub(super) fn collect_constants_for_postconditions(
@@ -802,6 +956,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for node in nodes {
             let declaration = self.declaration_at(node, DeclarationRole::NamedConst)?.id();
             if !self.postcondition_constant_has_links(node)? {
+                self.mark_postcondition_unavailable(declaration);
+                continue;
+            }
+            // A nominal-typed const [CONST-2 candidate] is conservatively
+            // unavailable to the FN-9 selector preflight for now; ordinary
+            // checking collects it through the deferred second pass.
+            if self.constant_declaration_is_deferred(node)? {
                 self.mark_postcondition_unavailable(declaration);
                 continue;
             }
@@ -912,6 +1073,47 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
+    /// Orders the whole-unit missing-`main` rejection after per-declaration
+    /// source rejections.
+    ///
+    /// [DIAG-1] leaves the order among rejection events at distinct nodes
+    /// implementation-defined, and this compiler reports a declaration's own
+    /// established rule violation before the [FN-7] `BundleRoot` whole-unit
+    /// rejection: when the entry is missing, the remaining declarations are
+    /// still driven through signature collection and phase-A function
+    /// checking, and the first established source rejection found there is
+    /// reported instead. Anything short of an established source rejection —
+    /// success, an unsupported capability, an internal failure — falls back
+    /// to the held missing-`main` rejection, so a capability stop never
+    /// masks the definite FN-7 violation [DIAG-1].
+    fn reject_missing_main_last(&mut self, items: &[NodeId], stop: CheckStop) -> CheckStop {
+        let missing_main = matches!(
+            &stop,
+            CheckStop::Issue(issue)
+                if issue.rule == SemanticRule::Fn7
+                    && matches!(issue.kind, SemanticIssueKind::MissingMain)
+        );
+        if !missing_main {
+            return stop;
+        }
+        let salvage = (|| -> Result<(), CheckStop> {
+            self.check_system_call_arguments()?;
+            self.declare_nominals(items)?;
+            self.collect_constants(items)?;
+            self.complete_nominals()?;
+            self.collect_function_signatures(items)?;
+            self.admit_postcondition_selectors()?;
+            for index in 0..self.signatures.len() {
+                self.check_function_interning_nominals(index)?;
+            }
+            Ok(())
+        })();
+        match salvage {
+            Err(rejection @ (CheckStop::Issue(_) | CheckStop::Resolution(_))) => rejection,
+            _ => stop,
+        }
+    }
+
     /// Returns the dense identity of the checked entry function.
     fn main_id(&self) -> Result<FunctionId, CheckStop> {
         self.signatures
@@ -943,6 +1145,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         match nominal {
                             PendingNominal::Box(referent) => {
                                 self.intern_box_nominal(referent)?;
+                            }
+                            PendingNominal::Arena(region, content) => {
+                                self.intern_arena_nominal(region, content)?;
+                            }
+                            PendingNominal::ArenaStorage => {
+                                self.intern_arena_storage_nominal()?;
                             }
                             PendingNominal::Prelude(ty) => {
                                 self.intern_prelude_nominal(ty)?;
@@ -1150,6 +1358,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             (None, None) => None,
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
+        // TEMPORARY capability stop, judged only after every source rejection
+        // above had its chance: arena-typed parameters check under their
+        // ownership and [STOR-4] confinement rules, but the region-tied
+        // allocation and release lowering is not implemented yet, so a clean
+        // function that would carry an arena value to execution stops as an
+        // explicit unsupported capability rather than lowering wrong code.
+        for parameter in &signature.parameters {
+            if self.arena_instance(parameter.ty)?.is_some() {
+                return self.unsupported(
+                    UnsupportedSemanticFeature::ArenaRuntime,
+                    self.tree
+                        .node_with_path(&parameter.node_path)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                );
+            }
+        }
         let function = CheckedFunction {
             id: signature.id,
             declaration: signature.declaration,
@@ -1190,6 +1414,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedStatement::Let { .. }
             | CheckedStatement::PropagateLet { .. }
             | CheckedStatement::Set { .. }
+            | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. }
             | CheckedStatement::Check { .. }
@@ -1370,7 +1595,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::PropagateLet { scrutinee, .. } => {
                     self.install_expression_call_requirements(scrutinee, requirements)?;
                 }
-                CheckedStatement::Set { target, value, .. } => {
+                CheckedStatement::Set { target, value, .. }
+                | CheckedStatement::Replace { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
                         CheckedSetTarget::ArrayIndex(target) => self
@@ -1470,6 +1696,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ArrayFill { value, .. }
             | CheckedExpression::BoxNew { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaNew { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
                 self.install_expression_call_requirements(value, requirements)?;
             }
@@ -1717,7 +1945,60 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .substitution
                 .const_argument(declaration)
                 .unwrap_or(value),
+            CheckedConst::Derived(id) => {
+                let derived = self.derived_const(id)?;
+                let left = self.instantiate_goal_const(derived.left, signature)?;
+                let right = self.instantiate_goal_const(derived.right, signature)?;
+                // The owning instance body was accepted, so the same
+                // evaluation already succeeded at its source node; a failure
+                // here is a trusted-invariant breach, not a source verdict.
+                self.combine_const(derived.operation, left, right)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            }
         })
+    }
+
+    /// Returns the interned symbolic const operation behind `id`.
+    pub(super) fn derived_const(&self, id: DerivedConstId) -> Result<DerivedConst, CheckStop> {
+        self.derived_consts
+            .borrow()
+            .get(id.0 as usize)
+            .copied()
+            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    /// Combines two const operands under one const operation.
+    ///
+    /// Two concrete operands evaluate immediately in the u64 const-eval
+    /// domain, and `None` reports the const-eval overflow policy's rejection
+    /// (a result outside the domain or a zero divisor). A symbolic operand
+    /// hash-conses the operation instead, so a symbolic const never fails
+    /// here and always has one interned identity.
+    pub(super) fn combine_const(
+        &self,
+        operation: super::model::ConstOperation,
+        left: CheckedConst,
+        right: CheckedConst,
+    ) -> Option<CheckedConst> {
+        if let (CheckedConst::Value(left), CheckedConst::Value(right)) = (left, right) {
+            return evaluate_const_operation(operation, left, right).map(CheckedConst::Value);
+        }
+        let derived = DerivedConst {
+            operation,
+            left,
+            right,
+        };
+        let mut table = self.derived_consts.borrow_mut();
+        let index = table
+            .iter()
+            .position(|entry| *entry == derived)
+            .unwrap_or_else(|| {
+                table.push(derived);
+                table.len() - 1
+            });
+        u32::try_from(index)
+            .ok()
+            .map(|index| CheckedConst::Derived(DerivedConstId(index)))
     }
 
     fn instantiate_goal_region(
@@ -1781,6 +2062,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 elements: elements
                     .iter()
                     .map(|element| self.instantiate_goal_value(element, signature, regions))
+                    .collect::<Result<Vec<_>, _>>()?,
+            },
+            CheckedValue::Struct { ty, fields } => CheckedValue::Struct {
+                ty: self.instantiate_goal_type(*ty, signature, regions)?,
+                fields: fields
+                    .iter()
+                    .map(|field| self.instantiate_goal_value(field, signature, regions))
                     .collect::<Result<Vec<_>, _>>()?,
             },
         })
@@ -2207,7 +2495,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
             const fn rule(&self) -> SemanticRule {
                 match self {
-                    Self::Obligation(_) => SemanticRule::Op4,
+                    Self::Obligation(outcome) => match outcome.family {
+                        super::entailment::ObligationFamily::Bounds => SemanticRule::Op4,
+                        super::entailment::ObligationFamily::Overflow => SemanticRule::Op2,
+                    },
                     Self::Call(_) => SemanticRule::Fn8,
                     Self::Claim { .. } => SemanticRule::Clm2,
                 }
@@ -2263,15 +2554,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .tree
                         .node_with_path(&outcome.node_path)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    Err(CheckStop::source_issue(SemanticIssue {
-                        rule: SemanticRule::Op4,
-                        location: SemanticLocation::SourceNode(
-                            outcome.node_path.clone(),
-                            self.tree.coordinate(node)?,
-                        ),
-                        kind: SemanticIssueKind::UndischargedBoundsObligation {
-                            residual,
-                            mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it",
+                    let location = SemanticLocation::SourceNode(
+                        outcome.node_path.clone(),
+                        self.tree.coordinate(node)?,
+                    );
+                    Err(CheckStop::source_issue(match outcome.family {
+                        super::entailment::ObligationFamily::Bounds => SemanticIssue {
+                            rule: SemanticRule::Op4,
+                            location,
+                            kind: SemanticIssueKind::UndischargedBoundsObligation {
+                                residual,
+                                mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it",
+                            },
+                        },
+                        super::entailment::ObligationFamily::Overflow => SemanticIssue {
+                            rule: SemanticRule::Op2,
+                            location,
+                            kind: SemanticIssueKind::UndischargedOverflowObligation {
+                                residual,
+                                mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it, or respell the operation `wrap`, `checked`, or `sat`",
+                            },
                         },
                     }))
                 }

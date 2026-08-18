@@ -1,0 +1,11 @@
+fn fold(x: own u64) -> own u64 pure {
+  doc "The arithmetic-mode dissolution attaches obligations to the bare `+`, `-`, `*` constant-operand class only. `.wrap` is untouched: it is total by definition, carries no overflow obligation, needs no discharge, never traps, and contributes nothing to the effect row, so an unbounded operand is fine here and the row stays `pure`.";
+  let y = x *wrap 3_u64;
+  return y;
+}
+
+fn main() -> own unit traps {
+  let folded = fold(x: 24_u64);
+  check ieq(folded, 72_u64) else trap "wrapped fold";
+  return unit;
+}

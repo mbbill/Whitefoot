@@ -202,16 +202,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             let statement = self.tree.only_child(wrapper)?;
             self.validate_clause_statement(ClauseKind::Requires, entry, statement)?;
-            let checked = self.check_statement(
-                function,
-                statement,
-                bindings,
-                counters,
-                ControlScope {
-                    loops: &[],
-                    give_context: None,
-                },
-            )?;
+            let checked = self
+                .check_statement(
+                    function,
+                    statement,
+                    bindings,
+                    counters,
+                    ControlScope {
+                        loops: &[],
+                        give_context: None,
+                    },
+                )
+                .map_err(Self::clause_conditional_repair)?;
             if !checked.can_continue {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             }
@@ -262,6 +264,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(CheckedRequires {
             requirement: requirement.ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?,
         })
+    }
+
+    /// The clause-conditional OWN-1 bare-affine repair [#35, v0.31
+    /// candidate]. OWN-1's ordinary mechanical fix is `write move p`, but
+    /// [FN-8] rejects `move` inside a requires block, so that instruction
+    /// would send the writer from one hard error to another. Inside the
+    /// clause the same rejection instead carries the clause-specific repair.
+    /// Inert while `V031_CANDIDATE_SEMANTICS` is false.
+    fn clause_conditional_repair(stop: CheckStop) -> CheckStop {
+        if !crate::semantic::V031_CANDIDATE_SEMANTICS {
+            return stop;
+        }
+        let CheckStop::Issue(mut issue) = stop else {
+            return stop;
+        };
+        if matches!(issue.kind, SemanticIssueKind::BareAffineUse { .. })
+            && matches!(issue.rule, SemanticRule::Own1)
+        {
+            issue.kind = SemanticIssueKind::BareAffineUse {
+                mechanical_fix: "restate the clause over copy operands or non-consuming admitted reads; a requires block admits no `move`",
+            };
+        }
+        CheckStop::Issue(issue)
     }
 
     pub(super) fn clause_statement_expression(

@@ -3,9 +3,11 @@ struct Counter {
 }
 
 fn main() -> own unit traps {
-  doc "TYPE-5: mutate a struct field with `set place.f = atom`, read it back, check the result.";
+  doc "TYPE-5: mutate a struct field with `set place.f = atom`, read it back, check the result. The read-back feeds a class site, so a dominating claim discharges its OP-2 overflow obligation with the residual the diagnostic renders.";
   let c = Counter(n: 1_i32);
   set c.n = 41_i32;
+  let field_in_range = ile(c.n, 2147483646_i32);
+  claim field_below_max: field_in_range because "the field was just set to 41";
   let v = c.n + 1_i32;
   check ieq(v, 42_i32) else trap "set field drift";
   return unit;

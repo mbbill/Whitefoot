@@ -61,6 +61,83 @@ fn affine_box_referent_move_stays_an_explicit_capability_boundary() {
     assert_unsupported(source, UnsupportedSemanticFeature::BoxReferentMove);
 }
 
+/// [SET-1] admits a `deref` target through either of two roots: a live usable
+/// `&uniq` holder, or a live own-mode binding whose storage the `deref`
+/// reaches [STOR-1]. A `box_new` result is own mode, so `set deref(b)` over it
+/// is the second root and never needs a holder; the target-side dispatch
+/// nevertheless resolved a holder for every `deref` target and reported these
+/// spec-legal targets as TYPE-7 "deref requires a borrow holder". Box content
+/// is copy-typed here, so SET-1 admits the target and it stops explicitly:
+/// the target names the root binding, which lowers to the content pointer
+/// under the box's own IR type, so no store addresses the content.
+#[test]
+fn box_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
+    assert_unsupported(
+        br#"fn main() -> own unit allocates(heap), traps {
+  let b = box_new(4_i32);
+  set deref(b) = 7_i32;
+  let seen = deref(b);
+  check ieq(seen, 7_i32) else trap "box content set";
+  return unit;
+}
+"#,
+        UnsupportedSemanticFeature::RegionsAndBorrows,
+    );
+    // [SET-2] shares SET-1's writability relation, so an affine, region-free
+    // box content is a legal `replace` target and reaches the same stop.
+    assert_unsupported(
+        br#"fn main() -> own unit allocates(heap), traps {
+  let bytes = buffer_new(1_u64, 0_u8);
+  let owner = box_new(move bytes);
+  let other = buffer_new(1_u64, 1_u8);
+  let old = replace deref(owner) = move other;
+  return unit;
+}
+"#,
+        UnsupportedSemanticFeature::RegionsAndBorrows,
+    );
+}
+
+/// The ordinary own-rooted judgments the routed target now reaches still
+/// reject before the capability stop: [STOR-1] for an affine final selected
+/// type, which `set` never writes, and [OWN-1] for a dead root, which SET-1
+/// never revives.
+#[test]
+fn box_content_set_targets_keep_their_source_rejections() {
+    assert_rule(
+        br#"fn main() -> own unit allocates(heap), traps {
+  let bytes = buffer_new(1_u64, 0_u8);
+  let owner = box_new(move bytes);
+  let other = buffer_new(1_u64, 1_u8);
+  set deref(owner) = move other;
+  return unit;
+}
+"#,
+        SemanticRule::Stor1,
+        SemanticIssueKind::AffineSetTarget {
+            target_type: "buffer<u8>".to_owned(),
+            mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
+        },
+    );
+    assert_rule(
+        br#"fn eat(b: own box<i32>) -> own unit pure {
+  return unit;
+}
+
+fn main() -> own unit allocates(heap), traps {
+  let b = box_new(4_i32);
+  eat(b: move b);
+  set deref(b) = 7_i32;
+  return unit;
+}
+"#,
+        SemanticRule::Own1,
+        SemanticIssueKind::UseAfterMove {
+            mechanical_fix: "introduce a new `let` binding before reuse",
+        },
+    );
+}
+
 #[test]
 fn region_bearing_box_and_arena_content_reject_under_stor5() {
     let expected = SemanticIssueKind::RegionBearingStorage {

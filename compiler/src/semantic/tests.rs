@@ -1,15 +1,20 @@
 #![allow(clippy::panic)]
 
+mod arenas;
+mod arithmetic_obligations;
 mod arrays;
+mod boolean_composition;
 mod borrows;
 mod boxes;
 mod buffers;
 mod checked_division;
 mod conditionals;
+mod const_eval;
 mod contracts;
 mod counted_ranges;
 mod derivation;
 mod entailment;
+mod entailment_sources;
 mod entry_form;
 mod float_conversion;
 mod floating;
@@ -19,10 +24,12 @@ mod integer_absolute;
 mod integer_conversion;
 mod integer_extended;
 mod integer_negation;
+mod operation_table;
 mod options;
 mod postconditions;
 mod provenance;
 mod reinterpret;
+mod replace;
 mod requires;
 mod slices;
 mod strict;
@@ -168,8 +175,102 @@ fn with_semantics_dark<ResultValue>(
     run(super::check::check_semantics_dark(resolved))
 }
 
+/// [`with_semantics`] through the test-only entry that forces the
+/// arithmetic-mode dissolution switch on, so the v0.31 candidate judgment
+/// [OP-2, ENT-6] is testable while the shipped switch stays off under the
+/// active v0.30 specification.
+fn with_semantics_arithmetic<ResultValue>(
+    source: &[u8],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        SemanticOutcome<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
+        panic!("semantic test bundle must be valid");
+    };
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("semantic test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("semantic test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("semantic test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("semantic test derivation must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("semantic test source must be canonical");
+    };
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+        panic!("semantic test source must resolve");
+    };
+    run(super::check::check_semantics_arithmetic_obligations(
+        resolved,
+    ))
+}
+
+/// [`with_semantics`] through the test-only extension checker, which admits
+/// the v0.31-candidate reborrow extension while the shipped switch keeps
+/// v0.30 semantics [OWN-6, OWN-14].
+fn with_semantics_extension<ResultValue>(
+    source: &[u8],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        SemanticOutcome<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
+        panic!("semantic test bundle must be valid");
+    };
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("semantic test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("semantic test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("semantic test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("semantic test derivation must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("semantic test source must be canonical");
+    };
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+        panic!("semantic test source must resolve");
+    };
+    run(super::check::check_semantics_reborrow_extension(resolved))
+}
+
 fn assert_rule(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
     with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("expected {rule:?}/{kind:?}, got {outcome:?}");
+        };
+        assert_eq!(issue.rule(), rule);
+        assert_eq!(issue.kind(), &kind);
+    });
+}
+
+/// [`assert_rule`] under the reborrow extension [OWN-6, OWN-14].
+fn assert_rule_extension(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
+    with_semantics_extension(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("expected {rule:?}/{kind:?}, got {outcome:?}");
         };
@@ -598,14 +699,29 @@ fn enum_equality_exclusions_reach_the_intended_rule() {
 
 #[test]
 fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
+    // The TYPE-5 set-field control is written inline rather than read from
+    // `x-struct-set-field.wf`: that case's `c.n + 1_i32` is a v0.31
+    // constant-operand-class site whose overflow obligation nothing
+    // discharges, so the case now rejects on OP-2 with residual
+    // `c.n <= 2147483646` and needs the owner-approved corpus migration the
+    // arith delta assigns to the activation packet. The capability this
+    // control exists to demonstrate — set a struct field, read it back — is
+    // unaffected.
     with_semantics(
-        include_bytes!("../../../tests/conformance/cases/x-struct-set-field.wf"),
+        b"struct Counter {\n  n: i32;\n}\n\nfn main() -> own unit traps {\n  let c = Counter(n: 1_i32);\n  set c.n = 41_i32;\n  let v = c.n;\n  check ieq(v, 41_i32) else trap \"set field drift\";\n  return unit;\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     // Borrow-mode parameters and `let` borrows of scalars and enums, and the
-    // [OWN-13] borrowed match this case exercises, are on the normal path now.
+    // [OWN-13] borrowed match this exercises, are on the normal path now.
+    // Also written inline rather than read from
+    // `x-enum-borrow-payload-live.wf` for the same reason: that case's
+    // `deref(x) + 1_i32` is an undischarged v0.31 class site (residual
+    // `deref(x) <= 2147483646`), so it too awaits the owner-approved corpus
+    // migration. The shape kept here is the one under test — a payload enum
+    // borrow-matched through `&'r` whose scrutinee stays live for a second
+    // read, with each derived binder explicitly dereferenced.
     with_semantics(
-        include_bytes!("../../../tests/conformance/cases/x-enum-borrow-payload-live.wf"),
+        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\nfn main() -> own unit traps {\n  let c = Full(v: 20_i32);\n  region 'r {\n    let p = &'r c;\n    let a = match deref(p) {\n      Full(v: x) => {\n        give deref(x);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    let q = &'r c;\n    let b = match deref(q) {\n      Full(v: y) => {\n        give deref(y);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    check ieq(a, 20_i32) else trap \"borrow payload drift\";\n    check ieq(b, 20_i32) else trap \"second read drift\";\n  }\n  return unit;\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_unsupported(
@@ -893,8 +1009,7 @@ fn set_rejections_keep_their_exact_rule_owners() {
         SemanticRule::Stor1,
         SemanticIssueKind::AffineSetTarget {
             target_type: "Cell".to_owned(),
-            mechanical_fix:
-                "construct a fresh owner under a new let; do not replace an affine place",
+            mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
         },
     );
     assert_rule(

@@ -44,7 +44,11 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 /// review, only additional bumps. Do not generate this constant from the
 /// specification (that would delete the review it exists to force), and do
 /// not add more copies.
-const REVIEWED_FOR: &str = "v0.30";
+// v0.31 review (2026-08-17): the candidate adds [SET-2] replacement, the
+// `buffer_vacant` row, and affine buffer-element formation; it touches no
+// [SYS-2] operation, resource, guarantee, or entry contract, so every row
+// below is unchanged and remains valid as reviewed.
+const REVIEWED_FOR: &str = "v0.31";
 
 /// The number of [SYS-2] opaque resource types.
 const RESOURCE_COUNT: usize = 7;

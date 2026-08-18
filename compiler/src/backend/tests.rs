@@ -1,5 +1,7 @@
 #![allow(clippy::panic)]
 
+mod arenas;
+mod arithmetic_obligations;
 mod arrays;
 mod base64;
 mod buffers;
@@ -15,6 +17,7 @@ mod integer_conversion;
 mod integer_extended;
 mod integer_negation;
 mod options;
+mod propagation;
 mod reborrows;
 mod reinterpret;
 mod requires;
@@ -34,8 +37,8 @@ use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
     HOST_OPTIMIZATION_ARGUMENTS, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome,
     SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical,
-    check_semantics, classify_terminals, compile as compile_program, emit_llvm, finalize,
-    lower_checked, parse, resolve,
+    check_semantics, check_semantics_arithmetic_obligations, classify_terminals,
+    compile as compile_program, emit_llvm, finalize, lower_checked, parse, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -118,8 +121,91 @@ fn emit(source: &[u8]) -> String {
         .into_string()
 }
 
+/// [`emit`] through the test-only checker entry that forces the
+/// arithmetic-mode dissolution switch on [OP-2, ENT-6], so the emitted
+/// module of the v0.31 candidate judgment can be compared against the
+/// default v0.30 emission of the same source.
+fn emit_arithmetic_obligations(source: &[u8]) -> String {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("backend test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("backend test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("backend test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("backend test source must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("backend test source must be canonical");
+    };
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+        panic!("backend test source must resolve");
+    };
+    let SemanticOutcome::Complete(checked) = check_semantics_arithmetic_obligations(resolved)
+    else {
+        panic!("backend test source must check under the arithmetic switch");
+    };
+    let ir = lower_checked(*checked).expect("checked program must lower");
+    emit_llvm(&ir)
+        .expect("lowered program must emit")
+        .into_string()
+}
+
 fn compile(source: &[u8]) -> String {
     compile_sources(&[("test.wf", source)])
+}
+
+/// [`emit`] through the test-only reborrow-extension checker, so execution
+/// tests can run the implemented v0.31-candidate chains while the shipped
+/// switch keeps v0.30 semantics [OWN-6, OWN-14].
+fn emit_reborrow_extension(source: &[u8]) -> String {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("backend test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("backend test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("backend test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("backend test source must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("backend test source must be canonical");
+    };
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+        panic!("backend test source must resolve");
+    };
+    let checked = match crate::semantic::check_semantics_reborrow_extension(resolved) {
+        SemanticOutcome::Complete(checked) => checked,
+        outcome => {
+            panic!("backend test source must check under the reborrow extension: {outcome:?}")
+        }
+    };
+    let ir = lower_checked(*checked).expect("checked program must lower");
+    emit_llvm(&ir)
+        .expect("lowered program must emit")
+        .into_string()
 }
 
 /// Compiles a source that must be rejected, returning the failure for rule
@@ -636,13 +722,16 @@ fn main() -> own unit traps {
     assert!(output.stderr.is_empty());
 }
 
-/// [OP-2] bare infix arithmetic keeps the trapping semantics its named
-/// `.trap` spelling had: the required check is not lost to the shorter form.
+/// [OP-2] bare infix arithmetic outside the constant-operand class keeps the
+/// trapping semantics its named `.trap` spelling had: the required check is
+/// not lost to the shorter form. Both operands are bound rather than written
+/// as literals, so the site stays in the retained trapping class.
 #[test]
 fn bare_infix_overflow_traps_at_runtime() {
     let source = br#"fn main() -> own unit traps {
   let hi = 2147483647_i32;
-  let overflowed = hi + 1_i32;
+  let one = 1_i32;
+  let overflowed = hi + one;
   return unit;
 }
 "#;
@@ -962,10 +1051,54 @@ fn explicit_check_failure_emits_the_exact_mandatory_record_shape() {
     assert_eq!(stderr.lines().count(), 1);
 }
 
+/// [DIAG-3] record fields carry their exact bytes for every scalar, not only
+/// for ASCII.
+///
+/// This exercises the record encoder directly because [FORM-5] still admits no
+/// non-ASCII byte in a STRING, so no source program can reach the case through
+/// a `trap` message yet. The encoder is nonetheless the real emission path for
+/// every record, and it was silently lossy: byte iteration re-encoded each
+/// continuation byte as its Latin-1 scalar, so `"é"` (2 bytes) left as 4 and
+/// `"日"` (3 bytes) as 6. The assertion is exact bytes rather than a length,
+/// because a length check passes on mojibake of the right size.
+///
+/// A green run establishes that the encoder preserves and escapes correctly;
+/// it does not establish that any source program can produce such a message.
+#[test]
+fn a_diag3_record_preserves_the_exact_utf8_bytes_of_its_message() {
+    let record = crate::backend::emitter::trap_record(&crate::IrTrapSite {
+        rule_id: "OP-5",
+        // One two-byte scalar, one three-byte scalar, one four-byte scalar,
+        // and both characters that still need a JSON escape.
+        message: "é 日 \u{1F600} \"q\"\nl".to_owned(),
+        function: "main".to_owned(),
+        node_path: vec![0, 1],
+    });
+    assert_eq!(
+        record,
+        "{\"rule_id\":\"OP-5\",\"message\":\"é 日 \u{1F600} \\\"q\\\"\\nl\",\
+         \"function\":\"main\",\"node_path\":[0,1]}\n"
+            .as_bytes()
+    );
+    // The record is exactly the bytes the message was written with: no
+    // expansion, no replacement scalar, and no encoding split across the
+    // escape boundary.
+    assert!(String::from_utf8(record.clone()).is_ok());
+    assert_eq!(
+        record.iter().filter(|byte| !byte.is_ascii()).count(),
+        "é日\u{1F600}".len()
+    );
+}
+
 #[test]
 fn integer_overflow_reports_op2_before_abort() {
+    // Both operands are bound, keeping the site in [OP-2]'s retained
+    // trapping class: a written literal operand would carry a compile-time
+    // overflow obligation instead and could never reach a runtime record.
     let source = br#"fn main() -> own unit traps {
-  let overflow = 127_i8 + 1_i8;
+  let hi = 127_i8;
+  let one = 1_i8;
+  let overflow = hi + one;
   return unit;
 }
 "#;

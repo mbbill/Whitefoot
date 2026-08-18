@@ -37,17 +37,82 @@ pub(crate) struct NominalId(pub(crate) u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct CheckedConstantId(pub(crate) u32);
 
+/// One checker-interned symbolic const operation [`DerivedConst`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct DerivedConstId(pub(crate) u32);
+
+/// The five bare const-expression operations of the CONST-1 candidate
+/// grammar. Const evaluation happens at monomorphization in the unsigned
+/// 64-bit domain under the const-eval overflow policy: a result outside that
+/// domain or a zero divisor is a compile-time rejection citing CONST-1, never
+/// a runtime trap, so this family is disjoint from the runtime arithmetic
+/// modes and excluded from EFF-2's exhibits-traps relation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum ConstOperation {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+}
+
+impl ConstOperation {
+    pub(crate) const fn spelling(self) -> &'static str {
+        match self {
+            Self::Add => "+",
+            Self::Subtract => "-",
+            Self::Multiply => "*",
+            Self::Divide => "/",
+            Self::Remainder => "%",
+        }
+    }
+}
+
+/// One interned symbolic const-expression node: exactly one operation over
+/// two operands, mirroring the one-operation source grammar. At least one
+/// operand is symbolic — a fully concrete operation is evaluated eagerly and
+/// never interned — so a value of this shape exists only while a generic
+/// template or symbolic validation instance is being checked, and every
+/// concrete instantiation evaluates it away.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct DerivedConst {
+    pub(crate) operation: ConstOperation,
+    pub(crate) left: CheckedConst,
+    pub(crate) right: CheckedConst,
+}
+
+/// Evaluates one const operation in the u64 const-eval domain.
+///
+/// `None` is the const-eval overflow policy's rejection premise: the
+/// mathematical result is outside the domain, or the divisor is zero.
+pub(crate) const fn evaluate_const_operation(
+    operation: ConstOperation,
+    left: u64,
+    right: u64,
+) -> Option<u64> {
+    match operation {
+        ConstOperation::Add => left.checked_add(right),
+        ConstOperation::Subtract => left.checked_sub(right),
+        ConstOperation::Multiply => left.checked_mul(right),
+        ConstOperation::Divide => left.checked_div(right),
+        ConstOperation::Remainder => left.checked_rem(right),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedConst {
     Value(u64),
     Parameter(DeclarationId),
+    /// One symbolic const operation, by checker-interned identity. Structural
+    /// identity is id identity because interning is hash-consed.
+    Derived(DerivedConstId),
 }
 
 impl CheckedConst {
     pub(crate) const fn value(self) -> Option<u64> {
         match self {
             Self::Value(value) => Some(value),
-            Self::Parameter(_) => None,
+            Self::Parameter(_) | Self::Derived(_) => None,
         }
     }
 
@@ -223,6 +288,12 @@ pub(crate) enum CheckedValue {
         ty: CheckedType,
         elements: Vec<CheckedValue>,
     },
+    /// One struct-typed constant value [CONST-2 candidate]: the nominal
+    /// instance plus its complete field values in declared order.
+    Struct {
+        ty: CheckedType,
+        fields: Vec<CheckedValue>,
+    },
 }
 
 impl CheckedValue {
@@ -234,6 +305,7 @@ impl CheckedValue {
             Self::Float { ty, .. } => CheckedType::Float(*ty),
             Self::NumericIdentity { ty, .. } => *ty,
             Self::Array { ty, .. } => *ty,
+            Self::Struct { ty, .. } => *ty,
         }
     }
 }
@@ -280,6 +352,19 @@ pub(crate) enum CheckedNominalKind {
     Box {
         referent: CheckedType,
     },
+    /// One `arena<'r, T>` instance [STOR-1, STOR-2]. The region is part of
+    /// the type's identity, so `arena<'r, T>` and `arena<'s, T>` are two
+    /// nominals. Its storage is released with its region rather than with an
+    /// owner scope [STOR-3, STOR-4], so the value itself derives no drop.
+    Arena {
+        region: DeclarationId,
+        content: CheckedType,
+    },
+    /// The compiler-owned allocation list one region block carries when it
+    /// has arena allocations: a pointer-shaped cell whose compiler-derived
+    /// drop walks and frees every registered allocation, which is exactly
+    /// the region's [STOR-3] storage release.
+    ArenaStorage,
     /// One [SYS-2] opaque resource type, by index into the system
     /// nominal catalog. It has no source-visible content; its
     /// compiler-derived release carries the fixed [SYS-5] row.
@@ -419,6 +504,32 @@ impl CheckedFloatOperation {
     }
 }
 
+/// The [PRE-1] error type a checked [OP-1] integer row reports.
+///
+/// The row's `signature` cell names it, so the choice is table data rather
+/// than a property of the operation's semantics; this enum exists so that one
+/// place decides it and an extraction lock can compare that decision against
+/// the specification's own cell.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedIntegerErrorClass {
+    Overflow,
+    DivError,
+}
+
+impl CheckedIntegerErrorClass {
+    /// The exact PRE-1 spelling the `wf-ops` `signature` cell writes.
+    ///
+    /// Read only by the extraction lock: nothing in the compiler's own path
+    /// needs the name, because the class already selects the prelude type.
+    #[cfg(test)]
+    pub(crate) const fn spelling(self) -> &'static str {
+        match self {
+            Self::Overflow => "Overflow",
+            Self::DivError => "DivError",
+        }
+    }
+}
+
 impl CheckedIntegerOperation {
     pub(crate) const fn traps(self) -> bool {
         matches!(
@@ -501,6 +612,23 @@ impl CheckedIntegerOperation {
             Some(CheckedType::Integer(IntegerType::U32))
         } else {
             Some(operand)
+        }
+    }
+
+    /// The error type of a checked row, or `None` for a row whose result is a
+    /// scalar. Exactly the complement of [`Self::scalar_result_type`]'s `None`:
+    /// a row either produces a scalar or produces `Result<T, E>`.
+    pub(crate) const fn checked_error(self) -> Option<CheckedIntegerErrorClass> {
+        match self {
+            Self::AddChecked
+            | Self::SubtractChecked
+            | Self::MultiplyChecked
+            | Self::AbsoluteChecked
+            | Self::NegateChecked => Some(CheckedIntegerErrorClass::Overflow),
+            Self::DivideChecked | Self::RemainderChecked => {
+                Some(CheckedIntegerErrorClass::DivError)
+            }
+            _ => None,
         }
     }
 
@@ -612,6 +740,15 @@ pub(crate) enum CheckedSliceSource {
         length: CheckedConst,
     },
     Buffer(CheckedBufferRoot),
+    /// An array reached in `arena<'r, T>` content through `deref` [OWN-5,
+    /// OWN-10]. Semantic checking admits it; the arena runtime lowering is
+    /// not implemented yet, and the temporary arena-parameter capability
+    /// stop keeps it from reaching lowering.
+    ArenaContent {
+        binding: BindingId,
+        fields: Vec<u32>,
+        length: CheckedConst,
+    },
 }
 
 /// Source category retained only for integer-operation operands whose exact
@@ -629,6 +766,16 @@ pub(crate) enum CheckedIntegerArgumentSource {
 pub(crate) struct CheckedIntegerArgument {
     pub(crate) node_path: NodePath,
     pub(crate) source: CheckedIntegerArgumentSource,
+}
+
+/// The caller-side root a bound borrow-mode call result reads and writes
+/// through: the resolved place of the single provenance-candidate actual
+/// [OWN-6, ENT-5]. The claim deliberately keeps the complete actual place
+/// even when the callee returned a narrower suffix of it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedResultBorrow {
+    pub(crate) binding: BindingId,
+    pub(crate) fields: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -666,6 +813,14 @@ pub(crate) enum CheckedExpression {
         requirement: Option<Box<super::goal::CheckedCallRequirement>>,
         result: CheckedType,
         slice_origins: Vec<CheckedSliceOrigin>,
+        /// For a borrow-mode result admitted under the reborrow extension:
+        /// the caller-side storage the result borrow is conservatively rooted
+        /// at — the resolved place of the callee signature's single
+        /// provenance-candidate actual. Entailment reads it so a write
+        /// through the bound result kills exactly the facts on that storage
+        /// [ENT-5]; it is `None` for every own-mode result and whenever the
+        /// extension is off.
+        result_borrow: Option<CheckedResultBorrow>,
     },
     /// One call to an admitted [SYS-2] system operation, by index into the
     /// system operation catalog. Arguments follow declared parameter order.
@@ -789,6 +944,23 @@ pub(crate) enum CheckedExpression {
         referent: CheckedType,
         value: Box<CheckedExpression>,
     },
+    /// One `arena_new<'r, T>(v)` allocation [STOR-2]: the content moves into
+    /// region-owned storage registered on the region's allocation list, and
+    /// the whole list is released with the region [STOR-3, STOR-4].
+    ArenaNew {
+        carrier: NodePath,
+        nominal: NominalId,
+        /// The owning region's hidden allocation-list binding.
+        list: BindingId,
+        value: Box<CheckedExpression>,
+    },
+    /// Arena content read through explicit `deref` [STOR-2, TYPE-7].
+    ArenaDeref {
+        carrier: NodePath,
+        nominal: NominalId,
+        content: CheckedType,
+        value: Box<CheckedExpression>,
+    },
     BorrowBuffer {
         carrier: NodePath,
         root: CheckedBufferRoot,
@@ -878,6 +1050,8 @@ impl CheckedExpression {
             | Self::SliceIndex { carrier, .. }
             | Self::BoxNew { carrier, .. }
             | Self::BoxDeref { carrier, .. }
+            | Self::ArenaNew { carrier, .. }
+            | Self::ArenaDeref { carrier, .. }
             | Self::BorrowBuffer { carrier, .. }
             | Self::BorrowAddressed { carrier, .. }
             | Self::BorrowBox { carrier, .. }
@@ -922,8 +1096,11 @@ impl CheckedExpression {
             },
             Self::SliceLength { .. } => CheckedType::Integer(IntegerType::U64),
             Self::SliceIndex { root, .. } => root.element.ty(),
-            Self::BoxNew { nominal, .. } => CheckedType::Nominal(*nominal),
+            Self::BoxNew { nominal, .. } | Self::ArenaNew { nominal, .. } => {
+                CheckedType::Nominal(*nominal)
+            }
             Self::BoxDeref { referent, .. } => *referent,
+            Self::ArenaDeref { content, .. } => *content,
             Self::BorrowBuffer { root, .. } => CheckedType::Buffer {
                 element: root.element,
             },
@@ -1069,6 +1246,16 @@ pub(crate) enum CheckedStatement {
         target: CheckedSetTarget,
         value: CheckedExpression,
     },
+    /// A [SET-2] affine-place replacement: one read of the previous value
+    /// into the fresh binding and one write of the replacement into the
+    /// target, with no writer-observable point between them. The target
+    /// root stays live; the commit is not a consuming use.
+    Replace {
+        node_path: NodePath,
+        binding: BindingId,
+        target: CheckedSetTarget,
+        value: CheckedExpression,
+    },
     Evaluate(CheckedExpression),
     /// The discarded result of an expression statement, with the
     /// compiler-derived release it runs [STOR-3].
@@ -1137,6 +1324,12 @@ pub(crate) enum CheckedStatement {
         drops: Vec<CheckedDrop>,
     },
     Region {
+        /// The region's hidden arena allocation-list binding, present exactly
+        /// when the block allocates into this region [STOR-2]. Lowering
+        /// materializes it at region entry; its compiler-derived drop on
+        /// every normal exit edge is the region's storage release
+        /// [STOR-3, STOR-4].
+        arena_list: Option<BindingId>,
         body: Vec<CheckedStatement>,
         fallthrough_drops: Vec<CheckedDrop>,
     },

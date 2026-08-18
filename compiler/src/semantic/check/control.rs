@@ -8,13 +8,14 @@ mod results;
 use crate::syntax::NodeId;
 use crate::syntax::terminal::TerminalPredicate;
 use crate::{
-    DeclarationId, DeclarationRole, Production, SemanticCompilerFailure, SemanticIssue,
-    SemanticIssueKind, SemanticLocation, SemanticRule, UnsupportedSemanticFeature,
+    DeclarationClass, DeclarationId, DeclarationRole, LexicalUseRole, Production, ResolvedTarget,
+    SemanticCompilerFailure, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticRule,
+    UnsupportedSemanticFeature,
 };
 
 use super::super::model::{
-    BindingId, CheckedDrop, CheckedLoopId, CheckedMode, CheckedStatement, CheckedType, TrapSite,
-    ValueInitializerKind,
+    BindingId, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMode, CheckedStatement,
+    CheckedType, TrapSite, ValueInitializerKind,
 };
 use super::borrows::ReborrowPosition;
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
@@ -153,7 +154,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .first_child_with(node, Production::Call)?
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
                 let value = self.check_call(function, call, bindings, scope.loops.len())?;
-                let statement = if self.is_copy_type(value.expression.ty())? {
+                // A discarded borrow-mode result is a reference, never the
+                // owner of its referent: no drop or release may run for it
+                // [OWN-2, STOR-3]. Only an own-mode affine result is dropped.
+                let statement = if value.mode != CheckedMode::Own
+                    || self.is_copy_type(value.expression.ty())?
+                {
                     CheckedStatement::Evaluate(value.expression)
                 } else {
                     let release = self.release_of_type(value.expression.ty())?;
@@ -529,6 +535,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self
                     .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, initializer);
             }
+            // [STOR-4] the delivered value lands in this binding, so a
+            // delivered arena value whose region block does not enclose the
+            // binding has been moved to a destination outside its region.
+            if let Some((region, _)) = self.arena_instance(expected)?
+                && !self.declaration_is_within_region_block(declaration_id, region)?
+            {
+                return self.issue_node(
+                    SemanticRule::Stor4,
+                    initializer,
+                    SemanticIssueKind::ArenaEscape {
+                        mechanical_fix: super::ARENA_ESCAPE_RESTRUCTURING,
+                    },
+                );
+            }
             // [OWN-5]'s slice-valued-delivery prohibition used to be judged
             // here, one step too late: the branch-state join runs inside the
             // checkers above and stopped with a capability limit before this
@@ -594,6 +614,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 scope,
             );
         }
+        if let Some(replace) = self
+            .tree
+            .first_child_with(node, Production::ReplaceLetRhs)?
+        {
+            return self.check_replace_let(
+                function,
+                node,
+                replace,
+                declaration_id,
+                binding,
+                bindings,
+                scope,
+            );
+        }
         let rhs = self
             .tree
             .first_child_with(node, Production::OrdinaryLetRhs)?
@@ -612,6 +646,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.unsupported(
                 UnsupportedSemanticFeature::RegionsAndBorrows,
                 expression_node,
+            );
+        }
+        // Reborrow extension: binding a borrow-mode call result requires the
+        // callee signature to determine its one provenance-candidate
+        // parameter; without one the caller cannot root the claim and the
+        // binding is rejected, not inferred [OWN-6, OWN-8].
+        if self.reborrow_extension
+            && mode != CheckedMode::Own
+            && value.borrow.is_none()
+            && matches!(value.expression, CheckedExpression::UserCall { .. })
+        {
+            return self.issue_node(
+                SemanticRule::Own6,
+                expression_node,
+                SemanticIssueKind::AmbiguousResultBorrow {
+                    mechanical_fix: "give the callee exactly one parameter written as a borrow \
+                     of the result's mode and region and no other parameter naming that region, \
+                     or bind the borrow from a direct borrow expression",
+                },
             );
         }
         if !self.borrow_holder_scope_supported(declaration_id, mode)? {
@@ -652,6 +705,90 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ))
     }
 
+    /// [SET-2] `let x = replace p = e;`: SET-1's target order with the
+    /// affine class judgment, then the fresh old-value binding.
+    #[allow(clippy::too_many_arguments)]
+    fn check_replace_let(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        replace: NodeId,
+        declaration_id: DeclarationId,
+        binding: crate::BindingId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        scope: ControlScope<'_>,
+    ) -> Result<StatementResult, CheckStop> {
+        let target_node = self
+            .tree
+            .first_child_with(replace, Production::Place)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let expression_node = self
+            .tree
+            .first_child_with(replace, Production::Expr)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+
+        // [SET-2] fixes SET-1's order: form and check the target first
+        // (its affine, region-free class judged inside), then evaluate the
+        // right-hand side, then re-establish target-root liveness.
+        let (target_declaration, target, target_effects) =
+            self.check_replace_target(function, target_node, bindings, scope.loops.len())?;
+        let value =
+            self.check_expression(function, expression_node, bindings, scope.loops.len())?;
+        // [TYPE-5]: the right-hand side must produce exactly `own T`.
+        if value.expression.ty() != target.ty() || value.mode != CheckedMode::Own {
+            return self.issue_node(
+                SemanticRule::Type5,
+                expression_node,
+                SemanticIssueKind::TypeMismatch,
+            );
+        }
+        if !bindings
+            .get(&target_declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .live
+        {
+            return self.issue_node(
+                SemanticRule::Own1,
+                target_node,
+                SemanticIssueKind::UseAfterMove {
+                    mechanical_fix: "introduce a new `let` binding before reuse",
+                },
+            );
+        }
+        // The moved-out value's sole owner is the fresh ordinary binding;
+        // the target root stays live [SET-2, OWN-1].
+        if bindings
+            .insert(
+                declaration_id,
+                LocalBinding {
+                    binding,
+                    declaration: declaration_id,
+                    mode: CheckedMode::Own,
+                    ty: target.ty(),
+                    live: true,
+                    loop_depth: scope.loops.len(),
+                    compiler_updated: false,
+                    borrow: None,
+                    slice: None,
+                    slice_loans: Vec::new(),
+                    suspended: false,
+                },
+            )
+            .is_some()
+        {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        Ok(Self::continuing_statement(
+            CheckedStatement::Replace {
+                node_path: self.tree.path(node)?.clone(),
+                binding,
+                target,
+                value: value.expression,
+            },
+            value.effects.union(target_effects),
+        ))
+    }
+
     fn check_region(
         &self,
         function: &FunctionSignature,
@@ -660,10 +797,45 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
-        let region = self
-            .declaration_at(node, DeclarationRole::LocalRegion)?
-            .id();
+        let declaration = self.declaration_at(node, DeclarationRole::LocalRegion)?;
+        let region = declaration.id();
         let base_keys = bindings.keys().copied().collect::<HashSet<_>>();
+        // A region block with arena allocations carries the compiler-owned
+        // allocation list [STOR-3]: an ordinary hidden own binding keyed by
+        // the region declaration, so `arena_new` sites find it by region and
+        // every existing exit-edge drop derivation releases it exactly once
+        // per normal edge leaving the block, after the block's own bindings.
+        let arena_list = if self.region_allocates_arenas(node, region)? {
+            let storage = self.arena_storage_nominal_or_defer()?;
+            let list = Self::allocate_binding(counters.next_binding)?;
+            counters
+                .binding_names
+                .push(format!("<arena {}>", declaration.spelling()));
+            if bindings
+                .insert(
+                    region,
+                    LocalBinding {
+                        binding: list,
+                        declaration: region,
+                        mode: CheckedMode::Own,
+                        ty: CheckedType::Nominal(storage),
+                        live: true,
+                        loop_depth: scope.loops.len(),
+                        compiler_updated: false,
+                        borrow: None,
+                        slice: None,
+                        slice_loans: Vec::new(),
+                        suspended: false,
+                    },
+                )
+                .is_some()
+            {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+            Some(list)
+        } else {
+            None
+        };
         let statements = self.tree.children_with(node, Production::Stmt)?;
         let mut checked = self.check_block(function, &statements, bindings, counters, scope)?;
         let fallthrough_drops = if checked.can_continue {
@@ -689,6 +861,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(StatementResult {
             statement: CheckedStatement::Region {
+                arena_list,
                 body: checked.statements,
                 fallthrough_drops,
             },
@@ -699,6 +872,59 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             give_states: checked.give_states,
             break_states: checked.break_states,
         })
+    }
+
+    /// Whether any `call` in this region block resolves to the `arena_new`
+    /// operation naming this region [STOR-2]. The judgment reads resolved
+    /// operation identity and the resolved region argument — never a source
+    /// spelling — so shadowing cannot select it, and an inner region's
+    /// allocations register on the inner region's own list.
+    fn region_allocates_arenas(
+        &self,
+        node: NodeId,
+        region: DeclarationId,
+    ) -> Result<bool, CheckStop> {
+        for call in self.tree.descendants_with(node, Production::Call)? {
+            let Some(callee) = self.tree.first_child_with(call, Production::Callee)? else {
+                continue;
+            };
+            let usage = self.use_at_roles(
+                callee,
+                &[
+                    LexicalUseRole::IdentifierCallee,
+                    LexicalUseRole::OperationCallee,
+                ],
+            )?;
+            let ResolvedTarget::Operation(operation) = usage.target() else {
+                continue;
+            };
+            if crate::operation_family_spelling(operation) != Some("arena_new") {
+                continue;
+            }
+            let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+                continue;
+            };
+            let Some(first) = self
+                .tree
+                .children_with(targs, Production::Targ)?
+                .first()
+                .copied()
+            else {
+                continue;
+            };
+            let Ok(region_use) = self.use_at(first, LexicalUseRole::TypeArgumentRegion) else {
+                continue;
+            };
+            if region_use.target()
+                == (ResolvedTarget::Source {
+                    declaration: region,
+                    class: DeclarationClass::Region,
+                })
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn live_affine_drops(

@@ -522,6 +522,7 @@ let loaded = table[ordinary];
 let compared = ilt(ordinary, moved);
 let chosen = if compared { give ordinary; } else { give moved; }
 set deref(pointer).field = ordinary;
+let previous = replace deref(pointer).field = ordinary;
 user<T, 'r, 2>(arg: ordinary);
 return unit;
 loop @again { break @again; }
@@ -559,7 +560,7 @@ fn main() -> own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 73);
+    assert_eq!(productions().len(), 74);
     assert_eq!(
         parsed
             .tree

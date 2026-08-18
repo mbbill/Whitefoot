@@ -4,6 +4,7 @@
 //! check, emits no overflow or alias promises, initializes complete aggregate
 //! representations, and keeps a defensive abort edge for enum discriminants.
 
+mod arena;
 mod array;
 mod boxes;
 mod buffer;
@@ -130,12 +131,19 @@ fn emit_llvm_for(
             .any(|block| matches!(block.terminator(), IrTerminator::Match { .. }))
     });
     let drop_helpers = emit_resource_drop_helpers(program, &qualification)?;
+    let has_arena_storage = program
+        .nominals()
+        .iter()
+        .any(|nominal| matches!(nominal.kind(), IrNominalKind::ArenaStorage));
     let has_heap_storage = !drop_helpers.is_empty()
+        || has_arena_storage
         || program.functions().iter().any(IrFunction::contains_buffer)
-        || program
-            .nominals()
-            .iter()
-            .any(|nominal| matches!(nominal.kind(), IrNominalKind::Box { .. }));
+        || program.nominals().iter().any(|nominal| {
+            matches!(
+                nominal.kind(),
+                IrNominalKind::Box { .. } | IrNominalKind::Arena { .. }
+            )
+        });
 
     let mut text = format!(
         "; Whitefoot conservative module\nsource_filename = \"whitefoot\"\ntarget datalayout = \"{}\"\ntarget triple = \"{}\"\n\n",
@@ -179,6 +187,10 @@ fn emit_llvm_for(
         );
     } else if has_matches {
         text.push('\n');
+    }
+    if has_arena_storage {
+        text.push('\n');
+        text.push_str(arena::ARENA_RELEASE_HELPER);
     }
     text.push_str(&drop_helpers);
     text.push_str(&system.definitions);
@@ -229,49 +241,84 @@ fn emit_global_constants(
             .map_err(|_| BackendFailure::TextEmission)?;
         write!(
             output,
-            "{} = private unnamed_addr constant {} ",
+            "{} = private unnamed_addr constant {} {}",
             constant_symbol(constant.id()),
-            llvm_type(program, constant.ty())?
+            llvm_type(program, constant.ty())?,
+            global_constant_value(program, constant.value(), constant.ty())?
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        match (constant.value(), constant.ty()) {
-            (IrGlobalValue::Scalar(value), ty) => {
-                output.push_str(&constant_operand(*value, ty)?);
-            }
-            (IrGlobalValue::Array(elements), IrType::Array { element, length }) => {
-                if u64::try_from(elements.len()).map_err(|_| BackendFailure::CounterOverflow)?
-                    != length
-                {
-                    return Err(BackendFailure::InvalidIr);
-                }
-                if elements.is_empty() {
-                    output.push_str("zeroinitializer");
-                } else {
-                    output.push('[');
-                    let element_type = element.ty();
-                    let llvm_element_type = llvm_type(program, element_type)?;
-                    for (index, value) in elements.iter().enumerate() {
-                        if index != 0 {
-                            output.push_str(", ");
-                        }
-                        write!(
-                            output,
-                            "{llvm_element_type} {}",
-                            constant_operand(*value, element_type)?
-                        )
-                        .map_err(|_| BackendFailure::TextEmission)?;
-                    }
-                    output.push(']');
-                }
-            }
-            _ => return Err(BackendFailure::InvalidIr),
-        }
         output.push('\n');
     }
     if !program.constants().is_empty() {
         output.push('\n');
     }
     Ok(())
+}
+
+/// Renders one rodata constant value of one exact type: a scalar operand, a
+/// complete array, or a complete struct aggregate with each field rendered
+/// recursively [CONST-2 candidate].
+fn global_constant_value(
+    program: &IrProgram<'_, '_, '_>,
+    value: &IrGlobalValue,
+    ty: IrType,
+) -> Result<String, BackendFailure> {
+    match (value, ty) {
+        (IrGlobalValue::Scalar(value), ty) => constant_operand(*value, ty),
+        (IrGlobalValue::Array(elements), IrType::Array { element, length }) => {
+            if u64::try_from(elements.len()).map_err(|_| BackendFailure::CounterOverflow)? != length
+            {
+                return Err(BackendFailure::InvalidIr);
+            }
+            if elements.is_empty() {
+                return Ok("zeroinitializer".to_owned());
+            }
+            let mut text = String::from("[");
+            let element_type = element.ty();
+            let llvm_element_type = llvm_type(program, element_type)?;
+            for (index, value) in elements.iter().enumerate() {
+                if index != 0 {
+                    text.push_str(", ");
+                }
+                write!(
+                    text,
+                    "{llvm_element_type} {}",
+                    constant_operand(*value, element_type)?
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            text.push(']');
+            Ok(text)
+        }
+        (IrGlobalValue::Struct(fields), IrType::Nominal(id)) => {
+            let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
+            let IrNominalKind::Struct { fields: declared } = nominal.kind() else {
+                return Err(BackendFailure::InvalidIr);
+            };
+            if fields.len() != declared.len() {
+                return Err(BackendFailure::InvalidIr);
+            }
+            if fields.is_empty() {
+                return Ok("zeroinitializer".to_owned());
+            }
+            let mut text = String::from("{ ");
+            for (index, (value, field)) in fields.iter().zip(declared).enumerate() {
+                if index != 0 {
+                    text.push_str(", ");
+                }
+                write!(
+                    text,
+                    "{} {}",
+                    llvm_type(program, field.ty())?,
+                    global_constant_value(program, value, field.ty())?
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            text.push_str(" }");
+            Ok(text)
+        }
+        _ => Err(BackendFailure::InvalidIr),
+    }
 }
 
 fn emit_nominal_declarations(
@@ -286,7 +333,10 @@ fn emit_nominal_declarations(
         if nominal.is_tag_only_enum()
             || matches!(
                 nominal.kind(),
-                IrNominalKind::Box { .. } | IrNominalKind::SystemResource(_)
+                IrNominalKind::Box { .. }
+                    | IrNominalKind::Arena { .. }
+                    | IrNominalKind::ArenaStorage
+                    | IrNominalKind::SystemResource(_)
             )
         {
             continue;
@@ -312,7 +362,10 @@ fn emit_nominal_declarations(
                     }
                 }
             }
-            IrNominalKind::Box { .. } | IrNominalKind::SystemResource(_) => {
+            IrNominalKind::Box { .. }
+            | IrNominalKind::Arena { .. }
+            | IrNominalKind::ArenaStorage
+            | IrNominalKind::SystemResource(_) => {
                 return Err(BackendFailure::InvalidIr);
             }
         }
@@ -734,6 +787,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::BoxDeref { nominal, value } => {
                 self.emit_box_deref(result, ty, *nominal, *value)
             }
+            IrOperation::ArenaListNew => self.emit_arena_list_new(result, ty),
+            IrOperation::ArenaNew {
+                nominal,
+                list,
+                value,
+            } => self.emit_arena_new(result, ty, *nominal, *list, *value),
+            IrOperation::ArenaDeref { nominal, value } => {
+                self.emit_arena_deref(result, ty, *nominal, *value)
+            }
             IrOperation::ConstructStruct { nominal, fields } => {
                 self.emit_struct(result, ty, *nominal, fields)
             }
@@ -920,6 +982,21 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrType::Nominal(nominal) if !self.nominal(nominal)?.is_tag_only_enum() => {
                 match self.nominal(nominal)?.kind() {
                     IrNominalKind::Struct { .. } => {}
+                    // An arena value derives no owner-scope drop action; its
+                    // storage is released with its region [STOR-3, STOR-4].
+                    IrNominalKind::Arena { .. } => {}
+                    // The region's allocation-list drop is that release:
+                    // walk the list and free every registered allocation.
+                    IrNominalKind::ArenaStorage => {
+                        emit_value_cleanup(
+                            self.program,
+                            self.qualification,
+                            &mut self.output,
+                            &mut self.temporary,
+                            drop.ty(),
+                            value_name.clone(),
+                        )?;
+                    }
                     // The checked program's own [SYS-5] record is the single
                     // source of truth for which action runs here, so a table
                     // row disagreeing with it stops rather than silently
@@ -1060,7 +1137,12 @@ fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, Back
         IrType::Address(_) => Ok("ptr".to_owned()),
         IrType::Nominal(id) => {
             let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
-            if matches!(nominal.kind(), IrNominalKind::Box { .. }) {
+            if matches!(
+                nominal.kind(),
+                IrNominalKind::Box { .. }
+                    | IrNominalKind::Arena { .. }
+                    | IrNominalKind::ArenaStorage
+            ) {
                 return Ok("ptr".to_owned());
             }
             // [QUAL-1] fixes an opaque resource's representation in its
@@ -1186,6 +1268,16 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock) -> String {
             } => label = array_fill_done_label(*result),
             IrInstruction::Define {
                 result,
+                operation: IrOperation::BoxNew { .. },
+                ..
+            } => label = box_new_ready_label(*result),
+            IrInstruction::Define {
+                result,
+                operation: IrOperation::ArenaNew { .. },
+                ..
+            } => label = arena_new_ready_label(*result),
+            IrInstruction::Define {
+                result,
                 operation: IrOperation::BufferFill { .. },
                 ..
             } => label = buffer_fill_done_label(*result),
@@ -1248,6 +1340,14 @@ fn integer_continue_label(value: IrValueId) -> String {
     format!("integer.cont.v{}", value.ordinal())
 }
 
+fn box_new_ready_label(value: IrValueId) -> String {
+    format!("box.new.ready.v{}", value.ordinal())
+}
+
+fn arena_new_ready_label(value: IrValueId) -> String {
+    format!("arena.new.ready.v{}", value.ordinal())
+}
+
 fn array_fill_head_label(value: IrValueId) -> String {
     format!("array.fill.head.v{}", value.ordinal())
 }
@@ -1284,14 +1384,28 @@ pub(super) fn trap_record(trap: &IrTrapSite) -> Vec<u8> {
     .into_bytes()
 }
 
+/// Encodes one [DIAG-3] record field as a JSON string.
+///
+/// The input is always a Rust `str`, so it is already one well-formed UTF-8
+/// sequence; the record must carry those exact bytes. Iteration is therefore
+/// over scalar values, not bytes: pushing a `char` writes its complete UTF-8
+/// encoding, so a multi-byte scalar survives intact and no record can end
+/// inside an encoding. Byte iteration with `char::from` was wrong for exactly
+/// this case — it reinterpreted each continuation byte as the Latin-1 scalar
+/// of the same value and re-encoded it, doubling every non-ASCII byte. ASCII
+/// input is unaffected either way.
+///
+/// Only `"`, `\`, and newline need escaping here: [FORM-5] admits no other
+/// control in a STRING, so no other scalar in a record field requires a JSON
+/// escape.
 fn json_string(value: &str) -> String {
     let mut encoded = String::from("\"");
-    for byte in value.bytes() {
-        match byte {
-            b'"' => encoded.push_str("\\\""),
-            b'\\' => encoded.push_str("\\\\"),
-            b'\n' => encoded.push_str("\\n"),
-            _ => encoded.push(char::from(byte)),
+    for scalar in value.chars() {
+        match scalar {
+            '"' => encoded.push_str("\\\""),
+            '\\' => encoded.push_str("\\\\"),
+            '\n' => encoded.push_str("\\n"),
+            _ => encoded.push(scalar),
         }
     }
     encoded.push('"');

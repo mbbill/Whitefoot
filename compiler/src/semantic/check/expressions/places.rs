@@ -276,22 +276,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 };
-                let CheckedNominalKind::Box { referent } = self.nominal(nominal)?.kind else {
-                    return self.issue_node(
-                        SemanticRule::Type7,
-                        pbase,
-                        SemanticIssueKind::MissingDereference {
-                            mechanical_fix: "deref requires a borrow, box, or arena place",
-                        },
-                    );
-                };
-                inner.expression = CheckedExpression::BoxDeref {
-                    carrier: self.tree.path(carrier)?.clone(),
-                    nominal,
-                    referent,
-                    value: Box::new(inner.expression),
-                };
-                inner.ty = referent;
+                match self.nominal(nominal)?.kind {
+                    CheckedNominalKind::Box { referent } => {
+                        inner.expression = CheckedExpression::BoxDeref {
+                            carrier: self.tree.path(carrier)?.clone(),
+                            nominal,
+                            referent,
+                            value: Box::new(inner.expression),
+                        };
+                        inner.ty = referent;
+                    }
+                    CheckedNominalKind::Arena { content, .. } => {
+                        inner.expression = CheckedExpression::ArenaDeref {
+                            carrier: self.tree.path(carrier)?.clone(),
+                            nominal,
+                            content,
+                            value: Box::new(inner.expression),
+                        };
+                        inner.ty = content;
+                    }
+                    _ => {
+                        return self.issue_node(
+                            SemanticRule::Type7,
+                            pbase,
+                            SemanticIssueKind::MissingDereference {
+                                mechanical_fix: "deref requires a borrow, box, or arena place",
+                            },
+                        );
+                    }
+                }
                 inner
             }
         } else {
