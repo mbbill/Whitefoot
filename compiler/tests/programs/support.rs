@@ -34,6 +34,21 @@ pub fn compile_sources(sources: &[(&str, &[u8])]) -> String {
     compile(&inputs, CompilerLimits::default()).expect("integration source must compile")
 }
 
+/// Compiles sources that must be rejected and returns the rendered failure.
+///
+/// A negative direction over a real corpus program needs the compiler's own
+/// diagnostic, not a panic, so the case can pin the rule and the residual.
+pub fn compile_rejection(sources: &[(&str, &[u8])]) -> String {
+    let inputs = sources
+        .iter()
+        .map(|(name, source)| SourceInput::new(name, source))
+        .collect::<Vec<_>>();
+    match compile(&inputs, CompilerLimits::default()) {
+        Ok(_) => panic!("source that must be rejected compiled"),
+        Err(failure) => failure.to_string(),
+    }
+}
+
 pub fn compile_and_run(llvm: &str) -> Output {
     let sequence = NEXT_EXECUTION.fetch_add(1, Ordering::Relaxed);
     let directory = std::env::temp_dir().join(format!(
