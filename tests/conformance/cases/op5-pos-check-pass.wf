@@ -1,6 +1,12 @@
+fn opaque(n: own u64) -> own u64 pure {
+  return n;
+}
+
 fn main() -> own unit traps {
-  doc "A check that holds passes and the program continues [OP-5]; the passed check creates a checked fact on the dominated path.";
-  let x = 1_i32 +wrap 2_i32;
-  check ieq(x, 3_i32) else trap "check drift";
+  doc "A claim that holds passes and the program continues [CLM-1]. The index passes through a call so no fact reaches the claim [ENT-2] and CLM-2 neither proves nor refutes it; the passed claim then establishes its predicate on the dominated path [ENT-3], and the following subscript discharges its OP-4 obligation from that fact alone.";
+  let table = array_new<u8, 8>(3_u8);
+  let index = opaque(n: 3_u64);
+  claim check_drift: ilt(index, 8_u64) because "check drift";
+  let value = table[index];
   return unit;
 }

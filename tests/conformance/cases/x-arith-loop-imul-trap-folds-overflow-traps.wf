@@ -10,6 +10,6 @@ fn main() -> own unit traps {
     set acc = acc * factor;
     set i = i + 1_i32;
   }
-  check igt(acc, 0_i32) else trap "unreachable after overflow";
+  claim unreachable_after_overflow: igt(acc, 0_i32) because "unreachable after overflow";
   return unit;
 }

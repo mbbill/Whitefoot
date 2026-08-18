@@ -7,7 +7,7 @@ fn required(value: own u64, limit: own u64) -> own unit pure requires {
 
 deny_claims fn checked_forward(value: own u64, limit: own u64) -> own unit traps {
   let allowed = ilt(value, limit);
-  check allowed else trap "caller check";
+  claim caller_check: allowed because "caller check";
   required(value: value, limit: limit);
   return unit;
 }

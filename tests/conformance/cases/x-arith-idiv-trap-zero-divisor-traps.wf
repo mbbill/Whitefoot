@@ -2,6 +2,6 @@ fn main() -> own unit traps {
   doc "The bare / traps on a zero divisor [OP-2]; division carries no wrap mode and the zero-divisor contract violation aborts the process [SCOPE-4].";
   let x = 10_i32;
   let q = x / 0_i32;
-  check igt(q, 0_i32) else trap "unreachable";
+  claim unreachable: igt(q, 0_i32) because "unreachable";
   return unit;
 }

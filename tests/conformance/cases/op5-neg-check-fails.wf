@@ -1,5 +1,5 @@
 fn main() -> own unit traps {
-  doc "A failing check is a runtime check in all build modes, never elided; it traps and aborts [OP-5].";
-  check ilt(3_i32, 2_i32) else trap "impossible order";
+  doc "A failing claim is a runtime check in all build modes, never elided; it traps and aborts [CLM-1]. The predicate is a constructed Bool, so it has no comparison origin, is neither redundant nor refutable [CLM-2], and its falseness is a runtime property.";
+  claim impossible_order: False() because "impossible order";
   return unit;
 }

@@ -33,7 +33,7 @@ fn cycle_right(remaining: own u64) -> own u64 pure {
   }
 }
 
-deny_claims command fn main() -> own ExitStatus traps requires {
+deny_claims command fn main() -> own ExitStatus pure requires {
   let valid_entry = ieq(0_u64, 0_u64);
   check valid_entry else trap "entry relation";
 } {
@@ -49,6 +49,10 @@ deny_claims command fn main() -> own ExitStatus traps requires {
   let relayed_length = relay<u64>(value: bounded_length);
   let accepted_length = accept_bound(value: relayed_length, limit: capacity);
   let cycle_result = cycle_left(remaining: 2_u64);
-  check ieq(cycle_result, 0_u64) else trap "seedless cycle drift";
-  return exit_status(code: 0_u8);
+  let cycle_holds = ieq(cycle_result, 0_u64);
+  if cycle_holds {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
 }

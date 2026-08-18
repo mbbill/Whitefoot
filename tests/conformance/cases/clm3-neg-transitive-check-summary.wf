@@ -1,7 +1,7 @@
 fn checked_leaf(values: own array<u8, 4>, index: own u64) -> own u8 traps {
   let room = len(values);
   let inside = ilt(index, room);
-  check inside else trap "checked leaf";
+  claim checked_leaf: inside because "checked leaf";
   return values[index];
 }
 

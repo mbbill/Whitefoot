@@ -1,7 +1,7 @@
 deny_claims fn checked_read(values: own array<u8, 4>, index: own u64) -> own u8 traps {
   let room = len(values);
   let inside = ilt(index, room);
-  check inside else trap "checked read";
+  claim checked_read: inside because "checked read";
   return values[index];
 }
 

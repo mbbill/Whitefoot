@@ -1,5 +1,5 @@
 fn main() -> own unit traps {
-  doc "Trap is abort: a failing `check` kills the process, no unwinding/cleanup [EFF-4].";
-  check ieq(1_i32, 2_i32) else trap "boom";
+  doc "Trap is abort: a failing `claim` kills the process, no unwinding/cleanup [EFF-4]. The predicate is a constructed Bool with no comparison origin, so CLM-2 accepts it and the failure is a runtime event.";
+  claim boom: False() because "boom";
   return unit;
 }

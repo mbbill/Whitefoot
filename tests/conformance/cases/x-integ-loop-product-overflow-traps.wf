@@ -16,6 +16,6 @@ fn main() -> own unit traps {
     set prod = prod * i;
     set i = i + 1_i32;
   }
-  check igt(prod, 0_i32) else trap "unreachable: product overflowed first";
+  claim unreachable_product_overflowed_first: igt(prod, 0_i32) because "unreachable: product overflowed first";
   return unit;
 }
