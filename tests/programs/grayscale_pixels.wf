@@ -62,17 +62,17 @@ fn main() -> own unit allocates(heap), traps {
       Ok(value: success) => {
       }
       Err(error: failure) => {
-        check False() else trap "grayscale conversion failed";
+        claim grayscale_conversion_failed: False() because "grayscale conversion failed";
       }
     }
   }
-  check ieq(output[0_u64], 0_u8) else trap "black";
-  check ieq(output[1_u64], 255_u8) else trap "white";
-  check ieq(output[2_u64], 85_u8) else trap "red";
-  check ieq(output[3_u64], 85_u8) else trap "green";
-  check ieq(output[4_u64], 85_u8) else trap "blue";
-  check ieq(output[5_u64], 170_u8) else trap "yellow";
-  check ieq(output[6_u64], 2_u8) else trap "low";
-  check ieq(output[7_u64], 253_u8) else trap "high";
+  claim black: ieq(output[0_u64], 0_u8) because "black";
+  claim white: ieq(output[1_u64], 255_u8) because "white";
+  claim red: ieq(output[2_u64], 85_u8) because "red";
+  claim green: ieq(output[3_u64], 85_u8) because "green";
+  claim blue: ieq(output[4_u64], 85_u8) because "blue";
+  claim yellow: ieq(output[5_u64], 170_u8) because "yellow";
+  claim low: ieq(output[6_u64], 2_u8) because "low";
+  claim high: ieq(output[7_u64], 253_u8) because "high";
   return unit;
 }

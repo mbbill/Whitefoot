@@ -7530,7 +7530,7 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
             include_bytes!("../../../../tests/programs/wfgrep.wf"),
         )],
     ];
-    for (inputs, expected_claims) in bundles.into_iter().zip([2, 12, 8]) {
+    for (inputs, expected_claims) in bundles.into_iter().zip([10, 12, 8]) {
         with_semantics_inputs(inputs, |outcome| {
             let SemanticOutcome::Complete(program) = outcome else {
                 panic!("frozen real source bundle must remain accepted: {outcome:?}");

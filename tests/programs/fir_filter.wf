@@ -14,7 +14,7 @@ fn main() -> own unit traps {
   let delay = DelayLine(samples: move samples, cursor: 0_u64);
   let filter = FirFilter(taps: move taps, delay: move delay);
   let tap_count = len(filter.taps);
-  check ieq(tap_count, 8_u64) else trap "FIR tap count";
+  claim fir_tap_count: ieq(tap_count, 8_u64) because "FIR tap count";
   let frame = 0_u64;
   let output_sum = 0.0_f64;
   loop @frames {
@@ -66,6 +66,6 @@ fn main() -> own unit traps {
     set filter.delay.cursor = next_cursor;
     set frame = frame +wrap 1_u64;
   }
-  check feq(output_sum, 8.0_f64) else trap "FIR impulse response";
+  claim fir_impulse_response: feq(output_sum, 8.0_f64) because "FIR impulse response";
   return unit;
 }

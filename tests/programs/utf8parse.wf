@@ -232,7 +232,7 @@ fn main() -> own unit allocates(heap), traps {
   let output = buffer_new(15_u64, 99_u32);
   region 'parse_region {
     let produced = parse<'parse_region>(out: &uniq 'parse_region output, src: move input);
-    check ieq(produced, 6_u64) else trap "event count";
+    claim event_count: ieq(produced, 6_u64) because "event count";
   }
   let event_zero = output[0_u64];
   let event_one = output[1_u64];
@@ -241,12 +241,12 @@ fn main() -> own unit allocates(heap), traps {
   let event_four = output[4_u64];
   let event_five = output[5_u64];
   let event_tail = output[6_u64];
-  check ieq(event_zero, 65_u32) else trap "ASCII event";
-  check ieq(event_one, 162_u32) else trap "two-byte event";
-  check ieq(event_two, 8364_u32) else trap "three-byte event";
-  check ieq(event_three, 128512_u32) else trap "four-byte event";
-  check ieq(event_four, 1114112_u32) else trap "bad continuation event";
-  check ieq(event_five, 1114112_u32) else trap "bad ground byte event";
-  check ieq(event_tail, 99_u32) else trap "incomplete sequence changed output";
+  claim ascii_event: ieq(event_zero, 65_u32) because "ASCII event";
+  claim two_byte_event: ieq(event_one, 162_u32) because "two-byte event";
+  claim three_byte_event: ieq(event_two, 8364_u32) because "three-byte event";
+  claim four_byte_event: ieq(event_three, 128512_u32) because "four-byte event";
+  claim bad_continuation_event: ieq(event_four, 1114112_u32) because "bad continuation event";
+  claim bad_ground_byte_event: ieq(event_five, 1114112_u32) because "bad ground byte event";
+  claim incomplete_sequence_changed_output: ieq(event_tail, 99_u32) because "incomplete sequence changed output";
   return unit;
 }

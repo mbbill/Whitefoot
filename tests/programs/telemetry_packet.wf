@@ -67,7 +67,7 @@ fn main() -> own unit allocates(heap), traps {
       Ok(value: success) => {
       }
       Err(error: narrow) => {
-        check False() else trap "temperature encoding";
+        claim temperature_encoding: False() because "temperature encoding";
       }
     }
   }
@@ -79,7 +79,7 @@ fn main() -> own unit allocates(heap), traps {
       Ok(value: success) => {
       }
       Err(error: narrow) => {
-        check False() else trap "negative zero encoding";
+        claim negative_zero_encoding: False() because "negative zero encoding";
       }
     }
   }
@@ -91,14 +91,14 @@ fn main() -> own unit allocates(heap), traps {
       Ok(value: success) => {
       }
       Err(error: narrow) => {
-        check False() else trap "NaN encoding";
+        claim nan_encoding: False() because "NaN encoding";
       }
     }
   }
   region 'temperature_read {
     let bits = load_u32_be<'temperature_read>(input: &'temperature_read packet, offset: 0_u64);
     let decoded = reinterpret<u32, f32>(bits);
-    check feq(decoded, temperature) else trap "temperature round trip";
+    claim temperature_round_trip: feq(decoded, temperature) because "temperature round trip";
   }
   region 'zero_read {
     let bits = load_u32_be<'zero_read>(input: &'zero_read packet, offset: 4_u64);
@@ -106,12 +106,12 @@ fn main() -> own unit allocates(heap), traps {
     let reciprocal = fdiv.strict(1.0_f32, decoded);
     let infinity = finf<f32>();
     let negative_infinity = fneg(infinity);
-    check feq(reciprocal, negative_infinity) else trap "negative zero sign";
+    claim negative_zero_sign: feq(reciprocal, negative_infinity) because "negative zero sign";
   }
   region 'nan_read {
     let bits = load_u32_be<'nan_read>(input: &'nan_read packet, offset: 8_u64);
     let decoded = reinterpret<u32, f32>(bits);
-    check fne(decoded, decoded) else trap "NaN round trip";
+    claim nan_round_trip: fne(decoded, decoded) because "NaN round trip";
   }
   return unit;
 }
