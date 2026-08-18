@@ -3,7 +3,7 @@ fn main() -> own unit traps {
   let hi = 2147483647_i32;
   match hi +checked 1_i32 {
     Ok(value: v) => {
-      check ilt(v, 0_i32) else trap "overflow was not detected";
+      claim overflow_was_not_detected: ilt(v, 0_i32) because "overflow was not detected";
       return unit;
     }
     Err(error: e) => {

@@ -20,7 +20,7 @@ fn main() -> own unit traps {
         return unit;
       }
     }
-    check ieq(v, 4_i32) else trap "drift";
+    claim drift: ieq(v, 4_i32) because "drift";
   }
   return unit;
 }

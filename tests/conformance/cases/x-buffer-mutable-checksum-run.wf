@@ -24,6 +24,6 @@ fn main() -> own unit allocates(heap), traps {
     set total = total +wrap value;
     set cursor = cursor +wrap 1_u64;
   }
-  check ieq(total, 36_u64) else trap "mutable buffer checksum drift";
+  claim mutable_buffer_checksum_drift: ieq(total, 36_u64) because "mutable buffer checksum drift";
   return unit;
 }

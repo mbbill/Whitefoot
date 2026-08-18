@@ -117,18 +117,18 @@ fn main() -> own unit allocates(heap), traps {
   region 'combine_region {
     combine<'combine_region>(out: &uniq 'combine_region total, left: &'combine_region left, right: &'combine_region right);
   }
-  check ieq(total.lines, 1_u64) else trap "line summary drift";
-  check ieq(total.words, 3_u64) else trap "word summary drift";
-  check ieq(total.bytes, 5_u64) else trap "byte summary drift";
-  check ieq(total.first_space, 0_u64) else trap "first-space summary drift";
-  check ieq(total.last_space, 0_u64) else trap "last-space summary drift";
+  claim line_summary_drift: ieq(total.lines, 1_u64) because "line summary drift";
+  claim word_summary_drift: ieq(total.words, 3_u64) because "word summary drift";
+  claim byte_summary_drift: ieq(total.bytes, 5_u64) because "byte summary drift";
+  claim first_space_summary_drift: ieq(total.first_space, 0_u64) because "first-space summary drift";
+  claim last_space_summary_drift: ieq(total.last_space, 0_u64) because "last-space summary drift";
   let empty = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 1_u64, last_space: 1_u64);
   let copied = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
   region 'identity_region {
     combine<'identity_region>(out: &uniq 'identity_region copied, left: &'identity_region empty, right: &'identity_region total);
   }
-  check ieq(copied.lines, 1_u64) else trap "identity line drift";
-  check ieq(copied.words, 3_u64) else trap "identity word drift";
-  check ieq(copied.bytes, 5_u64) else trap "identity byte drift";
+  claim identity_line_drift: ieq(copied.lines, 1_u64) because "identity line drift";
+  claim identity_word_drift: ieq(copied.words, 3_u64) because "identity word drift";
+  claim identity_byte_drift: ieq(copied.bytes, 5_u64) because "identity byte drift";
   return unit;
 }

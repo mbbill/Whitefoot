@@ -9,7 +9,7 @@ fn main() -> own unit traps {
     }
   }
   if ilt(r, 100_i32) {
-    check ieq(r, 7_i32) else trap "prelude drift";
+    claim prelude_drift: ieq(r, 7_i32) because "prelude drift";
   } else {
     return unit;
   }

@@ -13,6 +13,6 @@ fn get(table: own array<u8, 4>, symbol: own u64) -> own u8 pure {
 fn main() -> own unit traps {
   let table = array_new<u8, 4>(7_u8);
   let value = get(table: move table, symbol: 2_u64);
-  check ieq(value, 7_u8) else trap "guarded read";
+  claim guarded_read: ieq(value, 7_u8) because "guarded read";
   return unit;
 }

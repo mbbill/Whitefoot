@@ -4,6 +4,6 @@ fn main() -> own unit traps {
   let b = 4_i32;
   let s = a +wrap b;
   let p = s *wrap s;
-  check ieq(p, 49_i32) else trap "drift";
+  claim drift: ieq(p, 49_i32) because "drift";
   return unit;
 }

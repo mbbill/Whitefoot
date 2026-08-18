@@ -1,13 +1,13 @@
 fn main() -> own unit traps {
   doc "OP-2: integer negation has exact wrap, trap, and checked behavior at signed minimum.";
   let wrapped = ineg.wrap(-128_i8);
-  check ieq(wrapped, -128_i8) else trap "wrapped negation drift";
+  claim wrapped_negation_drift: ieq(wrapped, -128_i8) because "wrapped negation drift";
   let trapped = ineg.trap(-42_i8);
-  check ieq(trapped, 42_i8) else trap "trapping negation drift";
+  claim trapping_negation_drift: ieq(trapped, 42_i8) because "trapping negation drift";
   let checked_minimum = ineg.checked(-128_i8);
   match move checked_minimum {
     Ok(value: unexpected_value) => {
-      check False() else trap "checked minimum negation took Ok";
+      claim checked_minimum_negation_took_ok: False() because "checked minimum negation took Ok";
     }
     Err(error: overflow_error) => {
     }

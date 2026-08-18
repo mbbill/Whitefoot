@@ -2,9 +2,9 @@ fn get(b: own buffer<u8>, i: own u64) -> own u8 traps {
   doc "Closure rule (2): from `i - room <= 0` and a disequality between the two terms in either orientation, the least closure derives `i - room <= -1` [ENT-4]. The non-strict bound alone does not discharge; the disequality is what makes it strict.";
   let room = len(b);
   let within = ile(i, room);
-  check within else trap "offset past the length";
+  claim offset_past_the_length: within because "offset past the length";
   let distinct = ine(i, room);
-  check distinct else trap "offset equals the length";
+  claim offset_equals_the_length: distinct because "offset equals the length";
   return b[i];
 }
 

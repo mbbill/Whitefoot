@@ -4,13 +4,13 @@ fn main() -> own unit traps {
   let no = False();
   let both = band(yes, no);
   let not_both = bnot(both);
-  check not_both else trap "band drift";
+  claim band_drift: not_both because "band drift";
   let either = bor(no, yes);
-  check either else trap "bor drift";
+  claim bor_drift: either because "bor drift";
   let different = bxor(yes, no);
-  check different else trap "bxor off-diagonal drift";
+  claim bxor_off_diagonal_drift: different because "bxor off-diagonal drift";
   let same = bxor(yes, yes);
   let not_same = bnot(same);
-  check not_same else trap "bxor diagonal drift";
+  claim bxor_diagonal_drift: not_same because "bxor diagonal drift";
   return unit;
 }

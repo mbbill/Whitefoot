@@ -3,6 +3,6 @@ fn main() -> own unit traps {
   let hi = 2147483647_i32;
   let lo = hi +wrap 1_i32;
   let back = lo -wrap 1_i32;
-  check ieq(back, hi) else trap "underflow round-trip drift";
+  claim underflow_round_trip_drift: ieq(back, hi) because "underflow round-trip drift";
   return unit;
 }

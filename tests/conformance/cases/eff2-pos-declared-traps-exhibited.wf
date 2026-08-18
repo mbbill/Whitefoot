@@ -1,5 +1,5 @@
 fn main() -> own unit traps {
   doc "Body exhibits traps (a `check`) and declares `traps` [EFF-2].";
-  check ieq(2_i32, 2_i32) else trap "x";
+  claim x: ieq(2_i32, 2_i32) because "x";
   return unit;
 }

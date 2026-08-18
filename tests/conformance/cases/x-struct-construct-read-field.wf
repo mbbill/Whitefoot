@@ -7,6 +7,6 @@ fn main() -> own unit traps {
   doc "TYPE-2/GRAM-8: construct a struct, read its fields, use them in arithmetic, check the sum.";
   let p = Point(x: 3_i32, y: 4_i32);
   let s = p.x + p.y;
-  check ieq(s, 7_i32) else trap "field arithmetic drift";
+  claim field_arithmetic_drift: ieq(s, 7_i32) because "field arithmetic drift";
   return unit;
 }

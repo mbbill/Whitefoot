@@ -12,11 +12,11 @@ fn guard(value: own i32) -> own unit pure requires {
 fn matched(value: own i32, choice: own Choice) -> own i32 traps {
   let picked = match choice {
     Narrow() => {
-      check ilt(value, 8_i32) else trap "narrow bound";
+      claim narrow_bound: ilt(value, 8_i32) because "narrow bound";
       give value;
     }
     Wide() => {
-      check ilt(value, 128_i32) else trap "wide bound";
+      claim wide_bound: ilt(value, 128_i32) because "wide bound";
       give value;
     }
   }

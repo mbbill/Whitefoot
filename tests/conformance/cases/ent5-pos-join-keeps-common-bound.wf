@@ -3,10 +3,10 @@ fn get(b: own buffer<u8>, i: own u64, pick: own Bool) -> own u8 traps {
   let room = len(b);
   if pick {
     let inside = ilt(i, room);
-    check inside else trap "offset out of range on the taken arm";
+    claim offset_out_of_range_on_the_taken_arm: inside because "offset out of range on the taken arm";
   } else {
     let inside = ilt(i, room);
-    check inside else trap "offset out of range on the other arm";
+    claim offset_out_of_range_on_the_other_arm: inside because "offset out of range on the other arm";
   }
   return b[i];
 }

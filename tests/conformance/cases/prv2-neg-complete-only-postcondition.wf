@@ -1,7 +1,7 @@
 fn bounded(value: own u64) -> own u64 traps ensures result {
   check ilt(result, 4_u64) else trap "bounded postcondition";
 } {
-  check ilt(value, 4_u64) else trap "body assertion";
+  claim body_assertion: ilt(value, 4_u64) because "body assertion";
   return value;
 }
 

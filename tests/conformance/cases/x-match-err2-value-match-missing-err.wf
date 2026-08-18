@@ -5,6 +5,6 @@ fn main() -> own unit traps {
       give w;
     }
   }
-  check ieq(v, 42_i32) else trap "x";
+  claim x: ieq(v, 42_i32) because "x";
   return unit;
 }

@@ -4,7 +4,7 @@ fn main() -> own unit traps {
   loop @l {
     region 's {
       let p = &'s a;
-      check ieq(deref(p), 0_i32) else trap "p";
+      claim p: ieq(deref(p), 0_i32) because "p";
     }
     break @l;
   }

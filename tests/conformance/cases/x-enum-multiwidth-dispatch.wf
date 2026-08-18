@@ -35,6 +35,6 @@ fn main() -> own unit traps {
   let c = classify(v: move bare_atom_0003);
   let s0 = a + b;
   let s1 = s0 + c;
-  check ieq(s1, 52_i32) else trap "multiwidth drift";
+  claim multiwidth_drift: ieq(s1, 52_i32) because "multiwidth drift";
   return unit;
 }

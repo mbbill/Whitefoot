@@ -9,6 +9,6 @@ fn main() -> own unit traps {
     set acc = acc +wrap n;
     set n = n -wrap 1_i32;
   }
-  check ieq(acc, 10_i32) else trap "sum drift";
+  claim sum_drift: ieq(acc, 10_i32) because "sum drift";
   return unit;
 }

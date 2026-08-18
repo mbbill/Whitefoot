@@ -6,8 +6,8 @@ fn doubled<const n: u64>(fill: own u64) -> own array<u64, n * 2> pure {
 fn main() -> own unit traps {
   let cells = doubled<3>(fill: 7_u64);
   let count = len(cells);
-  check ieq(count, 6_u64) else trap "doubled array length";
+  claim doubled_array_length: ieq(count, 6_u64) because "doubled array length";
   let last = cells[5_u64];
-  check ieq(last, 7_u64) else trap "doubled array fill";
+  claim doubled_array_fill: ieq(last, 7_u64) because "doubled array fill";
   return unit;
 }

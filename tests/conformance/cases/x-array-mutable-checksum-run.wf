@@ -23,6 +23,6 @@ fn main() -> own unit traps {
     set total = total +wrap value;
     set cursor = cursor +wrap 1_u64;
   }
-  check ieq(total, 36_u64) else trap "mutable array checksum drift";
+  claim mutable_array_checksum_drift: ieq(total, 36_u64) because "mutable array checksum drift";
   return unit;
 }

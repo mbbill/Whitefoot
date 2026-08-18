@@ -3,7 +3,7 @@ fn main() -> own unit allocates(heap), traps {
   region 'r {
     let b = box_new(9_i32);
     let v = deref(b);
-    check ieq(v, 9_i32) else trap "box drift";
+    claim box_drift: ieq(v, 9_i32) because "box drift";
   }
   return unit;
 }

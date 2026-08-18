@@ -7,7 +7,7 @@ fn get(b: own buffer<u8>) -> own u8 traps {
   let room = len(b);
   let probe = 0_u64;
   let inside = ilt(probe, room);
-  check inside else trap "the buffer is empty";
+  claim the_buffer_is_empty: inside because "the buffer is empty";
   let echoed = identity(n: probe);
   return b[echoed];
 }

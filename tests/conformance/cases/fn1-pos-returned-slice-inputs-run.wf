@@ -20,7 +20,7 @@ fn main() -> own unit traps {
     let passed_ok = ilt(0_u64, passed_room);
     claim passed_nonempty: passed_ok because "pass_slice returns the two-byte view";
     let passed_value = passed[0_u64];
-    check ieq(passed_value, 11_u8) else trap "returned slice pass through";
+    claim returned_slice_pass_through: ieq(passed_value, 11_u8) because "returned slice pass through";
     let left_source = slice_of(&'view left);
     let right_source = slice_of(&'view right);
     let take_left = False();
@@ -29,7 +29,7 @@ fn main() -> own unit traps {
     let selected_ok = ilt(0_u64, selected_room);
     claim selected_nonempty: selected_ok because "choose_slice returns one two-byte view";
     let selected_value = selected[0_u64];
-    check ieq(selected_value, 29_u8) else trap "returned slice choice";
+    claim returned_slice_choice: ieq(selected_value, 29_u8) because "returned slice choice";
   }
   return unit;
 }

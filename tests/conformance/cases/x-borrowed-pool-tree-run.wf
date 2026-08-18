@@ -98,9 +98,9 @@ fn main() -> own unit allocates(heap), traps {
   region 'tree {
     let root = build<'tree>(pool: &uniq 'tree pool, depth: depth);
     let nodes = checksum<'tree>(pool: &'tree pool, root: root);
-    check ieq(nodes, 63_u64) else trap "tree checksum drift";
+    claim tree_checksum_drift: ieq(nodes, 63_u64) because "tree checksum drift";
   }
   let used = pool.count;
-  check ieq(used, 64_u64) else trap "tree allocation drift";
+  claim tree_allocation_drift: ieq(used, 64_u64) because "tree allocation drift";
   return unit;
 }

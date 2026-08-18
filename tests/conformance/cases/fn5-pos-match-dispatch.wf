@@ -22,6 +22,6 @@ fn apply(op: own Op, x: own i32) -> own i32 traps {
 fn main() -> own unit traps {
   let inc_atom_0001 = Inc();
   let r = apply(op: inc_atom_0001, x: 41_i32);
-  check ieq(r, 42_i32) else trap "dispatch drift";
+  claim dispatch_drift: ieq(r, 42_i32) because "dispatch drift";
   return unit;
 }

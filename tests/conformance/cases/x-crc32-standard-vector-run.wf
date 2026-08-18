@@ -47,6 +47,6 @@ fn main() -> own unit allocates(heap), traps {
   set bytes[7_u64] = 56_u8;
   set bytes[8_u64] = 57_u8;
   let checksum = crc32(bytes: move bytes);
-  check ieq(checksum, 3421780262_u32) else trap "CRC32 vector";
+  claim crc32_vector: ieq(checksum, 3421780262_u32) because "CRC32 vector";
   return unit;
 }

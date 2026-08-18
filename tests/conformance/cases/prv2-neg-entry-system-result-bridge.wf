@@ -13,7 +13,7 @@ command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap
     let bytes = buffer_new(4_u64, 0_u8);
     let room = len(bytes);
     let inside = ilt(index, room);
-    check inside else trap "entry call precondition";
+    claim entry_call_precondition: inside because "entry call precondition";
     let value = required_read(bytes: move bytes, index: index);
     return exit_status(code: 0_u8);
   }

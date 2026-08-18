@@ -20,9 +20,9 @@ fn main() -> own unit traps {
     set outer.inner.value = number;
   }
   let observed = outer.inner.value;
-  check ieq(observed, 42_i32) else trap "nested set failed";
+  claim nested_set_failed: ieq(observed, 42_i32) because "nested set failed";
   let preserved = outer.other;
-  check ieq(preserved, 7_i32) else trap "sibling changed";
+  claim sibling_changed: ieq(preserved, 7_i32) because "sibling changed";
   let selected = if flag {
     set number = 43_i32;
     give number;
@@ -30,7 +30,7 @@ fn main() -> own unit traps {
     set number = 10_i32;
     give number;
   }
-  check ieq(selected, 43_i32) else trap "value match result failed";
-  check ieq(number, 43_i32) else trap "value match set failed";
+  claim value_match_result_failed: ieq(selected, 43_i32) because "value match result failed";
+  claim value_match_set_failed: ieq(number, 43_i32) because "value match set failed";
   return unit;
 }
