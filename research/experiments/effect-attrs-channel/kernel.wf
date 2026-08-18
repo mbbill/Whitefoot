@@ -19,6 +19,6 @@ fn main () -> own unit traps {
     set acc = iadd.wrap<i64>(acc, m);
     set i = iadd.wrap<i64>(i, 1_i64);
   }
-  claim zero: ine<i64>(acc, 0_i64) because "zero";
+  check ine<i64>(acc, 0_i64) else trap "zero";
   return unit;
 }

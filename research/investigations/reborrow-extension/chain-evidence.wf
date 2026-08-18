@@ -16,6 +16,6 @@ fn main() -> own unit traps {
       bump<'c>(n: &uniq 'c deref(r));
     }
   }
-  claim chain_write_lost: ieq(v, 42_i32) because "chain write lost";
+  check ieq(v, 42_i32) else trap "chain write lost";
   return unit;
 }

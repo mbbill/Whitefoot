@@ -37,6 +37,6 @@ fn reduce (b: own buffer<u64>) -> own u64 traps {
 fn main () -> own unit allocates(heap), traps {
   let b: own buffer<u64> = buffer_new<u64>(1000_u64, 3_u64);
   let r: own u64 = reduce(b: move b);
-  claim reduce_drift: ieq<u64>(r, 3000_u64) because "reduce drift";
+  check ieq<u64>(r, 3000_u64) else trap "reduce drift";
   return unit;
 }

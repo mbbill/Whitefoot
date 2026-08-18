@@ -29,6 +29,6 @@ fn mix_n (seed: own u64, n: own u64) -> own u64 pure {
 fn main () -> own unit traps {
   doc "Consume the accumulator via a check so nothing is dead-code-eliminated.";
   let r: own u64 = mix_n(seed: 81985529216486895_u64, n: 200000000_u64);
-  claim kernela_drift: ieq<u64>(r, 7363752762991654310_u64) because "kernelA drift";
+  check ieq<u64>(r, 7363752762991654310_u64) else trap "kernelA drift";
   return unit;
 }

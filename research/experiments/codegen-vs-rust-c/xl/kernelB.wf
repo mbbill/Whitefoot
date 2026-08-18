@@ -23,6 +23,6 @@ fn main () -> own unit traps {
   region 'r {
     accumulate(acc: &uniq 'r a, addend: &'r b, n: 1000000000_u64);
   }
-  claim kernelb_drift: ieq<u64>(a, 9001921559172283393_u64) because "kernelB drift";
+  check ieq<u64>(a, 9001921559172283393_u64) else trap "kernelB drift";
   return unit;
 }
