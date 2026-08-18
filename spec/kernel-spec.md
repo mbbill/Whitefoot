@@ -1,6 +1,6 @@
-# Kernel Specification v0.31
+# Kernel Specification v0.32
 
-Status: ACTIVE v0.31 (2026-08-18; batch-0070 capability delta: [SET-2] affine-place replacement, the [ENT-6] constant-operand overflow obligation family, the reborrow extension, [ENT-3] signed Boolean decomposition, and one-operation const arithmetic with struct-typed consts; rule inventory 134).
+Status: CANDIDATE v0.32 supersedes v0.31 ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c (2026-08-18; batch-0071 composition in progress — the complete delta inventory is recomposed in the composition's final commit).
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -87,7 +87,7 @@ Its canonical spelling is the candidate with the fewest ASCII bytes before `_TYP
 This selection is total, host-independent, and unique; in particular `0.0` and `-0.0` remain distinct.
 Other examples are `1.5_f64` and `6.022e23_f64`.
 `unit`; STRING `"..."` whose interior is a sequence of items, each one raw ASCII-printable byte in U+0020..U+007E other than `"` and `\`, or one of exactly three escapes `\\ \" \n`; no other byte is legal, and each character has exactly one spelling (the escape where one is defined, the raw byte otherwise).
-STRING appears only in `doc` entries, `check` messages, and `claim` justifications; non-ASCII diagnostic text is DEFERRED.
+STRING appears only in `doc` entries, contract final `check` messages, and `claim` justifications; non-ASCII diagnostic text is DEFERRED.
 There are no boolean literals: `Bool` is a prelude enum (§15).
 Generic-numeric literals `0_T` and `1_T` are legal where `T` is a gparam bound by a numeric contract (`Int` or `Float`, §15), denoting T's additive and multiplicative identity; a concrete type uses `0_i32` and the like, so there is no dual spelling.
 NaN and the infinities are not literals; they are the nullary ops `fnan` and `finf` [OP-1].
@@ -163,10 +163,10 @@ fn_decl      := "deny_claims"? program_kind? "fn" IDENT generics? region_params?
                 "->" rtype effects requires_block? ensures_block? "{" doc? stmt* "}"
 program_kind := IDENT
 requires_block:= "requires" "{" requires_entry* "}"
-requires_entry:= doc | stmt
+requires_entry:= doc | stmt | check_stmt
 ensures_block:= "ensures" ensures_selector "{" ensures_entry* "}"
 ensures_selector:= IDENT | TYPEID "(" fieldbind_list? ")"
-ensures_entry:= doc | stmt
+ensures_entry:= doc | stmt | check_stmt
 contract_decl:= "contract" TYPEID generics? "{" doc? fn_sig* law* "}"
 fn_sig       := "fn" IDENT region_params? "(" param_list? ")" "->" rtype effects ";"
 law          := "law" IDENT "(" (law_arg ("," law_arg)*)? ")" ";"
@@ -200,7 +200,7 @@ targ   := type | REGIONID | const
 
 ```wf-ebnf GRAM-4
 stmt        := let_stmt | set_stmt | expr_stmt | return_stmt | loop_stmt
-             | for_stmt | break_stmt | region_stmt | check_stmt | claim_stmt
+             | for_stmt | break_stmt | region_stmt | claim_stmt
              | if_stmt | match_stmt | give_stmt
 let_stmt    := "let" IDENT "="
                ( ordinary_let_rhs | propagate_let_rhs | replace_let_rhs
@@ -274,7 +274,7 @@ A value initializer whose delivery set is empty — every arm or branch leaves b
 On every control path an arm or branch terminates in exactly one `give e;` or cannot reach the initializer's continuation; a give-free continuing path, a statement following a `give` in the same block, and a second `give` on one path are each a hard error citing GIVE-1 — the value analog of match exhaustiveness [ERR-2].
 Give-completeness is a structural last-statement recursion: an arm or branch delivers when its final statement is a `give_stmt`, a `return_stmt`, a `break_stmt` whose resolved target loop lexically encloses the same value initializer, a `match_stmt` every arm of which delivers, or an `if_stmt` with `else` both branches of which deliver, relative to that same value initializer; an else-free `if_stmt` has a continuing false edge and never delivers.
 A final nested value initializer bound by its own `let` delivers only to its own inner let and therefore does not make the outer arm or branch deliver.
-A `check`, `claim`, or call that may trap also has a normally continuing edge and does not count as delivery or must-divergence.
+A `claim` or call that may trap also has a normally continuing edge and does not count as delivery or must-divergence.
 No `loop_stmt` or `for_stmt` is assumed to diverge.
 This recursion is strictly simpler than the ownership checker.
 `give e;` moves or copies `e` per [OWN-1]; a borrow-typed `e` is judged for regions exactly as a returned borrow of the same mode [OWN-4].
@@ -867,15 +867,13 @@ The range validation of the system transfer operations [SYS-8] is an operation-i
 For a protected subscript in a [CLM-3] demanded strict component, the complete-state base judgment and every applicable [PRV-2] or [PRV-3] judgment above still run first.
 After those succeed, the same normalized obligation must additionally discharge in that function's already-computed unasserted U state [ENT-6].
 A refuted or unproved strict judgment is a hard rejection citing OP-4 at the same `psuffix` node, carrying the same exact residual plus the strict root, concrete function instance, and `unasserted` view; it creates no new runtime bounds check, provenance event, fallback, fact source, or caller-side duplicate.
-Its mechanical repair is a dominating real branch or another non-assertion fact source admitted by [ENT-3]; a body `check` or `claim` is not a strict repair.
+Its mechanical repair is a dominating real branch or another non-assertion fact source admitted by [ENT-3]; a claim is not a strict repair.
 An unmarked function outside every demanded strict closure keeps exactly the preceding ordinary judgment.
 
 [OP-5] `check e else trap "msg";` requires `e` to have exact value mode and type `own Bool`, where `Bool` is the PRE-1 nominal type.
 No integer, other enum, borrowed `Bool`, or implicit truthiness conversion is admitted [TYPE-4].
 The implicit-read case already owned by [TYPE-7] is exclusive: when `e` uses a borrow-mode or box/arena binding where its referent `Bool` value would be required, that use is rejected citing TYPE-7 and OP-5 forms no candidate.
 Every other exact-mode or exact-type failure is a hard error citing OP-5 at the selected `expr` node, with `SourceCoordinate` equal to that expression node's complete checked half-open source extent.
-A conforming check in a function body is a runtime check in all build modes and is never elided.
-If `e` is `False()` it emits the required trap record and aborts [SCOPE-4, EFF-4]; if `e` is `True()` execution continues and the checked fact is available only on that dominated continuation.
 The final `check_stmt` in a `requires` block uses this exact condition judgment, decoded message, and dynamic-boundary failure behavior, but [FN-8] owns its execution: it is no ordinary-callee runtime check, and only program start plus a later implemented gated adapter evaluate it.
 The final `check_stmt` in an `ensures` block uses the exact condition judgment but [FN-9] owns it as a proof obligation; it never executes and has no dynamic-boundary failure behavior.
 The fuller stated-and-checked vocabulary (loop invariants, ranges) is DEFERRED with its delta.
@@ -980,7 +978,7 @@ Ordinary `loop_stmt` execution is unchanged.
 Function completion and statement reachability use one conservative structural normal-control graph over the resolved function body.
 For any statement s, `normal_successor(s)` is the entry of s's next sibling statement in the same block when one exists, and otherwise that containing block's normal exit.
 A block entry reaches its first statement, or its normal block exit when it contains no statement.
-An ordinary `let`, a `let` selecting `replace_let_rhs`, `set`, an expression statement, and a passed `check` or `claim` have a normal edge to `normal_successor(s)`.
+An ordinary `let`, a `let` selecting `replace_let_rhs`, `set`, an expression statement, and a passed `claim` have a normal edge to `normal_successor(s)`.
 A call or operation with a trapping effect also retains that normal edge; a possible trap never proves divergence.
 A `return_stmt` has an edge only to the function-return sink.
 A `region_stmt` enters its body, and that body's normal exit reaches `normal_successor(region_stmt)`.
@@ -1247,7 +1245,7 @@ The S4 axiom authorizes source checking only; it creates no `llvm.assume`, optim
 
 Program start is the one implemented dynamic boundary and follows [PROG-3].
 After ordinary full-state body acceptance, [PRV-3] treats every labelled `command` input as unconditionally external and judges an entry-local protected leaf before lowering.
-An entry-local leaf whose constrained subject is unconditionally external and whose unasserted S2/S3-blinded state fails is rejected directly; when such an external leaf is retained behind this entry's own S4 requirement bridge, it must additionally discharge in the S4-blinded state, with either local rejection owned by PRV-3.
+An entry-local leaf whose constrained subject is unconditionally external and whose unasserted S3-blinded state fails is rejected directly; when such an external leaf is retained behind this entry's own S4 requirement bridge, it must additionally discharge in the S4-blinded state, with either local rejection owned by PRV-3.
 An inherited bridge reached through an entry-body call is checked at that call's selected argument and any rejection is instead owned by PRV-2.
 Thus neither the compiler-owned wrapper check nor the body's S4 axiom can launder an external protected leaf, while an internal subject keeps complete-state discharge and a real branch in the body may establish the relation for an external subject and pass.
 A requirement unrelated to a protected leaf retains the boundary behavior below.
@@ -1261,7 +1259,7 @@ After every ordinary complete-state FN-8 and provenance judgment succeeds, [CLM-
 A requirement-free call is discharged trivially.
 At one call, a nonempty imported `MayClaims` set is tested first and is owned only by CLM-3; otherwise a refuted or unproved U requirement is one FN-8 rejection at the existing complete `call` node, with the ordinary payload plus the strict root, caller instance, and `unasserted` view.
 It has no fallback check, alternate entry, body clone, or duplicated caller-side strict-summary event.
-Its mechanical repair replaces the ordinary assertion options with a dominating real branch or another non-S2/S3 fact source admitted by [ENT-3]; an ephemeral actual may first be bound non-consumingly as ordinary FN-8 already permits, but a body `check` or `claim` is not a strict repair.
+Its mechanical repair replaces the ordinary assertion options with a dominating real branch or another non-S3 fact source admitted by [ENT-3]; an ephemeral actual may first be bound non-consumingly as ordinary FN-8 already permits, but a claim is not a strict repair.
 For a marked program entry with a requirement, the same concrete goal must discharge in U after ordinary standard-input setup but before the compiler-owned wrapper check, owner transfer, or S4 establishment; failure cites FN-8 at the requirement final `check_stmt`.
 Success never removes or replaces the one runtime wrapper evaluation fixed below.
 
@@ -1413,7 +1411,7 @@ A source row consequently carries no resource origin, and no rule derives a disj
 The apostrophe- and at-prefixed lexical classes are untouched: REGIONID `'external` and LABEL `@blocks` remain well-formed spellings.
 
 [EFF-2] A concrete function declaration exhibits the union of exactly two contributions: its body-syntactic contribution and its release contribution.
-The body-syntactic contribution is syntactic over the complete function body: it exhibits `traps` iff the body contains any trapping-mode operation — a bare `/` or `%`, a bare `+`, `-`, or `*` outside [OP-2]'s constant-operand class, or a `.trap` OPNAME — `check`, `claim`, or a call to any operation or function whose effect row includes `traps` (even if later proven away); it exhibits reads/writes/allocates per the operation table and borrow modes the body uses; and it exhibits `external` or `blocks` iff the body contains a call to any operation or function whose effect row includes that category.
+The body-syntactic contribution is syntactic over the complete function body: it exhibits `traps` iff the body contains any trapping-mode operation — a bare `/` or `%`, a bare `+`, `-`, or `*` outside [OP-2]'s constant-operand class, or a `.trap` OPNAME — `claim`, or a call to any operation or function whose effect row includes `traps` (even if later proven away); it exhibits reads/writes/allocates per the operation table and borrow modes the body uses; and it exhibits `external` or `blocks` iff the body contains a call to any operation or function whose effect row includes that category.
 A bare operator inside a `const` [CONST-1] is const evaluation under `const-reject`, not a trapping-mode operation, and contributes nothing to any effect row.
 An optional `requires` block is a checked callable-boundary obligation [FN-8], and an optional `ensures` block is a verified normal-return relation [FN-9]; neither is an executed body occurrence, and neither contributes a read, write, allocation, external, blocking, or trapping category.
 The release contribution is defined below and has no syntactic occurrence anywhere in the declaration.
@@ -1463,11 +1461,11 @@ Rows are checked both ways against the exhibited row defined above: undeclared-b
 A mismatch involving the release contribution has no offending source occurrence, so it is a hard error citing EFF-2 using `SourceNode` at that function's `effects` node, with `SourceCoordinate` equal to that node's complete checked half-open source extent; the diagnostic additionally renders the parameter or binding whose release contributed the category, and the restructuring `declare the release effects of every resource this function may release, or move the owner out`.
 When more than one owner establishes that premise, the reported one follows DIAG-1's implementation-defined deterministic traversal.
 A function whose body and release contribution are empty may therefore declare `pure` while carrying a requirement.
-An explicit body `check` or `claim` still contributes `traps` to that caller.
+An explicit body `claim` still contributes `traps` to that caller.
 The retained program-start check [PROG-3] and any future gated adapter check [GATE-1] belong to those dynamic boundaries, not to an ordinary source call or the callee's exhibited row.
 
 Canonically, a nongeneric function whose only parameter is `own ReadFile` and whose complete body is exactly `return unit;` exhibits `external, blocks` and must declare exactly that row.
-Its declaration contains no call, no `check`, no `claim`, and no other syntactic effect occurrence, so its complete exhibited row is the release contribution of that parameter's compiler-derived release on the function-return edge.
+Its declaration contains no call, no `claim`, and no other syntactic effect occurrence, so its complete exhibited row is the release contribution of that parameter's compiler-derived release on the function-return edge.
 Declaring `pure` is an undeclared-but-exhibited rejection at that function's `effects` node.
 This shape cannot be reduced further: [FN-1] requires the body's normal exit to be unreachable, so a function with an empty body is separately rejected and is not the canonical case.
 
@@ -1548,7 +1546,7 @@ The implementation evaluates the expression directly in the sole entry wrapper: 
 This rule governs both the unlabelled no-input entry and the `command` entry.
 A source call to the unlabelled entry is not program start and instead follows [FN-8]'s ordinary static discharge.
 
-For a marked entry, the [CLM-3, FN-8] source-acceptance judgment additionally evaluates the concrete requirement proposition in the existing U proof state over the post-setup, pre-transfer parameter images before the retained wrapper check contributes S2 or the body receives S4.
+For a marked entry, the [CLM-3, FN-8] source-acceptance judgment additionally evaluates the concrete requirement proposition in the existing U proof state over the post-setup, pre-transfer parameter images before the retained wrapper check executes or the body receives S4.
 This is a static derivation query, not a second runtime evaluation.
 A requirement-free entry passes it trivially.
 If the query succeeds, the exact wrapper evaluation, false trap, true owner transfer, and one body invocation above remain mandatory and only the successful boundary then justifies S4 inside the body.
@@ -1944,7 +1942,7 @@ A rejecting PRV-2 target set or PRV-3 witness exists only in failure-atomic diag
 Target lowering must discharge each target-domain obligation from the selected target plus already-checked layout, allocation, and bounds facts, or materialize its exact non-continuing guard before the governed allocation or address operation.
 Every potentially removable implicit source-language check has exactly one disposition: `retained`, or `eliminated` with a deterministic checker derivation or separately verified proof that authorizes that exact elimination.
 A source subscript carries no implicit check and no such disposition: an accepted subscript is `discharged` at its `psuffix` node, and the checked program retains its exact [ENT-4] derivation for that node.
-An explicit body [OP-5] check and every [CLM-1] claim are always `retained`; the checked program retains each claim's name, predicate, and justification STRING.
+Every [CLM-1] claim is always `retained`; the checked program retains each claim's name, predicate, and justification STRING.
 The final check inside a `requires` block is not an ordinary-callee check: its condition is represented by the GoalTemplate, and an executable retained check exists only for program start [PROG-3] and a later implemented gated boundary [GATE-1].
 The final check inside an `ensures` block is represented only by its verified RelationTemplate, selected-exit judgments, and derivations; it is never an executable retained check.
 In facts-off compilation every required runtime check remains `retained`, and all [ENT-1] source-acceptance and call-goal judgments are identical in facts-on and facts-off compilation.
@@ -2027,10 +2025,10 @@ Fields occur in exactly the written order with no extra whitespace or fields.
 
 `rule_id` is the exact numbered rule whose runtime condition failed.
 `function` is the exact enclosing source function IDENT.
-`node_path` identifies the source production that introduced the failing checked condition: the `check_stmt` for [OP-5], including the final `check_stmt` whose complete goal fails at program start [FN-8, PROG-3]; the `claim_stmt` for [CLM-1]; and the operation `call` — or, for an operation spelled infix, the `infix` node — for a table-operation contract check and for the [SYS-8] range validation judged under [OP-4]'s retained operation-internal semantics.
+`node_path` identifies the source production that introduced the failing checked condition: the final `check_stmt` whose complete goal fails at program start [OP-5; FN-8, PROG-3]; the `claim_stmt` for [CLM-1]; and the operation `call` — or, for an operation spelled infix, the `infix` node — for a table-operation contract check and for the [SYS-8] range validation judged under [OP-4]'s retained operation-internal semantics.
 For an executed bare `+`, `-`, or `*` overflow, `rule_id` is `OP-2`, `message` is `integer overflow`, and `node_path` is the trapping `infix` node; such a record arises only outside [OP-2]'s constant-operand class, because a class call discharges at compile time and executes no overflow test; a bare `/` or `%` contract violation is a table-operation contract check at its `infix` node.
 
-For an explicit [OP-5] body check and for an [FN-8] program-start goal, `rule_id` is `OP-5` and `message` is the final `check_stmt`'s STRING value decoded by [FORM-5].
+For an [FN-8] program-start goal, `rule_id` is `OP-5` and `message` is the final `check_stmt`'s STRING value decoded by [FORM-5].
 For a [CLM-1] claim, `rule_id` is `CLM-1` and `message` is the claim's exact IDENT spelling; the justification STRING is compile-time data and does not appear in the record.
 For every compiler-generated implicit check without a rule-specific message above, `message` is the empty string.
 
@@ -2620,7 +2618,7 @@ No predicate is illegal merely by operand provenance: a claim's own legality is 
 A claim supporting no protected obligation is ungated, and a claim whose external operand occurs only as a bound, base, or unrelated goal operand remains legal.
 
 [CLM-2] Claim lifecycle judgments are fixed by the entailment fragment under [ENT-1]'s monotonicity law, whose one enumerated non-monotone edge is this rule's refutation.
-Redundancy and refutation are judged only for a predicate with comparison origin [ENT-3]; a conforming claim whose predicate has none — a constructed `True()`, a `band` result — is neither redundant nor refutable, is accepted, and traps whenever it evaluates false at runtime, exactly as today's `check` on the same expression, even though the passed claim establishes the predicate's signed decomposition members [ENT-3].
+Redundancy and refutation are judged only for a predicate with comparison origin [ENT-3]; a conforming claim whose predicate has none — a constructed `True()`, a `band` result — is neither redundant nor refutable, is accepted, and traps whenever it evaluates false at runtime, even though the passed claim establishes the predicate's signed decomposition members [ENT-3].
 When the closed fact state at a `claim_stmt` [ENT-3] derives its predicate [ENT-4], the claim is redundant: the program remains accepted, the check still executes [CLM-1], and a conforming implementation reports one non-rejecting redundancy advisory naming the claim — an advisory is not a [DIAG-1] rejection, and a later specification version that proves more predicates therefore rejects no previously accepted program on that ground.
 When the fact state is non-contradictory [ENT-4] and derives the predicate's exact negation, the program is rejected with a hard error citing CLM-2 at the `claim_stmt` node, carrying the claim name, the predicate, and the derived negation: a refuted claim is a defect found at compile time.
 A claim whose trap record any execution produces is thereby demonstrated not to be a necessary truth; surfacing fired claims for reclassification is a toolchain contract in the [ERR-2] edit-list sense, not a language judgment.
@@ -2629,7 +2627,7 @@ Advisory channel and encoding are implementation-owned in this version; the advi
 [CLM-3] Any source `fn_decl`, generic or nongeneric, may carry the one optional fixed terminal `deny_claims` before its optional `program_kind`.
 That terminal is ineligible for IDENT under [FORM-3].
 Each marked concrete [FN-2] instance is one strict root.
-The marker is compile-time policy only: it adds no effect, trap, runtime check, fact, type, mode, region, call convention, body, or lowering, and it neither removes nor changes any [CLM-1] claim or [OP-5] check.
+The marker is compile-time policy only: it adds no effect, trap, runtime check, fact, type, mode, region, call convention, body, or lowering, and it neither removes nor changes any [CLM-1] claim.
 A declaration without the marker is no strict root.
 
 After every ordinary semantic and provenance judgment succeeds, form the finite concrete ordinary-user-call graph already used by [FN-9], retaining every checked call occurrence in source NodePath order, including calls and claims in structurally checked arms irrespective of value reachability or optimization.
@@ -2744,12 +2742,9 @@ The sources are:
 At an `if_stmt` or `value_if`, each goal G in the condition's goal-origin set is established as `+G` at the then-block's entry and `-G` at the else-block's entry; for an else-free `if_stmt`, `-G` is established on the false edge, which joins the then exit at the continuation [ENT-5].
 Independently, when the condition has comparison origin R, R is established at the then entry and R's exact negation at the else entry or false edge.
 L0 negation is exact over mathematical integers: the negation of `a - b <= c` is `b - a <= -c - 1`; the negation of `a = b` is `a != b` and conversely.
-[ENT-3.S2]
-- S2 (check facts).
-After `check e else trap "…";` [OP-5], each goal in `e`'s goal-origin set is established with positive sign on the normal continuation; when `e` also has comparison origin R, R is established there independently.
 [ENT-3.S3]
 - S3 (claim facts).
-After `claim n: e because "…";` [CLM-1], establishment is exactly [ENT-3.S2]'s.
+After `claim n: e because "…";` [CLM-1], each goal in `e`'s goal-origin set is established with positive sign on the normal continuation; when `e` also has comparison origin R, R is established there independently.
 [ENT-3.S4]
 - S4 (requires facts).
 At a concrete function-body entry, its complete instantiated [FN-8] goal G is established as `+G`.
@@ -2972,7 +2967,7 @@ The base P, `len(P)`, a bound, a write target, and every other operand mentioned
 A leaf with no subject parameter datum still has its protected-leaf and structural bridge identity; an implementation must not manufacture a datum from a bound, base, or another goal operand.
 
 For the active gate, the **complete state** is the ordinary [ENT-3] flow and closure used by the base [OP-4] and [FN-8] judgments.
-The **unasserted state** U is that flow recomputed with S2 and S3 establishment disabled and every other source, kill, join, loop rule, and closure unchanged.
+The **unasserted state** U is that flow recomputed with S3 establishment disabled and every other source, kill, join, loop rule, and closure unchanged.
 The **S4-blinded state** B is U with both the function's positive S4 goal and its exact L0 projection, when any, omitted at body entry.
 Only a leaf whose complete-state base judgment succeeds reaches the local demand generator.
 If B discharges the leaf, add no demand.
@@ -3098,7 +3093,7 @@ The event payload retains the complete ordered `Targets(c, q)` set, the selected
 For a direct demand, its legal repair is a real branch in the protected leaf's owning body that establishes the residual and takes the domain outcome on the false edge.
 For a requirement-bridge target, the branch instead establishes the complete bridged call goal in the rejecting caller's unasserted state before that call.
 Either kind may also be repaired by restructuring the route so the external value no longer reaches the protected constrained subject.
-A body `check`, `claim`, fallback callee prologue, or retained wrapper check is not a repair.
+A `claim`, fallback callee prologue, or retained wrapper check is not a repair.
 
 [PRV-3] This rule owns only a local protected leaf, including a leaf local to a program entry.
 The [ENT-6] complete-state base judgment runs first.
@@ -3118,9 +3113,9 @@ The compiler-owned wrapper evaluation is still executed exactly once for every u
 A real source branch in the body remains S1 in U and B and may discharge it.
 This special entry disposition adds no foreign adapter, alternate error protocol, source surface, or second body.
 
-The unasserted state removes exactly S2 body-check and S3 claim establishment.
+The unasserted state removes exactly S3 claim establishment.
 S1 branches, S4 except where the entry bridge is explicitly blinded, S5, S6, S7, S9, S10, S11, every kill and join, and [ENT-4] closure remain unchanged.
-Thus a `check` or `claim` may not authorize an external constrained subject, while an internal subject may continue to use either; a claim supporting no protected leaf is untouched.
+Thus a `claim` may not authorize an external constrained subject, while an internal subject may continue to use one; a claim supporting no protected leaf is untouched.
 Provenance of `P`, `len(P)`, a bound, a target address, or another goal operand does not gate the obligation, because none is its constrained subject.
 
 A PRV-3 payload contains the exact ENT-6 residual, the shortest post-convergence PRV-1 chain from the subject component to its labelled-entry or [SYS-2] origin, and the two legal repairs: a dominating real branch whose false edge takes the domain outcome, or a restructure in which the external value no longer occupies the constrained-subject position.
@@ -3163,7 +3158,7 @@ fn main() -> own unit traps {
         return unit;
       }
     }
-    check ieq(v, 42_i32) else trap "arithmetic drift";
+    claim arithmetic_drift: ieq(v, 42_i32) because "arithmetic drift";
   }
   return unit;
 }
