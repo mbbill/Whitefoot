@@ -130,14 +130,17 @@ fn bare_arithmetic_contributes_the_traps_effect() {
 /// [GRAM-5]'s complete set of positions taking a bare `expr`, enumerated from
 /// the grammar rather than from whichever tests happened to fail: the `if_stmt`
 /// and `value_if` conditions, `ordinary_let_rhs`, `propagate_let_rhs`,
-/// `set_stmt`, `return_stmt`, `check_stmt`, `claim_stmt`, `give_stmt`, and the
-/// `match_stmt` and `value_match` scrutinees. `expr_stmt := call ";"` takes a
-/// `call`, so infix cannot be written there and it is deliberately absent.
+/// `set_stmt`, `return_stmt`, `claim_stmt`, `give_stmt`, and the `match_stmt`
+/// and `value_match` scrutinees. `expr_stmt := call ";"` takes a `call`, so
+/// infix cannot be written there and it is deliberately absent. v0.32 removes
+/// `check_stmt` from the [GRAM-4] alternation, so its former entry here goes
+/// with it: the production survives only as the contract final, whose
+/// condition [FN-8] restricts to a pure total row, which no infix here is.
 ///
 /// Each source writes one infix over `a` and `b` at the named position and
 /// binds the second operand with the exact line [`DISAGREEING_OPERAND`]
 /// rewrites, which is what turns every entry into its own negative case.
-const EXPRESSION_POSITIONS: [(&str, &str); 11] = [
+const EXPRESSION_POSITIONS: [(&str, &str); 10] = [
     (
         "ordinary_let_rhs",
         "fn main() -> own unit traps {
@@ -179,16 +182,6 @@ fn main() -> own unit pure {
 }
 
 fn main() -> own unit pure {
-  return unit;
-}
-",
-    ),
-    (
-        "check_stmt",
-        "fn main() -> own unit traps {
-  let a = 6_u64;
-  let b = 7_u64;
-  check ile(a, b) else trap \"six is at most seven\";
   return unit;
 }
 ",
