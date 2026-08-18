@@ -1287,6 +1287,31 @@ fn declaration_provenance_admits_the_zero_candidate_boundary() {
     );
 }
 
+/// [FN-1]'s v0.32 conjunct over a result whose written type is not
+/// region-free reaches no source through this order. Every written
+/// region-bearing type is a `slice` or an `arena` [STOR-5]: the slice shape
+/// is FN-1's own borrowed-descriptor rejection above, an arena result is
+/// STOR-4's escape — the rule this specification defines first, which the
+/// same-node ordering selects — and a borrow-mode arena parameter never
+/// reaches a result judgment at all, because borrowing an arena is an
+/// explicit capability stop rather than a source rejection. This test pins
+/// that order, so restating the arena result as an FN-1 provenance
+/// rejection cannot happen silently.
+#[test]
+fn a_region_bearing_borrow_result_is_owned_by_the_rules_stated_before_it() {
+    assert_rule(
+        b"fn held['b, 'r](n: own i32) -> &'b arena<'r, i32> pure {\n  return n;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Stor4,
+        SemanticIssueKind::ArenaEscape {
+            mechanical_fix: "keep the arena value inside its region's block; return or deliver its content, or a borrow OWN-10 admits, instead",
+        },
+    );
+    assert_unsupported(
+        b"fn held['b, 'r](a: &'b arena<'r, i32>) -> own i32 pure {\n  return 1_i32;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        UnsupportedSemanticFeature::RegionsAndBorrows,
+    );
+}
+
 /// The boundary judgment is added to the existing signature-formation order,
 /// not ahead of it: a borrowed-slice result still cites FN-1's own
 /// slice-descriptor rejection, and a zero-candidate boundary whose body
