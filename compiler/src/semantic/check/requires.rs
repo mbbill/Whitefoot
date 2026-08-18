@@ -196,11 +196,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let mut requirement = None;
         for entry in entries {
-            let wrapper = self.tree.only_child(entry)?;
-            if self.tree.production(wrapper)? != Production::Stmt {
-                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-            }
-            let statement = self.tree.only_child(wrapper)?;
+            let statement = self.clause_entry_statement(entry)?;
             self.validate_clause_statement(ClauseKind::Requires, entry, statement)?;
             let checked = self
                 .check_statement(
@@ -288,6 +284,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
         }
         CheckStop::Issue(issue)
+    }
+
+    /// Selects one contract entry's statement node.
+    ///
+    /// v0.32 [GRAM-2] spells the entry `doc | stmt | check_stmt`: the
+    /// mandatory final check is the entry's own selected child, because
+    /// `check_stmt` left the [GRAM-4] `stmt` alternation together with the
+    /// body check statement. An ordinary clause `let` still arrives wrapped
+    /// in `stmt`.
+    pub(super) fn clause_entry_statement(&self, entry: NodeId) -> Result<NodeId, CheckStop> {
+        let selected = self.tree.only_child(entry)?;
+        match self.tree.production(selected)? {
+            Production::CheckStmt => Ok(selected),
+            Production::Stmt => Ok(self.tree.only_child(selected)?),
+            _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+        }
     }
 
     pub(super) fn clause_statement_expression(

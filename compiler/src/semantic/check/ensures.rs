@@ -434,11 +434,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             let mut relation = None;
             for entry in entries {
-                let wrapper = self.tree.only_child(entry)?;
-                if self.tree.production(wrapper)? != Production::Stmt {
-                    return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-                }
-                let statement = self.tree.only_child(wrapper)?;
+                let statement = self.clause_entry_statement(entry)?;
                 self.validate_clause_statement(
                     ClauseKind::Postcondition(record),
                     entry,
