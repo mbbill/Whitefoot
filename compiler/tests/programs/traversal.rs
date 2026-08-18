@@ -7,7 +7,8 @@
 //! host's own facilities, exactly as a shipped command would.
 
 use super::support::{
-    build_program, compile_program, compile_program_with_traversal_surface,
+    build_program, compile_program, compile_program_rejection_without_traversal_surface,
+    compile_program_with_traversal_surface, compile_program_without_traversal_surface,
     compile_rejection_with_traversal_surface, fixture_directory,
 };
 
@@ -96,31 +97,37 @@ fn an_unreadable_subdirectory_is_recorded_without_descending_into_it() {
     );
 }
 
-/// The shipped inventory and the test-only entry are one judgment: the
-/// traversal source is a program on the ordinary path and emits the same
-/// module the forced-on entry does. Under v0.31 every traversal spelling in
-/// it was an undeclared name, so admission is decided by the inventory the
-/// specification declares and never by the compiler recognizing a source
-/// shape — the property the off-switch rejection used to carry.
+/// Admission is decided by the inventory the specification declares, never
+/// by the compiler recognizing a source shape: the identical traversal source
+/// compiles against the inventory that declares its operations and is an
+/// undeclared name against the one that does not. The shipped path is the
+/// declaring one, so the program is an ordinary program there.
 #[test]
-fn the_traversal_source_is_admitted_on_the_shipped_path() {
+fn the_traversal_source_is_admitted_only_by_the_declaring_inventory() {
     assert_eq!(
         compile_program("dir_walk.wf"),
         compile_program_with_traversal_surface("dir_walk.wf"),
-        "the shipped inventory and the forced-on entry disagree"
+        "the shipped inventory and the explicitly named one disagree"
+    );
+    let failure = compile_program_rejection_without_traversal_surface("dir_walk.wf");
+    assert!(
+        failure.contains("UnresolvedUse") && failure.contains("open_list"),
+        "the base inventory must reject the traversal spellings as undeclared names: {failure}"
     );
 }
 
-/// Every v0.31 program keeps its exact emitted module when the candidate
-/// inventory is selected, because the candidate only adds declarations: no
-/// v0.31 spelling, ordinal, or lowering decision moves.
+/// Every earlier program keeps its exact emitted module when the traversal
+/// rows are appended, because appending only adds declarations: no earlier
+/// spelling, ordinal, or lowering decision moves. Both sides are compiled
+/// against explicitly named inventories, so this is the inventory
+/// differential and not one inventory compared with itself.
 #[test]
-fn the_candidate_inventory_leaves_every_v031_program_byte_identical() {
+fn appending_the_traversal_inventory_leaves_every_earlier_program_byte_identical() {
     for name in ["wfgrep.wf", "byte_string.wf", "growable_vec.wf"] {
         assert_eq!(
-            compile_program(name),
+            compile_program_without_traversal_surface(name),
             compile_program_with_traversal_surface(name),
-            "{name} emits different bytes under the candidate inventory"
+            "{name} emits different bytes once the traversal rows are appended"
         );
     }
 }

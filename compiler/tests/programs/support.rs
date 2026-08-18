@@ -43,6 +43,29 @@ pub fn compile_program_with_traversal_surface(name: &str) -> String {
         .expect("traversal program source must compile under the candidate inventory")
 }
 
+/// Compiles one corpus program against the base [SYS-2] inventory: the
+/// tables without the traversal rows appended.
+///
+/// This is the other side of every inventory differential — the traversal
+/// spellings are undeclared names here, and every earlier program must keep
+/// its exact emitted module.
+pub fn compile_program_without_traversal_surface(name: &str) -> String {
+    let source = read_program(name);
+    let inputs = [SourceInput::new(name, &source)];
+    compile_with_traversal_surface(&inputs, CompilerLimits::default(), false)
+        .expect("program corpus source must compile under the base inventory")
+}
+
+/// [`compile_program_without_traversal_surface`]'s rejection direction.
+pub fn compile_program_rejection_without_traversal_surface(name: &str) -> String {
+    let source = read_program(name);
+    let inputs = [SourceInput::new(name, &source)];
+    match compile_with_traversal_surface(&inputs, CompilerLimits::default(), false) {
+        Ok(_) => panic!("source that must be rejected compiled"),
+        Err(failure) => failure.to_string(),
+    }
+}
+
 /// [`compile_program_with_traversal_surface`]'s rejection direction.
 pub fn compile_rejection_with_traversal_surface(sources: &[(&str, &[u8])]) -> String {
     let inputs = sources
