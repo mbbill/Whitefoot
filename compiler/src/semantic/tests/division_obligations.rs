@@ -395,13 +395,12 @@ fn a_checked_division_attaches_no_obligation() {
     });
 }
 
-/// Default-switch control: with [`DIVISION_OBLIGATIONS`] off, the shipped
-/// compiler keeps the active-v0.31 judgment — every bare site retains its
-/// trap record and no division obligation exists anywhere.
-///
-/// [`DIVISION_OBLIGATIONS`]: super::super::check::DIVISION_OBLIGATIONS
+/// The shipped switch is on, so the default checker and the test-only entry
+/// are one judgment: a divisor-class site carries the obligation and no
+/// longer contributes `traps`, so the `traps` row v0.31 required is now the
+/// EFF-2 disagreement — the row is judged before the undischarged divisor is.
 #[test]
-fn the_default_switch_keeps_every_bare_site_trapping() {
+fn the_shipped_checker_rejects_the_v031_traps_row_on_a_class_site() {
     let source = br#"fn ratio(n: own u64, d: own u64) -> own u64 traps {
   let q = n / d;
   let r = n % d;
@@ -413,27 +412,20 @@ fn main() -> own unit pure {
 }
 "#;
     with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the shipped path accepts an unconstrained divisor: {outcome:?}");
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a class site contributes no traps, so the row disagrees: {outcome:?}");
         };
-        let ratio = named(&checked.data.functions, "ratio");
-        assert_eq!(
-            division_trap_records(ratio),
-            vec![true, true],
-            "with the switch off every bare site keeps its trap record",
-        );
-        assert!(
-            division_outcomes(ratio).is_empty(),
-            "with the switch off no division obligation is attached",
-        );
+        assert_eq!(issue.rule(), SemanticRule::Eff2);
     });
 }
 
-/// Default-switch control on the constant-zero case: the active
-/// specification still accepts `x / 0_i32` as a well-typed always-trapping
-/// call, which is exactly what the candidate changes.
+/// The same unification on the constant-zero case: v0.31 accepted
+/// `x / 0_i32` as a well-typed always-trapping call, and the shipped path
+/// now reaches the ground-false zero-divisor conjunct that
+/// `a_constant_zero_divisor_is_rejected_everywhere` pins through the
+/// test-only entry.
 #[test]
-fn the_default_switch_still_accepts_a_constant_zero_divisor() {
+fn the_shipped_checker_rejects_a_constant_zero_divisor() {
     let source = br#"fn main() -> own unit traps {
   let x = 10_i32;
   let q = x / 0_i32;
@@ -442,21 +434,26 @@ fn the_default_switch_still_accepts_a_constant_zero_divisor() {
 }
 "#;
     with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the shipped path accepts a constant zero divisor: {outcome:?}");
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the shipped path rejects a constant zero divisor: {outcome:?}");
         };
-        let main = named(&checked.data.functions, "main");
-        assert_eq!(division_trap_records(main), vec![true]);
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert_eq!(
+            issue.kind(),
+            &SemanticIssueKind::UndischargedDivisionObligation {
+                residual: "0_i32 != 0".to_owned(),
+                mechanical_fix: DIVISION_FIX,
+            },
+        );
     });
 }
 
-/// The one direction in which the candidate accepts more: a body whose only
-/// trap contributor was a divisor-class bare site can now write the narrower
-/// `pure` row, which the active specification rejects under EFF-2. This is
-/// the exact converse of the effect-row rejection the acceptance-set
-/// analysis records, and it is the only newly accepted class.
+/// The one direction in which the candidate accepts more, now on the shipped
+/// path: a body whose only trap contributor was a divisor-class bare site
+/// writes the narrower `pure` row, which v0.31 rejected under EFF-2. This is
+/// the only newly accepted class the acceptance-set analysis records.
 #[test]
-fn the_default_switch_rejects_a_pure_row_the_candidate_accepts() {
+fn the_shipped_checker_accepts_a_pure_row_over_a_discharged_class_site() {
     let source = br#"fn halve(n: own i32) -> own i32 pure {
   let q = n / 2_i32;
   return q;
@@ -467,15 +464,9 @@ fn main() -> own unit pure {
 }
 "#;
     with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("v0.31 makes every bare division exhibit traps: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Eff2);
-    });
-    with_semantics_division(source, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),
-            "the discharged class site contributes no traps, so `pure` is correct",
+            "the discharged class site contributes no traps, so `pure` is correct: {outcome:?}",
         );
     });
 }

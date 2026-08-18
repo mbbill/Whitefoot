@@ -136,9 +136,20 @@ fn main() -> own unit traps {
     assert_eq!(detail.least_downstream_claim.name, "cycle_seed");
 }
 
+/// No writer assertion can authorize a strict bounds query.
+///
+/// v0.31 stated this through the [ENT-3.S2] blinding: a body `check` was
+/// legal inside a demanded closure and its fact was merely invisible in the
+/// unasserted view, so the subscript stayed undischarged and OP-4 reported a
+/// strict residual. v0.32 retires the body check, so the only writer
+/// assertion left is a `claim`, and [CLM-3] refuses it outright at the claim
+/// itself — `deny_claims` now means literally "no writer assertion in the
+/// demanded closure" rather than "no *named* one". The claim here is
+/// load-bearing and reachable, which is what separates this case from the
+/// unreachable-redundant one above.
 #[test]
-fn a_body_check_cannot_discharge_a_strict_bounds_query_in_u() {
-    let source =
+fn a_load_bearing_claim_cannot_authorize_a_strict_bounds_query() {
+    let asserted =
         br#"deny_claims fn read(values: own array<u8, 4>, index: own u64) -> own u8 traps {
   let room = len(values);
   let inside = ilt(index, room);
@@ -152,19 +163,26 @@ fn main() -> own unit traps {
   return unit;
 }
 "#;
-    let issue = rejection(source, SemanticRule::Op4, "[index]");
-    let SemanticIssueKind::StrictUndischargedBounds(detail) = issue.kind() else {
-        panic!("expected strict bounds detail: {issue:?}");
+    let issue = rejection(
+        asserted,
+        SemanticRule::Clm3,
+        "claim body_authorization: inside because \"body authorization\";",
+    );
+    let SemanticIssueKind::StrictDirectClaim(detail) = issue.kind() else {
+        panic!("expected direct-claim detail: {issue:?}");
     };
-    assert_eq!(detail.residual, "index < len(values)");
     assert_eq!(detail.strict_root, "read");
-    assert_eq!(detail.concrete_function, "read");
-    assert_eq!(detail.view, StrictProofView::Unasserted);
+    assert_eq!(detail.concrete_claim_owner, "read");
+    assert_eq!(detail.name, "body_authorization");
+    assert_eq!(detail.lifecycle, StrictClaimLifecycleDisposition::Retained);
 }
 
+/// The same law where the obligation is a callee requirement rather than a
+/// subscript: the assertion the strict root would have leaned on is refused
+/// at the claim, not deferred to the U view of the call.
 #[test]
-fn a_body_check_cannot_discharge_a_strict_required_call_in_u() {
-    let source = br#"fn required(value: own u64, limit: own u64) -> own unit pure requires {
+fn a_load_bearing_claim_cannot_authorize_a_strict_required_call() {
+    let asserted = br#"fn required(value: own u64, limit: own u64) -> own unit pure requires {
   let allowed = ilt(value, limit);
   check allowed else trap "required";
 } {
@@ -184,23 +202,26 @@ fn main() -> own unit traps {
 }
 "#;
     let issue = rejection(
-        source,
-        SemanticRule::Fn8,
-        "required(value: value, limit: limit)",
+        asserted,
+        SemanticRule::Clm3,
+        "claim body_authorization: allowed because \"body authorization\";",
     );
-    let SemanticIssueKind::StrictUndischargedCallRequirement(detail) = issue.kind() else {
-        panic!("expected strict call detail: {issue:?}");
+    let SemanticIssueKind::StrictDirectClaim(detail) = issue.kind() else {
+        panic!("expected direct-claim detail: {issue:?}");
     };
     assert_eq!(detail.strict_root, "forward");
-    assert_eq!(detail.concrete_caller, "forward");
-    assert_eq!(detail.concrete_callee, "required");
-    assert_eq!(detail.view, StrictProofView::Unasserted);
-    assert!(!detail.final_check.components().is_empty());
-    assert!(detail.instantiated_goal.contains("Less"));
+    assert_eq!(detail.concrete_claim_owner, "forward");
+    assert_eq!(detail.name, "body_authorization");
+    assert_eq!(detail.lifecycle, StrictClaimLifecycleDisposition::Retained);
 }
 
+/// A downstream authorization is still attributed to the real leaf that
+/// wrote it, not to the strict root that imported it. v0.31 saw this as a
+/// blinded body check leaving the leaf's own subscript undischarged; v0.32
+/// sees the same authorship through [CLM-3]'s import event, which names the
+/// least downstream claim's function and the root's own call site.
 #[test]
-fn a_downstream_check_only_bounds_failure_is_reported_only_at_the_real_leaf() {
+fn a_downstream_authorization_is_reported_against_the_real_leaf() {
     let source = br#"fn leaf(values: own array<u8, 4>, index: own u64) -> own u8 traps {
   let room = len(values);
   let inside = ilt(index, room);
@@ -219,12 +240,19 @@ fn main() -> own unit traps {
   return unit;
 }
 "#;
-    let issue = rejection(source, SemanticRule::Op4, "[index]");
-    let SemanticIssueKind::StrictUndischargedBounds(detail) = issue.kind() else {
-        panic!("expected downstream strict bounds detail: {issue:?}");
+    let issue = rejection(
+        source,
+        SemanticRule::Clm3,
+        "leaf(values: move values, index: index)",
+    );
+    let SemanticIssueKind::StrictImportedClaim(detail) = issue.kind() else {
+        panic!("expected downstream imported-claim detail: {issue:?}");
     };
     assert_eq!(detail.strict_root, "root");
-    assert_eq!(detail.concrete_function, "leaf");
+    assert_eq!(detail.concrete_caller, "root");
+    assert_eq!(detail.concrete_callee, "leaf");
+    assert_eq!(detail.least_downstream_claim.concrete_function, "leaf");
+    assert_eq!(detail.least_downstream_claim.name, "leaf_authorization");
 }
 
 #[test]

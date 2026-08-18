@@ -864,11 +864,16 @@ fn non_admitted_reborrow_forms_are_own14_hard_errors() {
             mechanical_fix: RESTRUCTURING,
         },
     );
+    // A `shared` result may derive from a `uniq` parameter, so this widening
+    // signature has no same-kind candidate and one other parameter naming the
+    // result region. v0.32 refuses that boundary at its own `rtype` [FN-1]
+    // before OWN-14 judges the return position: the form stays a hard error,
+    // and the rule that owns it moves to the declaration.
     assert_rule(
         b"fn down['r0](x: &uniq 'r0 i32) -> &'r0 i32 pure {\n  return &'r0 deref(x);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
-        SemanticRule::Own14,
-        SemanticIssueKind::InvalidReborrowPosition {
-            mechanical_fix: RESTRUCTURING,
+        SemanticRule::Fn1,
+        SemanticIssueKind::AmbiguousResultProvenance {
+            mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
         },
     );
     assert_rule(
@@ -1116,11 +1121,9 @@ fn extension_chains_suspend_the_candidate_parent_permanently() {
 fn extension_rejects_ambiguous_result_provenance() {
     assert_rule_extension(
         b"fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\nfn main() -> own unit pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    let r = pick<'a>(a: &uniq 'a x, b: &uniq 'a y);\n  }\n  return unit;\n}\n",
-        SemanticRule::Own6,
-        SemanticIssueKind::AmbiguousResultBorrow {
-            mechanical_fix: "give the callee exactly one parameter written as a borrow \
-                     of the result's mode and region and no other parameter naming that region, \
-                     or bind the borrow from a direct borrow expression",
+        SemanticRule::Fn1,
+        SemanticIssueKind::AmbiguousResultProvenance {
+            mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
         },
     );
 }
@@ -1318,41 +1321,37 @@ fn declaration_provenance_makes_the_binding_side_ambiguity_unreachable() {
             mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
         },
     );
-    // The v0.31 disposition of the same source, pinned: the boundary stands
-    // and the binding is the rejection.
+    // The shipped path is the same judgment: the boundary is the rejection,
+    // and OWN-6's binding-side ambiguity exception — which v0.31 reached on
+    // exactly this source — is gone with it.
     assert_rule(
         AMBIGUOUS_CALL,
-        SemanticRule::Own6,
-        SemanticIssueKind::AmbiguousResultBorrow {
-            mechanical_fix: "give the callee exactly one parameter written as a borrow \
-                     of the result's mode and region and no other parameter naming that region, \
-                     or bind the borrow from a direct borrow expression",
+        SemanticRule::Fn1,
+        SemanticIssueKind::AmbiguousResultProvenance {
+            mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
         },
     );
 }
 
-/// The shipped switch is off, so every source above keeps its exact v0.31
-/// disposition through the ordinary `check_semantics` path: the uncalled
-/// ambiguous declarations are accepted, and the distinct-region boundary is
-/// accepted exactly as it is under the candidate.
+/// The shipped switch is on, so the default checker and the test-only entry
+/// are one judgment: an uncalled ambiguous declaration is rejected at its own
+/// `rtype` through the ordinary `check_semantics` path — the rule is a
+/// boundary rule and does not wait for a caller — while the distinct-region
+/// boundary stays accepted exactly as it was.
 #[test]
-fn the_shipped_checker_keeps_the_v031_declaration_dispositions() {
-    with_semantics(
+fn the_shipped_checker_rejects_the_uncalled_ambiguous_declarations() {
+    assert_rule(
         b"fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "v0.31 accepts the uncalled ambiguous declaration: {outcome:?}",
-            );
+        SemanticRule::Fn1,
+        SemanticIssueKind::AmbiguousResultProvenance {
+            mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
         },
     );
-    with_semantics(
+    assert_rule(
         b"fn either['r](a: &uniq 'r i32, b: &'r i32) -> &'r i32 pure {\n  return &'r deref(b);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "v0.31 accepts the uncalled other-kind declaration: {outcome:?}",
-            );
+        SemanticRule::Fn1,
+        SemanticIssueKind::AmbiguousResultProvenance {
+            mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
         },
     );
     with_semantics(

@@ -1091,7 +1091,7 @@ fn main() -> own unit pure {
 /// version, which is what this pins.
 #[test]
 fn a_failing_entry_requirement_emits_the_exact_mandatory_record_shape() {
-    let source = b"fn main() -> own unit pure requires {\n  check False() else trap \"bad \\\"quote\\\"\\nline\";\n} {\n  return unit;\n}\n";
+    let source = b"fn main() -> own unit pure requires {\n  check ieq(0_u8, 1_u8) else trap \"bad \\\"quote\\\"\\nline\";\n} {\n  return unit;\n}\n";
     let output = compile_and_run(&compile(source));
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");

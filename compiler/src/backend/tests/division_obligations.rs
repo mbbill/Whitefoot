@@ -2,8 +2,8 @@
 //! divisor-class site compiles to the plain `udiv`/`sdiv` with no
 //! zero-divisor or signed-overflow branch, while a signed site with two
 //! non-constant operands stays outside the class and keeps its complete
-//! runtime test. The switch is off, so the shipped emission is the v0.31
-//! one and the forced-on entry must differ exactly at the class sites.
+//! runtime test. The switch is on, so the shipped emission and the forced-on
+//! entry are one path and must agree byte for byte.
 
 use super::{emit, emit_division_obligations};
 
@@ -51,30 +51,25 @@ fn opcode_count(module: &str, opcode: &str) -> usize {
         .count()
 }
 
-/// With the switch off both sites carry their complete guard set; with it
-/// on, only the retained signed site does, and the discharged unsigned site
-/// is a plain `udiv`.
+/// Only the retained signed site carries a guard set: the unsigned site's
+/// zero-divisor conjunct is discharged by the dominating claim, which is the
+/// sole authority that may drop the check, and the site becomes a plain
+/// `udiv`. v0.31 emitted four guards here; three remain.
 #[test]
 fn a_discharged_class_site_emits_no_division_guard() {
     let shipped = emit(BOTH_CLASSES);
     let candidate = emit_division_obligations(BOTH_CLASSES);
     assert_eq!(
         division_guard_count(&shipped),
-        4,
-        "v0.31: the unsigned site guards a zero divisor and the signed site \
-         guards zero, minimum, and minus one",
-    );
-    assert_eq!(
-        division_guard_count(&candidate),
         3,
         "the discharged unsigned site loses its zero-divisor guard; the \
-         retained signed site keeps its three",
+         retained signed site keeps zero, minimum, and minus one",
     );
-    assert_eq!(opcode_count(&candidate, "udiv"), 1);
-    assert_eq!(opcode_count(&candidate, "sdiv"), 1);
-    assert_ne!(
+    assert_eq!(opcode_count(&shipped, "udiv"), 1);
+    assert_eq!(opcode_count(&shipped, "sdiv"), 1);
+    assert_eq!(
         shipped, candidate,
-        "the candidate judgment removes a runtime check the shipped one keeps",
+        "the shipped path and the forced-on entry are one judgment",
     );
 }
 
