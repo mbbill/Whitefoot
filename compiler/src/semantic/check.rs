@@ -502,7 +502,7 @@ pub(crate) const REBORROW_EXTENSION_ACTIVE: bool = true;
 /// by construction. `false` keeps every v0.31 disposition byte for byte;
 /// the test-only `check_semantics_declaration_provenance` entry selects the
 /// candidate judgment until activation flips this constant.
-pub(crate) const DECLARATION_PROVENANCE: bool = false;
+pub(crate) const DECLARATION_PROVENANCE: bool = true;
 
 struct Checker<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
@@ -593,7 +593,7 @@ pub(crate) const ARITHMETIC_OVERFLOW_OBLIGATIONS: bool = true;
 /// runtime trap, because its safe condition is the disjunction
 /// `dividend != iK::MIN or divisor != -1`, which the [ENT-4] conjunctive
 /// fragment cannot state.
-pub(crate) const DIVISION_OBLIGATIONS: bool = false;
+pub(crate) const DIVISION_OBLIGATIONS: bool = true;
 /// The check-dissolution integration switch (v0.32 candidate, #47): `false`
 /// under ACTIVE v0.31, whose grammar and OP-5 admit the body `check`
 /// statement unchanged. When the candidate activates, the body statement
@@ -603,7 +603,7 @@ pub(crate) const DIVISION_OBLIGATIONS: bool = false;
 /// is ready before the grammar change lands. Contract finals inside
 /// `requires`/`ensures` blocks are FN-8/FN-9 surfaces and stay accepted in
 /// both positions of the switch.
-pub(crate) const CHECK_DISSOLUTION: bool = false;
+pub(crate) const CHECK_DISSOLUTION: bool = true;
 
 /// Checks the currently implemented active-specification semantic family.
 ///

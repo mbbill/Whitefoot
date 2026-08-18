@@ -283,7 +283,7 @@ const LIST_OUTCOME: u8 = 15;
 /// and `list_once` — as the last row of each [SYS-2] table. The switch is read
 /// once, by `compile`; `compile_with_traversal_surface` selects the candidate
 /// inventory until activation flips this constant.
-pub const TRAVERSAL_SURFACE: bool = false;
+pub const TRAVERSAL_SURFACE: bool = true;
 
 /// The v0.31 nominal-type count: the prefix of [`SYSTEM_NOMINALS`] the active
 /// specification declares.
