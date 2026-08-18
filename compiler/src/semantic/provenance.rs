@@ -1245,6 +1245,10 @@ impl<'check> FunctionPass<'check> {
                 aggregate.union(&self.expression(value, summaries)?.aggregate());
                 ValueDependencies::from_aggregate(expression.ty(), &aggregate, self.nominals)
             }
+            CheckedExpression::BufferVacant { length, .. } => {
+                let aggregate = self.expression(length, summaries)?.aggregate();
+                ValueDependencies::from_aggregate(expression.ty(), &aggregate, self.nominals)
+            }
             CheckedExpression::BufferIndex { root, offset, .. } => {
                 let mut aggregate = self.root(root.binding)?;
                 aggregate.union(&self.expression(offset, summaries)?.aggregate());
@@ -1960,6 +1964,7 @@ fn expression_children(expression: &CheckedExpression) -> Vec<&CheckedExpression
         | CheckedExpression::BufferIndex { offset, .. }
         | CheckedExpression::SliceIndex { offset, .. } => vec![offset],
         CheckedExpression::BufferFill { length, value, .. } => vec![length, value],
+        CheckedExpression::BufferVacant { length, .. } => vec![length.as_ref()],
     }
 }
 
@@ -2391,6 +2396,9 @@ impl<'check> CarrierReconstructor<'check> {
                     self.route_expression_aggregate(function, value, goal, visited)?,
                 );
                 route
+            }
+            CheckedExpression::BufferVacant { length, .. } => {
+                self.route_expression_aggregate(function, length, goal, visited)?
             }
             CheckedExpression::BufferIndex { root, offset, .. } => {
                 let mut route = self.route_storage(function, root.binding, goal, visited)?;

@@ -1370,7 +1370,9 @@ fn type_uses_nominal_prefix(ty: CheckedType, checkpoint: usize) -> bool {
 
 fn flat_element_uses_nominal_prefix(element: CheckedFlatElement, checkpoint: usize) -> bool {
     match element {
-        CheckedFlatElement::TagOnlyNominal(id) => (id.0 as usize) < checkpoint,
+        CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id) => {
+            (id.0 as usize) < checkpoint
+        }
         CheckedFlatElement::Unit
         | CheckedFlatElement::Bool
         | CheckedFlatElement::Integer(_)

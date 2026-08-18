@@ -122,11 +122,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.reject_region_bearing_storage_type(element_node, substitution)?;
             let element_type = self.parse_type_with(element_node, substitution)?;
-            // [TYPE-2] v0.31 also forms buffers over region-free affine
-            // elements; their representation is not implemented, so a
-            // well-formed affine-element buffer stops as an explicit
-            // unsupported capability rather than a source rejection.
-            return match self.flat_element(element_type)? {
+            // [TYPE-2] v0.31 forms buffers over copy elements and over
+            // region-free affine nominal elements. The structural affine
+            // composites (`buffer<buffer<T>>`, `buffer<array<T, N>>`) and
+            // generic elements have no implemented representation yet and
+            // stop as an explicit unsupported capability rather than a
+            // source rejection.
+            return match self.buffer_element(element_type)? {
                 Some(element) => Ok(CheckedType::Buffer { element }),
                 None => self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node),
             };
@@ -940,6 +942,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Some(element) => Ok(element),
             None => self.issue_node(SemanticRule::Type2, node, SemanticIssueKind::TypeMismatch),
         }
+    }
+
+    /// The [TYPE-2] buffer element domain: every flat copy element, plus a
+    /// region-free affine nominal stored by value. Arrays and slices keep
+    /// [`Self::flat_element`]'s copy domain.
+    pub(super) fn buffer_element(
+        &self,
+        ty: CheckedType,
+    ) -> Result<Option<CheckedFlatElement>, CheckStop> {
+        if let Some(element) = self.flat_element(ty)? {
+            return Ok(Some(element));
+        }
+        Ok(match ty {
+            CheckedType::Nominal(id) => match self.nominal(id)?.kind {
+                // An arena is region-bearing [STOR-5] and the region
+                // allocation list is compiler-owned; neither is an element.
+                super::super::model::CheckedNominalKind::Arena { .. }
+                | super::super::model::CheckedNominalKind::ArenaStorage => None,
+                _ => Some(CheckedFlatElement::Nominal(id)),
+            },
+            _ => None,
+        })
     }
 
     pub(super) fn flat_element(

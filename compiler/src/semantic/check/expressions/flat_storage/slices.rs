@@ -120,6 +120,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // stays. Widening what `array<T, N>` or `buffer<T>` admit re-opens the
         // question and owes this arm a test.
         let element_type = indexed.element_type();
+        // An affine-element buffer is viewable in principle ([OP-1] states no
+        // copy bound on the viewed T), but the in-place borrowed element read
+        // a view would serve is not implemented, so the view stops as an
+        // explicit unsupported capability rather than a source rejection.
+        if let CheckedType::Nominal(id) = element_type
+            && !self.nominal(id)?.is_copy()
+        {
+            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, atoms[0]);
+        }
         let Some(element) = self.flat_element(element_type)? else {
             return self.issue_node(
                 SemanticRule::Op1,

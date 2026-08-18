@@ -427,7 +427,8 @@ impl Analyzer<'_, '_> {
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> bool {
         match value {
-            CheckedExpression::BufferFill { length, .. } => {
+            CheckedExpression::BufferFill { length, .. }
+            | CheckedExpression::BufferVacant { length, .. } => {
                 let Some(allocated) = self.read_operand(length) else {
                     return true;
                 };

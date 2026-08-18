@@ -1886,6 +1886,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.install_expression_call_requirements(length, requirements)?;
                 self.install_expression_call_requirements(value, requirements)?;
             }
+            CheckedExpression::BufferVacant { length, .. } => {
+                self.install_expression_call_requirements(length, requirements)?;
+            }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
@@ -2100,7 +2103,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Float(ty) => CheckedFlatElement::Float(ty),
             CheckedType::GenericInt(declaration) => CheckedFlatElement::GenericInt(declaration),
             CheckedType::GenericFloat(declaration) => CheckedFlatElement::GenericFloat(declaration),
-            CheckedType::Nominal(nominal) => CheckedFlatElement::TagOnlyNominal(nominal),
+            CheckedType::Nominal(nominal) => {
+                if self.nominal(nominal)?.is_copy() {
+                    CheckedFlatElement::TagOnlyNominal(nominal)
+                } else {
+                    CheckedFlatElement::Nominal(nominal)
+                }
+            }
             CheckedType::Generic(_)
             | CheckedType::Array { .. }
             | CheckedType::Slice { .. }

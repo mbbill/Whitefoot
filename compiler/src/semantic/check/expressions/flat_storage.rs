@@ -245,6 +245,59 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ))
     }
 
+    /// The all-`None` affine-element constructor [OP-1, OP-9]: the written
+    /// element payload type is [TYPE-5] retained because no operand can
+    /// supply it, the one operand is the `own u64` length, and the result is
+    /// `own buffer<Option<T>>` over the interned `Option<T>` instance.
+    pub(in crate::semantic::check) fn check_buffer_vacant(
+        &self,
+        node: NodeId,
+        function: &FunctionSignature,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<TypedExpression, CheckStop> {
+        self.reject_region_bearing_storage_operation_argument(
+            node,
+            "buffer_vacant",
+            function,
+            1,
+            0,
+        )?;
+        let payload = self.retained_operation_type_argument(node, function)?;
+        if !payload.is_concrete() {
+            // A generic payload defers to the concrete instantiation; the
+            // template-side judgment is not implemented yet.
+            return self.unsupported(UnsupportedSemanticFeature::Generics, node);
+        }
+        let element = self.prelude_nominal(super::super::PreludeType::Option(payload))?;
+        let atoms = self.operation_atoms(node, 1)?;
+        let length = self.check_atom(function, atoms[0], bindings, loop_depth)?;
+        if length.expression.ty() != CheckedType::Integer(IntegerType::U64)
+            || length.mode != CheckedMode::Own
+        {
+            return self.issue_node(
+                SemanticRule::Type5,
+                atoms[0],
+                SemanticIssueKind::TypeMismatch,
+            );
+        }
+        Ok(TypedExpression::owned(
+            CheckedExpression::BufferVacant {
+                carrier: self.tree.path(node)?.clone(),
+                element,
+                length: Box::new(length.expression),
+                trap: TrapSite {
+                    rule_id: "OP-9",
+                    message: String::new(),
+                    function: function.name.clone(),
+                    node_path: self.tree.path(node)?.clone(),
+                },
+                target_domains: CheckedRuntimeTargetObligations::new(),
+            },
+            length.effects.union(EffectSet::ALLOCATES_HEAP_AND_TRAPS),
+        ))
+    }
+
     pub(in crate::semantic::check) fn check_flat_length(
         &self,
         node: NodeId,
@@ -332,6 +385,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if subscript + 1 != suffixes.len() {
             return self.issue_node(SemanticRule::Type5, place, SemanticIssueKind::TypeMismatch);
         }
+        let indexed = self.check_indexed_place(place, bindings, &suffixes[..subscript], suffix)?;
+        // [TYPE-2] affine elements leave and enter their slots only through
+        // [SET-2] replacement and are read in place through borrowed match:
+        // a subscript read would mint a second owner of the stored value, so
+        // both the bare and the `move` spelling reject here.
+        if !self.is_copy_type(indexed.element_type())? {
+            if options.explicit_move {
+                return self.issue_node(
+                    SemanticRule::Type2,
+                    use_node,
+                    SemanticIssueKind::AffineElementMove {
+                        mechanical_fix: "exchange the element with `let old = replace p = e;`",
+                    },
+                );
+            }
+            return self.issue_node(
+                SemanticRule::Own1,
+                use_node,
+                SemanticIssueKind::BareAffineUse {
+                    mechanical_fix: "exchange the element with `let old = replace p = e;`",
+                },
+            );
+        }
         if options.explicit_move {
             return self.issue_node(
                 SemanticRule::Own1,
@@ -341,7 +417,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let indexed = self.check_indexed_place(place, bindings, &suffixes[..subscript], suffix)?;
         match &indexed {
             CheckedIndexedPlace::Array(array) => {
                 if let Some(resolved) = array.resolved_place() {

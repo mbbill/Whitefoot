@@ -1047,6 +1047,13 @@ impl<'program> IrBuilder<'program> {
                 target_domains,
                 ..
             } => self.lower_buffer_fill(*element, length, value, trap, *target_domains),
+            CheckedExpression::BufferVacant {
+                element,
+                length,
+                trap,
+                target_domains,
+                ..
+            } => self.lower_buffer_vacant(*element, length, trap, *target_domains),
             CheckedExpression::BufferLength { root, .. } => self.lower_buffer_length(root),
             CheckedExpression::BufferIndex {
                 root,
@@ -1289,10 +1296,22 @@ impl<'program> IrBuilder<'program> {
                     self.project_struct_path(root, &place.fields, false)?
                 }
             }
-            // Element-position replacement requires an affine element type,
-            // which has no v0 constructor; the checker cannot produce these
-            // targets today [SET-2, TYPE-2].
-            CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::BufferIndex(_) => {
+            // A buffer-element replacement [SET-2, TYPE-2] evaluates its
+            // target components exactly once: the projected buffer and the
+            // offset feed one element read (the previous owner) and one
+            // element write (the replacement), so the shared `set` path,
+            // which would re-lower the offset, is not reused here.
+            CheckedSetTarget::BufferIndex(target) => {
+                let previous = self.lower_buffer_replace(root, target, value)?;
+                if self.bindings.insert(binding, previous).is_some() {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                self.promote_binding_if_needed(binding)?;
+                return Ok(());
+            }
+            // An array element is copy [TYPE-2], so the checker never forms
+            // an element-position replace target over an array [SET-2].
+            CheckedSetTarget::ArrayIndex(_) => {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
         };

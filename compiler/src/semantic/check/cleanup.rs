@@ -56,9 +56,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ty: CheckedType,
         visited: &mut HashSet<NominalId>,
     ) -> Result<SystemReleaseRow, CheckStop> {
+        if let CheckedType::Buffer { element } = ty {
+            // An affine buffer element drops with its owning buffer
+            // [STOR-3], so a contained resource row reaches the buffer's
+            // release contribution exactly as a box referent's does.
+            return self.release_row_of_type(element.ty(), visited);
+        }
         let CheckedType::Nominal(id) = ty else {
-            // Scalars carry no release action, and array, slice, and buffer
-            // elements are flat copy data with no release of their own.
+            // Scalars carry no release action, and array and slice elements
+            // are flat copy data with no release of their own.
             return Ok(SystemReleaseRow::EMPTY);
         };
         if !visited.insert(id) {
@@ -277,6 +283,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::BufferFill { length, value, .. } => {
                 self.collect_expression_release_sites(length, sites)?;
                 self.collect_expression_release_sites(value, sites)?;
+            }
+            CheckedExpression::BufferVacant { length, .. } => {
+                self.collect_expression_release_sites(length, sites)?;
             }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }

@@ -713,6 +713,12 @@ pub enum SemanticIssueKind {
         /// Exact mechanical repair required by OWN-1.
         mechanical_fix: &'static str,
     },
+    /// An affine buffer element was moved out of its slot; elements leave
+    /// and enter their slots only through [SET-2] replacement [TYPE-2].
+    AffineElementMove {
+        /// Exact restructuring required by TYPE-2.
+        mechanical_fix: &'static str,
+    },
     /// A binding was used after ownership had already been consumed.
     UseAfterMove {
         /// Exact restructuring required by OWN-1.

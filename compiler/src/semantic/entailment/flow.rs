@@ -3460,6 +3460,7 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::SystemCall { .. }
             | CheckedExpression::ArrayIndex { .. }
             | CheckedExpression::BufferFill { .. }
+            | CheckedExpression::BufferVacant { .. }
             | CheckedExpression::BufferIndex { .. }
             | CheckedExpression::SliceOf { .. }
             | CheckedExpression::SliceIndex { .. }
@@ -6785,6 +6786,7 @@ pub(super) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         CheckedExpression::BufferFill { length, value, .. } => {
             vec![length.as_ref(), value.as_ref()]
         }
+        CheckedExpression::BufferVacant { length, .. } => vec![length.as_ref()],
         CheckedExpression::BufferIndex { offset, .. }
         | CheckedExpression::SliceIndex { offset, .. } => vec![offset.as_ref()],
         CheckedExpression::ConstructStruct { fields, .. }
