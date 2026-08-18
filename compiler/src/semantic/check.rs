@@ -561,6 +561,11 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// symbolic validation instance is checked; every concrete instantiation
     /// evaluates entries away, so no id reaches lowering.
     derived_consts: RefCell<Vec<DerivedConst>>,
+    /// [EFF-2] the body-syntactic contribution of each generic template's
+    /// written body, recorded by its symbolic validation instance and reused
+    /// by every concrete instance of the same declaration; see
+    /// [`Checker::written_body_effects`].
+    written_body_effect_rows: RefCell<HashMap<DeclarationId, EffectSet>>,
     generic_requirements: Vec<CheckedGenericRequirement>,
     postcondition_selectors: Vec<CheckedPostconditionSelector>,
     postcondition_unavailable_declarations: Vec<DeclarationId>,
@@ -785,6 +790,45 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .contains(&declaration)
     }
 
+    /// [EFF-2] the body-syntactic contribution of one checked function,
+    /// judged once on the written body.
+    ///
+    /// Two classes read the selected type of a bare operator call, and one
+    /// of them — [OP-2]'s divisor class, which a written generic type
+    /// parameter enters or leaves with the instance's signedness — therefore
+    /// contributes differently to two concrete instances of one written
+    /// body. The specification resolves that on the written body: a bare `/`
+    /// or `%` whose written selected type is a generic type parameter and
+    /// whose operand atoms are non-constant is outside the class for this
+    /// contribution and exhibits `traps`, while the obligation and its
+    /// discharge stay per concrete instance, so a discharged unsigned
+    /// instance under that row simply executes no test.
+    ///
+    /// The written body is exactly what the symbolic validation instance
+    /// checks, so its contribution is recorded there and reused by every
+    /// instance of the same declaration. The release contribution is not
+    /// syntactic and stays per instance [STOR-3].
+    fn written_body_effects(
+        &self,
+        signature: &FunctionSignature,
+        syntactic: EffectSet,
+    ) -> EffectSet {
+        if signature.substitution.is_symbolic() {
+            self.written_body_effect_rows
+                .borrow_mut()
+                .insert(signature.declaration, syntactic.clone());
+            return syntactic;
+        }
+        if signature.substitution.len() == 0 {
+            return syntactic;
+        }
+        self.written_body_effect_rows
+            .borrow()
+            .get(&signature.declaration)
+            .cloned()
+            .unwrap_or(syntactic)
+    }
+
     /// [FN-1]'s declaration-site provenance judgment under the v0.32
     /// candidate: a callable boundary whose borrow-mode result has no
     /// signature-determined source is a hard error at its complete `rtype`,
@@ -853,6 +897,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             constants: HashMap::new(),
             checked_constants: Vec::new(),
             derived_consts: RefCell::new(Vec::new()),
+            written_body_effect_rows: RefCell::new(HashMap::new()),
             generic_requirements: Vec::new(),
             postcondition_selectors: Vec::new(),
             postcondition_unavailable_declarations: Vec::new(),
@@ -1514,7 +1559,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // contribution of every compiler-derived release recorded on a normal
         // body edge [STOR-3]. A requirement is a signature obligation, not an
         // executed declaration occurrence.
-        let syntactic = checked.effects.clone();
+        let syntactic = self.written_body_effects(signature, checked.effects.clone());
         let mut release_sites = Vec::new();
         self.collect_release_sites(&checked.statements, &mut release_sites)?;
         let mut release = EffectSet::NONE;

@@ -88,6 +88,26 @@ impl GenericSubstitution {
             })
     }
 
+    /// Whether this is the symbolic validation substitution of its own
+    /// template: every parameter stands for itself, which is the shape
+    /// [`Checker::validate_generic_templates`] builds to check a written
+    /// generic body once.
+    pub(super) fn is_symbolic(&self) -> bool {
+        !self.bindings.is_empty()
+            && self
+                .bindings
+                .iter()
+                .all(|(declaration, argument)| match argument {
+                    GenericArgument::Type(
+                        CheckedType::Generic(bound)
+                        | CheckedType::GenericInt(bound)
+                        | CheckedType::GenericFloat(bound),
+                    ) => bound == declaration,
+                    GenericArgument::Const(CheckedConst::Parameter(bound)) => bound == declaration,
+                    GenericArgument::Type(_) | GenericArgument::Const(_) => false,
+                })
+    }
+
     pub(super) fn is_concrete(&self) -> bool {
         self.bindings.iter().all(|(_, argument)| match argument {
             GenericArgument::Type(ty) => ty.is_concrete(),

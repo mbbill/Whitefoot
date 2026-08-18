@@ -97,3 +97,42 @@ fn main() -> own unit traps {
     );
     assert_eq!(opcode_count(&candidate, "sdiv"), 1);
 }
+
+/// The instance evidence behind [EFF-2]'s written-body contribution: one
+/// generic body whose written selected type is a type parameter emits both
+/// dispositions from the same written `traps` row. The unsigned instance is
+/// in [OP-2]'s divisor class, discharges through the requirement, and emits
+/// a plain `udiv` with no guard; the signed instance is outside the class
+/// and keeps its complete zero, minimum, and minus-one test around `sdiv`.
+#[test]
+fn a_generic_divisor_site_emits_a_guard_only_at_the_retained_instance() {
+    const GENERIC_DIVISION: &[u8] = br#"fn ratio<T: Int>(n: own T, d: own T) -> own T traps requires {
+  check ine(d, 0_T) else trap "nonzero divisor";
+} {
+  let q = n / d;
+  return q;
+}
+
+fn main() -> own unit traps {
+  let unsigned = ratio<u32>(n: 12_u32, d: 4_u32);
+  let signed = ratio<i32>(n: 9_i32, d: 3_i32);
+  return unit;
+}
+"#;
+    let module = emit(GENERIC_DIVISION);
+    assert_eq!(
+        opcode_count(&module, "udiv"),
+        1,
+        "the unsigned instance emits its division",
+    );
+    assert_eq!(
+        opcode_count(&module, "sdiv"),
+        1,
+        "the signed instance emits its division",
+    );
+    assert_eq!(
+        division_guard_count(&module),
+        3,
+        "only the retained signed instance tests zero, the minimum, and minus one",
+    );
+}

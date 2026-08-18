@@ -11,7 +11,8 @@ use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
 
 use super::super::entailment::ObligationFamily;
 use super::super::model::{
-    CheckedExpression, CheckedFunction, CheckedIntegerOperation, CheckedStatement,
+    CheckedExpression, CheckedFunction, CheckedIntegerOperation, CheckedStatement, CheckedType,
+    IntegerType,
 };
 use super::{with_semantics, with_semantics_division};
 
@@ -45,6 +46,25 @@ fn named<'functions>(
         .iter()
         .find(|function| function.name == name)
         .expect("named function is checked")
+}
+
+/// The concrete instance of a generic function, selected by the substituted
+/// type of its first parameter.
+fn instance<'functions>(
+    functions: &'functions [CheckedFunction],
+    name: &str,
+    ty: IntegerType,
+) -> &'functions CheckedFunction {
+    functions
+        .iter()
+        .find(|function| {
+            function.name == name
+                && function
+                    .parameters
+                    .first()
+                    .is_some_and(|parameter| parameter.ty == CheckedType::Integer(ty))
+        })
+        .expect("named instance is checked")
 }
 
 fn division_outcomes(
@@ -468,5 +488,86 @@ fn main() -> own unit pure {
             matches!(outcome, SemanticOutcome::Complete(_)),
             "the discharged class site contributes no traps, so `pure` is correct: {outcome:?}",
         );
+    });
+}
+
+/// [EFF-2] the body-syntactic contribution is judged once on the written
+/// body, so a bare `/` whose written selected type is a generic type
+/// parameter and whose operand atoms are non-constant is outside [OP-2]'s
+/// divisor class for that contribution and exhibits `traps` — at every
+/// instance, whatever that instance's signedness makes of the class. One
+/// written row therefore serves both instantiations of one written body;
+/// judged per instance instead, no single row could, because the unsigned
+/// instance would demand `pure` and the signed one `traps`.
+///
+/// The obligation and its discharge stay per concrete instance underneath
+/// that row: the unsigned instance is in the class, discharges through the
+/// requirement, and executes no test, while the signed two-variable instance
+/// is outside the class, carries no obligation, and keeps its runtime trap.
+#[test]
+fn a_generic_divisor_site_exhibits_traps_at_every_instance() {
+    let source = br#"fn ratio<T: Int>(n: own T, d: own T) -> own T traps requires {
+  check ine(d, 0_T) else trap "nonzero divisor";
+} {
+  let q = n / d;
+  return q;
+}
+
+fn main() -> own unit traps {
+  let a = 10_i32;
+  let b = 3_i32;
+  let signed = ratio<i32>(n: a, d: b);
+  let x = 10_u32;
+  let y = 3_u32;
+  let unsigned = ratio<u32>(n: x, d: y);
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("one written row must serve both instances: {outcome:?}");
+        };
+        let unsigned = instance(&checked.data.functions, "ratio", IntegerType::U32);
+        assert_eq!(
+            division_trap_records(unsigned),
+            vec![false],
+            "the unsigned instance is in the class and its discharged site executes no test",
+        );
+        let discharged = division_outcomes(unsigned);
+        assert_eq!(discharged.len(), 2, "one obligation, two conjuncts");
+        assert!(
+            discharged.iter().all(|outcome| outcome.discharged),
+            "the requirement establishes the divisor disequality at the instance",
+        );
+        let signed = instance(&checked.data.functions, "ratio", IntegerType::I32);
+        assert_eq!(
+            division_trap_records(signed),
+            vec![true],
+            "the signed two-variable instance stays outside the class and keeps its trap",
+        );
+        assert!(
+            division_outcomes(signed).is_empty(),
+            "no obligation attaches outside the class",
+        );
+    });
+    let pure_row = br#"fn ratio<T: Int>(n: own T, d: own T) -> own T pure requires {
+  check ine(d, 0_T) else trap "nonzero divisor";
+} {
+  let q = n / d;
+  return q;
+}
+
+fn main() -> own unit traps {
+  let x = 10_u32;
+  let y = 3_u32;
+  let unsigned = ratio<u32>(n: x, d: y);
+  return unit;
+}
+"#;
+    with_semantics(pure_row, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the written body exhibits traps, so `pure` disagrees: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Eff2);
     });
 }
