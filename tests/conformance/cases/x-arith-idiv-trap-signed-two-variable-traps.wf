@@ -1,0 +1,16 @@
+fn opaque(n: own i32) -> own i32 pure {
+  return n;
+}
+
+fn divide(p: own i32, q: own i32) -> own i32 traps {
+  doc "The retained class [OP-2]: a signed bare `/` both of whose operand atoms are non-constant is outside the divisor class, because its safe condition is the disjunction `p != i32::MIN or q != -1` that the ENT-4 closure cannot state. No obligation attaches, the runtime test stays, and the row exhibits `traps`.";
+  let r = p / q;
+  return r;
+}
+
+fn main() -> own unit traps {
+  doc "The divisor passes through a call so no constant reaches the site, and the executed zero divisor is a contract violation that aborts the process [SCOPE-4].";
+  let z = opaque(n: 0_i32);
+  let v = divide(p: 10_i32, q: z);
+  return unit;
+}

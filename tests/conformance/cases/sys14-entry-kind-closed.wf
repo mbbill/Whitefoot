@@ -1,0 +1,81 @@
+command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
+  doc "One entry record is one kind byte, one name-length byte, and exactly that many name bytes [SYS-14]. The kind set is closed at `0` unknown, `1` regular file, `2` directory, `3` symbolic link, and `4` other, a name is never empty, and `ListBytes` reports the exact number of records its transferred prefix holds. The program walks the batch and exits nonzero on any violation of those four statements.";
+  let entries = buffer_new(4096_u64, 0_u8);
+  let room = len(entries);
+  let status = 0_u8;
+  region 'c {
+    match open_list<'c>(directory: &'c cwd) {
+      Ok(value: list) => {
+        let produced = 0_u64;
+        let announced = 0_u64;
+        region 'b {
+          match list_once<'b, 'b>(list: &uniq 'b list, destination: &uniq 'b entries, offset: 0_u64, capacity: 4096_u64) {
+            ListBytes(count: bytes, entries: reported) => {
+              set produced = bytes;
+              set announced = reported;
+            }
+            ListEnd() => {
+            }
+            ListFailed(error: problem) => {
+              set status = 3_u8;
+            }
+          }
+        }
+        let at = 0_u64;
+        let seen = 0_u64;
+        loop @entry {
+          let header_end = at +wrap 2_u64;
+          let complete = ile(header_end, produced);
+          if complete {
+          } else {
+            break @entry;
+          }
+          let kind_readable = ilt(at, room);
+          if kind_readable {
+          } else {
+            break @entry;
+          }
+          let kind = entries[at];
+          let closed = ile(kind, 4_u8);
+          if closed {
+          } else {
+            set status = 9_u8;
+            break @entry;
+          }
+          let length_at = at +wrap 1_u64;
+          let length_readable = ilt(length_at, room);
+          if length_readable {
+          } else {
+            break @entry;
+          }
+          let name_length = entries[length_at];
+          let name_count = cvt<u8, u64>(name_length);
+          let named = igt(name_count, 0_u64);
+          if named {
+          } else {
+            set status = 10_u8;
+            break @entry;
+          }
+          let name_at = at +wrap 2_u64;
+          let name_end = name_at +wrap name_count;
+          let bounded = ile(name_end, produced);
+          if bounded {
+          } else {
+            break @entry;
+          }
+          set at = name_end;
+          set seen = seen +wrap 1_u64;
+        }
+        let counted = ieq(seen, announced);
+        if counted {
+        } else {
+          set status = 12_u8;
+        }
+      }
+      Err(error: problem) => {
+        set status = 4_u8;
+      }
+    }
+  }
+  return exit_status(code: status);
+}
