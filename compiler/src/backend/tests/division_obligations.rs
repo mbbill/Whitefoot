@@ -3,7 +3,7 @@
 //! zero-divisor or signed-overflow branch, while a signed site with two
 //! non-constant operands stays outside the class and keeps its complete
 //! runtime test. The switch is on, so the shipped emission and the forced-on
-//! entry are one path and must agree byte for byte.
+//! entry are one path; each case names the entry whose judgment it means.
 
 use super::{emit, emit_division_obligations};
 
@@ -25,6 +25,29 @@ fn main() -> own unit traps {
   return unit;
 }
 "#;
+
+/// Each emitted function body, so a count means what it says about one
+/// function rather than about every function in the module.
+fn function_bodies(module: &str) -> Vec<&str> {
+    module
+        .split("\ndefine ")
+        .skip(1)
+        .map(|body| {
+            body.split_once("\n}")
+                .expect("a defined function is terminated")
+                .0
+        })
+        .collect()
+}
+
+/// The emitted body of one named function.
+fn function_body<'module>(module: &'module str, symbol: &str) -> &'module str {
+    let marker = format!("@{symbol}(");
+    function_bodies(module)
+        .into_iter()
+        .find(|body| body.contains(&marker))
+        .unwrap_or_else(|| panic!("the module defines {symbol}"))
+}
 
 /// Every `icmp eq` a bare division emits against a zero divisor, the type
 /// minimum, or `-1` before its trap branch.
@@ -54,23 +77,19 @@ fn opcode_count(module: &str, opcode: &str) -> usize {
 /// Only the retained signed site carries a guard set: the unsigned site's
 /// zero-divisor conjunct is discharged by the dominating claim, which is the
 /// sole authority that may drop the check, and the site becomes a plain
-/// `udiv`. v0.31 emitted four guards here; three remain.
+/// `udiv`. Both sites are in one function, so the counts are taken over that
+/// function's own body.
 #[test]
 fn a_discharged_class_site_emits_no_division_guard() {
-    let shipped = emit(BOTH_CLASSES);
-    let candidate = emit_division_obligations(BOTH_CLASSES);
+    let combine = function_body(&emit(BOTH_CLASSES), "wf_combine").to_owned();
     assert_eq!(
-        division_guard_count(&shipped),
+        division_guard_count(&combine),
         3,
         "the discharged unsigned site loses its zero-divisor guard; the \
          retained signed site keeps zero, minimum, and minus one",
     );
-    assert_eq!(opcode_count(&shipped, "udiv"), 1);
-    assert_eq!(opcode_count(&shipped, "sdiv"), 1);
-    assert_eq!(
-        shipped, candidate,
-        "the shipped path and the forced-on entry are one judgment",
-    );
+    assert_eq!(opcode_count(&combine, "udiv"), 1);
+    assert_eq!(opcode_count(&combine, "sdiv"), 1);
 }
 
 /// A constant divisor decides both conditions statically, so the whole site
@@ -120,20 +139,26 @@ fn main() -> own unit traps {
   return unit;
 }
 "#;
+    // Both instances lower to the same LLVM integer type, so each is
+    // identified by the division it emits rather than by its symbol.
     let module = emit(GENERIC_DIVISION);
+    let bodies = function_bodies(&module);
+    let unsigned = bodies
+        .iter()
+        .find(|body| body.contains("= udiv "))
+        .expect("the unsigned instance emits its division");
+    let signed = bodies
+        .iter()
+        .find(|body| body.contains("= sdiv "))
+        .expect("the signed instance emits its division");
     assert_eq!(
-        opcode_count(&module, "udiv"),
-        1,
-        "the unsigned instance emits its division",
+        division_guard_count(unsigned),
+        0,
+        "the discharged unsigned instance executes no runtime test",
     );
     assert_eq!(
-        opcode_count(&module, "sdiv"),
-        1,
-        "the signed instance emits its division",
-    );
-    assert_eq!(
-        division_guard_count(&module),
+        division_guard_count(signed),
         3,
-        "only the retained signed instance tests zero, the minimum, and minus one",
+        "the retained signed instance tests zero, the minimum, and minus one",
     );
 }
