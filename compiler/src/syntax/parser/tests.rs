@@ -1,8 +1,8 @@
 #![allow(clippy::panic)]
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
-use crate::syntax::grammar::{Production, productions};
 use crate::syntax::NodeId;
+use crate::syntax::grammar::{Production, productions};
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::{ACTIVE_KERNEL_SPEC_HASH, SourceBundle, SourceId, SourceInput, SourceLimits};
 

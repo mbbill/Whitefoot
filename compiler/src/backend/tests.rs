@@ -1236,7 +1236,7 @@ fn required_check_survives_host_optimization_of_an_unfoldable_loop() {
     );
     assert_eq!(
         output.stderr,
-        b"{\"rule_id\":\"OP-5\",\"message\":\"mixing chain drift\",\"function\":\"main\",\"node_path\":[0,0,6,0]}\n"
+        b"{\"rule_id\":\"CLM-1\",\"message\":\"mixing_chain_drift\",\"function\":\"main\",\"node_path\":[0,0,6,0]}\n"
     );
     assert!(output.stdout.is_empty());
 }

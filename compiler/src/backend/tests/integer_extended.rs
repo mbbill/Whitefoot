@@ -153,8 +153,19 @@ fn trapping_shift_reports_op8_before_executing_an_invalid_shift() {
 
 #[test]
 fn trapping_division_checks_zero_before_the_partial_instruction() {
-    let source = br#"fn main() -> own unit traps {
-  let quotient = 1_i32 / 0_i32;
+    // Two non-constant signed operands keep the site outside [OP-2]'s divisor
+    // class, so it retains the trapping judgment and emits the runtime test.
+    // A constant-operand spelling would instead be a compile-time [ENT-6]
+    // division-obligation rejection and reach no record at all.
+    let source = br#"fn divide(n: own i32, d: own i32) -> own i32 traps {
+  let quotient = n / d;
+  return quotient;
+}
+
+fn main() -> own unit traps {
+  let zero = 0_i32;
+  let one = 1_i32;
+  let quotient = divide(n: one, d: zero);
   return unit;
 }
 "#;
@@ -167,7 +178,7 @@ fn trapping_division_checks_zero_before_the_partial_instruction() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.starts_with(
-            "{\"rule_id\":\"OP-2\",\"message\":\"\",\"function\":\"main\",\"node_path\":["
+            "{\"rule_id\":\"OP-2\",\"message\":\"\",\"function\":\"divide\",\"node_path\":["
         ),
         "unexpected stderr: {stderr}"
     );

@@ -1148,9 +1148,9 @@ mod tests {
     use super::{
         DeclarationClass, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS, ReservedNameClass,
         SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemDeclarationId, SystemEntity,
-        SystemParameterMode, SystemResultPayload, SystemTypeRef, operation_region_effects,
-        TRAVERSAL_SURFACE, reserved_name, system_constructors, system_declarations, system_entity,
-        system_nominals, system_operations,
+        SystemParameterMode, SystemResultPayload, SystemTypeRef, TRAVERSAL_SURFACE,
+        operation_region_effects, reserved_name, system_constructors, system_declarations,
+        system_entity, system_nominals, system_operations,
     };
 
     #[test]

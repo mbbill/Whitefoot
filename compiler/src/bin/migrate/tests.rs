@@ -67,9 +67,9 @@ fn a_constructor_with_no_generic_annotation_stays_bare() {
 /// A spelling inside a string is never a token, so the pre-pass cannot see it.
 #[test]
 fn a_spelling_inside_a_string_is_untouched() {
-    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  check flag else trap \"let x: own u64 = 1_u64;\";\n  return unit;\n}\n";
+    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  claim let_x_own_u64_1_u64: flag because \"let x: own u64 = 1_u64;\";\n  return unit;\n}\n";
     let out = migrated(source);
-    assert!(out.contains("trap \"let x: own u64 = 1_u64;\""), "{out}");
+    assert!(out.contains("because \"let x: own u64 = 1_u64;\""), "{out}");
     assert!(out.contains("let flag = True();"), "{out}");
 }
 
@@ -86,7 +86,7 @@ fn a_named_arithmetic_row_becomes_its_operator() {
 /// of the infix spellings, and lose only their written arguments.
 #[test]
 fn every_comparison_keeps_its_name_and_loses_only_its_argument() {
-    let source = b"fn main() -> own unit traps {\n  let a: own u64 = 1_u64;\n  let same: own Bool = ieq<u64>(a, 1_u64);\n  let under: own Bool = ilt<u64>(a, 2_u64);\n  check same else trap \"eq\";\n  check under else trap \"lt\";\n  return unit;\n}\n";
+    let source = b"fn main() -> own unit traps {\n  let a: own u64 = 1_u64;\n  let same: own Bool = ieq<u64>(a, 1_u64);\n  let under: own Bool = ilt<u64>(a, 2_u64);\n  claim eq: same because \"eq\";\n  claim lt: under because \"lt\";\n  return unit;\n}\n";
     let out = migrated(source);
     assert!(out.contains("let same = ieq(a, 1_u64);"), "{out}");
     assert!(out.contains("let under = ilt(a, 2_u64);"), "{out}");
@@ -103,7 +103,7 @@ fn every_comparison_keeps_its_name_and_loses_only_its_argument() {
 /// as two byte-adjacent punctuation tokens each.
 #[test]
 fn an_infix_comparison_returns_to_its_named_call() {
-    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  let same = a == 1_u64;\n  let under = a <= 2_u64;\n  let over = a >= 0_u64;\n  check same else trap \"eq\";\n  return unit;\n}\n";
+    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  let same = a == 1_u64;\n  let under = a <= 2_u64;\n  let over = a >= 0_u64;\n  claim eq: same because \"eq\";\n  return unit;\n}\n";
     let out = migrated(source);
     assert!(out.contains("let same = ieq(a, 1_u64);"), "{out}");
     assert!(out.contains("let under = ile(a, 2_u64);"), "{out}");
@@ -115,11 +115,20 @@ fn an_infix_comparison_returns_to_its_named_call() {
 /// group on both sides, a subscripted place, and a field suffix after a group.
 #[test]
 fn the_reverse_class_recovers_every_atom_form_it_can_meet() {
-    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  region 'r {\n    let p = &'r a;\n    check deref(p) == a else trap \"deref left\";\n    check a == deref(p) else trap \"deref right\";\n  }\n  let b = buffer_new(2_u64, 0_u8);\n  check b[0_u64] <= b[1_u64] else trap \"subscript\";\n  return unit;\n}\n";
+    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  region 'r {\n    let p = &'r a;\n    claim deref_left: deref(p) == a because \"deref left\";\n    claim deref_right: a == deref(p) because \"deref right\";\n  }\n  let b = buffer_new(2_u64, 0_u8);\n  claim subscript: b[0_u64] <= b[1_u64] because \"subscript\";\n  return unit;\n}\n";
     let out = migrated(source);
-    assert!(out.contains("check ieq(deref(p), a) else"), "{out}");
-    assert!(out.contains("check ieq(a, deref(p)) else"), "{out}");
-    assert!(out.contains("check ile(b[0_u64], b[1_u64]) else"), "{out}");
+    assert!(
+        out.contains("claim deref_left: ieq(deref(p), a) because"),
+        "{out}"
+    );
+    assert!(
+        out.contains("claim deref_right: ieq(a, deref(p)) because"),
+        "{out}"
+    );
+    assert!(
+        out.contains("claim subscript: ile(b[0_u64], b[1_u64]) because"),
+        "{out}"
+    );
 }
 
 /// The statement keyword before an operand is not part of it. This is the one
@@ -127,9 +136,12 @@ fn the_reverse_class_recovers_every_atom_form_it_can_meet() {
 /// every position that introduces an expression.
 #[test]
 fn a_statement_keyword_is_never_swallowed_into_an_operand() {
-    let source = b"fn pick(x: own i32) -> own Bool traps {\n  check x == 0_i32 else trap \"check\";\n  if x >= 1_i32 {\n    return x <= 2_i32;\n  }\n  return x <= 3_i32;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
+    let source = b"fn pick(x: own i32) -> own Bool traps {\n  claim check_claim: x == 0_i32 because \"check\";\n  if x >= 1_i32 {\n    return x <= 2_i32;\n  }\n  return x <= 3_i32;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
     let out = migrated(source);
-    assert!(out.contains("check ieq(x, 0_i32) else"), "{out}");
+    assert!(
+        out.contains("claim check_claim: ieq(x, 0_i32) because"),
+        "{out}"
+    );
     assert!(out.contains("if ige(x, 1_i32) {"), "{out}");
     assert!(out.contains("return ile(x, 2_i32);"), "{out}");
     assert!(out.contains("return ile(x, 3_i32);"), "{out}");
@@ -139,17 +151,20 @@ fn a_statement_keyword_is_never_swallowed_into_an_operand() {
 /// cannot reach it — the same property the annotation class relies on.
 #[test]
 fn an_infix_comparison_inside_a_string_is_untouched() {
-    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  check a == 1_u64 else trap \"want a == 1\";\n  return unit;\n}\n";
+    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  claim want_a_1: a == 1_u64 because \"want a == 1\";\n  return unit;\n}\n";
     let out = migrated(source);
-    assert!(out.contains("trap \"want a == 1\""), "{out}");
-    assert!(out.contains("check ieq(a, 1_u64) else"), "{out}");
+    assert!(out.contains("because \"want a == 1\""), "{out}");
+    assert!(
+        out.contains("claim want_a_1: ieq(a, 1_u64) because"),
+        "{out}"
+    );
 }
 
 /// The reverse class is re-runnable like every other: a named call holds no
 /// operator, so a second pass is the identity.
 #[test]
 fn the_reverse_class_is_idempotent() {
-    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  check a == 1_u64 else trap \"eq\";\n  return unit;\n}\n";
+    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  claim eq: a == 1_u64 because \"eq\";\n  return unit;\n}\n";
     let once = migrated(source);
     let twice = migrated(once.as_bytes());
     assert_eq!(once, twice);
@@ -202,7 +217,7 @@ fn a_returned_constructor_with_a_plain_result_stays_bare() {
 /// conditional's — the reshape the renderer cannot rescue if it is wrong.
 #[test]
 fn a_bool_match_becomes_an_if_with_both_branches() {
-    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  match flag {\n    True() => {\n      check flag else trap \"then\";\n    }\n    False() => {\n      check flag else trap \"else\";\n    }\n  }\n  return unit;\n}\n";
+    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  match flag {\n    True() => {\n      claim then: flag because \"then\";\n    }\n    False() => {\n      claim else_claim: flag because \"else\";\n    }\n  }\n  return unit;\n}\n";
     let out = migrated(source);
     assert!(out.contains("if flag {"), "{out}");
     assert!(out.contains("} else {"), "{out}");
@@ -213,10 +228,12 @@ fn a_bool_match_becomes_an_if_with_both_branches() {
 /// GRAM-6 rejects the empty `else`.
 #[test]
 fn an_empty_false_arm_becomes_the_else_free_if() {
-    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  match flag {\n    True() => {\n      check flag else trap \"then\";\n    }\n    False() => {\n    }\n  }\n  return unit;\n}\n";
+    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  match flag {\n    True() => {\n      claim then: flag because \"then\";\n    }\n    False() => {\n    }\n  }\n  return unit;\n}\n";
     let out = migrated(source);
     assert!(out.contains("if flag {"), "{out}");
-    // `check ... else trap` also spells `else`, so the join line is the test.
+    // The arm body no longer spells `else` at all now that the carrier is a
+    // claim, but the join line stays the assertion: it is the reshape that
+    // can go wrong, not the word.
     assert!(!out.contains("} else {"), "{out}");
 }
 
@@ -224,7 +241,7 @@ fn an_empty_false_arm_becomes_the_else_free_if() {
 /// else is not, so this one keeps both branches.
 #[test]
 fn an_empty_true_arm_keeps_the_empty_then_block() {
-    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  match flag {\n    True() => {\n    }\n    False() => {\n      check flag else trap \"else\";\n    }\n  }\n  return unit;\n}\n";
+    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  match flag {\n    True() => {\n    }\n    False() => {\n      claim else_claim: flag because \"else\";\n    }\n  }\n  return unit;\n}\n";
     let out = migrated(source);
     assert!(out.contains("if flag {"), "{out}");
     assert!(out.contains("} else {"), "{out}");
@@ -233,7 +250,7 @@ fn an_empty_true_arm_keeps_the_empty_then_block() {
 /// [GRAM-6] an `else` block holding exactly one conditional must flatten.
 #[test]
 fn a_nested_match_in_the_false_arm_flattens_to_else_if() {
-    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  let other: own Bool = False();\n  match flag {\n    True() => {\n      check flag else trap \"a\";\n    }\n    False() => {\n      match other {\n        True() => {\n          check flag else trap \"b\";\n        }\n        False() => {\n          check flag else trap \"c\";\n        }\n      }\n    }\n  }\n  return unit;\n}\n";
+    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  let other: own Bool = False();\n  match flag {\n    True() => {\n      claim a: flag because \"a\";\n    }\n    False() => {\n      match other {\n        True() => {\n          claim b: flag because \"b\";\n        }\n        False() => {\n          claim c: flag because \"c\";\n        }\n      }\n    }\n  }\n  return unit;\n}\n";
     let out = migrated(source);
     assert!(out.contains("} else if other {"), "{out}");
 }

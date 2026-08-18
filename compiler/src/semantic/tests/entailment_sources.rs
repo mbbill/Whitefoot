@@ -244,14 +244,12 @@ fn the_view_definitions_and_the_compilers_proof_views_agree() {
     );
 
     let retained = source_numbers(
-        spec.split_once(
-            "The unasserted state removes exactly S3 claim establishment.\n",
-        )
-        .expect("the removal sentence is followed by the retention sentence")
-        .1
-        .split_once('\n')
-        .expect("that sentence ends")
-        .0,
+        spec.split_once("The unasserted state removes exactly S3 claim establishment.\n")
+            .expect("the removal sentence is followed by the retention sentence")
+            .1
+            .split_once('\n')
+            .expect("that sentence ends")
+            .0,
     );
 
     let mut sources = defined_sources();
