@@ -1,5 +1,5 @@
 fn guarded(x: own i32) -> own i32 traps {
-  doc "Declares traps and exhibits a check.";
+  doc "Declares traps and exhibits a claim.";
   claim range: ilt(x, 100_i32) because "range";
   return x;
 }

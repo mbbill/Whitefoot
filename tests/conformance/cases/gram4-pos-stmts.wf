@@ -1,5 +1,5 @@
 fn main() -> own unit traps {
-  doc "GRAM-4: let, region, loop, match(stmt), break, set, give(let-match), check, return statements.";
+  doc "GRAM-4: let, region, loop, match(stmt), break, set, give(let-match), claim, return statements.";
   let i = 0_i32;
   region 'r {
     loop @l {
