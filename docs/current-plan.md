@@ -1,8 +1,7 @@
 # Current Plan — wfgrep functional legs and trap-endpoint closure
 
-Status: PROPOSED (drafted 2026-08-18 after the batch-0070 plan completed
-with v0.31 activation at `eb8e8634`. Authorizes no execution; the owner
-approves this high-level plan before it becomes ACTIVE.)
+Status: ACTIVE (owner approval in conversation, 2026-08-18: "批了",
+approving this plan exactly as proposed at 6d9eb4bc.)
 
 Derived from Direction Outline revision 41 and the batch-0070 outcome.
 Supersedes the completed gap-closure/take-replace plan in place.
