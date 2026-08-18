@@ -65,8 +65,10 @@ the frozen slice has no directory" enumeration.
 
 ## 2. The complete v0.31 system surface
 
-Normative: [SYS-1] .. [SYS-9], [HOST-1] .. [HOST-3], [PATH-1], [PATH-2],
-[QUAL-1] .. [QUAL-3], [FN-7]'s standard-input table.
+Normative: [SYS-1] .. [SYS-13], [HOST-1] .. [HOST-3], [PATH-1], [PATH-2],
+[QUAL-1] .. [QUAL-3], [FN-7]'s standard-input table. The per-type family
+contracts are [SYS-10] `DirectoryRead`, [SYS-11] `ReadFile`, [SYS-12]
+`Output`, [SYS-13] `ExitStatus`.
 Implementation: `compiler/src/resolution/catalog.rs`
 (`SYSTEM_NOMINALS`, `SYSTEM_CONSTRUCTORS`, `SYSTEM_OPERATIONS`,
 `system_declarations`), `compiler/src/backend/qualification.rs`
@@ -117,8 +119,8 @@ what the addition would touch; nothing here is proposed as bytes.
 
 | # | Needed capability | Present? | Exact specification surface it would require |
 |---|---|---|---|
-| 1 | Obtain a directory capability for a subdirectory | **Absent.** Only `command.cwd` yields `DirectoryRead`; no operation produces one. | One new [SYS-2] operation row returning `Result<DirectoryRead, IoError>`; [PRV-1] provenance row; [QUAL-1] semantic ID + `qualification.rs` symbol; no new nominal, since [SYS-4] and [SYS-5] already carry `DirectoryRead` (shared capability; "at most one native close attempt", `external, blocks`). |
-| 2 | Enumerate the entries of a directory | **Absent.** No stream, cursor, or entry operation exists. | One new opaque nominal (a stateful directory stream) → [SYS-2] nominal table, [SYS-4] kind/Sendable/Shareable row (stateful resource, not Shareable — it owns a cursor), [SYS-5] release row; an open-stream operation and a next-entry operation → two [SYS-2] rows, [PRV-1] rows, two [QUAL-1] semantic IDs. |
+| 1 | Obtain a directory capability for a subdirectory | **Absent.** Only `command.cwd` yields `DirectoryRead`; no operation produces one. [SYS-10]: it "is live from its entry binding until its release and has no other transition", and "Opening creates aliases only downward. `open_read` creates an independent `ReadFile` … and does not alias the capability." | One new [SYS-2] operation row returning `Result<DirectoryRead, IoError>`; [PRV-1] provenance row; [QUAL-1] semantic ID + `qualification.rs` symbol. No new nominal — [SYS-4] and [SYS-5] already carry `DirectoryRead` (shared capability; "at most one native close attempt", `external, blocks`), and [SYS-10] already admits that "Two `DirectoryRead` values may denote the same directory object". But **[SYS-10]'s entry-binding-only liveness sentence and its downward-aliasing paragraph must both state the new producer.** |
+| 2 | Enumerate the entries of a directory | **Absent.** No stream, cursor, or entry operation exists. | One new opaque nominal (a stateful directory stream) → [SYS-2] nominal table, [SYS-4] kind/Sendable/Shareable row (stateful resource, not Shareable — it owns a cursor), [SYS-5] release row, and one new per-type family contract in the [SYS-10] .. [SYS-13] series; an open-stream operation and a next-entry operation → two [SYS-2] rows, [PRV-1] rows, two [QUAL-1] semantic IDs. |
 | 3 | Represent one enumeration step's three outcomes (entry / end / failure) | **Absent.** `ReadOutcome` is `read_once`'s own type; [SYS-6] states "the one operation with more than two outcomes", singular. | One new enum with three operation-prefixed variants → [SYS-2] enum table (+3 constructors, +N fields); **[SYS-6]'s singular sentence must change**; [SYS-7] is untouched because the failure payload is still `IoError`. |
 | 4 | Read an entry's name as bytes the program owns | **Absent, and the obvious reuse is blocked.** [HOST-3]: "A producer whose backing is not command-lifetime yields no value of this type: it introduces a distinct owned-backing string resource with its own release action and its own family contract." A directory entry name is not command-lifetime backed, so it may **not** be delivered as a `HostString`. | Two disjoint options. (a) Deliver the name by an [SYS-8]-style one-attempt transfer into a caller-owned `buffer<u8>` — adds no type, extends [SYS-8]'s enumeration of transfer operations, and keeps [HOST-3] untouched. (b) Introduce a second string type with owned backing — new nominal, new [SYS-4] row, new [SYS-5] release row and release effect, new conversion contract, plus the [HOST-3] "explicit later operation with its own delta [META-5]" it already anticipates. |
 | 5 | Turn an entry name into something openable | **Absent.** `relative_path` takes only a `HostString`; a path is an inline lease over command-lifetime backing ([HOST-3], [PATH-1]). Constructing one over a program buffer would break that representation invariant and the [QUAL-2] backing guarantee. | Either (a) the directory-relative operations of gaps 1–2 accept `(&'c DirectoryRead, &'b buffer<u8>, offset, count)` directly and **no path value is ever formed** — the smallest honest shape, and it leaves [PATH-1]'s deferral intact; or (b) [PATH-1] and [HOST-3] are amended to admit a second path representation whose backing is a borrowed program buffer, which drags in region-bearing path types under [STOR-5] and reopens [QUAL-2]. |
@@ -162,7 +164,10 @@ touches the fewest existing invariants is:
   representation (a native descriptor) unchanged.
 - **Add exactly one new opaque nominal** for the enumeration cursor, because a
   cursor is state and [SYS-4] requires a stateful resource for anything a later
-  call advances. Its release is a native close attempt, matching `ReadFile`.
+  call advances. Its release is a native close attempt and its family contract
+  mirrors [SYS-11] `ReadFile` almost sentence for sentence: created live by one
+  operation, one cursor domain, call-scoped advance leaving both owners live,
+  release-complete, no duplicate/split/positioned-lane operation.
 - **Deliver entry names by transfer, never as a string or path value.** The
   next-entry operation writes the name bytes into a caller-owned `buffer<u8>`
   under the [SYS-8] one-attempt contract, exactly like `read_once`, and returns
