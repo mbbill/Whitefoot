@@ -125,16 +125,14 @@ fn the_traversal_source_is_admitted_only_by_the_declaring_inventory() {
 fn appending_the_traversal_inventory_leaves_every_earlier_program_byte_identical() {
     // `wfgrep.wf` was on this list until it became a recursive search and
     // started using the traversal surface itself, so it is no longer an
-    // earlier program. `raw_deflate_boundary.wf` replaces it as the heavy
-    // witness: twenty-six system-surface references and zero traversal
-    // references, so it exercises the property — appending rows moves no
+    // earlier program. `prefix_expression.wf` replaces it as the
+    // system-touching witness: nine system-surface spellings and no traversal
+    // operation, so it exercises the property — appending rows moves no
     // earlier spelling, ordinal, or lowering decision — where a program that
     // touches no system operation at all cannot detect a moved ordinal.
-    for name in [
-        "raw_deflate_boundary.wf",
-        "byte_string.wf",
-        "growable_vec.wf",
-    ] {
+    // `raw_deflate_boundary.wf` has more system references still, but is not a
+    // standalone compilation unit, which is what this entry compiles.
+    for name in ["prefix_expression.wf", "byte_string.wf", "growable_vec.wf"] {
         assert_eq!(
             compile_program_without_traversal_surface(name),
             compile_program_with_traversal_surface(name),
