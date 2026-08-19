@@ -3,7 +3,7 @@
 Status: CANDIDATE v0.33 supersedes v0.32 5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +0/-0 (135 remain); grammar productions +6/-6 (135 remain); unique fixed lowercase grammar atoms net +1; writer operation spellings +13/-4 (the five bare infix exact spellings remain); runtime-trap families +0/-4, leaving only claims; entry forms +0/-1; contract block forms +1/-2; named result bindings become mandatory; system operations +1 and declaration records +7; exception clauses for executable entry requirements, integer/runtime range fallback, and allocation-size traps are removed.
+META-5 delta declaration: numbered rules +0/-0 (135 remain); grammar productions +6/-6 (74 remain); unique fixed lowercase grammar atoms net +1; writer operation spellings +13/-4 (the five bare infix exact spellings remain); runtime-trap families +0/-4, leaving only claims; entry forms +0/-1; contract block forms +1/-2; named result bindings become mandatory; system operations +1 and declaration records +7; exception clauses for executable entry requirements, integer/runtime range fallback, and allocation-size traps are removed.
 Selection ground: owner-selected safety/performance direction, supported by the v0.32 checker/provenance model, batch-0072 `open_file` and strict-retirement evidence, and the bounded contract/trap design study recorded by Direction Outline revision 43 and its ACTIVE Current Plan.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -2529,7 +2529,7 @@ Whole-process abort relies on operating-system teardown [SYS-5].
 
 [SYS-12] `Output` is a stateful resource with one state.
 The standard output and standard error entry bindings supply separate affine `Output` owners; neither is a shared global sink and neither carries a lock.
-`write_once` performs at most one host output attempt [SYS-8], and its accepted count means exactly that the host operation accepted that prefix: it promises neither line atomicity nor storage durability.
+`write_once` performs at most one host output attempt [SYS-8], and an `Ok(next)` result means exactly that the host operation accepted the prefix `[start, next)`: it promises neither line atomicity nor storage durability.
 Sequential calls across either owner preserve source order by the ordering rule that governs every external call, not by any aliasing analysis.
 The checked program additionally retains the conservative fact that redirection may make the two owners the same sink [DIAG-2]; this specification defines no consumer of that fact, and it is retained so a later verified cross-resource reordering fact fails closed on this pair rather than treating two separate `Output` owners as disjoint sinks.
 
