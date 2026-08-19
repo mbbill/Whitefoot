@@ -2978,7 +2978,7 @@ impl Analyzer<'_, '_> {
     /// initializer it describes has not itself been written or consumed.
     /// This key guard is separate from the goal's value support: invalidating
     /// it stops future alias expansion without erasing a signed snapshot fact
-    /// that an earlier branch, check, or claim already established.
+    /// that an earlier branch or claim already established.
     fn event_kills_goal_origin_binding(&self, binding: BindingId, event: &KillEvent) -> bool {
         match event {
             KillEvent::Write { place, .. } => ResolvedPlace {

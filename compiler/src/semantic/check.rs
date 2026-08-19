@@ -2781,7 +2781,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let mechanical_fix = if first_ephemeral_argument(&outcome.goal.root).is_some() {
                         "bind that argument or referent value with one preceding ordinary let, establish the complete requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow"
                     } else {
-                        "establish the complete callee requirement with one dominating branch, check, or claim before the call"
+                        "establish the complete callee requirement with one dominating branch or claim before the call"
                     };
                     Err(CheckStop::source_issue(SemanticIssue {
                         rule: SemanticRule::Fn8,
