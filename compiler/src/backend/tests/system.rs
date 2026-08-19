@@ -626,6 +626,9 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
 }
 "#;
     let llvm = compile(source);
+    assert!(llvm.contains("%bounded = icmp ule i64 %accepted, %extent"));
+    assert!(llvm.contains("br i1 %bounded, label %ok, label %tcb.defect"));
+    assert!(!llvm.contains("wf_trap"));
     assert!(llvm.contains("%next = add nuw i64 %start, %accepted"));
     let output = compile_and_run_with(&llvm, &[]);
     assert_eq!(output.stdout, b"AA");
@@ -659,6 +662,108 @@ fn linux_enumeration_facility_without_an_abi_mapping_is_missing_mapping() {
 }
 
 #[test]
+fn component_open_flags_and_status_abis_are_target_exact() {
+    let cases = [
+        (
+            "aarch64-apple-darwin",
+            0x0010_0000,
+            0x0010_0100,
+            0x0000_0104,
+            "fstat",
+            144,
+            4,
+        ),
+        (
+            "x86_64-apple-darwin",
+            0x0010_0000,
+            0x0010_0100,
+            0x0000_0104,
+            "fstat$INODE64",
+            144,
+            4,
+        ),
+        (
+            "aarch64-unknown-linux-gnu",
+            0x0000_4000,
+            0x0000_c000,
+            0x0000_8800,
+            "fstat",
+            128,
+            16,
+        ),
+        (
+            "x86_64-unknown-linux-gnu",
+            0x0001_0000,
+            0x0003_0000,
+            0x0002_0800,
+            "fstat",
+            144,
+            24,
+        ),
+    ];
+    for (triple, directory, component_directory, component_file, status, size, mode) in cases {
+        let target = SystemTarget::for_triple(triple).expect("a supported target row");
+        assert_eq!(target.directory_open_flags(), directory, "{triple}");
+        assert_eq!(
+            target.component_directory_open_flags(),
+            component_directory,
+            "{triple}"
+        );
+        assert_eq!(target.file_open_flags(), 0, "{triple}");
+        assert_eq!(
+            target.component_file_open_flags(),
+            component_file,
+            "{triple}"
+        );
+        assert_eq!(target.file_status_symbol(), status, "{triple}");
+        assert_eq!(target.file_status_size(), size, "{triple}");
+        assert_eq!(target.file_status_mode_offset(), mode, "{triple}");
+    }
+}
+
+#[test]
+fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks {
+  let name = buffer_new(1_u64, 65_u8);
+  region 'c {
+    region 'n {
+      match open_file<'c, 'n>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
+        Ok(value: file) => {
+        }
+        Err(error: problem) => {
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir(source, |program| {
+        for triple in [
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-unknown-linux-gnu",
+        ] {
+            let target = SystemTarget::for_triple(triple).expect("a supported target row");
+            let llvm = emit_llvm_for_target(program, target)
+                .expect("open_file must qualify and emit")
+                .into_string();
+            let status = target.file_status_symbol();
+            assert!(llvm.contains(&format!(
+                "call i32 @{status}(i32 %descriptor, ptr %file.status)"
+            )));
+            assert!(llvm.contains("%file.kind = and i32 %mode, 61440"));
+            assert!(llvm.contains("%regular = icmp eq i32 %file.kind, 32768"));
+            assert!(llvm.contains("br i1 %regular, label %live, label %kind.failure"));
+            assert!(llvm.contains("call i32 @close(i32 %descriptor)"));
+            assert!(llvm.contains("tcb.defect:\n  call void @abort()\n  unreachable"));
+            let _optimized = host_optimized_module(&llvm);
+        }
+    });
+}
+
+#[test]
 fn darwin_list_once_keeps_range_and_record_extents_distinct_and_verifiable() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks {
   let destination = buffer_new(64_u64, 0_u8);
@@ -686,10 +791,14 @@ fn darwin_list_once_keeps_range_and_record_extents_distinct_and_verifiable() {
             .into_string()
     });
     assert_eq!(llvm.matches("%record.extent = zext").count(), 1);
+    assert!(llvm.contains("%bounded.batch = icmp ule i64 %filled, %extent"));
+    assert!(llvm.contains("br i1 %bounded.batch, label %normalize, label %tcb.defect"));
     assert!(llvm.contains("%sized = icmp uge i64 %record.extent, %needed"));
     assert!(llvm.contains("%bounded = icmp ule i64 %record.extent, %remaining"));
     assert!(llvm.contains("%source.next = add i64 %source, %record.extent"));
     assert!(llvm.contains("%fits = icmp ule i64 %after, %extent"));
+    assert!(llvm.contains("%copy.invalid = or i1 %copy.nul, %copy.separator"));
+    assert!(llvm.contains("tcb.defect:\n  call void @abort()\n  unreachable"));
     let optimized = host_optimized_module(&llvm);
     assert!(optimized.contains("@__getdirentries64"));
 }

@@ -415,9 +415,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Integer(integer) => primitive(u64::from(integer.width() / 8)),
             CheckedType::Float(float) => primitive(u64::from(float.width() / 8)),
             CheckedType::Array { element, length } => {
+                let length = length.value()?;
+                if length == 0 {
+                    return finish(CheckedLayoutMagnitude::Finite(0), 1);
+                }
                 let element = self.layout_ceiling_inner(element.ty(), visiting)?;
                 finish(
-                    multiply_layout_magnitude(element.stride, length.value()?),
+                    multiply_layout_magnitude(element.stride, length),
                     element.align,
                 )
             }

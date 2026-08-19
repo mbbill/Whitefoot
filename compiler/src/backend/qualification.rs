@@ -141,6 +141,16 @@ impl HostFacilities {
         }
     }
 
+    /// The descriptor-status facility used to validate that `open_file`
+    /// produced the regular-file capability its semantic row promises.
+    const fn file_status(self, native: &'static str) -> &'static str {
+        match self {
+            Self::Native => native,
+            #[cfg(test)]
+            Self::DeterministicTest => "wf_test_fstat",
+        }
+    }
+
     /// The facility one `read_once` transfer attempt reaches.
     const fn read(self) -> &'static str {
         match self {
@@ -278,6 +288,8 @@ pub(crate) const ORIGIN_DIRECTORY_OPEN: u8 = 1;
 pub(crate) const ORIGIN_READ: u8 = 2;
 /// The target-owned `origin` discriminator of the write facility.
 pub(crate) const ORIGIN_WRITE: u8 = 3;
+/// The target-owned `origin` discriminator of descriptor-status inspection.
+pub(crate) const ORIGIN_DESCRIPTOR_STATUS: u8 = 4;
 /// The `origin` value used when no native facility produced the code.
 pub(crate) const ORIGIN_NONE: u8 = 0;
 
@@ -577,8 +589,20 @@ pub(crate) struct SystemTarget {
     /// Which host facilities this target's approved implementations call.
     host: HostFacilities,
     root_prefix: u8,
+    /// Bootstrap and self-component directory opens.
     directory_open_flags: i32,
+    /// `open_read`'s namespace-following relative-path open.
     file_open_flags: i32,
+    /// Single-component `open_directory`, which must not follow its terminal
+    /// symbolic link.
+    component_directory_open_flags: i32,
+    /// Single-component `open_file`, which must not follow its terminal
+    /// symbolic link or block while a non-regular object is rejected.
+    component_file_open_flags: i32,
+    /// The target `struct stat` size and `st_mode` byte offset.
+    file_status_size: u64,
+    file_status_mode_offset: u64,
+    native_file_status_symbol: &'static str,
     errno_location: &'static str,
     errno_declaration: &'static str,
     error_classes: &'static [PortableErrorClass; 30],
@@ -604,6 +628,36 @@ impl SystemTarget {
     /// The flags a directory-relative open of a file for reading uses.
     pub(crate) const fn file_open_flags(self) -> i32 {
         self.file_open_flags
+    }
+
+    /// Flags for a no-follow single-component directory open.
+    pub(crate) const fn component_directory_open_flags(self) -> i32 {
+        self.component_directory_open_flags
+    }
+
+    /// Flags for a no-follow, nonblocking single-component file open.
+    pub(crate) const fn component_file_open_flags(self) -> i32 {
+        self.component_file_open_flags
+    }
+
+    /// The target descriptor-status facility and record coordinates used to
+    /// validate `open_file` before the capability reaches source.
+    pub(crate) const fn file_status_symbol(self) -> &'static str {
+        self.host.file_status(self.native_file_status_symbol)
+    }
+
+    pub(crate) const fn file_status_size(self) -> u64 {
+        self.file_status_size
+    }
+
+    pub(crate) const fn file_status_mode_offset(self) -> u64 {
+        self.file_status_mode_offset
+    }
+
+    /// The same target close facility resource release uses. An `open_file`
+    /// classification failure consumes the provisional descriptor here.
+    pub(crate) const fn close_symbol(self) -> &'static str {
+        self.host.close()
     }
 
     /// The symbol yielding the address of the calling thread's native error
@@ -690,30 +744,74 @@ impl SystemTarget {
     pub(crate) fn for_triple(triple: &str) -> Option<Self> {
         let (
             directory_open_flags,
+            component_directory_open_flags,
+            component_file_open_flags,
+            file_status_size,
+            file_status_mode_offset,
+            native_file_status_symbol,
             errno_location,
             errno_declaration,
             error_classes,
             directory_enumeration_facility,
             directory_enumeration,
         ) = match triple {
-            // `O_RDONLY | O_DIRECTORY` on the Darwin ABI.
-            "aarch64-apple-darwin" | "x86_64-apple-darwin" => (
+            // Darwin: O_DIRECTORY, O_NOFOLLOW, and O_NONBLOCK.
+            "aarch64-apple-darwin" => (
                 0x0010_0000,
+                0x0010_0100,
+                0x0000_0104,
+                144,
+                4,
+                "fstat",
                 "__error",
                 "declare ptr @__error()",
                 &DARWIN_ERROR_CLASSES,
                 true,
                 Some(DARWIN_ENUMERATION),
             ),
-            // `O_RDONLY | O_DIRECTORY` on the Linux asm-generic ABI, which
-            // both supported architectures use.
-            //
+            // x86_64 Darwin uses the inode64-decorated ABI symbol for the
+            // modern 144-byte `struct stat`; arm64 exports that ABI as fstat.
+            "x86_64-apple-darwin" => (
+                0x0010_0000,
+                0x0010_0100,
+                0x0000_0104,
+                144,
+                4,
+                "fstat$INODE64",
+                "__error",
+                "declare ptr @__error()",
+                &DARWIN_ERROR_CLASSES,
+                true,
+                Some(DARWIN_ENUMERATION),
+            ),
+            // Linux aarch64 uses the asm-generic O_DIRECTORY/O_NOFOLLOW
+            // values; they differ from x86_64 and therefore retain their own
+            // target row.
+            "aarch64-unknown-linux-gnu" => (
+                0x0000_4000,
+                0x0000_c000,
+                0x0000_8800,
+                128,
+                16,
+                "fstat",
+                "__errno_location",
+                "declare ptr @__errno_location()",
+                &LINUX_ERROR_CLASSES,
+                true,
+                None,
+            ),
+            // Linux x86_64: O_DIRECTORY, O_NOFOLLOW, and O_NONBLOCK.
             // Linux supplies `getdents64`, but this compiler intentionally has
             // no approved ABI/record mapping for it yet. Qualification must
             // therefore report MissingMapping rather than pretending the
             // target lacks the semantic facility.
-            "aarch64-unknown-linux-gnu" | "x86_64-unknown-linux-gnu" => (
-                0o200_000,
+            "x86_64-unknown-linux-gnu" => (
+                0x0001_0000,
+                0x0003_0000,
+                0x0002_0800,
+                144,
+                24,
+                "fstat",
                 "__errno_location",
                 "declare ptr @__errno_location()",
                 &LINUX_ERROR_CLASSES,
@@ -735,6 +833,11 @@ impl SystemTarget {
             // reading only and adds no creation, truncation, or mode flag:
             // [SYS-11] creates one live readable file and nothing else.
             file_open_flags: 0,
+            component_directory_open_flags,
+            component_file_open_flags,
+            file_status_size,
+            file_status_mode_offset,
+            native_file_status_symbol,
             errno_location,
             errno_declaration,
             error_classes,

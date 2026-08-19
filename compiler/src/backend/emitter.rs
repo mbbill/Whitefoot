@@ -1127,6 +1127,7 @@ fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, Back
         IrType::Float { width: 32 } => Ok("float".to_owned()),
         IrType::Float { width: 64 } => Ok("double".to_owned()),
         IrType::Float { .. } => Err(BackendFailure::InvalidIr),
+        IrType::Array { length: 0, .. } => Ok("[0 x i8]".to_owned()),
         IrType::Array { element, length } => Ok(format!(
             "[{length} x {}]",
             llvm_type(program, element.ty())?

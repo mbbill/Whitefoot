@@ -166,6 +166,51 @@ fn buffer_fits_admits_direct_region_free_array_and_buffer_types() {
 }
 
 #[test]
+fn zero_length_arrays_have_the_empty_sequence_layout_ceiling() {
+    let source = br#"fn main() -> own unit allocates(heap) {
+  let array_fit = buffer_fits<array<u64, 0>>(18446744073709551615_u64);
+  let slots = buffer_vacant<array<u64, 0>>(0_u64);
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("zero-length array ceilings must admit the exact empty sequence: {outcome:?}");
+        };
+        let main = &checked.data.functions[0];
+        let CheckedStatement::Let {
+            value:
+                CheckedExpression::BufferFits {
+                    layout_ceiling: array_ceiling,
+                    ..
+                },
+            ..
+        } = &main.body[0]
+        else {
+            panic!("the first binding must retain the array buffer_fits query");
+        };
+        assert_eq!(array_ceiling.size, CheckedLayoutMagnitude::Finite(0));
+        assert_eq!(array_ceiling.align, 1);
+        assert_eq!(array_ceiling.stride, CheckedLayoutMagnitude::Finite(1));
+
+        let CheckedStatement::Let {
+            value:
+                CheckedExpression::BufferVacant {
+                    layout_ceiling: option_ceiling,
+                    ..
+                },
+            ..
+        } = &main.body[1]
+        else {
+            panic!("the second binding must retain the vacant Option allocation ceiling");
+        };
+        assert_eq!(option_ceiling.size, CheckedLayoutMagnitude::Finite(4));
+        assert_eq!(option_ceiling.align, 4);
+        assert_eq!(option_ceiling.stride, CheckedLayoutMagnitude::Finite(4));
+    });
+}
+
+#[test]
 fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
     let source = br#"fn make(n: own u64) -> own buffer<u16> allocates(heap), traps {
   let fits = buffer_fits<u16>(n);

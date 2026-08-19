@@ -17,8 +17,9 @@
 //! `ExitStatus` onto the host process status exactly [PROG-3].
 
 use super::super::qualification::{
-    ApprovedImplementation, ORIGIN_DIRECTORY_OPEN, ORIGIN_NONE, ORIGIN_READ, ORIGIN_WRITE,
-    ProgramKind, Qualification, ReleaseImplementation, SystemTarget, qualified_representation,
+    ApprovedImplementation, ORIGIN_DESCRIPTOR_STATUS, ORIGIN_DIRECTORY_OPEN, ORIGIN_NONE,
+    ORIGIN_READ, ORIGIN_WRITE, ProgramKind, Qualification, ReleaseImplementation, SystemTarget,
+    qualified_representation,
 };
 use super::*;
 use crate::ACTIVE_KERNEL_SPEC_VERSION;
@@ -305,7 +306,7 @@ fn operation_declarations(
                 target.file_open_symbol()
             )]);
         }
-        OPEN_DIRECTORY | OPEN_FILE => {
+        OPEN_DIRECTORY => {
             return Ok(vec![
                 format!(
                     "declare i32 @{}(i32, ptr, i32, ...)",
@@ -314,17 +315,29 @@ fn operation_declarations(
                 "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)".to_owned(),
             ]);
         }
+        OPEN_FILE => {
+            return Ok(vec![
+                format!(
+                    "declare i32 @{}(i32, ptr, i32, ...)",
+                    target.file_open_symbol()
+                ),
+                format!("declare i32 @{}(i32, ptr)", target.file_status_symbol()),
+                format!("declare i32 @{}(i32)", target.close_symbol()),
+                "declare void @abort() noreturn".to_owned(),
+                "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)".to_owned(),
+            ]);
+        }
         READ_ONCE => {
-            return Ok(vec![format!(
-                "declare i64 @{}(i32, ptr, i64)",
-                target.read_symbol()
-            )]);
+            return Ok(vec![
+                format!("declare i64 @{}(i32, ptr, i64)", target.read_symbol()),
+                "declare void @abort() noreturn".to_owned(),
+            ]);
         }
         WRITE_ONCE => {
-            return Ok(vec![format!(
-                "declare i64 @{}(i32, ptr, i64)",
-                target.write_symbol()
-            )]);
+            return Ok(vec![
+                format!("declare i64 @{}(i32, ptr, i64)", target.write_symbol()),
+                "declare void @abort() noreturn".to_owned(),
+            ]);
         }
         // The target's own enumeration facility [SYS-14]; qualification
         // already refused a target that supplies none.
@@ -332,7 +345,10 @@ fn operation_declarations(
             let enumeration = target
                 .directory_enumeration()
                 .ok_or(BackendFailure::InvalidIr)?;
-            return Ok(vec![enumeration.declaration().to_owned()]);
+            return Ok(vec![
+                enumeration.declaration().to_owned(),
+                "declare void @abort() noreturn".to_owned(),
+            ]);
         }
         _ => &[],
     };
@@ -1088,7 +1104,10 @@ fn emit_read_once(
          %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
          %transferred = call i64 @{read}({file} %file, ptr %target, i64 %extent)\n  \
          %progress = icmp sgt i64 %transferred, 0\n  \
-         br i1 %progress, label %bytes, label %quiet\n\
+         br i1 %progress, label %sanitize, label %quiet\n\
+         sanitize:\n  \
+         %bounded = icmp ule i64 %transferred, %extent\n  \
+         br i1 %bounded, label %bytes, label %tcb.defect\n\
          bytes:\n  \
          %next = add nuw i64 %start, %transferred\n  \
          %bytes.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
@@ -1107,6 +1126,9 @@ fn emit_read_once(
          %failed.outcome = insertvalue {llvm} %failed.tag, {failed_llvm} %failure.error, \
          {failed_index}\n  \
          ret {llvm} %failed.outcome\n\
+         tcb.defect:\n  \
+         call void @abort()\n  \
+         unreachable\n\
          }}\n\n",
         symbol = implementation.symbol(),
         read = target.read_symbol()
@@ -1176,7 +1198,10 @@ fn emit_write_once(
          %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
          %accepted = call i64 @{write}({output} %output, ptr %target, i64 %extent)\n  \
          %progress = icmp sgt i64 %accepted, 0\n  \
-         br i1 %progress, label %ok, label %quiet\n\
+         br i1 %progress, label %sanitize, label %quiet\n\
+         sanitize:\n  \
+         %bounded = icmp ule i64 %accepted, %extent\n  \
+         br i1 %bounded, label %ok, label %tcb.defect\n\
          ok:\n  \
          %next = add nuw i64 %start, %accepted\n  \
          %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
@@ -1196,6 +1221,9 @@ fn emit_write_once(
          %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
          %err.outcome = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
          ret {llvm} %err.outcome\n\
+         tcb.defect:\n  \
+         call void @abort()\n  \
+         unreachable\n\
          }}\n\n",
         symbol = implementation.symbol(),
         write = target.write_symbol()
@@ -1336,18 +1364,17 @@ fn emit_open_directory(
         shape,
         target,
         SystemResourceType::DirectoryRead,
-        target.directory_open_flags(),
+        target.component_directory_open_flags(),
+        false,
     )
 }
 
 /// Emits the approved implementation of the candidate `open_file` [SYS-11].
 ///
-/// It differs from `open_directory` in exactly the two places the two rows
-/// differ: the flags the target's own directory-relative facility is handed,
-/// and the resource the returned descriptor becomes. Everything the shared
-/// emitter performs — the statically discharged [SYS-8] range entry, component
-/// validation, bounded terminating slot, one host call, and one cold mapper —
-/// is the same because [SYS-11] states it by mirroring [SYS-14].
+/// The provisional descriptor is opened without following the terminal link
+/// and without blocking on a non-regular object, then classified through the
+/// target ABI before it becomes a `ReadFile`. A rejected descriptor is closed;
+/// inability to consume it is a resource/TCB failure and cannot continue.
 fn emit_open_file(
     program: &IrProgram<'_, '_, '_>,
     implementation: ApprovedImplementation,
@@ -1360,7 +1387,8 @@ fn emit_open_file(
         shape,
         target,
         SystemResourceType::ReadFile,
-        target.file_open_flags(),
+        target.component_file_open_flags(),
+        true,
     )
 }
 
@@ -1379,6 +1407,7 @@ fn emit_open_by_name(
     target: SystemTarget,
     opened: SystemResourceType,
     flags: i32,
+    require_regular: bool,
 ) -> Result<String, BackendFailure> {
     let directory = representation(SystemResourceType::DirectoryRead);
     let opened = representation(opened);
@@ -1405,10 +1434,89 @@ fn emit_open_by_name(
         ..
     } = shape;
     let slot = COMPONENT_LIMIT + 1;
-    let entry = range_entry(&format!("  %component = alloca [{slot} x i8], align 1\n"));
+    let mut prologue = format!("  %component = alloca [{slot} x i8], align 1\n");
+    if require_regular {
+        writeln!(
+            prologue,
+            "  %file.status = alloca [{} x i8], align 8",
+            target.file_status_size()
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+    }
+    let entry = range_entry(&prologue);
     let component = component_validation(&buffer, u32::from(target.root_prefix()));
     let (read_error, error) = native_error(target, "failure");
     let (invalid_value, invalid_error) = invalid_component(program, err_llvm, *err_type)?;
+    let opened_target = if require_regular { "inspect" } else { "live" };
+    let validation = if require_regular {
+        let (inspection_read_error, inspection_error) = native_error(target, "inspection");
+        let classes = io_error_classes(program, *err_type)?;
+        let directory_class = classes
+            .iter()
+            .find(|class| class.spelling == "IsDirectory")
+            .ok_or(BackendFailure::InvalidIr)?;
+        let other_class = classes
+            .iter()
+            .find(|class| class.spelling == "Other")
+            .ok_or(BackendFailure::InvalidIr)?;
+        let (directory_value, directory_error) =
+            io_error_value(err_llvm, directory_class, "kind.directory", "0", "0");
+        let (other_value, other_error) =
+            io_error_value(err_llvm, other_class, "kind.other", "0", "0");
+        format!(
+            "inspect:\n  \
+             %inspection.result = call i32 @{status}(i32 %descriptor, ptr %file.status)\n  \
+             %inspection.ok = icmp eq i32 %inspection.result, 0\n  \
+             br i1 %inspection.ok, label %classify, label %inspection.failure\n\
+             classify:\n  \
+             %mode.at = getelementptr inbounds i8, ptr %file.status, i64 {mode_offset}\n  \
+             %mode.native = load i16, ptr %mode.at, align 2\n  \
+             %mode = zext i16 %mode.native to i32\n  \
+             %file.kind = and i32 %mode, 61440\n  \
+             %regular = icmp eq i32 %file.kind, 32768\n  \
+             br i1 %regular, label %live, label %kind.failure\n\
+             inspection.failure:\n\
+             {inspection_read_error}  \
+             %inspection.close = call i32 @{close}(i32 %descriptor)\n  \
+             %inspection.released = icmp eq i32 %inspection.close, 0\n  \
+             br i1 %inspection.released, label %inspection.error, label %tcb.defect\n\
+             inspection.error:\n  \
+             %inspection.mapped = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {inspection_error}, \
+             i8 {ORIGIN_DESCRIPTOR_STATUS})\n  \
+             %inspection.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+             %inspection.outcome = insertvalue {llvm} %inspection.tag, {err_llvm} \
+             %inspection.mapped, {err_index}\n  \
+             ret {llvm} %inspection.outcome\n\
+             kind.failure:\n  \
+             %kind.directory = icmp eq i32 %file.kind, 16384\n  \
+             %kind.close = call i32 @{close}(i32 %descriptor)\n  \
+             %kind.released = icmp eq i32 %kind.close, 0\n  \
+             br i1 %kind.released, label %kind.select, label %tcb.defect\n\
+             kind.select:\n  \
+             br i1 %kind.directory, label %kind.directory.return, label %kind.other.return\n\
+             kind.directory.return:\n\
+             {directory_value}  \
+             %kind.directory.outcome.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+             %kind.directory.outcome = insertvalue {llvm} %kind.directory.outcome.tag, \
+             {err_llvm} {directory_error}, {err_index}\n  \
+             ret {llvm} %kind.directory.outcome\n\
+             kind.other.return:\n\
+             {other_value}  \
+             %kind.other.outcome.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+             %kind.other.outcome = insertvalue {llvm} %kind.other.outcome.tag, {err_llvm} \
+             {other_error}, \
+             {err_index}\n  \
+             ret {llvm} %kind.other.outcome\n\
+             tcb.defect:\n  \
+             call void @abort()\n  \
+             unreachable\n",
+            status = target.file_status_symbol(),
+            mode_offset = target.file_status_mode_offset(),
+            close = target.close_symbol(),
+        )
+    } else {
+        String::new()
+    };
     Ok(format!(
         "define private {llvm} @{symbol}({directory} %root, {buffer} %name, i64 %start, \
          i64 %end) alwaysinline {{\n\
@@ -1421,7 +1529,8 @@ fn emit_open_by_name(
          %descriptor = call {opened} (i32, ptr, i32, ...) @{open}({directory} %root, \
          ptr %component, i32 {flags})\n  \
          %opened = icmp sge {opened} %descriptor, 0\n  \
-         br i1 %opened, label %live, label %failure\n\
+         br i1 %opened, label %{opened_target}, label %failure\n\
+         {validation}\
          live:\n  \
          %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
          %ok = insertvalue {llvm} %ok.tag, {opened} %descriptor, {ok_index}\n  \
@@ -1568,7 +1677,10 @@ fn emit_list_once(
          %filled = call i64 @{enumerate}({list} %list, ptr %window, i64 %extent, \
          ptr %position)\n  \
          %progress = icmp sgt i64 %filled, 0\n  \
-         br i1 %progress, label %normalize, label %quiet\n\
+         br i1 %progress, label %sanitize, label %quiet\n\
+         sanitize:\n  \
+         %bounded.batch = icmp ule i64 %filled, %extent\n  \
+         br i1 %bounded.batch, label %normalize, label %tcb.defect\n\
          quiet:\n  \
          %ended = icmp eq i64 %filled, 0\n  \
          br i1 %ended, label %exhausted, label %failure\n\
@@ -1588,9 +1700,12 @@ fn emit_list_once(
          %source = phi i64 [ 0, %normalize ], [ %source.next, %step ]\n  \
          %written = phi i64 [ 0, %normalize ], [ %written.next, %step ]\n  \
          %entries = phi i64 [ 0, %normalize ], [ %entries.next, %step ]\n  \
-         %remaining = sub i64 %filled, %source\n  \
+         %complete = icmp eq i64 %source, %filled\n  \
+         br i1 %complete, label %done, label %record\n\
+         record:\n  \
+         %remaining = sub nuw i64 %filled, %source\n  \
          %headerless = icmp ult i64 %remaining, {name_offset}\n  \
-         br i1 %headerless, label %done, label %header\n\
+         br i1 %headerless, label %tcb.defect, label %header\n\
          header:\n  \
          %entry.record = getelementptr inbounds i8, ptr %window, i64 %source\n  \
          %record.extent.at = getelementptr inbounds i8, ptr %entry.record, i64 {record_length_offset}\n  \
@@ -1612,12 +1727,12 @@ fn emit_list_once(
          %consistent = and i1 %sized, %bounded\n  \
          %progressive = and i1 %advancing, %named.usable\n  \
          %usable = and i1 %consistent, %progressive\n  \
-         br i1 %usable, label %room, label %done\n\
+         br i1 %usable, label %room, label %tcb.defect\n\
          room:\n  \
          %portable = add i64 {ENTRY_HEADER}, %named\n  \
          %after = add i64 %written, %portable\n  \
          %fits = icmp ule i64 %after, %extent\n  \
-         br i1 %fits, label %record.header, label %done\n\
+         br i1 %fits, label %record.header, label %tcb.defect\n\
          record.header:\n  \
          %regular = icmp eq i64 %kind.value, {native_regular}\n  \
          %directory = icmp eq i64 %kind.value, {native_directory}\n  \
@@ -1636,12 +1751,17 @@ fn emit_list_once(
          %source.name = getelementptr inbounds i8, ptr %entry.record, i64 {name_offset}\n  \
          br label %copy\n\
          copy:\n  \
-         %copied = phi i64 [ 0, %record.header ], [ %copied.next, %copy.step ]\n  \
+         %copied = phi i64 [ 0, %record.header ], [ %copied.next, %copy.store ]\n  \
          %copy.done = icmp uge i64 %copied, %named\n  \
          br i1 %copy.done, label %step, label %copy.step\n\
          copy.step:\n  \
          %copy.from = getelementptr inbounds i8, ptr %source.name, i64 %copied\n  \
          %copy.byte = load i8, ptr %copy.from, align 1\n  \
+         %copy.nul = icmp eq i8 %copy.byte, 0\n  \
+         %copy.separator = icmp eq i8 %copy.byte, {root}\n  \
+         %copy.invalid = or i1 %copy.nul, %copy.separator\n  \
+         br i1 %copy.invalid, label %tcb.defect, label %copy.store\n\
+         copy.store:\n  \
          %copy.to = getelementptr inbounds i8, ptr %target.name, i64 %copied\n  \
          store i8 %copy.byte, ptr %copy.to, align 1\n  \
          %copied.next = add i64 %copied, 1\n  \
@@ -1652,19 +1772,19 @@ fn emit_list_once(
          %entries.next = add i64 %entries, 1\n  \
          br label %walk\n\
          done:\n  \
-         %final.written = phi i64 [ %written, %walk ], [ %written, %header ], \
-         [ %written, %room ]\n  \
-         %final.entries = phi i64 [ %entries, %walk ], [ %entries, %header ], \
-         [ %entries, %room ]\n  \
-         %next = add nuw i64 %start, %final.written\n  \
+         %next = add nuw i64 %start, %written\n  \
          %bytes.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
          %bytes.count = insertvalue {llvm} %bytes.tag, i64 %next, {bytes_index}\n  \
-         %bytes.outcome = insertvalue {llvm} %bytes.count, i64 %final.entries, \
+         %bytes.outcome = insertvalue {llvm} %bytes.count, i64 %entries, \
          {entries_index}\n  \
          ret {llvm} %bytes.outcome\n\
+         tcb.defect:\n  \
+         call void @abort()\n  \
+         unreachable\n\
          }}\n\n",
         symbol = implementation.symbol(),
-        enumerate = enumeration.symbol()
+        enumerate = enumeration.symbol(),
+        root = target.root_prefix(),
     ))
 }
 

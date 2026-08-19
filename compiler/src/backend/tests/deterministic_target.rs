@@ -194,6 +194,7 @@ const HOST_PRELUDE: &str = "\
 #include <limits.h>\n\
 #include <stdio.h>\n\
 #include <string.h>\n\
+#include <sys/stat.h>\n\
 #include <unistd.h>\n\
 \n\
 /* The descriptors the scripted opens produce. They are deliberately not real\n\
@@ -269,6 +270,16 @@ int wf_test_openat(int directory, const char *path, int flags, ...) {\n\
              WF_TEST_FILE);\n\
     wf_test_trace(line);\n\
     return WF_TEST_FILE;\n\
+}\n\
+\n\
+int wf_test_fstat(int descriptor, struct stat *status) {\n\
+    if (descriptor != WF_TEST_FILE) {\n\
+        errno = EBADF;\n\
+        return -1;\n\
+    }\n\
+    memset(status, 0, sizeof *status);\n\
+    status->st_mode = S_IFREG | S_IRUSR;\n\
+    return 0;\n\
 }\n\
 \n\
 ssize_t wf_test_read(int descriptor, void *destination, size_t capacity) {\n\

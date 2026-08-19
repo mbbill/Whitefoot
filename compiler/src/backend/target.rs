@@ -375,6 +375,7 @@ impl LayoutComputer<'_, '_, '_, '_> {
             IrType::Float { .. } => Err(TargetLayoutFailure::InvalidIr),
             IrType::Nominal(id) => self.nominal_layout(id),
             IrType::Address(_) => Ok(Layout { size: 8, align: 8 }),
+            IrType::Array { length: 0, .. } => Ok(Layout { size: 0, align: 1 }),
             IrType::Array { element, length } => {
                 let element = self.layout(element.ty())?;
                 let stride = align_up(
