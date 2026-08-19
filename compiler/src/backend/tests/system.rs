@@ -604,6 +604,35 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
 }
 
 #[test]
+fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
+    let source = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks {
+  let bytes = buffer_new(3_u64, 65_u8);
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 1_u64, end: 3_u64) {
+        Ok(value: next) => {
+          if ieq(next, 3_u64) {
+            return exit_status(code: 0_u8);
+          } else {
+            return exit_status(code: 2_u8);
+          }
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}
+"#;
+    let llvm = compile(source);
+    assert!(llvm.contains("%next = add nuw i64 %start, %accepted"));
+    let output = compile_and_run_with(&llvm, &[]);
+    assert_eq!(output.stdout, b"AA");
+    assert_eq!(output.status.code(), Some(0));
+}
+
+#[test]
 fn linux_enumeration_facility_without_an_abi_mapping_is_missing_mapping() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus external, blocks {
   region 'c {
