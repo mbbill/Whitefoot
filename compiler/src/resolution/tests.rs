@@ -102,25 +102,25 @@ fn with_one_resolution<ResultValue>(
 
 #[test]
 fn minimal_function_publishes_the_closed_prelude_and_source_declaration() {
-    with_one_resolution(b"fn main() -> own unit pure {\n}\n", |outcome| {
+    with_one_resolution(b"fn probe() -> result: own unit pure {\n}\n", |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("minimal canonical function must resolve: {outcome:?}");
         };
         assert_eq!(resolved.prelude_declarations().len(), 24);
         assert_eq!(resolved.declarations().len(), 1);
         assert_eq!(resolved.declarations()[0].role(), DeclarationRole::Function);
-        assert_eq!(resolved.declarations()[0].spelling(), "main");
+        assert_eq!(resolved.declarations()[0].spelling(), "probe");
         assert!(resolved.scopes().len() >= 3);
     });
 }
 
 #[test]
 fn top_level_functions_are_visible_throughout_the_closed_unit() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"fn probe() -> result: own unit pure {
   helper();
 }
 
-fn helper() -> own unit pure {
+fn helper() -> result: own unit pure {
 }
 "#;
     with_one_resolution(source, |outcome| {
@@ -165,7 +165,7 @@ fn named_constants_remain_lexically_declaration_before_use() {
 
 #[test]
 fn decimal_array_sizes_need_no_lexical_target() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"fn probe() -> result: own unit pure {
   let values = array_new<i32, 4>(0_i32);
   return unit;
 }
@@ -185,7 +185,7 @@ fn decimal_array_sizes_need_no_lexical_target() {
 
 #[test]
 fn source_nominals_are_not_visible_before_their_declaration() {
-    let source = br#"fn consume(value: own Later) -> own unit pure {
+    let source = br#"fn consume(value: own Later) -> result: own unit pure {
 }
 
 struct Later {
@@ -205,8 +205,8 @@ struct Later {
 
 #[test]
 fn requires_shape_is_checked_before_names_inside_the_invalid_block() {
-    let source = br#"fn guarded() -> own unit traps requires {
-  let value = missing;
+    let source = br#"fn guarded() -> result: own unit pure contract {
+  define value = missing;
 } {
   return unit;
 }
@@ -224,31 +224,22 @@ fn requires_shape_is_checked_before_names_inside_the_invalid_block() {
 }
 
 #[test]
-fn clause_structural_admission_selects_the_earliest_source_across_both_rules() {
-    let invalid_ensures = br#"fn first() -> own i32 pure ensures result {
-  doc "bad ensures";
+fn contract_structural_admission_selects_the_earliest_source() {
+    let first_empty = br#"fn first() -> result: own i32 pure contract {
 } {
   return 0_i32;
 }
 "#;
-    let invalid_requires = br#"fn second() -> own unit traps requires {
-  doc "bad requires";
+    let second_define_only = br#"fn second() -> result: own unit pure contract {
+  define unresolved = missing;
 } {
   return unit;
 }
 "#;
 
-    for (first, second, expected) in [
-        (
-            invalid_ensures.as_slice(),
-            invalid_requires.as_slice(),
-            ResolutionRule::Fn9,
-        ),
-        (
-            invalid_requires.as_slice(),
-            invalid_ensures.as_slice(),
-            ResolutionRule::Fn8,
-        ),
+    for (first, second) in [
+        (first_empty.as_slice(), second_define_only.as_slice()),
+        (second_define_only.as_slice(), first_empty.as_slice()),
     ] {
         with_resolution(
             &[
@@ -259,7 +250,7 @@ fn clause_structural_admission_selects_the_earliest_source_across_both_rules() {
                 let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
                     panic!("an invalid clause block must reject: {outcome:?}");
                 };
-                assert_eq!(issue.rule(), expected);
+                assert_eq!(issue.rule(), ResolutionRule::Fn8);
                 assert_eq!(issue.origin().coordinate().source().ordinal(), 0);
             },
         );
@@ -267,11 +258,11 @@ fn clause_structural_admission_selects_the_earliest_source_across_both_rules() {
 }
 
 #[test]
-fn plain_postcondition_selector_is_private_and_clause_scopes_are_disjoint() {
-    let source = br#"fn relation(value: own i32) -> own i32 traps requires {
-  check ieq(value, value) else trap "pre";
-} ensures result {
-  check ieq(result, value) else trap "post";
+fn plain_postcondition_selector_is_private_and_definitions_share_one_contract_scope() {
+    let source = br#"fn relation(value: own i32) -> result: own i32 pure contract {
+  define reflexive = ieq(value, value);
+  requires reflexive;
+  ensures ieq(result, value);
 } {
   return value;
 }
@@ -326,7 +317,7 @@ fn plain_postcondition_selector_is_private_and_clause_scopes_are_disjoint() {
 fn variant_postcondition_selector_preserves_prelude_identity_without_match_roles() {
     for field in ["value", "hostile"] {
         let source = format!(
-            "fn selected(value: own i32) -> own Result<i32, i32> pure ensures Ok({field}: result) {{\n  check ieq(result, value) else trap \"post\";\n}} {{\n  return Ok<i32, i32>(value: value);\n}}\n"
+            "fn selected(value: own i32) -> result: own Result<i32, i32> pure contract {{\n  ensures when Ok({field}: result): ieq(result, value);\n}} {{\n  return Ok<i32, i32>(value: value);\n}}\n"
         );
         with_one_resolution(source.as_bytes(), |outcome| {
             let ResolutionOutcome::Complete(resolved) = outcome else {
@@ -370,15 +361,14 @@ fn variant_postcondition_selector_preserves_prelude_identity_without_match_roles
 
 #[test]
 fn selector_candidates_use_their_exact_form3_reservation_roles() {
-    let plain = br#"fn plain(value: own i32) -> own i32 pure ensures ilt {
-  check ieq(ilt, value) else trap "post";
+    let plain = br#"fn plain(value: own i32) -> ilt: own i32 pure contract {
+  ensures ieq(ilt, value);
 } {
   return value;
 }
 "#;
-    let variant =
-        br#"fn variant(value: own i32) -> own Result<i32, i32> pure ensures Ok(value: ilt) {
-  check ieq(ilt, value) else trap "post";
+    let variant = br#"fn variant(value: own i32) -> result: own Result<i32, i32> pure contract {
+  ensures when Ok(value: ilt): ieq(ilt, value);
 } {
   return Ok<i32, i32>(value: value);
 }
@@ -406,7 +396,7 @@ fn selector_candidates_use_their_exact_form3_reservation_roles() {
                 ResolutionIssueKind::ReservedName {
                     spelling,
                     declaration_role,
-                    inventory_ordinal: 18,
+                    inventory_ordinal: 24,
                     ..
                 } if spelling == "ilt" && *declaration_role == expected_role
             ));
@@ -415,9 +405,9 @@ fn selector_candidates_use_their_exact_form3_reservation_roles() {
 }
 
 #[test]
-fn postcondition_entry_inventory_and_lookup_wait_for_selector_admission() {
-    let unresolved = br#"fn unresolved() -> own unit pure ensures result {
-  check ieq(result, missing) else trap "post";
+fn postcondition_lookup_waits_for_selector_admission_and_live_conflicts_are_retained() {
+    let unresolved = br#"fn unresolved() -> result: own unit pure contract {
+  ensures ieq(result, missing);
 } {
   return unit;
 }
@@ -443,9 +433,8 @@ fn postcondition_entry_inventory_and_lookup_wait_for_selector_admission() {
         ));
     });
 
-    let inventory_conflict = br#"fn conflict(result: own i32) -> own i32 pure ensures result {
-  let result = 0_i32;
-  check ieq(result, result) else trap "post";
+    let inventory_conflict = br#"fn conflict(result: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, result);
 } {
   return result;
 }
@@ -462,66 +451,45 @@ fn postcondition_entry_inventory_and_lookup_wait_for_selector_admission() {
             .as_ref()
             .expect("plain selector candidate");
         assert_eq!(candidate.live_conflicts.len(), 1);
-        assert!(candidate.later_local_collision.is_some());
-        assert!(postcondition.provisional_uses.is_empty());
+        assert!(candidate.later_local_collision.is_none());
+        assert_eq!(postcondition.provisional_uses.len(), 1);
+        assert_eq!(postcondition.provisional_uses[0].spelling(), "ieq");
+        assert_eq!(postcondition.selector_uses.len(), 2);
         assert!(postcondition.entry_resolution_issue.is_none());
-        assert!(matches!(
-            postcondition.entry_inventory_issue.as_ref(),
-            Some(issue)
-                if issue.rule() == ResolutionRule::Type6
-                    && matches!(
-                        issue.kind(),
-                        ResolutionIssueKind::DeclarationCollision { spelling, .. }
-                            if spelling == "result"
-                    )
-        ));
+        assert!(postcondition.entry_inventory_issue.is_none());
     });
 }
 
 #[test]
 fn invalid_ensures_local_cannot_poison_an_ordinary_body_lookup() {
-    let source = br#"fn poisoned(value: own i32) -> own i32 pure ensures result {
-  let ilt = ieq(result, value);
-  check ilt else trap "post";
+    let source = br#"fn poisoned(value: own i32) -> result: own i32 pure contract {
+  define ilt = ieq(value, value);
+  ensures ieq(result, value);
 } {
-  return ilt;
+  return value;
 }
 "#;
     with_one_resolution(source, |outcome| {
-        let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("entry inventory must remain pending through selector admission: {outcome:?}");
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an invalid contract definition must reject before body lookup: {outcome:?}");
         };
-        let [postcondition] = resolved.postconditions() else {
-            panic!("one private postcondition record is required");
-        };
+        assert_eq!(issue.rule(), ResolutionRule::Form3);
         assert!(matches!(
-            postcondition.entry_inventory_issue.as_ref(),
-            Some(issue)
-                if issue.rule() == ResolutionRule::Form3
-                    && matches!(
-                        issue.kind(),
-                        ResolutionIssueKind::ReservedName {
-                            spelling,
-                            declaration_role: ReservedDeclarationRole::Let,
-                            ..
-                        } if spelling == "ilt"
-                    )
+            issue.kind(),
+            ResolutionIssueKind::ReservedName {
+                spelling,
+                declaration_role: ReservedDeclarationRole::Let,
+                ..
+            } if spelling == "ilt"
         ));
-        assert!(
-            resolved
-                .lexical_uses()
-                .iter()
-                .all(|usage| usage.spelling() != "ilt"),
-            "neither the invalid entry declaration nor its body lookalike may publish a target"
-        );
     });
 }
 
 #[test]
 fn unresolved_variant_selector_keeps_its_lookup_verdict_before_entry_inventory() {
-    let source = br#"fn unresolved(value: own i32) -> own Result<i32, Overflow> pure ensures Missing(value: result) {
-  let ilt = ieq(result, value);
-  check ilt else trap "post";
+    let source =
+        br#"fn unresolved(value: own i32) -> result: own Result<i32, Overflow> pure contract {
+  ensures when Missing(value: result): ieq(result, value);
 } {
   return Ok<i32, Overflow>(value: value);
 }
@@ -545,38 +513,24 @@ fn unresolved_variant_selector_keeps_its_lookup_verdict_before_entry_inventory()
 }
 
 #[test]
-fn requires_and_ensures_locals_do_not_cross_clause_or_body_boundaries() {
-    let requires_into_ensures = br#"fn isolated(value: own i32) -> own i32 traps requires {
-  let pre = value;
-  check ieq(pre, value) else trap "pre";
-} ensures result {
-  check ieq(result, pre) else trap "post";
+fn contract_definitions_are_shared_across_clauses_but_do_not_reach_the_body() {
+    let requires_into_ensures = br#"fn isolated(value: own i32) -> result: own i32 pure contract {
+  define pre = value;
+  requires ieq(pre, value);
+  ensures ieq(result, pre);
 } {
   return value;
 }
 "#;
     with_one_resolution(requires_into_ensures, |outcome| {
-        let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("cross-clause lookup must wait behind selector admission: {outcome:?}");
+        let ResolutionOutcome::Complete(_) = outcome else {
+            panic!("one shared contract definition must reach both clause kinds: {outcome:?}");
         };
-        let [postcondition] = resolved.postconditions() else {
-            panic!("one private postcondition record is required");
-        };
-        assert!(matches!(
-            postcondition.entry_resolution_issue.as_ref(),
-            Some(issue)
-                if issue.rule() == ResolutionRule::Type5
-                    && matches!(
-                        issue.kind(),
-                        ResolutionIssueKind::InvisibleUse { spelling, .. }
-                            if spelling == "pre"
-                    )
-        ));
     });
 
-    let ensures_into_body = br#"fn isolated(value: own i32) -> own i32 pure ensures result {
-  let post = value;
-  check ieq(result, post) else trap "post";
+    let ensures_into_body = br#"fn isolated(value: own i32) -> result: own i32 pure contract {
+  define post = value;
+  ensures ieq(result, post);
 } {
   return post;
 }
@@ -595,21 +549,21 @@ fn requires_and_ensures_locals_do_not_cross_clause_or_body_boundaries() {
 
 #[test]
 fn const_generics_remain_outside_the_ordinary_place_base_domain() {
-    let ordinary = br#"fn value<const n: u64>() -> own u64 pure {
+    let ordinary = br#"fn value<const n: u64>() -> result: own u64 pure {
   return n;
 }
 
-fn main() -> own unit pure {
+fn probe() -> result: own unit pure {
   return unit;
 }
 "#;
-    let postcondition = br#"fn value<const n: u64>() -> own u64 pure ensures result {
-  check ieq(result, result) else trap "post";
+    let postcondition = br#"fn value<const n: u64>() -> result: own u64 pure contract {
+  ensures ieq(result, result);
 } {
   return n;
 }
 
-fn main() -> own unit pure {
+fn probe() -> result: own unit pure {
   return unit;
 }
 "#;
@@ -635,14 +589,14 @@ fn main() -> own unit pure {
 }
 
 #[test]
-fn the_kind_declaring_judgment_gates_only_the_system_admission_decision() {
+fn the_command_kind_gates_only_the_system_admission_decision_in_resolution() {
     // A unit with no `program_kind` child is not kind-declaring, so nothing
     // about the entry-form grammar changes its ordinary resolution, and the
     // system domain contributes no entry to it [SYS-3].
-    let unlabelled = b"fn main() -> own unit pure {\n  return unit;\n}\n";
-    with_one_resolution(unlabelled, |outcome| {
+    let ordinary = b"fn probe() -> result: own unit pure {\n  return unit;\n}\n";
+    with_one_resolution(ordinary, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("the unlabelled entry must resolve unchanged: {outcome:?}");
+            panic!("an ordinary internal function must resolve unchanged: {outcome:?}");
         };
         assert!(resolved.system_declarations().is_empty());
     });
@@ -651,12 +605,12 @@ fn the_kind_declaring_judgment_gates_only_the_system_admission_decision() {
     // the complete SYS-2 inventory as a third declaration source [SYS-1]:
     // the entry's system input and result types resolve to system targets.
     let kind_declaring =
-        b"command fn main(command.args as args: own Args) -> own ExitStatus pure {\n  return unit;\n}\n";
+        b"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_one_resolution(kind_declaring, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("a kind-declaring unit must resolve system names: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 192);
+        assert_eq!(resolved.system_declarations().len(), 199);
         for (spelling, ordinal) in [("Args", 0), ("ExitStatus", 6)] {
             let usage = resolved
                 .lexical_uses()
@@ -670,17 +624,6 @@ fn the_kind_declaring_judgment_gates_only_the_system_admission_decision() {
             ));
         }
     });
-
-    // The judgment is syntactic: a `program_kind` on a declaration that is not
-    // the entry still makes the unit kind-declaring, and the unlabelled `main`
-    // beside it changes nothing.
-    let non_entry_kind = b"command fn helper() -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
-    with_one_resolution(non_entry_kind, |outcome| {
-        let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("a non-entry program_kind must still be kind-declaring: {outcome:?}");
-        };
-        assert_eq!(resolved.system_declarations().len(), 192);
-    });
 }
 
 #[test]
@@ -689,11 +632,14 @@ fn fn8_admission_precedes_the_system_admission_decision() {
     // permits the SYS-3 system-admission decision. The FN-8 rejection must
     // therefore win in a kind-declaring unit before any system name enters
     // inventory or lookup.
-    let source =
-        br#"command fn main(command.args as args: own Args) -> own ExitStatus pure requires {
-  doc "not an admitted requires entry";
+    let source = br#"fn guarded(value: own i32) -> result: own i32 pure contract {
+  define unresolved = missing;
 } {
-  return unit;
+  return value;
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_one_resolution(source, |outcome| {
@@ -707,20 +653,24 @@ fn fn8_admission_precedes_the_system_admission_decision() {
         ));
     });
 
-    // The same kind-declaring entry with an admitted requires block reaches
-    // the system-admission decision and resolves with the domain admitted.
-    let admitted =
-        br#"command fn main(command.args as args: own Args) -> own ExitStatus traps requires {
-  check args else trap "present";
+    // The same kind-declaring unit with an admitted internal requirement
+    // reaches the system-admission decision and resolves with the domain
+    // admitted. The command entry itself carries no contract [FN-7].
+    let admitted = br#"fn guarded(value: own i32) -> result: own i32 pure contract {
+  requires ieq(value, value);
 } {
-  return unit;
+  return value;
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_one_resolution(admitted, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("an admitted requires block must reach the SYS-3 decision: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 192);
+        assert_eq!(resolved.system_declarations().len(), 199);
     });
 }
 
@@ -731,43 +681,58 @@ fn a_kind_declaring_unit_resolves_the_complete_system_lookup_inventory() {
     // `ReadOutcome` variants in arm position, with deterministic [SYS-2]
     // preorder ordinals throughout. Resolution fixes callee targets only;
     // argument-name checking against the [SYS-2] parameter lists is the
-    // later typed stage, so the `arg_get` call here omits its second
-    // argument: the declared name `index` is a fixed [GRAM-5] atom that
-    // [FORM-3] excludes from IDENT, so a complete [GRAM-11] call to
-    // `arg_get` is unwritable under v0.18 — a recorded specification
-    // finding, not behavior this test may normalize.
-    let source = br#"command fn main() -> own ExitStatus pure {
+    // later typed stage; this fixture nevertheless spells every current
+    // parameter name so catalog surface changes remain visible here.
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-fn types(a: own Args, b: own HostString, c: own RelativePath, d: own DirectoryRead, e: own ReadFile, f: own Output, g: own ExitStatus, h: own ArgError, i: own Utf8Error, j: own CopyError, k: own Utf8CopyError, l: own PathError, m: own ReadOutcome, n: own IoError) -> own unit pure {
+fn types(a: own Args, b: own HostString, c: own RelativePath, d: own DirectoryRead, e: own ReadFile, f: own Output, g: own ExitStatus, h: own ArgError, i: own Utf8Error, j: own CopyError, k: own Utf8CopyError, l: own PathError, m: own ReadOutcome, n: own IoError, o: own DirectoryList, p: own ListOutcome) -> result: own unit pure {
   return unit;
 }
 
-fn calls(x: own u64) -> own unit pure {
+fn calls(x: own u64) -> result: own unit pure {
   args_count(args: x);
-  arg_get(args: x);
+  arg_get(args: x, position: x);
   host_bytes_len(value: x);
-  host_copy_bytes(value: x, destination: x, offset: x, capacity: x);
+  host_copy_bytes(value: x, destination: x, start: x, end: x);
   host_utf8_len(value: x);
-  host_copy_utf8(value: x, destination: x, offset: x, capacity: x);
+  host_copy_utf8(value: x, destination: x, start: x, end: x);
   relative_path(value: x);
   open_read(root: x, path: x);
-  read_once(file: x, destination: x, offset: x, capacity: x);
-  write_once(output: x, source: x, offset: x, count: x);
+  read_once(file: x, destination: x, start: x, end: x);
+  write_once(output: x, source: x, start: x, end: x);
+  open_directory(root: x, name: x, start: x, end: x);
+  open_list(directory: x);
+  list_once(list: x, destination: x, start: x, end: x);
+  open_file(root: x, name: x, start: x, end: x);
   return unit;
 }
 
-fn outcomes(m: own ReadOutcome) -> own unit pure {
+fn outcomes(m: own ReadOutcome) -> result: own unit pure {
   let failed = NotFound(code: 1_u32, origin: 0_u8);
   match m {
-    ReadBytes(count: got) => {
+    ReadBytes(next: got) => {
       return unit;
     }
     ReadEnd() => {
       return unit;
     }
     ReadFailed(error: cause) => {
+      return unit;
+    }
+  }
+}
+
+fn list_outcomes(m: own ListOutcome) -> result: own unit pure {
+  match m {
+    ListBytes(next: got, entries: count) => {
+      return unit;
+    }
+    ListEnd() => {
+      return unit;
+    }
+    ListFailed(error: cause) => {
       return unit;
     }
   }
@@ -808,6 +773,8 @@ fn outcomes(m: own ReadOutcome) -> own unit pure {
             ("PathError", 11),
             ("ReadOutcome", 12),
             ("IoError", 13),
+            ("DirectoryList", 14),
+            ("ListOutcome", 15),
         ] {
             expect(LexicalUseRole::Type, spelling, ordinal);
         }
@@ -823,6 +790,10 @@ fn outcomes(m: own ReadOutcome) -> own unit pure {
             ("read_once", 159),
             ("write_once", 166),
             ("exit_status", 173),
+            ("open_directory", 175),
+            ("open_list", 182),
+            ("list_once", 185),
+            ("open_file", 192),
         ] {
             expect(LexicalUseRole::IdentifierCallee, spelling, ordinal);
         }
@@ -830,6 +801,9 @@ fn outcomes(m: own ReadOutcome) -> own unit pure {
         expect(LexicalUseRole::ArmVariant, "ReadBytes", 24);
         expect(LexicalUseRole::ArmVariant, "ReadEnd", 26);
         expect(LexicalUseRole::ArmVariant, "ReadFailed", 27);
+        expect(LexicalUseRole::ArmVariant, "ListBytes", 119);
+        expect(LexicalUseRole::ArmVariant, "ListEnd", 122);
+        expect(LexicalUseRole::ArmVariant, "ListFailed", 123);
     });
 }
 
@@ -838,7 +812,7 @@ fn a_system_unadmitted_unit_sees_system_spellings_as_ordinary_undeclared_names()
     // [SYS-3]: in a unit that is not kind-declaring the system domain
     // contributes no entry, so a system operation spelling is an ordinary
     // undeclared callee decided by the ordinary lexical-use ranks.
-    let callee = br#"fn main() -> own unit pure {
+    let callee = br#"fn probe() -> result: own unit pure {
   let x = 0_u64;
   args_count(args: x);
   return unit;
@@ -857,11 +831,11 @@ fn a_system_unadmitted_unit_sees_system_spellings_as_ordinary_undeclared_names()
     });
 
     // The same holds in the nominal-type domain.
-    let nominal = br#"fn consume(value: own HostString) -> own unit pure {
+    let nominal = br#"fn consume(value: own HostString) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
+fn probe() -> result: own unit pure {
   return unit;
 }
 "#;
@@ -890,15 +864,15 @@ enum Outcome {
   ReadEnd();
 }
 
-fn args_count(args: own u64) -> own u64 pure {
+fn args_count(args: own u64) -> result: own u64 pure {
   return args;
 }
 
-fn keeper(value: own HostString) -> own unit pure {
+fn keeper(value: own HostString) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
+fn probe() -> result: own unit pure {
   let x = args_count(args: 0_u64);
   let s = HostString();
   match ReadEnd() {
@@ -938,9 +912,8 @@ fn system_collisions_reject_deterministically_in_both_directions() {
     // whose spelling equals a system entry's spelling in the same domain is a
     // deterministic rejection at that source declaration event — before the
     // entry declaration and after it alike — and neither name resolves.
-    let entry =
-        "command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-    let lookalike = "fn args_count(args: own u64) -> own u64 pure {\n  return args;\n}\n";
+    let entry = "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let lookalike = "fn args_count(args: own u64) -> result: own u64 pure {\n  return args;\n}\n";
     for source in [
         format!("{lookalike}\n{entry}"),
         format!("{entry}\n{lookalike}"),
@@ -971,8 +944,7 @@ fn system_collisions_reject_deterministically_in_both_directions() {
 
 #[test]
 fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
-    let entry =
-        "command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let entry = "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
     // Nominal-type domain: a struct reusing an opaque-type spelling. The
     // struct's constructor entry collides with nothing because an opaque
@@ -1026,7 +998,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
     // A nested declaration collides at rank 5 exactly like a root one
     // ([SYS-1]: at the compilation root and in every nested scope alike);
     // this is a rejection, never a shadow of the system entry.
-    let nested = "command fn main() -> own ExitStatus pure {\n  let host_bytes_len = 0_u64;\n  return exit_status(code: 0_u8);\n}\n";
+    let nested = "command fn main() -> status: own ExitStatus pure {\n  let host_bytes_len = 0_u64;\n  return exit_status(code: 0_u8);\n}\n";
     with_one_resolution(nested.as_bytes(), |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("the nested system collision must reject: {outcome:?}");
@@ -1053,7 +1025,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
 fn a_prelude_collision_keeps_rank_four_in_a_system_admitted_unit() {
     // [DIAG-1] rank 4 precedes rank 5 at one event: a PRE-1 collision in a
     // kind-declaring unit reports only its PRE-1 conflicts.
-    let source = "command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n\nstruct Overflow {\n}\n";
+    let source = "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n\nstruct Overflow {\n}\n";
     with_one_resolution(source.as_bytes(), |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("the prelude collision must reject: {outcome:?}");
@@ -1080,12 +1052,12 @@ fn a_system_operation_never_satisfies_a_conformance_binding() {
     // [SYS-2]: a system operation is not the right IDENT of an FN-3
     // `fn_bind`; a conformance binds only a top-level source function. The
     // visible system entry still surfaces through the available classes.
-    let source = br#"command fn main() -> own ExitStatus pure {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
 contract Task {
-  fn run(value: own u64) -> own u64 pure;
+  fn run(value: own u64) -> result: own u64 pure;
 }
 
 conform u64: Task {
@@ -1107,7 +1079,7 @@ conform u64: Task {
 #[test]
 fn system_resolution_is_deterministic_across_repeated_runs_and_paths() {
     let source =
-        b"command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+        b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     let targets = |path: &str| -> Vec<(String, u8)> {
         with_resolution(&[SourceInput::new(path, source)], |outcome| {
             let ResolutionOutcome::Complete(resolved) = outcome else {
@@ -1137,9 +1109,9 @@ fn system_resolution_is_deterministic_across_repeated_runs_and_paths() {
 
 #[test]
 fn requires_locals_do_not_escape_into_the_function_body() {
-    let source = br#"fn guarded() -> own unit traps requires {
-  let condition = 1_i32;
-  check condition else trap "failed";
+    let source = br#"fn guarded() -> result: own unit pure contract {
+  define condition = 1_i32;
+  requires ieq(condition, condition);
 } {
   return condition;
 }
@@ -1158,7 +1130,7 @@ fn requires_locals_do_not_escape_into_the_function_body() {
 
 #[test]
 fn root_identifier_collisions_are_rejected_in_inventory_order() {
-    let source = br#"fn value() -> own unit pure {
+    let source = br#"fn value() -> result: own unit pure {
 }
 
 const value: i32 = 1_i32;
@@ -1177,7 +1149,7 @@ const value: i32 = 1_i32;
 
 #[test]
 fn dotless_operation_names_are_reserved_from_source_declarations() {
-    with_one_resolution(b"fn ilt() -> own unit pure {\n}\n", |outcome| {
+    with_one_resolution(b"fn ilt() -> result: own unit pure {\n}\n", |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("operation name declaration must reject: {outcome:?}");
         };
@@ -1186,7 +1158,7 @@ fn dotless_operation_names_are_reserved_from_source_declarations() {
             issue.kind(),
             ResolutionIssueKind::ReservedName {
                 spelling,
-                inventory_ordinal: 18,
+                inventory_ordinal: 24,
                 ..
             } if spelling == "ilt"
         ));
@@ -1201,7 +1173,7 @@ fn dotless_operation_names_are_reserved_from_source_declarations() {
 #[test]
 fn every_comparison_name_is_reserved_from_source_declarations() {
     for spelling in ["ieq", "ine", "ile", "ige"] {
-        let source = format!("fn {spelling}() -> own unit pure {{\n}}\n");
+        let source = format!("fn {spelling}() -> result: own unit pure {{\n}}\n");
         with_one_resolution(source.as_bytes(), |outcome| {
             let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
                 panic!("a comparison name declaration must reject: {outcome:?}");
@@ -1218,7 +1190,7 @@ fn every_comparison_name_is_reserved_from_source_declarations() {
 
 #[test]
 fn region_names_are_unique_across_the_complete_function() {
-    let source = br#"fn nested() -> own unit pure {
+    let source = br#"fn nested() -> result: own unit pure {
   region 'r {
     give unit;
   }
@@ -1241,7 +1213,7 @@ fn region_names_are_unique_across_the_complete_function() {
 
 #[test]
 fn a_break_label_must_lexically_enclose_the_break() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"fn probe() -> result: own unit pure {
   loop @done {
     break @done;
   }
@@ -1262,7 +1234,7 @@ fn a_break_label_must_lexically_enclose_the_break() {
 
 #[test]
 fn counted_range_binder_and_label_are_visible_only_in_the_body() {
-    let source = br#"fn main(limit: own u64) -> own unit pure {
+    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
   for @range index in 0_u64..limit {
     let copied = index;
     break @range;
@@ -1320,7 +1292,7 @@ fn counted_range_binder_and_label_are_visible_only_in_the_body() {
 #[test]
 fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
     for source in [
-        br#"fn main(limit: own u64) -> own unit pure {
+        br#"fn probe(limit: own u64) -> result: own unit pure {
   for @range index in index..limit {
     break @range;
   }
@@ -1328,7 +1300,7 @@ fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
 }
 "#
         .as_slice(),
-        br#"fn main(limit: own u64) -> own unit pure {
+        br#"fn probe(limit: own u64) -> result: own unit pure {
   for @range index in 0_u64..index {
     break @range;
   }
@@ -1336,7 +1308,7 @@ fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
 }
 "#
         .as_slice(),
-        br#"fn main(limit: own u64) -> own unit pure {
+        br#"fn probe(limit: own u64) -> result: own unit pure {
   for @range index in 0_u64..limit {
     break @range;
   }
@@ -1361,7 +1333,7 @@ fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
 
 #[test]
 fn counted_range_label_is_non_enclosing_after_the_loop() {
-    let source = br#"fn main(limit: own u64) -> own unit pure {
+    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
   for @range index in 0_u64..limit {
     break @range;
   }
@@ -1382,7 +1354,7 @@ fn counted_range_label_is_non_enclosing_after_the_loop() {
 
 #[test]
 fn counted_range_binder_uses_the_for_binder_reservation_role() {
-    let source = br#"fn main(limit: own u64) -> own unit pure {
+    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
   for @range ilt in 0_u64..limit {
     break @range;
   }
@@ -1407,7 +1379,7 @@ fn counted_range_binder_uses_the_for_binder_reservation_role() {
 
 #[test]
 fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
-    let live_outer = br#"fn main(limit: own u64) -> own unit pure {
+    let live_outer = br#"fn probe(limit: own u64) -> result: own unit pure {
   let index = 0_u64;
   for @range index in 0_u64..limit {
     break @range;
@@ -1426,7 +1398,7 @@ fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
         ));
     });
 
-    let nested = br#"fn main(limit: own u64) -> own unit pure {
+    let nested = br#"fn probe(limit: own u64) -> result: own unit pure {
   for @outer index in 0_u64..limit {
     for @inner index in 0_u64..limit {
       break @inner;
@@ -1447,7 +1419,7 @@ fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
         ));
     });
 
-    let nested_distinct = br#"fn main(limit: own u64) -> own unit pure {
+    let nested_distinct = br#"fn probe(limit: own u64) -> result: own unit pure {
   for @outer outer_index in 0_u64..limit {
     for @inner inner_index in outer_index..limit {
       let copied = inner_index;
@@ -1465,7 +1437,7 @@ fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
         );
     });
 
-    let reused = br#"fn main(limit: own u64) -> own unit pure {
+    let reused = br#"fn probe(limit: own u64) -> result: own unit pure {
   for @range index in 0_u64..limit {
     break @range;
   }
@@ -1496,7 +1468,7 @@ fn is_operator_family(spelling: &str) -> bool {
 
 #[test]
 fn dotless_and_dotted_operations_resolve_by_exact_op1_spelling() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"fn probe() -> result: own unit pure {
   let negated = ineg(1_i32);
   let smaller = imin(negated, 2_i32);
   return unit;
@@ -1527,7 +1499,7 @@ fn dotless_and_dotted_operations_resolve_by_exact_op1_spelling() {
 /// named side and is a second control rather than a second subject.
 #[test]
 fn a_respelled_family_produces_no_lexical_use_at_all() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"fn probe() -> result: own unit pure {
   let sum = 1_i32 +wrap 2_i32;
   let equal = ieq(sum, 3_i32);
   let named = imin(sum, 3_i32);
@@ -1561,7 +1533,7 @@ fn a_respelled_family_produces_no_lexical_use_at_all() {
 
 #[test]
 fn match_binder_cannot_equal_its_paired_field_name() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"fn probe() -> result: own unit pure {
   match unit {
     Some(value: value) => {
       return unit;
@@ -1586,7 +1558,7 @@ fn arm_lookup_does_not_accept_a_struct_constructor() {
     let source = br#"struct Boxed {
 }
 
-fn main() -> own unit pure {
+fn probe() -> result: own unit pure {
   match unit {
     Boxed() => {
       return unit;
@@ -1612,19 +1584,19 @@ fn main() -> own unit pure {
 /// that A3 deletes, so it now rides a signature-borne `slice<'v, i32>`, which
 /// [TYPE-5] keeps written. `OperationCallee` is the OPNAME form specifically
 /// (`roles.rs` keys it on `TerminalPredicate::OperationName`), and the
-/// fixture's only operation call was `iadd.wrap`, one of the twenty rows
-/// [OP-7] respelled — an operator token is never a callee, so a respelled row
-/// produces no lexical use at all. It rides `ineg`, a dotted row that
-/// keeps its name.
+/// fixture's only operation call was `iadd.wrap`, one of the rows [OP-7]
+/// respelled — an operator token is never a callee, so a respelled row
+/// produces no lexical use at all. It now rides `iabs.checked`, a dotted row
+/// that keeps its operation-name route.
 #[test]
 fn complete_role_fixture_materializes_every_d_u_and_x_family() {
     let source = br#"contract Bound {
-  fn member['sig](value: &'sig i32) -> own i32 reads('sig);
+  fn member['sig](value: &'sig i32) -> result: own i32 reads('sig);
   law identity(member, 0_i32);
 }
 
 contract Numeric<T: Int> {
-  fn zero() -> own T pure;
+  fn zero() -> result: own T pure;
   law identity(zero, 0_T);
 }
 
@@ -1641,7 +1613,7 @@ const one: i32 = 1_i32;
 
 const two: i32 = one;
 
-fn implementation(value: own i32) -> own i32 pure {
+fn implementation(value: own i32) -> result: own i32 pure {
   return value;
 }
 
@@ -1649,21 +1621,21 @@ conform Package<i32, one>: Bound {
   member = implementation;
 }
 
-fn user<T: Bound, const n: i32>['call](arg: &'call T) -> &'call T reads('call) {
+fn user<T: Bound, const n: i32>['call](arg: &'call T) -> result: &'call T reads('call) {
   return arg;
 }
 
-fn viewer['v](values: own slice<'v, i32>) -> own unit reads('v) {
+fn viewer['v](values: own slice<'v, i32>) -> result: own unit reads('v) {
   return unit;
 }
 
-fn numeric<T: Int>() -> own T pure {
+fn numeric<T: Int>() -> result: own T pure {
   return 0_T;
 }
 
-fn main() -> own unit traps {
+fn probe() -> result: own unit traps {
   let ordinary = 1_i32 +wrap two;
-  let smaller = ineg(ordinary);
+  let smaller = iabs.checked(ordinary);
   let made = Package<i32, one>(items: ordinary);
   set deref(made).items = ordinary;
   region 'r {
@@ -1878,12 +1850,12 @@ fn approved_duplicate_main_conformance_case_is_type6() {
 
 #[test]
 fn nested_declarations_cannot_shadow_source_later_global_functions() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"fn probe() -> result: own unit pure {
   let future = 1_i32;
   return unit;
 }
 
-fn future() -> own unit pure {
+fn future() -> result: own unit pure {
 }
 "#;
     with_one_resolution(source, |outcome| {
@@ -1901,8 +1873,8 @@ fn future() -> own unit pure {
 #[test]
 fn sibling_contract_signatures_do_not_share_region_parameters() {
     let source = br#"contract Separate {
-  fn first['r](value: &'r i32) -> own unit pure;
-  fn second() -> own slice<'r, i32> pure;
+  fn first['r](value: &'r i32) -> result: own unit pure;
+  fn second() -> result: own slice<'r, i32> pure;
 }
 "#;
     with_one_resolution(source, |outcome| {
@@ -1928,7 +1900,7 @@ fn sibling_contract_signatures_do_not_share_region_parameters() {
 /// otherwise hide it.
 #[test]
 fn conditional_branches_are_separate_lexical_scopes() {
-    let sibling_branches = br#"fn get(pick: own Bool) -> own unit traps {
+    let sibling_branches = br#"fn get(pick: own Bool) -> result: own unit traps {
   if pick {
     let inside = 1_u64;
     claim left: ieq(inside, 1_u64) because "left";
@@ -1951,7 +1923,7 @@ fn conditional_branches_are_separate_lexical_scopes() {
   Right();
 }
 
-fn get(pick: own Pick) -> own unit traps {
+fn get(pick: own Pick) -> result: own unit traps {
   match pick {
     Left() => {
       let inside = 1_u64;
@@ -1972,7 +1944,7 @@ fn get(pick: own Pick) -> own unit traps {
         );
     });
 
-    let expired_then_enclosing = br#"fn get(pick: own Bool) -> own unit traps {
+    let expired_then_enclosing = br#"fn get(pick: own Bool) -> result: own unit traps {
   if pick {
     let offset = 0_u64;
     claim inner: ieq(offset, 0_u64) because "inner";
@@ -1989,7 +1961,7 @@ fn get(pick: own Pick) -> own unit traps {
         );
     });
 
-    let live_shadow = br#"fn get(pick: own Bool) -> own unit traps {
+    let live_shadow = br#"fn get(pick: own Bool) -> result: own unit traps {
   let offset = 0_u64;
   if pick {
     let offset = 1_u64;
@@ -2013,11 +1985,11 @@ fn get(pick: own Pick) -> own unit traps {
 
 #[test]
 fn semantic_stage_order_precedes_source_position_and_inventory_rank_is_event_local() {
-    let later_inventory_error = br#"fn main() -> own unit pure {
+    let later_inventory_error = br#"fn probe() -> result: own unit pure {
   missing();
 }
 
-fn ilt() -> own unit pure {
+fn ilt() -> result: own unit pure {
 }
 "#;
     with_one_resolution(later_inventory_error, |outcome| {
@@ -2027,11 +1999,11 @@ fn ilt() -> own unit pure {
         assert_eq!(issue.rule(), ResolutionRule::Form3);
     });
 
-    let later_fn8_error = br#"fn ilt() -> own unit pure {
+    let later_fn8_error = br#"fn ilt() -> result: own unit pure {
 }
 
-fn guarded() -> own unit traps requires {
-  let value = 1_i32;
+fn guarded() -> result: own unit pure contract {
+  define value = 1_i32;
 } {
   return unit;
 }
@@ -2043,12 +2015,12 @@ fn guarded() -> own unit traps requires {
         assert_eq!(issue.rule(), ResolutionRule::Fn8);
     });
 
-    let earlier_lower_rank = br#"fn value() -> own unit pure {
+    let earlier_lower_rank = br#"fn value() -> result: own unit pure {
 }
 
 const value: i32 = 1_i32;
 
-fn ilt() -> own unit pure {
+fn ilt() -> result: own unit pure {
 }
 "#;
     with_one_resolution(earlier_lower_rank, |outcome| {
@@ -2071,7 +2043,7 @@ fn identifier_renaming_preserves_general_resolution_structure() {
         ("function_27", "binding_42"),
     ] {
         let source = format!(
-            "fn {helper}() -> own unit pure {{\n}}\n\nfn main() -> own unit pure {{\n  let {local} = 1_i32;\n  {helper}();\n  return {local};\n}}\n"
+            "fn {helper}() -> result: own unit pure {{\n}}\n\nfn probe() -> result: own unit pure {{\n  let {local} = 1_i32;\n  {helper}();\n  return {local};\n}}\n"
         );
         with_one_resolution(source.as_bytes(), |outcome| {
             let ResolutionOutcome::Complete(resolved) = outcome else {
@@ -2104,10 +2076,10 @@ fn identifier_renaming_preserves_general_resolution_structure() {
 
 #[test]
 fn one_name_mutation_changes_a_complete_call_into_an_op1_rejection() {
-    let accepted = br#"fn helper() -> own unit pure {
+    let accepted = br#"fn helper() -> result: own unit pure {
 }
 
-fn main() -> own unit pure {
+fn probe() -> result: own unit pure {
   helper();
 }
 "#;
@@ -2115,10 +2087,10 @@ fn main() -> own unit pure {
         assert!(matches!(outcome, ResolutionOutcome::Complete(_)));
     });
 
-    let mutated = br#"fn helper() -> own unit pure {
+    let mutated = br#"fn helper() -> result: own unit pure {
 }
 
-fn main() -> own unit pure {
+fn probe() -> result: own unit pure {
   missing();
 }
 "#;
@@ -2136,7 +2108,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn diagnostics_ignore_logical_paths_and_repeat_byte_for_byte() {
-    let source = b"fn main() -> own unit pure {\n  missing();\n}\n";
+    let source = b"fn probe() -> result: own unit pure {\n  missing();\n}\n";
     let issue = |path: &str| -> ResolutionIssue {
         with_resolution(&[SourceInput::new(path, source)], |outcome| {
             let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
@@ -2171,8 +2143,11 @@ fn source_record_order_controls_const_visibility_but_paths_create_no_namespace()
         );
     });
 
-    let first = SourceInput::new("left/name.wf", b"fn same() -> own unit pure {\n}\n");
-    let second = SourceInput::new("right/name.wf", b"fn same() -> own unit pure {\n}\n");
+    let first = SourceInput::new("left/name.wf", b"fn same() -> result: own unit pure {\n}\n");
+    let second = SourceInput::new(
+        "right/name.wf",
+        b"fn same() -> result: own unit pure {\n}\n",
+    );
     with_resolution(&[first, second], |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("logical paths must not create function namespaces: {outcome:?}");
@@ -2183,8 +2158,8 @@ fn source_record_order_controls_const_visibility_but_paths_create_no_namespace()
 
 #[test]
 fn every_distinct_op1_family_resolves_through_the_normal_callee_path() {
-    // The callee path now covers the families that keep a name; the sixteen
-    // [OP-7] respelled to operators reach their row by operator token and are
+    // The callee path now covers the families that keep a name; the twenty-one
+    // operator-spelled rows reach their family by operator token and are
     // covered by `a_respelled_family_produces_no_lexical_use_at_all`. The two
     // halves are counted here so that a family silently leaving one for the
     // other cannot pass unnoticed — which is what the owner's cancellation of
@@ -2194,9 +2169,9 @@ fn every_distinct_op1_family_resolves_through_the_normal_callee_path() {
         .enumerate()
         .filter(|(_, spelling)| !is_operator_family(spelling))
         .collect();
-    assert_eq!(named.len(), OPERATION_FAMILIES.len() - 16);
+    assert_eq!(named.len(), OPERATION_FAMILIES.len() - 21);
 
-    let mut source = String::from("fn main() -> own unit pure {\n");
+    let mut source = String::from("fn probe() -> result: own unit pure {\n");
     for (_, operation) in &named {
         source.push_str("  ");
         source.push_str(operation);

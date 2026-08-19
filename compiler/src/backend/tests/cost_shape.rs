@@ -72,7 +72,7 @@
 //! an informal reading, that `wfgrep`'s newline scan is "recognized as
 //! memchr". It is not. The single `@memchr` call in the optimized module is
 //! `relative_path`'s embedded-NUL check; the newline scan is a scalar
-//! byte-at-a-time loop that retains its bounds trap, and the `<16 x i8>`
+//! byte-at-a-time loop whose bounds obligation is statically discharged, and the `<16 x i8>`
 //! vector operations in the module belong to the boundary-carry shift and the
 //! batch append, not to the scan. No §9.1 row requires a `memchr`, and §12.2's
 //! per-byte-call rejection is satisfied — the deterministic-host run below
@@ -368,6 +368,11 @@ fn target_selection_is_one_link_time_table_decision() {
             1,
             "{operation} must resolve to exactly one approved implementation at compile time"
         );
+        let row = approved_row(module, &format!("wf.sys.{operation}.v1"));
+        assert!(
+            !row.contains("@wf_trap"),
+            "{operation} must consume statically discharged domains without a runtime trap"
+        );
     }
     // Nothing else was selected: the table is consulted once per operation the
     // program uses, not once per call and not for operations it never reaches.
@@ -432,11 +437,15 @@ fn an_argument_lease_allocates_nothing_and_copies_no_byte() {
 #[test]
 fn the_raw_byte_route_carries_no_unicode_gate() {
     let row = approved_row(emitted(), "wf.sys.host_copy_bytes.v1");
-    // The range is validated and traps before the source is read or the
-    // destination is written; the length is compared against the caller's
-    // capacity; the accepted case is one copy into the caller's buffer.
-    assert!(row.contains("call void @wf_trap(ptr %record, i64 %record.length)"));
-    assert!(row.contains("%room = icmp ule i64 %required, %capacity"));
+    // The two range obligations were discharged at the source call. The
+    // wrapper therefore starts directly from the authorized half-open extent;
+    // only the recoverable source-length fit remains dynamic.
+    assert!(row.contains("%extent = sub nuw i64 %end, %start"));
+    assert!(row.contains("%room = icmp ule i64 %required, %extent"));
+    assert!(
+        !row.contains("@wf_trap"),
+        "a system wrapper must not reintroduce a runtime range trap:\n{row}"
+    );
     assert_eq!(
         row.matches("@llvm.memcpy").count(),
         1,
@@ -546,31 +555,27 @@ fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
     );
 }
 
-/// §9.1 row 7 — `read_once` and `write_once` are bounds checks, at most one
-/// host transfer, one count check, and a cold outcome mapper.
+/// §9.1 row 7 — `read_once` and `write_once` consume statically authorized
+/// ranges, make at most one host transfer, sanitize one reported count, and
+/// use a cold outcome mapper.
 #[test]
 fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     let module = emitted();
-    for (operation, facility, empty) in [
-        (
-            "wf.sys.read_once.v1",
-            "@read(",
-            "%vacant = icmp eq i64 %capacity, 0",
-        ),
-        (
-            "wf.sys.write_once.v1",
-            "@write(",
-            "%vacant = icmp eq i64 %count, 0",
-        ),
+    for (operation, facility) in [
+        ("wf.sys.read_once.v1", "@read("),
+        ("wf.sys.write_once.v1", "@write("),
     ] {
         let row = approved_row(module, operation);
-        // The range is validated first and traps before any host action
-        // [SYS-8].
-        assert!(row.contains("%wrapped = icmp ult i64 %end, %offset"));
-        assert!(row.contains("call void @wf_trap(ptr %record, i64 %record.length)"));
+        // SYS-8's two source obligations authorize `sub nuw`; the wrapper has
+        // no range-validation branch or language trap fallback.
+        assert!(row.contains("%extent = sub nuw i64 %end, %start"));
+        assert!(
+            !row.contains("@wf_trap"),
+            "a system transfer must not retain a runtime range trap:\n{row}"
+        );
         // A zero-length range issues no host call at all.
         assert!(
-            row.contains(empty),
+            row.contains("%vacant = icmp eq i64 %extent, 0"),
             "{operation} must short-circuit an empty range:\n{row}"
         );
         // Exactly one host transfer, and one check of the count it reported.
@@ -750,7 +755,7 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
         );
     }
     // The complete inventory of what the finished program calls. Every entry
-    // is accounted for by a first-slice operation, by a required check, or by
+    // is accounted for by a first-slice operation, by a written claim, or by
     // the compiler's own runtime; nothing here is a release reaching a host
     // facility, a handle table, or a hidden external effect [§12.2]. A release
     // that started making a target call would have to add a name to this list.
@@ -767,7 +772,7 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             | "strlen" | "memchr"
             // Buffer allocation and language cleanup.
             | "calloc" | "free"
-            // Required checks and the mandatory diagnostic record.
+            // Written claims and their mandatory diagnostic record.
             | "wf_trap" | "abort"
         ) || target.starts_with("llvm.")
             // The program's own declared functions, and the optimizer's cold

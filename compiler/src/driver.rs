@@ -477,13 +477,13 @@ mod tests {
 
     #[test]
     fn driver_lowers_static_contract_metadata_without_executable_artifacts() {
-        let source = b"contract Empty {\n}\n\nconform i32: Empty {\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
+        let source = b"contract Empty {\n}\n\nconform i32: Empty {\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
         let llvm = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
         )
         .expect("static contract metadata must use the ordinary lowering path");
-        assert!(llvm.contains("define i32 @main()"));
+        assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv)"));
         assert!(!llvm.contains("Empty"));
     }
 
@@ -496,49 +496,49 @@ mod tests {
         for (name, source, stage, rule) in [
             (
                 "comment.wf",
-                b"// nope\nfn main() -> own unit pure {\n  return unit;\n}\n".as_slice(),
+                b"// nope\nfn probe() -> result: own unit pure {\n  return unit;\n}\n".as_slice(),
                 CompilationStage::Lexing,
                 "FORM-4",
             ),
             (
                 "tab.wf",
-                b"fn main() -> own unit pure {\n\treturn unit;\n}\n",
+                b"fn probe() -> result: own unit pure {\n\treturn unit;\n}\n",
                 CompilationStage::Lexing,
                 "FORM-2",
             ),
             (
                 "sigil.wf",
-                b"fn main() -> own unit pure {\n  let value: own i32 = 'Bad;\n  return unit;\n}\n",
+                b"fn probe() -> result: own unit pure {\n  let value: own i32 = 'Bad;\n  return unit;\n}\n",
                 CompilationStage::Lexing,
                 "FORM-3",
             ),
             (
                 "dollar.wf",
-                b"$\nfn main() -> own unit pure {\n  return unit;\n}\n",
+                b"$\nfn probe() -> result: own unit pure {\n  return unit;\n}\n",
                 CompilationStage::Lexing,
                 "FORM-1",
             ),
             (
                 "string.wf",
-                b"fn main() -> own unit pure {\n  let text: own str = \"bad\\t\";\n  return unit;\n}\n",
+                b"fn probe() -> result: own unit pure {\n  let text: own str = \"bad\\t\";\n  return unit;\n}\n",
                 CompilationStage::Lexing,
                 "FORM-5",
             ),
             (
                 "numeric.wf",
-                b"fn main() -> own unit pure {\n  let value: own i32 = 1e+;\n  return unit;\n}\n",
+                b"fn probe() -> result: own unit pure {\n  let value: own i32 = 1e+;\n  return unit;\n}\n",
                 CompilationStage::TerminalClassification,
                 "FORM-5",
             ),
             (
                 "construct.wf",
-                b"nope value;\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+                b"nope value;\n\nfn probe() -> result: own unit pure {\n  return unit;\n}\n",
                 CompilationStage::Parsing,
                 "FORM-1",
             ),
             (
                 "spacing.wf",
-                b"fn  main() -> own unit pure {\n  return unit;\n}\n",
+                b"fn  main() -> result: own unit pure {\n  return unit;\n}\n",
                 CompilationStage::CanonicalSource,
                 "FORM-2",
             ),
@@ -548,7 +548,7 @@ mod tests {
                 // borrow keeps writing its region, so the same undeclared
                 // spelling reaches the same OWN-3 at the same stage.
                 "region.wf",
-                b"fn main() -> own unit pure {\n  let value = 0_i32;\n  let borrowed = &'gone value;\n  return unit;\n}\n",
+                b"fn probe() -> result: own unit pure {\n  let value = 0_i32;\n  let borrowed = &'gone value;\n  return unit;\n}\n",
                 CompilationStage::Resolution,
                 "OWN-3",
             ),
@@ -571,7 +571,7 @@ mod tests {
 
     #[test]
     fn unrepresentable_array_is_a_target_failure_without_a_source_rule() {
-        let source = b"fn main() -> own unit pure {\n  let values = array_new<u8, 18446744073709551615>(0_u8);\n  return unit;\n}\n";
+        let source = b"command fn main() -> status: own ExitStatus pure {\n  let values = array_new<u8, 18446744073709551615>(0_u8);\n  return exit_status(code: 0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -585,7 +585,7 @@ mod tests {
 
     #[test]
     fn complete_frame_is_checked_after_each_slot_layout_succeeds() {
-        let source = b"fn main() -> own unit pure {\n  let left = array_new<u8, 4611686018427387904>(0_u8);\n  let right = array_new<u8, 4611686018427387904>(0_u8);\n  return unit;\n}\n";
+        let source = b"command fn main() -> status: own ExitStatus pure {\n  let left = array_new<u8, 4611686018427387904>(0_u8);\n  let right = array_new<u8, 4611686018427387904>(0_u8);\n  return exit_status(code: 0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -606,7 +606,7 @@ mod tests {
         // close attempt on the return edge. [QUAL-1] qualification now maps
         // each identity to an approved implementation and the [QUAL-3]
         // bootstrap supplies the standard inputs, so the program emits.
-        let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus external, blocks {\n  return exit_status(code: 0_u8);\n}\n";
+        let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus external, blocks {\n  return exit_status(code: 0_u8);\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry.wf", kind_entry)],
             CompilerLimits::default(),
@@ -618,7 +618,7 @@ mod tests {
         // the same bootstrap shape: the qualification is over the IR's own
         // system facts, not over the entry's parameter list.
         let no_inputs =
-            b"command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+            b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry.wf", no_inputs)],
             CompilerLimits::default(),
@@ -630,7 +630,7 @@ mod tests {
         // interface: every [SYS-2] semantic identity now has an approved
         // implementation on this target, so no unsupported stop remains
         // between an accepted system program and its emitted module.
-        let writing =b"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
+        let writing =b"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry.wf", writing)],
             CompilerLimits::default(),
@@ -642,7 +642,7 @@ mod tests {
         // source rejection now, not an unsupported stop: the FN-7 entry-form
         // judgment is implemented and runs before the remaining capability
         // stops.
-        let wrong_result = b"command fn main() -> own unit pure {\n  return unit;\n}\n";
+        let wrong_result = b"command fn main() -> result: own unit pure {\n  return unit;\n}\n";
         let failure = compile(
             &[SourceInput::new("entry.wf", wrong_result)],
             CompilerLimits::default(),
@@ -656,8 +656,8 @@ mod tests {
         // a non-kind-declaring unit can never exhibit them, so declaring
         // either is an ordinary EFF-2 declared-but-unexhibited rejection.
         for source in [
-            b"fn probe() -> own unit external {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n".as_slice(),
-            b"fn probe() -> own unit blocks {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+            b"fn probe() -> result: own unit external {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n".as_slice(),
+            b"fn probe() -> result: own unit blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         ] {
             let failure = compile(
                 &[SourceInput::new("rejected.wf", source)],

@@ -65,7 +65,7 @@ const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
 
 /// The `command` entry every system-admitted test unit needs [SYS-3, FN-7].
 const COMMAND_ENTRY: &str =
-    "command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 fn with_ir<ResultValue>(
     source: &[u8],
@@ -137,7 +137,7 @@ fn return_drops(function: &IrFunction) -> &[IrDrop] {
 
 #[test]
 fn counted_range_cfg_emits_with_distinct_header_update_and_exit_interfaces() {
-    let source = br#"fn count() -> own u64 pure {
+    let source = br#"fn count() -> result: own u64 pure {
   let total = 0_u64;
   for @items i in 0_u64..2_u64 {
     set total = total +wrap 1_u64;
@@ -145,7 +145,7 @@ fn counted_range_cfg_emits_with_distinct_header_update_and_exit_interfaces() {
   return total;
 }
 
-command fn main() -> own ExitStatus pure {
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -169,7 +169,7 @@ command fn main() -> own ExitStatus pure {
 
 #[test]
 fn counted_range_carries_one_stable_binder_address_for_body_local_shared_borrows() {
-    let source = br#"fn count() -> own u64 pure {
+    let source = br#"fn count() -> result: own u64 pure {
   let total = 0_u64;
   let upper = 2_u64;
   for @items i in 0_u64..upper {
@@ -183,7 +183,7 @@ fn counted_range_carries_one_stable_binder_address_for_body_local_shared_borrows
   return total;
 }
 
-command fn main() -> own ExitStatus pure {
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -212,7 +212,7 @@ command fn main() -> own ExitStatus pure {
 
 #[test]
 fn nested_counted_breaks_keep_each_exit_interface_local_to_its_range() {
-    let source = br#"fn count() -> own u64 pure {
+    let source = br#"fn count() -> result: own u64 pure {
   let total = 0_u64;
   for @outer i in 0_u64..4_u64 {
     for @inner j in 0_u64..4_u64 {
@@ -226,7 +226,7 @@ fn nested_counted_breaks_keep_each_exit_interface_local_to_its_range() {
   return total;
 }
 
-command fn main() -> own ExitStatus pure {
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -285,13 +285,13 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
     // declared rows below are exactly [SYS-5]'s table read back through
     // [EFF-2]: only the two native close attempts carry a category.
     let source = format!(
-        "fn release_args(value: own Args) -> own unit pure {{\n  return unit;\n}}\n\n\
-         fn release_host_string(value: own HostString) -> own unit pure {{\n  return unit;\n}}\n\n\
-         fn release_relative_path(value: own RelativePath) -> own unit pure {{\n  return unit;\n}}\n\n\
-         fn release_directory_read(value: own DirectoryRead) -> own unit external, blocks {{\n  return unit;\n}}\n\n\
-         fn release_read_file(value: own ReadFile) -> own unit external, blocks {{\n  return unit;\n}}\n\n\
-         fn release_output(value: own Output) -> own unit pure {{\n  return unit;\n}}\n\n\
-         fn release_exit_status(value: own ExitStatus) -> own unit pure {{\n  return unit;\n}}\n\n\
+        "fn release_args(value: own Args) -> result: own unit pure {{\n  return unit;\n}}\n\n\
+         fn release_host_string(value: own HostString) -> result: own unit pure {{\n  return unit;\n}}\n\n\
+         fn release_relative_path(value: own RelativePath) -> result: own unit pure {{\n  return unit;\n}}\n\n\
+         fn release_directory_read(value: own DirectoryRead) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
+         fn release_read_file(value: own ReadFile) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
+         fn release_output(value: own Output) -> result: own unit pure {{\n  return unit;\n}}\n\n\
+         fn release_exit_status(value: own ExitStatus) -> result: own unit pure {{\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -408,7 +408,7 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
 #[test]
 fn a_move_keeps_the_resource_identity_and_its_release() {
     let source = format!(
-        "fn release_after_move(file: own ReadFile) -> own unit external, blocks {{\n  \
+        "fn release_after_move(file: own ReadFile) -> result: own unit external, blocks {{\n  \
          let moved = move file;\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -434,7 +434,7 @@ fn a_move_keeps_the_resource_identity_and_its_release() {
 fn a_struct_field_release_reaches_the_contained_resource() {
     let source = format!(
         "struct Holder {{\n  file: ReadFile;\n}}\n\n\
-         fn release_holder(holder: own Holder) -> own unit external, blocks {{\n  return unit;\n}}\n\n\
+         fn release_holder(holder: own Holder) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -470,7 +470,7 @@ fn a_struct_field_release_reaches_the_contained_resource() {
 fn an_enum_release_carries_the_union_of_its_components_rows() {
     let source = format!(
         "enum Holder {{\n  Empty();\n  Full(file: ReadFile);\n}}\n\n\
-         fn release_holder(holder: own Holder) -> own unit external, blocks {{\n  return unit;\n}}\n\n\
+         fn release_holder(holder: own Holder) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -491,7 +491,7 @@ fn an_enum_release_carries_the_union_of_its_components_rows() {
 fn one_match_arm_releases_its_binder_on_that_arms_normal_edge() {
     let source = format!(
         "enum Holder {{\n  Empty();\n  Full(file: ReadFile);\n}}\n\n\
-         fn release_arm(holder: own Holder) -> own unit external, blocks {{\n  \
+         fn release_arm(holder: own Holder) -> result: own unit external, blocks {{\n  \
          match move holder {{\n    Empty() => {{\n    }}\n    Full(file: opened) => {{\n    }}\n  }}\n  \
          return unit;\n}}\n\n{COMMAND_ENTRY}"
     );
@@ -530,11 +530,11 @@ fn one_match_arm_releases_its_binder_on_that_arms_normal_edge() {
 #[test]
 fn returning_or_passing_an_owner_derives_no_release_here() {
     let source = format!(
-        "fn pass_through(file: own ReadFile) -> own ReadFile pure {{\n  return move file;\n}}\n\n\
-         fn release_read_file(file: own ReadFile) -> own unit external, blocks {{\n  return unit;\n}}\n\n\
-         fn hand_off(file: own ReadFile) -> own unit external, blocks {{\n  \
+        "fn pass_through(file: own ReadFile) -> result: own ReadFile pure {{\n  return move file;\n}}\n\n\
+         fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
+         fn hand_off(file: own ReadFile) -> result: own unit external, blocks {{\n  \
          release_read_file(file: move file);\n  return unit;\n}}\n\n\
-         fn receive(file: own ReadFile) -> own unit external, blocks {{\n  \
+         fn receive(file: own ReadFile) -> result: own unit external, blocks {{\n  \
          let received = pass_through(file: move file);\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
@@ -568,15 +568,15 @@ fn returning_or_passing_an_owner_derives_no_release_here() {
 fn releases_keep_reverse_declaration_order_and_never_sit_on_a_trapping_edge() {
     let source = format!(
         "fn ordered(first: own ReadFile, second: own ReadFile, ready: own Bool) \
-         -> own unit external, blocks, traps {{\n  \
+         -> result: own unit external, blocks, traps {{\n  \
          claim ordering_probe: ready because \"ordering probe\";\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let function = function(program, "ordered");
         let block = only_block(function);
-        // A trap runs no language cleanup [TRAP-1, EFF-4]: the retained check
-        // is reached with no release before it, and the IR gives a check no
-        // edge to carry one.
+        // A failed written claim runs no language cleanup [TRAP-1, EFF-4]:
+        // the lowered claim check is reached with no release before it, and
+        // the IR gives that check no edge on which to carry one.
         assert!(
             block
                 .instructions()
@@ -608,7 +608,7 @@ fn releases_keep_reverse_declaration_order_and_never_sit_on_a_trapping_edge() {
 
 #[test]
 fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
-    let source = "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus external, blocks {\n  return exit_status(code: 0_u8);\n}\n";
+    let source = "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus external, blocks {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(source.as_bytes(), |program| {
         let main = function(program, "main");
         let block = only_block(main);
@@ -691,17 +691,17 @@ fn the_entry_retains_the_standard_input_rows_and_the_may_alias_pair() {
 
 #[test]
 fn ordinary_requires_is_not_lowered_as_a_callee_prologue() {
-    let source = br#"fn bounded(value: own u64) -> own u64 pure requires {
-  check ilt(value, 8_u64) else trap "bounded";
+    let source = br#"fn bounded(value: own u64) -> result: own u64 pure contract {
+  requires ilt(value, 8_u64);
 } {
   return value;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let value = 4_u64;
   claim caller_evidence: ilt(value, 8_u64) because "caller evidence";
   let result = bounded(value: value);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_ir(source, |program| {
@@ -753,7 +753,7 @@ fn a_memory_only_release_carries_no_system_action_or_row() {
     // The negative boundary: a `buffer` release is compiler-derived too, and
     // it must stay distinguishable from a system release [STOR-3].
     with_ir(
-        b"fn drop_buffer(values: own buffer<u8>) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn drop_buffer(values: own buffer<u8>) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         |program| {
             let [drop] = return_drops(function(program, "drop_buffer")) else {
                 panic!("the buffer owner must be released once");
@@ -768,7 +768,7 @@ fn a_memory_only_release_carries_no_system_action_or_row() {
 /// and `{STEP}` varied per case.
 fn byte_walk_source(middle: &str, step: &str) -> Vec<u8> {
     format!(
-        "fn main() -> own unit allocates(heap), traps {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = ige(cursor, stop);\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  claim walk_drift: ilt(seen, 1000_u64) because \"walk drift\";\n  return unit;\n}}\n"
+        "command fn main() -> status: own ExitStatus allocates(heap), traps {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = ige(cursor, stop);\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  claim walk_drift: ilt(seen, 1000_u64) because \"walk drift\";\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }

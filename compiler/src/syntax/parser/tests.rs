@@ -48,7 +48,7 @@ fn bundle(inputs: &[SourceInput<'_>]) -> SourceBundle {
 #[test]
 fn minimal_function_and_multi_source_items_form_one_program_root() {
     let inputs = [
-        SourceInput::new("one.wf", b"fn main() -> own unit pure {}"),
+        SourceInput::new("one.wf", b"fn main() -> result: own unit pure {}"),
         SourceInput::new("two.wf", b"const answer: i32 = 42_i32;"),
     ];
     let bundle = bundle(&inputs);
@@ -73,11 +73,11 @@ fn minimal_function_and_multi_source_items_form_one_program_root() {
 #[test]
 fn ordered_sources_report_the_first_invalid_record() {
     let inputs = [
-        SourceInput::new("first.wf", b"fn main() -> own unit pure {}"),
+        SourceInput::new("first.wf", b"fn main() -> result: own unit pure {}"),
         SourceInput::new("second.wf", b"unknown value"),
         SourceInput::new(
             "third.wf",
-            b"fn later() -> own unit pure { object.member(); }",
+            b"fn later() -> result: own unit pure { object.member(); }",
         ),
     ];
     let bundle = bundle(&inputs);
@@ -103,7 +103,7 @@ fn shared_prefix_expression_forms_select_without_priority_or_backtracking() {
     let source = br#"
 struct Value { field: i32; }
 enum Choice { Some(value: i32); }
-fn main() -> own unit pure {
+fn main() -> result: own unit pure {
 let atom = 0_i32;
 let positional = user(atom);
 let named = user(arg: atom);
@@ -183,7 +183,7 @@ fn unknown_ident_construct_uses_closed_form1_override() {
 
 #[test]
 fn dotted_call_spelling_uses_bounded_form3_override() {
-    let source = b"fn main() -> own unit pure { object.member(); }";
+    let source = b"fn main() -> result: own unit pure { object.member(); }";
     let inputs = [SourceInput::new("dotted.wf", source)];
     let bundle = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -207,7 +207,7 @@ fn dotted_call_spelling_uses_bounded_form3_override() {
 
 #[test]
 fn nested_call_in_atom_only_argument_uses_gram9_override() {
-    let source = b"fn main() -> own unit pure { outer(inner()); }";
+    let source = b"fn main() -> result: own unit pure { outer(inner()); }";
     let inputs = [SourceInput::new("nested.wf", source)];
     let bundle = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -234,7 +234,7 @@ fn nested_call_in_atom_only_argument_uses_gram9_override() {
 fn mandatory_name_and_numeric_pattern_mismatches_keep_their_owners() {
     for (source, expected_rule) in [
         (
-            b"fn struct() -> own unit pure {}".as_slice(),
+            b"fn struct() -> result: own unit pure {}".as_slice(),
             SyntaxRule::Form3,
         ),
         (
@@ -271,7 +271,7 @@ fn item_head_with_a_wrong_name_shape_is_a_name_slot_mismatch() {
     // offending name token.
     for (source, name) in [
         (
-            b"fn Main() -> own unit pure {}".as_slice(),
+            b"fn Main() -> result: own unit pure {}".as_slice(),
             b"Main".as_slice(),
         ),
         (b"enum sign { Neg(); }".as_slice(), b"sign".as_slice()),
@@ -326,11 +326,10 @@ fn non_name_program_leftover_expects_only_source_end() {
 }
 
 #[test]
-fn fixed_word_program_leftover_is_a_reserved_name_slot_mismatch() {
-    // Under v0.18 the item entry expects IDENT through `program_kind?`, so a
-    // fixed lower word such as `return` at top level is DIAG-1 attribution
-    // row 3 (a reserved spelling in an IDENT slot, FORM-3) before the row 5
-    // program-leftover replacement can apply.
+fn fixed_word_program_leftover_is_a_grammar_shape_mismatch() {
+    // Program kinds are now a closed fixed-terminal choice. A statement-only
+    // word at top level therefore reaches the item grammar itself instead of
+    // being mistaken for a reserved spelling in an IDENT kind slot.
     let inputs = [SourceInput::new("leftover.wf", b"return unit;")];
     let bundle = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -346,14 +345,14 @@ fn fixed_word_program_leftover_is_a_reserved_name_slot_mismatch() {
     let ParseOutcome::SourceIssue(issue) = parse(&classified, PARSE_LIMITS) else {
         panic!("top-level statement must reject");
     };
-    assert_eq!(issue.rule(), SyntaxRule::Form3);
+    assert_eq!(issue.rule(), SyntaxRule::Gram2);
 }
 
 #[test]
 fn element_limit_is_explicit_and_failure_atomic() {
     let inputs = [SourceInput::new(
         "main.wf",
-        b"fn main() -> own unit pure {}",
+        b"fn main() -> result: own unit pure {}",
     )];
     let bundle = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -401,7 +400,7 @@ fn envelope_and_each_control_stack_limit_are_distinct() {
 
     let inputs = [SourceInput::new(
         "main.wf",
-        b"fn main() -> own unit pure {}",
+        b"fn main() -> result: own unit pure {}",
     )];
     let source_bundle = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&source_bundle, LEX_LIMITS) else {
@@ -450,7 +449,7 @@ fn envelope_and_each_control_stack_limit_are_distinct() {
 fn sufficient_limits_produce_identical_derivation_metrics() {
     let inputs = [SourceInput::new(
         "main.wf",
-        b"fn main() -> own unit pure { let x = unit; return x; }",
+        b"fn main() -> result: own unit pure { let x = unit; return x; }",
     )];
     let bundle = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -493,7 +492,7 @@ n: slice<'r, u8>; o: box<u8>; p: arena<'r, u8>; q: buffer<u8>;
 enum Choice<T> { doc "choice"; None(); Some(value: T); }
 contract Contract<T> {
 doc "contract";
-fn member['r](x: own T) -> own T reads('r), writes('r), allocates(heap arena 'r), traps;
+fn member['r](x: own T) -> result: own T reads('r), writes('r), allocates(heap arena 'r), traps;
 law associative(member);
 law identity(member, 0_i32);
 }
@@ -502,14 +501,18 @@ const zero: i32 = 0_i32;
 const alias: i32 = zero;
 const table: array<i32, 2> =[0_i32, zero];
 command fn entry(command.args as arguments: own i32, command.cwd as directory: own i32)
--> own unit external, blocks
+-> result: own unit external, blocks
 {
 return unit;
 }
 fn everything['r](x: own i32, shared: &'r i32, unique: &uniq 'r i32)
--> own unit reads('r), writes('r), allocates(heap arena 'r), traps
-requires { let pre = 0_i32 +wrap 1_i32; check pre else trap "pre"; }
-ensures Result(value: result) { let post = 0_i32 +wrap 1_i32; check post else trap "post"; }
+-> result: own unit reads('r), writes('r), allocates(heap arena 'r), traps
+contract {
+define pre = 0_i32 +wrap 1_i32;
+define post = 0_i32 +wrap 1_i32;
+requires pre;
+ensures when Some(value: routed): routed;
+}
 {
 doc "body";
 let ordinary = 0_i32 +wrap 1_i32;
@@ -534,7 +537,7 @@ claim named: ordinary because "claim";
 match ordinary { Some(value: payload) => { give payload; } }
 if compared { claim then_branch: ordinary because "then"; } else if chosen { break @again; } else { return unit; }
 }
-fn main() -> own unit pure {}
+fn main() -> result: own unit pure {}
 "#;
     let inputs = [SourceInput::new("all.wf", source)];
     let bundle = bundle(&inputs);
@@ -590,26 +593,27 @@ fn main() -> own unit pure {}
     assert!(finalized.node_count() >= productions().len());
 }
 
-const KIND_DECLARING_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  return unit;\n}\n";
+const KIND_DECLARING_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {\n  return unit;\n}\n";
 
-const EXTERNAL_EFFECT_ROW: &[u8] = b"fn probe() -> own unit external {\n  return unit;\n}\n";
+const EXTERNAL_EFFECT_ROW: &[u8] =
+    b"fn probe() -> result: own unit external {\n  return unit;\n}\n";
 
-const BLOCKS_EFFECT_ROW: &[u8] = b"fn probe() -> own unit blocks {\n  return unit;\n}\n";
+const BLOCKS_EFFECT_ROW: &[u8] = b"fn probe() -> result: own unit blocks {\n  return unit;\n}\n";
 
 const RESERVED_SPELLINGS_AS_IDENTIFIERS: &[u8] =
-    b"fn external() -> own unit pure {\n  let as = blocks;\n  return unit;\n}\n";
+    b"fn external() -> result: own unit pure {\n  let as = blocks;\n  return unit;\n}\n";
 
-const CLAIM_STATEMENT: &[u8] = b"fn probe() -> own unit traps {\n  let flag = True();\n  claim held: flag because \"constructed true\";\n  return unit;\n}\n";
+const CLAIM_STATEMENT: &[u8] = b"fn probe() -> result: own unit traps {\n  let flag = True();\n  claim held: flag because \"constructed true\";\n  return unit;\n}\n";
 
 const CLAIM_SPELLINGS_AS_IDENTIFIERS: &[u8] =
-    b"fn probe() -> own unit pure {\n  let claim = 0_i32;\n  return unit;\n}\n";
+    b"fn probe() -> result: own unit pure {\n  let claim = 0_i32;\n  return unit;\n}\n";
 
 const BODY_CHECK_STATEMENT: &[u8] =
-    b"fn probe() -> result: own unit traps {\n  let flag = True();\n  check flag else trap \"held\";\n  return unit;\n}\n";
+    b"fn probe() -> result: own unit traps {\n  let flag = True();\n  check flag;\n  return unit;\n}\n";
 
 const UNIFIED_CONTRACT: &[u8] = b"fn probe(value: own i32) -> result: own i32 pure contract {\n  define admitted = ieq(value, value);\n  requires admitted;\n  ensures ieq(result, value);\n} {\n  return value;\n}\n";
 
-const COUNTED_RANGE_STATEMENT: &[u8] = b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for @range index in lower..upper {\n    break @range;\n  }\n  return unit;\n}\n";
+const COUNTED_RANGE_STATEMENT: &[u8] = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index in lower..upper {\n    break @range;\n  }\n  return unit;\n}\n";
 
 fn parse_active(
     name: &'static str,
@@ -688,7 +692,8 @@ fn active_contract_reserves_the_claim_spellings() {
 
 /// Check dissolution (#47): `check_stmt` left the [GRAM-4] `stmt`
 /// alternation, so a body `check` no longer selects any statement and the
-/// parser rejects it under [FORM-3]. `claim` [CLM-1] is the sole
+/// parser rejects it as an unknown statement construct under [FORM-1].
+/// `claim` [CLM-1] is the sole
 /// writer-stated trap construct a body may spell.
 #[test]
 fn active_contract_rejects_a_body_check_statement() {
@@ -696,7 +701,7 @@ fn active_contract_rejects_a_body_check_statement() {
     let ParseOutcome::SourceIssue(issue) = outcome else {
         panic!("a body check must not parse once check_stmt leaves stmt: {outcome:?}");
     };
-    assert_eq!(issue.rule(), SyntaxRule::Form3);
+    assert_eq!(issue.rule(), SyntaxRule::Form1);
     let start = usize::try_from(issue.coordinate().start().value()).unwrap_or(usize::MAX);
     let end = usize::try_from(issue.coordinate().end().value()).unwrap_or(usize::MAX);
     assert_eq!(&BODY_CHECK_STATEMENT[start..end], b"check");
@@ -785,8 +790,8 @@ fn active_contract_parses_the_complete_counted_range_statement() {
 #[test]
 fn counted_range_fixed_words_are_not_identifier_spellings() {
     for source in [
-        b"fn for() -> own unit pure {\n  return unit;\n}\n".as_slice(),
-        b"fn probe() -> own unit pure {\n  let in = 0_u64;\n  return unit;\n}\n",
+        b"fn for() -> result: own unit pure {\n  return unit;\n}\n".as_slice(),
+        b"fn probe() -> result: own unit pure {\n  let in = 0_u64;\n  return unit;\n}\n",
     ] {
         let ParseOutcome::SourceIssue(issue) = parse_active("reserved-range.wf", source) else {
             panic!("for/in must be excluded from IDENT");
@@ -799,31 +804,31 @@ fn counted_range_fixed_words_are_not_identifier_spellings() {
 fn malformed_counted_ranges_stop_at_their_first_grammar_boundary() {
     for (source, boundary) in [
         (
-            b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for index in lower..upper {\n  }\n  return unit;\n}\n".as_slice(),
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for index in lower..upper {\n  }\n  return unit;\n}\n".as_slice(),
             b"index".as_slice(),
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for @range in lower..upper {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range in lower..upper {\n  }\n  return unit;\n}\n",
             b"in",
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for @range index lower..upper {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index lower..upper {\n  }\n  return unit;\n}\n",
             b"lower",
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for @range index in ..upper {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index in ..upper {\n  }\n  return unit;\n}\n",
             b"..",
         ),
         (
-            b"fn probe() -> own unit pure {\n  for @range index in 0_u64 . 1_u64 {\n  }\n  return unit;\n}\n",
+            b"fn probe() -> result: own unit pure {\n  for @range index in 0_u64 . 1_u64 {\n  }\n  return unit;\n}\n",
             b".",
         ),
         (
-            b"fn probe(lower: own u64) -> own unit pure {\n  for @range index in lower.. {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: own u64) -> result: own unit pure {\n  for @range index in lower.. {\n  }\n  return unit;\n}\n",
             b"{",
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for @range index in lower..upper..upper {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index in lower..upper..upper {\n  }\n  return unit;\n}\n",
             b"..",
         ),
     ] {
@@ -849,31 +854,31 @@ fn malformed_input_labels_reject_at_their_exact_grammar_boundary() {
     // reserved `as` in a label-tail IDENT slot is DIAG-1 attribution row 3.
     for (source, rule, boundary, expected) in [
         (
-            b"command fn main(command.args args: own Args) -> own ExitStatus pure {\n  return unit;\n}\n".as_slice(),
+            b"command fn main(command.args args: own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n".as_slice(),
             SyntaxRule::Gram2,
             b"args".as_slice(),
             TerminalPredicate::Fixed(FixedTerminal::As),
         ),
         (
-            b"command fn main(command.args.more as args: own Args) -> own ExitStatus pure {\n  return unit;\n}\n",
+            b"command fn main(command.args.more as args: own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n",
             SyntaxRule::Gram2,
             b".",
             TerminalPredicate::Fixed(FixedTerminal::As),
         ),
         (
-            b"command fn main(command. as args: own Args) -> own ExitStatus pure {\n  return unit;\n}\n",
+            b"command fn main(command. as args: own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n",
             SyntaxRule::Form3,
             b"as",
             TerminalPredicate::Identifier,
         ),
         (
-            b"command fn main(command.args as: own Args) -> own ExitStatus pure {\n  return unit;\n}\n",
+            b"command fn main(command.args as: own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n",
             SyntaxRule::Gram2,
             b":",
             TerminalPredicate::Identifier,
         ),
         (
-            b"command fn main(command.args as args own Args) -> own ExitStatus pure {\n  return unit;\n}\n",
+            b"command fn main(command.args as args own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n",
             SyntaxRule::Gram2,
             b"own",
             TerminalPredicate::Fixed(FixedTerminal::Colon),
@@ -895,23 +900,24 @@ fn malformed_input_labels_reject_at_their_exact_grammar_boundary() {
 
 #[test]
 fn declaration_and_parameter_optionals_report_their_complete_expected_sets() {
-    // `fn_decl := "deny_claims"? program_kind? "fn" ...`: an IDENT-headed top-level lookahead
-    // that no complete item row accepts is DIAG-1 attribution row 4, reported
-    // at that first IDENT with the second position's expectation retained.
+    // `fn_decl := "deny_claims"? program_kind? "fn" ...`: once the fixed
+    // program kind is consumed, a non-`fn` continuation is a GRAM-2 shape
+    // failure at the first invalid continuation, with `fn` retained as the
+    // sole expected terminal.
     let outcome = parse_active(
         "kind.wf",
-        b"command struct Thing {\n  a: i32;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"command struct Thing {\n  a: i32;\n}\n\nfn main() -> result: own unit pure {\n  return unit;\n}\n",
     );
     let ParseOutcome::SourceIssue(issue) = outcome else {
         panic!("a program_kind not followed by `fn` must reject: {outcome:?}");
     };
-    assert_eq!(issue.rule(), SyntaxRule::Form1);
+    assert_eq!(issue.rule(), SyntaxRule::Gram2);
     assert_eq!(
         issue_bytes(
-            b"command struct Thing {\n  a: i32;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+            b"command struct Thing {\n  a: i32;\n}\n\nfn main() -> result: own unit pure {\n  return unit;\n}\n",
             issue,
         ),
-        b"command"
+        b"struct"
     );
     assert_eq!(issue.expected().len(), 1);
     assert!(
@@ -922,14 +928,15 @@ fn declaration_and_parameter_optionals_report_their_complete_expected_sets() {
             ))
     );
 
-    // Once the fixed marker is consumed, a non-IDENT, non-`fn` token is
-    // attributed at that marker and retains the complete continuation set.
+    // Once the fixed marker is consumed, a token that is neither a program
+    // kind nor `fn` is a GRAM-2 continuation failure and retains the complete
+    // continuation set.
     let marked_non_function = b"deny_claims struct Thing {\n  a: i32;\n}\n".as_slice();
     let outcome = parse_active("marked-kind.wf", marked_non_function);
     let ParseOutcome::SourceIssue(issue) = outcome else {
         panic!("deny_claims not followed by a function must reject: {outcome:?}");
     };
-    assert_eq!(issue.rule(), SyntaxRule::Form3);
+    assert_eq!(issue.rule(), SyntaxRule::Gram2);
     assert_eq!(issue_bytes(marked_non_function, issue), b"struct");
     assert_eq!(issue.expected().len(), 2);
     assert!(
@@ -950,7 +957,8 @@ fn declaration_and_parameter_optionals_report_their_complete_expected_sets() {
     // `param := input_label? IDENT ":" mode type`: after one IDENT both
     // directions of the optional remain live, so the expected set names each.
     let unresolved_param =
-        b"command fn main(args own Args) -> own ExitStatus pure {\n  return unit;\n}\n".as_slice();
+        b"command fn main(args own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n"
+            .as_slice();
     let outcome = parse_active("param.wf", unresolved_param);
     let ParseOutcome::SourceIssue(issue) = outcome else {
         panic!("an IDENT continuing neither param arm must reject: {outcome:?}");
@@ -977,9 +985,9 @@ fn a_program_kind_and_an_input_label_derive_outside_the_entry() {
     // must derive these units and leave the rejection to semantic checking
     // rather than reporting invalid source here.
     for source in [
-        b"deny_claims command fn helper(command.args as args: own Args) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n".as_slice(),
-        b"command fn helper(command.args as args: own Args) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n".as_slice(),
-        b"fn helper(command.args as args: own Args) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"deny_claims command fn helper(command.args as args: own Args) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> result: own unit pure {\n  return unit;\n}\n".as_slice(),
+        b"command fn helper(command.args as args: own Args) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> result: own unit pure {\n  return unit;\n}\n".as_slice(),
+        b"fn helper(command.args as args: own Args) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> result: own unit pure {\n  return unit;\n}\n",
     ] {
         let outcome = parse_active("outside.wf", source);
         assert!(

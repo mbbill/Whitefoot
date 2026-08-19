@@ -17,14 +17,14 @@
 //! termination." `willreturn` is exactly the termination promise the language
 //! does not make, so emitting it asserts something v0 cannot prove.
 //!
-//! Measured hazard, on a function containing a required trap path: with
-//! `nounwind willreturn memory(argmem: read)`, LLVM DELETES the required trap.
+//! Measured hazard, on a function containing an executed claim path: with
+//! `nounwind willreturn memory(argmem: read)`, LLVM DELETES the claim trap.
 //! The program then exits 0 with empty stderr where it must abort with the
 //! DIAG-3 record. Every other tested combination kept the trap and aborted
 //! correctly: `nounwind`; `willreturn`; `memory(read)`; `nounwind
 //! memory(read)`; `nounwind memory(argmem: read)`; `willreturn memory(read)`;
 //! and `nounwind willreturn memory(read, inaccessiblemem: readwrite)`. The
-//! trap vanishes only when `nounwind` and `willreturn` and a memory class that
+//! claim trap vanishes only when `nounwind` and `willreturn` and a memory class that
 //! excludes `inaccessiblemem` all coincide, in the shape where a caller
 //! discards the callee's result - which is precisely how the emitted `main`
 //! shim calls `wf_main`.
@@ -47,9 +47,10 @@
 
 use super::compile;
 
-/// Representative accepted programs from the corpus. Every one carries a
-/// `traps` effect row, so each emitted module contains at least one required
-/// trap path - the shape the measured miscompile deletes. `recursive_tree`
+/// Representative accepted programs from the corpus. Every one contains at
+/// least one written claim and therefore carries a `traps` effect row, so each
+/// emitted module contains a claim trap path — the shape the measured
+/// miscompile deletes. `recursive_tree`
 /// additionally contains a self-recursive call, and `generic_instances`
 /// exercises monomorphized instances, so the check covers the call shapes an
 /// effect-attribute pass would annotate.
@@ -85,21 +86,21 @@ fn no_emitted_module_promises_termination_with_the_willreturn_attribute() {
     for (path, source) in REPRESENTATIVE_PROGRAMS {
         let module = compile(source);
         // Guards against the tripwire going vacuous on a degenerate module:
-        // each program must really have emitted code and a required trap path.
+        // each program must really have emitted code and a written claim path.
         assert!(
             module.contains("define "),
             "{path} must emit at least one function definition"
         );
         assert!(
             module.contains("@wf_trap"),
-            "{path} must emit at least one required trap path"
+            "{path} must emit at least one written claim trap path"
         );
         assert!(
             !module.contains("willreturn"),
             "{path} emitted the willreturn attribute; v0 has no termination \
              checker, so no effect row licenses that promise [EFF-3], and \
              `nounwind willreturn memory(argmem: read)` was measured to delete \
-             a required trap"
+             a written claim trap"
         );
     }
 }
