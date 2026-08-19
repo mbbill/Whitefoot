@@ -19,7 +19,7 @@ use crate::{
 
 use super::{
     CANONICAL_LIMITS, FINALIZE_LIMITS, LEX_LIMITS, PARSE_LIMITS, SOURCE_LIMITS, compile,
-    compile_and_run_with, host_optimized_module, optimized_main,
+    compile_and_run_with, compile_rejection, host_optimized_module, optimized_main,
 };
 
 pub(super) fn with_ir<ResultValue>(
@@ -376,7 +376,7 @@ fn the_text_route_validates_completely_and_reports_the_exact_encoded_length() {
 
 #[test]
 fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
-    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -433,8 +433,8 @@ fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
 }
 
 #[test]
-fn an_out_of_range_copy_traps_with_its_own_record_before_any_write() {
-    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
+fn an_out_of_range_copy_is_a_static_sys8_rejection() {
+    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -459,18 +459,9 @@ fn an_out_of_range_copy_traps_with_its_own_record_before_any_write() {
   }
 }
 "#;
-    let llvm = compile(source);
-    // The range validation precedes every other action, so the trap record is
-    // the operation's own site and no byte of the destination changed.
-    let output = compile_and_run_with(&llvm, &[b"ab"]);
-    assert!(!output.status.success());
-    let record = String::from_utf8(output.stderr).expect("the trap record is UTF-8");
-    assert!(
-        record.contains("\"rule_id\":\"SYS-8\""),
-        "unexpected trap record: {record}"
-    );
-    assert!(record.contains("\"function\":\"main\""));
-    assert!(record.ends_with("\n"));
+    let failure = compile_rejection(source);
+    assert_eq!(failure.rule_id(), Some("SYS-8"));
+    assert!(failure.detail().contains("5_u64 <= len(buffer)"));
 }
 
 #[test]
@@ -525,14 +516,15 @@ fn an_entry_selecting_no_input_still_starts_and_returns_its_status() {
 }
 
 #[test]
-fn the_unlabelled_entry_wrapper_is_unchanged() {
+fn a_no_input_entry_still_uses_the_command_bootstrap() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
-    assert!(llvm.contains("define i32 @main() {"));
-    assert!(!llvm.contains("QUAL-1"));
+    assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv) {"));
+    assert_eq!(llvm.matches("@signal(i32 13,").count(), 1);
+    assert!(llvm.contains("%backing = and i1 %argv.present, %argc.counted"));
     assert_eq!(compile_and_run_with(&llvm, &[]).status.code(), Some(0));
 }
 

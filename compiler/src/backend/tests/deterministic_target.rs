@@ -425,7 +425,7 @@ const READS_ITS_ARGUMENTS: &[u8] =
 /// while also binding the initial working directory so exactly one resource
 /// in the program releases with a close.
 const WRITES_THEN_RELEASES_BOTH: &[u8] =
-    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
@@ -636,11 +636,11 @@ fn a_mid_stream_read_failure_stops_the_drain_after_the_bytes_it_delivered() {
 }
 
 #[test]
-fn a_forced_short_write_reports_exactly_the_count_the_host_accepted() {
+fn a_forced_short_write_reports_the_absolute_endpoint_after_the_host_prefix() {
     // A destination that accepts only part of one request is not something a
     // regular file or a pipe can be made to do on demand at a chosen call.
     // [SYS-8] makes one `write_once` at most one host attempt, so a partial
-    // acceptance is `Ok(n)` with the exact accepted count — never a silent
+    // acceptance is `Ok(next)` with the exact absolute endpoint — never a silent
     // loop that finishes the range, and never an error.
     let run = run_on_deterministic_host(
         WRITE_PREFIX,
@@ -651,10 +651,10 @@ fn a_forced_short_write_reports_exactly_the_count_the_host_accepted() {
         &[],
     );
 
-    // The program returns the reported count as its status: one, not two.
+    // The request starts at one, so accepting one byte reports endpoint two.
     assert_eq!(
         run.output.status.code(),
-        Some(1),
+        Some(2),
         "trace was {:?}",
         run.trace()
     );
@@ -667,9 +667,9 @@ fn a_forced_short_write_reports_exactly_the_count_the_host_accepted() {
     );
 
     // The control: with nothing scripted the same request is accepted whole
-    // and the same program reports two.
+    // and reports endpoint three.
     let whole = run_on_deterministic_host(WRITE_PREFIX, &HostScript::new(), &[]);
-    assert_eq!(whole.output.status.code(), Some(2));
+    assert_eq!(whole.output.status.code(), Some(3));
     assert!(
         whole
             .trace()
@@ -722,14 +722,30 @@ fn the_trap_record_writer_stays_native_on_the_deterministic_target() {
     // facility, but only the operation row has a target column: the record
     // writer is the compiler's own and must never be scriptable, or a forced
     // short write could truncate a trap record. One module declares both.
-    let module = emit_for_deterministic_target(WRITE_PREFIX);
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+  let bytes = buffer_new(1_u64, 65_u8);
+  claim record_writer_probe: True() because "retain the claim record writer";
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+        Ok(value: next) => {
+        }
+        Err(error: problem) => {
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = emit_for_deterministic_target(source);
     assert!(module.contains("declare i64 @wf_test_write(i32, ptr, i64)"));
     assert!(module.contains("declare i64 @write(i32, ptr, i64)"));
     assert!(module.contains("%written = call i64 @write(i32 2, ptr %cursor"));
     assert!(module.contains("%accepted = call i64 @wf_test_write(i32 %output"));
 
     // And the native target still declares exactly one `@write` for both.
-    let native = super::compile(WRITE_PREFIX);
+    let native = super::compile(source);
     assert_eq!(
         native.matches("declare i64 @write(i32, ptr, i64)").count(),
         1
@@ -758,7 +774,7 @@ fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
         "return exit_status(code: 199_u8);",
     );
     let source = format!(
-        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {{
+        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {{
   let bytes = buffer_new(2_u64, 119_u8);
   region 'o {{
     region 's {{

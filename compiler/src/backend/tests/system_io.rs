@@ -5,8 +5,8 @@
 //! The behaviour cases compile, link, and run each program against real
 //! directories and files, because [SYS-8]'s one-attempt transfer semantics —
 //! that a short success is not end of input, that a zero-length range issues
-//! no host transfer, that the cursor advances by exactly the reported count,
-//! and that an out-of-range request traps before any host action — are
+//! no host transfer, and that the returned endpoint advances by exactly the
+//! accepted count — are
 //! observable only by performing a transfer. The cost-shape assertions read
 //! the module the host optimizer leaves, which is what [QUAL-3] says
 //! establishes the required emitted shape: inspection of emitted code and
@@ -17,7 +17,10 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
 
-use super::{build_executable, compile, host_optimized_module, optimized_main, test_directory};
+use super::{
+    build_executable, compile, compile_rejection, host_optimized_module, optimized_main,
+    test_directory,
+};
 
 /// Runs one emitted module in a fresh directory holding the given fixtures.
 ///
@@ -138,7 +141,7 @@ pub(super) fn class_arms(indent: usize, named: &[(&str, &str)], default: &str) -
 
 /// Opens one argument-named path under `command.cwd` and reads its first
 /// bytes, reporting the exact count.
-const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -342,7 +345,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
 }
 
 /// Drains one file in three-byte requests, reporting `total * 10 + requests`.
-pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -441,7 +444,7 @@ fn a_short_read_is_progress_and_only_the_observed_end_is_read_end() {
 }
 
 /// Reports a zero-length read's count, then the following request's count.
-const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -557,7 +560,7 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
                       region 'd {
                         match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 2_u64, end: 5_u64) {
                           ReadBytes(next: n) => {
-                            if ieq(n, 3_u64) {
+                            if ieq(n, 5_u64) {
                             } else {
                               return exit_status(code: 250_u8);
                             }
@@ -619,9 +622,9 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
 #[test]
 fn a_successful_read_changes_exactly_the_requested_prefix() {
     let llvm = compile(EXACT_PREFIX);
-    // On `ReadBytes(count)` exactly the first `count` bytes of the requested
-    // range may have changed and every other byte of the buffer is unchanged
-    // [SYS-8]. The digest is over the whole buffer, so any other write shows.
+    // On `ReadBytes(next)` exactly `[start, next)` may have changed and every
+    // other byte of the buffer is unchanged [SYS-8]. The digest is over the
+    // whole buffer, so any other write shows.
     let expected = [7_u8, 7, b'a', b'b', b'c', 7, 7, 7]
         .iter()
         .fold(0_u64, |digest, byte| {
@@ -637,7 +640,7 @@ fn a_successful_read_changes_exactly_the_requested_prefix() {
 }
 
 /// Writes nothing, then the two-byte prefix at offset one.
-pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   let bytes = buffer_new(4_u64, 119_u8);
   set bytes[1_u64] = 120_u8;
   set bytes[2_u64] = 121_u8;
@@ -681,14 +684,14 @@ pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out
 "#;
 
 #[test]
-fn write_once_publishes_exactly_the_requested_range_and_reports_its_count() {
+fn write_once_publishes_the_requested_range_and_reports_its_absolute_endpoint() {
     let llvm = compile(WRITE_PREFIX);
     let output = run_in_directory(&llvm, &[], &[]);
     // The zero-length range issued no host transfer and reported a count of
     // zero; the nonempty range published exactly the requested prefix of the
-    // source and reported the accepted count [SYS-8, SYS-12].
+    // source and reported the absolute endpoint three [SYS-8, SYS-12].
     assert_eq!(output.stdout, b"xy");
-    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.status.code(), Some(3));
     // A host zero-length write is `Err(WriteZero())` and never `Ok(0)`; no
     // host produces it for a nonempty request against these destinations, so
     // the emitted shape is the evidence.
@@ -697,7 +700,7 @@ fn write_once_publishes_exactly_the_requested_range_and_reports_its_count() {
 }
 
 /// Requests a range that runs past the end of its source buffer.
-const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   let bytes = buffer_new(4_u64, 65_u8);
   region 'o {
     region 's {
@@ -715,29 +718,15 @@ const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main(command.stdout as out: own
 "#;
 
 #[test]
-fn an_out_of_range_transfer_traps_before_any_host_action() {
-    let llvm = compile(OUT_OF_RANGE_WRITE);
-    let output = run_in_directory(&llvm, &[], &[]);
-    // Range validation precedes every other action, so the trap leaves the
-    // resource, the source, and the buffer unchanged and the destination
-    // never sees a byte [SYS-8, TRAP-1]. No status is produced.
-    assert!(!output.status.success());
-    assert_eq!(output.status.code(), None);
-    assert!(
-        output.stdout.is_empty(),
-        "the host was never asked to write"
-    );
-    let record = String::from_utf8(output.stderr).expect("the trap record is UTF-8");
-    assert!(
-        record.contains("\"rule_id\":\"SYS-8\""),
-        "unexpected trap record: {record}"
-    );
-    assert!(record.contains("\"function\":\"main\""));
+fn an_out_of_range_transfer_is_a_static_sys8_rejection() {
+    let failure = compile_rejection(OUT_OF_RANGE_WRITE);
+    assert_eq!(failure.rule_id(), Some("SYS-8"));
+    assert!(failure.detail().contains("9_u64 <= len(buffer)"));
 }
 
 /// Publishes one byte to standard output, one to standard error, then one
 /// more to standard output.
-const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
@@ -797,7 +786,7 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
         "set status = 43_u8;",
     );
     let source = format!(
-        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {{
+        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {{
   let bytes = buffer_new(1_u64, 65_u8);
   let attempts = 0_u64;
   let status = 44_u8;
@@ -840,7 +829,7 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
 }
 
 /// Drains one file through a reusable buffer and publishes one byte.
-const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -1017,7 +1006,7 @@ fn an_opened_file_releases_with_one_direct_close_that_is_never_retried() {
 /// routes, retypes it as a relative path, opens that path under the initial
 /// directory, copies the file to standard output through a reused buffer,
 /// echoes the argument to standard error, and returns a command code.
-const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   let echo = buffer_new(64_u64, 0_u8);
   let name_length = 0_u64;
   region 'a {
@@ -1083,6 +1072,12 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                           }
                         }
                       }
+                      let page_length = len(page);
+                      let chunk_fits = ile(chunk, page_length);
+                      if chunk_fits {
+                      } else {
+                        return exit_status(code: 12_u8);
+                      }
                       region 'o {
                         region 's {
                           match write_once<'o, 's>(output: &uniq 'o out, source: &'s page, start: 0_u64, end: chunk) {
@@ -1100,6 +1095,12 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                     if ieq(failed, 0_u8) {
                     } else {
                       return exit_status(code: failed);
+                    }
+                    let echo_length = len(echo);
+                    let name_fits = ile(name_length, echo_length);
+                    if name_fits {
+                    } else {
+                      return exit_status(code: 13_u8);
                     }
                     region 'x {
                       region 'y {
