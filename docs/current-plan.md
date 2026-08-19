@@ -2,9 +2,10 @@
 
 Status: ACTIVE (owner approval in conversation, 2026-08-19: roadmap revision
 43 and “Claim-only runtime trap surface and static contracts” are approved as
-the ACTIVE Current Plan.) Candidate specification and protected-compliance
-bytes are prepared and fully verified on the branch; they activate only after
-the owner approves their exact identities.
+the ACTIVE Current Plan.) The candidate compiler and ordinary material are
+implemented on the branch, and an exact specification correction packet is
+prepared. Specification activation and protected-compliance migration remain
+behind the owner's exact approval boundary.
 
 Derived from Direction Outline revision 43 and main at
 `e5b30704831c03a6555aa5a08d049558e468477e`. Supersedes the completed
