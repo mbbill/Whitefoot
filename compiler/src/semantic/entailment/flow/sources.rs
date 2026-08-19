@@ -561,13 +561,13 @@ impl Analyzer<'_, '_> {
         {
             return true;
         }
-        let Some((base, delta, trapping)) = self.constant_offset(value) else {
+        let Some((base, delta, exact)) = self.constant_offset(value) else {
             return false;
         };
         let Some(bound) = self.bound_term(binding, value) else {
             return true;
         };
-        if !trapping {
+        if !exact {
             let Some(ty) = fragment_type(value.ty()) else {
                 return true;
             };
@@ -717,9 +717,11 @@ impl Analyzer<'_, '_> {
         true
     }
 
-    /// The `(p, k, trapping)` reading of one constant-offset arithmetic call:
-    /// `iadd` accepts its constant in either operand position, `isub` only as
-    /// the subtrahend, since `k - p` is no offset of p.
+    /// The `(p, k, exact)` reading of one constant-offset arithmetic call.
+    /// Exact rows have already discharged their static IntegerDomain
+    /// obligation; wrapping rows need the additional range proof above.
+    /// Addition accepts its constant in either operand position, subtraction
+    /// only as the subtrahend, since `k - p` is no offset of p.
     fn constant_offset(&mut self, value: &CheckedExpression) -> Option<(TermId, i128, bool)> {
         let CheckedExpression::IntegerOperation {
             operation,
@@ -734,7 +736,7 @@ impl Analyzer<'_, '_> {
         let [left, right] = arguments.as_slice() else {
             return None;
         };
-        let (adding, trapping) = match operation {
+        let (adding, exact) = match operation {
             CheckedIntegerOperation::AddWrap => (true, false),
             CheckedIntegerOperation::AddExact => (true, true),
             CheckedIntegerOperation::SubtractWrap => (false, false),
@@ -744,7 +746,7 @@ impl Analyzer<'_, '_> {
         let left = self.read_operand(left)?;
         let right = self.read_operand(right)?;
         let (base, delta) = self.split_offset(left, right, adding)?;
-        Some((base, delta, trapping))
+        Some((base, delta, exact))
     }
 
     /// Splits one operand pair into a base term and a constant offset.
