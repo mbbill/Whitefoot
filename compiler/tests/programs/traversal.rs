@@ -123,7 +123,11 @@ fn the_traversal_source_is_admitted_only_by_the_declaring_inventory() {
 /// differential and not one inventory compared with itself.
 #[test]
 fn appending_the_traversal_inventory_leaves_every_earlier_program_byte_identical() {
-    for name in ["wfgrep.wf", "byte_string.wf", "growable_vec.wf"] {
+    // `wfgrep.wf` was on this list until it became a recursive search and
+    // started using the traversal surface itself, so it is no longer an
+    // earlier program; `utf8parse.wf` takes its place as the largest corpus
+    // program that reaches no system operation at all.
+    for name in ["utf8parse.wf", "byte_string.wf", "growable_vec.wf"] {
         assert_eq!(
             compile_program_without_traversal_surface(name),
             compile_program_with_traversal_surface(name),
