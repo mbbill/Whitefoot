@@ -312,7 +312,8 @@ pub(crate) enum TargetGuarantee {
 ///
 /// Every field is target data read only by the `list_once` implementation:
 /// the emitted shim walks the native records this facility wrote and
-/// normalizes them into the portable `[kind][name length][name bytes]` form
+/// normalizes them into the portable
+/// `[kind][little-endian u16 name length][name bytes]` form
 /// [SYS-14] fixes. A target with no such facility supplies no record here and
 /// fails qualification for the enumeration semantic IDs rather than emulating
 /// them with a directory-reading loop of its own.
@@ -587,6 +588,9 @@ pub(crate) struct SystemTarget {
     /// Which host facilities this target's approved implementations call.
     host: HostFacilities,
     root_prefix: u8,
+    /// The greatest byte length of one directory component admitted by this
+    /// target's filesystem-facing ABI.
+    component_limit: u64,
     /// Bootstrap and self-component directory opens.
     directory_open_flags: i32,
     /// `open_read`'s namespace-following relative-path open.
@@ -615,6 +619,11 @@ impl SystemTarget {
     /// set of this family: one leading separator.
     pub(crate) const fn root_prefix(self) -> u8 {
         self.root_prefix
+    }
+
+    /// The selected target's maximum component length in bytes.
+    pub(crate) const fn component_limit(self) -> u64 {
+        self.component_limit
     }
 
     /// The flags the bootstrap opens the initial working directory with, so
@@ -741,6 +750,7 @@ impl SystemTarget {
     /// directory-relative resolution.
     pub(crate) fn for_triple(triple: &str) -> Option<Self> {
         let (
+            component_limit,
             directory_open_flags,
             component_directory_open_flags,
             component_file_open_flags,
@@ -755,6 +765,7 @@ impl SystemTarget {
         ) = match triple {
             // Darwin: O_DIRECTORY, O_NOFOLLOW, and O_NONBLOCK.
             "aarch64-apple-darwin" => (
+                1023,
                 0x0010_0000,
                 0x0010_0100,
                 0x0000_0104,
@@ -770,6 +781,7 @@ impl SystemTarget {
             // x86_64 Darwin uses the inode64-decorated ABI symbol for the
             // modern 144-byte `struct stat`; arm64 exports that ABI as fstat.
             "x86_64-apple-darwin" => (
+                1023,
                 0x0010_0000,
                 0x0010_0100,
                 0x0000_0104,
@@ -786,6 +798,7 @@ impl SystemTarget {
             // values; they differ from x86_64 and therefore retain their own
             // target row.
             "aarch64-unknown-linux-gnu" => (
+                255,
                 0x0000_4000,
                 0x0000_c000,
                 0x0000_8800,
@@ -804,6 +817,7 @@ impl SystemTarget {
             // therefore report MissingMapping rather than pretending the
             // target lacks the semantic facility.
             "x86_64-unknown-linux-gnu" => (
+                255,
                 0x0001_0000,
                 0x0003_0000,
                 0x0002_0800,
@@ -826,6 +840,7 @@ impl SystemTarget {
             directory_enumeration,
             host: HostFacilities::Native,
             root_prefix: b'/',
+            component_limit,
             directory_open_flags,
             // `O_RDONLY` is zero on both families. `open_read` opens for
             // reading only and adds no creation, truncation, or mode flag:

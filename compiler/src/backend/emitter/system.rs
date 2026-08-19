@@ -51,14 +51,6 @@ const OPEN_LIST: u8 = 12;
 const LIST_ONCE: u8 = 13;
 const OPEN_FILE: u8 = 14;
 
-/// The longest single path component the [SYS-14] name operations admit.
-///
-/// Both qualified families cap one component at this many bytes, so the
-/// bounded stack slot the directory-relative facility is handed is exactly
-/// this size plus its terminator. A longer name is rejected as an invalid
-/// component before any host call.
-const COMPONENT_LIMIT: u64 = 255;
-
 /// The portable [SYS-14] entry-kind values written into the destination.
 const KIND_UNKNOWN: u8 = 0;
 const KIND_REGULAR: u8 = 1;
@@ -66,9 +58,9 @@ const KIND_DIRECTORY: u8 = 2;
 const KIND_SYMLINK: u8 = 3;
 const KIND_OTHER: u8 = 4;
 
-/// The portable [SYS-14] entry record header: one kind byte and one name
-/// length byte, ahead of the name bytes themselves.
-const ENTRY_HEADER: u64 = 2;
+/// The portable [SYS-14] entry record header: one kind byte and one
+/// little-endian `u16` name length, ahead of the name bytes themselves.
+const ENTRY_HEADER: u64 = 3;
 
 /// The private symbol of the shared UTF-8 validator both text-route
 /// implementations use [HOST-2].
@@ -1323,10 +1315,10 @@ fn invalid_component(
 /// target separator — so no source-assembled multi-component path reaches the
 /// host and [PATH-1]'s deferral of path algebra stands. Validation precedes
 /// the copy and therefore precedes the host call.
-fn component_validation(buffer: &str, root: u32) -> String {
+fn component_validation(buffer: &str, root: u32, component_limit: u64) -> String {
     format!(
         "measure:\n  \
-         %oversize = icmp ugt i64 %extent, {COMPONENT_LIMIT}\n  \
+         %oversize = icmp ugt i64 %extent, {component_limit}\n  \
          %vacant = icmp eq i64 %extent, 0\n  \
          %unusable = or i1 %oversize, %vacant\n  \
          br i1 %unusable, label %invalid, label %scan.entry\n\
@@ -1432,7 +1424,7 @@ fn emit_open_by_name(
         err_type,
         ..
     } = shape;
-    let slot = COMPONENT_LIMIT + 1;
+    let slot = target.component_limit() + 1;
     let mut prologue = format!("  %component = alloca [{slot} x i8], align 1\n");
     if require_regular {
         writeln!(
@@ -1443,7 +1435,11 @@ fn emit_open_by_name(
         .map_err(|_| BackendFailure::TextEmission)?;
     }
     let entry = range_entry(&prologue);
-    let component = component_validation(&buffer, u32::from(target.root_prefix()));
+    let component = component_validation(
+        &buffer,
+        u32::from(target.root_prefix()),
+        target.component_limit(),
+    );
     let (read_error, error) = native_error(target, "failure");
     let (invalid_value, invalid_error) = invalid_component(program, err_llvm, *err_type)?;
     let opened_target = if require_regular { "inspect" } else { "live" };
@@ -1611,12 +1607,12 @@ fn emit_open_list(
 /// one host call, then one outcome check and a cold mapper [QUAL-3]. The one addition
 /// is normalization — the facility writes its own records into the caller's
 /// range, and the shim rewrites them in place as the portable
-/// `[kind][name length][name bytes]` sequence [SYS-14]. The rewrite moves
-/// every byte strictly toward the front, because a portable record's two-byte
-/// header is smaller than any native record's, so no unread byte is ever
-/// overwritten. Every native header field is validated against the reported
-/// extent before it is used, so a record the facility mis-sizes ends the walk
-/// instead of reading past the range.
+/// `[kind][little-endian u16 name length][name bytes]` sequence [SYS-14]. The
+/// rewrite moves every byte strictly toward the front, because a portable
+/// record's three-byte header is smaller than any native record's, so no
+/// unread byte is ever overwritten. Every native header field is validated
+/// against the reported extent before it is used, so a record the facility
+/// mis-sizes ends the walk instead of reading past the range.
 fn emit_list_once(
     program: &IrProgram<'_, '_, '_>,
     implementation: ApprovedImplementation,
@@ -1657,6 +1653,7 @@ fn emit_list_once(
     let native_directory = enumeration.native_directory();
     let native_symlink = enumeration.native_symlink();
     let native_unknown = enumeration.native_unknown();
+    let component_limit = target.component_limit();
     Ok(format!(
         "define private {llvm} @{symbol}({list} %list, {buffer} %destination, i64 %start, \
          i64 %end) alwaysinline {{\n\
@@ -1720,7 +1717,7 @@ fn emit_list_once(
          %sized = icmp uge i64 %record.extent, %needed\n  \
          %bounded = icmp ule i64 %record.extent, %remaining\n  \
          %advancing = icmp uge i64 %record.extent, 1\n  \
-         %nameable = icmp ule i64 %named, {COMPONENT_LIMIT}\n  \
+         %nameable = icmp ule i64 %named, {component_limit}\n  \
          %naming = icmp uge i64 %named, 1\n  \
          %named.usable = and i1 %nameable, %naming\n  \
          %consistent = and i1 %sized, %bounded\n  \
@@ -1743,9 +1740,14 @@ fn emit_list_once(
          %kind.portable = select i1 %unclassified, i8 {KIND_UNKNOWN}, i8 %kind.symlink\n  \
          %target.record = getelementptr inbounds i8, ptr %window, i64 %written\n  \
          store i8 %kind.portable, ptr %target.record, align 1\n  \
-         %target.named = getelementptr inbounds i8, ptr %target.record, i64 1\n  \
-         %named.byte = trunc i64 %named to i8\n  \
-         store i8 %named.byte, ptr %target.named, align 1\n  \
+         %target.named.low = getelementptr inbounds i8, ptr %target.record, i64 1\n  \
+         %target.named.high = getelementptr inbounds i8, ptr %target.record, i64 2\n  \
+         %named.short = trunc i64 %named to i16\n  \
+         %named.low = trunc i16 %named.short to i8\n  \
+         %named.high.part = lshr i16 %named.short, 8\n  \
+         %named.high = trunc i16 %named.high.part to i8\n  \
+         store i8 %named.low, ptr %target.named.low, align 1\n  \
+         store i8 %named.high, ptr %target.named.high, align 1\n  \
          %target.name = getelementptr inbounds i8, ptr %target.record, i64 {ENTRY_HEADER}\n  \
          %source.name = getelementptr inbounds i8, ptr %entry.record, i64 {name_offset}\n  \
          br label %copy\n\
