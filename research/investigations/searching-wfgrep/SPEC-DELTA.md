@@ -386,20 +386,96 @@ earlier program is byte-identical across the switch.
 Touched: the catalog inventory row; the `wf-prov` result class and external
 write columns (`compiler/src/semantic/provenance.rs`); the [QUAL-1] symbol and
 [QUAL-2] guarantee rows (`compiler/src/backend/qualification.rs`); the emitted
-implementation (`compiler/src/backend/emitter/system.rs`,
-`emit_open_file`, which reuses `range_validation_after` and
-`component_validation` unchanged and differs from `emit_open_directory` in
-exactly the open flags and the result representation).
+implementation (`compiler/src/backend/emitter/system.rs`, `emit_open_file`,
+which shares one `emit_open_by_name` with `emit_open_directory` — the two
+differ in exactly the open flags and the opened resource, so the [SYS-8] range
+trap, the component validation, the bounded terminating slot, the single host
+call, and the one cold mapper are written once).
 
-## 5. Evidence
+Everything downstream of the catalog is table-driven, so no rule in the
+resolver, the checker, or the lowering needed a new case: the operation's
+signature, its region effects, its trap row, and its call-site argument
+discipline all come from the inventory row.
 
-See §6 of this document for the run, and
-`compiler/tests/programs/open_by_name.rs` and
-`compiler/tests/programs/wfgrep_search.rs` for the tests.
+## 5. Running evidence
 
-## 6. Running evidence
+`tests/programs/wfgrep.wf` is now a real recursive search. It takes a pattern
+and one search root, opens the root by name against `command.cwd`, walks the
+tree with `open_list`/`list_once`/`open_directory`, opens every regular file
+it reaches with `open_file`, reads it with `read_once`, runs the same literal
+matcher the argv-list version ran, and publishes `PATH:LINE:TEXT`. The entries
+of one directory are sorted by name bytes before they are visited, because
+[SYS-14] deliberately fixes no enumeration order.
 
-Filled in by the implementation, below.
+The tree, written with ordinary filesystem calls and never injected into the
+program's address space:
+
+```
+tree/.hidden.txt            hidden needle
+tree/alpha.txt              needle here / plain / needle again
+tree/beta.txt               nothing / at all
+tree/sub/delta.txt          no match here
+tree/sub/gamma.txt          deep needle
+tree/sub/deeper/epsilon.txt deepest needle / last
+tree/zeta.txt               needle at the end
+```
+
+`./wfgrep needle tree`, verbatim:
+
+```
+tree/.hidden.txt:1:hidden needle
+tree/alpha.txt:1:needle here
+tree/alpha.txt:3:needle again
+tree/sub/deeper/epsilon.txt:1:deepest needle
+tree/sub/gamma.txt:1:deep needle
+tree/zeta.txt:1:needle at the end
+```
+exit 0.
+
+`/usr/bin/grep -rn needle tree` on the same tree, verbatim:
+
+```
+tree/alpha.txt:1:needle here
+tree/alpha.txt:3:needle again
+tree/zeta.txt:1:needle at the end
+tree/sub/deeper/epsilon.txt:1:deepest needle
+tree/sub/gamma.txt:1:deep needle
+tree/.hidden.txt:1:hidden needle
+```
+exit 0.
+
+`diff <(./wfgrep needle tree | sort) <(grep -rn needle tree | sort)` is empty:
+six records on each side, identical byte for byte. The two orders differ
+because `grep -r` visits the tree in the host's own enumeration order while
+wfgrep sorts each directory's entries; the hit *set* is the claim under test.
+The same comparison with the pattern `e` agrees on seven records, and with an
+absent pattern both publish nothing and exit 1.
+
+Tests: `compiler/tests/programs/wfgrep.rs`, eleven cases, all green. They
+carry both oracles — the frozen reference search written in the harness, and
+`grep -rn` on the shapes the two grep families agree on.
+
+## 6. What the run measured about the surface
+
+Three observations the run produced that the specification should hear:
+
+1. **The kind byte is load-bearing.** wfgrep opens an entry with `open_file`
+   exactly when the enumerated kind is `1 regular` and descends exactly when
+   it is `2 directory`. On a target that reported `0 unknown` for every entry
+   — which [SYS-14] explicitly admits — this program would find nothing, and
+   no operation in the inventory can classify an entry after the fact: `open`
+   on a Unix-family directory succeeds and only the later `read` fails. That
+   is a real gap in the surface, not in this program. It is not blocking on
+   the qualified darwin binding, whose shim maps `d_type` faithfully.
+2. **`open_file` per file, `open_directory` per directory, one descriptor per
+   live level.** [SYS-14]'s release note is exact: a depth-8 walk holds eight
+   enumeration descriptors. wfgrep releases each `DirectoryList` before it
+   recurses, so its live set is one list plus one capability per level.
+3. **Checking cost.** The search program takes roughly eight minutes of
+   semantic checking on this host, against roughly two for the argv-list
+   version it replaces. The entailment work over the nested walk and matcher
+   dominates. That is a compiler measurement, not a language one, and it is
+   the reason the test module compiles the program once and shares the module.
 
 ## 7. PROPOSED conformance cases (no `tests/conformance/` edit here)
 
