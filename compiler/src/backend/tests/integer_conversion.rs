@@ -120,7 +120,7 @@ fn executes_exact_success_and_failure_edges_for_every_conversion_class() {
         .expect("write checked conversion");
         checked_count += 1;
     }
-    source.push_str("  return unit;\n}\n");
+    source.push_str("  return exit_status(code: 0_u8);\n}\n");
     assert_eq!(total_count, 3);
     assert_eq!(checked_count, 12);
 

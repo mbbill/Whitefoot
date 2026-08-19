@@ -431,7 +431,7 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
   set bytes[2_u64] = 67_u8;
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 3_u64) {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 3_u64) {
         Ok(value: written) => {
           let narrowed = cvt<u64, u8>(written);
           match narrowed {
@@ -762,7 +762,7 @@ fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
   let bytes = buffer_new(2_u64, 119_u8);
   region 'o {{
     region 's {{
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 2_u64) {{
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 2_u64) {{
         Ok(value: written) => {{
           let narrowed = cvt<u64, u8>(written);
           match narrowed {{

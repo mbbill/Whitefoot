@@ -3,6 +3,8 @@ use super::*;
 #[test]
 fn primitive_buffers_cross_functions_update_and_free_once() {
     let source = br#"fn make(n: own u64) -> result: own buffer<u16> allocates(heap), traps {
+  let fits = buffer_fits<u16>(n);
+  claim allocation_fits: fits because "the requested u16 buffer fits every selected target";
   return buffer_new(n, 3_u16);
 }
 
@@ -144,7 +146,7 @@ fn empty_buffer_has_zero_length_and_a_normal_free() {
 
 #[test]
 fn buffer_cleanup_is_explicit_on_return_and_break_edges() {
-    let source = br#"fn cleanup(flag: own Bool) -> result: own unit allocates(heap), traps {
+    let source = br#"fn cleanup(flag: own Bool) -> result: own unit allocates(heap) {
   let values = buffer_new(2_u64, 0_u8);
   if flag {
     return unit;
@@ -156,7 +158,7 @@ fn buffer_cleanup_is_explicit_on_return_and_break_edges() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let true_value = True();
   let false_value = False();
   cleanup(flag: true_value);
@@ -228,6 +230,7 @@ fn observe['r](pool: &'r Pool) -> result: own u64 reads('r), traps {
   claim left_sized: ok because "main pools two slots per column";
   let value = deref(pool).left[1_u64];
   let count = deref(pool).count;
+  claim observed_sum_defined: value +defined count because "the observed fields have a representable sum";
   return value + count;
 }
 
@@ -383,7 +386,7 @@ struct Owner {
   suffix: buffer<u64>;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(1_u64, 0_u8);
   let second = buffer_new(1_u64, 0_u16);
   let pair = Pair(first: move first, second: move second);
@@ -419,7 +422,7 @@ fn take(owner: own Owner) -> result: own buffer<u8> pure {
   return move owner.pair.first;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(1_u64, 0_u8);
   let second = buffer_new(1_u64, 0_u8);
   let pair = Pair(first: move first, second: move second);
@@ -533,7 +536,7 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
 
 #[test]
 fn trivially_droppable_affine_elements_keep_the_single_free() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let slots = buffer_vacant<u32>(4_u64);
   let filled = Some<u32>(value: 7_u32);
   let vacant = replace slots[2_u64] = move filled;

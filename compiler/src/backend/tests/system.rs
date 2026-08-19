@@ -83,7 +83,7 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> resul
     let length = host_bytes_len<'v>(value: &'v value);
     let bytes = buffer_new(length, 0_u8);
     region 'd {
-      let copied = host_copy_bytes<'v, 'd>(value: &'v value, destination: &uniq 'd bytes, offset: 0_u64, capacity: length);
+      let copied = host_copy_bytes<'v, 'd>(value: &'v value, destination: &uniq 'd bytes, start: 0_u64, end: length);
       match move copied {
         Ok(value: count) => {
         }
@@ -364,7 +364,7 @@ fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
         let bytes = buffer_new(2_u64, 7_u8);
         region 'v {
           region 'd {
-            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, offset: 0_u64, capacity: 2_u64) {
+            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 0_u64, end: 2_u64) {
               Ok(value: count) => {
                 return exit_status(code: 10_u8);
               }
@@ -422,7 +422,7 @@ fn an_out_of_range_copy_traps_with_its_own_record_before_any_write() {
         let bytes = buffer_new(2_u64, 7_u8);
         region 'v {
           region 'd {
-            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, offset: 1_u64, capacity: 4_u64) {
+            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 1_u64, end: 5_u64) {
               Ok(value: count) => {
                 return exit_status(code: 10_u8);
               }

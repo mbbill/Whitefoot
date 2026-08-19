@@ -737,7 +737,9 @@ fn infix_operators_execute_the_rows_they_name() {
 /// trap, so a lost or inverted result fails here rather than passing quietly.
 #[test]
 fn an_infix_returned_from_a_function_executes() {
-    let source = br#"fn add(a: own i32, b: own i32) -> result: own i32 traps {
+    let source = br#"fn add(a: own i32, b: own i32) -> result: own i32 pure contract {
+  requires a +defined b;
+} {
   return a + b;
 }
 
@@ -1072,7 +1074,7 @@ fn unit_is_a_first_class_parameter_result_and_local() {
 
 command fn main() -> status: own ExitStatus pure {
   let value = identity(value: unit);
-  return value;
+  return exit_status(code: 0_u8);
 }
 "#;
     let output = compile_and_run(&compile(source));
@@ -1203,7 +1205,7 @@ fn required_check_survives_host_optimization_of_an_unfoldable_loop() {
     }
     let mixed = ixor(state, step);
     set state = mixed *wrap 1099511628211_u64;
-    set step = step + 1_u64;
+    set step = step +wrap 1_u64;
   }
   claim mixing_chain_drift: ieq(state, 1_u64) because "mixing chain drift";
   return exit_status(code: 0_u8);
@@ -1237,7 +1239,7 @@ fn required_check_survives_host_optimization_of_an_unfoldable_loop() {
     );
     assert_eq!(
         output.stderr,
-        b"{\"rule_id\":\"CLM-1\",\"message\":\"mixing_chain_drift\",\"function\":\"main\",\"node_path\":[0,0,6,0]}\n"
+        b"{\"rule_id\":\"CLM-1\",\"message\":\"mixing_chain_drift\",\"function\":\"main\",\"node_path\":[0,0,7,0]}\n"
     );
     assert!(output.stdout.is_empty());
 }
