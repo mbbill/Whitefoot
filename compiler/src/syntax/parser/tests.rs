@@ -928,9 +928,10 @@ fn declaration_and_parameter_optionals_report_their_complete_expected_sets() {
             ))
     );
 
-    // Once the fixed marker is consumed, a token that is neither a program
-    // kind nor `fn` is a GRAM-2 continuation failure and retains the complete
-    // continuation set.
+    // Once the fixed marker is consumed, either the fixed `command` program
+    // kind or an ordinary `fn` may follow. The program kind is no longer an
+    // arbitrary identifier, so the complete continuation set is two fixed
+    // terminals.
     let marked_non_function = b"deny_claims struct Thing {\n  a: i32;\n}\n".as_slice();
     let outcome = parse_active("marked-kind.wf", marked_non_function);
     let ParseOutcome::SourceIssue(issue) = outcome else {
@@ -943,7 +944,7 @@ fn declaration_and_parameter_optionals_report_their_complete_expected_sets() {
         issue
             .expected()
             .contains(crate::syntax::grammar::LookaheadPredicate::Terminal(
-                TerminalPredicate::Identifier
+                TerminalPredicate::Fixed(FixedTerminal::Command)
             ))
     );
     assert!(
@@ -954,8 +955,9 @@ fn declaration_and_parameter_optionals_report_their_complete_expected_sets() {
             ))
     );
 
-    // `param := input_label? IDENT ":" mode type`: after one IDENT both
-    // directions of the optional remain live, so the expected set names each.
+    // `param := input_label? IDENT ":" mode type`: `input_label` begins with
+    // the fixed `command` terminal, so after an ordinary parameter IDENT only
+    // the colon continuation remains live.
     let unresolved_param =
         b"command fn main(args own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n"
             .as_slice();
@@ -965,17 +967,15 @@ fn declaration_and_parameter_optionals_report_their_complete_expected_sets() {
     };
     assert_eq!(issue.rule(), SyntaxRule::Gram2);
     assert_eq!(issue_bytes(unresolved_param, issue), b"own");
-    assert_eq!(issue.expected().len(), 2);
-    for expected in [FixedTerminal::Dot, FixedTerminal::Colon] {
-        assert!(
-            issue
-                .expected()
-                .contains(crate::syntax::grammar::LookaheadPredicate::Terminal(
-                    TerminalPredicate::Fixed(expected)
-                )),
-            "the param optional must expect {expected:?}"
-        );
-    }
+    assert_eq!(issue.expected().len(), 1);
+    assert!(
+        issue
+            .expected()
+            .contains(crate::syntax::grammar::LookaheadPredicate::Terminal(
+                TerminalPredicate::Fixed(FixedTerminal::Colon)
+            )),
+        "an ordinary parameter name must be followed by a colon"
+    );
 }
 
 #[test]
