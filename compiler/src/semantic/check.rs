@@ -2016,7 +2016,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element,
                 maximum_length,
             } => GoalOperation::BufferFits {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_type(element, signature, regions)?,
                 maximum_length,
             },
             GoalOperation::SliceLength { region, element } => GoalOperation::SliceLength {

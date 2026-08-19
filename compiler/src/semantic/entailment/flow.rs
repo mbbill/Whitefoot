@@ -32,7 +32,7 @@ use super::super::postcondition::{
 use super::state::{
     ClaimLifecycleKind, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
-    GoalId, GoalSign, GoalSupport, GoalTable, IntegerDomainNormalization, JoinParent, OutcomeFact,
+    GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
     PostconditionCallSubstitution, ProofView, Relation, close, close_excluding_term, join_at,
     materialize_closure_at,
 };
@@ -240,15 +240,11 @@ struct IntegerDomainPlan {
 }
 
 impl IntegerDomainPlan {
-    fn normalization(&self) -> IntegerDomainNormalization {
+    fn normalization(&self) -> GoalNormalization {
         let components = self.components.iter().map(request_relation).collect();
         match self.kind {
-            IntegerDomainPlanKind::Conjunction => {
-                IntegerDomainNormalization::conjunction(components)
-            }
-            IntegerDomainPlanKind::SignedDivision => {
-                IntegerDomainNormalization::signed_division(components)
-            }
+            IntegerDomainPlanKind::Conjunction => GoalNormalization::conjunction(components),
+            IntegerDomainPlanKind::SignedDivision => GoalNormalization::signed_division(components),
         }
     }
 }
@@ -3484,7 +3480,7 @@ impl Analyzer<'_, '_> {
                     element: *element,
                     maximum_length: layout_ceiling.stride.allocation_limit(),
                 },
-                vec![element.ty()],
+                vec![*element],
                 Vec::new(),
                 CheckedType::Bool,
                 vec![self.direct_goal_expression(length)?],
@@ -3718,13 +3714,11 @@ impl Analyzer<'_, '_> {
 
     fn intern_goal_expression(&mut self, expression: GoalExpression) -> GoalId {
         let projection = self.goal_projection(&expression);
-        let integer_domain = self
-            .goal_integer_domain_plan(&expression)
-            .map(|plan| plan.normalization());
+        let normalization = self.goal_normalization(&expression);
         let mut support = Vec::new();
         self.collect_goal_support(&expression, false, &mut support);
         self.goals
-            .intern(expression, projection, integer_domain, support)
+            .intern(expression, projection, normalization, support)
     }
 
     /// [O11 candidate] The signed Boolean decomposition set of one
@@ -4420,7 +4414,7 @@ impl Analyzer<'_, '_> {
                 let _ = self.judge_expression(length, states);
                 let _ = self.judge_expression(value, states);
                 self.judge_allocation_fit(
-                    *element,
+                    element.ty(),
                     layout_ceiling.stride.allocation_limit(),
                     length,
                     carrier.clone(),
@@ -4437,7 +4431,7 @@ impl Analyzer<'_, '_> {
             } => {
                 let _ = self.judge_expression(length, states);
                 self.judge_allocation_fit(
-                    super::super::model::CheckedFlatElement::Nominal(*element),
+                    CheckedType::Nominal(*element),
                     layout_ceiling.stride.allocation_limit(),
                     length,
                     carrier.clone(),
@@ -4551,16 +4545,16 @@ impl Analyzer<'_, '_> {
                 .goals
                 .projection(id)
                 .is_some_and(|relation| closed.derives(relation));
-            let positive_domain =
-                closed.derives_integer_domain_goal(id, GoalSign::Positive, &self.goals);
+            let positive_normalization =
+                closed.derives_normalized_goal(id, GoalSign::Positive, &self.goals);
             let negative_opaque = closed.holds_opaque(id, GoalSign::Negative);
             let negative_projection = self
                 .goals
                 .projection(id)
                 .is_some_and(|relation| closed.derives(&relation.negated()));
-            let negative_domain =
-                closed.derives_integer_domain_goal(id, GoalSign::Negative, &self.goals);
-            if positive_opaque || positive_projection || positive_domain {
+            let negative_normalization =
+                closed.derives_normalized_goal(id, GoalSign::Negative, &self.goals);
+            if positive_opaque || positive_projection || positive_normalization {
                 let mut evidence = Vec::with_capacity(3);
                 if positive_opaque {
                     evidence.push(CallGoalEvidence::OpaquePositive);
@@ -4568,13 +4562,13 @@ impl Analyzer<'_, '_> {
                 if positive_projection {
                     evidence.push(CallGoalEvidence::ExactL0Projection);
                 }
-                if positive_domain {
-                    evidence.push(CallGoalEvidence::IntegerDomainPositive);
+                if positive_normalization {
+                    evidence.push(CallGoalEvidence::NormalizationPositive);
                 }
                 let derivation =
                     closed.goal_proof(id, GoalSign::Positive, &self.goals, &mut self.derivations);
                 (CallGoalDisposition::Discharged, evidence, derivation)
-            } else if negative_opaque || negative_projection || negative_domain {
+            } else if negative_opaque || negative_projection || negative_normalization {
                 let mut evidence = Vec::with_capacity(3);
                 if negative_opaque {
                     evidence.push(CallGoalEvidence::OpaqueNegative);
@@ -4582,8 +4576,8 @@ impl Analyzer<'_, '_> {
                 if negative_projection {
                     evidence.push(CallGoalEvidence::NegatedL0Projection);
                 }
-                if negative_domain {
-                    evidence.push(CallGoalEvidence::IntegerDomainNegative);
+                if negative_normalization {
+                    evidence.push(CallGoalEvidence::NormalizationNegative);
                 }
                 (CallGoalDisposition::Refuted, evidence, None)
             } else {
@@ -4764,7 +4758,7 @@ impl Analyzer<'_, '_> {
     /// predicate fact does not publish an ambient comparison fact.
     fn judge_allocation_fit(
         &mut self,
-        element: super::super::model::CheckedFlatElement,
+        element: CheckedType,
         maximum_length: u64,
         length: &CheckedExpression,
         node_path: crate::NodePath,
@@ -4772,14 +4766,14 @@ impl Analyzer<'_, '_> {
     ) {
         let length_goal = self.direct_goal_expression(length);
         let canonical_goal = length_goal.map(|argument| GoalExpression::Operation {
-                row: GoalOperation::BufferFits {
-                    element,
-                    maximum_length,
-                },
-                type_arguments: vec![element.ty()],
-                const_arguments: Vec::new(),
-                result: CheckedType::Bool,
-                arguments: vec![argument],
+            row: GoalOperation::BufferFits {
+                element,
+                maximum_length,
+            },
+            type_arguments: vec![element],
+            const_arguments: Vec::new(),
+            result: CheckedType::Bool,
+            arguments: vec![argument],
         });
         let goal = canonical_goal
             .as_ref()
@@ -4791,7 +4785,7 @@ impl Analyzer<'_, '_> {
             .intern(TermKind::Constant(i128::from(maximum_length)));
         let rendered = format!(
             "buffer_fits<{:?}>({})",
-            element.ty(),
+            element,
             self.render_expression(length)
         );
 
@@ -4853,26 +4847,29 @@ impl Analyzer<'_, '_> {
         threshold: TermId,
     ) -> (bool, bool, bool, Option<DerivationId>) {
         let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
-        let exact = goal.is_some_and(|goal| closed.holds_opaque(goal, GoalSign::Positive));
-        let refuted = goal.is_some_and(|goal| closed.holds_opaque(goal, GoalSign::Negative));
-        let component = length.is_some_and(|length| closed.derives_bound(length, threshold, 0));
         let contradictory = closed.contradictory();
-        // An exact negative fact is authoritative over the one-way component:
-        // `buffer_fits<T>(n)` deliberately does not project an ambient L0
-        // relation, so the component cannot silently cancel a known-false
-        // predicate. A contradictory state remains the sole exception.
-        let discharged = exact || (!refuted && component) || contradictory;
-        let proof = if exact {
-            goal.and_then(|goal| closed.opaque_proof(goal, GoalSign::Positive))
-        } else if !refuted && component {
+        if contradictory {
+            return (true, false, true, closed.contradiction_proof());
+        }
+        if let Some(goal) = goal {
+            if closed.derives_goal(goal, GoalSign::Positive, &self.goals) {
+                let proof =
+                    closed.goal_proof(goal, GoalSign::Positive, &self.goals, &mut self.derivations);
+                return (true, false, false, proof);
+            }
+            let refuted = closed.derives_goal(goal, GoalSign::Negative, &self.goals);
+            return (false, refuted, false, None);
+        }
+
+        // An operand outside the finite goal vocabulary can still use the
+        // same single comparison when it happens to have an L0 term.
+        let component = length.is_some_and(|length| closed.derives_bound(length, threshold, 0));
+        let refuted = length.is_some_and(|length| closed.derives_bound(threshold, length, -1));
+        let proof = component.then(|| {
             length
                 .and_then(|length| closed.bound_proof(length, threshold, 0, &mut self.derivations))
-        } else if contradictory {
-            closed.contradiction_proof()
-        } else {
-            None
-        };
-        (discharged, !discharged && refuted, contradictory, proof)
+        });
+        (component, !component && refuted, false, proof.flatten())
     }
 
     fn judge_system_ranges(
@@ -5282,6 +5279,37 @@ impl Analyzer<'_, '_> {
             .collect::<Vec<_>>();
         self.integer_domain_plan(operation, operand_type, &operands)
             .map_or_else(Vec::new, |plan| plan.components)
+    }
+
+    /// The one normalization authority attached to any goal family that has
+    /// a fixed L0 interpretation. Integer domains may use a small DNF;
+    /// AllocationFit is one conjunction containing its ceiling comparison.
+    fn goal_normalization(&mut self, expression: &GoalExpression) -> Option<GoalNormalization> {
+        if let Some(plan) = self.goal_integer_domain_plan(expression) {
+            return Some(plan.normalization());
+        }
+        let GoalExpression::Operation {
+            row: GoalOperation::BufferFits { maximum_length, .. },
+            arguments,
+            result: CheckedType::Bool,
+            ..
+        } = expression
+        else {
+            return None;
+        };
+        let [length] = arguments.as_slice() else {
+            return None;
+        };
+        let threshold = self
+            .terms
+            .intern(TermKind::Constant(i128::from(*maximum_length)));
+        Some(GoalNormalization::conjunction(vec![
+            self.goal_operand(length).map(|length| Relation::Bound {
+                left: length,
+                right: threshold,
+                bound: 0,
+            }),
+        ]))
     }
 
     fn goal_integer_domain_plan(

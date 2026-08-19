@@ -1025,7 +1025,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert!(!parents.is_empty());
                 DerivationConclusion::IntegerDomain(*goal)
             }
-            DerivationNode::IntegerDomainNormalization {
+            DerivationNode::GoalNormalization {
                 goal,
                 sign,
                 clause,
@@ -1037,7 +1037,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     .get(goal.0 as usize)
                     .expect("normalization proof goal is retained");
                 let relations = retained
-                    .integer_domain
+                    .normalization
                     .as_ref()
                     .expect("normalization proof goal has fixed components")
                     .clause_relations(*sign, *clause)
@@ -7378,7 +7378,7 @@ fn main() -> own unit pure {
             claim_lifecycle_root(summary, 0),
             |node| matches!(
                 node,
-                DerivationNode::IntegerDomainNormalization {
+                DerivationNode::GoalNormalization {
                     sign: GoalSign::Positive,
                     ..
                 }
@@ -7416,7 +7416,7 @@ fn main() -> own unit pure {
         claim_lifecycle_root(&summary, 0),
         |node| matches!(
             node,
-            DerivationNode::IntegerDomainNormalization {
+            DerivationNode::GoalNormalization {
                 sign: GoalSign::Negative,
                 ..
             }
@@ -8517,14 +8517,14 @@ fn main() -> own unit pure {
     );
     assert_eq!(
         summary.call_goals[0].evidence,
-        vec![CallGoalEvidence::IntegerDomainPositive],
+        vec![CallGoalEvidence::NormalizationPositive],
     );
     let root = summary.call_goals[0]
         .derivation
         .expect("a discharged domain call retains its proof");
     assert!(root_contains(&summary, root, |node| matches!(
         node,
-        DerivationNode::IntegerDomainNormalization {
+        DerivationNode::GoalNormalization {
             sign: GoalSign::Positive,
             ..
         }

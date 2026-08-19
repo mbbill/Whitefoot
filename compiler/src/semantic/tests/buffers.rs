@@ -1,6 +1,6 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
-use super::super::entailment::ObligationFamily;
+use super::super::entailment::{DerivationNode, GoalSign, ObligationFamily};
 use super::super::model::{
     CheckedExpression, CheckedFlatElement, CheckedLayoutMagnitude, CheckedSetTarget,
     CheckedStatement, CheckedTargetDomainObligation, CheckedType, IntegerType, NominalId,
@@ -8,7 +8,7 @@ use super::super::model::{
 use super::{assert_rule, assert_unsupported, with_semantics, with_semantics_dark};
 
 #[test]
-fn allocation_fit_is_static_exact_componentized_and_refutation_preserving() {
+fn allocation_fit_is_static_exact_componentized_and_contradiction_closing() {
     let unproved = br#"fn allocate(n: own u64) -> own unit allocates(heap) {
   let values = buffer_new(n, 0_u16);
   return unit;
@@ -69,10 +69,25 @@ fn main() -> own unit pure {
 }
 "#;
     with_semantics(component, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "the canonical L0 component must discharge OP-9: {outcome:?}"
-        );
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the canonical L0 component must discharge OP-9: {outcome:?}");
+        };
+        let allocation = checked.data.functions[0]
+            .entailment
+            .obligations
+            .iter()
+            .find(|outcome| outcome.family == ObligationFamily::AllocationFit)
+            .expect("the allocation retains its OP-9 occurrence");
+        let proof = allocation
+            .derivation
+            .expect("the discharged allocation retains one proof");
+        assert!(matches!(
+            checked.data.functions[0].entailment.derivations.nodes[proof.0 as usize],
+            DerivationNode::GoalNormalization {
+                sign: GoalSign::Positive,
+                ..
+            }
+        ));
     });
 
     let refuted = br#"fn allocate(n: own u64) -> own unit allocates(heap) {
@@ -92,10 +107,61 @@ fn main() -> own unit pure {
 }
 "#;
     with_semantics(refuted, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("an exact negative predicate must outrank its component: {outcome:?}");
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!(
+                "a fixed true component plus the exact negative must close contradiction: {outcome:?}"
+            );
         };
-        assert_eq!(issue.rule(), SemanticRule::Op9);
+        let allocation = checked.data.functions[0]
+            .entailment
+            .obligations
+            .iter()
+            .find(|outcome| outcome.family == ObligationFamily::AllocationFit)
+            .expect("the allocation retains its OP-9 occurrence");
+        assert!(allocation.discharged);
+        assert!(allocation.contradictory);
+        let contradiction = allocation
+            .derivation
+            .expect("the contradictory allocation keeps its proof");
+        assert!(matches!(
+            checked.data.functions[0].entailment.derivations.nodes[contradiction.0 as usize],
+            DerivationNode::GoalContradiction { .. }
+        ));
+    });
+}
+
+#[test]
+fn buffer_fits_admits_direct_region_free_array_and_buffer_types() {
+    let source = br#"fn main() -> own unit pure {
+  let array_fit = buffer_fits<array<u8, 4>>(0_u64);
+  let buffer_fit = buffer_fits<buffer<u8>>(0_u64);
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("direct region-free composite types belong to buffer_fits: {outcome:?}");
+        };
+        let main = &checked.data.functions[0];
+        let expected = [
+            CheckedType::Array {
+                element: CheckedFlatElement::Integer(IntegerType::U8),
+                length: super::super::model::CheckedConst::Value(4),
+            },
+            CheckedType::Buffer {
+                element: CheckedFlatElement::Integer(IntegerType::U8),
+            },
+        ];
+        for (statement, expected) in main.body.iter().take(2).zip(expected) {
+            let CheckedStatement::Let {
+                value: CheckedExpression::BufferFits { element, .. },
+                ..
+            } = statement
+            else {
+                panic!("each binding must retain its typed buffer_fits expression");
+            };
+            assert_eq!(*element, expected);
+        }
     });
 }
 

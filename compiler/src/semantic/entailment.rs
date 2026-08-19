@@ -743,10 +743,10 @@ pub(crate) enum CallGoalEvidence {
     AllDerivable,
     OpaquePositive,
     ExactL0Projection,
-    IntegerDomainPositive,
+    NormalizationPositive,
     OpaqueNegative,
     NegatedL0Projection,
-    IntegerDomainNegative,
+    NormalizationNegative,
 }
 
 /// Retained checked metadata for one ordinary call carrying a requirement.

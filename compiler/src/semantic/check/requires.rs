@@ -434,7 +434,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     element: *element,
                     maximum_length: layout_ceiling.stride.allocation_limit(),
                 },
-                vec![element.ty()],
+                vec![*element],
                 Vec::new(),
                 CheckedType::Bool,
                 std::slice::from_ref(length.as_ref()),

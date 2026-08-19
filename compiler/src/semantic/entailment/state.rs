@@ -44,37 +44,36 @@ pub(crate) enum GoalSign {
     Negative,
 }
 
-/// One literal in a fixed integer-domain normalization clause.
+/// One literal in a fixed goal-normalization clause.
 ///
 /// The component index preserves [ENT-6]'s normative order; `negated`
-/// selects the exact L0 negation of that component for a negative-domain
-/// proof.
+/// selects the exact L0 negation of that component for a negative-goal proof.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct IntegerDomainLiteral {
+struct GoalNormalizationLiteral {
     component: u32,
     negated: bool,
 }
 
-/// The complete fixed [ENT-4] normalization of one integer `.defined` goal.
+/// The complete fixed [ENT-4] normalization of one goal.
 ///
 /// Clauses are a small deterministic DNF. `None` components retain an
 /// operand outside L0's term vocabulary: a clause using one is unavailable,
 /// while another complete clause may still prove the goal or its negation.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct IntegerDomainNormalization {
+pub(crate) struct GoalNormalization {
     components: Vec<Option<Relation>>,
-    positive_clauses: Vec<Vec<IntegerDomainLiteral>>,
-    negative_clauses: Vec<Vec<IntegerDomainLiteral>>,
+    positive_clauses: Vec<Vec<GoalNormalizationLiteral>>,
+    negative_clauses: Vec<Vec<GoalNormalizationLiteral>>,
 }
 
-impl IntegerDomainNormalization {
+impl GoalNormalization {
     /// A fixed conjunction and its exact De Morgan negation.
     pub(crate) fn conjunction(components: Vec<Option<Relation>>) -> Self {
-        let count =
-            u32::try_from(components.len()).expect("integer-domain component count exceeds u32");
+        let count = u32::try_from(components.len())
+            .expect("goal-normalization component count exceeds u32");
         let positive_clauses = vec![
             (0..count)
-                .map(|component| IntegerDomainLiteral {
+                .map(|component| GoalNormalizationLiteral {
                     component,
                     negated: false,
                 })
@@ -82,7 +81,7 @@ impl IntegerDomainNormalization {
         ];
         let negative_clauses = (0..count)
             .map(|component| {
-                vec![IntegerDomainLiteral {
+                vec![GoalNormalizationLiteral {
                     component,
                     negated: true,
                 }]
@@ -99,7 +98,7 @@ impl IntegerDomainNormalization {
     /// negation `!c0 || (!c1 && !c2)`.
     pub(crate) fn signed_division(components: Vec<Option<Relation>>) -> Self {
         debug_assert_eq!(components.len(), 3);
-        let literal = |component, negated| IntegerDomainLiteral { component, negated };
+        let literal = |component, negated| GoalNormalizationLiteral { component, negated };
         Self {
             components,
             positive_clauses: vec![
@@ -113,7 +112,7 @@ impl IntegerDomainNormalization {
         }
     }
 
-    fn clauses(&self, sign: GoalSign) -> &[Vec<IntegerDomainLiteral>] {
+    fn clauses(&self, sign: GoalSign) -> &[Vec<GoalNormalizationLiteral>] {
         match sign {
             GoalSign::Positive => &self.positive_clauses,
             GoalSign::Negative => &self.negative_clauses,
@@ -196,7 +195,7 @@ pub(crate) struct FlowEvent {
 pub(crate) struct RetainedGoal {
     pub(crate) expression: GoalExpression,
     pub(crate) projection: Option<Relation>,
-    pub(crate) integer_domain: Option<IntegerDomainNormalization>,
+    pub(crate) normalization: Option<GoalNormalization>,
 }
 
 /// The exact canonical identities referenced by retained dense term and goal
@@ -324,10 +323,10 @@ pub(crate) enum DerivationNode {
         goal: Option<GoalId>,
         parents: Vec<DerivationId>,
     },
-    /// One signed `.defined` goal derived from a fixed normalization clause.
+    /// One signed goal derived from a fixed normalization clause.
     /// The retained goal inventory makes the clause and every ordered parent
     /// relation independently verifiable.
-    IntegerDomainNormalization {
+    GoalNormalization {
         goal: GoalId,
         sign: GoalSign,
         clause: u32,
@@ -503,7 +502,7 @@ impl DerivationNode {
             }
             Self::PostconditionAggregate { parents, .. }
             | Self::IntegerDomain { parents, .. }
-            | Self::IntegerDomainNormalization { parents, .. }
+            | Self::GoalNormalization { parents, .. }
             | Self::PostconditionCall {
                 view_parents: parents,
                 ..
@@ -563,8 +562,9 @@ impl DerivationNode {
             | Self::JoinContradiction { parents, .. }
             | Self::PostconditionDeliveryJoin { parents, .. } => parents.len(),
             Self::PostconditionAggregate { parents, .. } => parents.len(),
-            Self::IntegerDomain { parents, .. }
-            | Self::IntegerDomainNormalization { parents, .. } => parents.len(),
+            Self::IntegerDomain { parents, .. } | Self::GoalNormalization { parents, .. } => {
+                parents.len()
+            }
             Self::PostconditionCall {
                 a0_parents,
                 view_parents,
@@ -618,7 +618,7 @@ impl DerivationNode {
             Self::PostconditionGive { .. } => 27,
             Self::PostconditionDeliveryJoin { .. } => 28,
             Self::IntegerDomain { .. } => 29,
-            Self::IntegerDomainNormalization { .. } => 30,
+            Self::GoalNormalization { .. } => 30,
         }
     }
 }
@@ -1082,7 +1082,7 @@ impl DerivationLedger {
                         parents.capacity() * size_of::<DerivationId>()
                     }
                     DerivationNode::IntegerDomain { parents, .. }
-                    | DerivationNode::IntegerDomainNormalization { parents, .. } => {
+                    | DerivationNode::GoalNormalization { parents, .. } => {
                         parents.capacity() * size_of::<DerivationId>()
                     }
                     DerivationNode::PostconditionDeliveryJoin { parents, .. } => {
@@ -1192,7 +1192,7 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
                     .map(|parent| parent.0)
             })
         }
-        DerivationNode::IntegerDomainNormalization {
+        DerivationNode::GoalNormalization {
             goal,
             sign,
             clause,
@@ -1433,7 +1433,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
             remap_id(negative, remap);
         }
         DerivationNode::IntegerDomain { parents, .. }
-        | DerivationNode::IntegerDomainNormalization { parents, .. } => {
+        | DerivationNode::GoalNormalization { parents, .. } => {
             for parent in parents {
                 remap_id(parent, remap);
             }
@@ -1500,7 +1500,7 @@ pub(crate) struct GoalSupport {
 struct GoalRecord {
     expression: GoalExpression,
     projection: Option<Relation>,
-    integer_domain: Option<IntegerDomainNormalization>,
+    normalization: Option<GoalNormalization>,
     support: Vec<GoalSupport>,
 }
 
@@ -1516,7 +1516,7 @@ impl GoalTable {
         &mut self,
         expression: GoalExpression,
         projection: Option<Relation>,
-        integer_domain: Option<IntegerDomainNormalization>,
+        normalization: Option<GoalNormalization>,
         support: Vec<GoalSupport>,
     ) -> GoalId {
         if let Some(id) = self.ids.get(&expression).copied() {
@@ -1527,10 +1527,10 @@ impl GoalTable {
             } else {
                 debug_assert_eq!(record.projection, projection);
             }
-            if record.integer_domain.is_none() {
-                record.integer_domain = integer_domain;
+            if record.normalization.is_none() {
+                record.normalization = normalization;
             } else {
-                debug_assert_eq!(record.integer_domain, integer_domain);
+                debug_assert_eq!(record.normalization, normalization);
             }
             return id;
         }
@@ -1542,7 +1542,7 @@ impl GoalTable {
         self.records.push(GoalRecord {
             expression,
             projection,
-            integer_domain,
+            normalization,
             support,
         });
         id
@@ -1556,8 +1556,8 @@ impl GoalTable {
         self.records[id.0 as usize].projection.as_ref()
     }
 
-    pub(crate) fn integer_domain(&self, id: GoalId) -> Option<&IntegerDomainNormalization> {
-        self.records[id.0 as usize].integer_domain.as_ref()
+    pub(crate) fn normalization(&self, id: GoalId) -> Option<&GoalNormalization> {
+        self.records[id.0 as usize].normalization.as_ref()
     }
 
     pub(crate) fn support(&self, id: GoalId) -> &[GoalSupport] {
@@ -1576,7 +1576,7 @@ impl GoalTable {
             .map(|record| RetainedGoal {
                 expression: record.expression,
                 projection: record.projection,
-                integer_domain: record.integer_domain,
+                normalization: record.normalization,
             })
             .collect()
     }
@@ -2177,11 +2177,7 @@ impl ClosedState {
         }
     }
 
-    fn derives_integer_domain(
-        &self,
-        normalization: &IntegerDomainNormalization,
-        sign: GoalSign,
-    ) -> bool {
+    fn derives_normalization(&self, normalization: &GoalNormalization, sign: GoalSign) -> bool {
         normalization.clauses(sign).iter().any(|clause| {
             clause.iter().all(|literal| {
                 let Some(relation) = normalization
@@ -2200,20 +2196,19 @@ impl ClosedState {
         })
     }
 
-    pub(crate) fn derives_integer_domain_goal(
+    pub(crate) fn derives_normalized_goal(
         &self,
         goal: GoalId,
         sign: GoalSign,
         goals: &GoalTable,
     ) -> bool {
         goals
-            .integer_domain(goal)
-            .is_some_and(|normalization| self.derives_integer_domain(normalization, sign))
+            .normalization(goal)
+            .is_some_and(|normalization| self.derives_normalization(normalization, sign))
     }
 
     /// Exact signed-goal derivability: a retained opaque sign, its one
-    /// comparison-root projection, or the fixed normalization of an integer
-    /// domain predicate.
+    /// comparison-root projection, or its family's fixed normalization.
     pub(crate) fn derives_goal(&self, goal: GoalId, sign: GoalSign, goals: &GoalTable) -> bool {
         if self.all_derivable || self.opaque.contains(&(goal, sign)) {
             return true;
@@ -2222,7 +2217,7 @@ impl ClosedState {
             GoalSign::Positive => self.derives(relation),
             GoalSign::Negative => self.derives(&relation.negated()),
         });
-        projected || self.derives_integer_domain_goal(goal, sign, goals)
+        projected || self.derives_normalized_goal(goal, sign, goals)
     }
 
     pub(crate) fn holds_opaque(&self, goal: GoalId, sign: GoalSign) -> bool {
@@ -2340,7 +2335,7 @@ impl ClosedState {
         ))
     }
 
-    pub(crate) fn integer_domain_normalization_proof(
+    pub(crate) fn normalization_proof(
         &self,
         goal: GoalId,
         sign: GoalSign,
@@ -2350,7 +2345,7 @@ impl ClosedState {
         if self.all_derivable {
             return self.contradiction;
         }
-        let normalization = goals.integer_domain(goal)?;
+        let normalization = goals.normalization(goal)?;
         for (clause, literals) in normalization.clauses(sign).iter().enumerate() {
             let parents = literals
                 .iter()
@@ -2370,16 +2365,18 @@ impl ClosedState {
                 })
                 .collect::<Option<Vec<_>>>();
             if let Some(parents) = parents {
-                return Some(ledger.intern_for(
-                    self.view,
-                    DerivationNode::IntegerDomainNormalization {
-                        goal,
-                        sign,
-                        clause:
-                            u32::try_from(clause).expect("integer-domain clause count exceeds u32"),
-                        parents,
-                    },
-                ));
+                return Some(
+                    ledger.intern_for(
+                        self.view,
+                        DerivationNode::GoalNormalization {
+                            goal,
+                            sign,
+                            clause: u32::try_from(clause)
+                                .expect("goal-normalization clause count exceeds u32"),
+                            parents,
+                        },
+                    ),
+                );
             }
         }
         None
@@ -2397,7 +2394,7 @@ impl ClosedState {
         }
         self.opaque_proof(goal, sign)
             .or_else(|| self.goal_projection_proof(goal, sign, goals, ledger))
-            .or_else(|| self.integer_domain_normalization_proof(goal, sign, goals, ledger))
+            .or_else(|| self.normalization_proof(goal, sign, goals, ledger))
     }
 }
 

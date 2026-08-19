@@ -1005,7 +1005,7 @@ pub(crate) enum CheckedExpression {
     /// allocates and never traps.
     BufferFits {
         carrier: NodePath,
-        element: CheckedFlatElement,
+        element: CheckedType,
         layout_ceiling: CheckedLayoutCeiling,
         length: Box<CheckedExpression>,
     },

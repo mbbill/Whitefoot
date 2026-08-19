@@ -328,7 +328,7 @@ impl<'program> EntryGoalBuilder<'program> {
                 element,
                 maximum_length,
             } => {
-                if type_arguments != [element.ty()]
+                if type_arguments != [element]
                     || !const_arguments.is_empty()
                     || result != CheckedType::Bool
                 {

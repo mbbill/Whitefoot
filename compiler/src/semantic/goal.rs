@@ -216,7 +216,7 @@ pub(crate) enum GoalOperation {
     /// part of the row identity so a proof cannot be reused across a layout
     /// rule change or across distinct element representations.
     BufferFits {
-        element: CheckedFlatElement,
+        element: CheckedType,
         maximum_length: u64,
     },
     SliceLength {

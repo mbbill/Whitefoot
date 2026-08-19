@@ -345,8 +345,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if !ty.is_concrete() {
             return self.unsupported(UnsupportedSemanticFeature::Generics, node);
         }
-        let Some(element) = self.buffer_element(ty)? else {
-            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        let element = match self.buffer_element(ty)? {
+            Some(_) => ty,
+            None if matches!(ty, CheckedType::Array { .. } | CheckedType::Buffer { .. }) => ty,
+            None => {
+                return self.issue_node(
+                    SemanticRule::Op1,
+                    node,
+                    SemanticIssueKind::InvalidOperation,
+                );
+            }
         };
         let atoms = self.operation_atoms(node, 1)?;
         let length = self.check_atom(function, atoms[0], bindings, loop_depth)?;
