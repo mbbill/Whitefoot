@@ -244,55 +244,41 @@ deny_claims fn name_before['n](names: &'n buffer<u8>, left: own u64, right: own 
   return ilt(left_count, right_count);
 }
 
-fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> own u64 reads('d), writes('d), allocates(heap), traps {
-  doc "Writes the decimal spelling of one unsigned value at one offset and reports the offset just past it.";
-  let scratch = buffer_new(20_u64, 48_u8);
-  let written = 0_u64;
-  let rest = value;
-  loop @extract {
-    let digit = rest % 10_u64;
-    let glyphs = len(digit_glyphs);
-    let known = ilt(digit, glyphs);
-    let capacity = len(scratch);
-    let room = ilt(written, capacity);
-    if known {
-      if room {
-        let glyph = digit_glyphs[digit];
-        set scratch[written] = glyph;
-        set written = written +wrap 1_u64;
-      } else {
-        break @extract;
-      }
-    } else {
-      break @extract;
+fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> own u64 reads('d), writes('d) {
+  doc "Writes the decimal spelling of one unsigned value at one offset and reports the offset just past it, counting its digits first so it needs no scratch storage.";
+  let digits = 1_u64;
+  let probe = value;
+  loop @measure {
+    let single = ilt(probe, 10_u64);
+    if single {
+      break @measure;
     }
-    set rest = rest / 10_u64;
-    let finished = ieq(rest, 0_u64);
-    if finished {
-      break @extract;
-    }
+    set probe = probe / 10_u64;
+    set digits = digits +wrap 1_u64;
   }
-  let cursor = at;
-  let capacity = len(scratch);
   let room = len(deref(destination));
-  let index = written;
+  let glyphs = len(digit_glyphs);
+  let end = at +wrap digits;
+  let cursor = end;
+  let rest = value;
   loop @emit {
-    let done = ieq(index, 0_u64);
-    if done {
+    let started = ile(cursor, at);
+    if started {
       break @emit;
     }
-    set index = index -wrap 1_u64;
-    let inside = ilt(index, capacity);
-    if inside {
+    set cursor = cursor -wrap 1_u64;
+    let digit = rest % 10_u64;
+    let known = ilt(digit, glyphs);
+    if known {
       let writable = ilt(cursor, room);
       if writable {
-        let glyph = scratch[index];
+        let glyph = digit_glyphs[digit];
         set deref(destination)[cursor] = glyph;
-        set cursor = cursor +wrap 1_u64;
       }
     }
+    set rest = rest / 10_u64;
   }
-  return cursor;
+  return end;
 }
 
 fn report_failure['e, 'r, 'n](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, path: &'n buffer<u8>, path_length: own u64, status: own u8) -> own unit reads('e 'r 'n), writes('e 'r), external, blocks, traps {
@@ -1090,6 +1076,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   }
   let matched = 0_u8;
   let failed = 0_u8;
+  let root_status = 0_u8;
   region 'root_open {
     match open_directory<'root_open, 'root_open>(root: &'root_open cwd, name: &'root_open root_name, offset: 0_u64, count: root_length) {
       Ok(value: root) => {
@@ -1107,12 +1094,51 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         }
       }
       Err(error: problem) => {
-        set failed = 1_u8;
-        let status = io_class(error: move problem);
-        region 'root_report {
-          report_failure<'root_report, 'root_report, 'root_report>(err: &uniq 'root_report err, report: &uniq 'root_report report, path: &'root_report root_path, path_length: copied, status: status);
+        set root_status = io_class(error: move problem);
+      }
+    }
+  }
+  let directory_refused = ine(root_status, 0_u8);
+  if directory_refused {
+    let single = 0_u8;
+    region 'file_lease {
+      match arg_get<'file_lease>(args: &'file_lease args, position: 2_u64) {
+        Ok(value: text) => {
+          match relative_path(value: move text) {
+            Ok(value: path) => {
+              region 'open_call {
+                match open_read<'open_call, 'open_call>(root: &'open_call cwd, path: &'open_call path) {
+                  Ok(value: file) => {
+                    set single = 1_u8;
+                    let outcome = 0_u8;
+                    region 'search_call {
+                      set outcome = search_file<'search_call, 'search_call, 'search_call, 'search_call>(file: &uniq 'search_call file, pattern: &'search_call pattern, pattern_length: pattern_length, path: &'search_call root_path, path_length: copied, out: &uniq 'search_call out);
+                    }
+                    set root_status = iand(outcome, 15_u8);
+                    let found = iand(outcome, 16_u8);
+                    if ieq(found, 16_u8) {
+                      set matched = 1_u8;
+                    }
+                  }
+                  Err(error: refused) => {
+                  }
+                }
+              }
+            }
+            Err(error: rejected) => {
+            }
+          }
+        }
+        Err(error: absent) => {
         }
       }
+    }
+  }
+  let reportable = ine(root_status, 0_u8);
+  if reportable {
+    set failed = 1_u8;
+    region 'root_report {
+      report_failure<'root_report, 'root_report, 'root_report>(err: &uniq 'root_report err, report: &uniq 'root_report report, path: &'root_report root_path, path_length: copied, status: root_status);
     }
   }
   if ieq(failed, 0_u8) {

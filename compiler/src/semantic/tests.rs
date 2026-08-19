@@ -106,6 +106,20 @@ fn with_semantics_inputs<ResultValue>(
         SemanticOutcome<'classified, 'lexed, 'source>,
     ) -> ResultValue,
 ) -> ResultValue {
+    with_semantics_inputs_for(inputs, crate::Inventory::ACTIVE, run)
+}
+
+/// [`with_semantics_inputs`] against one named [SYS-2] inventory state.
+///
+/// A frozen real source that uses a candidate operation names the inventory
+/// that declares it; every other caller takes the active one.
+fn with_semantics_inputs_for<ResultValue>(
+    inputs: &[SourceInput<'_>],
+    inventory: crate::Inventory,
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        SemanticOutcome<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
     let Ok(bundle) = SourceBundle::with_limits(inputs, SOURCE_LIMITS) else {
         panic!("semantic test bundle must be valid");
     };
@@ -130,7 +144,8 @@ fn with_semantics_inputs<ResultValue>(
     let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
         panic!("semantic test source must be canonical");
     };
-    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+    let ResolutionOutcome::Complete(resolved) = crate::resolve_with_inventory(canonical, inventory)
+    else {
         panic!("semantic test source must resolve");
     };
     run(check_semantics(resolved))

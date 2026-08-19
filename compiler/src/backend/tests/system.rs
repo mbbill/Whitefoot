@@ -27,6 +27,21 @@ pub(super) fn with_ir<ResultValue>(
         &IrProgram<'classified, 'lexed, 'source>,
     ) -> ResultValue,
 ) -> ResultValue {
+    with_ir_for(source, crate::Inventory::ACTIVE, run)
+}
+
+/// [`with_ir`] against one named [SYS-2] inventory state.
+///
+/// The cost-shape anchor is a real corpus program, and that program now uses
+/// the candidate `open_file` [SYS-11], so it names the inventory that
+/// declares it. Every other caller takes the active one.
+pub(super) fn with_ir_for<ResultValue>(
+    source: &[u8],
+    inventory: crate::Inventory,
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        &IrProgram<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
     let inputs = [SourceInput::new("test.wf", source)];
     let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -50,7 +65,8 @@ pub(super) fn with_ir<ResultValue>(
     let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
         panic!("system test source must be canonical");
     };
-    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+    let ResolutionOutcome::Complete(resolved) = crate::resolve_with_inventory(canonical, inventory)
+    else {
         panic!("system test source must resolve");
     };
     let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {

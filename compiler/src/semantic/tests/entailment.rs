@@ -7529,8 +7529,20 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
             include_bytes!("../../../../tests/programs/wfgrep.wf"),
         )],
     ];
-    for (inputs, expected_claims) in bundles.into_iter().zip([10, 12, 8]) {
-        with_semantics_inputs(inputs, |outcome| {
+    // The searching `wfgrep.wf` uses the candidate `open_file` [SYS-11], so
+    // its bundle names the inventory that declares it; the other two are
+    // active-inventory sources.
+    let inventories = [
+        crate::Inventory::ACTIVE,
+        crate::Inventory::ACTIVE,
+        crate::Inventory::OpenByName,
+    ];
+    for ((inputs, expected_claims), inventory) in bundles
+        .into_iter()
+        .zip([10, 12, 8])
+        .zip(inventories.into_iter())
+    {
+        super::with_semantics_inputs_for(inputs, inventory, |outcome| {
             let SemanticOutcome::Complete(program) = outcome else {
                 panic!("frozen real source bundle must remain accepted: {outcome:?}");
             };
