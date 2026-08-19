@@ -837,8 +837,11 @@ pub(crate) struct FunctionEntailmentView {
 /// derivation arena. Registration precedes the sole finish/remap boundary.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct StrictEntailmentRoot {
-    /// Exact protected leaf, call, or program-start final-check occurrence.
+    /// Exact protected leaf or call occurrence.
     pub(crate) node_path: NodePath,
+    /// Exact callee clause for a call-goal query; absent for a protected-leaf
+    /// query. Call and clause together form the occurrence identity.
+    pub(crate) requires_clause: Option<NodePath>,
     /// Query class sharing this occurrence namespace.
     pub(crate) kind: StrictDerivationRootKind,
     /// Owning-function derivation, remapped by the sole finish boundary.
@@ -906,14 +909,15 @@ impl FunctionEntailment {
     fn register_strict_root(
         &mut self,
         node_path: &NodePath,
+        requires_clause: Option<&NodePath>,
         kind: StrictDerivationRootKind,
         derivation: DerivationId,
     ) -> Result<(), SemanticCompilerFailure> {
-        if let Some(existing) = self
-            .strict_roots
-            .iter()
-            .find(|root| root.node_path == *node_path && root.kind == kind)
-        {
+        if let Some(existing) = self.strict_roots.iter().find(|root| {
+            root.node_path == *node_path
+                && root.requires_clause.as_ref() == requires_clause
+                && root.kind == kind
+        }) {
             return (existing.derivation == derivation)
                 .then_some(())
                 .ok_or(SemanticCompilerFailure::InvalidResolution);
@@ -924,6 +928,7 @@ impl FunctionEntailment {
             .add_root(DerivationRootKind::Strict { occurrence, kind }, derivation);
         self.strict_roots.push(StrictEntailmentRoot {
             node_path: node_path.clone(),
+            requires_clause: requires_clause.cloned(),
             kind,
             derivation,
         });
@@ -948,7 +953,12 @@ impl FunctionEntailment {
         let derivation = outcome
             .derivation
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        self.register_strict_root(node_path, StrictDerivationRootKind::Obligation, derivation)
+        self.register_strict_root(
+            node_path,
+            None,
+            StrictDerivationRootKind::Obligation,
+            derivation,
+        )
     }
 
     /// Retains one already-successful ordinary-call requirement U proof.
@@ -978,7 +988,8 @@ impl FunctionEntailment {
                 return Err(SemanticCompilerFailure::InvalidResolution);
             }
             self.register_strict_root(
-                &requires_clause,
+                node_path,
+                Some(&requires_clause),
                 StrictDerivationRootKind::CallGoal,
                 derivation.ok_or(SemanticCompilerFailure::InvalidResolution)?,
             )?;
@@ -1015,7 +1026,8 @@ impl FunctionEntailment {
                 return Err(SemanticCompilerFailure::InvalidResolution);
             }
             self.register_strict_root(
-                &requires_clause,
+                node_path,
+                Some(&requires_clause),
                 StrictDerivationRootKind::CallGoal,
                 derivation.ok_or(SemanticCompilerFailure::InvalidResolution)?,
             )?;

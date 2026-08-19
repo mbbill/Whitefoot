@@ -21,8 +21,8 @@ use super::super::entailment::{
     FlowEventKind, FunctionEntailment, GoalId, GoalSign, ImplicitBoundKind, JoinParent,
     LengthBound, ObligationFamily, ObligationOutcome, PlaceProjection, PlaceRoot,
     PostconditionAggregate, PostconditionDisposition, PostconditionExit, PostconditionViewExit,
-    ProofView, Relation, S7DerivationKind, ShiftOneIdentity, TermId, TermKind, ZERO,
-    build_claim_ledger, type_range,
+    ProofView, Relation, S7DerivationKind, ShiftOneIdentity, StrictDerivationRootKind, TermId,
+    TermKind, ZERO, build_claim_ledger, type_range,
 };
 use super::super::model::{
     CheckedBodyDisposition, CheckedExpression, CheckedProgramData, CheckedStatement, CheckedValue,
@@ -1923,6 +1923,19 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert_eq!(retained.kind, kind);
                 assert_eq!(retained.derivation, root.node);
                 assert!(!retained.node_path.components().is_empty());
+                match kind {
+                    StrictDerivationRootKind::Obligation => {
+                        assert!(retained.requires_clause.is_none());
+                    }
+                    StrictDerivationRootKind::CallGoal => {
+                        assert!(
+                            retained
+                                .requires_clause
+                                .as_ref()
+                                .is_some_and(|clause| !clause.components().is_empty())
+                        );
+                    }
+                }
                 assert_eq!(
                     summary.derivations.node_views[root.node.0 as usize],
                     ProofView::Unasserted

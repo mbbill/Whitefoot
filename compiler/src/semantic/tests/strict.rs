@@ -27,6 +27,53 @@ fn rejection(source: &[u8], rule: SemanticRule, cited: &str) -> SemanticIssue {
 }
 
 #[test]
+fn two_strict_calls_to_one_requires_clause_keep_distinct_roots() {
+    let source = br#"fn required(value: own i32) -> out: own i32 pure contract {
+  requires ige(value, 0_i32);
+} {
+  return value;
+}
+
+deny_claims fn root() -> out: own unit pure {
+  let first = 1_i32;
+  let accepted_first = required(value: first);
+  let second = 2_i32;
+  let accepted_second = required(value: second);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let completed = root();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("two independently proved strict calls must compile: {outcome:?}");
+        };
+        let root = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "root")
+            .expect("strict root function");
+        let roots = root
+            .entailment
+            .strict_roots
+            .iter()
+            .filter(|root| root.kind == StrictDerivationRootKind::CallGoal)
+            .collect::<Vec<_>>();
+        let [first, second] = roots.as_slice() else {
+            panic!("both strict call-goal roots must be retained");
+        };
+        assert_ne!(first.node_path, second.node_path);
+        assert_eq!(first.requires_clause, second.requires_clause);
+        assert!(first.requires_clause.is_some());
+        assert_ne!(first.derivation, second.derivation);
+    });
+}
+
+#[test]
 fn a_direct_unreachable_redundant_claim_rejects_at_the_claim_with_full_identity() {
     let source = br#"deny_claims fn main() -> own unit traps {
   let never = False();
