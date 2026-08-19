@@ -96,8 +96,11 @@ successful unchanged endpoint. One cold shared mapper turns a native error code 
 exactly one of SYS-7's thirty portable classes, carrying the two-field inline
 detail (`code`, `origin`); a native error with no portable distinction in that
 set is `Other`. Releases emit per SYS-5: a logical consume and `Output`'s
-source detach emit no code, while `DirectoryRead` and `ReadFile` emit one
-direct close whose diagnostic is discarded and never retried. The macOS/Linux
+source detach emit no code, while `DirectoryRead`, `DirectoryList`, and
+`ReadFile` emit one direct close whose diagnostic is discarded and never
+retried. When `open_file` rejects a provisional descriptor after inspection,
+it applies the same one-attempt policy and returns the already selected typed
+error unchanged. The macOS/Linux
 command bootstrap owns the process before entry: it establishes the QUAL-2
 argument backing from the native vector (refusing startup otherwise), installs
 the ignored write-to-closed-pipe disposition once, opens `command.cwd`,
