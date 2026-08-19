@@ -4450,17 +4450,19 @@ impl Analyzer<'_, '_> {
                 root,
                 length,
                 offset,
-                trap,
+                obligation,
                 ..
             } => {
                 let _ = self.judge_expression(offset, states);
                 let base = self.array_root_place(root);
-                let node_path = trap.node_path.clone();
-                self.judge_obligation(base, Some(*length), offset, node_path, states);
+                self.judge_obligation(base, Some(*length), offset, obligation.clone(), states);
                 None
             }
             CheckedExpression::BufferIndex {
-                root, offset, trap, ..
+                root,
+                offset,
+                obligation,
+                ..
             } => {
                 let _ = self.judge_expression(offset, states);
                 let base = PlaceTerm {
@@ -4468,12 +4470,14 @@ impl Analyzer<'_, '_> {
                     deref: self.is_holder(root.binding),
                     fields: root.fields.clone(),
                 };
-                let node_path = trap.node_path.clone();
-                self.judge_obligation(base, None, offset, node_path, states);
+                self.judge_obligation(base, None, offset, obligation.clone(), states);
                 None
             }
             CheckedExpression::SliceIndex {
-                root, offset, trap, ..
+                root,
+                offset,
+                obligation,
+                ..
             } => {
                 let _ = self.judge_expression(offset, states);
                 let base = PlaceTerm {
@@ -4481,8 +4485,7 @@ impl Analyzer<'_, '_> {
                     deref: self.is_holder(root.binding),
                     fields: Vec::new(),
                 };
-                let node_path = trap.node_path.clone();
-                self.judge_obligation(base, None, offset, node_path, states);
+                self.judge_obligation(base, None, offset, obligation.clone(), states);
                 None
             }
             CheckedExpression::BufferFill {
@@ -5724,8 +5727,13 @@ impl Analyzer<'_, '_> {
                     deref: self.is_holder(target.binding),
                     fields: target.fields.clone(),
                 };
-                let node_path = target.trap.node_path.clone();
-                self.judge_obligation(base, Some(target.length), &target.offset, node_path, states);
+                self.judge_obligation(
+                    base,
+                    Some(target.length),
+                    &target.offset,
+                    target.obligation.clone(),
+                    states,
+                );
             }
             CheckedSetTarget::BufferIndex(target) => {
                 let _ = self.judge_expression(&target.offset, states);
@@ -5734,8 +5742,13 @@ impl Analyzer<'_, '_> {
                     deref: self.is_holder(target.root.binding),
                     fields: target.root.fields.clone(),
                 };
-                let node_path = target.trap.node_path.clone();
-                self.judge_obligation(base, None, &target.offset, node_path, states);
+                self.judge_obligation(
+                    base,
+                    None,
+                    &target.offset,
+                    target.obligation.clone(),
+                    states,
+                );
             }
         }
     }
@@ -6447,7 +6460,7 @@ impl Analyzer<'_, '_> {
                 predicate,
                 justification,
                 condition,
-                trap,
+                site,
                 ..
             } => {
                 let _ = self.expression_effects(condition, state);
@@ -6548,7 +6561,7 @@ impl Analyzer<'_, '_> {
                     proof
                 });
                 self.claims.push(ClaimOutcome {
-                    node_path: trap.node_path.clone(),
+                    node_path: site.node_path.clone(),
                     name: name.clone(),
                     predicate: predicate.clone(),
                     justification: justification.clone(),
@@ -6557,7 +6570,7 @@ impl Analyzer<'_, '_> {
                 });
                 // [ENT-3] S3: the passed predicate holds on the normal
                 // continuation as the sole writer-stated fact source.
-                self.establish_claim_condition(&trap.node_path, condition, &mut state.complete);
+                self.establish_claim_condition(&site.node_path, condition, &mut state.complete);
                 true
             }
             CheckedStatement::Return {

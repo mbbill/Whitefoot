@@ -717,7 +717,7 @@ impl CheckedIntegerOperation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct TrapSite {
+pub(crate) struct ClaimSite {
     pub(crate) rule_id: &'static str,
     pub(crate) message: String,
     pub(crate) function: String,
@@ -979,7 +979,7 @@ pub(crate) enum CheckedExpression {
         element_type: CheckedType,
         length: CheckedConst,
         offset: Box<CheckedExpression>,
-        trap: TrapSite,
+        obligation: NodePath,
         target_domain: CheckedTargetDomainObligation,
     },
     BufferFill {
@@ -1017,7 +1017,7 @@ pub(crate) enum CheckedExpression {
         carrier: NodePath,
         root: CheckedBufferRoot,
         offset: Box<CheckedExpression>,
-        trap: TrapSite,
+        obligation: NodePath,
         target_domain: CheckedTargetDomainObligation,
     },
     SliceOf {
@@ -1034,7 +1034,7 @@ pub(crate) enum CheckedExpression {
         carrier: NodePath,
         root: CheckedSliceRoot,
         offset: Box<CheckedExpression>,
-        trap: TrapSite,
+        obligation: NodePath,
         target_domain: CheckedTargetDomainObligation,
     },
     BoxNew {
@@ -1289,7 +1289,7 @@ pub(crate) struct CheckedArraySetTarget {
     pub(crate) element_type: CheckedType,
     pub(crate) length: CheckedConst,
     pub(crate) offset: CheckedExpression,
-    pub(crate) trap: TrapSite,
+    pub(crate) obligation: NodePath,
     pub(crate) target_domain: CheckedTargetDomainObligation,
 }
 
@@ -1297,7 +1297,7 @@ pub(crate) struct CheckedArraySetTarget {
 pub(crate) struct CheckedBufferSetTarget {
     pub(crate) root: CheckedBufferRoot,
     pub(crate) offset: CheckedExpression,
-    pub(crate) trap: TrapSite,
+    pub(crate) obligation: NodePath,
     pub(crate) target_domain: CheckedTargetDomainObligation,
 }
 
@@ -1382,7 +1382,7 @@ pub(crate) enum CheckedStatement {
         predicate: String,
         justification: String,
         condition: CheckedExpression,
-        trap: TrapSite,
+        site: ClaimSite,
     },
     Return {
         node_path: NodePath,

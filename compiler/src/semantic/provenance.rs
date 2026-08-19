@@ -1864,7 +1864,7 @@ fn collect_block_sites(
                         leaves.push(LeafSite {
                             leaf: ProtectedLeaf {
                                 function,
-                                obligation: target.trap.node_path.clone(),
+                                obligation: target.obligation.clone(),
                                 conjunct: 0,
                             },
                             subjects: vec![target.offset.clone()],
@@ -1881,7 +1881,7 @@ fn collect_block_sites(
                         leaves.push(LeafSite {
                             leaf: ProtectedLeaf {
                                 function,
-                                obligation: target.trap.node_path.clone(),
+                                obligation: target.obligation.clone(),
                                 conjunct: 0,
                             },
                             subjects: vec![target.offset.clone()],
@@ -2020,14 +2020,20 @@ fn collect_expression_sites(
                 subjects: vec![(**length).clone()],
             });
         }
-        CheckedExpression::ArrayIndex { offset, trap, .. }
-        | CheckedExpression::BufferIndex { offset, trap, .. }
-        | CheckedExpression::SliceIndex { offset, trap, .. } => {
+        CheckedExpression::ArrayIndex {
+            offset, obligation, ..
+        }
+        | CheckedExpression::BufferIndex {
+            offset, obligation, ..
+        }
+        | CheckedExpression::SliceIndex {
+            offset, obligation, ..
+        } => {
             collect_expression_sites(function, offset, leaves, calls, direct_calls);
             leaves.push(LeafSite {
                 leaf: ProtectedLeaf {
                     function,
-                    obligation: trap.node_path.clone(),
+                    obligation: obligation.clone(),
                     conjunct: 0,
                 },
                 subjects: vec![(**offset).clone()],

@@ -338,8 +338,8 @@ impl IrBuilder<'_> {
     /// recognized byte-walk form; any recognition or representation
     /// mismatch falls back to the ordinary lowering with zero change.
     ///
-    /// The scalar body and every one of its trap sites are untouched: the
-    /// probe skips only iterations that are provably `i := i + 1`, so trap
+    /// The scalar body and every one of its claim sites are untouched: the
+    /// probe skips only iterations that are provably `i := i + 1`, so claim
     /// identity, effect order, and acceptance are preserved by
     /// construction.
     pub(super) fn emit_probe_skip_if_recognized(

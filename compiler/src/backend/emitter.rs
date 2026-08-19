@@ -25,10 +25,10 @@ use super::qualification::{
 };
 use super::target::{TargetLayout, TargetLayoutFailure, validate_program};
 use crate::{
-    IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop, IrEntry,
-    IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction, IrIntegerOperation,
-    IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind, IrOperation, IrProgram,
-    IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator, IrTrapSite, IrType,
+    IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrClaimSite, IrConstant,
+    IrDrop, IrEntry, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction,
+    IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind, IrOperation,
+    IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator, IrType,
     IrValueId, SystemResourceType,
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
@@ -98,7 +98,7 @@ fn emit_llvm_for(
         .ok_or(BackendFailure::InvalidIr)?;
     let system = system::emit_system_interface(program, &qualification)?;
 
-    let mut traps = Vec::new();
+    let mut claim_records = Vec::new();
     let mut intrinsics = BTreeSet::new();
     let mut functions = String::new();
     for function in program.functions() {
@@ -108,7 +108,7 @@ fn emit_llvm_for(
                 &qualification,
                 function,
                 target,
-                &mut traps,
+                &mut claim_records,
                 &mut intrinsics,
             )
             .emit()?,
@@ -144,7 +144,7 @@ fn emit_llvm_for(
     emit_nominal_declarations(&mut text, program)?;
     emit_global_constants(&mut text, program)?;
     text.push_str(&system.constants);
-    for (index, bytes) in traps.iter().enumerate() {
+    for (index, bytes) in claim_records.iter().enumerate() {
         writeln!(
             text,
             "@.wf_trap.{index} = private unnamed_addr constant [{} x i8] c\"{}\", align 1",
@@ -156,12 +156,12 @@ fn emit_llvm_for(
     // The mandatory [DIAG-3] record and the qualified system interface can
     // need the same host symbol; one module declares it once.
     let mut system_declarations = system.declarations;
-    if !traps.is_empty() {
+    if !claim_records.is_empty() {
         text.push('\n');
         text.push_str("declare i64 @write(i32, ptr, i64)\n");
         system_declarations.remove("declare i64 @write(i32, ptr, i64)");
     }
-    if !traps.is_empty() || has_matches || has_heap_storage {
+    if !claim_records.is_empty() || has_matches || has_heap_storage {
         text.push_str("declare void @abort() noreturn\n");
         system_declarations.remove("declare void @abort() noreturn");
     }
@@ -172,7 +172,7 @@ fn emit_llvm_for(
         text.push_str(declaration);
         text.push('\n');
     }
-    if !traps.is_empty() {
+    if !claim_records.is_empty() {
         text.push_str(
             "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n",
         );
@@ -410,7 +410,7 @@ struct FunctionEmitter<'program, 'state> {
     qualification: &'program Qualification,
     function: &'program IrFunction,
     target: TargetLayout,
-    traps: &'state mut Vec<Vec<u8>>,
+    claim_records: &'state mut Vec<Vec<u8>>,
     intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
     incoming: Vec<Vec<Incoming>>,
     output: String,
@@ -431,7 +431,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         qualification: &'program Qualification,
         function: &'program IrFunction,
         target: TargetLayout,
-        traps: &'state mut Vec<Vec<u8>>,
+        claim_records: &'state mut Vec<Vec<u8>>,
         intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
     ) -> Self {
         Self {
@@ -439,7 +439,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             qualification,
             function,
             target,
-            traps,
+            claim_records,
             intrinsics,
             incoming: Vec::new(),
             output: String::new(),
@@ -577,20 +577,20 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 ty,
                 operation,
             } => self.emit_definition(*result, *ty, operation),
-            IrInstruction::Check { condition, trap } => {
+            IrInstruction::Claim { condition, site } => {
                 if self.value_type(*condition) != Some(IrType::Bool) {
                     return Err(BackendFailure::InvalidIr);
                 }
-                let trap_id = self.register_trap(trap)?;
+                let claim_id = self.register_claim(site)?;
                 writeln!(
                     self.output,
-                    "  br i1 {}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:",
+                    "  br i1 {}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{claim_id}, i64 {})\n  unreachable\n{}:",
                     self.value_name(*condition),
-                    check_continue_label(block, index),
-                    check_trap_label(block, index),
-                    check_trap_label(block, index),
-                    self.traps[trap_id].len(),
-                    check_continue_label(block, index)
+                    claim_continue_label(block, index),
+                    claim_trap_label(block, index),
+                    claim_trap_label(block, index),
+                    self.claim_records[claim_id].len(),
+                    claim_continue_label(block, index)
                 )
                 .map_err(|_| BackendFailure::TextEmission)
             }
@@ -891,10 +891,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .ok_or(BackendFailure::InvalidIr)
     }
 
-    fn register_trap(&mut self, trap: &IrTrapSite) -> Result<usize, BackendFailure> {
-        let index = self.traps.len();
+    fn register_claim(&mut self, site: &IrClaimSite) -> Result<usize, BackendFailure> {
+        let index = self.claim_records.len();
         let _ = u32::try_from(index).map_err(|_| BackendFailure::CounterOverflow)?;
-        self.traps.push(trap_record(trap));
+        self.claim_records.push(trap_record(site));
         Ok(index)
     }
 
@@ -1142,7 +1142,7 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock) -> String {
     let mut label = block_label(block_id);
     for (index, instruction) in block.instructions().iter().enumerate() {
         match instruction {
-            IrInstruction::Check { .. } => label = check_continue_label(block_id, index),
+            IrInstruction::Claim { .. } => label = claim_continue_label(block_id, index),
             IrInstruction::Define {
                 result,
                 operation:
@@ -1209,12 +1209,12 @@ fn constant_symbol(constant: crate::IrConstantId) -> String {
     format!("@.wf_const.{}", constant.ordinal())
 }
 
-fn check_continue_label(block: IrBlockId, index: usize) -> String {
-    format!("check.cont.b{}.i{index}", block.ordinal())
+fn claim_continue_label(block: IrBlockId, index: usize) -> String {
+    format!("claim.cont.b{}.i{index}", block.ordinal())
 }
 
-fn check_trap_label(block: IrBlockId, index: usize) -> String {
-    format!("check.trap.b{}.i{index}", block.ordinal())
+fn claim_trap_label(block: IrBlockId, index: usize) -> String {
+    format!("claim.trap.b{}.i{index}", block.ordinal())
 }
 
 fn integer_safe_label(value: IrValueId) -> String {
@@ -1257,8 +1257,8 @@ fn source_symbol(name: &str) -> String {
     format!("wf_{name}")
 }
 
-pub(super) fn trap_record(trap: &IrTrapSite) -> Vec<u8> {
-    let components = trap
+pub(super) fn trap_record(site: &IrClaimSite) -> Vec<u8> {
+    let components = site
         .node_path
         .iter()
         .map(u32::to_string)
@@ -1266,9 +1266,9 @@ pub(super) fn trap_record(trap: &IrTrapSite) -> Vec<u8> {
         .join(",");
     format!(
         "{{\"rule_id\":{},\"message\":{},\"function\":{},\"node_path\":[{components}]}}\n",
-        json_string(trap.rule_id),
-        json_string(&trap.message),
-        json_string(&trap.function)
+        json_string(site.rule_id),
+        json_string(&site.message),
+        json_string(&site.function)
     )
     .into_bytes()
 }

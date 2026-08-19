@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    IrArrayRoot, IrFlatElement, IrFunction, IrInstruction, IrNominalId, IrNominalKind, IrOperation,
-    IrProgram, IrTargetDomainObligation, IrTrapSite, IrType,
+    IrArrayRoot, IrClaimSite, IrFlatElement, IrFunction, IrInstruction, IrNominalId, IrNominalKind,
+    IrOperation, IrProgram, IrTargetDomainObligation, IrType,
 };
 
 use super::emitter::trap_record;
@@ -152,8 +152,8 @@ fn validate_function(
             layouts.layout(*ty)?;
         }
         for instruction in block.instructions() {
-            if let Some(trap) = instruction_trap(instruction) {
-                validate_trap_record(layouts.target, trap)?;
+            if let Some(site) = instruction_claim(instruction) {
+                validate_claim_record(layouts.target, site)?;
             }
             let IrInstruction::Define { ty, operation, .. } = instruction else {
                 continue;
@@ -291,11 +291,11 @@ fn add_frame_slot(
     checked_add(start, slot.size, target, TargetObject::StackFrame)
 }
 
-fn validate_trap_record(
+fn validate_claim_record(
     target: TargetLayout,
-    trap: &IrTrapSite,
+    site: &IrClaimSite,
 ) -> Result<(), TargetLayoutFailure> {
-    let length = u64::try_from(trap_record(trap).len())
+    let length = u64::try_from(trap_record(site).len())
         .map_err(|_| TargetLayoutFailure::Unrepresentable(TargetObject::TrapRecord))?;
     if length > target.address_index_max() {
         return Err(TargetLayoutFailure::Unrepresentable(
@@ -305,9 +305,9 @@ fn validate_trap_record(
     Ok(())
 }
 
-fn instruction_trap(instruction: &IrInstruction) -> Option<&IrTrapSite> {
+fn instruction_claim(instruction: &IrInstruction) -> Option<&IrClaimSite> {
     match instruction {
-        IrInstruction::Check { trap, .. } => Some(trap),
+        IrInstruction::Claim { site, .. } => Some(site),
         IrInstruction::Define { .. }
         | IrInstruction::StoreBuffer { .. }
         | IrInstruction::Store { .. }

@@ -15,7 +15,7 @@ use super::super::super::model::{
     CheckedConst, CheckedExpression, CheckedFlatElement, CheckedLayoutCeiling,
     CheckedLayoutMagnitude, CheckedMode, CheckedNominalKind, CheckedRuntimeTargetObligations,
     CheckedSetTarget, CheckedSliceRoot, CheckedTargetDomainObligation, CheckedType, IntegerType,
-    NominalId, TrapSite,
+    NominalId,
 };
 use super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, RequiredReferent, ResolvedPlace, SliceInfo,
@@ -679,15 +679,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         // A subscript is not an [EFF-2] trap source: an accepted subscript
-        // is discharged [OP-4] and executes no runtime check. The retained
-        // TrapSite carries the psuffix node identity the [ENT-6] obligation
-        // judgment and the [OP-4] rejection cite; it never reaches runtime.
-        let trap = TrapSite {
-            rule_id: "OP-4",
-            message: String::new(),
-            function: function.name.clone(),
-            node_path: self.tree.path(suffix)?.clone(),
-        };
+        // is discharged [OP-4] and executes no runtime check. Retain only the
+        // psuffix identity that the [ENT-6] obligation judgment and [OP-4]
+        // rejection cite.
+        let obligation = self.tree.path(suffix)?.clone();
         let mut effects = offset.effects;
         let mut accesses = offset.accesses;
         match &indexed {
@@ -725,7 +720,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element_type: array.element_type,
                 length: array.length,
                 offset: Box::new(offset.expression),
-                trap,
+                obligation,
                 target_domain: CheckedTargetDomainObligation::ElementAddress,
             },
             CheckedIndexedPlace::Buffer(buffer) => {
@@ -736,7 +731,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     carrier: self.tree.path(use_node)?.clone(),
                     root: buffer.root,
                     offset: Box::new(offset.expression),
-                    trap,
+                    obligation,
                     target_domain: CheckedTargetDomainObligation::ElementAddress,
                 }
             }
@@ -753,7 +748,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     carrier: self.tree.path(use_node)?.clone(),
                     root: slice.root,
                     offset: Box::new(offset.expression),
-                    trap,
+                    obligation,
                     target_domain: CheckedTargetDomainObligation::ElementAddress,
                 }
             }
@@ -835,14 +830,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::TypeMismatch,
             );
         }
-        // As in the read path: no [EFF-2] trap contribution; the TrapSite
-        // carries only the psuffix node identity for the [ENT-6] judgment.
-        let trap = TrapSite {
-            rule_id: "OP-4",
-            message: String::new(),
-            function: function.name.clone(),
-            node_path: self.tree.path(suffix)?.clone(),
-        };
+        // As in the read path, retain only the psuffix identity for [ENT-6];
+        // an accepted target contributes no runtime check or trap carrier.
+        let obligation = self.tree.path(suffix)?.clone();
         // [SET-1]/[SET-2] partition the element class exactly as they
         // partition every other final selected type; every v0-constructible
         // element is copy, so an element-position `replace` rejects here
@@ -877,7 +867,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         element_type: array.element_type,
                         length: array.length,
                         offset: offset.expression,
-                        trap,
+                        obligation,
                         target_domain: CheckedTargetDomainObligation::ElementAddress,
                     })),
                 )
@@ -896,7 +886,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     CheckedSetTarget::BufferIndex(Box::new(CheckedBufferSetTarget {
                         root: buffer.root,
                         offset: offset.expression,
-                        trap,
+                        obligation,
                         target_domain: CheckedTargetDomainObligation::ElementAddress,
                     })),
                 )

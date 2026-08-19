@@ -15,7 +15,7 @@ use crate::{
 
 use super::super::model::{
     BindingId, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMode, CheckedStatement,
-    CheckedType, TrapSite, ValueInitializerKind,
+    CheckedType, ClaimSite, ValueInitializerKind,
 };
 use super::borrows::ReborrowPosition;
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
@@ -434,7 +434,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let predicate = self.tree.source_spelling(expression_node)?;
                 Ok(Self::continuing_statement(
                     CheckedStatement::Claim {
-                        trap: TrapSite {
+                        site: ClaimSite {
                             rule_id: "CLM-1",
                             message: name.clone(),
                             function: function.name.clone(),

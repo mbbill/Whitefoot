@@ -259,13 +259,13 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
             panic!("the statement after the discharging claim must be indexed SET-1");
         };
         let CheckedSetTarget::BufferIndex(target) = target else {
-            panic!("SET-1 target must retain its buffer root and OP-4 check");
+            panic!("SET-1 target must retain its buffer root and OP-4 obligation");
         };
         assert_eq!(
             target.root.element,
             CheckedFlatElement::Integer(IntegerType::U16)
         );
-        assert_eq!(target.trap.rule_id, "OP-4");
+        assert!(!target.obligation.components().is_empty());
         assert_eq!(
             target.target_domain,
             CheckedTargetDomainObligation::ElementAddress
@@ -281,12 +281,12 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
             &main.body[5],
             CheckedStatement::Let {
                 value: CheckedExpression::BufferIndex {
-                    trap,
+                    obligation,
                     target_domain: CheckedTargetDomainObligation::ElementAddress,
                     ..
                 },
                 ..
-            } if trap.rule_id == "OP-4"
+            } if !obligation.components().is_empty()
         ));
         let CheckedStatement::Return { drops, .. } = &main.body[8] else {
             panic!("main must end in return");

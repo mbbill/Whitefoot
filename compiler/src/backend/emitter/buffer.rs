@@ -276,13 +276,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    /// Emits the check-aware wide probe: how many upcoming byte-walk
+    /// Emits the claim-aware wide probe: how many upcoming byte-walk
     /// iterations are provably no-ops.
     ///
     /// The window guard `index + 16 <= min(limit, length)` is internal, so
     /// the probe reads only bytes it proves in bounds and below the walk's
     /// exit bound, and it carries no trap: every observable byte — a needle
-    /// hit, the exit bound, or any trap — stays with the unchanged scalar
+    /// hit, the exit bound, or any claim — stays with the unchanged scalar
     /// body. The lane-to-bit `bitcast` places lane 0 at the least
     /// significant bit on every supported (little-endian) target, so
     /// `cttz` yields the count of leading clean bytes.

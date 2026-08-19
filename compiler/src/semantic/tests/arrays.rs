@@ -71,12 +71,12 @@ command fn main() -> status: own ExitStatus traps {
                 value: CheckedExpression::ArrayIndex {
                     root: CheckedArrayRoot::Binding { .. },
                     length: CheckedConst::Value(4),
-                    trap,
+                    obligation,
                     target_domain: CheckedTargetDomainObligation::ElementAddress,
                     ..
                 },
                 ..
-            } if trap.rule_id == "OP-4"
+            } if !obligation.components().is_empty()
         ));
         assert!(matches!(
             &body[3],
@@ -84,12 +84,12 @@ command fn main() -> status: own ExitStatus traps {
                 value: CheckedExpression::ArrayIndex {
                     root: CheckedArrayRoot::Constant(_),
                     length: CheckedConst::Value(4),
-                    trap,
+                    obligation,
                     target_domain: CheckedTargetDomainObligation::ElementAddress,
                     ..
                 },
                 ..
-            } if trap.rule_id == "OP-4"
+            } if !obligation.components().is_empty()
         ));
     });
 }
@@ -202,7 +202,7 @@ fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
         assert_eq!(target.element_type, CheckedType::Integer(IntegerType::U8));
         assert_eq!(target.length, CheckedConst::Value(2));
         assert_eq!(target.offset.ty(), CheckedType::Integer(IntegerType::U64));
-        assert_eq!(target.trap.rule_id, "OP-4");
+        assert!(!target.obligation.components().is_empty());
         assert_eq!(
             target.target_domain,
             CheckedTargetDomainObligation::ElementAddress

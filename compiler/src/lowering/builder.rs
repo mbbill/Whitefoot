@@ -537,14 +537,14 @@ impl<'program> IrBuilder<'program> {
                 // the justification is compile-time data and lowers to
                 // nothing.
                 CheckedStatement::Claim {
-                    condition, trap, ..
+                    condition, site, ..
                 } => {
                     let condition = self.expression(condition)?;
                     self.current_block_mut()?
                         .instructions
-                        .push(IrInstruction::Check {
+                        .push(IrInstruction::Claim {
                             condition,
-                            trap: trap.clone().into(),
+                            site: site.clone().into(),
                         });
                 }
                 CheckedStatement::Return { value, drops, .. } => {

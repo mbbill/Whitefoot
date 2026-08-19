@@ -34,7 +34,7 @@ pub(crate) use model::{
     CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter,
     CheckedProgramData, CheckedProjectedDrop, CheckedRuntimeTargetObligations, CheckedSetTarget,
     CheckedSliceRoot, CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation,
-    CheckedType, CheckedValue, NominalId, PropagationContext, TrapSite,
+    CheckedType, CheckedValue, ClaimSite, NominalId, PropagationContext,
 };
 
 /// Master switch for the v0.31 candidate's gated semantic surface:

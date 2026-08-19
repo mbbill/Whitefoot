@@ -1,7 +1,7 @@
 //! Target-independent lowering from the semantically checked active Whitefoot specification.
 //!
 //! The private IR records exact value types, nominal construction/projection,
-//! direct calls, retained checks, and explicit control-flow edges. It performs
+//! direct calls, retained claims, and explicit control-flow edges. It performs
 //! no source admission, label lookup, exhaustiveness decision, or ownership
 //! judgment.
 
@@ -9,7 +9,7 @@ use crate::semantic::{
     CheckedBooleanOperation, CheckedEnumType, CheckedFlatElement, CheckedFloatOperation,
     CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedNumericType,
     CheckedProgram, CheckedRuntimeTargetObligations, CheckedTargetDomainObligation, CheckedType,
-    TrapSite,
+    ClaimSite,
 };
 use crate::{SystemRelease, SystemResourceContract};
 
@@ -545,15 +545,15 @@ pub enum IrConstant {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IrTrapSite {
+pub struct IrClaimSite {
     pub(crate) rule_id: &'static str,
     pub(crate) message: String,
     pub(crate) function: String,
     pub(crate) node_path: Vec<u32>,
 }
 
-impl From<TrapSite> for IrTrapSite {
-    fn from(value: TrapSite) -> Self {
+impl From<ClaimSite> for IrClaimSite {
+    fn from(value: ClaimSite) -> Self {
         Self {
             rule_id: value.rule_id,
             message: value.message,
@@ -794,14 +794,14 @@ pub enum IrOperation {
         offset: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
-    /// One check-aware wide-probe step over a `u8` buffer.
+    /// One claim-aware wide-probe step over a `u8` buffer.
     ///
     /// Computes how many upcoming iterations of a recognized byte-walk loop
     /// are provably no-ops: the count of leading bytes at `index ..` that
     /// match no needle, but only when `index + 16 <= min(limit, length)`
     /// bounds both the walk's exit guard and every skipped read; otherwise 0.
     /// Every byte at which anything observable can happen — a needle hit,
-    /// the exit bound, or any retained trap such as a `check` or `claim` —
+    /// the exit bound, or any retained `claim` —
     /// therefore reaches the unchanged scalar body and its own [DIAG-3]
     /// record. The probe itself never traps and never reports; it reads only
     /// bytes its internal guard proves in bounds.
@@ -895,9 +895,9 @@ pub enum IrInstruction {
         ty: IrType,
         operation: IrOperation,
     },
-    Check {
+    Claim {
         condition: IrValueId,
-        trap: IrTrapSite,
+        site: IrClaimSite,
     },
     StoreBuffer {
         buffer: IrValueId,
@@ -919,7 +919,7 @@ pub enum IrInstruction {
 /// actions run only on normal edges: a trap runs none [TRAP-1, EFF-4]. The IR
 /// therefore places these records only on `Jump` and `Return` terminators and
 /// as `Drop` instructions in straight-line position, never on a trapping
-/// `Check`. Their order inside one edge is the checked program's reverse
+/// `Claim`. Their order inside one edge is the checked program's reverse
 /// declaration order, and their position relative to surrounding calls is the
 /// order [EFF-5] requires of every conforming lowering.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

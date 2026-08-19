@@ -253,7 +253,7 @@ fn element_position_replace_accepts_an_affine_element_and_keeps_its_checks() {
             checked.data.nominals[element.0 as usize].name,
             "Option<u32>"
         );
-        assert_eq!(target.trap.rule_id, "OP-4");
+        assert!(!target.obligation.components().is_empty());
         assert!(matches!(
             &main.body[3],
             CheckedStatement::Replace {

@@ -587,7 +587,7 @@ fn releases_keep_reverse_declaration_order_and_never_sit_on_a_trapping_edge() {
             block
                 .instructions()
                 .iter()
-                .any(|instruction| matches!(instruction, IrInstruction::Check { .. }))
+                .any(|instruction| matches!(instruction, IrInstruction::Claim { .. }))
         );
         // Both releases sit on the one normal edge, in the reverse
         // declaration order [STOR-3] fixes, which is the order [EFF-5]
@@ -711,7 +711,7 @@ command fn main() -> status: own ExitStatus traps {
                 .blocks()
                 .iter()
                 .flat_map(IrBlock::instructions)
-                .all(|instruction| !matches!(instruction, IrInstruction::Check { .. })),
+                .all(|instruction| !matches!(instruction, IrInstruction::Claim { .. })),
             "an ordinary requirement is a call-site obligation and S4 axiom, not executable IR"
         );
     });
