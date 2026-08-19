@@ -51,7 +51,7 @@ fn general_scalar_and_enum_borrows_execute_through_host_llvm() {
 #[test]
 fn a_discarded_borrow_returning_call_compiles_and_runs() {
     let llvm = compile(
-        br#"fn source['r](x: &'r i32) -> &'r i32 pure {
+        br#"fn source['r](x: &'r i32) -> result: &'r i32 pure {
   return x;
 }
 
@@ -83,7 +83,7 @@ command fn main() -> status: own ExitStatus traps {
 #[test]
 fn extension_chains_execute_and_write_the_owners_storage() {
     let llvm = emit_reborrow_extension(
-        br#"fn passthru['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {
+        br#"fn passthru['r0](x: &uniq 'r0 i32) -> result: &uniq 'r0 i32 pure {
   return &uniq 'r0 deref(x);
 }
 
