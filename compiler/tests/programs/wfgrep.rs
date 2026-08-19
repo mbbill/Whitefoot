@@ -76,7 +76,7 @@ fn visit(
         .expect("read the reference fixture directory")
         .map(|entry| entry.expect("one reference fixture entry"))
         .collect();
-    entries.sort_by(|left, right| left.file_name().cmp(&right.file_name()));
+    entries.sort_by_key(std::fs::DirEntry::file_name);
     for entry in entries {
         let name = entry.file_name();
         let name = name.as_bytes().to_vec();
@@ -376,6 +376,34 @@ fn a_pattern_that_is_not_text_travels_the_lossless_route_unchanged() {
         b"tree/raw.txt:1:prefix \xff\xfe marker suffix\n".to_vec(),
         "diagnostics: {}",
         String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.status.code(), Some(0));
+}
+
+/// A symbolic link the walk enumerates is not followed.
+///
+/// [SYS-14] reports it as kind `3 symbolic link`, and the program acts on
+/// exactly the kinds it was told about — a regular file it opens, a directory
+/// it descends, and everything else it leaves alone. That is a property of
+/// this program, not of the capability: [PATH-2]'s resolution is still
+/// process-equivalent and would follow a link a program actually named. This
+/// case has no `grep` side, because the two grep families disagree about
+/// links found during a traversal.
+#[test]
+fn an_enumerated_symbolic_link_is_not_followed() {
+    let fixture = fixture_directory();
+    fixture.directory("tree");
+    fixture.write_nested("tree/visible.txt", b"needle inside\n");
+    let outside = fixture.write(b"outside.txt", b"needle outside\n");
+    let outside_directory = fixture.directory("elsewhere");
+    fixture.write_nested("elsewhere/buried.txt", b"needle elsewhere\n");
+    fixture.symlink("tree/link.txt", &outside);
+    fixture.symlink("tree/linkdir", &outside_directory);
+
+    let output = wfgrep().run(fixture.path(), &[b"needle", b"tree"]);
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "tree/visible.txt:1:needle inside\n"
     );
     assert_eq!(output.status.code(), Some(0));
 }
