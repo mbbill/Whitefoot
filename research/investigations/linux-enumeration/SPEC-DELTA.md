@@ -61,7 +61,7 @@ TargetGuarantee::DirectoryEnumeration => self.directory_enumeration.is_some(),
 `directory_enumeration` is an `Option<DirectoryEnumeration>` holding the
 target's ABI record — symbol, declaration, and the five `struct dirent`
 offsets. For the Linux triples it is `None`
-(`compiler/src/backend/qualification.rs:706–712`), so `supplies()` answers
+(`compiler/src/backend/qualification.rs:704–710`), so `supplies()` answers
 "this target has no directory-enumeration facility", and `operation_row`
 raises `QualificationFailure::UnmetGuarantee { guarantee: DirectoryEnumeration }`
 for `open_list` (ordinal 12) and `list_once` (ordinal 13).
@@ -77,14 +77,14 @@ Form cell: "Linux enumeration is deliberately unmapped and fails qualification
 rather than emulating [QUAL-2]." The word *unmapped* is right; the citation is
 not.
 
-The compiler's own comment at `compiler/src/backend/qualification.rs:696–703`
+The compiler's own comment at `compiler/src/backend/qualification.rs:697–703`
 already has it right — "this target fails qualification for the [SYS-14]
 enumeration IDs — a target-qualification failure, not a source rejection
 [QUAL-1]" — so the code comment and the code disagree.
 
 No test pins any of this: the only Linux-triple test in the tree is
 `every_portable_class_is_mapped_exactly_once_in_inventory_order`
-(`compiler/src/backend/tests/system_io.rs:1168`), which exercises the error
+(`compiler/src/backend/tests/system_io.rs:1169`), which exercises the error
 tables and never touches enumeration.
 
 ## Why not (a)
