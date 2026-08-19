@@ -6,6 +6,7 @@
 //! is what [QUAL-3] says establishes the required emitted shape: inspection of
 //! emitted code and symbols, not a machine-checked language judgment.
 
+use crate::backend::emitter::emit_llvm_for_target;
 use crate::backend::qualification::{
     CodeUnitFamily, QualificationFailure, SystemTarget, qualify_program,
 };
@@ -626,4 +627,40 @@ fn linux_enumeration_facility_without_an_abi_mapping_is_missing_mapping() {
             crate::BackendFailure::TargetQualification(QualificationFailure::MissingMapping(_))
         ));
     });
+}
+
+#[test]
+fn darwin_list_once_keeps_range_and_record_extents_distinct_and_verifiable() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks {
+  let destination = buffer_new(64_u64, 0_u8);
+  region 'c {
+    match open_list<'c>(directory: &'c cwd) {
+      Ok(value: list) => {
+        region 'l {
+          region 'd {
+            let outcome = list_once<'l, 'd>(list: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
+          }
+        }
+      }
+      Err(error: problem) => {
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = with_ir(source, |program| {
+        let darwin = SystemTarget::for_triple("aarch64-apple-darwin")
+            .expect("Darwin is a recognized system target");
+        emit_llvm_for_target(program, darwin)
+            .expect("Darwin must qualify and emit list_once")
+            .into_string()
+    });
+    assert_eq!(llvm.matches("%record.extent = zext").count(), 1);
+    assert!(llvm.contains("%sized = icmp uge i64 %record.extent, %needed"));
+    assert!(llvm.contains("%bounded = icmp ule i64 %record.extent, %remaining"));
+    assert!(llvm.contains("%source.next = add i64 %source, %record.extent"));
+    assert!(llvm.contains("%fits = icmp ule i64 %after, %extent"));
+    let optimized = host_optimized_module(&llvm);
+    assert!(optimized.contains("@__getdirentries64"));
 }

@@ -1593,9 +1593,9 @@ fn emit_list_once(
          br i1 %headerless, label %done, label %header\n\
          header:\n  \
          %entry.record = getelementptr inbounds i8, ptr %window, i64 %source\n  \
-         %extent.at = getelementptr inbounds i8, ptr %entry.record, i64 {record_length_offset}\n  \
-         %extent.native = load i16, ptr %extent.at, align 1\n  \
-         %extent = zext i16 %extent.native to i64\n  \
+         %record.extent.at = getelementptr inbounds i8, ptr %entry.record, i64 {record_length_offset}\n  \
+         %record.extent.native = load i16, ptr %record.extent.at, align 1\n  \
+         %record.extent = zext i16 %record.extent.native to i64\n  \
          %named.at = getelementptr inbounds i8, ptr %entry.record, i64 {name_length_offset}\n  \
          %named.native = load i16, ptr %named.at, align 1\n  \
          %named = zext i16 %named.native to i64\n  \
@@ -1603,9 +1603,9 @@ fn emit_list_once(
          %kind.native = load i8, ptr %kind.at, align 1\n  \
          %kind.value = zext i8 %kind.native to i64\n  \
          %needed = add i64 {name_offset}, %named\n  \
-         %sized = icmp uge i64 %extent, %needed\n  \
-         %bounded = icmp ule i64 %extent, %remaining\n  \
-         %advancing = icmp uge i64 %extent, 1\n  \
+         %sized = icmp uge i64 %record.extent, %needed\n  \
+         %bounded = icmp ule i64 %record.extent, %remaining\n  \
+         %advancing = icmp uge i64 %record.extent, 1\n  \
          %nameable = icmp ule i64 %named, {COMPONENT_LIMIT}\n  \
          %naming = icmp uge i64 %named, 1\n  \
          %named.usable = and i1 %nameable, %naming\n  \
@@ -1647,7 +1647,7 @@ fn emit_list_once(
          %copied.next = add i64 %copied, 1\n  \
          br label %copy\n\
          step:\n  \
-         %source.next = add i64 %source, %extent\n  \
+         %source.next = add i64 %source, %record.extent\n  \
          %written.next = add i64 %written, %portable\n  \
          %entries.next = add i64 %entries, 1\n  \
          br label %walk\n\
