@@ -3,18 +3,18 @@ struct ByteString {
   fill: u64;
 }
 
-fn bs_new() -> own ByteString allocates(heap), traps {
+fn bs_new() -> result: own ByteString allocates(heap) {
   doc "Builds one empty byte string over a zero-length backing buffer.";
   let empty = buffer_new(0_u64, 0_u8);
   return ByteString(buf: move empty, fill: 0_u64);
 }
 
-deny_claims fn bs_len['a](s: &'a ByteString) -> own u64 reads('a) {
+deny_claims fn bs_len['a](s: &'a ByteString) -> result: own u64 reads('a) {
   doc "Reports how many bytes the string holds.";
   return deref(s).fill;
 }
 
-deny_claims fn bs_byte['a](s: &'a ByteString, index: own u64) -> own Option<u8> reads('a) {
+deny_claims fn bs_byte['a](s: &'a ByteString, index: own u64) -> result: own Option<u8> reads('a) {
   doc "Reads one stored byte, delivering None for a position the string does not hold.";
   let stored = deref(s).fill;
   let within = ilt(index, stored);
@@ -29,7 +29,7 @@ deny_claims fn bs_byte['a](s: &'a ByteString, index: own u64) -> own Option<u8> 
   return None<u8>();
 }
 
-fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> own unit reads('a), writes('a), allocates(heap), traps {
+fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads('a), writes('a), allocates(heap), traps {
   doc "Appends one byte, growing the backing buffer by one step when it is full.";
   let count = deref(s).fill;
   let capacity = len(deref(s).buf);
@@ -54,7 +54,10 @@ fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> own unit reads('a), wri
   return unit;
 }
 
-fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
+fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes('o), external, blocks contract {
+  define source_length = len(deref(source));
+  requires ile(length, source_length);
+} {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @publish {
@@ -63,11 +66,10 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
     } else {
       break @publish;
     }
-    let remaining = length -wrap sent;
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: sent, count: remaining) {
-        Ok(value: written) => {
-          set sent = sent +wrap written;
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+        Ok(value: next) => {
+          set sent = next;
         }
         Err(error: problem) => {
           return Err<unit, IoError>(error: move problem);
@@ -78,7 +80,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
   return Ok<unit, IoError>(value: unit);
 }
 
-deny_claims fn stored_byte['r](records: &'r ByteString, index: own u64) -> own u8 reads('r) {
+deny_claims fn stored_byte['r](records: &'r ByteString, index: own u64) -> result: own u8 reads('r) {
   doc "Reads one record byte, delivering zero for a position the record table does not hold.";
   match bs_byte<'r>(s: records, index: index) {
     Some(value: byte) => {
@@ -90,7 +92,7 @@ deny_claims fn stored_byte['r](records: &'r ByteString, index: own u64) -> own u
   }
 }
 
-deny_claims fn record_before['r](records: &'r ByteString, left: own u64, right: own u64) -> own Bool reads('r) {
+deny_claims fn record_before['r](records: &'r ByteString, left: own u64, right: own u64) -> result: own Bool reads('r) {
   doc "Orders two fixed-stride records by their stored path bytes, a shorter prefix first.";
   let left_base = left *wrap 128_u64;
   let right_base = right *wrap 128_u64;
@@ -128,7 +130,7 @@ deny_claims fn record_before['r](records: &'r ByteString, left: own u64, right: 
   return ilt(left_count, right_count);
 }
 
-deny_claims fn record_line['r, 'd](records: &'r ByteString, index: own u64, destination: &uniq 'd buffer<u8>, at: own u64) -> own u64 reads('r 'd), writes('d) {
+deny_claims fn record_line['r, 'd](records: &'r ByteString, index: own u64, destination: &uniq 'd buffer<u8>, at: own u64) -> result: own u64 reads('r 'd), writes('d) {
   doc "Renders one record as its kind glyph, one space, its relative path, and one newline.";
   let base = index *wrap 128_u64;
   let kind = stored_byte<'r>(records: records, index: base);
@@ -174,7 +176,7 @@ deny_claims fn record_line['r, 'd](records: &'r ByteString, index: own u64, dest
   return cursor;
 }
 
-fn record_entry['r, 'p](records: &uniq 'r ByteString, path: &'p buffer<u8>, length: own u64, kind: own u8) -> own unit reads('r 'p), writes('r), allocates(heap), traps {
+fn record_entry['r, 'p](records: &uniq 'r ByteString, path: &'p buffer<u8>, length: own u64, kind: own u8) -> result: own unit reads('r 'p), writes('r), allocates(heap), traps {
   doc "Appends one fixed-stride record holding an entry kind and its relative path.";
   region 'kind_push {
     let pushed = bs_push<'kind_push>(s: &uniq 'kind_push deref(records), value: kind);
@@ -219,7 +221,7 @@ fn record_entry['r, 'p](records: &uniq 'r ByteString, path: &'p buffer<u8>, leng
   return unit;
 }
 
-fn walk['c, 'p, 'r](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, records: &uniq 'r ByteString, used: own u64, depth: own u64) -> own u64 reads('c 'p 'r), writes('r), allocates(heap), external, blocks, traps {
+fn walk['c, 'p, 'r](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, records: &uniq 'r ByteString, used: own u64, depth: own u64) -> result: own u64 reads('c 'p 'r), writes('r), allocates(heap), external, blocks, traps {
   doc "Enumerates one directory, records every entry's relative path, and descends into every subdirectory it names.";
   let count = used;
   let too_deep = ige(depth, 8_u64);
@@ -237,9 +239,9 @@ fn walk['c, 'p, 'r](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_lengt
         let produced = 0_u64;
         let ended = 0_u8;
         region 'batch {
-          match list_once<'batch, 'batch>(list: &uniq 'batch list, destination: &uniq 'batch entries, offset: 0_u64, capacity: 4096_u64) {
-            ListBytes(count: bytes, entries: reported) => {
-              set produced = bytes;
+          match list_once<'batch, 'batch>(list: &uniq 'batch list, destination: &uniq 'batch entries, start: 0_u64, end: 4096_u64) {
+            ListBytes(next: endpoint, entries: reported) => {
+              set produced = endpoint;
             }
             ListEnd() => {
               set ended = 1_u8;
@@ -259,7 +261,7 @@ fn walk['c, 'p, 'r](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_lengt
         }
         let at = 0_u64;
         loop @entry {
-          let header_end = at +wrap 2_u64;
+          let header_end = at +wrap 3_u64;
           let complete = ile(header_end, produced);
           if complete {
           } else {
@@ -271,18 +273,38 @@ fn walk['c, 'p, 'r](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_lengt
             break @entry;
           }
           let kind = entries[at];
-          let length_at = at +wrap 1_u64;
-          let length_readable = ilt(length_at, entries_room);
-          if length_readable {
+          let length_low_at = at +wrap 1_u64;
+          let length_low_readable = ilt(length_low_at, entries_room);
+          if length_low_readable {
           } else {
             break @entry;
           }
-          let name_length = entries[length_at];
-          let name_count = cvt<u8, u64>(name_length);
-          let name_at = at +wrap 2_u64;
+          let length_high_at = at +wrap 2_u64;
+          let length_high_readable = ilt(length_high_at, entries_room);
+          if length_high_readable {
+          } else {
+            break @entry;
+          }
+          let name_length_low = entries[length_low_at];
+          let name_length_high = entries[length_high_at];
+          let name_count_low = cvt<u8, u64>(name_length_low);
+          let name_count_high = cvt<u8, u64>(name_length_high);
+          let name_count_high_shifted = ishl.wrap(name_count_high, 8_u32);
+          let name_count = ior(name_count_low, name_count_high_shifted);
+          let name_at = at +wrap 3_u64;
           let name_end = name_at +wrap name_count;
           let bounded = ile(name_end, produced);
           if bounded {
+          } else {
+            break @entry;
+          }
+          let ordered = ile(name_at, name_end);
+          if ordered {
+          } else {
+            break @entry;
+          }
+          let addressable = ile(name_end, entries_room);
+          if addressable {
           } else {
             break @entry;
           }
@@ -385,7 +407,7 @@ fn walk['c, 'p, 'r](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_lengt
               let descending = ieq(kind, 2_u8);
               if descending {
                 region 'descend {
-                  match open_directory<'c, 'descend>(root: dir, name: &'descend entries, offset: name_at, count: name_count) {
+                  match open_directory<'c, 'descend>(root: dir, name: &'descend entries, start: name_at, end: name_end) {
                     Ok(value: opened) => {
                       let deeper = depth +wrap 1_u64;
                       region 'child {
@@ -408,7 +430,7 @@ fn walk['c, 'p, 'r](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_lengt
   return count;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
   doc "Walks the invocation directory recursively and publishes every entry's kind and relative path in sorted order.";
   let records = bs_new();
   let root_prefix = buffer_new(1_u64, 0_u8);
@@ -501,14 +523,20 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     region 'render {
       set length = record_line<'render, 'render>(records: &'render records, index: index, destination: &uniq 'render line, at: 0_u64);
     }
-    region 'publish {
-      match publish_all<'publish, 'publish>(output: &uniq 'publish out, source: &'publish line, length: length) {
-        Ok(value: published) => {
-        }
-        Err(error: problem) => {
-          set status = 2_u8;
+    let line_room = len(line);
+    let length_fits = ile(length, line_room);
+    if length_fits {
+      region 'publish {
+        match publish_all<'publish, 'publish>(output: &uniq 'publish out, source: &'publish line, length: length) {
+          Ok(value: published) => {
+          }
+          Err(error: problem) => {
+            set status = 2_u8;
+          }
         }
       }
+    } else {
+      set status = 2_u8;
     }
     if ieq(status, 0_u8) {
     } else {

@@ -22,7 +22,7 @@ const reason_pattern_too_long: array<u8, 25> =[119_u8, 102_u8, 103_u8, 114_u8, 1
 
 const reason_root_too_long: array<u8, 29> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 115_u8, 101_u8, 97_u8, 114_u8, 99_u8, 104_u8, 32_u8, 114_u8, 111_u8, 111_u8, 116_u8, 32_u8, 116_u8, 111_u8, 111_u8, 32_u8, 108_u8, 111_u8, 110_u8, 103_u8, 10_u8];
 
-fn io_class(error: own IoError) -> own u8 pure {
+fn io_class(error: own IoError) -> result: own u8 pure {
   doc "Reduces one portable IoError class to the distinctions wfgrep reports.";
   match error {
     NotFound(code: c, origin: o) => {
@@ -118,13 +118,11 @@ fn io_class(error: own IoError) -> own u8 pure {
   }
 }
 
-fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> own u64 reads('d 'm), writes('d) requires {
-  let capacity = len(deref(destination));
-  let admitted = ile(filled, capacity);
-  check admitted else trap "append filled exceeds destination";
-} ensures result {
-  let capacity = len(deref(destination));
-  check ile(result, capacity) else trap "append result exceeds destination";
+fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> result: own u64 reads('d 'm), writes('d) contract {
+  define capacity = len(deref(destination));
+  define admitted = ile(filled, capacity);
+  requires admitted;
+  ensures ile(result, capacity);
 } {
   doc "Appends as much of one static message as the destination still holds.";
   let capacity = len(deref(destination));
@@ -146,7 +144,7 @@ fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text:
   }
 }
 
-fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> own u64 reads('d 's), writes('d), traps {
+fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads('d 's), writes('d), traps {
   doc "Copies one half-open source range into the destination at one offset.";
   let source_room = len(deref(source));
   let destination_room = len(deref(destination));
@@ -169,7 +167,10 @@ fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s
   return target;
 }
 
-fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
+fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes('o), external, blocks contract {
+  define source_length = len(deref(source));
+  requires ile(length, source_length);
+} {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @publish {
@@ -178,11 +179,10 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
     } else {
       break @publish;
     }
-    let remaining = length -wrap sent;
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: sent, count: remaining) {
-        Ok(value: written) => {
-          set sent = sent +wrap written;
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+        Ok(value: next) => {
+          set sent = next;
         }
         Err(error: problem) => {
           return Err<unit, IoError>(error: move problem);
@@ -193,7 +193,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
   return Ok<unit, IoError>(value: unit);
 }
 
-deny_claims fn byte_at['n](store: &'n buffer<u8>, index: own u64) -> own u8 reads('n) {
+deny_claims fn byte_at['n](store: &'n buffer<u8>, index: own u64) -> result: own u8 reads('n) {
   doc "Reads one stored byte, delivering zero for a position the buffer does not hold.";
   let room = len(deref(store));
   let inside = ilt(index, room);
@@ -204,23 +204,33 @@ deny_claims fn byte_at['n](store: &'n buffer<u8>, index: own u64) -> own u8 read
   return 0_u8;
 }
 
-deny_claims fn name_before['n](names: &'n buffer<u8>, left: own u64, right: own u64) -> own Bool reads('n) {
+deny_claims fn name_before['n](names: &'n buffer<u8>, left: own u64, right: own u64) -> result: own Bool reads('n) {
   doc "Orders two collected entry records by their stored name bytes, a shorter prefix first.";
-  let left_base = left *wrap 258_u64;
-  let right_base = right *wrap 258_u64;
-  let left_length_at = left_base +wrap 1_u64;
-  let right_length_at = right_base +wrap 1_u64;
-  let left_length = byte_at<'n>(store: names, index: left_length_at);
-  let right_length = byte_at<'n>(store: names, index: right_length_at);
-  let left_count = cvt<u8, u64>(left_length);
-  let right_count = cvt<u8, u64>(right_length);
+  let left_base = left *wrap 1026_u64;
+  let right_base = right *wrap 1026_u64;
+  let left_length_low_at = left_base +wrap 1_u64;
+  let right_length_low_at = right_base +wrap 1_u64;
+  let left_length_low = byte_at<'n>(store: names, index: left_length_low_at);
+  let right_length_low = byte_at<'n>(store: names, index: right_length_low_at);
+  let left_length_high_at = left_base +wrap 2_u64;
+  let right_length_high_at = right_base +wrap 2_u64;
+  let left_length_high = byte_at<'n>(store: names, index: left_length_high_at);
+  let right_length_high = byte_at<'n>(store: names, index: right_length_high_at);
+  let left_count_low = cvt<u8, u64>(left_length_low);
+  let right_count_low = cvt<u8, u64>(right_length_low);
+  let left_count_high = cvt<u8, u64>(left_length_high);
+  let right_count_high = cvt<u8, u64>(right_length_high);
+  let left_count_high_shifted = ishl.wrap(left_count_high, 8_u32);
+  let right_count_high_shifted = ishl.wrap(right_count_high, 8_u32);
+  let left_count = ior(left_count_low, left_count_high_shifted);
+  let right_count = ior(right_count_low, right_count_high_shifted);
   let shared = if ilt(left_count, right_count) {
     give left_count;
   } else {
     give right_count;
   }
-  let left_start = left_base +wrap 2_u64;
-  let right_start = right_base +wrap 2_u64;
+  let left_start = left_base +wrap 3_u64;
+  let right_start = right_base +wrap 3_u64;
   let at = 0_u64;
   loop @compare {
     let done = ige(at, shared);
@@ -242,7 +252,7 @@ deny_claims fn name_before['n](names: &'n buffer<u8>, left: own u64, right: own 
   return ilt(left_count, right_count);
 }
 
-fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> own u64 reads('d), writes('d) {
+fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads('d), writes('d) {
   doc "Writes the decimal spelling of one unsigned value at one offset and reports the offset just past it, counting its digits first so it needs no scratch storage.";
   let digits = 1_u64;
   let probe = value;
@@ -279,7 +289,7 @@ fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64
   return end;
 }
 
-fn report_failure['e, 'r, 'n](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, path: &'n buffer<u8>, path_length: own u64, status: own u8) -> own unit reads('e 'r 'n), writes('e 'r), external, blocks, traps {
+fn report_failure['e, 'r, 'n](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, path: &'n buffer<u8>, path_length: own u64, status: own u8) -> result: own unit reads('e 'r 'n), writes('e 'r), external, blocks {
   doc "Assembles one `wfgrep: PATH: reason` diagnostic in the report buffer and publishes it with a single write, copying the caller's path bytes and clamping the assembled length against the report's capacity.";
   let length = 0_u64;
   region 'report_prefix {
@@ -390,7 +400,7 @@ fn report_failure['e, 'r, 'n](err: &uniq 'e Output, report: &uniq 'r buffer<u8>,
   return unit;
 }
 
-fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>, pattern_length: own u64, path: &'n buffer<u8>, path_length: own u64, out: &uniq 'o Output) -> own u8 reads('f 'a 'n 'o), writes('f 'o), allocates(heap), external, blocks, traps {
+fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>, pattern_length: own u64, path: &'n buffer<u8>, path_length: own u64, out: &uniq 'o Output) -> result: own u8 reads('f 'a 'n 'o), writes('f 'o), allocates(heap), external, blocks, traps {
   doc "Reads one open file and publishes `PATH:LINE:TEXT` for every line that holds the literal pattern bytes.";
   let input = buffer_new(4096_u64, 0_u8);
   let batch = buffer_new(8192_u64, 0_u8);
@@ -408,6 +418,12 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
   let line_number = 0_u64;
   let carry = 0_u64;
   loop @chunks {
+    let carry_within_input = ile(carry, 4096_u64);
+    if carry_within_input {
+    } else {
+      set status = 6_u8;
+      break @chunks;
+    }
     let room = 4096_u64 -wrap carry;
     let overlong = ieq(room, 0_u64);
     if overlong {
@@ -417,9 +433,9 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
     let available = 0_u64;
     let ended = 0_u8;
     region 'read_call {
-      match read_once<'read_call, 'read_call>(file: &uniq 'read_call deref(file), destination: &uniq 'read_call input, offset: carry, capacity: room) {
-        ReadBytes(count: taken) => {
-          set available = carry +wrap taken;
+      match read_once<'read_call, 'read_call>(file: &uniq 'read_call deref(file), destination: &uniq 'read_call input, start: carry, end: 4096_u64) {
+        ReadBytes(next: endpoint) => {
+          set available = endpoint;
         }
         ReadEnd() => {
           set ended = 1_u8;
@@ -519,14 +535,19 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
         let need = filled +wrap record;
         let overfull = igt(need, 8192_u64);
         if overfull {
-          region 'batch_write {
-            match publish_all<'batch_write, 'batch_write>(output: &uniq 'batch_write deref(out), source: &'batch_write batch, length: filled) {
-              Ok(value: published) => {
-              }
-              Err(error: problem) => {
-                set status = io_class(error: move problem);
+          let batch_fits = ile(filled, batch_room);
+          if batch_fits {
+            region 'batch_write {
+              match publish_all<'batch_write, 'batch_write>(output: &uniq 'batch_write deref(out), source: &'batch_write batch, length: filled) {
+                Ok(value: published) => {
+                }
+                Err(error: problem) => {
+                  set status = io_class(error: move problem);
+                }
               }
             }
+          } else {
+            set status = 6_u8;
           }
           set filled = 0_u64;
         }
@@ -583,14 +604,19 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
   }
   let pending = igt(filled, 0_u64);
   if pending {
-    region 'final_write {
-      match publish_all<'final_write, 'final_write>(output: &uniq 'final_write deref(out), source: &'final_write batch, length: filled) {
-        Ok(value: published) => {
-        }
-        Err(error: problem) => {
-          set status = io_class(error: move problem);
+    let final_fits = ile(filled, batch_room);
+    if final_fits {
+      region 'final_write {
+        match publish_all<'final_write, 'final_write>(output: &uniq 'final_write deref(out), source: &'final_write batch, length: filled) {
+          Ok(value: published) => {
+          }
+          Err(error: problem) => {
+            set status = io_class(error: move problem);
+          }
         }
       }
+    } else {
+      set status = 6_u8;
     }
   }
   let flag = if ieq(matched, 1_u8) {
@@ -602,7 +628,7 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
   return packed;
 }
 
-fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, pattern: &'a buffer<u8>, pattern_length: own u64, out: &uniq 'o Output, err: &uniq 'e Output, depth: own u64) -> own u8 reads('c 'p 'a 'o 'e), writes('o 'e), allocates(heap), external, blocks, traps {
+fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, pattern: &'a buffer<u8>, pattern_length: own u64, out: &uniq 'o Output, err: &uniq 'e Output, depth: own u64) -> result: own u8 reads('c 'p 'a 'o 'e), writes('o 'e), allocates(heap), external, blocks, traps {
   doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. Two fixed bounds truncate silently and are recorded as defects: at most 64 entries per directory are retained, in the host's enumeration order, before sorting; and a subtree deeper than 16 levels is left unsearched. Both return normally, so a truncated search is indistinguishable from a complete one.";
   let matched = 0_u8;
   let failed = 0_u8;
@@ -612,7 +638,7 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
     return empty;
   }
   let entries = buffer_new(8192_u64, 0_u8);
-  let names = buffer_new(16512_u64, 0_u8);
+  let names = buffer_new(65664_u64, 0_u8);
   let order = buffer_new(64_u64, 0_u64);
   let child = buffer_new(1024_u64, 0_u8);
   let report = buffer_new(1280_u64, 0_u8);
@@ -628,9 +654,9 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
         let produced = 0_u64;
         let ended = 0_u8;
         region 'batch {
-          match list_once<'batch, 'batch>(list: &uniq 'batch list, destination: &uniq 'batch entries, offset: 0_u64, capacity: 8192_u64) {
-            ListBytes(count: bytes, entries: reported) => {
-              set produced = bytes;
+          match list_once<'batch, 'batch>(list: &uniq 'batch list, destination: &uniq 'batch entries, start: 0_u64, end: 8192_u64) {
+            ListBytes(next: endpoint, entries: reported) => {
+              set produced = endpoint;
             }
             ListEnd() => {
               set ended = 1_u8;
@@ -651,7 +677,7 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
         }
         let at = 0_u64;
         loop @entry {
-          let header_end = at +wrap 2_u64;
+          let header_end = at +wrap 3_u64;
           let complete = ile(header_end, produced);
           if complete {
           } else {
@@ -663,18 +689,38 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
             break @entry;
           }
           let kind = entries[at];
-          let length_at = at +wrap 1_u64;
-          let length_readable = ilt(length_at, entries_room);
-          if length_readable {
+          let length_low_at = at +wrap 1_u64;
+          let length_low_readable = ilt(length_low_at, entries_room);
+          if length_low_readable {
           } else {
             break @entry;
           }
-          let name_length = entries[length_at];
-          let name_count = cvt<u8, u64>(name_length);
-          let name_at = at +wrap 2_u64;
+          let length_high_at = at +wrap 2_u64;
+          let length_high_readable = ilt(length_high_at, entries_room);
+          if length_high_readable {
+          } else {
+            break @entry;
+          }
+          let name_length_low = entries[length_low_at];
+          let name_length_high = entries[length_high_at];
+          let name_count_low = cvt<u8, u64>(name_length_low);
+          let name_count_high = cvt<u8, u64>(name_length_high);
+          let name_count_high_shifted = ishl.wrap(name_count_high, 8_u32);
+          let name_count = ior(name_count_low, name_count_high_shifted);
+          let name_at = at +wrap 3_u64;
           let name_end = name_at +wrap name_count;
           let bounded = ile(name_end, produced);
           if bounded {
+          } else {
+            break @entry;
+          }
+          let ordered = ile(name_at, name_end);
+          if ordered {
+          } else {
+            break @entry;
+          }
+          let addressable = ile(name_end, entries_room);
+          if addressable {
           } else {
             break @entry;
           }
@@ -707,21 +753,28 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
               }
             }
           }
-          let usable = ieq(dotted, 0_u8);
+          let not_dotted = ieq(dotted, 0_u8);
+          let component_fits = ile(name_count, 1023_u64);
+          let usable = band(not_dotted, component_fits);
           let room_left = ilt(stored, 64_u64);
           if usable {
             if room_left {
-              let base = stored *wrap 258_u64;
+              let base = stored *wrap 1026_u64;
               let kind_writable = ilt(base, names_room);
               if kind_writable {
                 set names[base] = kind;
               }
-              let stored_length_at = base +wrap 1_u64;
-              let length_writable = ilt(stored_length_at, names_room);
-              if length_writable {
-                set names[stored_length_at] = name_length;
+              let stored_length_low_at = base +wrap 1_u64;
+              let length_low_writable = ilt(stored_length_low_at, names_room);
+              if length_low_writable {
+                set names[stored_length_low_at] = name_length_low;
               }
-              let target_start = base +wrap 2_u64;
+              let stored_length_high_at = base +wrap 2_u64;
+              let length_high_writable = ilt(stored_length_high_at, names_room);
+              if length_high_writable {
+                set names[stored_length_high_at] = name_length_high;
+              }
+              let target_start = base +wrap 3_u64;
               let taken = 0_u64;
               loop @store_name {
                 let done = ige(taken, name_count);
@@ -832,22 +885,45 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
     }
     let index = order[visited];
     set visited = visited +wrap 1_u64;
-    let base = index *wrap 258_u64;
+    let base = index *wrap 1026_u64;
     let kind_readable = ilt(base, names_room);
     if kind_readable {
     } else {
       break @process;
     }
     let kind = names[base];
-    let stored_length_at = base +wrap 1_u64;
-    let length_readable = ilt(stored_length_at, names_room);
-    if length_readable {
+    let stored_length_low_at = base +wrap 1_u64;
+    let length_low_readable = ilt(stored_length_low_at, names_room);
+    if length_low_readable {
     } else {
       break @process;
     }
-    let stored_length = names[stored_length_at];
-    let name_count = cvt<u8, u64>(stored_length);
-    let name_at = base +wrap 2_u64;
+    let stored_length_high_at = base +wrap 2_u64;
+    let length_high_readable = ilt(stored_length_high_at, names_room);
+    if length_high_readable {
+    } else {
+      break @process;
+    }
+    let stored_length_low = names[stored_length_low_at];
+    let stored_length_high = names[stored_length_high_at];
+    let name_count_low = cvt<u8, u64>(stored_length_low);
+    let name_count_high = cvt<u8, u64>(stored_length_high);
+    let name_count_high_shifted = ishl.wrap(name_count_high, 8_u32);
+    let name_count = ior(name_count_low, name_count_high_shifted);
+    let name_at = base +wrap 3_u64;
+    let name_end = name_at +wrap name_count;
+    let name_bounded = ile(name_end, names_room);
+    if name_bounded {
+    } else {
+      set failed = 1_u8;
+      break @process;
+    }
+    let name_ordered = ile(name_at, name_end);
+    if name_ordered {
+    } else {
+      set failed = 1_u8;
+      break @process;
+    }
     let separated = igt(prefix_length, 0_u64);
     let separated_length = prefix_length +wrap 1_u64;
     let child_length = if separated {
@@ -914,7 +990,7 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
     if regular {
       let status = 0_u8;
       region 'open_call {
-        match open_file<'c, 'open_call>(root: dir, name: &'open_call names, offset: name_at, count: name_count) {
+        match open_file<'c, 'open_call>(root: dir, name: &'open_call names, start: name_at, end: name_end) {
           Ok(value: file) => {
             let outcome = 0_u8;
             region 'search_call {
@@ -943,7 +1019,7 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
     if descending {
       let status = 0_u8;
       region 'descend {
-        match open_directory<'c, 'descend>(root: dir, name: &'descend names, offset: name_at, count: name_count) {
+        match open_directory<'c, 'descend>(root: dir, name: &'descend names, start: name_at, end: name_end) {
           Ok(value: opened) => {
             let deeper = depth +wrap 1_u64;
             let outcome = 0_u8;
@@ -987,7 +1063,7 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
   return packed;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
   doc "Searches one directory tree recursively and publishes `PATH:LINE:TEXT` for the lines holding the literal pattern bytes; 0 matched, 1 none, 2 error. The search is complete only within `walk`'s two fixed bounds (64 entries per directory and 16 levels of depth), beyond which it truncates and still returns normally.";
   let pattern = buffer_new(4096_u64, 0_u8);
   let root_name = buffer_new(256_u64, 0_u8);
@@ -1006,7 +1082,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       match arg_get<'pattern_lease>(args: &'pattern_lease args, position: 1_u64) {
         Ok(value: text) => {
           region 'pattern_copy {
-            match host_copy_bytes<'pattern_copy, 'pattern_copy>(value: &'pattern_copy text, destination: &uniq 'pattern_copy pattern, offset: 0_u64, capacity: 4096_u64) {
+            match host_copy_bytes<'pattern_copy, 'pattern_copy>(value: &'pattern_copy text, destination: &uniq 'pattern_copy pattern, start: 0_u64, end: 4096_u64) {
               Ok(value: copied) => {
                 set pattern_length = copied;
               }
@@ -1025,7 +1101,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       match arg_get<'root_lease>(args: &'root_lease args, position: 2_u64) {
         Ok(value: text) => {
           region 'root_copy {
-            match host_copy_bytes<'root_copy, 'root_copy>(value: &'root_copy text, destination: &uniq 'root_copy root_name, offset: 0_u64, capacity: 256_u64) {
+            match host_copy_bytes<'root_copy, 'root_copy>(value: &'root_copy text, destination: &uniq 'root_copy root_name, start: 0_u64, end: 256_u64) {
               Ok(value: copied) => {
                 set root_length = copied;
               }
@@ -1074,6 +1150,25 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     }
     return exit_status(code: 2_u8);
   }
+  let root_name_room = len(root_name);
+  let root_length_fits = ile(root_length, root_name_room);
+  if root_length_fits {
+  } else {
+    let length = 0_u64;
+    region 'root_length_view {
+      let view = slice_of(&'root_length_view reason_root_too_long);
+      set length = append_slice<'root_length_view, 'root_length_view>(destination: &uniq 'root_length_view report, filled: length, text: move view);
+    }
+    region 'root_length_write {
+      match publish_all<'root_length_write, 'root_length_write>(output: &uniq 'root_length_write err, source: &'root_length_write report, length: length) {
+        Ok(value: published) => {
+        }
+        Err(error: problem) => {
+        }
+      }
+    }
+    return exit_status(code: 2_u8);
+  }
   let root_room = len(root_path);
   let copied = 0_u64;
   loop @root_copy_out {
@@ -1099,7 +1194,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let failed = 0_u8;
   let root_status = 0_u8;
   region 'root_open {
-    match open_directory<'root_open, 'root_open>(root: &'root_open cwd, name: &'root_open root_name, offset: 0_u64, count: root_length) {
+    match open_directory<'root_open, 'root_open>(root: &'root_open cwd, name: &'root_open root_name, start: 0_u64, end: root_length) {
       Ok(value: root) => {
         let outcome = 0_u8;
         region 'root_walk {

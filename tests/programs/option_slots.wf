@@ -3,12 +3,14 @@ struct OptVec {
   fill: u64;
 }
 
-fn optvec_new(capacity: own u64) -> own OptVec allocates(heap), traps {
+fn optvec_new(capacity: own u64) -> result: own OptVec allocates(heap) contract {
+  requires buffer_fits<Option<u32>>(capacity);
+} {
   let empty = buffer_vacant<u32>(capacity);
   return OptVec(buf: move empty, fill: 0_u64);
 }
 
-fn optvec_push['a](v: &uniq 'a OptVec, x: own u32) -> own unit reads('a), writes('a), traps {
+fn optvec_push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads('a), writes('a), traps {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
   let has_room = ilt(count, cap);
@@ -28,7 +30,7 @@ fn optvec_push['a](v: &uniq 'a OptVec, x: own u32) -> own unit reads('a), writes
   return unit;
 }
 
-fn optvec_pop['a](v: &uniq 'a OptVec) -> own u32 reads('a), writes('a), traps {
+fn optvec_pop['a](v: &uniq 'a OptVec) -> result: own u32 reads('a), writes('a), traps {
   let count = deref(v).fill;
   let nonempty = igt(count, 0_u64);
   claim empty_vector: nonempty because "empty vector";
@@ -49,7 +51,7 @@ fn optvec_pop['a](v: &uniq 'a OptVec) -> own u32 reads('a), writes('a), traps {
   return 0_u32;
 }
 
-fn boxed_slots() -> own unit allocates(heap), traps {
+fn boxed_slots() -> result: own unit allocates(heap), traps {
   let slots = buffer_vacant<box<u64>>(3_u64);
   let first = box_new(11_u64);
   let wrapped = Some<box<u64>>(value: move first);
@@ -86,7 +88,7 @@ fn boxed_slots() -> own unit allocates(heap), traps {
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let v = optvec_new(capacity: 4_u64);
   region 'p {
     optvec_push<'p>(v: &uniq 'p v, x: 10_u32);
@@ -104,5 +106,5 @@ fn main() -> own unit allocates(heap), traps {
   let remaining = v.fill;
   claim fill_after_pop: ieq(remaining, 2_u64) because "fill after pop";
   boxed_slots();
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -1,8 +1,8 @@
-fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> own u64 writes('r), traps requires {
-  let source_length = len(src);
-  let output_length = len(deref(out));
-  let enough_output = ige(output_length, source_length);
-  check enough_output else trap "output too short";
+fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 writes('r), traps contract {
+  define source_length = len(src);
+  define output_length = len(deref(out));
+  define enough_output = ige(output_length, source_length);
+  requires enough_output;
 } {
   let source_length = len(src);
   let i = 0_u64;
@@ -212,7 +212,7 @@ fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> own u64 writes('
   return count;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let input = buffer_new(15_u64, 0_u8);
   set input[0_u64] = 65_u8;
   set input[1_u64] = 194_u8;
@@ -248,5 +248,5 @@ fn main() -> own unit allocates(heap), traps {
   claim bad_continuation_event: ieq(event_four, 1114112_u32) because "bad continuation event";
   claim bad_ground_byte_event: ieq(event_five, 1114112_u32) because "bad ground byte event";
   claim incomplete_sequence_changed_output: ieq(event_tail, 99_u32) because "incomplete sequence changed output";
-  return unit;
+  return exit_status(code: 0_u8);
 }

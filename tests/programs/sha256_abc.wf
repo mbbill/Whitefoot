@@ -2,54 +2,54 @@ const sha256_abc_block: array<u32, 16> =[1633837952_u32, 0_u32, 0_u32, 0_u32, 0_
 
 const sha256_round_constants: array<u32, 64> =[1116352408_u32, 1899447441_u32, 3049323471_u32, 3921009573_u32, 961987163_u32, 1508970993_u32, 2453635748_u32, 2870763221_u32, 3624381080_u32, 310598401_u32, 607225278_u32, 1426881987_u32, 1925078388_u32, 2162078206_u32, 2614888103_u32, 3248222580_u32, 3835390401_u32, 4022224774_u32, 264347078_u32, 604807628_u32, 770255983_u32, 1249150122_u32, 1555081692_u32, 1996064986_u32, 2554220882_u32, 2821834349_u32, 2952996808_u32, 3210313671_u32, 3336571891_u32, 3584528711_u32, 113926993_u32, 338241895_u32, 666307205_u32, 773529912_u32, 1294757372_u32, 1396182291_u32, 1695183700_u32, 1986661051_u32, 2177026350_u32, 2456956037_u32, 2730485921_u32, 2820302411_u32, 3259730800_u32, 3345764771_u32, 3516065817_u32, 3600352804_u32, 4094571909_u32, 275423344_u32, 430227734_u32, 506948616_u32, 659060556_u32, 883997877_u32, 958139571_u32, 1322822218_u32, 1537002063_u32, 1747873779_u32, 1955562222_u32, 2024104815_u32, 2227730452_u32, 2361852424_u32, 2428436474_u32, 2756734187_u32, 3204031479_u32, 3329325298_u32];
 
-fn xor_three(x: own u32, y: own u32, z: own u32) -> own u32 pure {
+fn xor_three(x: own u32, y: own u32, z: own u32) -> result: own u32 pure {
   let first = ixor(x, y);
   return ixor(first, z);
 }
 
-fn sha256_small_zero(word: own u32) -> own u32 pure {
+fn sha256_small_zero(word: own u32) -> result: own u32 pure {
   let rotate_seven = irotr(word, 7_u32);
   let rotate_eighteen = irotr(word, 18_u32);
   let shift_three = ishr.wrap(word, 3_u32);
   return xor_three(x: rotate_seven, y: rotate_eighteen, z: shift_three);
 }
 
-fn sha256_small_one(word: own u32) -> own u32 pure {
+fn sha256_small_one(word: own u32) -> result: own u32 pure {
   let rotate_seventeen = irotr(word, 17_u32);
   let rotate_nineteen = irotr(word, 19_u32);
   let shift_ten = ishr.wrap(word, 10_u32);
   return xor_three(x: rotate_seventeen, y: rotate_nineteen, z: shift_ten);
 }
 
-fn sha256_big_zero(word: own u32) -> own u32 pure {
+fn sha256_big_zero(word: own u32) -> result: own u32 pure {
   let rotate_two = irotr(word, 2_u32);
   let rotate_thirteen = irotr(word, 13_u32);
   let rotate_twenty_two = irotr(word, 22_u32);
   return xor_three(x: rotate_two, y: rotate_thirteen, z: rotate_twenty_two);
 }
 
-fn sha256_big_one(word: own u32) -> own u32 pure {
+fn sha256_big_one(word: own u32) -> result: own u32 pure {
   let rotate_six = irotr(word, 6_u32);
   let rotate_eleven = irotr(word, 11_u32);
   let rotate_twenty_five = irotr(word, 25_u32);
   return xor_three(x: rotate_six, y: rotate_eleven, z: rotate_twenty_five);
 }
 
-fn sha256_choose(x: own u32, y: own u32, z: own u32) -> own u32 pure {
+fn sha256_choose(x: own u32, y: own u32, z: own u32) -> result: own u32 pure {
   let selected = iand(x, y);
   let inverted = inot(x);
   let rejected = iand(inverted, z);
   return ixor(selected, rejected);
 }
 
-fn sha256_majority(x: own u32, y: own u32, z: own u32) -> own u32 pure {
+fn sha256_majority(x: own u32, y: own u32, z: own u32) -> result: own u32 pure {
   let xy = iand(x, y);
   let xz = iand(x, z);
   let yz = iand(y, z);
   return xor_three(x: xy, y: xz, z: yz);
 }
 
-fn sha256_abc_word_zero() -> own u32 pure {
+fn sha256_abc_word_zero() -> result: own u32 pure {
   let schedule = array_new<u32, 64>(0_u32);
   for @copy_block copy_index in 0_u64..16_u64 {
     let source_word = sha256_abc_block[copy_index];
@@ -105,7 +105,7 @@ fn sha256_abc_word_zero() -> own u32 pure {
   return a +wrap 1779033703_u32;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let direct_digest_word = sha256_abc_word_zero();
   claim sha256_abc_digest_word_zero: ieq(direct_digest_word, 3128432319_u32) because "sha256 abc digest word zero";
   let iteration = 0_u64;
@@ -120,5 +120,5 @@ fn main() -> own unit traps {
     set iteration = iteration +wrap 1_u64;
   }
   claim sha256_sustained_workload: ieq(accumulated, 3764059136_u32) because "sha256 sustained workload";
-  return unit;
+  return exit_status(code: 0_u8);
 }

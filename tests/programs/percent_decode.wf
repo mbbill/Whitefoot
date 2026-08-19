@@ -1,4 +1,4 @@
-fn is_hex(byte: own u8) -> own Bool pure {
+fn is_hex(byte: own u8) -> result: own Bool pure {
   let decimal_low = ige(byte, 48_u8);
   let decimal_high = ile(byte, 57_u8);
   let decimal = band(decimal_low, decimal_high);
@@ -13,7 +13,7 @@ fn is_hex(byte: own u8) -> own Bool pure {
   return result;
 }
 
-fn hex_value(byte: own u8) -> own u8 pure {
+fn hex_value(byte: own u8) -> result: own u8 pure {
   let is_decimal = ile(byte, 57_u8);
   let result = if is_decimal {
     let value = byte -wrap 48_u8;
@@ -34,11 +34,11 @@ fn hex_value(byte: own u8) -> own u8 pure {
   return result;
 }
 
-fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 writes('r), traps requires {
-  let output_length = len(deref(out));
-  let source_length = len(src);
-  let sufficient = ige(output_length, source_length);
-  check sufficient else trap "output too short";
+fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 writes('r), traps contract {
+  define output_length = len(deref(out));
+  define source_length = len(src);
+  define sufficient = ige(output_length, source_length);
+  requires sufficient;
 } {
   let source_length = len(src);
   let input_index = 0_u64;
@@ -91,7 +91,7 @@ fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 writes('
   return output_index;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let input = buffer_new(11_u64, 0_u8);
   set input[0_u64] = 65_u8;
   set input[1_u64] = 37_u8;
@@ -125,5 +125,5 @@ fn main() -> own unit allocates(heap), traps {
   claim decoded_byte_five: ieq(output_five, 122_u8) because "decoded byte five";
   claim decoded_byte_six: ieq(output_six, 37_u8) because "decoded byte six";
   claim output_tail_changed: ieq(output_tail, 204_u8) because "output tail changed";
-  return unit;
+  return exit_status(code: 0_u8);
 }

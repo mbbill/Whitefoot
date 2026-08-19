@@ -1,17 +1,13 @@
-fn probe (b: own buffer<u8>) -> own unit traps {
+fn probe(b: own buffer<u8>) -> result: own unit pure {
   doc "PROOF-1 positive: the same guard licenses a direct element write.";
-  let m: own u64 = len<u8>(b);
-  let i: own u64 = 0_u64;
+  let m = len(b);
+  let i = 0_u64;
   loop @fill {
-    match ige<u64>(i, m) {
-      True() => {
-        break @fill;
-      }
-      False() => {
-      }
+    if ige(i, m) {
+      break @fill;
     }
-    set index<u8>(b, i) = 7_u8;
-    set i = iadd.wrap<u64>(i, 1_u64);
+    set b[i] = 7_u8;
+    set i = i +wrap 1_u64;
   }
   return unit;
 }

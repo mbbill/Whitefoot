@@ -1,7 +1,7 @@
-fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_lengths: &uniq 'd buffer<u8>, literal_count: own u64, position: own u64, value: own u8) -> own Result<unit, InflateError> reads('d), writes('l 'd) requires {
-  let literal_room = len(deref(literal_lengths));
-  let enough_literals = ile(literal_count, literal_room);
-  check enough_literals else trap "literal lengths shorter than literal_count";
+fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_lengths: &uniq 'd buffer<u8>, literal_count: own u64, position: own u64, value: own u8) -> result: own Result<unit, InflateError> reads('d), writes('l 'd) contract {
+  define literal_room = len(deref(literal_lengths));
+  define enough_literals = ile(literal_count, literal_room);
+  requires enough_literals;
 } {
   let is_literal = ilt(position, literal_count);
   if is_literal {
@@ -20,7 +20,7 @@ fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_l
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), allocates(heap), traps {
+fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> result: own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), allocates(heap), traps {
   let literal_count_bits = 0_u64;
   region 'literal_count_call {
     match read_bits<'literal_count_call, 'literal_count_call>(state: &uniq 'literal_count_call deref(state), input: &'literal_count_call deref(input), count: 5_u32, mask: 31_u64) {

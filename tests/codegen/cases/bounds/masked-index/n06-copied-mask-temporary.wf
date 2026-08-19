@@ -1,13 +1,13 @@
-const table: array<u8, 8> = [0_u8, 1_u8, 2_u8, 3_u8, 4_u8, 5_u8, 6_u8, 7_u8];
+const table: array<u8, 8> =[0_u8, 1_u8, 2_u8, 3_u8, 4_u8, 5_u8, 6_u8, 7_u8];
 
-fn lookup (x: own u64) -> own u8 traps {
-  let masked: own u64 = iand<u64>(x, 7_u64);
-  let slot: own u64 = masked;
-  return index<u8>(table, slot);
+fn lookup(x: own u64) -> result: own u8 pure {
+  let masked = iand(x, 7_u64);
+  let slot = masked;
+  return table[slot];
 }
 
-fn main () -> own unit traps {
-  let value: own u8 = lookup(x: 14_u64);
-  claim copied_mask_drift: ieq<u8>(value, 6_u8) because "copied mask drift";
-  return unit;
+command fn main() -> status: own ExitStatus traps {
+  let value = lookup(x: 14_u64);
+  claim copied_mask_drift: ieq(value, 6_u8) because "copied mask drift";
+  return exit_status(code: 0_u8);
 }

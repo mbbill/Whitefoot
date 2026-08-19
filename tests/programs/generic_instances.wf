@@ -1,25 +1,27 @@
-fn maximum<T: Int>(left: own T, right: own T) -> own T pure {
+fn maximum<T: Int>(left: own T, right: own T) -> result: own T pure {
   return imax(left, right);
 }
 
-fn preserve<const n: u64>(value: own array<u8, n>) -> own array<u8, n> pure {
+fn preserve<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure {
   let size = len(value);
   return move value;
 }
 
-fn forward<const n: u64>(value: own array<u8, n>) -> own array<u8, n> pure {
+fn forward<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure {
   return preserve<n>(value: move value);
 }
 
-fn filled_array<T: Int, const n: u64>(value: own T) -> own array<T, n> pure {
+fn filled_array<T: Int, const n: u64>(value: own T) -> result: own array<T, n> pure {
   return array_new<T, n>(value);
 }
 
-fn filled_buffer<T: Int>(length: own u64, value: own T) -> own buffer<T> allocates(heap), traps {
+fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap) contract {
+  requires buffer_fits<T>(length);
+} {
   return buffer_new(length, value);
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let small_maximum = maximum<u8>(left: 4_u8, right: 9_u8);
   let signed_maximum = maximum<i64>(left: -7_i64, right: -2_i64);
   let short_input = array_new<u8, 2>(7_u8);
@@ -44,5 +46,5 @@ fn main() -> own unit allocates(heap), traps {
   claim typed_byte_array: ieq(typed_byte, 13_u8) because "typed byte array";
   claim typed_word_array: ieq(typed_word, -17_i64) because "typed word array";
   claim typed_buffer: ieq(stored, 19_u16) because "typed buffer";
-  return unit;
+  return exit_status(code: 0_u8);
 }

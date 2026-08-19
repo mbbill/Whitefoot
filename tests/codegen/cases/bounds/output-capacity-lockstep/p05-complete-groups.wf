@@ -1,60 +1,48 @@
-fn probe ['r] (out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 writes('r), traps requires {
-  let out_len: own u64 = len<u8>(deref(out));
-  let src_len: own u64 = len<u8>(src);
-  let groups: own u64 = ishr.wrap<u64>(out_len, 2_u32);
-  let covered: own u64 = imul.wrap<u64>(groups, 3_u64);
-  check ile<u64>(src_len, covered) else trap "output capacity";
+fn probe['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 writes('r) contract {
+  define out_len = len(deref(out));
+  define src_len = len(src);
+  define groups = ishr.wrap(out_len, 2_u32);
+  define covered = groups *wrap 3_u64;
+  requires ile(src_len, covered);
 } {
-  let n: own u64 = len<u8>(src);
-  let i: own u64 = 0_u64;
-  let o: own u64 = 0_u64;
+  let n = len(src);
+  let i = 0_u64;
+  let o = 0_u64;
   loop @groups {
-    let rem: own u64 = isub.wrap<u64>(n, i);
-    match ilt<u64>(rem, 3_u64) {
-      True() => {
-        break @groups;
-      }
-      False() => {
-      }
+    let rem = n -wrap i;
+    if ilt(rem, 3_u64) {
+      break @groups;
     }
-    let o1: own u64 = iadd.wrap<u64>(o, 1_u64);
-    let o2: own u64 = iadd.wrap<u64>(o, 2_u64);
-    let o3: own u64 = iadd.wrap<u64>(o, 3_u64);
-    set index<u8>(deref(out), o) = 0_u8;
-    set index<u8>(deref(out), o1) = 1_u8;
-    set index<u8>(deref(out), o2) = 2_u8;
-    set index<u8>(deref(out), o3) = 3_u8;
-    set i = iadd.wrap<u64>(i, 3_u64);
-    set o = iadd.wrap<u64>(o, 4_u64);
+    let o1 = o +wrap 1_u64;
+    let o2 = o +wrap 2_u64;
+    let o3 = o +wrap 3_u64;
+    set deref(out)[o] = 0_u8;
+    set deref(out)[o1] = 1_u8;
+    set deref(out)[o2] = 2_u8;
+    set deref(out)[o3] = 3_u8;
+    set i = i +wrap 3_u64;
+    set o = o +wrap 4_u64;
   }
-  let tail: own u64 = isub.wrap<u64>(n, i);
-  match ieq<u64>(tail, 1_u64) {
-    True() => {
-      let a1: own u64 = iadd.wrap<u64>(o, 1_u64);
-      let a2: own u64 = iadd.wrap<u64>(o, 2_u64);
-      let a3: own u64 = iadd.wrap<u64>(o, 3_u64);
-      set index<u8>(deref(out), o) = 4_u8;
-      set index<u8>(deref(out), a1) = 5_u8;
-      set index<u8>(deref(out), a2) = 6_u8;
-      set index<u8>(deref(out), a3) = 7_u8;
-      set o = iadd.wrap<u64>(o, 4_u64);
-    }
-    False() => {
-    }
+  let tail = n -wrap i;
+  if ieq(tail, 1_u64) {
+    let a1 = o +wrap 1_u64;
+    let a2 = o +wrap 2_u64;
+    let a3 = o +wrap 3_u64;
+    set deref(out)[o] = 4_u8;
+    set deref(out)[a1] = 5_u8;
+    set deref(out)[a2] = 6_u8;
+    set deref(out)[a3] = 7_u8;
+    set o = o +wrap 4_u64;
   }
-  match ieq<u64>(tail, 2_u64) {
-    True() => {
-      let b1: own u64 = iadd.wrap<u64>(o, 1_u64);
-      let b2: own u64 = iadd.wrap<u64>(o, 2_u64);
-      let b3: own u64 = iadd.wrap<u64>(o, 3_u64);
-      set index<u8>(deref(out), o) = 8_u8;
-      set index<u8>(deref(out), b1) = 9_u8;
-      set index<u8>(deref(out), b2) = 10_u8;
-      set index<u8>(deref(out), b3) = 11_u8;
-      set o = iadd.wrap<u64>(o, 4_u64);
-    }
-    False() => {
-    }
+  if ieq(tail, 2_u64) {
+    let b1 = o +wrap 1_u64;
+    let b2 = o +wrap 2_u64;
+    let b3 = o +wrap 3_u64;
+    set deref(out)[o] = 8_u8;
+    set deref(out)[b1] = 9_u8;
+    set deref(out)[b2] = 10_u8;
+    set deref(out)[b3] = 11_u8;
+    set o = o +wrap 4_u64;
   }
   return o;
 }

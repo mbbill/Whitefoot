@@ -23,8 +23,8 @@ const distance_bases: array<u16, 30> =[1_u16, 2_u16, 3_u16, 4_u16, 5_u16, 7_u16,
 
 const distance_extras: array<u8, 30> =[0_u8, 0_u8, 0_u8, 0_u8, 1_u8, 1_u8, 2_u8, 2_u8, 3_u8, 3_u8, 4_u8, 4_u8, 5_u8, 5_u8, 6_u8, 6_u8, 7_u8, 7_u8, 8_u8, 8_u8, 9_u8, 9_u8, 10_u8, 10_u8, 11_u8, 11_u8, 12_u8, 12_u8, 13_u8, 13_u8];
 
-fn read_bits['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, count: own u32, mask: own u64) -> own Result<u64, InflateError> reads('s 'i), writes('s) ensures Ok(value: result) {
-  check ile(result, mask) else trap "read bits result exceeds mask";
+fn read_bits['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, count: own u32, mask: own u64) -> outcome: own Result<u64, InflateError> reads('s 'i), writes('s) contract {
+  ensures when Ok(value: result): ile(result, mask);
 } {
   loop @fill_bits {
     let enough = ige(deref(state).bits, count);
@@ -51,7 +51,7 @@ fn read_bits['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, count:
   return Ok<u64, InflateError>(value: value);
 }
 
-fn decode_fixed_symbol['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>) -> own Result<u64, InflateError> reads('s 'i), writes('s) {
+fn decode_fixed_symbol['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>) -> result: own Result<u64, InflateError> reads('s 'i), writes('s) {
   let code = 0_u64;
   let first = 0_u64;
   let symbol_index = 0_u64;
@@ -113,7 +113,7 @@ fn decode_fixed_symbol['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u
   return Ok<u64, InflateError>(value: decoded);
 }
 
-fn emit_byte['s, 'o](state: &uniq 's InflateState, out: &uniq 'o buffer<u8>, value: own u8) -> own Result<unit, InflateError> reads('s 'o), writes('s 'o) {
+fn emit_byte['s, 'o](state: &uniq 's InflateState, out: &uniq 'o buffer<u8>, value: own u8) -> result: own Result<unit, InflateError> reads('s 'o), writes('s 'o) {
   let output_length = len(deref(out));
   let output_full = ige(deref(state).output_offset, output_length);
   if output_full {
@@ -125,7 +125,7 @@ fn emit_byte['s, 'o](state: &uniq 's InflateState, out: &uniq 'o buffer<u8>, val
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn decode_fixed['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o) {
+fn decode_fixed['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> result: own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o) {
   loop @fixed_codes {
     let symbol = 0_u64;
     region 'symbol_call {
@@ -199,7 +199,7 @@ fn decode_fixed['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>,
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u64, InflateError> reads('r), writes('r), allocates(heap), traps {
+fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> result: own Result<u64, InflateError> reads('r), writes('r), allocates(heap), traps {
   let input_length = len(input);
   let output_length = len(deref(out));
   let state = InflateState(input_offset: 0_u64, output_offset: 0_u64, hold: 0_u64, bits: 0_u32);

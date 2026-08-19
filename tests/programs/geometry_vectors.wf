@@ -4,7 +4,7 @@ struct Vector3<T: Float> {
   z: T;
 }
 
-fn dot3<T: Float>(left: own Vector3<T>, right: own Vector3<T>) -> own T pure {
+fn dot3<T: Float>(left: own Vector3<T>, right: own Vector3<T>) -> result: own T pure {
   let total = 0_T;
   let x_product = fmul.strict(left.x, right.x);
   let after_x = fadd.strict(total, x_product);
@@ -14,7 +14,7 @@ fn dot3<T: Float>(left: own Vector3<T>, right: own Vector3<T>) -> own T pure {
   return fadd.strict(after_y, z_product);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let left32 = Vector3<f32>(x: 1.0_f32, y: 2.0_f32, z: 3.0_f32);
   let right32 = Vector3<f32>(x: 4.0_f32, y: 5.0_f32, z: 6.0_f32);
   let product32 = dot3<f32>(left: move left32, right: move right32);
@@ -23,5 +23,5 @@ fn main() -> own unit traps {
   let right64 = Vector3<f64>(x: 7.0_f64, y: 11.0_f64, z: 13.0_f64);
   let product64 = dot3<f64>(left: move left64, right: move right64);
   claim f64_vector_dot_product: feq(product64, 84.0_f64) because "f64 vector dot product";
-  return unit;
+  return exit_status(code: 0_u8);
 }

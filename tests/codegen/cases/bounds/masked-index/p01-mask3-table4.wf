@@ -1,12 +1,12 @@
-const table: array<u8, 4> = [10_u8, 20_u8, 30_u8, 40_u8];
+const table: array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 
-fn lookup (x: own u64) -> own u8 traps {
-  let slot: own u64 = iand<u64>(x, 3_u64);
-  return index<u8>(table, slot);
+fn lookup(x: own u64) -> result: own u8 pure {
+  let slot = iand(x, 3_u64);
+  return table[slot];
 }
 
-fn main () -> own unit traps {
-  let value: own u8 = lookup(x: 7_u64);
-  claim masked_lookup_drift: ieq<u8>(value, 40_u8) because "masked lookup drift";
-  return unit;
+command fn main() -> status: own ExitStatus traps {
+  let value = lookup(x: 7_u64);
+  claim masked_lookup_drift: ieq(value, 40_u8) because "masked lookup drift";
+  return exit_status(code: 0_u8);
 }

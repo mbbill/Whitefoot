@@ -3,17 +3,17 @@ enum Tree {
   Branch(left: box<Tree>, right: box<Tree>);
 }
 
-fn boxed_leaf() -> own box<Tree> allocates(heap) {
+fn boxed_leaf() -> result: own box<Tree> allocates(heap) {
   let leaf = Leaf();
   return box_new(move leaf);
 }
 
-fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> own box<Tree> allocates(heap) {
+fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tree> allocates(heap) {
   let branch = Branch(left: move left, right: move right);
   return box_new(move branch);
 }
 
-fn count['r](tree: &'r box<Tree>) -> own u64 reads('r), traps {
+fn count['r](tree: &'r box<Tree>) -> result: own u64 reads('r), traps {
   match deref(deref(tree)) {
     Leaf() => {
       return 1_u64;
@@ -21,15 +21,17 @@ fn count['r](tree: &'r box<Tree>) -> own u64 reads('r), traps {
     Branch(left: l, right: r) => {
       let left_count = count<'r>(tree: l);
       let right_count = count<'r>(tree: r);
+      let children_defined = left_count +defined right_count;
+      claim subtree_count_sum_fits: children_defined because "a tree that exists in memory has a representable node count";
       let children = left_count + right_count;
-      let children_bounded = ilt(children, 18446744073709551615_u64);
-      claim node_count_fits: children_bounded because "a reachable node count cannot reach the u64 maximum";
+      let branch_defined = children +defined 1_u64;
+      claim branch_count_fits: branch_defined because "adding the current branch keeps the in-memory tree count representable";
       return children + 1_u64;
     }
   }
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let leaf0 = boxed_leaf();
   let leaf1 = boxed_leaf();
   let leaf2 = boxed_leaf();
@@ -41,5 +43,5 @@ fn main() -> own unit allocates(heap), traps {
     let nodes = count<'tree>(tree: &'tree root);
     claim recursive_tree_count: ieq(nodes, 7_u64) because "recursive tree count";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

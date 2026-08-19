@@ -1,34 +1,22 @@
-fn probe ['r] (out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 writes('r), traps {
-  let n: own u64 = len<u8>(src);
-  let i: own u64 = 0_u64;
-  let o: own u64 = 0_u64;
+fn probe['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 writes('r) {
+  let n = len(src);
+  let i = 0_u64;
+  let o = 0_u64;
   loop @groups {
-    let rem: own u64 = isub.wrap<u64>(n, i);
-    match ilt<u64>(rem, 3_u64) {
-      True() => {
-        break @groups;
-      }
-      False() => {
-      }
+    let rem = n -wrap i;
+    if ilt(rem, 3_u64) {
+      break @groups;
     }
-    set index<u8>(deref(out), o) = 0_u8;
-    set i = iadd.wrap<u64>(i, 3_u64);
-    set o = iadd.wrap<u64>(o, 4_u64);
+    set deref(out)[o] = 0_u8;
+    set i = i +wrap 3_u64;
+    set o = o +wrap 4_u64;
   }
-  let tail: own u64 = isub.wrap<u64>(n, i);
-  match ieq<u64>(tail, 1_u64) {
-    True() => {
-      set o = iadd.wrap<u64>(o, 4_u64);
-    }
-    False() => {
-    }
+  let tail = n -wrap i;
+  if ieq(tail, 1_u64) {
+    set o = o +wrap 4_u64;
   }
-  match ieq<u64>(tail, 2_u64) {
-    True() => {
-      set o = iadd.wrap<u64>(o, 4_u64);
-    }
-    False() => {
-    }
+  if ieq(tail, 2_u64) {
+    set o = o +wrap 4_u64;
   }
   return o;
 }

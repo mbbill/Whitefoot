@@ -1,12 +1,12 @@
-const table: array<u8, 8> = [0_u8, 1_u8, 2_u8, 3_u8, 4_u8, 5_u8, 6_u8, 7_u8];
+const table: array<u8, 8> =[0_u8, 1_u8, 2_u8, 3_u8, 4_u8, 5_u8, 6_u8, 7_u8];
 
-fn probe (x: own u32) -> own u64 traps {
-  let masked: own u32 = iand<u32>(x, 7_u32);
-  let slot: own u64 = cvt<u32, u64>(masked);
-  let good: own u8 = index<u8>(table, slot);
-  let next: own u64 = iadd.wrap<u64>(slot, 1_u64);
-  let guarded: own u8 = index<u8>(table, next);
-  let good64: own u64 = cvt<u8, u64>(good);
-  let guarded64: own u64 = cvt<u8, u64>(guarded);
-  return iadd.wrap<u64>(good64, guarded64);
+fn probe(x: own u32) -> result: own u64 pure {
+  let masked = iand(x, 7_u32);
+  let slot = cvt<u32, u64>(masked);
+  let good = table[slot];
+  let next = slot +wrap 1_u64;
+  let guarded = table[next];
+  let good64 = cvt<u8, u64>(good);
+  let guarded64 = cvt<u8, u64>(guarded);
+  return good64 +wrap guarded64;
 }

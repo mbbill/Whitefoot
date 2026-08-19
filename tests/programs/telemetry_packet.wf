@@ -1,4 +1,4 @@
-fn store_u32_be['o](out: &uniq 'o buffer<u8>, offset: own u64, value: own u32) -> own Result<unit, NarrowError> reads('o), writes('o), traps {
+fn store_u32_be['o](out: &uniq 'o buffer<u8>, offset: own u64, value: own u32) -> result: own Result<unit, NarrowError> reads('o), writes('o), traps {
   let first_word = ishr.wrap(value, 24_u32);
   let second_shifted = ishr.wrap(value, 16_u32);
   let second_word = iand(second_shifted, 255_u32);
@@ -28,7 +28,7 @@ fn store_u32_be['o](out: &uniq 'o buffer<u8>, offset: own u64, value: own u32) -
   return Ok<unit, NarrowError>(value: unit);
 }
 
-fn load_u32_be['i](input: &'i buffer<u8>, offset: own u64) -> own u32 reads('i), traps {
+fn load_u32_be['i](input: &'i buffer<u8>, offset: own u64) -> result: own u32 reads('i), traps {
   let second_offset = offset +wrap 1_u64;
   let third_offset = offset +wrap 2_u64;
   let fourth_offset = offset +wrap 3_u64;
@@ -57,7 +57,7 @@ fn load_u32_be['i](input: &'i buffer<u8>, offset: own u64) -> own u32 reads('i),
   return ior(first_third, fourth);
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let packet = buffer_new(12_u64, 0_u8);
   let temperature = 36.5_f32;
   let temperature_bits = reinterpret<f32, u32>(temperature);
@@ -113,5 +113,5 @@ fn main() -> own unit allocates(heap), traps {
     let decoded = reinterpret<u32, f32>(bits);
     claim nan_round_trip: fne(decoded, decoded) because "NaN round trip";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

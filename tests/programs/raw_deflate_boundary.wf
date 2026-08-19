@@ -14,13 +14,11 @@ const reason_output_full: array<u8, 63> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 
 
 const reason_write_failed: array<u8, 56> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 112_u8, 117_u8, 98_u8, 108_u8, 105_u8, 115_u8, 104_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 100_u8, 101_u8, 99_u8, 111_u8, 100_u8, 101_u8, 100_u8, 32_u8, 111_u8, 117_u8, 116_u8, 112_u8, 117_u8, 116_u8, 10_u8];
 
-fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> own u64 reads('d 'm), writes('d) requires {
-  let capacity = len(deref(destination));
-  let admitted = ile(filled, capacity);
-  check admitted else trap "append filled exceeds destination";
-} ensures result {
-  let capacity = len(deref(destination));
-  check ile(result, capacity) else trap "append result exceeds destination";
+fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> result: own u64 reads('d 'm), writes('d) contract {
+  define capacity = len(deref(destination));
+  define admitted = ile(filled, capacity);
+  requires admitted;
+  ensures ile(result, capacity);
 } {
   doc "Appends as much of one static message as the destination still holds.";
   let capacity = len(deref(destination));
@@ -42,7 +40,7 @@ fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text:
   }
 }
 
-fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> own u64 reads('d 's), writes('d), traps {
+fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads('d 's), writes('d), traps {
   doc "Copies one half-open source range into the destination at one offset.";
   let source_room = len(deref(source));
   let destination_room = len(deref(destination));
@@ -65,7 +63,7 @@ fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s
   return target;
 }
 
-fn inflate_status(error: own InflateError) -> own u8 pure {
+fn inflate_status(error: own InflateError) -> result: own u8 pure {
   doc "Reduces one decode failure to the status the driver reports for it: 5 an early end of stream, 6 a malformed stream, 7 an output buffer too small.";
   match error {
     Truncated() => {
@@ -92,7 +90,10 @@ fn inflate_status(error: own InflateError) -> own u8 pure {
   }
 }
 
-fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
+fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes('o), external, blocks contract {
+  define source_length = len(deref(source));
+  requires ile(length, source_length);
+} {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @publish {
@@ -101,11 +102,10 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
     } else {
       break @publish;
     }
-    let remaining = length -wrap sent;
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: sent, count: remaining) {
-        Ok(value: written) => {
-          set sent = sent +wrap written;
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+        Ok(value: next) => {
+          set sent = next;
         }
         Err(error: problem) => {
           return Err<unit, IoError>(error: move problem);
@@ -116,7 +116,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
   return Ok<unit, IoError>(value: unit);
 }
 
-fn publish_reason['e, 'r](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, reason: own u8) -> own unit reads('e 'r), writes('e 'r), external, blocks, traps {
+fn publish_reason['e, 'r](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, reason: own u8) -> result: own unit reads('e 'r), writes('e 'r), external, blocks {
   doc "Publishes the static diagnostic that names one boundary outcome, selected by the status the outcome carries.";
   let length = 0_u64;
   if ieq(reason, 1_u8) {
@@ -194,7 +194,7 @@ fn publish_reason['e, 'r](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, rea
   return unit;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
   doc "Reads one raw DEFLATE file named on the command line through the system read path; every boundary outcome reaches its own status.";
   let scratch = buffer_new(4097_u64, 0_u8);
   let report = buffer_new(128_u64, 0_u8);
@@ -222,15 +222,21 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                 Ok(value: file) => {
                   let ended = 0_u8;
                   loop @chunks {
+                    let within_scratch = ile(filled, 4097_u64);
+                    if within_scratch {
+                    } else {
+                      set ended = 2_u8;
+                      break @chunks;
+                    }
                     let room = 4097_u64 -wrap filled;
                     let full = ieq(room, 0_u64);
                     if full {
                       break @chunks;
                     }
                     region 'read_call {
-                      match read_once<'read_call, 'read_call>(file: &uniq 'read_call file, destination: &uniq 'read_call scratch, offset: filled, capacity: room) {
-                        ReadBytes(count: taken) => {
-                          set filled = filled +wrap taken;
+                      match read_once<'read_call, 'read_call>(file: &uniq 'read_call file, destination: &uniq 'read_call scratch, start: filled, end: 4097_u64) {
+                        ReadBytes(next: endpoint) => {
+                          set filled = endpoint;
                         }
                         ReadEnd() => {
                           set ended = 1_u8;
@@ -305,6 +311,15 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       publish_reason<'decode_report, 'decode_report>(err: &uniq 'decode_report err, report: &uniq 'decode_report report, reason: status);
     }
     return exit_status(code: status);
+  }
+  let decoded_room = len(decoded);
+  let decoded_fits = ile(decoded_length, decoded_room);
+  if decoded_fits {
+  } else {
+    region 'decoded_length_report {
+      publish_reason<'decoded_length_report, 'decoded_length_report>(err: &uniq 'decoded_length_report err, report: &uniq 'decoded_length_report report, reason: 7_u8);
+    }
+    return exit_status(code: 7_u8);
   }
   region 'decoded_write {
     match publish_all<'decoded_write, 'decoded_write>(output: &uniq 'decoded_write out, source: &'decoded_write decoded, length: decoded_length) {

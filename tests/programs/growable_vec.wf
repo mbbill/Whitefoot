@@ -3,12 +3,12 @@ struct ByteVec {
   fill: u64;
 }
 
-fn vec_new() -> own ByteVec allocates(heap), traps {
+fn vec_new() -> result: own ByteVec allocates(heap) {
   let empty = buffer_new(0_u64, 0_u8);
   return ByteVec(buf: move empty, fill: 0_u64);
 }
 
-fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> own unit reads('a), writes('a), allocates(heap), traps {
+fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> result: own unit reads('a), writes('a), allocates(heap), traps {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
   let cap_headroom = ilt(cap, 18446744073709551608_u64);
@@ -32,7 +32,7 @@ fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> own unit reads('a), writes('a
   return unit;
 }
 
-fn bytes_append['d, 's](dst: &uniq 'd ByteVec, src: &'s buffer<u8>) -> own unit reads('d 's), writes('d), allocates(heap), traps {
+fn bytes_append['d, 's](dst: &uniq 'd ByteVec, src: &'s buffer<u8>) -> result: own unit reads('d 's), writes('d), allocates(heap), traps {
   let count = len(deref(src));
   for @append i in 0_u64..count {
     let byte = deref(src)[i];
@@ -43,7 +43,7 @@ fn bytes_append['d, 's](dst: &uniq 'd ByteVec, src: &'s buffer<u8>) -> own unit 
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let v = vec_new();
   let b = 7_u8;
   for @seed i in 0_u64..20_u64 {
@@ -81,5 +81,5 @@ fn main() -> own unit allocates(heap), traps {
   } else {
     claim byte_string_capacity_too_small: False() because "byte string capacity too small";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

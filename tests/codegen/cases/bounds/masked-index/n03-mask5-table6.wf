@@ -1,12 +1,12 @@
-const table: array<u8, 6> = [0_u8, 1_u8, 2_u8, 3_u8, 4_u8, 5_u8];
+const table: array<u8, 6> =[0_u8, 1_u8, 2_u8, 3_u8, 4_u8, 5_u8];
 
-fn lookup (x: own u64) -> own u8 traps {
-  let slot: own u64 = iand<u64>(x, 5_u64);
-  return index<u8>(table, slot);
+fn lookup(x: own u64) -> result: own u8 pure {
+  let slot = iand(x, 5_u64);
+  return table[slot];
 }
 
-fn main () -> own unit traps {
-  let value: own u8 = lookup(x: 7_u64);
-  claim non_power_of_two_drift: ieq<u8>(value, 5_u8) because "non-power-of-two drift";
-  return unit;
+command fn main() -> status: own ExitStatus traps {
+  let value = lookup(x: 7_u64);
+  claim non_power_of_two_drift: ieq(value, 5_u8) because "non-power-of-two drift";
+  return exit_status(code: 0_u8);
 }
