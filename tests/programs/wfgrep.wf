@@ -280,7 +280,7 @@ fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64
 }
 
 fn report_failure['e, 'r, 'n](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, path: &'n buffer<u8>, path_length: own u64, status: own u8) -> own unit reads('e 'r 'n), writes('e 'r), external, blocks, traps {
-  doc "Publishes one `wfgrep: PATH: reason` diagnostic to standard error as three writes, so the caller's path bytes travel from their own buffer and are never copied or clamped.";
+  doc "Assembles one `wfgrep: PATH: reason` diagnostic in the report buffer and publishes it with a single write, copying the caller's path bytes and clamping the assembled length against the report's capacity.";
   let length = 0_u64;
   region 'report_prefix {
     let view = slice_of(&'report_prefix error_prefix);
