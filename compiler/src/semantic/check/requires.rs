@@ -240,7 +240,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(
                     SemanticRule::Op5,
                     expression,
-                    SemanticIssueKind::InvalidCheckCondition,
+                    SemanticIssueKind::InvalidPredicateCondition,
                 );
             }
             let root = self

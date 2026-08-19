@@ -756,8 +756,8 @@ pub enum SemanticIssueKind {
     },
     /// The selected operation family has no row for the written arguments.
     InvalidOperation,
-    /// An explicit check condition is not exactly `own Bool`.
-    InvalidCheckCondition,
+    /// A contract or claim predicate is not exactly `own Bool`.
+    InvalidPredicateCondition,
     /// A conditional was written in a form GRAM-6 does not admit for its
     /// class: a Bool-scrutinee `match`, an empty `else`, or an `else` block
     /// holding exactly one `if`.

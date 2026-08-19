@@ -427,7 +427,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             self.tree.path(node)?.clone(),
                             self.tree.coordinate(expression_node)?,
                         ),
-                        kind: SemanticIssueKind::InvalidCheckCondition,
+                        kind: SemanticIssueKind::InvalidPredicateCondition,
                     }));
                 }
                 let justification = self.check_message(node)?;
