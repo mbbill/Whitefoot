@@ -212,6 +212,13 @@ pub(crate) enum GoalOperation {
     BufferLength {
         element: CheckedFlatElement,
     },
+    /// Canonical total allocation-domain predicate [OP-9]. The ceiling is
+    /// part of the row identity so a proof cannot be reused across a layout
+    /// rule change or across distinct element representations.
+    BufferFits {
+        element: CheckedFlatElement,
+        maximum_length: u64,
+    },
     SliceLength {
         region: DeclarationId,
         element: CheckedFlatElement,

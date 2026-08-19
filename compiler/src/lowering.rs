@@ -7,8 +7,9 @@
 
 use crate::semantic::{
     CheckedBooleanOperation, CheckedEnumType, CheckedFlatElement, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedNumericType, CheckedProgram, CheckedRuntimeTargetObligations,
-    CheckedTargetDomainObligation, CheckedType, TrapSite,
+    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedNumericType,
+    CheckedProgram, CheckedRuntimeTargetObligations, CheckedTargetDomainObligation, CheckedType,
+    TrapSite,
 };
 use crate::{SystemRelease, SystemResourceContract};
 
@@ -593,6 +594,47 @@ pub struct IrRuntimeTargetObligations {
     element_address: IrTargetDomainObligation,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrLayoutMagnitude {
+    Finite(u64),
+    AboveU64,
+}
+
+impl IrLayoutMagnitude {
+    pub(crate) const fn permits(self, actual: u64) -> bool {
+        match self {
+            Self::Finite(ceiling) => actual <= ceiling,
+            Self::AboveU64 => true,
+        }
+    }
+}
+
+impl From<CheckedLayoutMagnitude> for IrLayoutMagnitude {
+    fn from(value: CheckedLayoutMagnitude) -> Self {
+        match value {
+            CheckedLayoutMagnitude::Finite(value) => Self::Finite(value),
+            CheckedLayoutMagnitude::AboveU64 => Self::AboveU64,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrLayoutCeiling {
+    pub size: IrLayoutMagnitude,
+    pub align: u64,
+    pub stride: IrLayoutMagnitude,
+}
+
+impl From<CheckedLayoutCeiling> for IrLayoutCeiling {
+    fn from(value: CheckedLayoutCeiling) -> Self {
+        Self {
+            size: value.size.into(),
+            align: value.align,
+            stride: value.stride.into(),
+        }
+    }
+}
+
 impl From<CheckedRuntimeTargetObligations> for IrRuntimeTargetObligations {
     fn from(value: CheckedRuntimeTargetObligations) -> Self {
         Self {
@@ -653,14 +695,9 @@ pub enum IrOperation {
     },
     /// One call to a [SYS-2] system operation, by semantic identity, with its
     /// value arguments in declared parameter order.
-    ///
-    /// `trap` is present exactly when the [SYS-2] row classifies the operation
-    /// `traps`; it is the [DIAG-3] record for the [SYS-8] range validation the
-    /// approved implementation performs before any transfer, read, or write.
     SystemCall {
         operation: IrSystemOperation,
         arguments: Vec<IrValueId>,
-        trap: Option<IrTrapSite>,
     },
     Integer {
         operation: IrIntegerOperation,
@@ -711,7 +748,7 @@ pub enum IrOperation {
     BufferFill {
         length: IrValueId,
         value: IrValueId,
-        trap: IrTrapSite,
+        layout_ceiling: IrLayoutCeiling,
         target_domains: IrRuntimeTargetObligations,
     },
     /// One `buffer_vacant<T>(n)` allocation [OP-1, OP-9]: the defined value's
@@ -719,8 +756,12 @@ pub enum IrOperation {
     /// is initialized to the compiler-minted `None()` of that instance.
     BufferVacant {
         length: IrValueId,
-        trap: IrTrapSite,
+        layout_ceiling: IrLayoutCeiling,
         target_domains: IrRuntimeTargetObligations,
+    },
+    BufferFits {
+        length: IrValueId,
+        maximum_length: u64,
     },
     BufferLength {
         buffer: IrValueId,

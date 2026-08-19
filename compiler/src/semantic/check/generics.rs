@@ -1341,6 +1341,7 @@ fn goal_operation_uses_nominal_prefix(row: GoalOperation, checkpoint: usize) -> 
         GoalOperation::ArrayFill { element, .. }
         | GoalOperation::ArrayLength { element, .. }
         | GoalOperation::BufferLength { element }
+        | GoalOperation::BufferFits { element, .. }
         | GoalOperation::SliceLength { element, .. } => {
             flat_element_uses_nominal_prefix(element, checkpoint)
         }

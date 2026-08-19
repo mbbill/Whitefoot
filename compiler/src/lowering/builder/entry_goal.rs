@@ -324,6 +324,31 @@ impl<'program> EntryGoalBuilder<'program> {
                 let buffer = self.expression(argument)?;
                 self.define(lower_type(result)?, IrOperation::BufferLength { buffer })
             }
+            GoalOperation::BufferFits {
+                element,
+                maximum_length,
+            } => {
+                if type_arguments != [element.ty()]
+                    || !const_arguments.is_empty()
+                    || result != CheckedType::Bool
+                {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                let [argument] = arguments else {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                };
+                if argument.ty() != CheckedType::Integer(IntegerType::U64) {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                let length = self.expression(argument)?;
+                self.define(
+                    IrType::Bool,
+                    IrOperation::BufferFits {
+                        length,
+                        maximum_length,
+                    },
+                )
+            }
             GoalOperation::SliceLength { region, element } => {
                 if !type_arguments.is_empty()
                     || !const_arguments.is_empty()

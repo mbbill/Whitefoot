@@ -1,14 +1,109 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
+use super::super::entailment::ObligationFamily;
 use super::super::model::{
-    CheckedExpression, CheckedFlatElement, CheckedSetTarget, CheckedStatement,
-    CheckedTargetDomainObligation, CheckedType, IntegerType, NominalId,
+    CheckedExpression, CheckedFlatElement, CheckedLayoutMagnitude, CheckedSetTarget,
+    CheckedStatement, CheckedTargetDomainObligation, CheckedType, IntegerType, NominalId,
 };
-use super::{assert_rule, assert_unsupported, with_semantics};
+use super::{assert_rule, assert_unsupported, with_semantics, with_semantics_dark};
+
+#[test]
+fn allocation_fit_is_static_exact_componentized_and_refutation_preserving() {
+    let unproved = br#"fn allocate(n: own u64) -> own unit allocates(heap) {
+  let values = buffer_new(n, 0_u16);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(unproved, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("an unproved allocation fit must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op9);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedAllocationFitObligation { .. }
+        ));
+    });
+    with_semantics_dark(unproved, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the dark hook must retain the OP-9 obligation: {outcome:?}");
+        };
+        let allocation = &checked.data.functions[0].entailment.obligations;
+        assert_eq!(allocation.len(), 1);
+        assert_eq!(allocation[0].family, ObligationFamily::AllocationFit);
+        assert!(!allocation[0].discharged);
+    });
+
+    let exact = br#"fn allocate(n: own u64) -> own unit allocates(heap), traps {
+  let fits = buffer_fits<u16>(n);
+  claim reviewed_fit: fits because "the caller's size was reviewed";
+  let values = buffer_new(n, 0_u16);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(exact, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the exact predicate must discharge OP-9: {outcome:?}"
+        );
+    });
+
+    let component = br#"fn allocate(n: own u64) -> own unit allocates(heap) {
+  let within = ile(n, 9223372036854775807_u64);
+  if within {
+    let values = buffer_new(n, 0_u16);
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(component, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the canonical L0 component must discharge OP-9: {outcome:?}"
+        );
+    });
+
+    let refuted = br#"fn allocate(n: own u64) -> own unit allocates(heap) {
+  let fits = buffer_fits<u8>(n);
+  let does_not_fit = bnot(fits);
+  if does_not_fit {
+    let within = ile(n, 18446744073709551615_u64);
+    if within {
+      let values = buffer_new(n, 0_u8);
+    }
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(refuted, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("an exact negative predicate must outrank its component: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op9);
+    });
+}
 
 #[test]
 fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
     let source = br#"fn make(n: own u64) -> own buffer<u16> allocates(heap), traps {
+  let fits = buffer_fits<u16>(n);
+  claim allocation_fits: fits because "caller-selected length must fit";
   return buffer_new(n, 3_u16);
 }
 
@@ -32,16 +127,16 @@ fn main() -> own unit allocates(heap), traps {
         assert!(make.declared_allocates_heap);
         assert!(make.declared_traps);
         assert!(matches!(
-            &make.body[0],
+            &make.body[2],
             CheckedStatement::Return {
                 value: CheckedExpression::BufferFill {
                     element: CheckedFlatElement::Integer(IntegerType::U16),
-                    trap,
                     target_domains,
+                    layout_ceiling,
                     ..
                 },
                 ..
-            } if trap.rule_id == "OP-9"
+            } if layout_ceiling.stride == CheckedLayoutMagnitude::Finite(2)
                 && target_domains.allocation()
                     == CheckedTargetDomainObligation::RuntimeSizedAllocation
                 && target_domains.element_address()
@@ -102,10 +197,9 @@ fn buffer_effect_rows_are_checked_both_ways() {
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
-    assert_rule(
+    with_semantics(
         b"fn main() -> own unit allocates(heap) {\n  let values = buffer_new(2_u64, 0_u8);\n  return unit;\n}\n",
-        SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_rule(
         b"fn main() -> own unit allocates(heap), traps {\n  return unit;\n}\n",
@@ -133,7 +227,7 @@ fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
         };
         let CheckedExpression::BufferVacant {
             element,
-            trap,
+            layout_ceiling,
             target_domains,
             ..
         } = value
@@ -144,7 +238,7 @@ fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
             checked.data.nominals[element.0 as usize].name,
             "Option<box<u64>>"
         );
-        assert_eq!(trap.rule_id, "OP-9");
+        assert!(layout_ceiling.stride.allocation_limit() >= 1);
         assert_eq!(
             target_domains.allocation(),
             CheckedTargetDomainObligation::RuntimeSizedAllocation
@@ -179,16 +273,15 @@ fn buffer_vacant_requires_its_written_payload_and_effect_row() {
         SemanticRule::Type5,
         SemanticIssueKind::InvalidOperation,
     );
-    // [EFF-2]: the row is allocates(heap), traps, both directions.
+    // [EFF-2]: allocation is the only effect; OP-9 is statically discharged.
     assert_rule(
         b"fn main() -> own unit traps {\n  let slots = buffer_vacant<u32>(3_u64);\n  return unit;\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
-    assert_rule(
+    with_semantics(
         b"fn main() -> own unit allocates(heap) {\n  let slots = buffer_vacant<u32>(3_u64);\n  return unit;\n}\n",
-        SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     // [TYPE-5]: the one operand is the own u64 length.
     assert_rule(

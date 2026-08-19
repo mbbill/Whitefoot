@@ -736,6 +736,37 @@ pub(crate) struct CheckedRuntimeTargetObligations {
     element_address: CheckedTargetDomainObligation,
 }
 
+/// Target-independent upper bounds for one stored value's representation.
+/// The backend must qualify its concrete layout against all three cells
+/// before it may use the source-level `buffer_fits<T>` proof.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedLayoutMagnitude {
+    Finite(u64),
+    AboveU64,
+}
+
+impl CheckedLayoutMagnitude {
+    /// The exact largest element count admitted by OP-9 for this stride.
+    /// Every stride represented by `AboveU64` is greater than U64_MAX, so
+    /// only the zero-length allocation can fit its u64 byte-count domain.
+    pub(crate) const fn allocation_limit(self) -> u64 {
+        match self {
+            Self::Finite(stride) => {
+                assert!(stride >= 1, "a layout stride ceiling is always positive");
+                u64::MAX / stride
+            }
+            Self::AboveU64 => 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedLayoutCeiling {
+    pub(crate) size: CheckedLayoutMagnitude,
+    pub(crate) align: u64,
+    pub(crate) stride: CheckedLayoutMagnitude,
+}
+
 impl CheckedRuntimeTargetObligations {
     pub(crate) const fn new() -> Self {
         Self {
@@ -892,14 +923,6 @@ pub(crate) enum CheckedExpression {
         argument_nodes: Vec<NodePath>,
         arguments: Vec<CheckedExpression>,
         result: CheckedType,
-        /// The [DIAG-3] record for the operation's own runtime condition,
-        /// present exactly when the [SYS-2] row classifies it `traps`.
-        ///
-        /// [SYS-8] validates the caller-written range before any host
-        /// transfer, any read of the source, and any write of the
-        /// destination; the failing site is this operation `call`, and only
-        /// the checked program knows its source coordinate.
-        trap: Option<TrapSite>,
     },
     IntegerOperation {
         carrier: NodePath,
@@ -963,7 +986,7 @@ pub(crate) enum CheckedExpression {
         element: CheckedFlatElement,
         length: Box<CheckedExpression>,
         value: Box<CheckedExpression>,
-        trap: TrapSite,
+        layout_ceiling: CheckedLayoutCeiling,
         target_domains: CheckedRuntimeTargetObligations,
     },
     /// One `buffer_vacant<T>(n)` allocation [OP-1, OP-9]: a flat buffer of
@@ -974,8 +997,17 @@ pub(crate) enum CheckedExpression {
         /// The interned `Option<T>` element instance.
         element: NominalId,
         length: Box<CheckedExpression>,
-        trap: TrapSite,
+        layout_ceiling: CheckedLayoutCeiling,
         target_domains: CheckedRuntimeTargetObligations,
+    },
+    /// The canonical total OP-9 allocation-domain predicate. Its Boolean
+    /// value is `n <= floor(u64::MAX / stride_ceiling(T))`; it never
+    /// allocates and never traps.
+    BufferFits {
+        carrier: NodePath,
+        element: CheckedFlatElement,
+        layout_ceiling: CheckedLayoutCeiling,
+        length: Box<CheckedExpression>,
     },
     BufferLength {
         root: CheckedBufferRoot,
@@ -1117,6 +1149,7 @@ impl CheckedExpression {
             | Self::ArrayIndex { carrier, .. }
             | Self::BufferFill { carrier, .. }
             | Self::BufferVacant { carrier, .. }
+            | Self::BufferFits { carrier, .. }
             | Self::BufferIndex { carrier, .. }
             | Self::SliceOf { carrier, .. }
             | Self::SliceIndex { carrier, .. }
@@ -1161,6 +1194,7 @@ impl CheckedExpression {
             Self::BufferVacant { element, .. } => CheckedType::Buffer {
                 element: CheckedFlatElement::Nominal(*element),
             },
+            Self::BufferFits { .. } => CheckedType::Bool,
             Self::BufferLength { .. } => CheckedType::Integer(IntegerType::U64),
             Self::BufferIndex { root, .. } => root.element.ty(),
             Self::SliceOf {

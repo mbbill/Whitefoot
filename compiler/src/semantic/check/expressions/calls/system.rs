@@ -19,7 +19,7 @@ use crate::{
     operation_region_effects,
 };
 
-use super::super::super::super::model::{CheckedExpression, CheckedMode, TrapSite};
+use super::super::super::super::model::{CheckedExpression, CheckedMode};
 use super::super::super::borrows::{AccessKind, BorrowInfo, BorrowKind, places_overlap};
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
@@ -149,20 +149,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &mut effects,
         )?;
         let result = self.system_type(operation.result)?;
-        // [SYS-8]'s range validation is the operation's own runtime condition,
-        // so its [DIAG-3] record names this `call` node — the same convention
-        // a table-operation contract check uses — and carries no
-        // rule-specific message. Only a row classified `traps` has one.
-        let trap = if operation.traps {
-            Some(TrapSite {
-                rule_id: "SYS-8",
-                message: String::new(),
-                function: function.name.clone(),
-                node_path: self.tree.path(node)?.clone(),
-            })
-        } else {
-            None
-        };
         Ok(TypedExpression::owned(
             CheckedExpression::SystemCall {
                 operation: operation_index,
@@ -170,7 +156,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 argument_nodes,
                 arguments,
                 result,
-                trap,
             },
             effects,
         ))

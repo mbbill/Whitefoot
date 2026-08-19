@@ -3444,6 +3444,21 @@ impl Analyzer<'_, '_> {
                     vec![argument],
                 )
             }
+            CheckedExpression::BufferFits {
+                element,
+                layout_ceiling,
+                length,
+                ..
+            } => build_operation(
+                GoalOperation::BufferFits {
+                    element: *element,
+                    maximum_length: layout_ceiling.stride.allocation_limit(),
+                },
+                vec![element.ty()],
+                Vec::new(),
+                CheckedType::Bool,
+                vec![self.direct_goal_expression(length)?],
+            ),
             CheckedExpression::SliceLength { root, .. } => {
                 let ty = self.summary(root.binding)?.ty?;
                 let CheckedType::Slice { region, element } = ty else {
@@ -4309,6 +4324,18 @@ impl Analyzer<'_, '_> {
                     kills: Vec::new(),
                 })
             }
+            CheckedExpression::SystemCall {
+                operation,
+                call,
+                arguments,
+                ..
+            } => {
+                for argument in arguments {
+                    let _ = self.judge_expression(argument, states);
+                }
+                self.judge_system_ranges(*operation, call, arguments, states);
+                None
+            }
             CheckedExpression::ArrayIndex {
                 root,
                 length,
@@ -4346,6 +4373,42 @@ impl Analyzer<'_, '_> {
                 };
                 let node_path = trap.node_path.clone();
                 self.judge_obligation(base, None, offset, node_path, states);
+                None
+            }
+            CheckedExpression::BufferFill {
+                carrier,
+                element,
+                layout_ceiling,
+                length,
+                value,
+                ..
+            } => {
+                let _ = self.judge_expression(length, states);
+                let _ = self.judge_expression(value, states);
+                self.judge_allocation_fit(
+                    *element,
+                    layout_ceiling.stride.allocation_limit(),
+                    length,
+                    carrier.clone(),
+                    states,
+                );
+                None
+            }
+            CheckedExpression::BufferVacant {
+                carrier,
+                element,
+                layout_ceiling,
+                length,
+                ..
+            } => {
+                let _ = self.judge_expression(length, states);
+                self.judge_allocation_fit(
+                    super::super::model::CheckedFlatElement::Nominal(*element),
+                    layout_ceiling.stride.allocation_limit(),
+                    length,
+                    carrier.clone(),
+                    states,
+                );
                 None
             }
             CheckedExpression::IntegerOperation {
@@ -4585,6 +4648,7 @@ impl Analyzer<'_, '_> {
         self.obligations.push(ObligationOutcome {
             node_path: node_path.clone(),
             family: ObligationFamily::Bounds,
+            conjunct: 0,
             canonical_goal: None,
             components: vec![BoundsRequest {
                 left: offset_term,
@@ -4621,6 +4685,7 @@ impl Analyzer<'_, '_> {
         self.unasserted_obligations.push(ViewObligationOutcome {
             node_path: node_path.clone(),
             family: ObligationFamily::Bounds,
+            conjunct: 0,
             discharged: unasserted_discharged,
             refuted: false,
             residual: (!unasserted_discharged).then(|| rendered_residual.clone()),
@@ -4647,10 +4712,418 @@ impl Analyzer<'_, '_> {
         self.s4_blinded_obligations.push(ViewObligationOutcome {
             node_path,
             family: ObligationFamily::Bounds,
+            conjunct: 0,
             discharged: blinded_discharged,
             refuted: false,
             residual: (!blinded_discharged).then_some(rendered_residual),
             derivation: blinded_derivation,
+        });
+    }
+
+    /// Judges OP-9 through either the exact total `buffer_fits<T>(n)` goal
+    /// or its one canonical L0 component. The component is used only in this
+    /// direction: proving the comparison authorizes the allocation, while a
+    /// predicate fact does not publish an ambient comparison fact.
+    fn judge_allocation_fit(
+        &mut self,
+        element: super::super::model::CheckedFlatElement,
+        maximum_length: u64,
+        length: &CheckedExpression,
+        node_path: crate::NodePath,
+        states: &ViewStates,
+    ) {
+        let length_goal = self.direct_goal_expression(length);
+        let canonical_goal = length_goal.map(|argument| GoalExpression::Operation {
+                row: GoalOperation::BufferFits {
+                    element,
+                    maximum_length,
+                },
+                type_arguments: vec![element.ty()],
+                const_arguments: Vec::new(),
+                result: CheckedType::Bool,
+                arguments: vec![argument],
+        });
+        let goal = canonical_goal
+            .as_ref()
+            .cloned()
+            .map(|goal| self.intern_goal_expression(goal));
+        let length_term = self.read_operand(length);
+        let threshold_term = self
+            .terms
+            .intern(TermKind::Constant(i128::from(maximum_length)));
+        let rendered = format!(
+            "buffer_fits<{:?}>({})",
+            element.ty(),
+            self.render_expression(length)
+        );
+
+        let (discharged, refuted, contradictory, derivation) =
+            self.allocation_fit_view(&states.complete, goal, length_term, threshold_term);
+        let ordinal = u32::try_from(self.obligations.len())
+            .expect("ENT obligation-root ordinal exceeds the u32 identity space");
+        if let Some(root) = derivation {
+            self.derivations
+                .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
+        }
+        self.obligations.push(ObligationOutcome {
+            node_path: node_path.clone(),
+            family: ObligationFamily::AllocationFit,
+            conjunct: 0,
+            canonical_goal,
+            components: vec![BoundsRequest {
+                left: length_term,
+                right: threshold_term,
+                bound: 0,
+                distinct: false,
+            }],
+            discharged,
+            refuted,
+            contradictory,
+            residual: (!discharged).then(|| rendered.clone()),
+            derivation,
+        });
+
+        let (discharged, refuted, _, derivation) =
+            self.allocation_fit_view(&states.unasserted, goal, length_term, threshold_term);
+        self.unasserted_obligations.push(ViewObligationOutcome {
+            node_path: node_path.clone(),
+            family: ObligationFamily::AllocationFit,
+            conjunct: 0,
+            discharged,
+            refuted,
+            residual: (!discharged).then(|| rendered.clone()),
+            derivation,
+        });
+        let (discharged, refuted, _, derivation) =
+            self.allocation_fit_view(&states.s4_blinded, goal, length_term, threshold_term);
+        self.s4_blinded_obligations.push(ViewObligationOutcome {
+            node_path,
+            family: ObligationFamily::AllocationFit,
+            conjunct: 0,
+            discharged,
+            refuted,
+            residual: (!discharged).then_some(rendered),
+            derivation,
+        });
+    }
+
+    fn allocation_fit_view(
+        &mut self,
+        state: &FactState,
+        goal: Option<GoalId>,
+        length: Option<TermId>,
+        threshold: TermId,
+    ) -> (bool, bool, bool, Option<DerivationId>) {
+        let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
+        let exact = goal.is_some_and(|goal| closed.holds_opaque(goal, GoalSign::Positive));
+        let refuted = goal.is_some_and(|goal| closed.holds_opaque(goal, GoalSign::Negative));
+        let component = length.is_some_and(|length| closed.derives_bound(length, threshold, 0));
+        let contradictory = closed.contradictory();
+        // An exact negative fact is authoritative over the one-way component:
+        // `buffer_fits<T>(n)` deliberately does not project an ambient L0
+        // relation, so the component cannot silently cancel a known-false
+        // predicate. A contradictory state remains the sole exception.
+        let discharged = exact || (!refuted && component) || contradictory;
+        let proof = if exact {
+            goal.and_then(|goal| closed.opaque_proof(goal, GoalSign::Positive))
+        } else if !refuted && component {
+            length
+                .and_then(|length| closed.bound_proof(length, threshold, 0, &mut self.derivations))
+        } else if contradictory {
+            closed.contradiction_proof()
+        } else {
+            None
+        };
+        (discharged, !discharged && refuted, contradictory, proof)
+    }
+
+    fn judge_system_ranges(
+        &mut self,
+        operation: u8,
+        node_path: &crate::NodePath,
+        arguments: &[CheckedExpression],
+        states: &ViewStates,
+    ) {
+        let Some(row) = SYSTEM_OPERATIONS.get(usize::from(operation)) else {
+            return;
+        };
+        let Some(start_ordinal) = row
+            .parameters
+            .iter()
+            .position(|parameter| parameter.name == "start")
+        else {
+            return;
+        };
+        let Some(end_ordinal) = row
+            .parameters
+            .iter()
+            .position(|parameter| parameter.name == "end")
+        else {
+            return;
+        };
+        let Some(buffer_ordinal) = row
+            .parameters
+            .iter()
+            .position(|parameter| parameter.ty == crate::SystemTypeRef::BufferU8)
+        else {
+            return;
+        };
+        let (Some(start), Some(end), Some(buffer)) = (
+            arguments.get(start_ordinal),
+            arguments.get(end_ordinal),
+            arguments.get(buffer_ordinal),
+        ) else {
+            return;
+        };
+        let start_goal = self.direct_goal_expression(start);
+        let end_goal = self.direct_goal_expression(end);
+        let start_term = self.read_operand(start);
+        let end_term = self.read_operand(end);
+        let comparison = |left, right| GoalExpression::Operation {
+            row: GoalOperation::Integer {
+                operation: super::super::model::CheckedIntegerOperation::LessEqual,
+                operand_type: CheckedType::Integer(IntegerType::U64),
+            },
+            type_arguments: Vec::new(),
+            const_arguments: Vec::new(),
+            result: CheckedType::Bool,
+            arguments: vec![left, right],
+        };
+
+        if let (Some(start_goal), Some(end_goal)) = (start_goal, end_goal.clone()) {
+            self.judge_exact_relation_obligation(
+                ObligationFamily::SystemRange,
+                0,
+                node_path.clone(),
+                comparison(start_goal, end_goal),
+                start_term,
+                end_term.unwrap_or(ZERO),
+                format!(
+                    "{} <= {}",
+                    self.render_expression(start),
+                    self.render_expression(end)
+                ),
+                states,
+            );
+        } else {
+            self.judge_unrepresentable_system_range(
+                node_path,
+                0,
+                format!(
+                    "{} <= {}",
+                    self.render_expression(start),
+                    self.render_expression(end)
+                ),
+                states,
+            );
+        }
+
+        let Some(end_goal) = end_goal else {
+            self.judge_unrepresentable_system_range(
+                node_path,
+                1,
+                format!("{} <= len(buffer)", self.render_expression(end)),
+                states,
+            );
+            return;
+        };
+        let (buffer_binding, buffer_fields, buffer_element) = match buffer {
+            CheckedExpression::BorrowBuffer { root, .. } => {
+                (root.binding, root.fields.clone(), root.element)
+            }
+            CheckedExpression::Binding {
+                binding,
+                ty: CheckedType::Buffer { element },
+                ..
+            } => (*binding, Vec::new(), *element),
+            _ => {
+                self.judge_unrepresentable_system_range(
+                    node_path,
+                    1,
+                    format!("{} <= len(buffer)", self.render_expression(end)),
+                    states,
+                );
+                return;
+            }
+        };
+        let buffer_goal = self.goal_binding_place(
+            buffer_binding,
+            buffer_fields.iter().copied().map(GoalProjection::Field),
+            CheckedType::Buffer {
+                element: buffer_element,
+            },
+        );
+        let length_goal = GoalExpression::Operation {
+            row: GoalOperation::BufferLength {
+                element: buffer_element,
+            },
+            type_arguments: Vec::new(),
+            const_arguments: Vec::new(),
+            result: CheckedType::Integer(IntegerType::U64),
+            arguments: vec![buffer_goal],
+        };
+        let base = PlaceTerm {
+            root: PlaceRoot::Binding(buffer_binding),
+            deref: self.is_holder(buffer_binding),
+            fields: buffer_fields,
+        };
+        let length_term = self.length_term(base, None);
+        self.judge_exact_relation_obligation(
+            ObligationFamily::SystemRange,
+            1,
+            node_path.clone(),
+            comparison(end_goal, length_goal),
+            end_term,
+            length_term,
+            format!("{} <= len(buffer)", self.render_expression(end)),
+            states,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn judge_exact_relation_obligation(
+        &mut self,
+        family: ObligationFamily,
+        conjunct: u8,
+        node_path: crate::NodePath,
+        root: GoalExpression,
+        left: Option<TermId>,
+        right: TermId,
+        residual: String,
+        states: &ViewStates,
+    ) {
+        let canonical_goal = root.clone();
+        let goal = ConcreteGoal::new(root);
+        let (disposition, _, derivation) = self.call_goal_disposition(&goal, &states.complete);
+        let discharged = disposition == CallGoalDisposition::Discharged;
+        let refuted = disposition == CallGoalDisposition::Refuted;
+        let contradictory = close(
+            &states.complete,
+            &self.terms,
+            &self.goals,
+            &mut self.derivations,
+        )
+        .contradictory();
+        let ordinal = u32::try_from(self.obligations.len())
+            .expect("ENT obligation-root ordinal exceeds the u32 identity space");
+        if let Some(root) = derivation {
+            self.derivations
+                .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
+        }
+        self.obligations.push(ObligationOutcome {
+            node_path: node_path.clone(),
+            family,
+            conjunct,
+            canonical_goal: Some(canonical_goal),
+            components: vec![BoundsRequest {
+                left,
+                right,
+                bound: 0,
+                distinct: false,
+            }],
+            discharged,
+            refuted,
+            contradictory,
+            residual: (!discharged).then(|| residual.clone()),
+            derivation,
+        });
+        let (disposition, _, derivation) = self.call_goal_disposition(&goal, &states.unasserted);
+        let discharged = disposition == CallGoalDisposition::Discharged;
+        let refuted = disposition == CallGoalDisposition::Refuted;
+        self.unasserted_obligations.push(ViewObligationOutcome {
+            node_path: node_path.clone(),
+            family,
+            conjunct,
+            discharged,
+            refuted,
+            residual: (!discharged).then(|| residual.clone()),
+            derivation,
+        });
+        let (disposition, _, derivation) = self.call_goal_disposition(&goal, &states.s4_blinded);
+        let discharged = disposition == CallGoalDisposition::Discharged;
+        let refuted = disposition == CallGoalDisposition::Refuted;
+        self.s4_blinded_obligations.push(ViewObligationOutcome {
+            node_path,
+            family,
+            conjunct,
+            discharged,
+            refuted,
+            residual: (!discharged).then_some(residual),
+            derivation,
+        });
+    }
+
+    fn judge_unrepresentable_system_range(
+        &mut self,
+        node_path: &crate::NodePath,
+        conjunct: u8,
+        residual: String,
+        states: &ViewStates,
+    ) {
+        let complete = close(
+            &states.complete,
+            &self.terms,
+            &self.goals,
+            &mut self.derivations,
+        );
+        let contradictory = complete.contradictory();
+        let derivation = contradictory.then(|| {
+            complete
+                .contradiction_proof()
+                .expect("contradictory state has a proof")
+        });
+        self.obligations.push(ObligationOutcome {
+            node_path: node_path.clone(),
+            family: ObligationFamily::SystemRange,
+            conjunct,
+            canonical_goal: None,
+            components: vec![BoundsRequest {
+                left: None,
+                right: ZERO,
+                bound: 0,
+                distinct: false,
+            }],
+            discharged: contradictory,
+            refuted: false,
+            contradictory,
+            residual: (!contradictory).then(|| residual.clone()),
+            derivation,
+        });
+        let unasserted = close(
+            &states.unasserted,
+            &self.terms,
+            &self.goals,
+            &mut self.derivations,
+        );
+        let unasserted_discharged = unasserted.contradictory();
+        self.unasserted_obligations.push(ViewObligationOutcome {
+            node_path: node_path.clone(),
+            family: ObligationFamily::SystemRange,
+            conjunct,
+            discharged: unasserted_discharged,
+            refuted: false,
+            residual: (!unasserted_discharged).then(|| residual.clone()),
+            derivation: unasserted_discharged
+                .then(|| unasserted.contradiction_proof())
+                .flatten(),
+        });
+        let blinded = close(
+            &states.s4_blinded,
+            &self.terms,
+            &self.goals,
+            &mut self.derivations,
+        );
+        let blinded_discharged = blinded.contradictory();
+        self.s4_blinded_obligations.push(ViewObligationOutcome {
+            node_path: node_path.clone(),
+            family: ObligationFamily::SystemRange,
+            conjunct,
+            discharged: blinded_discharged,
+            refuted: false,
+            residual: (!blinded_discharged).then_some(residual),
+            derivation: blinded_discharged
+                .then(|| blinded.contradiction_proof())
+                .flatten(),
         });
     }
 
@@ -4691,6 +5164,7 @@ impl Analyzer<'_, '_> {
         self.obligations.push(ObligationOutcome {
             node_path: node_path.clone(),
             family: ObligationFamily::IntegerDomain,
+            conjunct: 0,
             canonical_goal,
             components,
             discharged: complete.discharged,
@@ -4710,6 +5184,7 @@ impl Analyzer<'_, '_> {
         self.unasserted_obligations.push(ViewObligationOutcome {
             node_path: node_path.clone(),
             family: ObligationFamily::IntegerDomain,
+            conjunct: 0,
             discharged: unasserted.discharged,
             refuted: unasserted.refuted,
             residual: (!unasserted.discharged).then(|| residual.clone()),
@@ -4725,6 +5200,7 @@ impl Analyzer<'_, '_> {
         self.s4_blinded_obligations.push(ViewObligationOutcome {
             node_path: node_path.clone(),
             family: ObligationFamily::IntegerDomain,
+            conjunct: 0,
             discharged: blinded.discharged,
             refuted: blinded.refuted,
             residual: (!blinded.discharged).then_some(residual),
@@ -7072,7 +7548,8 @@ pub(super) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         CheckedExpression::BufferFill { length, value, .. } => {
             vec![length.as_ref(), value.as_ref()]
         }
-        CheckedExpression::BufferVacant { length, .. } => vec![length.as_ref()],
+        CheckedExpression::BufferVacant { length, .. }
+        | CheckedExpression::BufferFits { length, .. } => vec![length.as_ref()],
         CheckedExpression::BufferIndex { offset, .. }
         | CheckedExpression::SliceIndex { offset, .. } => vec![offset.as_ref()],
         CheckedExpression::ConstructStruct { fields, .. }

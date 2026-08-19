@@ -32,15 +32,15 @@ use super::super::{
 use super::{Analyzer, ArmFacts};
 use crate::SYSTEM_OPERATIONS;
 
-/// The [SYS-2] operations whose outcome carries an [ENT-3] S10 count bound,
-/// with the name of the bounding parameter and of the observing variant. The
-/// bounding actual is found by parameter name in the catalog row, never by a
-/// hardcoded position.
-const BOUNDARY_COUNTS: [(&str, &str, &str); 4] = [
-    ("read_once", "capacity", "ReadBytes"),
-    ("write_once", "count", "Ok"),
-    ("host_copy_bytes", "capacity", "Ok"),
-    ("host_copy_utf8", "capacity", "Ok"),
+/// The [SYS-2] operations whose outcome carries an [ENT-3] S10 absolute
+/// endpoint, with the observing variant. Both endpoint actuals are found by
+/// parameter name in the catalog row, never by a hardcoded position.
+const BOUNDARY_ENDPOINTS: [(&str, &str); 5] = [
+    ("read_once", "ReadBytes"),
+    ("write_once", "Ok"),
+    ("host_copy_bytes", "Ok"),
+    ("host_copy_utf8", "Ok"),
+    ("list_once", "ListBytes"),
 ];
 
 /// The three S11 terms installed for one counted range.
@@ -897,10 +897,10 @@ impl Analyzer<'_, '_> {
     }
 
     /// The outcome fact one call expression carries, if any: S7's checked
-    /// `Ok(value: w)` shift, or S10's count bound on the observing arm.
+    /// `Ok(value: w)` shift, or S10's absolute endpoint on the observing arm.
     fn outcome_fact(&mut self, value: &CheckedExpression) -> Option<OutcomeFact> {
         self.checked_offset_outcome(value)
-            .or_else(|| self.boundary_count_outcome(value))
+            .or_else(|| self.boundary_endpoint_outcome(value))
     }
 
     /// [ENT-3] S7: `iadd.checked<T>(p, k)` and `isub.checked<T>(p, k)` with a
@@ -936,18 +936,17 @@ impl Analyzer<'_, '_> {
         })
     }
 
-    /// [ENT-3] S10: a [SYS-2] transfer's observing arm binds a count that is
-    /// at most the bounding actual k — `capacity` for `read_once`,
-    /// `host_copy_bytes`, and `host_copy_utf8`, `count` for `write_once`.
+    /// [ENT-3] S10: a [SYS-2] transfer's observing arm binds the absolute
+    /// endpoint `next`, establishing `start <= next <= end`.
     /// The fact carries the same trust class as S6's allocation-length
     /// equality: it is a declared operation contract, never a writer
     /// statement.
     ///
-    /// The bound is admitted only where no kill event on the path to the
-    /// match reaches a fact supported by k. The call's own boundary writes
-    /// are on that path, so a k read through a place the call writes admits
-    /// nothing — the conservative reading, which only under-derives.
-    fn boundary_count_outcome(&mut self, value: &CheckedExpression) -> Option<OutcomeFact> {
+    /// The bounds are admitted only where no kill event on the path to the
+    /// match reaches either endpoint support. The call's own boundary writes
+    /// are on that path, so an endpoint read through a place the call writes
+    /// admits nothing — the conservative reading, which only under-derives.
+    fn boundary_endpoint_outcome(&mut self, value: &CheckedExpression) -> Option<OutcomeFact> {
         let CheckedExpression::SystemCall {
             operation,
             arguments,
@@ -957,26 +956,31 @@ impl Analyzer<'_, '_> {
             return None;
         };
         let row = SYSTEM_OPERATIONS.get(usize::from(*operation))?;
-        let (_, bounding, variant) = BOUNDARY_COUNTS
+        let (_, variant) = BOUNDARY_ENDPOINTS
             .iter()
-            .find(|(spelling, _, _)| *spelling == row.spelling)?;
-        let position = row
+            .find(|(spelling, _)| *spelling == row.spelling)?;
+        let start_position = row
             .parameters
             .iter()
-            .position(|parameter| parameter.name == *bounding)?;
-        let base = self.read_operand(arguments.get(position)?)?;
+            .position(|parameter| parameter.name == "start")?;
+        let end_position = row
+            .parameters
+            .iter()
+            .position(|parameter| parameter.name == "end")?;
+        let base = self.read_operand(arguments.get(start_position)?)?;
+        let upper = self.read_operand(arguments.get(end_position)?)?;
         let mut events = Vec::new();
         self.collect_expression_kills(value, &mut events);
         if events
             .iter()
-            .any(|event| self.event_kills_term(base, event))
+            .any(|event| self.event_kills_term(base, event) || self.event_kills_term(upper, event))
         {
             return None;
         }
         Some(OutcomeFact {
             variant,
             base,
-            relation: OutcomeRelation::AtMost,
+            relation: OutcomeRelation::Between { upper },
             event_kind: FlowEventKind::S10,
         })
     }
@@ -1013,15 +1017,26 @@ impl Analyzer<'_, '_> {
                     event,
                 );
             }
-            OutcomeRelation::AtMost => state.establish(
-                &Relation::Bound {
-                    left: bound,
-                    right: outcome.base,
-                    bound: 0,
-                },
-                &mut self.derivations,
-                event,
-            ),
+            OutcomeRelation::Between { upper } => {
+                state.establish(
+                    &Relation::Bound {
+                        left: outcome.base,
+                        right: bound,
+                        bound: 0,
+                    },
+                    &mut self.derivations,
+                    event,
+                );
+                state.establish(
+                    &Relation::Bound {
+                        left: bound,
+                        right: upper,
+                        bound: 0,
+                    },
+                    &mut self.derivations,
+                    event,
+                );
+            }
         }
     }
 }

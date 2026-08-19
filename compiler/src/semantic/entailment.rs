@@ -157,6 +157,10 @@ pub(crate) enum ObligationFamily {
     /// One canonical `.defined` goal for a proof-required exact integer
     /// operation [OP-2, ENT-6].
     IntegerDomain,
+    /// A runtime-sized buffer allocation's canonical fit predicate [OP-9].
+    AllocationFit,
+    /// One independent half-open system range goal [SYS-8].
+    SystemRange,
 }
 
 /// [ENT-6] disposition of one source obligation, judged at its source node.
@@ -168,6 +172,9 @@ pub(crate) struct ObligationOutcome {
     pub(crate) node_path: NodePath,
     /// The obligation family this occurrence belongs to.
     pub(crate) family: ObligationFamily,
+    /// Family-local occurrence ordinal: zero for every family except the two
+    /// independent SystemRange goals, which use zero and one.
+    pub(crate) conjunct: u8,
     /// The canonical total Bool domain predicate. Bounds obligations carry
     /// `None`; an integer-domain obligation carries `Some` whenever every
     /// operand belongs to ENT-2's finite goal vocabulary.
@@ -815,6 +822,8 @@ pub(crate) struct ViewObligationOutcome {
     pub(crate) node_path: NodePath,
     /// The obligation family this view outcome belongs to.
     pub(crate) family: ObligationFamily,
+    /// Family-local ordinal, matching the complete outcome.
+    pub(crate) conjunct: u8,
     /// Whether the selected counterfactual fact sources discharge it.
     pub(crate) discharged: bool,
     /// Whether this noncontradictory counterfactual proves the obligation

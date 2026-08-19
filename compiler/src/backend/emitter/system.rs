@@ -628,43 +628,16 @@ fn emit_host_utf8_len(
     ))
 }
 
-/// The [SYS-8] range validation every one-attempt operation performs first.
-///
-/// Overflow of the mathematical sum of the two range values in u64, an offset
-/// beyond the buffer's runtime length, or a range extending past that length
-/// traps under the bounds semantics of [OP-4], before any host transfer,
-/// before any read of the source value or resource, and before any write of
-/// the destination. `%end < %offset` is exactly u64 overflow of the sum, and
-/// `%end <= %length` covers both remaining conditions because the extent is
-/// never negative.
-///
-/// `value` names the buffer parameter the range is validated against and
-/// `extent` its second range value, which [SYS-2] spells `capacity` for the
-/// two copies and for `read_once` and `count` for `write_once`.
-fn range_validation(buffer: &str, value: &str, extent: &str) -> String {
-    range_validation_after(buffer, value, extent, "")
-}
-
-/// [`range_validation`] with one prologue emitted ahead of it in the entry
-/// block.
-///
-/// A shim needing a bounded stack slot places its `alloca` there, because
-/// only an entry-block `alloca` is hoisted when the wrapper inlines [QUAL-3];
-/// an empty prologue emits exactly the text `range_validation` emits.
-fn range_validation_after(buffer: &str, value: &str, extent: &str, prologue: &str) -> String {
+/// Starts one statically discharged half-open range operation. `sub nuw` is
+/// justified by SYS-8's exact `start <= end` call-site obligation; the other
+/// obligation proves `end <= len(buffer)`, so this wrapper has no check or
+/// trap fallback.
+fn range_entry(prologue: &str) -> String {
     format!(
         "entry:\n\
          {prologue}  \
-         %end = add i64 %offset, {extent}\n  \
-         %wrapped = icmp ult i64 %end, %offset\n  \
-         %exact = xor i1 %wrapped, true\n  \
-         %length = extractvalue {buffer} {value}, 1\n  \
-         %within = icmp ule i64 %end, %length\n  \
-         %admitted = and i1 %exact, %within\n  \
-         br i1 %admitted, label %measure, label %range.trap\n\
-         range.trap:\n  \
-         call void @wf_trap(ptr %record, i64 %record.length)\n  \
-         unreachable\n"
+         %extent = sub nuw i64 %end, %start\n  \
+         br label %measure\n"
     )
 }
 
@@ -694,26 +667,27 @@ fn emit_host_copy_bytes(
         err_llvm,
         ..
     } = shape;
-    let validation = range_validation(&buffer, "%destination", "%capacity");
+    let entry = range_entry("");
     // The lossless route transfers the target's own code units with no
     // validation and no Unicode restriction [HOST-2]; its only recoverable
     // failure is a destination too small for the exact length, which leaves
     // the whole destination buffer unchanged [SYS-8].
     Ok(format!(
-        "define private {llvm} @{symbol}({lease} %value, {buffer} %destination, i64 %offset, \
-         i64 %capacity, ptr %record, i64 %record.length) alwaysinline {{\n\
-         {validation}\
+        "define private {llvm} @{symbol}({lease} %value, {buffer} %destination, i64 %start, \
+         i64 %end) alwaysinline {{\n\
+         {entry}\
          measure:\n  \
          %required = extractvalue {lease} %value, 1\n  \
-         %room = icmp ule i64 %required, %capacity\n  \
+         %room = icmp ule i64 %required, %extent\n  \
          br i1 %room, label %transfer, label %small\n\
          transfer:\n  \
          %source = extractvalue {lease} %value, 0\n  \
          %base = extractvalue {buffer} %destination, 0\n  \
-         %target = getelementptr inbounds i8, ptr %base, i64 %offset\n  \
+         %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
          call void @llvm.memcpy.p0.p0.i64(ptr %target, ptr %source, i64 %required, i1 false)\n  \
+         %next = add nuw i64 %start, %required\n  \
          %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
-         %ok = insertvalue {llvm} %ok.tag, i64 %required, {ok_index}\n  \
+         %ok = insertvalue {llvm} %ok.tag, i64 %next, {ok_index}\n  \
          ret {llvm} %ok\n\
          small:\n  \
          %small.tag = insertvalue {err_llvm} zeroinitializer, i32 {small_tag}, 0\n  \
@@ -753,28 +727,29 @@ fn emit_host_copy_utf8(
         err_llvm,
         ..
     } = shape;
-    let validation = range_validation(&buffer, "%destination", "%capacity");
+    let entry = range_entry("");
     // The text route validates and measures the encoding first and returns
     // the invalid or too-small outcome without writing any byte; only then
     // does it copy the complete encoding [SYS-8, HOST-2].
     Ok(format!(
-        "define private {llvm} @{symbol}({lease} %value, {buffer} %destination, i64 %offset, \
-         i64 %capacity, ptr %record, i64 %record.length) alwaysinline {{\n\
-         {validation}\
+        "define private {llvm} @{symbol}({lease} %value, {buffer} %destination, i64 %start, \
+         i64 %end) alwaysinline {{\n\
+         {entry}\
          measure:\n  \
          %text = extractvalue {lease} %value, 0\n  \
          %required = extractvalue {lease} %value, 1\n  \
          %valid = call i1 @{UTF8_VALIDATOR}(ptr %text, i64 %required)\n  \
          br i1 %valid, label %fit, label %invalid\n\
          fit:\n  \
-         %room = icmp ule i64 %required, %capacity\n  \
+         %room = icmp ule i64 %required, %extent\n  \
          br i1 %room, label %transfer, label %small\n\
          transfer:\n  \
          %base = extractvalue {buffer} %destination, 0\n  \
-         %target = getelementptr inbounds i8, ptr %base, i64 %offset\n  \
+         %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
          call void @llvm.memcpy.p0.p0.i64(ptr %target, ptr %text, i64 %required, i1 false)\n  \
+         %next = add nuw i64 %start, %required\n  \
          %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
-         %ok = insertvalue {llvm} %ok.tag, i64 %required, {ok_index}\n  \
+         %ok = insertvalue {llvm} %ok.tag, i64 %next, {ok_index}\n  \
          ret {llvm} %ok\n\
          small:\n  \
          %small.tag = insertvalue {err_llvm} zeroinitializer, i32 {small_tag}, 0\n  \
@@ -862,7 +837,7 @@ struct ReadOutcomeShape {
 
 /// Resolves the one [SYS-6] outcome type with more than two outcomes.
 ///
-/// `ReadBytes(count: u64)` is the single measured variant, `ReadEnd()` the
+/// `ReadBytes(next: u64)` is the single measured variant, `ReadEnd()` the
 /// single empty one, and `ReadFailed(error: IoError)` the single variant
 /// carrying a nominal payload, so the three are resolved from the program's
 /// own IR rather than from any spelling.
@@ -1083,38 +1058,41 @@ fn emit_read_once(
         failed_llvm,
         ..
     } = shape;
-    let validation = range_validation(&buffer, "%destination", "%capacity");
+    let entry = range_entry("");
     let (read_error, error) = native_error(target, "failure");
-    // Range validation precedes every other action [SYS-8]. A zero-length
-    // range reports a count of zero and issues no host transfer, and is never
+    // The two call-site SYS-8 goals authorize this half-open range. A
+    // zero-length range reports `next = start` and issues no host transfer,
+    // and is never
     // reported as `ReadEnd`. A nonempty range makes at most one host transfer
     // attempt: reported progress is returned immediately and never hidden by a
-    // second attempt, so `ReadBytes(count)` appears only for a count greater
+    // second attempt, so `ReadBytes(next)` advances beyond start only for
+    // positive host progress,
     // than zero, only `ReadEnd` states that no byte was available at the
     // observed end, and a reported interruption reaches source as
     // `Interrupted` rather than being retried. The host advances the file
-    // cursor by exactly the reported count [SYS-11], and exactly the first
-    // `count` bytes of the requested range may have changed.
+    // cursor by exactly `next - start` [SYS-11], and exactly `[start, next)`
+    // of the requested range may have changed.
     Ok(format!(
-        "define private {llvm} @{symbol}({file} %file, {buffer} %destination, i64 %offset, \
-         i64 %capacity, ptr %record, i64 %record.length) alwaysinline {{\n\
-         {validation}\
+        "define private {llvm} @{symbol}({file} %file, {buffer} %destination, i64 %start, \
+         i64 %end) alwaysinline {{\n\
+         {entry}\
          measure:\n  \
-         %vacant = icmp eq i64 %capacity, 0\n  \
+         %vacant = icmp eq i64 %extent, 0\n  \
          br i1 %vacant, label %empty, label %transfer\n\
          empty:\n  \
          %empty.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
-         %empty.outcome = insertvalue {llvm} %empty.tag, i64 0, {bytes_index}\n  \
+         %empty.outcome = insertvalue {llvm} %empty.tag, i64 %start, {bytes_index}\n  \
          ret {llvm} %empty.outcome\n\
          transfer:\n  \
          %base = extractvalue {buffer} %destination, 0\n  \
-         %target = getelementptr inbounds i8, ptr %base, i64 %offset\n  \
-         %transferred = call i64 @{read}({file} %file, ptr %target, i64 %capacity)\n  \
+         %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
+         %transferred = call i64 @{read}({file} %file, ptr %target, i64 %extent)\n  \
          %progress = icmp sgt i64 %transferred, 0\n  \
          br i1 %progress, label %bytes, label %quiet\n\
          bytes:\n  \
+         %next = add nuw i64 %start, %transferred\n  \
          %bytes.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
-         %bytes.outcome = insertvalue {llvm} %bytes.tag, i64 %transferred, {bytes_index}\n  \
+         %bytes.outcome = insertvalue {llvm} %bytes.tag, i64 %next, {bytes_index}\n  \
          ret {llvm} %bytes.outcome\n\
          quiet:\n  \
          %ended = icmp eq i64 %transferred, 0\n  \
@@ -1168,40 +1146,41 @@ fn emit_write_once(
         err_llvm,
         ..
     } = shape;
-    let validation = range_validation(&buffer, "%source", "%count");
+    let entry = range_entry("");
     let (read_error, error) = native_error(target, "failure");
     // A host zero-length write is `Err(WriteZero())`, which no native error
     // code produced: [SYS-7] leaves both detail fields zero when the target
     // supplies no value for them.
     let (refused_value, refused_error) =
         io_error_value(err_llvm, refused, "refused", "0", &ORIGIN_NONE.to_string());
-    // At most one host output attempt [SYS-12]. A zero-length range reports a
-    // count of zero and issues no host transfer; otherwise the accepted count
-    // means exactly that the host operation accepted that prefix, promising
-    // neither line atomicity nor durability. A closed destination arrives as
+    // At most one host output attempt [SYS-12]. A zero-length range reports
+    // `next = start` and issues no host transfer; otherwise `Ok(next)` means
+    // exactly that the host accepted `[start, next)`, promising neither line
+    // atomicity nor durability. A closed destination arrives as
     // the recoverable `BrokenPipe` class because the bootstrap installed the
     // ignored write-to-closed-pipe disposition once, before entry [QUAL-3];
     // this path performs no per-call signal-disposition operation.
     Ok(format!(
-        "define private {llvm} @{symbol}({output} %output, {buffer} %source, i64 %offset, \
-         i64 %count, ptr %record, i64 %record.length) alwaysinline {{\n\
-         {validation}\
+        "define private {llvm} @{symbol}({output} %output, {buffer} %source, i64 %start, \
+         i64 %end) alwaysinline {{\n\
+         {entry}\
          measure:\n  \
-         %vacant = icmp eq i64 %count, 0\n  \
+         %vacant = icmp eq i64 %extent, 0\n  \
          br i1 %vacant, label %empty, label %transfer\n\
          empty:\n  \
          %empty.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
-         %empty.outcome = insertvalue {llvm} %empty.tag, i64 0, {ok_index}\n  \
+         %empty.outcome = insertvalue {llvm} %empty.tag, i64 %start, {ok_index}\n  \
          ret {llvm} %empty.outcome\n\
          transfer:\n  \
          %base = extractvalue {buffer} %source, 0\n  \
-         %target = getelementptr inbounds i8, ptr %base, i64 %offset\n  \
-         %accepted = call i64 @{write}({output} %output, ptr %target, i64 %count)\n  \
+         %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
+         %accepted = call i64 @{write}({output} %output, ptr %target, i64 %extent)\n  \
          %progress = icmp sgt i64 %accepted, 0\n  \
          br i1 %progress, label %ok, label %quiet\n\
          ok:\n  \
+         %next = add nuw i64 %start, %accepted\n  \
          %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
-         %ok.outcome = insertvalue {llvm} %ok.tag, i64 %accepted, {ok_index}\n  \
+         %ok.outcome = insertvalue {llvm} %ok.tag, i64 %next, {ok_index}\n  \
          ret {llvm} %ok.outcome\n\
          quiet:\n  \
          %refused = icmp eq i64 %accepted, 0\n  \
@@ -1227,7 +1206,7 @@ fn emit_write_once(
 struct ListOutcomeShape {
     llvm: String,
     bytes_tag: u32,
-    /// The position of `ListBytes(count:)`; `entries:` is the next one.
+    /// The position of `ListBytes(next:)`; `entries:` is the next one.
     bytes_index: usize,
     end_tag: u32,
     failed_tag: u32,
@@ -1238,7 +1217,7 @@ struct ListOutcomeShape {
 
 /// Resolves the [SYS-14] enumeration outcome from the program's own IR.
 ///
-/// `ListBytes(count: u64, entries: u64)` is the single two-count variant,
+/// `ListBytes(next: u64, entries: u64)` is the single two-u64 variant,
 /// `ListEnd()` the single empty one, and `ListFailed(error: IoError)` the
 /// single variant carrying a nominal payload, so the three are resolved by
 /// shape rather than by any spelling [QUAL-1].
@@ -1320,13 +1299,13 @@ fn invalid_component(
 fn component_validation(buffer: &str, root: u32) -> String {
     format!(
         "measure:\n  \
-         %oversize = icmp ugt i64 %count, {COMPONENT_LIMIT}\n  \
-         %vacant = icmp eq i64 %count, 0\n  \
+         %oversize = icmp ugt i64 %extent, {COMPONENT_LIMIT}\n  \
+         %vacant = icmp eq i64 %extent, 0\n  \
          %unusable = or i1 %oversize, %vacant\n  \
          br i1 %unusable, label %invalid, label %scan.entry\n\
          scan.entry:\n  \
          %base = extractvalue {buffer} %name, 0\n  \
-         %text = getelementptr inbounds i8, ptr %base, i64 %offset\n  \
+         %text = getelementptr inbounds i8, ptr %base, i64 %start\n  \
          br label %scan\n\
          scan:\n  \
          %index = phi i64 [ 0, %scan.entry ], [ %index.next, %scan.step ]\n  \
@@ -1339,7 +1318,7 @@ fn component_validation(buffer: &str, root: u32) -> String {
          br i1 %refused, label %invalid, label %scan.step\n\
          scan.step:\n  \
          %index.next = add i64 %index, 1\n  \
-         %scanned = icmp uge i64 %index.next, %count\n  \
+         %scanned = icmp uge i64 %index.next, %extent\n  \
          br i1 %scanned, label %open, label %scan\n"
     )
 }
@@ -1366,9 +1345,9 @@ fn emit_open_directory(
 /// It differs from `open_directory` in exactly the two places the two rows
 /// differ: the flags the target's own directory-relative facility is handed,
 /// and the resource the returned descriptor becomes. Everything the shared
-/// emitter performs — the [SYS-8] range trap, the component validation, the
-/// bounded terminating slot, the one host call, the one cold mapper — is the
-/// same because [SYS-11] states it by mirroring [SYS-14].
+/// emitter performs — the statically discharged [SYS-8] range entry, component
+/// validation, bounded terminating slot, one host call, and one cold mapper —
+/// is the same because [SYS-11] states it by mirroring [SYS-14].
 fn emit_open_file(
     program: &IrProgram<'_, '_, '_>,
     implementation: ApprovedImplementation,
@@ -1426,23 +1405,18 @@ fn emit_open_by_name(
         ..
     } = shape;
     let slot = COMPONENT_LIMIT + 1;
-    let validation = range_validation_after(
-        &buffer,
-        "%name",
-        "%count",
-        &format!("  %component = alloca [{slot} x i8], align 1\n"),
-    );
+    let entry = range_entry(&format!("  %component = alloca [{slot} x i8], align 1\n"));
     let component = component_validation(&buffer, u32::from(target.root_prefix()));
     let (read_error, error) = native_error(target, "failure");
     let (invalid_value, invalid_error) = invalid_component(program, err_llvm, *err_type)?;
     Ok(format!(
-        "define private {llvm} @{symbol}({directory} %root, {buffer} %name, i64 %offset, \
-         i64 %count, ptr %record, i64 %record.length) alwaysinline {{\n\
-         {validation}\
+        "define private {llvm} @{symbol}({directory} %root, {buffer} %name, i64 %start, \
+         i64 %end) alwaysinline {{\n\
+         {entry}\
          {component}\
          open:\n  \
-         call void @llvm.memcpy.p0.p0.i64(ptr %component, ptr %text, i64 %count, i1 false)\n  \
-         %terminator = getelementptr inbounds i8, ptr %component, i64 %count\n  \
+         call void @llvm.memcpy.p0.p0.i64(ptr %component, ptr %text, i64 %extent, i1 false)\n  \
+         %terminator = getelementptr inbounds i8, ptr %component, i64 %extent\n  \
          store i8 0, ptr %terminator, align 1\n  \
          %descriptor = call {opened} (i32, ptr, i32, ...) @{open}({directory} %root, \
          ptr %component, i32 {flags})\n  \
@@ -1525,8 +1499,8 @@ fn emit_open_list(
 
 /// Emits the approved implementation of `list_once` [SYS-14].
 ///
-/// The shape is [SYS-8]'s: range validation first, then at most one host
-/// call, then one outcome check and a cold mapper [QUAL-3]. The one addition
+/// The shape is [SYS-8]'s: enter the statically authorized range, make at most
+/// one host call, then one outcome check and a cold mapper [QUAL-3]. The one addition
 /// is normalization — the facility writes its own records into the caller's
 /// range, and the shim rewrites them in place as the portable
 /// `[kind][name length][name bytes]` sequence [SYS-14]. The rewrite moves
@@ -1565,12 +1539,7 @@ fn emit_list_once(
         ..
     } = shape;
     let entries_index = bytes_index + 1;
-    let validation = range_validation_after(
-        &buffer,
-        "%destination",
-        "%capacity",
-        "  %position = alloca i64, align 8\n",
-    );
+    let entry = range_entry("  %position = alloca i64, align 8\n");
     let (read_error, error) = native_error(target, "failure");
     let name_offset = enumeration.name_offset();
     let record_length_offset = enumeration.record_length_offset();
@@ -1581,22 +1550,22 @@ fn emit_list_once(
     let native_symlink = enumeration.native_symlink();
     let native_unknown = enumeration.native_unknown();
     Ok(format!(
-        "define private {llvm} @{symbol}({list} %list, {buffer} %destination, i64 %offset, \
-         i64 %capacity, ptr %record, i64 %record.length) alwaysinline {{\n\
-         {validation}\
+        "define private {llvm} @{symbol}({list} %list, {buffer} %destination, i64 %start, \
+         i64 %end) alwaysinline {{\n\
+         {entry}\
          measure:\n  \
          store i64 0, ptr %position, align 8\n  \
-         %empty.range = icmp eq i64 %capacity, 0\n  \
+         %empty.range = icmp eq i64 %extent, 0\n  \
          br i1 %empty.range, label %empty, label %transfer\n\
          empty:\n  \
          %empty.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
-         %empty.count = insertvalue {llvm} %empty.tag, i64 0, {bytes_index}\n  \
+         %empty.count = insertvalue {llvm} %empty.tag, i64 %start, {bytes_index}\n  \
          %empty.outcome = insertvalue {llvm} %empty.count, i64 0, {entries_index}\n  \
          ret {llvm} %empty.outcome\n\
          transfer:\n  \
          %base = extractvalue {buffer} %destination, 0\n  \
-         %window = getelementptr inbounds i8, ptr %base, i64 %offset\n  \
-         %filled = call i64 @{enumerate}({list} %list, ptr %window, i64 %capacity, \
+         %window = getelementptr inbounds i8, ptr %base, i64 %start\n  \
+         %filled = call i64 @{enumerate}({list} %list, ptr %window, i64 %extent, \
          ptr %position)\n  \
          %progress = icmp sgt i64 %filled, 0\n  \
          br i1 %progress, label %normalize, label %quiet\n\
@@ -1614,14 +1583,12 @@ fn emit_list_once(
          {failed_index}\n  \
          ret {llvm} %failed.outcome\n\
          normalize:\n  \
-         %overrun = icmp ugt i64 %filled, %capacity\n  \
-         %reported = select i1 %overrun, i64 %capacity, i64 %filled\n  \
          br label %walk\n\
          walk:\n  \
          %source = phi i64 [ 0, %normalize ], [ %source.next, %step ]\n  \
          %written = phi i64 [ 0, %normalize ], [ %written.next, %step ]\n  \
          %entries = phi i64 [ 0, %normalize ], [ %entries.next, %step ]\n  \
-         %remaining = sub i64 %reported, %source\n  \
+         %remaining = sub i64 %filled, %source\n  \
          %headerless = icmp ult i64 %remaining, {name_offset}\n  \
          br i1 %headerless, label %done, label %header\n\
          header:\n  \
@@ -1649,7 +1616,7 @@ fn emit_list_once(
          room:\n  \
          %portable = add i64 {ENTRY_HEADER}, %named\n  \
          %after = add i64 %written, %portable\n  \
-         %fits = icmp ule i64 %after, %capacity\n  \
+         %fits = icmp ule i64 %after, %extent\n  \
          br i1 %fits, label %record.header, label %done\n\
          record.header:\n  \
          %regular = icmp eq i64 %kind.value, {native_regular}\n  \
@@ -1689,8 +1656,9 @@ fn emit_list_once(
          [ %written, %room ]\n  \
          %final.entries = phi i64 [ %entries, %walk ], [ %entries, %header ], \
          [ %entries, %room ]\n  \
+         %next = add nuw i64 %start, %final.written\n  \
          %bytes.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
-         %bytes.count = insertvalue {llvm} %bytes.tag, i64 %final.written, {bytes_index}\n  \
+         %bytes.count = insertvalue {llvm} %bytes.tag, i64 %next, {bytes_index}\n  \
          %bytes.outcome = insertvalue {llvm} %bytes.count, i64 %final.entries, \
          {entries_index}\n  \
          ret {llvm} %bytes.outcome\n\
@@ -2095,13 +2063,12 @@ impl FunctionEmitter<'_, '_> {
         ty: IrType,
         operation: crate::IrSystemOperation,
         arguments: &[IrValueId],
-        trap: Option<&IrTrapSite>,
     ) -> Result<(), BackendFailure> {
         let implementation = self.qualification.operation(operation)?;
         let row = crate::SYSTEM_OPERATIONS
             .get(usize::from(operation.ordinal()))
             .ok_or(BackendFailure::InvalidIr)?;
-        if row.parameters.len() != arguments.len() {
+        if row.parameters.len() != arguments.len() || row.traps {
             return Err(BackendFailure::InvalidIr);
         }
         let mut rendered = Vec::with_capacity(arguments.len() + 2);
@@ -2115,19 +2082,6 @@ impl FunctionEmitter<'_, '_> {
                 return Err(BackendFailure::InvalidIr);
             }
             rendered.push(format!("{rendered_type} {}", value_name(*argument)));
-        }
-        // A trapping row carries the [DIAG-3] record of its own [SYS-8] range
-        // validation; the record is per-site data, so the shared approved
-        // implementation receives it as an argument and constant folding
-        // removes the transfer once the wrapper inlines.
-        match (row.traps, trap) {
-            (true, Some(trap)) => {
-                let trap_id = self.register_trap(trap)?;
-                rendered.push(format!("ptr @.wf_trap.{trap_id}"));
-                rendered.push(format!("i64 {}", self.traps[trap_id].len()));
-            }
-            (false, None) => {}
-            _ => return Err(BackendFailure::InvalidIr),
         }
         writeln!(
             self.output,

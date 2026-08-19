@@ -284,7 +284,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.collect_expression_release_sites(length, sites)?;
                 self.collect_expression_release_sites(value, sites)?;
             }
-            CheckedExpression::BufferVacant { length, .. } => {
+            CheckedExpression::BufferVacant { length, .. }
+            | CheckedExpression::BufferFits { length, .. } => {
                 self.collect_expression_release_sites(length, sites)?;
             }
             CheckedExpression::Constant(_)

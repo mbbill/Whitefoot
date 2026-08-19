@@ -577,12 +577,12 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
     // selected and before any use of an operation is emitted, and it now has
     // an approved implementation for every [SYS-2] identity on this target.
     // The I/O cluster's own emission evidence is in `system_io.rs`.
-    let source = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+    let source = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 1_u64) {
-        Ok(value: written) => {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+        Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
         Err(error: problem) => {
@@ -600,4 +600,30 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
     let output = compile_and_run_with(&llvm, &[]);
     assert_eq!(output.stdout, b"A");
     assert_eq!(output.status.code(), Some(0));
+}
+
+#[test]
+fn linux_enumeration_facility_without_an_abi_mapping_is_missing_mapping() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus external, blocks {
+  region 'c {
+    match open_list<'c>(directory: &'c cwd) {
+      Ok(value: list) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir(source, |program| {
+        let linux = SystemTarget::for_triple("x86_64-unknown-linux-gnu")
+            .expect("Linux is a recognized system target");
+        let failure = qualify_program(linux, program)
+            .expect_err("Linux has enumeration but no approved getdents ABI mapping");
+        assert!(matches!(
+            failure,
+            crate::BackendFailure::TargetQualification(QualificationFailure::MissingMapping(_))
+        ));
+    });
 }

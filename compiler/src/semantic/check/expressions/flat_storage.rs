@@ -1,7 +1,7 @@
 mod borrowed;
 mod slices;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::syntax::terminal::FixedTerminal;
@@ -12,9 +12,10 @@ use crate::{
 
 use super::super::super::model::{
     CheckedArrayRoot, CheckedArraySetTarget, CheckedBufferRoot, CheckedBufferSetTarget,
-    CheckedConst, CheckedExpression, CheckedFlatElement, CheckedMode,
-    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
-    CheckedTargetDomainObligation, CheckedType, IntegerType, TrapSite,
+    CheckedConst, CheckedExpression, CheckedFlatElement, CheckedLayoutCeiling,
+    CheckedLayoutMagnitude, CheckedMode, CheckedNominalKind, CheckedRuntimeTargetObligations,
+    CheckedSetTarget, CheckedSliceRoot, CheckedTargetDomainObligation, CheckedType, IntegerType,
+    NominalId, TrapSite,
 };
 use super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, RequiredReferent, ResolvedPlace, SliceInfo,
@@ -70,6 +71,47 @@ enum CheckedIndexedPlace {
     Array(CheckedArrayPlace),
     Buffer(CheckedBufferPlace),
     Slice(CheckedSlicePlace),
+}
+
+fn add_layout_magnitude(
+    left: CheckedLayoutMagnitude,
+    right: CheckedLayoutMagnitude,
+) -> CheckedLayoutMagnitude {
+    match (left, right) {
+        (CheckedLayoutMagnitude::Finite(left), CheckedLayoutMagnitude::Finite(right)) => {
+            left.checked_add(right).map_or(
+                CheckedLayoutMagnitude::AboveU64,
+                CheckedLayoutMagnitude::Finite,
+            )
+        }
+        _ => CheckedLayoutMagnitude::AboveU64,
+    }
+}
+
+fn multiply_layout_magnitude(value: CheckedLayoutMagnitude, count: u64) -> CheckedLayoutMagnitude {
+    if count == 0 {
+        return CheckedLayoutMagnitude::Finite(0);
+    }
+    match value {
+        CheckedLayoutMagnitude::Finite(value) => value.checked_mul(count).map_or(
+            CheckedLayoutMagnitude::AboveU64,
+            CheckedLayoutMagnitude::Finite,
+        ),
+        CheckedLayoutMagnitude::AboveU64 => CheckedLayoutMagnitude::AboveU64,
+    }
+}
+
+fn round_up_layout_magnitude(value: CheckedLayoutMagnitude, align: u64) -> CheckedLayoutMagnitude {
+    match value {
+        CheckedLayoutMagnitude::Finite(value) => value
+            .checked_add(align - 1)
+            .map(|sum| sum / align * align)
+            .map_or(
+                CheckedLayoutMagnitude::AboveU64,
+                CheckedLayoutMagnitude::Finite,
+            ),
+        CheckedLayoutMagnitude::AboveU64 => CheckedLayoutMagnitude::AboveU64,
+    }
 }
 
 impl CheckedIndexedPlace {
@@ -224,24 +266,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
         };
+        let layout_ceiling = self.layout_ceiling(element.ty(), node)?;
         Ok(TypedExpression::owned(
             CheckedExpression::BufferFill {
                 carrier: self.tree.path(node)?.clone(),
                 element,
                 length: Box::new(length.expression),
                 value: Box::new(value.expression),
-                trap: TrapSite {
-                    rule_id: "OP-9",
-                    message: String::new(),
-                    function: function.name.clone(),
-                    node_path: self.tree.path(node)?.clone(),
-                },
+                layout_ceiling,
                 target_domains: CheckedRuntimeTargetObligations::new(),
             },
             length
                 .effects
                 .union(value.effects)
-                .union(EffectSet::ALLOCATES_HEAP_AND_TRAPS),
+                .union(EffectSet::ALLOCATES_HEAP),
         ))
     }
 
@@ -270,6 +308,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.unsupported(UnsupportedSemanticFeature::Generics, node);
         }
         let element = self.prelude_nominal(super::super::PreludeType::Option(payload))?;
+        let layout_ceiling = self.layout_ceiling(CheckedType::Nominal(element), node)?;
         let atoms = self.operation_atoms(node, 1)?;
         let length = self.check_atom(function, atoms[0], bindings, loop_depth)?;
         if length.expression.ty() != CheckedType::Integer(IntegerType::U64)
@@ -286,16 +325,158 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 carrier: self.tree.path(node)?.clone(),
                 element,
                 length: Box::new(length.expression),
-                trap: TrapSite {
-                    rule_id: "OP-9",
-                    message: String::new(),
-                    function: function.name.clone(),
-                    node_path: self.tree.path(node)?.clone(),
-                },
+                layout_ceiling,
                 target_domains: CheckedRuntimeTargetObligations::new(),
             },
-            length.effects.union(EffectSet::ALLOCATES_HEAP_AND_TRAPS),
+            length.effects.union(EffectSet::ALLOCATES_HEAP),
         ))
+    }
+
+    /// The total OP-9 predicate over the exact retained buffer element type.
+    pub(in crate::semantic::check) fn check_buffer_fits(
+        &self,
+        node: NodeId,
+        function: &FunctionSignature,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<TypedExpression, CheckStop> {
+        self.reject_region_bearing_storage_operation_argument(node, "buffer_fits", function, 1, 0)?;
+        let ty = self.retained_operation_type_argument(node, function)?;
+        if !ty.is_concrete() {
+            return self.unsupported(UnsupportedSemanticFeature::Generics, node);
+        }
+        let Some(element) = self.buffer_element(ty)? else {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        };
+        let atoms = self.operation_atoms(node, 1)?;
+        let length = self.check_atom(function, atoms[0], bindings, loop_depth)?;
+        if length.expression.ty() != CheckedType::Integer(IntegerType::U64)
+            || length.mode != CheckedMode::Own
+        {
+            return self.issue_node(
+                SemanticRule::Type5,
+                atoms[0],
+                SemanticIssueKind::TypeMismatch,
+            );
+        }
+        let layout_ceiling = self.layout_ceiling(ty, node)?;
+        Ok(TypedExpression::owned(
+            CheckedExpression::BufferFits {
+                carrier: self.tree.path(node)?.clone(),
+                element,
+                layout_ceiling,
+                length: Box::new(length.expression),
+            },
+            length.effects,
+        ))
+    }
+
+    fn layout_ceiling(
+        &self,
+        ty: CheckedType,
+        node: NodeId,
+    ) -> Result<CheckedLayoutCeiling, CheckStop> {
+        let mut visiting = HashSet::new();
+        self.layout_ceiling_inner(ty, &mut visiting).ok_or_else(|| {
+            self.issue_value(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation)
+        })
+    }
+
+    fn layout_ceiling_inner(
+        &self,
+        ty: CheckedType,
+        visiting: &mut HashSet<NominalId>,
+    ) -> Option<CheckedLayoutCeiling> {
+        fn finish(size: CheckedLayoutMagnitude, align: u64) -> Option<CheckedLayoutCeiling> {
+            if align == 0 {
+                return None;
+            }
+            let stride = match round_up_layout_magnitude(size, align) {
+                CheckedLayoutMagnitude::Finite(0) => CheckedLayoutMagnitude::Finite(1),
+                stride => stride,
+            };
+            Some(CheckedLayoutCeiling {
+                size,
+                align,
+                stride,
+            })
+        }
+        let primitive = |bytes| finish(CheckedLayoutMagnitude::Finite(bytes), bytes.max(1));
+        match ty {
+            CheckedType::Unit | CheckedType::Bool => primitive(1),
+            CheckedType::Integer(integer) => primitive(u64::from(integer.width() / 8)),
+            CheckedType::Float(float) => primitive(u64::from(float.width() / 8)),
+            CheckedType::Array { element, length } => {
+                let element = self.layout_ceiling_inner(element.ty(), visiting)?;
+                finish(
+                    multiply_layout_magnitude(element.stride, length.value()?),
+                    element.align,
+                )
+            }
+            CheckedType::Buffer { .. } => finish(CheckedLayoutMagnitude::Finite(32), 16),
+            CheckedType::Slice { .. } => None,
+            CheckedType::Nominal(id) => {
+                if !visiting.insert(id) {
+                    return None;
+                }
+                let nominal = self.nominal(id).ok()?;
+                let result = match &nominal.kind {
+                    CheckedNominalKind::Box { .. } => {
+                        finish(CheckedLayoutMagnitude::Finite(16), 16)
+                    }
+                    CheckedNominalKind::Arena { .. } | CheckedNominalKind::ArenaStorage => None,
+                    CheckedNominalKind::SystemResource { .. } => {
+                        finish(CheckedLayoutMagnitude::Finite(32), 16)
+                    }
+                    CheckedNominalKind::Struct { fields } => {
+                        self.aggregate_layout_ceiling(fields.iter().map(|field| field.ty), visiting)
+                    }
+                    CheckedNominalKind::Enum { variants }
+                        if variants.iter().all(|variant| variant.fields.is_empty()) =>
+                    {
+                        primitive(if variants.len() <= 2 { 1 } else { 4 })
+                    }
+                    CheckedNominalKind::Enum { variants } => self.aggregate_layout_ceiling(
+                        std::iter::once(CheckedType::Integer(IntegerType::U32)).chain(
+                            variants
+                                .iter()
+                                .flat_map(|variant| variant.fields.iter().map(|field| field.ty)),
+                        ),
+                        visiting,
+                    ),
+                };
+                visiting.remove(&id);
+                result
+            }
+            CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => {
+                None
+            }
+        }
+    }
+
+    fn aggregate_layout_ceiling(
+        &self,
+        fields: impl IntoIterator<Item = CheckedType>,
+        visiting: &mut HashSet<NominalId>,
+    ) -> Option<CheckedLayoutCeiling> {
+        let mut size = CheckedLayoutMagnitude::Finite(0);
+        let mut align = 1_u64;
+        for ty in fields {
+            let field = self.layout_ceiling_inner(ty, visiting)?;
+            size = round_up_layout_magnitude(size, field.align);
+            size = add_layout_magnitude(size, field.size);
+            align = align.max(field.align);
+        }
+        size = round_up_layout_magnitude(size, align);
+        let stride = match size {
+            CheckedLayoutMagnitude::Finite(0) => CheckedLayoutMagnitude::Finite(1),
+            size => size,
+        };
+        Some(CheckedLayoutCeiling {
+            size,
+            align,
+            stride,
+        })
     }
 
     pub(in crate::semantic::check) fn check_flat_length(
@@ -886,5 +1067,38 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             _ => self.issue_node(SemanticRule::Type5, anchor, SemanticIssueKind::TypeMismatch),
         }
+    }
+}
+
+#[cfg(test)]
+mod layout_magnitude_tests {
+    use super::{
+        CheckedLayoutMagnitude, add_layout_magnitude, multiply_layout_magnitude,
+        round_up_layout_magnitude,
+    };
+
+    #[test]
+    fn finite_or_above_u64_preserves_every_layout_ceiling_observation() {
+        let finite = CheckedLayoutMagnitude::Finite;
+        assert_eq!(multiply_layout_magnitude(finite(8), 3), finite(24));
+        assert_eq!(multiply_layout_magnitude(finite(8), 0), finite(0));
+        assert_eq!(
+            multiply_layout_magnitude(finite(8), u64::MAX),
+            CheckedLayoutMagnitude::AboveU64
+        );
+        assert_eq!(
+            multiply_layout_magnitude(CheckedLayoutMagnitude::AboveU64, 0),
+            finite(0)
+        );
+        assert_eq!(round_up_layout_magnitude(finite(9), 8), finite(16));
+        assert_eq!(
+            round_up_layout_magnitude(finite(u64::MAX), 8),
+            CheckedLayoutMagnitude::AboveU64
+        );
+        assert_eq!(
+            add_layout_magnitude(finite(u64::MAX), finite(1)),
+            CheckedLayoutMagnitude::AboveU64
+        );
+        assert_eq!(CheckedLayoutMagnitude::AboveU64.allocation_limit(), 0);
     }
 }

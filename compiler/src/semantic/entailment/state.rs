@@ -1478,8 +1478,8 @@ pub(crate) enum OutcomeRelation {
     /// S7 checked arithmetic: the binder equals the base term shifted by this
     /// constant.
     Shifted(i128),
-    /// S10 boundary count: the binder is at most the base term.
-    AtMost,
+    /// S10 absolute endpoint: `base <= binder <= upper`.
+    Between { upper: TermId },
 }
 
 /// One pending arm fact: the relation the observing arm's value binder gains,

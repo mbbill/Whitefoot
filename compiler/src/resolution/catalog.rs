@@ -44,7 +44,7 @@ const fn prelude(
 
 /// Distinct OP-1 spellings in normative table order, with repeated `cvt`
 /// collapsed at its first occurrence as required by OP-1.
-pub(crate) const OPERATION_FAMILIES: [&str; 93] = [
+pub(crate) const OPERATION_FAMILIES: [&str; 94] = [
     "+wrap",
     "-wrap",
     "*wrap",
@@ -97,6 +97,7 @@ pub(crate) const OPERATION_FAMILIES: [&str; 93] = [
     "array_new",
     "buffer_new",
     "buffer_vacant",
+    "buffer_fits",
     "iand",
     "ior",
     "ixor",
@@ -305,7 +306,7 @@ pub const TRAVERSAL_SURFACE: bool = true;
 /// table. It is `false` until the owner approves the candidate bytes; the
 /// candidate inventory is reachable only by naming it at a compilation, which
 /// is what the end-to-end evidence does.
-pub const OPEN_BY_NAME: bool = false;
+pub const OPEN_BY_NAME: bool = true;
 
 /// One selected [SYS-2] inventory state.
 ///
@@ -430,12 +431,12 @@ const IO_ERROR_DETAIL: [SystemField; 2] = [
 ];
 
 const REQUIRED_U64: [SystemField; 1] = [field("required", SystemTypeRef::U64)];
-const COUNT_U64: [SystemField; 1] = [field("count", SystemTypeRef::U64)];
+const NEXT_U64: [SystemField; 1] = [field("next", SystemTypeRef::U64)];
 const ERROR_IO: [SystemField; 1] = [field("error", SystemTypeRef::Nominal(IO_ERROR))];
 /// One `ListBytes` payload: the transferred byte count and the exact number of
 /// entry records that prefix holds.
-const COUNT_AND_ENTRIES_U64: [SystemField; 2] = [
-    field("count", SystemTypeRef::U64),
+const NEXT_AND_ENTRIES_U64: [SystemField; 2] = [
+    field("next", SystemTypeRef::U64),
     field("entries", SystemTypeRef::U64),
 ];
 
@@ -476,7 +477,7 @@ pub const SYSTEM_CONSTRUCTORS: [SystemConstructor; 42] = [
     constructor("Utf8CopyTooSmall", UTF8_COPY_ERROR, &REQUIRED_U64),
     constructor("Utf8CopyInvalid", UTF8_COPY_ERROR, &[]),
     constructor("PathInvalid", PATH_ERROR, &[]),
-    constructor("ReadBytes", READ_OUTCOME, &COUNT_U64),
+    constructor("ReadBytes", READ_OUTCOME, &NEXT_U64),
     constructor("ReadEnd", READ_OUTCOME, &[]),
     constructor("ReadFailed", READ_OUTCOME, &ERROR_IO),
     io_class("NotFound"),
@@ -509,7 +510,7 @@ pub const SYSTEM_CONSTRUCTORS: [SystemConstructor; 42] = [
     io_class("CrossDevice"),
     io_class("DeviceFailure"),
     io_class("Other"),
-    constructor("ListBytes", LIST_OUTCOME, &COUNT_AND_ENTRIES_U64),
+    constructor("ListBytes", LIST_OUTCOME, &NEXT_AND_ENTRIES_U64),
     constructor("ListEnd", LIST_OUTCOME, &[]),
     constructor("ListFailed", LIST_OUTCOME, &ERROR_IO),
 ];
@@ -606,13 +607,13 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
                 SystemParameterMode::UniqueBorrow(1),
                 SystemTypeRef::BufferU8,
             ),
-            parameter("offset", SystemParameterMode::Own, SystemTypeRef::U64),
-            parameter("capacity", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_u64(COPY_ERROR),
         external: false,
         blocks: false,
-        traps: true,
+        traps: false,
     },
     SystemOperation {
         spelling: "host_utf8_len",
@@ -641,13 +642,13 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
                 SystemParameterMode::UniqueBorrow(1),
                 SystemTypeRef::BufferU8,
             ),
-            parameter("offset", SystemParameterMode::Own, SystemTypeRef::U64),
-            parameter("capacity", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_u64(UTF8_COPY_ERROR),
         external: false,
         blocks: false,
-        traps: true,
+        traps: false,
     },
     SystemOperation {
         spelling: "relative_path",
@@ -696,13 +697,13 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
                 SystemParameterMode::UniqueBorrow(1),
                 SystemTypeRef::BufferU8,
             ),
-            parameter("offset", SystemParameterMode::Own, SystemTypeRef::U64),
-            parameter("capacity", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: SystemTypeRef::Nominal(READ_OUTCOME),
         external: true,
         blocks: true,
-        traps: true,
+        traps: false,
     },
     SystemOperation {
         spelling: "write_once",
@@ -718,13 +719,13 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
                 SystemParameterMode::Borrow(1),
                 SystemTypeRef::BufferU8,
             ),
-            parameter("offset", SystemParameterMode::Own, SystemTypeRef::U64),
-            parameter("count", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_u64(IO_ERROR),
         external: true,
         blocks: true,
-        traps: true,
+        traps: false,
     },
     SystemOperation {
         spelling: "exit_status",
@@ -754,13 +755,13 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
                 SystemParameterMode::Borrow(1),
                 SystemTypeRef::BufferU8,
             ),
-            parameter("offset", SystemParameterMode::Own, SystemTypeRef::U64),
-            parameter("count", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_nominal(DIRECTORY_READ, IO_ERROR),
         external: true,
         blocks: true,
-        traps: true,
+        traps: false,
     },
     SystemOperation {
         spelling: "open_list",
@@ -789,13 +790,13 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
                 SystemParameterMode::UniqueBorrow(1),
                 SystemTypeRef::BufferU8,
             ),
-            parameter("offset", SystemParameterMode::Own, SystemTypeRef::U64),
-            parameter("capacity", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: SystemTypeRef::Nominal(LIST_OUTCOME),
         external: true,
         blocks: true,
-        traps: true,
+        traps: false,
     },
     // The file-open-by-name candidate row [SYS-11]: `open_read`'s sibling
     // over a caller-owned single path component, taking exactly the name
@@ -814,13 +815,13 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
                 SystemParameterMode::Borrow(1),
                 SystemTypeRef::BufferU8,
             ),
-            parameter("offset", SystemParameterMode::Own, SystemTypeRef::U64),
-            parameter("count", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_nominal(READ_FILE, IO_ERROR),
         external: true,
         blocks: true,
-        traps: true,
+        traps: false,
     },
 ];
 
@@ -1581,8 +1582,8 @@ mod tests {
             (194, "'n"),
             (195, "root"),
             (196, "name"),
-            (197, "offset"),
-            (198, "count"),
+            (197, "start"),
+            (198, "end"),
         ] {
             assert_eq!(records[ordinal].spelling(), spelling, "ordinal {ordinal}");
         }
@@ -1595,7 +1596,7 @@ mod tests {
         assert_eq!(operation.spelling, "open_file");
         assert_eq!(
             (operation.external, operation.blocks, operation.traps),
-            (true, true, true)
+            (true, true, false)
         );
         // Off, the same ordinal is past the inventory and names nothing.
         assert!(system_entity(open_file, Inventory::Traversal).is_none());

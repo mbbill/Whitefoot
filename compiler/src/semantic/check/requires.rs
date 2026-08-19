@@ -424,6 +424,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Bool,
                 arguments.as_slice(),
             )),
+            CheckedExpression::BufferFits {
+                element,
+                layout_ceiling,
+                length,
+                ..
+            } => Some((
+                GoalOperation::BufferFits {
+                    element: *element,
+                    maximum_length: layout_ceiling.stride.allocation_limit(),
+                },
+                vec![element.ty()],
+                Vec::new(),
+                CheckedType::Bool,
+                std::slice::from_ref(length.as_ref()),
+            )),
             _ => None,
         };
         if let Some((row, type_arguments, const_arguments, result, checked_arguments)) = operation {

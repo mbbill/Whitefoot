@@ -31,11 +31,11 @@ pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedBufferRoot,
     CheckedBufferSetTarget, CheckedConst, CheckedDrop, CheckedEntryForm, CheckedEnumType,
     CheckedExpression, CheckedFlatElement, CheckedFloatOperation, CheckedFunction,
-    CheckedIntegerOperation, CheckedLoopId, CheckedMatchArm, CheckedMode, CheckedNominalKind,
-    CheckedNumericType, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
-    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot, CheckedSliceSource,
-    CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue, IntegerType,
-    NominalId, PropagationContext, TrapSite,
+    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
+    CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter,
+    CheckedProgramData, CheckedProjectedDrop, CheckedRuntimeTargetObligations, CheckedSetTarget,
+    CheckedSliceRoot, CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation,
+    CheckedType, CheckedValue, IntegerType, NominalId, PropagationContext, TrapSite,
 };
 
 /// Master switch for the v0.31 candidate's gated semantic surface:
@@ -100,6 +100,8 @@ pub enum SemanticRule {
     Op4,
     /// Exact conversion-pair result classification.
     Op6,
+    /// Runtime-sized buffer allocation-domain discharge.
+    Op9,
     /// Exact `own Bool` explicit-check condition.
     Op5,
     /// Function result, reachability, or completion.
@@ -143,6 +145,8 @@ pub enum SemanticRule {
     /// class — "region arguments for system operations [SYS-2]" — so this rule
     /// owns that argument list exactly as FN-2 owns a user generic's.
     Sys2,
+    /// Half-open system buffer-range discharge.
+    Sys8,
     /// Named runtime claim formation and per-function name uniqueness.
     Clm1,
     /// Claim lifecycle: refutation rejection under the entailment fragment.
@@ -186,6 +190,7 @@ impl SemanticRule {
             Self::Op2 => "OP-2",
             Self::Op4 => "OP-4",
             Self::Op6 => "OP-6",
+            Self::Op9 => "OP-9",
             Self::Op5 => "OP-5",
             Self::Fn1 => "FN-1",
             Self::Fn2 => "FN-2",
@@ -206,6 +211,7 @@ impl SemanticRule {
             Self::Eff1 => "EFF-1",
             Self::Eff2 => "EFF-2",
             Self::Sys2 => "SYS-2",
+            Self::Sys8 => "SYS-8",
             Self::Clm1 => "CLM-1",
             Self::Clm2 => "CLM-2",
             Self::Clm3 => "CLM-3",
@@ -263,7 +269,8 @@ impl SemanticRule {
             Self::Op2 => Self::Op4,
             Self::Op4 => Self::Op5,
             Self::Op5 => Self::Op6,
-            Self::Op6 => Self::Fn1,
+            Self::Op6 => Self::Op9,
+            Self::Op9 => Self::Fn1,
             Self::Fn1 => Self::Fn2,
             Self::Fn2 => Self::Fn3,
             Self::Fn3 => Self::Fn4,
@@ -276,7 +283,8 @@ impl SemanticRule {
             Self::Eff2 => Self::Err2,
             Self::Err2 => Self::Err3,
             Self::Err3 => Self::Sys2,
-            Self::Sys2 => Self::Clm1,
+            Self::Sys2 => Self::Sys8,
+            Self::Sys8 => Self::Clm1,
             Self::Clm1 => Self::Clm2,
             Self::Clm2 => Self::Clm3,
             Self::Clm3 => Self::Ent2,
@@ -328,25 +336,27 @@ impl SemanticRule {
             Self::Op4 => 28,
             Self::Op5 => 29,
             Self::Op6 => 30,
-            Self::Fn1 => 31,
-            Self::Fn2 => 32,
-            Self::Fn3 => 33,
-            Self::Fn4 => 34,
-            Self::Fn6 => 35,
-            Self::Fn7 => 36,
-            Self::Fn8 => 37,
-            Self::Fn9 => 38,
-            Self::Eff1 => 39,
-            Self::Eff2 => 40,
-            Self::Err2 => 41,
-            Self::Err3 => 42,
-            Self::Sys2 => 43,
-            Self::Clm1 => 44,
-            Self::Clm2 => 45,
-            Self::Clm3 => 46,
-            Self::Ent2 => 47,
-            Self::Prv2 => 48,
-            Self::Prv3 => 49,
+            Self::Op9 => 31,
+            Self::Fn1 => 32,
+            Self::Fn2 => 33,
+            Self::Fn3 => 34,
+            Self::Fn4 => 35,
+            Self::Fn6 => 36,
+            Self::Fn7 => 37,
+            Self::Fn8 => 38,
+            Self::Fn9 => 39,
+            Self::Eff1 => 40,
+            Self::Eff2 => 41,
+            Self::Err2 => 42,
+            Self::Err3 => 43,
+            Self::Sys2 => 44,
+            Self::Sys8 => 45,
+            Self::Clm1 => 46,
+            Self::Clm2 => 47,
+            Self::Clm3 => 48,
+            Self::Ent2 => 49,
+            Self::Prv2 => 50,
+            Self::Prv3 => 51,
         }
     }
 }
@@ -791,6 +801,16 @@ pub enum SemanticIssueKind {
         /// The exact non-discharged complete-view disposition.
         disposition: StaticObligationDisposition,
         /// The mechanical fix OP-2 names.
+        mechanical_fix: &'static str,
+    },
+    /// A runtime-sized buffer allocation lacks an OP-9 fit proof.
+    UndischargedAllocationFitObligation {
+        residual: String,
+        mechanical_fix: &'static str,
+    },
+    /// One half-open system buffer-range conjunct lacks a SYS-8 proof.
+    UndischargedSystemRangeObligation {
+        residual: String,
         mechanical_fix: &'static str,
     },
     /// The complete instantiated requirement at an ordinary call is refuted

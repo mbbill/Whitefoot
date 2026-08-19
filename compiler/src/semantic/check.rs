@@ -427,16 +427,6 @@ impl EffectSet {
         blocks: false,
         traps: false,
     };
-    const ALLOCATES_HEAP_AND_TRAPS: Self = Self {
-        reads: Vec::new(),
-        writes: Vec::new(),
-        allocates_heap: true,
-        allocates_arenas: Vec::new(),
-        external: false,
-        blocks: false,
-        traps: true,
-    };
-
     fn union(mut self, other: Self) -> Self {
         for region in other.reads {
             self.add_read(region);
@@ -1857,7 +1847,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.install_expression_call_requirements(length, requirements)?;
                 self.install_expression_call_requirements(value, requirements)?;
             }
-            CheckedExpression::BufferVacant { length, .. } => {
+            CheckedExpression::BufferVacant { length, .. }
+            | CheckedExpression::BufferFits { length, .. } => {
                 self.install_expression_call_requirements(length, requirements)?;
             }
             CheckedExpression::Constant(_)
@@ -2020,6 +2011,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             GoalOperation::BufferLength { element } => GoalOperation::BufferLength {
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
+            },
+            GoalOperation::BufferFits {
+                element,
+                maximum_length,
+            } => GoalOperation::BufferFits {
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                maximum_length,
             },
             GoalOperation::SliceLength { region, element } => GoalOperation::SliceLength {
                 region: self.instantiate_goal_region(region, signature, regions)?,
@@ -2654,6 +2652,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     Self::Obligation(outcome) => match outcome.family {
                         super::entailment::ObligationFamily::Bounds => SemanticRule::Op4,
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
+                        super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
+                        super::entailment::ObligationFamily::SystemRange => SemanticRule::Sys8,
                     },
                     Self::Call(_) => SemanticRule::Fn8,
                     Self::Claim { .. } => SemanticRule::Clm2,
@@ -2734,6 +2734,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     StaticObligationDisposition::Unproved
                                 },
                                 mechanical_fix: "add a dominating `claim` of the `.defined` predicate or a dominating branch establishing its fixed normalization, or use an available total non-exact row",
+                            },
+                        },
+                        super::entailment::ObligationFamily::AllocationFit => SemanticIssue {
+                            rule: SemanticRule::Op9,
+                            location,
+                            kind: SemanticIssueKind::UndischargedAllocationFitObligation {
+                                residual,
+                                mechanical_fix: "add a dominating `claim buffer_fits<T>(n)` or a branch/requirement establishing that exact predicate",
+                            },
+                        },
+                        super::entailment::ObligationFamily::SystemRange => SemanticIssue {
+                            rule: SemanticRule::Sys8,
+                            location,
+                            kind: SemanticIssueKind::UndischargedSystemRangeObligation {
+                                residual,
+                                mechanical_fix: "add a dominating `claim` of the residual or a branch/requirement establishing it",
                             },
                         },
                     }))

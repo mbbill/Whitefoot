@@ -548,6 +548,24 @@ fn system_result_dependencies(
     Ok(value)
 }
 
+fn system_endpoint_start(operation: u8) -> ProvenanceResult<Option<usize>> {
+    let row = crate::SYSTEM_OPERATIONS
+        .get(usize::from(operation))
+        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+    if !matches!(
+        row.spelling,
+        "host_copy_bytes" | "host_copy_utf8" | "read_once" | "write_once" | "list_once"
+    ) {
+        return Ok(None);
+    }
+    Ok(Some(
+        row.parameters
+            .iter()
+            .position(|parameter| parameter.name == "start")
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+    ))
+}
+
 /// The `wf-prov` writable-`&uniq`-parameter column: the parameter ordinals one
 /// operation writes with an external class.
 pub(super) fn system_external_writes(operation: u8) -> ProvenanceResult<&'static [usize]> {
@@ -1147,9 +1165,10 @@ impl<'check> FunctionPass<'check> {
                 result,
                 ..
             } => {
-                for argument in arguments {
-                    self.expression(argument, summaries)?;
-                }
+                let actuals = arguments
+                    .iter()
+                    .map(|argument| self.expression(argument, summaries))
+                    .collect::<ProvenanceResult<Vec<_>>>()?;
                 let external = ProvenanceDependency::external();
                 for ordinal in system_external_writes(*operation)? {
                     let argument = arguments
@@ -1160,7 +1179,22 @@ impl<'check> FunctionPass<'check> {
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     self.add_root_write(root, &external, true)?;
                 }
-                system_result_dependencies(*operation, *result, self.nominals)?
+                let mut value = system_result_dependencies(*operation, *result, self.nominals)?;
+                if let Some(start) = system_endpoint_start(*operation)? {
+                    let dependency = actuals
+                        .get(start)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                        .aggregate();
+                    value
+                        .component_mut(DatumSelector::EnumPayload {
+                            variant: 0,
+                            field: 0,
+                        })
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                        .dependency
+                        .union(&dependency);
+                }
+                value
             }
             CheckedExpression::IntegerOperation {
                 operation,
@@ -1252,7 +1286,8 @@ impl<'check> FunctionPass<'check> {
                 aggregate.union(&self.expression(value, summaries)?.aggregate());
                 ValueDependencies::from_aggregate(expression.ty(), &aggregate, self.nominals)
             }
-            CheckedExpression::BufferVacant { length, .. } => {
+            CheckedExpression::BufferVacant { length, .. }
+            | CheckedExpression::BufferFits { length, .. } => {
                 let aggregate = self.expression(length, summaries)?.aggregate();
                 ValueDependencies::from_aggregate(expression.ty(), &aggregate, self.nominals)
             }
@@ -1494,7 +1529,7 @@ fn dependency_fixed_point(
 #[derive(Clone)]
 struct LeafSite {
     leaf: ProtectedLeaf,
-    offset: CheckedExpression,
+    subjects: Vec<CheckedExpression>,
 }
 
 #[derive(Clone)]
@@ -1831,7 +1866,7 @@ fn collect_block_sites(
                                 obligation: target.trap.node_path.clone(),
                                 conjunct: 0,
                             },
-                            offset: target.offset.clone(),
+                            subjects: vec![target.offset.clone()],
                         });
                     }
                     CheckedSetTarget::BufferIndex(target) => {
@@ -1848,7 +1883,7 @@ fn collect_block_sites(
                                 obligation: target.trap.node_path.clone(),
                                 conjunct: 0,
                             },
-                            offset: target.offset.clone(),
+                            subjects: vec![target.offset.clone()],
                         });
                     }
                 }
@@ -1910,6 +1945,78 @@ fn collect_expression_sites(
                 });
             }
         }
+        CheckedExpression::SystemCall {
+            operation,
+            call,
+            arguments,
+            ..
+        } => {
+            for argument in arguments {
+                collect_expression_sites(function, argument, leaves, calls, direct_calls);
+            }
+            let Some(row) = crate::SYSTEM_OPERATIONS.get(usize::from(*operation)) else {
+                return;
+            };
+            let (Some(start), Some(end)) = (
+                row.parameters
+                    .iter()
+                    .position(|parameter| parameter.name == "start"),
+                row.parameters
+                    .iter()
+                    .position(|parameter| parameter.name == "end"),
+            ) else {
+                return;
+            };
+            let (Some(start), Some(end)) = (arguments.get(start), arguments.get(end)) else {
+                return;
+            };
+            leaves.push(LeafSite {
+                leaf: ProtectedLeaf {
+                    function,
+                    obligation: call.clone(),
+                    conjunct: 0,
+                },
+                subjects: vec![start.clone(), end.clone()],
+            });
+            leaves.push(LeafSite {
+                leaf: ProtectedLeaf {
+                    function,
+                    obligation: call.clone(),
+                    conjunct: 1,
+                },
+                subjects: vec![end.clone()],
+            });
+        }
+        CheckedExpression::BufferFill {
+            carrier,
+            length,
+            value,
+            ..
+        } => {
+            collect_expression_sites(function, length, leaves, calls, direct_calls);
+            collect_expression_sites(function, value, leaves, calls, direct_calls);
+            leaves.push(LeafSite {
+                leaf: ProtectedLeaf {
+                    function,
+                    obligation: carrier.clone(),
+                    conjunct: 0,
+                },
+                subjects: vec![(**length).clone()],
+            });
+        }
+        CheckedExpression::BufferVacant {
+            carrier, length, ..
+        } => {
+            collect_expression_sites(function, length, leaves, calls, direct_calls);
+            leaves.push(LeafSite {
+                leaf: ProtectedLeaf {
+                    function,
+                    obligation: carrier.clone(),
+                    conjunct: 0,
+                },
+                subjects: vec![(**length).clone()],
+            });
+        }
         CheckedExpression::ArrayIndex { offset, trap, .. }
         | CheckedExpression::BufferIndex { offset, trap, .. }
         | CheckedExpression::SliceIndex { offset, trap, .. } => {
@@ -1920,7 +2027,7 @@ fn collect_expression_sites(
                     obligation: trap.node_path.clone(),
                     conjunct: 0,
                 },
-                offset: (**offset).clone(),
+                subjects: vec![(**offset).clone()],
             });
         }
         _ => {
@@ -1971,7 +2078,8 @@ fn expression_children(expression: &CheckedExpression) -> Vec<&CheckedExpression
         | CheckedExpression::BufferIndex { offset, .. }
         | CheckedExpression::SliceIndex { offset, .. } => vec![offset],
         CheckedExpression::BufferFill { length, value, .. } => vec![length, value],
-        CheckedExpression::BufferVacant { length, .. } => vec![length.as_ref()],
+        CheckedExpression::BufferVacant { length, .. }
+        | CheckedExpression::BufferFits { length, .. } => vec![length.as_ref()],
     }
 }
 
@@ -2279,11 +2387,12 @@ impl<'check> CarrierReconstructor<'check> {
                 operation,
                 call,
                 result,
+                arguments,
                 ..
             } => {
                 let selected = system_result_dependencies(*operation, *result, self.nominals)?
                     .selected(selector)?;
-                return Ok((matches!(goal, CarrierGoal::External)
+                let mut route = (matches!(goal, CarrierGoal::External)
                     && selected.unconditional_external)
                     .then(|| {
                         CarrierRoute::call_terminal(
@@ -2292,7 +2401,27 @@ impl<'check> CarrierReconstructor<'check> {
                             CarrierCallRole::SystemResult,
                             None,
                         )
-                    }));
+                    });
+                if selector
+                    == (DatumSelector::EnumPayload {
+                        variant: 0,
+                        field: 0,
+                    })
+                    && let Some(start) = system_endpoint_start(*operation)?
+                {
+                    choose_carrier_route(
+                        &mut route,
+                        self.route_expression_aggregate(
+                            function,
+                            arguments
+                                .get(start)
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                            goal,
+                            visited,
+                        )?,
+                    );
+                }
+                return Ok(route);
             }
             CheckedExpression::UserCall {
                 function: callee,
@@ -2404,7 +2533,8 @@ impl<'check> CarrierReconstructor<'check> {
                 );
                 route
             }
-            CheckedExpression::BufferVacant { length, .. } => {
+            CheckedExpression::BufferVacant { length, .. }
+            | CheckedExpression::BufferFits { length, .. } => {
                 self.route_expression_aggregate(function, length, goal, visited)?
             }
             CheckedExpression::BufferIndex { root, offset, .. } => {
@@ -3762,24 +3892,29 @@ fn local_bridge_seeds(
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let (leaves, _, _) = collect_sites(function);
         for site in leaves {
-            let full_discharged = function
-                .entailment
-                .obligations
-                .iter()
-                .any(|outcome| outcome.node_path == site.leaf.obligation && outcome.discharged);
-            let unasserted_discharged = unasserted
-                .obligations
-                .iter()
-                .any(|outcome| outcome.node_path == site.leaf.obligation && outcome.discharged);
-            let blinded_discharged = blinded
-                .obligations
-                .iter()
-                .any(|outcome| outcome.node_path == site.leaf.obligation && outcome.discharged);
+            let full_discharged = function.entailment.obligations.iter().any(|outcome| {
+                outcome.node_path == site.leaf.obligation
+                    && u32::from(outcome.conjunct) == site.leaf.conjunct
+                    && outcome.discharged
+            });
+            let unasserted_discharged = unasserted.obligations.iter().any(|outcome| {
+                outcome.node_path == site.leaf.obligation
+                    && u32::from(outcome.conjunct) == site.leaf.conjunct
+                    && outcome.discharged
+            });
+            let blinded_discharged = blinded.obligations.iter().any(|outcome| {
+                outcome.node_path == site.leaf.obligation
+                    && u32::from(outcome.conjunct) == site.leaf.conjunct
+                    && outcome.discharged
+            });
             if !full_discharged || !unasserted_discharged || blinded_discharged {
                 continue;
             }
             let mut pass = FunctionPass::from_metadata(function, nominals, function_dependencies)?;
-            let dependency = pass.expression(&site.offset, dependencies)?.aggregate();
+            let mut dependency = ProvenanceDependency::default();
+            for subject in &site.subjects {
+                dependency.union(&pass.expression(subject, dependencies)?.aggregate());
+            }
             // A true unconditional bit terminates locally under PRV-3.  Its
             // companion parameter datums are diagnostic explanations only.
             if dependency.unconditional_external {
@@ -3835,22 +3970,24 @@ fn local_gate_seeds(
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let (leaves, _, _) = collect_sites(function);
         for site in leaves {
-            let full_discharged = function
-                .entailment
-                .obligations
-                .iter()
-                .any(|outcome| outcome.node_path == site.leaf.obligation && outcome.discharged);
+            let full_discharged = function.entailment.obligations.iter().any(|outcome| {
+                outcome.node_path == site.leaf.obligation
+                    && u32::from(outcome.conjunct) == site.leaf.conjunct
+                    && outcome.discharged
+            });
             if !full_discharged {
                 continue;
             }
-            let blinded_discharged = blinded
-                .obligations
-                .iter()
-                .any(|outcome| outcome.node_path == site.leaf.obligation && outcome.discharged);
-            let unasserted_discharged = unasserted
-                .obligations
-                .iter()
-                .any(|outcome| outcome.node_path == site.leaf.obligation && outcome.discharged);
+            let blinded_discharged = blinded.obligations.iter().any(|outcome| {
+                outcome.node_path == site.leaf.obligation
+                    && u32::from(outcome.conjunct) == site.leaf.conjunct
+                    && outcome.discharged
+            });
+            let unasserted_discharged = unasserted.obligations.iter().any(|outcome| {
+                outcome.node_path == site.leaf.obligation
+                    && u32::from(outcome.conjunct) == site.leaf.conjunct
+                    && outcome.discharged
+            });
             if blinded_discharged {
                 dispositions.push(LocalLeafDisposition {
                     leaf: site.leaf,
@@ -3862,7 +3999,10 @@ fn local_gate_seeds(
                 continue;
             }
             let mut pass = FunctionPass::from_metadata(function, nominals, function_dependencies)?;
-            let subject = pass.expression(&site.offset, dependencies)?.aggregate();
+            let mut subject = ProvenanceDependency::default();
+            for expression in &site.subjects {
+                subject.union(&pass.expression(expression, dependencies)?.aggregate());
+            }
             if subject.unconditional_external {
                 let entry_requirement =
                     if reconstructor.external_entry == Some(function.id) && unasserted_discharged {
@@ -3877,11 +4017,26 @@ fn local_gate_seeds(
                     leaf: site.leaf,
                     subject,
                     entry_requirement,
-                    carrier: reconstructor.external_expression_route(
-                        function.id,
-                        &site.offset,
-                        DatumSelector::Plain,
-                    )?,
+                    carrier: {
+                        let mut route = None;
+                        for expression in &site.subjects {
+                            if pass
+                                .expression(expression, dependencies)?
+                                .aggregate()
+                                .unconditional_external
+                            {
+                                choose_carrier_route(
+                                    &mut route,
+                                    Some(reconstructor.external_expression_route(
+                                        function.id,
+                                        expression,
+                                        DatumSelector::Plain,
+                                    )?),
+                                );
+                            }
+                        }
+                        route.ok_or(SemanticCompilerFailure::InvalidResolution)?
+                    },
                 });
                 continue;
             }

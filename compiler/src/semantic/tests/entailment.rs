@@ -1497,7 +1497,14 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert!(!seen_obligations[ordinal], "one exact root per obligation");
                 seen_obligations[ordinal] = true;
                 assert!(outcome.discharged);
-                assert_eq!(outcome.family, ObligationFamily::Bounds);
+                match outcome.family {
+                    ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
+                    ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
+                    ObligationFamily::SystemRange => assert!(outcome.conjunct <= 1),
+                    ObligationFamily::IntegerDomain => {
+                        panic!("integer-domain roots use their own root class")
+                    }
+                }
                 assert_eq!(outcome.derivation, Some(root.node));
                 assert!(!outcome.node_path.components().is_empty());
                 let [requested] = outcome.components.as_slice() else {
@@ -1526,10 +1533,21 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         assert!(!outcome.contradictory);
                     }
                     DerivationConclusion::Contradiction => assert!(outcome.contradictory),
+                    DerivationConclusion::Goal {
+                        goal,
+                        sign: GoalSign::Positive,
+                    } if matches!(
+                        outcome.family,
+                        ObligationFamily::AllocationFit | ObligationFamily::SystemRange
+                    ) =>
+                    {
+                        assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
+                        assert!(!outcome.contradictory);
+                    }
                     DerivationConclusion::Goal { .. }
                     | DerivationConclusion::IntegerDomain(_)
                     | DerivationConclusion::PostconditionAggregate => {
-                        panic!("a bounds root cannot conclude a goal")
+                        panic!("this obligation root cannot conclude that goal")
                     }
                 }
             }
@@ -6368,43 +6386,96 @@ fn main() -> own unit pure {
 }
 
 // ---------------------------------------------------------------------
-// [ENT-3] S10 boundary count facts
+// [ENT-6] SYS-8 half-open range obligations
 // ---------------------------------------------------------------------
 
 #[test]
-fn a_transfer_count_is_bounded_by_its_bounding_actual_and_not_beyond_it() {
-    // The bound is `w <= k` against the actual bound to the operation's own
-    // bounding parameter, so a count equal to the length proves nothing.
+fn one_system_call_retains_two_independent_ordered_range_obligations() {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> own unit reads('o 's), writes('o), external, blocks {
+  region 'attempt {
+    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end) {
+      Ok(value: next) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+  }
+  return unit;
+}
+
+command fn main(command.stdout as out: own Output) -> own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let outcomes = obligations(source, "publish");
+    assert_eq!(outcomes.len(), 2);
+    assert!(
+        outcomes.iter().all(|outcome| {
+            outcome.family == ObligationFamily::SystemRange && !outcome.discharged
+        })
+    );
+    assert_eq!(outcomes[0].conjunct, 0);
+    assert_eq!(outcomes[1].conjunct, 1);
+    assert_eq!(outcomes[0].node_path, outcomes[1].node_path);
+
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("an unproved system range must reject statically: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Sys8);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedSystemRangeObligation { .. }
+        ));
+    });
+}
+
+// ---------------------------------------------------------------------
+// [ENT-3] S10 boundary endpoint facts
+// ---------------------------------------------------------------------
+
+#[test]
+fn a_transfer_endpoint_is_bounded_by_end_and_not_beyond_it() {
+    // The bound is `next <= end` against the operation's absolute endpoint,
+    // so an endpoint equal to the table length proves nothing.
     let source = br#"const count: u64 = 4_u64;
 
-fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> own unit reads('o 's), writes('o), external, blocks, traps {
-  region 'attempt {
-    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: 0_u64, count: 3_u64) {
-      Ok(value: written) => {
-        let sample = table[written];
-      }
-      Err(error: problem) => {
-      }
-    }
-  }
-  return unit;
-}
-
-fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> own unit reads('o 's), writes('o), external, blocks, traps {
-  region 'attempt {
-    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: 0_u64, count: 4_u64) {
-      Ok(value: written) => {
-        let sample = table[written];
-      }
-      Err(error: problem) => {
+fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> own unit reads('o 's), writes('o), external, blocks {
+  let source_length = len(deref(source));
+  let enough = ile(3_u64, source_length);
+  if enough {
+    region 'attempt {
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 3_u64) {
+        Ok(value: next) => {
+          let sample = table[next];
+        }
+        Err(error: problem) => {
+        }
       }
     }
   }
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
-  let batch = buffer_new(1_u64, 0_u8);
+fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> own unit reads('o 's), writes('o), external, blocks {
+  let source_length = len(deref(source));
+  let enough = ile(4_u64, source_length);
+  if enough {
+    region 'attempt {
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 4_u64) {
+        Ok(value: next) => {
+          let sample = table[next];
+        }
+        Err(error: problem) => {
+        }
+      }
+    }
+  }
+  return unit;
+}
+
+command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks {
+  let batch = buffer_new(4_u64, 0_u8);
   let table = array_new<u8, count>(0_u8);
   region 'publication {
     under<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, table: move table);
@@ -6420,14 +6491,19 @@ command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(h
             .iter()
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
-        vec![true],
-        "written <= 3 < len(table)"
+        vec![true, true, true],
+        "the range goals and next <= 3 < len(table) all discharge"
     );
-    assert_root_has_event_kind(&under, obligation_root(&under, 0), FlowEventKind::S10);
+    let indexed = under
+        .obligations
+        .iter()
+        .position(|outcome| outcome.family == ObligationFamily::Bounds)
+        .expect("the endpoint indexes the table once");
+    assert_root_has_event_kind(&under, obligation_root(&under, indexed), FlowEventKind::S10);
     assert_eq!(
         discharge_flags(source, "exact"),
-        vec![false],
-        "written <= 4 admits written = len(table)"
+        vec![true, true, false],
+        "next <= 4 admits next = len(table)"
     );
 }
 

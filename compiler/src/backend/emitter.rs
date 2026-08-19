@@ -27,9 +27,9 @@ use super::target::{TargetLayout, TargetLayoutFailure, validate_program};
 use crate::{
     IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop, IrEntry,
     IrEntryGoal, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction,
-    IrIntegerOperation, IrNominal, IrNominalId, IrNominalKind, IrOperation, IrProgram,
-    IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator, IrTrapSite, IrType,
-    IrValueId, SystemResourceType,
+    IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind, IrOperation,
+    IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator, IrTrapSite,
+    IrType, IrValueId, SystemResourceType,
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
@@ -690,8 +690,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::SystemCall {
                 operation,
                 arguments,
-                trap,
-            } => self.emit_system_call(result, ty, *operation, arguments, trap.as_ref()),
+            } => self.emit_system_call(result, ty, *operation, arguments),
             IrOperation::Integer {
                 operation,
                 operand_type,
@@ -738,14 +737,25 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::BufferFill {
                 length,
                 value,
-                trap,
+                layout_ceiling,
                 target_domains,
-            } => self.emit_buffer_fill(result, ty, *length, *value, trap, *target_domains),
+            } => self.emit_buffer_fill(
+                result,
+                ty,
+                *length,
+                *value,
+                *layout_ceiling,
+                *target_domains,
+            ),
             IrOperation::BufferVacant {
                 length,
-                trap,
+                layout_ceiling,
                 target_domains,
-            } => self.emit_buffer_vacant(result, ty, *length, trap, *target_domains),
+            } => self.emit_buffer_vacant(result, ty, *length, *layout_ceiling, *target_domains),
+            IrOperation::BufferFits {
+                length,
+                maximum_length,
+            } => self.emit_buffer_fits(result, ty, *length, *maximum_length),
             IrOperation::BufferLength { buffer } => self.emit_buffer_length(result, ty, *buffer),
             IrOperation::BufferIndex {
                 buffer,
@@ -1093,6 +1103,7 @@ pub(super) fn entry_goal_operation(operation: &IrOperation) -> bool {
             | IrOperation::Reinterpret { .. }
             | IrOperation::Boolean { .. }
             | IrOperation::EnumEquality { .. }
+            | IrOperation::BufferFits { .. }
             | IrOperation::BufferLength { .. }
             | IrOperation::SliceLength { .. }
             | IrOperation::BoxDeref { .. }

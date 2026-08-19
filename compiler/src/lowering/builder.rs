@@ -816,7 +816,6 @@ impl<'program> IrBuilder<'program> {
                 operation,
                 arguments,
                 result,
-                trap,
                 ..
             } => {
                 let arguments = arguments
@@ -828,7 +827,6 @@ impl<'program> IrBuilder<'program> {
                     IrOperation::SystemCall {
                         operation: IrSystemOperation(*operation),
                         arguments,
-                        trap: trap.clone().map(Into::into),
                     },
                 )
             }
@@ -1041,17 +1039,31 @@ impl<'program> IrBuilder<'program> {
                 element,
                 length,
                 value,
-                trap,
+                layout_ceiling,
                 target_domains,
                 ..
-            } => self.lower_buffer_fill(*element, length, value, trap, *target_domains),
+            } => self.lower_buffer_fill(*element, length, value, *layout_ceiling, *target_domains),
             CheckedExpression::BufferVacant {
                 element,
                 length,
-                trap,
+                layout_ceiling,
                 target_domains,
                 ..
-            } => self.lower_buffer_vacant(*element, length, trap, *target_domains),
+            } => self.lower_buffer_vacant(*element, length, *layout_ceiling, *target_domains),
+            CheckedExpression::BufferFits {
+                length,
+                layout_ceiling,
+                ..
+            } => {
+                let length = self.expression(length)?;
+                self.define(
+                    IrType::Bool,
+                    IrOperation::BufferFits {
+                        length,
+                        maximum_length: layout_ceiling.stride.allocation_limit(),
+                    },
+                )
+            }
             CheckedExpression::BufferLength { root, .. } => self.lower_buffer_length(root),
             CheckedExpression::BufferIndex {
                 root,

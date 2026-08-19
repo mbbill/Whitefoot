@@ -189,7 +189,7 @@ fn validate_function(
                 continue;
             };
             layouts.layout(*ty)?;
-            validate_target_obligation(layouts, function, operation)?;
+            validate_target_obligation(layouts, function, *ty, operation)?;
             for slot in emitted_stack_slots(function, *ty, operation)? {
                 let layout = layouts
                     .layout(slot)
@@ -209,14 +209,41 @@ fn validate_function(
 fn validate_target_obligation(
     layouts: &mut LayoutComputer<'_, '_, '_, '_>,
     function: &IrFunction,
+    result_type: IrType,
     operation: &IrOperation,
 ) -> Result<(), TargetLayoutFailure> {
     match operation {
         IrOperation::ArrayFill { target_domain, .. }
             if *target_domain == IrTargetDomainObligation::ElementAddress => {}
-        IrOperation::BufferFill { target_domains, .. }
-        | IrOperation::BufferVacant { target_domains, .. }
-            if target_domains.is_complete() => {}
+        IrOperation::BufferFill {
+            target_domains,
+            layout_ceiling,
+            ..
+        }
+        | IrOperation::BufferVacant {
+            target_domains,
+            layout_ceiling,
+            ..
+        } if target_domains.is_complete() => {
+            let IrType::Buffer { element } = result_type else {
+                return Err(TargetLayoutFailure::InvalidIr);
+            };
+            let actual = layouts.layout(element.ty())?;
+            let stride = align_up(
+                layouts.target,
+                actual.size,
+                actual.align,
+                TargetObject::Representation,
+            )?;
+            if !layout_ceiling.size.permits(actual.size)
+                || actual.align > layout_ceiling.align
+                || !layout_ceiling.stride.permits(stride)
+            {
+                return Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::Representation,
+                ));
+            }
+        }
         IrOperation::ArrayIndex {
             root,
             target_domain,
@@ -311,15 +338,8 @@ fn validate_trap_record(
 fn instruction_trap(instruction: &IrInstruction) -> Option<&IrTrapSite> {
     match instruction {
         IrInstruction::Check { trap, .. } => Some(trap),
-        IrInstruction::Define { operation, .. } => match operation {
-            IrOperation::BufferFill { trap, .. }
-            | IrOperation::BufferVacant { trap, .. }
-            | IrOperation::SystemCall {
-                trap: Some(trap), ..
-            } => Some(trap),
-            _ => None,
-        },
-        IrInstruction::StoreBuffer { .. }
+        IrInstruction::Define { .. }
+        | IrInstruction::StoreBuffer { .. }
         | IrInstruction::Store { .. }
         | IrInstruction::Drop(_) => None,
     }

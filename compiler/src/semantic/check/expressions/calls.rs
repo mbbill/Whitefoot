@@ -96,6 +96,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if spelling == "buffer_vacant" {
             return self.check_buffer_vacant(node, function, bindings, loop_depth);
         }
+        if spelling == "buffer_fits" {
+            return self.check_buffer_fits(node, function, bindings, loop_depth);
+        }
         if spelling == "box_new" {
             return self.check_box_new(node, function, bindings, loop_depth);
         }

@@ -567,6 +567,10 @@ pub(crate) struct SystemTarget {
     /// than entering under a weaker guarantee.
     argument_backing: bool,
     directory_relative: bool,
+    /// Whether the target family has a directory-enumeration facility at
+    /// all, independently of whether this compiler has an approved ABI
+    /// record mapping for it.
+    directory_enumeration_facility: bool,
     /// The target's own directory-enumeration facility, when it has one
     /// [SYS-14].
     directory_enumeration: Option<DirectoryEnumeration>,
@@ -672,7 +676,7 @@ impl SystemTarget {
             TargetGuarantee::CommandLifetimeArgumentBacking => self.argument_backing,
             TargetGuarantee::LosslessCodeUnits => self.family.is_some(),
             TargetGuarantee::DirectoryRelativeResolution => self.directory_relative,
-            TargetGuarantee::DirectoryEnumeration => self.directory_enumeration.is_some(),
+            TargetGuarantee::DirectoryEnumeration => self.directory_enumeration_facility,
         }
     }
 
@@ -689,6 +693,7 @@ impl SystemTarget {
             errno_location,
             errno_declaration,
             error_classes,
+            directory_enumeration_facility,
             directory_enumeration,
         ) = match triple {
             // `O_RDONLY | O_DIRECTORY` on the Darwin ABI.
@@ -697,23 +702,22 @@ impl SystemTarget {
                 "__error",
                 "declare ptr @__error()",
                 &DARWIN_ERROR_CLASSES,
+                true,
                 Some(DARWIN_ENUMERATION),
             ),
             // `O_RDONLY | O_DIRECTORY` on the Linux asm-generic ABI, which
             // both supported architectures use.
             //
-            // The Linux enumeration facility is deliberately absent rather
-            // than transcribed: `getdents64` has a different arity and a
-            // different record layout from the Darwin call, and no evidence
-            // in this tree exercises either. A qualification row is a
-            // promise, so this target fails qualification for the [SYS-14]
-            // enumeration IDs — a target-qualification failure, not a source
-            // rejection [QUAL-1] — until a Linux host can run the same tests.
+            // Linux supplies `getdents64`, but this compiler intentionally has
+            // no approved ABI/record mapping for it yet. Qualification must
+            // therefore report MissingMapping rather than pretending the
+            // target lacks the semantic facility.
             "aarch64-unknown-linux-gnu" | "x86_64-unknown-linux-gnu" => (
                 0o200_000,
                 "__errno_location",
                 "declare ptr @__errno_location()",
                 &LINUX_ERROR_CLASSES,
+                true,
                 None,
             ),
             _ => return None,
@@ -722,6 +726,7 @@ impl SystemTarget {
             family: Some(CodeUnitFamily::Unix),
             argument_backing: true,
             directory_relative: true,
+            directory_enumeration_facility,
             directory_enumeration,
             host: HostFacilities::Native,
             root_prefix: b'/',
@@ -972,6 +977,9 @@ fn operation_row(
                 guarantee: *guarantee,
             });
         }
+    }
+    if matches!(operation, 12 | 13) && target.directory_enumeration().is_none() {
+        return Err(QualificationFailure::MissingMapping(facility));
     }
     let symbol = match operation {
         0 => "wf.sys.args_count.v1",
