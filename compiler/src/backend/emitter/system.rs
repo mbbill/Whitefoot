@@ -2068,7 +2068,7 @@ impl FunctionEmitter<'_, '_> {
         let row = crate::SYSTEM_OPERATIONS
             .get(usize::from(operation.ordinal()))
             .ok_or(BackendFailure::InvalidIr)?;
-        if row.parameters.len() != arguments.len() || row.traps {
+        if row.parameters.len() != arguments.len() {
             return Err(BackendFailure::InvalidIr);
         }
         let mut rendered = Vec::with_capacity(arguments.len() + 2);

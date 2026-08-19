@@ -198,8 +198,6 @@ pub struct SystemOperation {
     pub external: bool,
     /// Fixed `blocks` classification from the written [SYS-2] row.
     pub blocks: bool,
-    /// Fixed `traps` classification from the written [SYS-2] row.
-    pub traps: bool,
 }
 
 /// One owner-local [SYS-2] operation value parameter.
@@ -544,7 +542,9 @@ const fn ok_u64(err: u8) -> SystemTypeRef {
 /// file-open-by-name candidate's, admitted only under [`OPEN_BY_NAME`].
 ///
 /// Each row registers the declared region parameters, value parameters, result
-/// type, and the fixed `external`/`blocks`/`traps` classification. The
+/// type, and the fixed `external`/`blocks` classification. System operations
+/// cannot exhibit the `traps` effect: their partial domains are static
+/// call-site obligations and fallible host results are explicit outcomes. The
 /// `reads`/`writes` region entries are not stored: [SYS-2] fixes them as a
 /// mechanical derivation from the parameter modes — every borrow of region
 /// `'r` contributes `reads('r)`, and every `&uniq 'r` parameter (each one is
@@ -562,7 +562,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: SystemTypeRef::U64,
         external: false,
         blocks: false,
-        traps: false,
     },
     SystemOperation {
         spelling: "arg_get",
@@ -578,7 +577,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: ok_nominal(HOST_STRING, ARG_ERROR),
         external: false,
         blocks: false,
-        traps: false,
     },
     SystemOperation {
         spelling: "host_bytes_len",
@@ -591,7 +589,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: SystemTypeRef::U64,
         external: false,
         blocks: false,
-        traps: false,
     },
     SystemOperation {
         spelling: "host_copy_bytes",
@@ -613,7 +610,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: ok_u64(COPY_ERROR),
         external: false,
         blocks: false,
-        traps: false,
     },
     SystemOperation {
         spelling: "host_utf8_len",
@@ -626,7 +622,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: ok_u64(UTF8_ERROR),
         external: false,
         blocks: false,
-        traps: false,
     },
     SystemOperation {
         spelling: "host_copy_utf8",
@@ -648,7 +643,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: ok_u64(UTF8_COPY_ERROR),
         external: false,
         blocks: false,
-        traps: false,
     },
     SystemOperation {
         spelling: "relative_path",
@@ -661,7 +655,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: ok_nominal(RELATIVE_PATH, PATH_ERROR),
         external: false,
         blocks: false,
-        traps: false,
     },
     SystemOperation {
         spelling: "open_read",
@@ -681,7 +674,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: ok_nominal(READ_FILE, IO_ERROR),
         external: true,
         blocks: true,
-        traps: false,
     },
     SystemOperation {
         spelling: "read_once",
@@ -703,7 +695,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: SystemTypeRef::Nominal(READ_OUTCOME),
         external: true,
         blocks: true,
-        traps: false,
     },
     SystemOperation {
         spelling: "write_once",
@@ -725,7 +716,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: ok_u64(IO_ERROR),
         external: true,
         blocks: true,
-        traps: false,
     },
     SystemOperation {
         spelling: "exit_status",
@@ -738,7 +728,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: SystemTypeRef::Nominal(EXIT_STATUS),
         external: false,
         blocks: false,
-        traps: false,
     },
     // The three traversal-surface candidate rows [SYS-14].
     SystemOperation {
@@ -761,7 +750,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: ok_nominal(DIRECTORY_READ, IO_ERROR),
         external: true,
         blocks: true,
-        traps: false,
     },
     SystemOperation {
         spelling: "open_list",
@@ -774,7 +762,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: ok_nominal(DIRECTORY_LIST, IO_ERROR),
         external: true,
         blocks: true,
-        traps: false,
     },
     SystemOperation {
         spelling: "list_once",
@@ -796,7 +783,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: SystemTypeRef::Nominal(LIST_OUTCOME),
         external: true,
         blocks: true,
-        traps: false,
     },
     // The file-open-by-name candidate row [SYS-11]: `open_read`'s sibling
     // over a caller-owned single path component, taking exactly the name
@@ -821,7 +807,6 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         result: ok_nominal(READ_FILE, IO_ERROR),
         external: true,
         blocks: true,
-        traps: false,
     },
 ];
 
@@ -1594,10 +1579,7 @@ mod tests {
             panic!("the candidate ordinal must name the candidate operation");
         };
         assert_eq!(operation.spelling, "open_file");
-        assert_eq!(
-            (operation.external, operation.blocks, operation.traps),
-            (true, true, false)
-        );
+        assert_eq!((operation.external, operation.blocks), (true, true));
         // Off, the same ordinal is past the inventory and names nothing.
         assert!(system_entity(open_file, Inventory::Traversal).is_none());
         assert!(system_entity(SystemDeclarationId::new(199), Inventory::OpenByName).is_none());
@@ -1792,9 +1774,6 @@ mod tests {
         }
         if operation.blocks {
             effects.push("blocks".to_owned());
-        }
-        if operation.traps {
-            effects.push("traps".to_owned());
         }
         if effects.is_empty() {
             effects.push("pure".to_owned());

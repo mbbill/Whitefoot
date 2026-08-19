@@ -4,8 +4,9 @@
 //! [GRAM-11] arguments in declared order, explicit region arguments, borrow
 //! formation and overlap checking, and [EFF-2] call-boundary effect
 //! projection — except that its signature is the fixed catalog row rather
-//! than a source declaration. `external`, `blocks`, and `traps` transfer by
-//! presence; `reads`/`writes` region entries come from the mechanical
+//! than a source declaration. `external` and `blocks` transfer by presence;
+//! system operations never exhibit `traps`, and `reads`/`writes` region
+//! entries come from the mechanical
 //! [SYS-2] mode derivation and are projected through the actual borrow's
 //! ultimate storage origin, so a borrow of a current-function own root
 //! contributes no enclosing region effect.
@@ -70,7 +71,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             allocates_arenas: Vec::new(),
             external: operation.external,
             blocks: operation.blocks,
-            traps: operation.traps,
+            traps: false,
         };
         for (field, parameter) in fields.into_iter().zip(operation.parameters) {
             if self.identifier(field)? != parameter.name {
