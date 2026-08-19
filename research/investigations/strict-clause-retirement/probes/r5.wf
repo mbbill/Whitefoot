@@ -1,0 +1,28 @@
+fn bounded<T: Int>(value: own T, limit: own T) -> own T traps ensures result {
+  check ilt(result, limit) else trap "bounded result";
+} {
+  doc "A generic whose postcondition is proved only by a claim; every concrete instance carries that claim.";
+  claim inside: ilt(value, limit) because "the caller passes a bounded value";
+  return value;
+}
+
+deny_claims fn strict_read(values: own array<u8, 4>, index: own u64) -> own u8 traps {
+  doc "One concrete instance of the claim-bearing generic sits in this demanded closure.";
+  let room = len(values);
+  let safe = bounded<u64>(value: index, limit: room);
+  return values[safe];
+}
+
+fn ordinary_use() -> own i32 traps {
+  doc "A second instantiation outside the closure, to force two concrete instances.";
+  let picked = bounded<i32>(value: 1_i32, limit: 4_i32);
+  return picked;
+}
+
+fn main() -> own unit traps {
+  doc "Driver.";
+  let values = array_new<u8, 4>(7_u8);
+  let selected = strict_read(values: move values, index: 0_u64);
+  let other = ordinary_use();
+  return unit;
+}

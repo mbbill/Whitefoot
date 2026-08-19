@@ -1,0 +1,12 @@
+deny_claims fn strict_overflow(n: own i32) -> own i32 traps {
+  doc "A constant-operand overflow site inside a marked root, discharged in the complete view only by a claim [OP-2, ENT-6].";
+  claim bounded: ilt(n, 100_i32) because "the caller passes a small value";
+  let m = n + 1_i32;
+  return m;
+}
+
+fn main() -> own unit traps {
+  doc "Driver.";
+  let observed = strict_overflow(n: 1_i32);
+  return unit;
+}

@@ -1,0 +1,21 @@
+fn clamped(value: own u64, limit: own u64) -> own u64 traps ensures result {
+  check ilt(result, limit) else trap "clamped result";
+} {
+  doc "The postcondition is proved only by this claim, so the summary is available in the complete view and absent from the unasserted one.";
+  claim inside: ilt(value, limit) because "caller passes a bounded value";
+  return value;
+}
+
+deny_claims fn strict_read(values: own array<u8, 4>, index: own u64) -> own u8 traps {
+  doc "A demanded strict component whose bounds obligation is discharged only by a claim-backed S12 summary imported from a callee.";
+  let room = len(values);
+  let safe = clamped(value: index, limit: room);
+  return values[safe];
+}
+
+fn main() -> own unit traps {
+  doc "Driver.";
+  let values = array_new<u8, 4>(7_u8);
+  let selected = strict_read(values: move values, index: 0_u64);
+  return unit;
+}
