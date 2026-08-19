@@ -54,14 +54,14 @@ fn named<'functions>(
 /// is gone in every build mode.
 #[test]
 fn a_dominating_check_discharges_the_literal_site_and_drops_its_check() {
-    let source = br#"fn bump(x: own u64) -> own u64 traps {
+    let source = br#"fn bump(x: own u64) -> result: own u64 traps {
   claim bounded_input: ilt(x, 1000_u64) because "bounded input";
   let y = x + 1_u64;
   return y;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_arithmetic(source, |outcome| {
@@ -96,12 +96,12 @@ fn main() -> own unit pure {
 /// index obligation uses.
 #[test]
 fn the_counted_binder_increment_discharges_by_transitive_closure() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let n = 10_u64;
   for @steps i in 0_u64..n {
     let next = i + 1_u64;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_arithmetic(source, |outcome| {
@@ -126,13 +126,13 @@ fn the_counted_binder_increment_discharges_by_transitive_closure() {
 /// `pure` effect row is the correct row for this body.
 #[test]
 fn an_unbounded_literal_site_rejects_citing_op2_with_the_folded_residual() {
-    let source = br#"fn bump(x: own u64) -> own u64 pure {
+    let source = br#"fn bump(x: own u64) -> result: own u64 pure {
   let y = x + 1_u64;
   return y;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_arithmetic(source, |outcome| {
@@ -166,14 +166,14 @@ fn main() -> own unit pure {
 /// which still executes — carries the function's `traps` effect.
 #[test]
 fn a_dominating_claim_discharges_the_site_and_carries_the_trap() {
-    let source = br#"fn bump(x: own u64) -> own u64 traps {
+    let source = br#"fn bump(x: own u64) -> result: own u64 traps {
   claim small: ile(x, 100_u64) because "callers pass a byte count";
   let y = x + 1_u64;
   return y;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_arithmetic(source, |outcome| {
@@ -201,10 +201,10 @@ fn main() -> own unit pure {
 /// operation stays pure, and the checked program keeps its wrap identity.
 #[test]
 fn a_wrap_site_attaches_no_obligation() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let x = 6_u64;
   let y = x +wrap 1_u64;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_arithmetic(source, |outcome| {
@@ -226,11 +226,11 @@ fn a_wrap_site_attaches_no_obligation() {
 /// canonical `.defined` goal is still required, independent of effects.
 #[test]
 fn a_two_variable_site_requires_its_canonical_goal() {
-    let pure_row = br#"fn main() -> own unit pure {
+    let pure_row = br#"command fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = a + b;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_arithmetic(pure_row, |outcome| {
@@ -239,11 +239,11 @@ fn a_two_variable_site_requires_its_canonical_goal() {
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
     });
-    let traps_row = br#"fn main() -> own unit traps {
+    let traps_row = br#"command fn main() -> status: own ExitStatus traps {
   let a = 6_u64;
   let b = 7_u64;
   let c = a + b;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_arithmetic(traps_row, |outcome| {
@@ -260,9 +260,9 @@ fn a_two_variable_site_requires_its_canonical_goal() {
 /// spelling in the class.
 #[test]
 fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() {
-    let in_range = br#"fn main() -> own unit pure {
+    let in_range = br#"command fn main() -> status: own ExitStatus pure {
   let x = 254_u8 + 1_u8;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_arithmetic(in_range, |outcome| {
@@ -272,9 +272,9 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
         let main = named(&checked.data.functions, "main");
         assert_eq!(add_trap_records(main), vec![false]);
     });
-    let overflowing = br#"fn main() -> own unit pure {
+    let overflowing = br#"command fn main() -> status: own ExitStatus pure {
   let x = 255_u8 + 1_u8;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_arithmetic(overflowing, |outcome| {
@@ -299,10 +299,10 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
 /// makes the operand a term, mirroring the subscript-offset fallback.
 #[test]
 fn a_subscripted_class_operand_is_underivable_and_rejects() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let a = array_new<u8, 2>(7_u8);
   let y = a[0_u64] + 1_u8;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_arithmetic(source, |outcome| {
@@ -329,13 +329,13 @@ fn a_subscripted_class_operand_is_underivable_and_rejects() {
 /// constant overflow is no longer an accepted always-trapping call.
 #[test]
 fn the_shipped_switch_selects_the_candidate_judgment() {
-    let traps_row = br#"fn bump(x: own u64) -> own u64 traps {
+    let traps_row = br#"fn bump(x: own u64) -> result: own u64 traps {
   let y = x + 1_u64;
   return y;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(traps_row, |outcome| {
@@ -345,13 +345,13 @@ fn main() -> own unit pure {
         assert_eq!(issue.rule(), SemanticRule::Eff2);
         assert_eq!(issue.kind(), &SemanticIssueKind::EffectMismatch);
     });
-    let pure_row = br#"fn bump(x: own u64) -> own u64 pure {
+    let pure_row = br#"fn bump(x: own u64) -> result: own u64 pure {
   let y = x + 1_u64;
   return y;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(pure_row, |outcome| {
@@ -368,9 +368,9 @@ fn main() -> own unit pure {
             },
         );
     });
-    let ground = br#"fn main() -> own unit pure {
+    let ground = br#"command fn main() -> status: own ExitStatus pure {
   let x = 255_u8 + 1_u8;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(ground, |outcome| {

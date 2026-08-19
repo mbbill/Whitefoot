@@ -124,7 +124,7 @@ fn exact_reservation_failure_is_reported_without_panicking() {
 
 #[test]
 fn different_sufficient_limits_produce_identical_partitions() {
-    let source = bundle(&[("same.wf", b"fn  name() -> own unit\n")]);
+    let source = bundle(&[("same.wf", b"fn  name() -> result: own unit\n")]);
     let render = |limits| match crate::lex(&source, limits) {
         LexOutcome::Complete(lexed) => lexed
             .lexemes()

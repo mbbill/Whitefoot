@@ -7,16 +7,16 @@ use super::{emit, emit_arithmetic_obligations};
 
 /// The claim bounds `x`, so the exact `x + 1_u64` domain is proved before
 /// lowering. The claim remains the only runtime rejection point.
-const PROVED_EXACT: &[u8] = br#"fn increment(x: own u64) -> own u64 traps {
+const PROVED_EXACT: &[u8] = br#"fn increment(x: own u64) -> result: own u64 traps {
   claim bounded_input: ilt(x, 1000_u64) because "bounded input";
   let stepped = x + 1_u64;
   return stepped;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let total = increment(x: 6_u64);
   claim incremented_total: ieq(total, 7_u64) because "incremented total";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
 

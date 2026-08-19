@@ -231,7 +231,7 @@ fn the_detector_sees_both_forbidden_forms_and_neither_legal_neighbour() {
     assert_eq!(
         forbidden_forms(
             // This control *is* the form under detection.
-            b"fn main() -> own unit pure {\n  let b = True();\n  match b {\n    True() => {\n    }\n    False() => {\n    }\n  }\n  return unit;\n}\n"
+            b"command fn main() -> status: own ExitStatus pure {\n  let b = True();\n  match b {\n    True() => {\n    }\n    False() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n"
         ),
         Some(Forbidden {
             bool_match_arms: 2,
@@ -240,7 +240,7 @@ fn the_detector_sees_both_forbidden_forms_and_neither_legal_neighbour() {
     );
     assert_eq!(
         forbidden_forms(
-            b"enum Colour {\n  Red();\n  Blue();\n}\n\nfn main() -> own unit pure {\n  let c = Red();\n  match c {\n    Red() => {\n    }\n    Blue() => {\n    }\n  }\n  return unit;\n}\n"
+            b"enum Colour {\n  Red();\n  Blue();\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let c = Red();\n  match c {\n    Red() => {\n    }\n    Blue() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n"
         ),
         Some(Forbidden::default())
     );
@@ -248,7 +248,7 @@ fn the_detector_sees_both_forbidden_forms_and_neither_legal_neighbour() {
     // The unflattened `else`, and the `else if` chain that replaces it.
     assert_eq!(
         forbidden_forms(
-            b"fn main() -> own unit pure {\n  let a = True();\n  let b = True();\n  if a {\n  } else {\n    if b {\n    }\n  }\n  return unit;\n}\n"
+            b"command fn main() -> status: own ExitStatus pure {\n  let a = True();\n  let b = True();\n  if a {\n  } else {\n    if b {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n"
         ),
         Some(Forbidden {
             bool_match_arms: 0,
@@ -257,7 +257,7 @@ fn the_detector_sees_both_forbidden_forms_and_neither_legal_neighbour() {
     );
     assert_eq!(
         forbidden_forms(
-            b"fn main() -> own unit pure {\n  let a = True();\n  let b = True();\n  if a {\n  } else if b {\n  }\n  return unit;\n}\n"
+            b"command fn main() -> status: own ExitStatus pure {\n  let a = True();\n  let b = True();\n  if a {\n  } else if b {\n  }\n  return exit_status(code: 0_u8);\n}\n"
         ),
         Some(Forbidden::default())
     );
@@ -266,7 +266,7 @@ fn the_detector_sees_both_forbidden_forms_and_neither_legal_neighbour() {
     // another statement cannot be spelled `else if` and is not this defect.
     assert_eq!(
         forbidden_forms(
-            b"fn main() -> own unit pure {\n  let a = True();\n  let b = True();\n  if a {\n  } else {\n    if b {\n    }\n    return unit;\n  }\n  return unit;\n}\n"
+            b"command fn main() -> status: own ExitStatus pure {\n  let a = True();\n  let b = True();\n  if a {\n  } else {\n    if b {\n    }\n    return exit_status(code: 0_u8);\n  }\n  return exit_status(code: 0_u8);\n}\n"
         ),
         Some(Forbidden::default())
     );
@@ -274,7 +274,7 @@ fn the_detector_sees_both_forbidden_forms_and_neither_legal_neighbour() {
     // An empty `else` is a different [GRAM-6] clause and not this one.
     assert_eq!(
         forbidden_forms(
-            b"fn main() -> own unit pure {\n  let a = True();\n  if a {\n  } else {\n  }\n  return unit;\n}\n"
+            b"command fn main() -> status: own ExitStatus pure {\n  let a = True();\n  if a {\n  } else {\n  }\n  return exit_status(code: 0_u8);\n}\n"
         ),
         Some(Forbidden::default())
     );

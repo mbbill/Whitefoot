@@ -118,7 +118,7 @@ fn assert_comparison_member(
 #[test]
 fn passed_band_claim_establishes_positive_conjuncts_and_discharges_both() {
     let source =
-        br#"fn read_pair(table: own array<u8, 8>, low: own u64, high: own u64) -> own u8 traps {
+        br#"fn read_pair(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 traps {
   let low_ok = ilt(low, 8_u64);
   let high_ok = ilt(high, 8_u64);
   let both = band(low_ok, high_ok);
@@ -128,8 +128,8 @@ fn passed_band_claim_establishes_positive_conjuncts_and_discharges_both() {
   return second;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read_pair");
@@ -152,7 +152,7 @@ fn main() -> own unit pure {
 /// on the edge the guard protects.
 #[test]
 fn bor_guard_false_edge_establishes_negative_disjuncts_and_discharges() {
-    let source = br#"fn get(table: own array<u8, 4>, symbol: own u64) -> own u8 pure {
+    let source = br#"fn get(table: own array<u8, 4>, symbol: own u64) -> result: own u8 pure {
   let below = ilt(symbol, 0_u64);
   let above = ige(symbol, 4_u64);
   let invalid = bor(below, above);
@@ -163,8 +163,8 @@ fn bor_guard_false_edge_establishes_negative_disjuncts_and_discharges() {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "get");
@@ -203,7 +203,7 @@ fn main() -> own unit pure {
 /// and record nothing, and `bxor` records nothing on either sign.
 #[test]
 fn disjunctive_signs_and_bxor_record_nothing() {
-    let source = br#"fn classify(a: own u64, b: own u64) -> own u64 pure {
+    let source = br#"fn classify(a: own u64, b: own u64) -> result: own u64 pure {
   let a_small = ilt(a, 16_u64);
   let b_small = ilt(b, 16_u64);
   let both = band(a_small, b_small);
@@ -220,8 +220,8 @@ fn disjunctive_signs_and_bxor_record_nothing() {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "classify");
@@ -252,7 +252,7 @@ fn main() -> own unit pure {
 /// the child.
 #[test]
 fn bnot_flips_recursively_without_rewriting() {
-    let source = br#"fn guard(table: own array<u8, 8>, index: own u64) -> own u8 pure {
+    let source = br#"fn guard(table: own array<u8, 8>, index: own u64) -> result: own u8 pure {
   let low = ilt(index, 4_u64);
   let high = ige(index, 8_u64);
   let outside = bor(low, high);
@@ -264,8 +264,8 @@ fn bnot_flips_recursively_without_rewriting() {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "guard");
@@ -300,7 +300,7 @@ fn main() -> own unit pure {
 #[test]
 fn band_requirement_establishes_body_conjuncts_and_composes_nothing_upward() {
     let source =
-        br#"fn pick(table: own array<u8, 8>, low: own u64, high: own u64) -> own u8 pure requires {
+        br#"fn pick(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure requires {
   let low_ok = ilt(low, 8_u64);
   let high_ok = ilt(high, 8_u64);
   let both = band(low_ok, high_ok);
@@ -310,7 +310,7 @@ fn band_requirement_establishes_body_conjuncts_and_composes_nothing_upward() {
   return first;
 }
 
-fn caller(table: own array<u8, 8>, low: own u64, high: own u64) -> own u8 traps {
+fn caller(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 traps {
   let low_ok = ilt(low, 8_u64);
   let high_ok = ilt(high, 8_u64);
   let both = band(low_ok, high_ok);
@@ -319,8 +319,8 @@ fn caller(table: own array<u8, 8>, low: own u64, high: own u64) -> own u8 traps 
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let callee = entailment(source, "pick");

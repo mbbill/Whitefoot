@@ -5,12 +5,12 @@ use super::{assert_rule, assert_unsupported, with_semantics};
 
 #[test]
 fn box_creation_dereference_and_cleanup_are_explicit() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let value = 41_u64;
   let owner = box_new(value);
   let loaded = deref(owner);
   claim box_value: ieq(loaded, 41_u64) because "box value";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -51,11 +51,11 @@ fn box_creation_dereference_and_cleanup_are_explicit() {
 
 #[test]
 fn affine_box_referent_move_stays_an_explicit_capability_boundary() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let bytes = buffer_new(1_u64, 0_u8);
   let owner = box_new(move bytes);
   let extracted = move deref(owner);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_unsupported(source, UnsupportedSemanticFeature::BoxReferentMove);
@@ -73,12 +73,12 @@ fn affine_box_referent_move_stays_an_explicit_capability_boundary() {
 #[test]
 fn box_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
     assert_unsupported(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let b = box_new(4_i32);
   set deref(b) = 7_i32;
   let seen = deref(b);
   claim box_content_set: ieq(seen, 7_i32) because "box content set";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::RegionsAndBorrows,
@@ -86,12 +86,12 @@ fn box_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
     // [SET-2] shares SET-1's writability relation, so an affine, region-free
     // box content is a legal `replace` target and reaches the same stop.
     assert_unsupported(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let bytes = buffer_new(1_u64, 0_u8);
   let owner = box_new(move bytes);
   let other = buffer_new(1_u64, 1_u8);
   let old = replace deref(owner) = move other;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::RegionsAndBorrows,
@@ -105,12 +105,12 @@ fn box_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
 #[test]
 fn box_content_set_targets_keep_their_source_rejections() {
     assert_rule(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let bytes = buffer_new(1_u64, 0_u8);
   let owner = box_new(move bytes);
   let other = buffer_new(1_u64, 1_u8);
   set deref(owner) = move other;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor1,
@@ -120,15 +120,15 @@ fn box_content_set_targets_keep_their_source_rejections() {
         },
     );
     assert_rule(
-        br#"fn eat(b: own box<i32>) -> own unit pure {
+        br#"fn eat(b: own box<i32>) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let b = box_new(4_i32);
   eat(b: move b);
   set deref(b) = 7_i32;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own1,
@@ -144,50 +144,50 @@ fn region_bearing_box_and_arena_content_reject_under_stor5() {
         mechanical_fix: "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
     };
     assert_rule(
-        br#"fn invalid['r](value: own box<slice<'r, u8>>) -> own unit pure {
+        br#"fn invalid['r](value: own box<slice<'r, u8>>) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor5,
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid['r](value: own slice<'r, u8>) -> own unit allocates(heap) {
+        br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit allocates(heap) {
   box_new(move value);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor5,
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid['storage, 'data](value: own arena<'storage, slice<'data, u8>>) -> own unit pure {
+        br#"fn invalid['storage, 'data](value: own arena<'storage, slice<'data, u8>>) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor5,
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid['data, 'storage](value: own slice<'data, u8>) -> own unit allocates(arena 'storage) {
+        br#"fn invalid['data, 'storage](value: own slice<'data, u8>) -> result: own unit allocates(arena 'storage) {
   arena_new<'storage, slice<'data, u8>>(move value);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor5,
@@ -204,20 +204,20 @@ fn main() -> own unit pure {
 /// implementation limitation deciding what source was acceptable.
 #[test]
 fn a_derived_box_nominal_is_interned_whether_or_not_the_type_is_spelled_elsewhere() {
-    let named_nowhere = br#"fn main() -> own unit allocates(heap) {
+    let named_nowhere = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let owner = box_new(41_u64);
   let loaded = deref(owner);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
-    let named_in_a_signature = br#"fn take(b: own box<u64>) -> own unit pure {
+    let named_in_a_signature = br#"fn take(b: own box<u64>) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit allocates(heap) {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let owner = box_new(41_u64);
   take(b: move owner);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     for source in [named_nowhere.as_slice(), named_in_a_signature.as_slice()] {

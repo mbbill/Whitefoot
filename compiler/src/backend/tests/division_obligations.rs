@@ -9,16 +9,16 @@ use super::{emit, emit_division_obligations};
 /// The claim establishes the complete unsigned domain `d != 0`; the claim is
 /// the only runtime rejection point and the accepted exact division has no
 /// backend guard.
-const PROVED_UNSIGNED: &[u8] = br#"fn ratio(n: own u64, d: own u64) -> own u64 traps {
+const PROVED_UNSIGNED: &[u8] = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
   claim positive_divisor: igt(d, 0_u64) because "positive divisor";
   let quotient = n / d;
   return quotient;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let total = ratio(n: 12_u64, d: 4_u64);
   claim ratio_total: ieq(total, 3_u64) because "ratio total";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -90,15 +90,15 @@ fn a_proved_unsigned_site_emits_no_division_guard() {
 /// needs no `traps` row.
 #[test]
 fn a_constant_divisor_site_emits_one_plain_instruction() {
-    const CONSTANT_DIVISOR: &[u8] = br#"fn halve(n: own i32) -> own i32 pure {
+    const CONSTANT_DIVISOR: &[u8] = br#"fn halve(n: own i32) -> result: own i32 pure {
   let q = n / 2_i32;
   return q;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let half = halve(n: 9_i32);
   claim halved: ieq(half, 4_i32) because "halved";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let candidate = emit_division_obligations(CONSTANT_DIVISOR);
@@ -116,15 +116,15 @@ fn main() -> own unit traps {
 /// neither may acquire a runtime division guard.
 #[test]
 fn generic_exact_division_emits_no_runtime_guards() {
-    const GENERIC_DIVISION: &[u8] = br#"fn divide_by_one<T: Int>(n: own T) -> own T pure {
+    const GENERIC_DIVISION: &[u8] = br#"fn divide_by_one<T: Int>(n: own T) -> result: own T pure {
   let q = n / 1_T;
   return q;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let unsigned = divide_by_one<u32>(n: 12_u32);
   let signed = divide_by_one<i32>(n: 9_i32);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     // Both instances lower to the same LLVM integer type, so each is

@@ -12,11 +12,11 @@ enum Owner {
   Full(value: PairBuffers);
 }
 
-fn abandon(owner: own Owner) -> own unit pure {
+fn abandon(owner: own Owner) -> result: own unit pure {
   return unit;
 }
 
-fn consume(owner: own Owner) -> own unit traps {
+fn consume(owner: own Owner) -> result: own unit traps {
   match move owner {
     Empty() => {
     }
@@ -31,7 +31,7 @@ fn consume(owner: own Owner) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let abandoned_left = buffer_new(1_u64, 7_u8);
   let abandoned_right = buffer_new(1_u64, 9_u8);
   let abandoned_pair = PairBuffers(left: move abandoned_left, right: move abandoned_right);
@@ -44,7 +44,7 @@ fn main() -> own unit allocates(heap), traps {
   let consumed_pair = PairBuffers(left: move consumed_left, right: move consumed_right);
   let consumed = Full(value: move consumed_pair);
   consume(owner: move consumed);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -114,11 +114,11 @@ fn result_buffer_transfer_error_and_abandonment_execute() {
 
 #[test]
 fn option_buffer_some_none_and_transfer_execute() {
-    let source = br#"fn abandon(value: own Option<buffer<u8>>) -> own unit pure {
+    let source = br#"fn abandon(value: own Option<buffer<u8>>) -> result: own unit pure {
   return unit;
 }
 
-fn consume(value: own Option<buffer<u8>>) -> own unit traps {
+fn consume(value: own Option<buffer<u8>>) -> result: own unit traps {
   match move value {
     None() => {
       claim some_became_none: False() because "Some became None";
@@ -134,7 +134,7 @@ fn consume(value: own Option<buffer<u8>>) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let abandoned_bytes = buffer_new(1_u64, 5_u8);
   let abandoned_some = Some<buffer<u8>>(value: move abandoned_bytes);
   abandon(value: move abandoned_some);
@@ -143,7 +143,7 @@ fn main() -> own unit allocates(heap), traps {
   let consumed_bytes = buffer_new(1_u64, 17_u8);
   let consumed_some = Some<buffer<u8>>(value: move consumed_bytes);
   consume(value: move consumed_some);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);

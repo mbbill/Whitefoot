@@ -78,7 +78,7 @@ pub(super) fn with_ir_for<ResultValue>(
 }
 
 /// Reads one argument's bytes and returns their wrapping sum as the status.
-const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> own u64 allocates(heap), traps {
+const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> result: own u64 allocates(heap), traps {
   region 'v {
     let length = host_bytes_len<'v>(value: &'v value);
     let bytes = buffer_new(length, 0_u8);
@@ -110,7 +110,7 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> own u
   }
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -136,7 +136,8 @@ command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap
 #[test]
 fn the_argument_lease_path_allocates_nothing_and_dispatches_on_nothing() {
     // Only the lease operations: no buffer, no copy, no text route.
-    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+    let source =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
   region 'a {
     let total = args_count<'a>(args: &'a args);
     match arg_get<'a>(args: &'a args, position: total) {
@@ -223,7 +224,8 @@ fn a_non_utf8_argument_round_trips_its_exact_bytes() {
 
 #[test]
 fn args_count_reports_the_complete_invocation_vector() {
-    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+    let source =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
   region 'a {
     let total = args_count<'a>(args: &'a args);
     let narrowed = cvt<u64, u8>(total);
@@ -251,7 +253,8 @@ fn args_count_reports_the_complete_invocation_vector() {
 
 #[test]
 fn relative_path_admits_by_construction_and_never_normalizes() {
-    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+    let source =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -296,7 +299,8 @@ fn relative_path_admits_by_construction_and_never_normalizes() {
 
 #[test]
 fn the_text_route_validates_completely_and_reports_the_exact_encoded_length() {
-    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+    let source =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -353,7 +357,7 @@ fn the_text_route_validates_completely_and_reports_the_exact_encoded_length() {
 
 #[test]
 fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
-    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -411,7 +415,7 @@ fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
 
 #[test]
 fn an_out_of_range_copy_traps_with_its_own_record_before_any_write() {
-    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -452,7 +456,7 @@ fn an_out_of_range_copy_traps_with_its_own_record_before_any_write() {
 
 #[test]
 fn every_release_action_emits_exactly_its_contract() {
-    let source = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus external, blocks {
+    let source = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus external, blocks {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -469,7 +473,8 @@ fn every_release_action_emits_exactly_its_contract() {
 
 #[test]
 fn the_command_bootstrap_normalizes_once_and_maps_the_returned_status_exactly() {
-    let source = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus pure {
+    let source =
+        br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {
   return exit_status(code: 42_u8);
 }
 "#;
@@ -491,7 +496,7 @@ fn the_command_bootstrap_normalizes_once_and_maps_the_returned_status_exactly() 
 
 #[test]
 fn an_entry_selecting_no_input_still_starts_and_returns_its_status() {
-    let source = br#"command fn main() -> own ExitStatus pure {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 7_u8);
 }
 "#;
@@ -502,8 +507,8 @@ fn an_entry_selecting_no_input_still_starts_and_returns_its_status() {
 
 #[test]
 fn the_unlabelled_entry_wrapper_is_unchanged() {
-    let source = br#"fn main() -> own unit pure {
-  return unit;
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -514,7 +519,8 @@ fn the_unlabelled_entry_wrapper_is_unchanged() {
 
 #[test]
 fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
-    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+    let source =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
   region 'a {
     let total = args_count<'a>(args: &'a args);
     return exit_status(code: 0_u8);
@@ -548,7 +554,8 @@ fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
     });
 
     // The same lossy target fails for a program that leases code units.
-    let leases = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+    let leases =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 0_u64) {
       Ok(value: text) => {
@@ -578,7 +585,7 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
     // selected and before any use of an operation is emitted, and it now has
     // an approved implementation for every [SYS-2] identity on this target.
     // The I/O cluster's own emission evidence is in `system_io.rs`.
-    let source = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
@@ -605,7 +612,7 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
 
 #[test]
 fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
-    let source = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   let bytes = buffer_new(3_u64, 65_u8);
   region 'o {
     region 's {
@@ -637,7 +644,7 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
 
 #[test]
 fn linux_enumeration_facility_without_an_abi_mapping_is_missing_mapping() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus external, blocks {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus external, blocks {
   region 'c {
     match open_list<'c>(directory: &'c cwd) {
       Ok(value: list) => {
@@ -723,7 +730,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
 
 #[test]
 fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region 'n {
@@ -765,7 +772,7 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
 
 #[test]
 fn darwin_list_once_keeps_range_and_record_extents_distinct_and_verifiable() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
   let destination = buffer_new(64_u64, 0_u8);
   region 'c {
     match open_list<'c>(directory: &'c cwd) {

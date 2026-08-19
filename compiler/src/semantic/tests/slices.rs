@@ -9,19 +9,19 @@ use super::{assert_rule, assert_unsupported, with_semantics};
 fn slices_retain_type_source_and_access_operations() {
     let source = br#"const bytes: array<u8, 2> =[4_u8, 9_u8];
 
-fn first['r](values: own slice<'r, u8>) -> own u8 reads('r), traps {
+fn first['r](values: own slice<'r, u8>) -> result: own u8 reads('r), traps {
   let length = len(values);
   claim length: ieq(length, 2_u64) because "length";
   return values[0_u64];
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   region 'view {
     let values = slice_of(&'view bytes);
     let value = first<'view>(values: move values);
     claim value: ieq(value, 4_u8) because "value";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -64,12 +64,12 @@ fn main() -> own unit traps {
 
 #[test]
 fn incoming_slice_reads_require_their_origin_effect() {
-    let source = br#"fn invalid['r](values: own slice<'r, u8>) -> own u8 pure {
+    let source = br#"fn invalid['r](values: own slice<'r, u8>) -> result: own u8 pure {
   return values[0_u64];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -83,26 +83,26 @@ fn main() -> own unit pure {
 #[test]
 fn a_live_slice_prevents_writes_and_moves_of_its_source() {
     assert_rule(
-        br#"fn main() -> own unit traps {
+        br#"command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 2>(0_u8);
   region 'view {
     let window = slice_of(&'view values);
     set values[0_u64] = 1_u8;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own5,
         SemanticIssueKind::BorrowConflict,
     );
     assert_rule(
-        br#"fn main() -> own unit pure {
+        br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   region 'view {
     let window = slice_of(&'view values);
     let taken = move values;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own5,
@@ -113,7 +113,7 @@ fn a_live_slice_prevents_writes_and_moves_of_its_source() {
 #[test]
 fn slice_loans_live_until_their_named_data_region_ends() {
     assert_rule(
-        br#"fn main() -> own unit traps {
+        br#"command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 2>(0_u8);
   region 'outer {
     region 'inner {
@@ -121,7 +121,7 @@ fn slice_loans_live_until_their_named_data_region_ends() {
     }
     set values[0_u64] = 1_u8;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own5,
@@ -129,7 +129,7 @@ fn slice_loans_live_until_their_named_data_region_ends() {
     );
 
     assert_rule(
-        br#"fn main() -> own unit traps {
+        br#"command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 2>(0_u8);
   let take_view = True();
   region 'outer {
@@ -138,20 +138,20 @@ fn slice_loans_live_until_their_named_data_region_ends() {
     }
     set values[0_u64] = 1_u8;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own5,
         SemanticIssueKind::BorrowConflict,
     );
 
-    let ended_region = br#"fn main() -> own unit pure {
+    let ended_region = br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   region 'view {
     let view = slice_of(&'view values);
   }
   set values[0_u64] = 1_u8;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(ended_region, |outcome| {
@@ -165,7 +165,7 @@ fn slice_loans_live_until_their_named_data_region_ends() {
 #[test]
 fn slice_loans_follow_structured_break_region_exits() {
     assert_rule(
-        br#"fn main() -> own unit traps {
+        br#"command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 2>(0_u8);
   region 'view {
     let view = slice_of(&'view values);
@@ -174,14 +174,14 @@ fn slice_loans_follow_structured_break_region_exits() {
     }
     set values[0_u64] = 1_u8;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own5,
         SemanticIssueKind::BorrowConflict,
     );
 
-    let ended_on_break = br#"fn main() -> own unit pure {
+    let ended_on_break = br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   loop @once {
     region 'view {
@@ -190,7 +190,7 @@ fn slice_loans_follow_structured_break_region_exits() {
     }
   }
   set values[0_u64] = 1_u8;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(ended_on_break, |outcome| {
@@ -201,7 +201,7 @@ fn slice_loans_follow_structured_break_region_exits() {
     });
 
     assert_rule(
-        br#"fn main() -> own unit traps {
+        br#"command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 2>(0_u8);
   region 'outside {
     loop @once {
@@ -209,7 +209,7 @@ fn slice_loans_follow_structured_break_region_exits() {
       break @once;
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own11,
@@ -229,7 +229,7 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
 "#;
 
     let direct_move = format!(
-        r#"{OWNER}fn main() -> own unit allocates(heap), traps {{
+        r#"{OWNER}command fn main() -> status: own ExitStatus allocates(heap), traps {{
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -237,7 +237,7 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
     let view = slice_of(&'view owner.source);
     let taken = move owner.sibling;
   }}
-  return unit;
+  return exit_status(code: 0_u8);
 }}
 "#
     );
@@ -248,11 +248,11 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
     );
 
     let call = format!(
-        r#"{OWNER}fn consume(value: own buffer<u8>) -> own unit pure {{
+        r#"{OWNER}fn consume(value: own buffer<u8>) -> result: own unit pure {{
   return unit;
 }}
 
-fn main() -> own unit allocates(heap), traps {{
+command fn main() -> status: own ExitStatus allocates(heap), traps {{
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -260,7 +260,7 @@ fn main() -> own unit allocates(heap), traps {{
     let view = slice_of(&'view owner.source);
     consume(value: move owner.sibling);
   }}
-  return unit;
+  return exit_status(code: 0_u8);
 }}
 "#
     );
@@ -280,7 +280,7 @@ struct Owner {
   sibling: Slot;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let source = buffer_new(1_u64, 0_u8);
   let sibling_value = buffer_new(1_u64, 0_u8);
   let sibling = Full(value: move sibling_value);
@@ -294,7 +294,7 @@ fn main() -> own unit allocates(heap), traps {
       }
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -304,7 +304,7 @@ fn main() -> own unit allocates(heap), traps {
     );
 
     let given = format!(
-        r#"{OWNER}fn main() -> own unit allocates(heap), traps {{
+        r#"{OWNER}command fn main() -> status: own ExitStatus allocates(heap), traps {{
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -317,7 +317,7 @@ fn main() -> own unit allocates(heap), traps {
       give buffer_new(1_u64, 0_u8);
     }}
   }}
-  return unit;
+  return exit_status(code: 0_u8);
 }}
 "#
     );
@@ -332,7 +332,7 @@ fn main() -> own unit allocates(heap), traps {
   result: Result<u8, Overflow>;
 }
 
-fn invalid(owner: own Owner) -> own Result<unit, Overflow> pure {
+fn invalid(owner: own Owner) -> result: own Result<unit, Overflow> pure {
   region 'view {
     let view = slice_of(&'view owner.source);
     let value = propagate owner.result;
@@ -340,8 +340,8 @@ fn invalid(owner: own Owner) -> own Result<unit, Overflow> pure {
   return Ok<unit, Overflow>(value: unit);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -351,7 +351,7 @@ fn main() -> own unit pure {
     );
 
     let ended_region = format!(
-        r#"{OWNER}fn main() -> own unit allocates(heap), traps {{
+        r#"{OWNER}command fn main() -> status: own ExitStatus allocates(heap), traps {{
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -359,7 +359,7 @@ fn main() -> own unit pure {
     let view = slice_of(&'view owner.source);
   }}
   let taken = move owner.sibling;
-  return unit;
+  return exit_status(code: 0_u8);
 }}
 "#
     );
@@ -374,13 +374,13 @@ fn main() -> own unit pure {
 #[test]
 fn slice_views_are_not_set_targets() {
     assert_rule(
-        br#"fn main() -> own unit traps {
+        br#"command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 2>(0_u8);
   region 'view {
     let window = slice_of(&'view values);
     set window[0_u64] = 1_u8;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Set1,
@@ -394,14 +394,14 @@ fn slice_views_are_not_set_targets() {
 #[test]
 fn slice_formation_enforces_storage_duration_and_explicit_boundaries() {
     assert_rule(
-        br#"fn invalid['caller]() -> own unit pure {
+        br#"fn invalid['caller]() -> result: own unit pure {
   let values = array_new<u8, 2>(0_u8);
   let window = slice_of(&'caller values);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own10,
@@ -412,37 +412,37 @@ fn main() -> own unit pure {
   value: u8;
 }
 
-fn observe['r](values: own slice<'r, Item>) -> own unit pure {
+fn observe['r](values: own slice<'r, Item>) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::CompositeValues,
     );
     assert_unsupported(
-        br#"fn invalid['source](values: &'source buffer<u8>) -> own unit pure {
+        br#"fn invalid['source](values: &'source buffer<u8>) -> result: own unit pure {
   region 'view {
     let window = slice_of(&'view deref(values));
   }
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::RegionsAndBorrows,
     );
     assert_rule(
-        br#"fn invalid['r](values: own array<u8, 2>) -> own slice<'r, u8> pure {
+        br#"fn invalid['r](values: own array<u8, 2>) -> result: own slice<'r, u8> pure {
   return slice_of(&'r values);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own10,
@@ -457,7 +457,7 @@ fn main() -> own unit pure {
 /// untested, and one that only derived would not reject the deleted form.
 #[test]
 fn slice_of_derives_its_region_and_rejects_a_written_argument() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let data = buffer_new(4_u64, 0_u8);
   region 'outer {
     region 'inner {
@@ -466,7 +466,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
       claim length: ieq(length, 4_u64) because "length";
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -480,13 +480,13 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     // `'outer` outlives the binding the view is taken from is not the point —
     // the loan is keyed on the region the borrow writes.
     assert_rule(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let data = buffer_new(4_u64, 0_u8);
   region 'view {
     let view = slice_of(&'view data);
     let taken = move data;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own5,
@@ -499,12 +499,12 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     // asserts — the `derivation.rs:224` class.
     // The written `<'view, u8>` IS the subject and must stay written.
     assert_rule(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let data = buffer_new(4_u64, 0_u8);
   region 'view {
     slice_of<'view, u8>(&'view data);
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Op1,
@@ -514,11 +514,11 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
 
 #[test]
 fn returned_slices_keep_signature_ceilings_and_substituted_call_origins() {
-    let source = br#"fn pass['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
+    let source = br#"fn pass['r](value: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
   return move value;
 }
 
-fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
+fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
   if take_left {
     return move left;
   } else {
@@ -526,7 +526,7 @@ fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r,
   }
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let left = array_new<u8, 2>(11_u8);
   let right = array_new<u8, 2>(29_u8);
   region 'view {
@@ -547,7 +547,7 @@ fn main() -> own unit traps {
     let selected_value = selected[0_u64];
     claim returned_slice_choice: ieq(selected_value, 29_u8) because "returned slice choice";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -608,11 +608,11 @@ fn main() -> own unit traps {
 
 #[test]
 fn returned_slice_origins_drive_effects_and_alias_conflicts() {
-    let wrapper = br#"fn pass['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
+    let wrapper = br#"fn pass['r](value: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
   return move value;
 }
 
-fn first['r](value: own slice<'r, u8>) -> own u8 reads('r), traps {
+fn first['r](value: own slice<'r, u8>) -> result: own u8 reads('r), traps {
   let returned = pass<'r>(value: move value);
   let room = len(returned);
   let ok = ilt(0_u64, room);
@@ -620,8 +620,8 @@ fn first['r](value: own slice<'r, u8>) -> own u8 reads('r), traps {
   return returned[0_u64];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(wrapper, |outcome| {
@@ -632,7 +632,7 @@ fn main() -> own unit pure {
     });
 
     assert_rule(
-        br#"fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
+        br#"fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
   if take_left {
     return move left;
   } else {
@@ -640,7 +640,7 @@ fn main() -> own unit pure {
   }
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let left = array_new<u8, 2>(0_u8);
   let right = array_new<u8, 2>(0_u8);
   region 'view {
@@ -650,7 +650,7 @@ fn main() -> own unit traps {
     let selected = choose<'view>(take_left: take_left, left: move left_view, right: move right_view);
     set right[0_u64] = 1_u8;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own5,
@@ -658,16 +658,16 @@ fn main() -> own unit traps {
     );
 
     assert_rule(
-        br#"fn consume['data, 'write](view: own slice<'data, u8>, output: &uniq 'write buffer<u8>) -> own unit pure {
+        br#"fn consume['data, 'write](view: own slice<'data, u8>, output: &uniq 'write buffer<u8>) -> result: own unit pure {
   return unit;
 }
 
-fn wrapper['data, 'write](view: own slice<'data, u8>, output: &uniq 'write buffer<u8>) -> own unit pure {
+fn wrapper['data, 'write](view: own slice<'data, u8>, output: &uniq 'write buffer<u8>) -> result: own unit pure {
   return consume<'data, 'write>(view: move view, output: move output);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own12,
@@ -678,7 +678,7 @@ fn main() -> own unit pure {
 #[test]
 fn slice_value_matches_and_borrowed_slice_results_are_rejected() {
     assert_rule(
-        br#"fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
+        br#"fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
   let selected = if take_left {
     give move left;
   } else {
@@ -687,8 +687,8 @@ fn slice_value_matches_and_borrowed_slice_results_are_rejected() {
   return move selected;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own5,
@@ -706,8 +706,8 @@ fn main() -> own unit pure {
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Fn1,
@@ -716,19 +716,19 @@ fn main() -> own unit pure {
         },
     );
 
-    let borrowed_input = br#"fn first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> own u8 reads('descriptor 'data), traps {
+    let borrowed_input = br#"fn first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads('descriptor 'data), traps {
   let room = len(deref(value));
   let ok = ilt(0_u64, room);
   claim nonempty: ok because "callers pass a nonempty view";
   return deref(value)[0_u64];
 }
 
-fn wrapper['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> own u8 reads('descriptor 'data), traps {
+fn wrapper['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads('descriptor 'data), traps {
   return first<'descriptor, 'data>(value: value);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(borrowed_input, |outcome| {

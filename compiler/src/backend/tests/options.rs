@@ -25,16 +25,16 @@ fn generic_result_instances_carry_owned_aggregate_payloads() {
   width: u64;
 }
 
-fn locate(offset: own u64, width: own u64) -> own Result<Extent, u64> pure {
+fn locate(offset: own u64, width: own u64) -> result: own Result<Extent, u64> pure {
   let extent = Extent(offset: offset, width: width);
   return Ok<Extent, u64>(value: move extent);
 }
 
-fn missing(code: own u64) -> own Result<Extent, u64> pure {
+fn missing(code: own u64) -> result: own Result<Extent, u64> pure {
   return Err<Extent, u64>(error: code);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let found = locate(offset: 3_u64, width: 4_u64);
   match move found {
     Ok(value: found_extent) => {
@@ -54,7 +54,7 @@ fn main() -> own unit traps {
       claim error_payload_drift: ieq(absent_code, 9_u64) because "error payload drift";
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let output = compile_and_run(&compile(source));

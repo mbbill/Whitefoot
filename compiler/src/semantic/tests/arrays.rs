@@ -12,7 +12,7 @@ fn constants_fill_length_and_index_share_exact_array_types() {
 
 const table: array<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let values = array_new<i32, count>(7_i32);
   let length = len(values);
   let local = values[2_u64];
@@ -20,7 +20,7 @@ fn main() -> own unit traps {
   claim length_drift: ieq(length, 4_u64) because "length drift";
   claim fill_drift: ieq(local, 7_i32) because "fill drift";
   claim const_drift: ieq(stored, 30_u8) because "const drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -102,7 +102,7 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticIssueKind::InvalidConstValue,
     );
     assert_rule(
-        b"const table: array<u8, 2> =[1_u8];\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"const table: array<u8, 2> =[1_u8];\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Const2,
         SemanticIssueKind::InvalidConstValue,
     );
@@ -112,7 +112,7 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticIssueKind::InvalidConstValue,
     );
     assert_rule(
-        b"struct Cell {\n  value: i32;\n}\n\nconst bad: Cell = unit;\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"struct Cell {\n  value: i32;\n}\n\nconst bad: Cell = unit;\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Const2,
         SemanticIssueKind::InvalidConstValue,
     );
@@ -122,7 +122,7 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticIssueKind::ImmutableSetTarget,
     );
     assert_rule(
-        b"fn main() -> own unit traps {\n  let items = array_new<u8, 2>(0_u8);\n  let value = items[0_u32];\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus traps {\n  let items = array_new<u8, 2>(0_u8);\n  let value = items[0_u32];\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
@@ -141,8 +141,8 @@ struct Holder {
   flags: array<Flag, count>;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -166,7 +166,7 @@ fn main() -> own unit pure {
     });
 
     assert_rule(
-        b"enum Payload {\n  Item(value: i32);\n}\n\nstruct Holder {\n  values: array<Payload, 2>;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"enum Payload {\n  Item(value: i32);\n}\n\nstruct Holder {\n  values: array<Payload, 2>;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type2,
         SemanticIssueKind::TypeMismatch,
     );
@@ -174,12 +174,12 @@ fn main() -> own unit pure {
 
 #[test]
 fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 2>(0_u8);
   set values[1_u64] = 9_u8;
   let stored = values[1_u64];
   claim set_drift: ieq(stored, 9_u8) because "set drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -215,7 +215,7 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
     // A discharged subscript is not an [EFF-2] trap source: the indexed set
     // with a constant in-range offset is accepted in a `pure` function.
     with_semantics(
-        b"fn main() -> own unit pure {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u8;\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u8;\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             assert!(
                 matches!(outcome, SemanticOutcome::Complete(_)),
@@ -224,12 +224,12 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
         },
     );
     assert_rule(
-        b"fn main() -> own unit traps {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u16;\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus traps {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
     assert_rule(
-        b"fn consume(values: own array<u8, 2>) -> own u8 pure {\n  return 1_u8;\n}\n\nfn main() -> own unit traps {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = consume(values: move values);\n  return unit;\n}\n",
+        b"fn consume(values: own array<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\ncommand fn main() -> status: own ExitStatus traps {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own1,
         SemanticIssueKind::UseAfterMove {
             mechanical_fix: "introduce a new `let` binding before reuse",
@@ -247,7 +247,7 @@ struct Outer {
   inner: Inner;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 2>(0_u8);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
@@ -256,7 +256,7 @@ fn main() -> own unit traps {
   let stored = outer.inner.values[1_u64];
   claim length_drift: ieq(length, 2_u64) because "length drift";
   claim set_drift: ieq(stored, 9_u8) because "set drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -292,16 +292,16 @@ struct Outer {
   inner: Inner;
 }
 
-fn replacement(value: own Outer) -> own u8 pure {
+fn replacement(value: own Outer) -> result: own u8 pure {
   return 9_u8;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 2>(0_u8);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
   set outer.inner.values[1_u64] = replacement(value: move outer);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own1,
@@ -319,7 +319,7 @@ struct Outer {
   inner: Inner;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 2>(0_u8);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
@@ -327,7 +327,7 @@ fn main() -> own unit traps {
     let held = &'view outer;
     set outer.inner.values[1_u64] = 9_u8;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own5,
@@ -341,25 +341,25 @@ fn region_bearing_array_content_rejects_under_stor5() {
         mechanical_fix: "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
     };
     assert_rule(
-        br#"fn invalid['r](value: own array<slice<'r, u8>, 1>) -> own unit pure {
+        br#"fn invalid['r](value: own array<slice<'r, u8>, 1>) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor5,
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid['r](value: own slice<'r, u8>) -> own unit pure {
+        br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit pure {
   array_new<slice<'r, u8>, 1>(move value);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor5,

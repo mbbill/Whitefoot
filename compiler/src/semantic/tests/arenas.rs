@@ -26,11 +26,11 @@ fn arena_results_reject_citing_stor4_before_missing_main() {
 fn contract_member_arena_results_reject_citing_stor4() {
     assert_rule(
         br#"contract Maker {
-  fn make['r]() -> own arena<'r, i32> allocates(arena 'r);
+  fn make['r]() -> result: own arena<'r, i32> allocates(arena 'r);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor4,
@@ -46,7 +46,7 @@ fn main() -> own unit pure {
 #[test]
 fn missing_main_still_rejects_when_nothing_else_does() {
     with_semantics(
-        b"fn quiet() -> own unit pure {\n  return unit;\n}\n",
+        b"fn quiet() -> result: own unit pure {\n  return unit;\n}\n",
         |outcome| {
             let SemanticOutcome::SourceIssue { issue } = outcome else {
                 panic!("a main-less unit must reject: {outcome:?}");
@@ -63,7 +63,7 @@ fn missing_main_still_rejects_when_nothing_else_does() {
 #[test]
 fn missing_main_wins_over_an_unsupported_capability() {
     with_semantics(
-        b"fn quiet['r](storage: own arena<'r, i32>) -> own unit pure {\n  return unit;\n}\n",
+        b"fn quiet['r](storage: own arena<'r, i32>) -> result: own unit pure {\n  return unit;\n}\n",
         |outcome| {
             let SemanticOutcome::SourceIssue { issue } = outcome else {
                 panic!("a main-less unit must reject: {outcome:?}");
@@ -98,13 +98,13 @@ fn arena_content_views_stay_outside_the_slice_return_ceiling() {
 #[test]
 fn arena_content_borrows_obey_own10_with_the_arena_region() {
     assert_rule(
-        br#"fn views['r, 's](storage: own arena<'r, array<u8, 2>>) -> own slice<'s, u8> pure {
+        br#"fn views['r, 's](storage: own arena<'r, array<u8, 2>>) -> result: own slice<'s, u8> pure {
   let view = slice_of(&'s deref(storage));
   return move view;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own10,
@@ -119,13 +119,13 @@ fn main() -> own unit pure {
 #[test]
 fn checked_arena_parameters_stop_at_the_explicit_runtime_gate() {
     assert_unsupported(
-        br#"fn views['r](storage: own arena<'r, array<u8, 2>>) -> own unit pure {
+        br#"fn views['r](storage: own arena<'r, array<u8, 2>>) -> result: own unit pure {
   let view = slice_of(&'r deref(storage));
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::ArenaRuntime,
@@ -139,13 +139,13 @@ fn main() -> own unit pure {
 #[test]
 fn local_arena_content_views_stop_at_the_explicit_runtime_gate() {
     assert_unsupported(
-        br#"fn main() -> own unit pure {
+        br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(7_u8);
   region 'r {
     let a = arena_new<'r, array<u8, 2>>(move values);
     let view = slice_of(&'r deref(a));
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::ArenaRuntime,
@@ -164,35 +164,35 @@ fn arena_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
     // A `uniq` child in the arena's own region, and the same borrow under a
     // nested region: `'r` outlives-or-equals both.
     assert_unsupported(
-        br#"fn bump['r](n: &uniq 'r i32) -> own unit writes('r) {
+        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes('r) {
   set deref(n) = 42_i32;
   return unit;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     bump<'r>(n: &uniq 'r deref(a));
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::ArenaRuntime,
     );
     assert_unsupported(
-        br#"fn bump['r](n: &uniq 'r i32) -> own unit writes('r) {
+        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes('r) {
   set deref(n) = 42_i32;
   return unit;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     region 'c {
       bump<'c>(n: &uniq 'c deref(a));
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::ArenaRuntime,
@@ -200,27 +200,27 @@ fn main() -> own unit traps {
     // A shared borrow in argument position, and a `let`-bound holder, which
     // OWN-14 rejected outright as a non-argument reborrow position.
     assert_unsupported(
-        br#"fn peek['r](n: &'r i32) -> own i32 reads('r) {
+        br#"fn peek['r](n: &'r i32) -> result: own i32 reads('r) {
   return deref(n);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     let v = peek<'r>(n: &'r deref(a));
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::ArenaRuntime,
     );
     assert_unsupported(
-        br#"fn main() -> own unit traps {
+        br#"command fn main() -> status: own ExitStatus traps {
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     let h = &uniq 'r deref(a);
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::ArenaRuntime,
@@ -235,14 +235,14 @@ fn arena_content_borrows_keep_their_region_rejections() {
     // An enclosing region outlives the arena's, so its storage is too
     // short-lived for the borrow.
     assert_rule(
-        br#"fn main() -> own unit traps {
+        br#"command fn main() -> status: own ExitStatus traps {
   region 'o {
     region 'r {
       let a = arena_new<'r, i32>(4_i32);
       let h = &uniq 'o deref(a);
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own10,
@@ -250,12 +250,12 @@ fn arena_content_borrows_keep_their_region_rejections() {
     );
     // A caller-supplied region is never comparable to a local arena's [OWN-3].
     assert_rule(
-        br#"fn hold['s](n: &uniq 's i32) -> own unit writes('s) {
+        br#"fn hold['s](n: &uniq 's i32) -> result: own unit writes('s) {
   set deref(n) = 1_i32;
   return unit;
 }
 
-fn outer['s]() -> own unit pure {
+fn outer['s]() -> result: own unit pure {
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     hold<'s>(n: &uniq 's deref(a));
@@ -263,15 +263,15 @@ fn outer['s]() -> own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own10,
         SemanticIssueKind::InvalidBorrowLifetime,
     );
     assert_rule(
-        br#"fn main() -> own unit traps {
+        br#"command fn main() -> status: own ExitStatus traps {
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     loop @once {
@@ -279,7 +279,7 @@ fn main() -> own unit pure {
       break @once;
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own11,
@@ -300,14 +300,14 @@ fn main() -> own unit pure {
 #[test]
 fn arena_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
     assert_unsupported(
-        br#"fn main() -> own unit traps {
+        br#"command fn main() -> status: own ExitStatus traps {
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     set deref(a) = 7_i32;
     let seen = deref(a);
     claim arena_content_set: ieq(seen, 7_i32) because "arena content set";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::ArenaRuntime,
@@ -319,7 +319,7 @@ fn arena_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
 #[test]
 fn arena_deliveries_may_not_leave_their_region_block() {
     assert_rule(
-        br#"fn main() -> own unit pure {
+        br#"command fn main() -> status: own ExitStatus pure {
   let flag = True();
   let escaped = if flag {
     region 'r {
@@ -327,9 +327,9 @@ fn arena_deliveries_may_not_leave_their_region_block() {
       give move a;
     }
   } else {
-    return unit;
+    return exit_status(code: 0_u8);
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor4,
@@ -344,11 +344,11 @@ fn arena_deliveries_may_not_leave_their_region_block() {
 #[test]
 fn arena_new_operands_must_match_the_written_content_type() {
     assert_rule(
-        br#"fn main() -> own unit pure {
+        br#"command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new<'r, i32>(4_u64);
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Type5,
@@ -362,24 +362,24 @@ fn arena_new_operands_must_match_the_written_content_type() {
 #[test]
 fn caller_region_allocation_and_owning_content_stop_at_the_runtime_gate() {
     assert_unsupported(
-        br#"fn fill['r]() -> own unit allocates(arena 'r) {
+        br#"fn fill['r]() -> result: own unit allocates(arena 'r) {
   let a = arena_new<'r, i32>(1_i32);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::ArenaRuntime,
     );
     assert_unsupported(
-        br#"fn main() -> own unit allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let boxed = box_new(9_i32);
   region 'r {
     let a = arena_new<'r, box<i32>>(move boxed);
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::ArenaRuntime,

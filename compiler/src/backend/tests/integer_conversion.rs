@@ -93,7 +93,7 @@ const CONVERSION_CLASSES: [(IntegerType, IntegerType); 15] = [
 
 #[test]
 fn executes_exact_success_and_failure_edges_for_every_conversion_class() {
-    let mut source = String::from("fn main() -> own unit traps {\n");
+    let mut source = String::from("command fn main() -> status: own ExitStatus traps {\n");
     let mut total_count = 0;
     let mut checked_count = 0;
     for (source_type, destination_type) in CONVERSION_CLASSES {

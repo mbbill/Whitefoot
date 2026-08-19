@@ -2,15 +2,15 @@ use super::*;
 
 #[test]
 fn primitive_buffers_cross_functions_update_and_free_once() {
-    let source = br#"fn make(n: own u64) -> own buffer<u16> allocates(heap), traps {
+    let source = br#"fn make(n: own u64) -> result: own buffer<u16> allocates(heap), traps {
   return buffer_new(n, 3_u16);
 }
 
-fn replacement() -> own u16 pure {
+fn replacement() -> result: own u16 pure {
   return 9_u16;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let values = make(n: 4_u64);
   let length = len(values);
   let room = ilt(2_u64, length);
@@ -19,7 +19,7 @@ fn main() -> own unit allocates(heap), traps {
   let stored = values[2_u64];
   claim length_drift: ieq(length, 4_u64) because "length drift";
   claim store_drift: ieq(stored, 9_u16) because "store drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -47,9 +47,9 @@ fn main() -> own unit allocates(heap), traps {
 
 #[test]
 fn op9_overflow_traps_before_allocation() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let values = buffer_new(18446744073709551615_u64, 0_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -76,9 +76,9 @@ fn op9_overflow_traps_before_allocation() {
 
 #[test]
 fn target_domain_failure_aborts_before_allocation_without_a_language_record() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let values = buffer_new(18446744073709551615_u64, 0_u8);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -111,15 +111,15 @@ fn target_domain_failure_aborts_before_allocation_without_a_language_record() {
 fn an_out_of_bounds_buffer_set_is_an_op4_compile_rejection() {
     // The allocation-length equality proves 2 < 2 underivable, so the
     // program rejects at compile time with the residual [OP-4, ENT-6].
-    let source = br#"fn replacement() -> own u8 traps {
+    let source = br#"fn replacement() -> result: own u8 traps {
   claim rhs_evaluated: False() because "RHS evaluated";
   return 9_u8;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let values = buffer_new(2_u64, 0_u8);
   set values[2_u64] = replacement();
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let failure = compile_rejection(source);
@@ -129,11 +129,11 @@ fn main() -> own unit allocates(heap), traps {
 
 #[test]
 fn empty_buffer_has_zero_length_and_a_normal_free() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let values = buffer_new(0_u64, 7_u8);
   let length = len(values);
   claim length_drift: ieq(length, 0_u64) because "length drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let output = compile_and_run(&compile(source));
@@ -144,7 +144,7 @@ fn empty_buffer_has_zero_length_and_a_normal_free() {
 
 #[test]
 fn buffer_cleanup_is_explicit_on_return_and_break_edges() {
-    let source = br#"fn cleanup(flag: own Bool) -> own unit allocates(heap), traps {
+    let source = br#"fn cleanup(flag: own Bool) -> result: own unit allocates(heap), traps {
   let values = buffer_new(2_u64, 0_u8);
   if flag {
     return unit;
@@ -156,12 +156,12 @@ fn buffer_cleanup_is_explicit_on_return_and_break_edges() {
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let true_value = True();
   let false_value = False();
   cleanup(flag: true_value);
   cleanup(flag: false_value);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -213,7 +213,7 @@ fn borrowed_struct_projection_updates_caller_storage_through_one_address_path() 
   count: u64;
 }
 
-fn update['r](pool: &uniq 'r Pool) -> own unit reads('r), writes('r), traps {
+fn update['r](pool: &uniq 'r Pool) -> result: own unit reads('r), writes('r), traps {
   let room = len(deref(pool).left);
   let ok = ilt(1_u64, room);
   claim left_sized: ok because "main pools two slots per column";
@@ -222,7 +222,7 @@ fn update['r](pool: &uniq 'r Pool) -> own unit reads('r), writes('r), traps {
   return unit;
 }
 
-fn observe['r](pool: &'r Pool) -> own u64 reads('r), traps {
+fn observe['r](pool: &'r Pool) -> result: own u64 reads('r), traps {
   let room = len(deref(pool).left);
   let ok = ilt(1_u64, room);
   claim left_sized: ok because "main pools two slots per column";
@@ -231,7 +231,7 @@ fn observe['r](pool: &'r Pool) -> own u64 reads('r), traps {
   return value + count;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let left = buffer_new(2_u64, 0_u64);
   let right = buffer_new(2_u64, 0_u64);
   let pool = Pool(left: move left, right: move right, count: 0_u64);
@@ -245,7 +245,7 @@ fn main() -> own unit allocates(heap), traps {
     let observed = observe<'read>(pool: &'read pool);
     claim borrowed_struct_update_drift: ieq(observed, 14_u64) because "borrowed struct update drift";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -323,11 +323,11 @@ fn projected_buffer_target_is_formed_once_before_rhs() {
   right: buffer<u16>;
 }
 
-fn replacement() -> own u16 pure {
+fn replacement() -> result: own u16 pure {
   return 9_u16;
 }
 
-fn update(columns: own Columns) -> own Columns traps {
+fn update(columns: own Columns) -> result: own Columns traps {
   let room = len(columns.left);
   let ok = ilt(1_u64, room);
   claim left_sized: ok because "main sizes both columns to two slots";
@@ -335,7 +335,7 @@ fn update(columns: own Columns) -> own Columns traps {
   return move columns;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let left = buffer_new(2_u64, 0_u16);
   let right = buffer_new(2_u64, 0_u16);
   let columns = Columns(left: move left, right: move right);
@@ -345,7 +345,7 @@ fn main() -> own unit allocates(heap), traps {
   claim updated_sized: updated_ok because "update returns the two-slot columns";
   let value = updated.left[1_u64];
   claim projected_store_drift: ieq(value, 9_u16) because "projected store drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -383,14 +383,14 @@ struct Owner {
   suffix: buffer<u64>;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let first = buffer_new(1_u64, 0_u8);
   let second = buffer_new(1_u64, 0_u16);
   let pair = Pair(first: move first, second: move second);
   let prefix = buffer_new(1_u64, 0_u32);
   let suffix = buffer_new(1_u64, 0_u64);
   let owner = Owner(prefix: move prefix, pair: move pair, suffix: move suffix);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -415,11 +415,11 @@ struct Owner {
   suffix: buffer<u8>;
 }
 
-fn take(owner: own Owner) -> own buffer<u8> pure {
+fn take(owner: own Owner) -> result: own buffer<u8> pure {
   return move owner.pair.first;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let first = buffer_new(1_u64, 0_u8);
   let second = buffer_new(1_u64, 0_u8);
   let pair = Pair(first: move first, second: move second);
@@ -427,7 +427,7 @@ fn main() -> own unit allocates(heap), traps {
   let suffix = buffer_new(1_u64, 0_u8);
   let owner = Owner(prefix: move prefix, pair: move pair, suffix: move suffix);
   let retained = take(owner: move owner);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -457,7 +457,7 @@ fn compiler_independent_struct_of_buffers_checksum_executes() {
 
 #[test]
 fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let slots = buffer_vacant<box<u64>>(3_u64);
   let first = box_new(11_u64);
   let wrapped = Some<box<u64>>(value: move first);
@@ -491,7 +491,7 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
       claim payload_zero: ieq(observed, 11_u64) because "payload zero";
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -533,11 +533,11 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
 
 #[test]
 fn trivially_droppable_affine_elements_keep_the_single_free() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let slots = buffer_vacant<u32>(4_u64);
   let filled = Some<u32>(value: 7_u32);
   let vacant = replace slots[2_u64] = move filled;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -554,9 +554,9 @@ fn trivially_droppable_affine_elements_keep_the_single_free() {
 
 #[test]
 fn buffer_vacant_op9_overflow_traps_before_allocation() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let slots = buffer_vacant<u64>(18446744073709551615_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);

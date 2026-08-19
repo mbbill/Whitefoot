@@ -75,13 +75,13 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_direct_unreachable_redundant_claim_rejects_at_the_claim_with_full_identity() {
-    let source = br#"deny_claims fn main() -> own unit traps {
+    let source = br#"deny_claims command fn main() -> status: own ExitStatus traps {
   let never = False();
   if never {
     let same = ieq(0_u64, 0_u64);
     claim hidden: same because "still structural";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let issue = rejection(
@@ -106,21 +106,21 @@ fn a_direct_unreachable_redundant_claim_rejects_at_the_claim_with_full_identity(
 
 #[test]
 fn the_first_root_call_importing_a_generic_claim_carries_the_least_claim_identity() {
-    let source = br#"fn claimed<T: Int>(value: own T) -> own T traps {
+    let source = br#"fn claimed<T: Int>(value: own T) -> result: own T traps {
   let flag = True();
   claim generic_seed: flag because "one concrete seed";
   return value;
 }
 
-fn relay<T: Int>(value: own T) -> own T traps {
+fn relay<T: Int>(value: own T) -> result: own T traps {
   let result = claimed<T>(value: value);
   return result;
 }
 
-deny_claims fn main() -> own unit traps {
+deny_claims command fn main() -> status: own ExitStatus traps {
   let first = relay<u64>(value: 2_u64);
   let second = relay<u8>(value: 3_u8);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let issue = rejection(source, SemanticRule::Clm3, "relay<u64>(value: 2_u64)");
@@ -145,7 +145,7 @@ deny_claims fn main() -> own unit traps {
 
 #[test]
 fn a_mutual_component_converges_one_claim_seed_to_the_root_import() {
-    let source = br#"fn left(value: own u64) -> own u64 traps {
+    let source = br#"fn left(value: own u64) -> result: own u64 traps {
   let done = ieq(value, 0_u64);
   if done {
     let flag = True();
@@ -157,19 +157,19 @@ fn a_mutual_component_converges_one_claim_seed_to_the_root_import() {
   }
 }
 
-fn right(value: own u64) -> own u64 traps {
+fn right(value: own u64) -> result: own u64 traps {
   let result = left(value: value);
   return result;
 }
 
-deny_claims fn strict_root(value: own u64) -> own u64 traps {
+deny_claims fn strict_root(value: own u64) -> result: own u64 traps {
   let result = right(value: value);
   return result;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let result = strict_root(value: 0_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let issue = rejection(source, SemanticRule::Clm3, "right(value: value)");
@@ -192,17 +192,17 @@ fn main() -> own unit traps {
 #[test]
 fn a_load_bearing_claim_cannot_authorize_a_strict_bounds_query() {
     let asserted =
-        br#"deny_claims fn read(values: own array<u8, 4>, index: own u64) -> own u8 traps {
+        br#"deny_claims fn read(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {
   let room = len(values);
   let inside = ilt(index, room);
   claim body_authorization: inside because "body authorization";
   return values[index];
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   let value = read(values: move values, index: 0_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let issue = rejection(
@@ -224,23 +224,24 @@ fn main() -> own unit traps {
 /// at the claim, not deferred to the U view of the call.
 #[test]
 fn a_load_bearing_claim_cannot_authorize_a_strict_required_call() {
-    let asserted = br#"fn required(value: own u64, limit: own u64) -> own unit pure requires {
+    let asserted =
+        br#"fn required(value: own u64, limit: own u64) -> result: own unit pure requires {
   let allowed = ilt(value, limit);
   check allowed else trap "required";
 } {
   return unit;
 }
 
-deny_claims fn forward(value: own u64, limit: own u64) -> own unit traps {
+deny_claims fn forward(value: own u64, limit: own u64) -> result: own unit traps {
   let allowed = ilt(value, limit);
   claim body_authorization: allowed because "body authorization";
   required(value: value, limit: limit);
   return unit;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   forward(value: 0_u64, limit: 1_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let issue = rejection(
@@ -264,22 +265,22 @@ fn main() -> own unit traps {
 /// least downstream claim's function and the root's own call site.
 #[test]
 fn a_downstream_authorization_is_reported_against_the_real_leaf() {
-    let source = br#"fn leaf(values: own array<u8, 4>, index: own u64) -> own u8 traps {
+    let source = br#"fn leaf(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {
   let room = len(values);
   let inside = ilt(index, room);
   claim leaf_authorization: inside because "leaf authorization";
   return values[index];
 }
 
-deny_claims fn root(values: own array<u8, 4>, index: own u64) -> own u8 traps {
+deny_claims fn root(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {
   let value = leaf(values: move values, index: index);
   return value;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   let value = root(values: move values, index: 0_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let issue = rejection(
@@ -300,23 +301,23 @@ fn main() -> own unit traps {
 #[test]
 fn an_outside_caller_must_prove_a_marked_root_requirement_in_its_own_u_view() {
     let source =
-        br#"deny_claims fn guarded(value: own u64, limit: own u64) -> own unit pure requires {
+        br#"deny_claims fn guarded(value: own u64, limit: own u64) -> result: own unit pure requires {
   let allowed = ilt(value, limit);
   check allowed else trap "guarded";
 } {
   return unit;
 }
 
-fn ordinary(value: own u64, limit: own u64) -> own unit traps {
+fn ordinary(value: own u64, limit: own u64) -> result: own unit traps {
   let allowed = ilt(value, limit);
   claim ordinary_authorization: allowed because "ordinary authorization";
   guarded(value: value, limit: limit);
   return unit;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   ordinary(value: 0_u64, limit: 1_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let issue = rejection(
@@ -334,14 +335,14 @@ fn main() -> own unit traps {
 
 #[test]
 fn an_outside_call_does_not_demand_its_actual_expression_obligations_in_u() {
-    let source = br#"deny_claims fn sink(value: own u8) -> own unit pure requires {
+    let source = br#"deny_claims fn sink(value: own u8) -> result: own unit pure requires {
   let valid = ieq(0_u64, 0_u64);
   check valid else trap "constant boundary";
 } {
   return unit;
 }
 
-fn ordinary(values: own array<u8, 4>, index: own u64) -> own unit traps {
+fn ordinary(values: own array<u8, 4>, index: own u64) -> result: own unit traps {
   let room = len(values);
   let inside = ilt(index, room);
   claim ordinary_actual_authorization: inside because "ordinary actual authorization";
@@ -349,10 +350,10 @@ fn ordinary(values: own array<u8, 4>, index: own u64) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   ordinary(values: move values, index: 0_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -388,20 +389,20 @@ fn main() -> own unit traps {
 
 #[test]
 fn a_real_value_branch_and_verified_result_pass_with_remapped_strict_roots() {
-    let source = br#"fn relay(value: own u64) -> own u64 pure ensures result {
+    let source = br#"fn relay(value: own u64) -> result: own u64 pure ensures result {
   check ieq(result, value) else trap "relay result";
 } {
   return value;
 }
 
-fn accept(value: own u64, limit: own u64) -> own u64 pure requires {
+fn accept(value: own u64, limit: own u64) -> result: own u64 pure requires {
   let allowed = ile(value, limit);
   check allowed else trap "accepted bound";
 } {
   return value;
 }
 
-deny_claims fn main() -> own unit pure requires {
+deny_claims command fn main() -> status: own ExitStatus pure requires {
   let valid = ieq(0_u64, 0_u64);
   check valid else trap "entry relation";
 } {
@@ -462,11 +463,11 @@ deny_claims fn main() -> own unit pure requires {
 
 #[test]
 fn strict_closures_do_not_flow_upward_into_an_ordinary_claiming_caller() {
-    let source = br#"deny_claims fn identity<T: Int>(value: own T) -> own T pure {
+    let source = br#"deny_claims fn identity<T: Int>(value: own T) -> result: own T pure {
   return value;
 }
 
-fn ordinary() -> own u64 traps {
+fn ordinary() -> result: own u64 traps {
   let flag = True();
   claim caller_only: flag because "outside every outgoing closure";
   let small = identity<u8>(value: 3_u8);
@@ -474,9 +475,9 @@ fn ordinary() -> own u64 traps {
   return large;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let value = ordinary();
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -491,17 +492,17 @@ fn main() -> own unit traps {
 
 #[test]
 fn removing_the_marker_preserves_the_ordinary_diagnostic_and_dark_observability() {
-    let source = br#"fn read(values: own array<u8, 4>, index: own u64) -> own u8 traps {
+    let source = br#"fn read(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {
   let room = len(values);
   let inside = ilt(index, room);
   claim ordinary_authorization: inside because "ordinary authorization";
   return values[index];
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   let value = read(values: move values, index: 0_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -521,13 +522,13 @@ fn main() -> own unit traps {
 
 #[test]
 fn the_dark_hook_still_reports_a_refuted_direct_claim_as_failure_atomic_clm3() {
-    let source = br#"deny_claims fn main() -> own unit traps {
+    let source = br#"deny_claims command fn main() -> status: own ExitStatus traps {
   let same = ieq(0_u64, 0_u64);
   let different = ine(0_u64, 0_u64);
   if same {
     claim refuted_seed: different because "dark lifecycle observation";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -546,17 +547,21 @@ fn the_dark_hook_still_reports_a_refuted_direct_claim_as_failure_atomic_clm3() {
 #[test]
 fn ordinary_fn3_contract_validation_precedes_a_marker_failure() {
     let source = br#"contract Repeated {
-  fn value() -> own i32 pure;
-  fn value() -> own i32 pure;
+  fn value() -> result: own i32 pure;
+  fn value() -> result: own i32 pure;
 }
 
-deny_claims fn main() -> own unit traps {
+deny_claims command fn main() -> status: own ExitStatus traps {
   let flag = True();
   claim later_seed: flag because "CLM-3 must run later";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
-    let issue = rejection(source, SemanticRule::Fn3, "fn value() -> own i32 pure;");
+    let issue = rejection(
+        source,
+        SemanticRule::Fn3,
+        "fn value() -> result: own i32 pure;",
+    );
     assert_eq!(
         issue.kind(),
         &SemanticIssueKind::DuplicateContractMember {
@@ -568,14 +573,14 @@ deny_claims fn main() -> own unit traps {
 #[test]
 fn ordinary_fn4_law_validation_precedes_a_marker_failure() {
     let source = br#"contract BadIdentity {
-  fn combine(x: own u64, y: own u64) -> own u64 pure;
+  fn combine(x: own u64, y: own u64) -> result: own u64 pure;
   law identity(combine, unit);
 }
 
-deny_claims fn main() -> own unit traps {
+deny_claims command fn main() -> status: own ExitStatus traps {
   let flag = True();
   claim later_seed: flag because "CLM-3 must run later";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let issue = rejection(source, SemanticRule::Fn4, "law identity(combine, unit);");
@@ -584,16 +589,16 @@ deny_claims fn main() -> own unit traps {
 
 #[test]
 fn a_dark_strict_ephemeral_failure_keeps_the_bind_first_repair() {
-    let source = br#"fn positive(value: own u8) -> own unit pure requires {
+    let source = br#"fn positive(value: own u8) -> result: own unit pure requires {
   check ilt(value, 10_u8) else trap "small";
 } {
   return unit;
 }
 
-deny_claims fn main() -> own unit pure {
+deny_claims command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(3_u8);
   positive(value: values[0_u64]);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -618,12 +623,12 @@ deny_claims fn main() -> own unit pure {
 
 #[test]
 fn an_uninstantiated_generic_marker_is_retained_without_a_concrete_root() {
-    let source = br#"deny_claims fn unused<T: Int>(value: own T) -> own T pure {
+    let source = br#"deny_claims fn unused<T: Int>(value: own T) -> result: own T pure {
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {

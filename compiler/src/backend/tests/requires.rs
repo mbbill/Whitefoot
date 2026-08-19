@@ -6,7 +6,7 @@ const OUTPUT_CAPACITY: &[u8] =
 #[test]
 fn unlabelled_entry_goal_is_inlined_once_in_the_process_wrapper() {
     let llvm = compile(
-        br#"fn main() -> own unit pure requires {
+        br#"command fn main() -> status: own ExitStatus pure requires {
   check ieq(7_u8, 7_u8) else trap "entry equality";
 } {
   return unit;
@@ -28,7 +28,7 @@ fn unlabelled_entry_goal_is_inlined_once_in_the_process_wrapper() {
 #[test]
 fn false_command_entry_goal_traps_after_setup_without_calling_or_cleaning_the_body() {
     let llvm = compile(
-        br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus external, blocks requires {
+        br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus external, blocks requires {
   check ieq(0_u8, 1_u8) else trap "entry rejected";
 } {
   return exit_status(code: 0_u8);
@@ -60,7 +60,7 @@ fn false_command_entry_goal_traps_after_setup_without_calling_or_cleaning_the_bo
 #[test]
 fn entry_only_intrinsic_is_declared_before_the_wrapper_uses_it() {
     let llvm = emit(
-        br#"fn main() -> own unit pure requires {
+        br#"command fn main() -> status: own ExitStatus pure requires {
   let count = ipopcount(0_u8);
   check ieq(count, 0_u32) else trap "entry count";
 } {
@@ -81,7 +81,7 @@ fn entry_only_intrinsic_is_declared_before_the_wrapper_uses_it() {
 #[test]
 fn entry_float_endpoint_conversion_uses_the_wrapper_value_namespace() {
     let llvm = compile(
-        br#"fn main() -> own unit pure requires {
+        br#"command fn main() -> status: own ExitStatus pure requires {
   let converted = cvt<u8, f32>(1_u8);
   check feq(converted, 1.0_f32) else trap "entry conversion";
 } {
@@ -104,18 +104,18 @@ fn entry_float_endpoint_conversion_uses_the_wrapper_value_namespace() {
 #[test]
 fn ordinary_requirement_is_not_emitted_as_a_callee_prologue() {
     let llvm = compile(
-        br#"fn bounded(value: own i32) -> own i32 pure requires {
+        br#"fn bounded(value: own i32) -> result: own i32 pure requires {
   check ige(value, 0_i32) else trap "nonnegative";
 } {
   return value;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let value = 7_i32;
   claim caller_evidence: ige(value, 0_i32) because "caller evidence";
   let result = bounded(value: value);
   claim result_drift: ieq(result, 7_i32) because "result drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -133,7 +133,7 @@ fn main() -> own unit traps {
 #[test]
 fn false_unlabelled_entry_requirement_traps_in_the_wrapper() {
     let llvm = compile(
-        br#"fn main() -> own unit pure requires {
+        br#"command fn main() -> status: own ExitStatus pure requires {
   check ieq(0_u8, 1_u8) else trap "entry rejected";
 } {
   return unit;

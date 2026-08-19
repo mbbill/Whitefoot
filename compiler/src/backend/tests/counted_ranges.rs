@@ -6,7 +6,7 @@ use super::{compile, compile_and_run, emitted_function};
 /// `main`; the counted worker itself remains pure and has no trap fallback.
 #[test]
 fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
-    let source = br#"fn exercise() -> own u64 pure {
+    let source = br#"fn exercise() -> result: own u64 pure {
   let total = 0_u64;
   for @empty i in 4_u64..4_u64 {
     set total = total +wrap 100_u64;
@@ -44,7 +44,7 @@ fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
   return total;
 }
 
-command fn main() -> own ExitStatus traps {
+command fn main() -> status: own ExitStatus traps {
   let result = exercise();
   claim counted_range_drift: ieq(result, 8_u64) because "counted range drift";
   return exit_status(code: 0_u8);

@@ -139,7 +139,7 @@ fn every_complete_source_is_reconstructible_byte_for_byte() {
         ("empty.wf", b"".as_slice()),
         (
             "forms.wf",
-            b"fn  x('r: &uniq 'r T) -> own unit\n".as_slice(),
+            b"fn  x('r: &uniq 'r T) -> result: own unit\n".as_slice(),
         ),
         ("strings.wf", br#"doc "a\\b\n";"#.as_slice()),
     ];

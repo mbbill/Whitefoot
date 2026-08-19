@@ -55,14 +55,14 @@ fn a_discarded_borrow_returning_call_compiles_and_runs() {
   return x;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let v = 5_i32;
   region 'a {
     let h = &'a v;
     source<'a>(x: h);
   }
   claim owner_value_changed: ieq(v, 5_i32) because "owner value changed";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -87,12 +87,12 @@ fn extension_chains_execute_and_write_the_owners_storage() {
   return &uniq 'r0 deref(x);
 }
 
-fn bump['r](n: &uniq 'r i32) -> own unit writes('r) {
+fn bump['r](n: &uniq 'r i32) -> result: own unit writes('r) {
   set deref(n) = 42_i32;
   return unit;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let v = 1_i32;
   region 'a {
     let h = &uniq 'a v;
@@ -102,7 +102,7 @@ fn main() -> own unit traps {
     }
   }
   claim chain_write_lost: ieq(v, 42_i32) because "chain write lost";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -117,18 +117,18 @@ fn main() -> own unit traps {
 #[test]
 fn a_unique_scalar_borrow_parameter_writes_the_callers_storage() {
     let llvm = compile(
-        br#"fn bump['r](n: &uniq 'r i32) -> own unit writes('r) {
+        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes('r) {
   set deref(n) = 42_i32;
   return unit;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let a = 0_i32;
   region 'r {
     bump<'r>(n: &uniq 'r a);
   }
   claim callee_write_lost: ieq(a, 42_i32) because "callee write lost";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -159,7 +159,7 @@ enum Packet {
   Empty();
 }
 
-fn inspect['r](packet: &'r Packet) -> own i32 reads('r) {
+fn inspect['r](packet: &'r Packet) -> result: own i32 reads('r) {
   match deref(packet) {
     Data(item: payload) => {
       return deref(payload).left;
@@ -170,7 +170,7 @@ fn inspect['r](packet: &'r Packet) -> own i32 reads('r) {
   }
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let pair = Pair(left: 41_i32, right: 1_i32);
   let packet = Data(item: move pair);
   let fallback = Empty();
@@ -182,7 +182,7 @@ fn main() -> own unit traps {
     let zero = inspect<'r>(packet: hollow);
     claim empty_arm: ieq(zero, 0_i32) because "empty arm";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );

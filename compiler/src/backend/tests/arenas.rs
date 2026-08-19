@@ -26,7 +26,7 @@ fn a_confined_arena_allocation_reads_and_releases_with_its_region() {
 #[test]
 fn arena_release_covers_loop_reentry_early_return_and_nested_regions() {
     let llvm = compile(
-        br#"fn early() -> own i32 traps {
+        br#"fn early() -> result: own i32 traps {
   region 'e {
     let a = arena_new<'e, i32>(5_i32);
     let v = deref(a);
@@ -35,7 +35,7 @@ fn arena_release_covers_loop_reentry_early_return_and_nested_regions() {
   }
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   for @turns i in 0_u64..200_u64 {
     region 'r {
       let a = arena_new<'r, i32>(1_i32);
@@ -60,7 +60,7 @@ fn main() -> own unit traps {
     let after = deref(base);
     claim outer_survives_inner_exit: ieq(after, 7_i32) because "outer survives inner exit";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -79,7 +79,7 @@ fn main() -> own unit traps {
 #[test]
 fn arena_release_covers_break_edges_and_enclosing_region_allocation() {
     let llvm = compile(
-        br#"fn main() -> own unit traps {
+        br#"command fn main() -> status: own ExitStatus traps {
   for @turns i in 0_u64..4_u64 {
     region 'r {
       let a = arena_new<'r, i32>(9_i32);
@@ -98,7 +98,7 @@ fn arena_release_covers_break_edges_and_enclosing_region_allocation() {
       claim inner_alloc: ieq(y, 4_i32) because "inner alloc";
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -114,7 +114,7 @@ fn arena_release_covers_break_edges_and_enclosing_region_allocation() {
 #[test]
 fn a_within_region_arena_delivery_executes() {
     let llvm = compile(
-        br#"fn main() -> own unit traps {
+        br#"command fn main() -> status: own ExitStatus traps {
   let flag = True();
   region 'r {
     let picked = if flag {
@@ -127,7 +127,7 @@ fn a_within_region_arena_delivery_executes() {
     let v = deref(picked);
     claim delivered_read: ieq(v, 11_i32) because "delivered read";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );

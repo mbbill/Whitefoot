@@ -4,7 +4,7 @@ use super::*;
 fn array_and_buffer_slices_share_one_read_only_descriptor_path() {
     let source = br#"const bytes: array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
 
-fn sum['r](values: own slice<'r, u8>) -> own u64 reads('r), traps {
+fn sum['r](values: own slice<'r, u8>) -> result: own u64 reads('r), traps {
   let offset = 0_u64;
   let total = 0_u64;
   let length = len(values);
@@ -23,7 +23,7 @@ fn sum['r](values: own slice<'r, u8>) -> own u64 reads('r), traps {
   return total;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   region 'static_view {
     let view = slice_of(&'static_view bytes);
     let total = sum<'static_view>(values: move view);
@@ -41,7 +41,7 @@ fn main() -> own unit allocates(heap), traps {
     let total = sum<'runtime_view>(values: move view);
     claim buffer_slice: ieq(total, 8_u64) because "buffer slice";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -64,13 +64,13 @@ fn an_out_of_bounds_slice_read_is_an_op4_compile_rejection() {
     // The slice carries its source array's length, so the constant offset
     // is refutable at compile time and the program rejects with the
     // residual [OP-4, ENT-6].
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let bytes = array_new<u8, 2>(0_u8);
   region 'view {
     let window = slice_of(&'view bytes);
     let value = window[2_u64];
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let failure = compile_rejection(source);
@@ -82,11 +82,11 @@ fn an_out_of_bounds_slice_read_is_an_op4_compile_rejection() {
 fn returned_slice_descriptors_execute_without_transferring_storage() {
     let source = br#"const fixed: array<u8, 2> =[7_u8, 13_u8];
 
-fn pass['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
+fn pass['r](value: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
   return move value;
 }
 
-fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
+fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
   if take_left {
     return move left;
   } else {
@@ -94,18 +94,18 @@ fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r,
   }
 }
 
-fn fixed_view['r]() -> own slice<'r, u8> pure {
+fn fixed_view['r]() -> result: own slice<'r, u8> pure {
   return slice_of(&'r fixed);
 }
 
-fn borrowed_first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> own u8 reads('descriptor 'data), traps {
+fn borrowed_first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads('descriptor 'data), traps {
   let room = len(deref(value));
   let ok = ilt(0_u64, room);
   claim nonempty: ok because "callers pass a two-byte view";
   return deref(value)[0_u64];
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let left = array_new<u8, 2>(11_u8);
   let right = array_new<u8, 2>(29_u8);
   region 'view {
@@ -137,7 +137,7 @@ fn main() -> own unit traps {
     let constant_value = constant[1_u64];
     claim const_holds: ieq(constant_value, 13_u8) because "const";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);

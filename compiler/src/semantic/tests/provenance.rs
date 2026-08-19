@@ -213,7 +213,7 @@ fn checked(source: &[u8], run: impl FnOnce(&CheckedProgramData)) {
 fn a_bridge_subject_excludes_the_requirement_bound_and_protected_base() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read_below(values: own array<u8, count>, limit: own u64, position: own u64) -> own u8 pure requires {
+fn read_below(values: own array<u8, count>, limit: own u64, position: own u64) -> result: own u8 pure requires {
   let room = len(values);
   check ile(limit, room) else trap "limit in values";
 } {
@@ -224,8 +224,8 @@ fn read_below(values: own array<u8, count>, limit: own u64, position: own u64) -
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -248,26 +248,26 @@ fn main() -> own unit pure {
 fn full_only_check_and_claim_calls_differ_from_an_unasserted_branch_call() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<u8, count>, position: own u64) -> own u8 pure requires {
+fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "read bound";
 } {
   return values[position];
 }
 
-fn from_check(values: own array<u8, count>, position: own u64) -> own u8 traps {
+fn from_check(values: own array<u8, count>, position: own u64) -> result: own u8 traps {
   let room = len(values);
   claim checked: ilt(position, room) because "checked";
   return read(values: move values, position: position);
 }
 
-fn from_claim(values: own array<u8, count>, position: own u64) -> own u8 traps {
+fn from_claim(values: own array<u8, count>, position: own u64) -> result: own u8 traps {
   let room = len(values);
   claim bounded: ilt(position, room) because "claimed";
   return read(values: move values, position: position);
 }
 
-fn from_branch(values: own array<u8, count>, position: own u64) -> own u8 pure {
+fn from_branch(values: own array<u8, count>, position: own u64) -> result: own u8 pure {
   let room = len(values);
   if ilt(position, room) {
     return read(values: move values, position: position);
@@ -276,8 +276,8 @@ fn from_branch(values: own array<u8, count>, position: own u64) -> own u8 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -459,7 +459,8 @@ fn coordinate_bytes<'source>(
 
 #[test]
 fn an_external_system_result_cannot_use_a_claim_to_authorize_a_local_subscript() {
-    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus traps {
+    let source =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -476,7 +477,8 @@ fn an_external_system_result_cannot_use_a_claim_to_authorize_a_local_subscript()
 
 #[test]
 fn an_external_nested_give_reaches_the_outer_value_binding_and_is_rejected() {
-    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus traps {
+    let source =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -502,13 +504,13 @@ fn an_external_nested_give_reaches_the_outer_value_binding_and_is_rejected() {
 
 #[test]
 fn a_direct_parameter_demand_rejects_the_external_actual_at_its_argument() {
-    let source = br#"fn read(values: own array<u8, 4>, position: own u64) -> own u8 traps {
+    let source = br#"fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
   let room = len(values);
   claim bounded: ilt(position, room) because "claimed parameter bound";
   return values[position];
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -523,7 +525,8 @@ command fn main(command.args as args: own Args) -> own ExitStatus traps {
 
 #[test]
 fn base_op4_precedes_a_local_prv3_candidate() {
-    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+    let source =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -538,14 +541,15 @@ fn base_op4_precedes_a_local_prv3_candidate() {
 
 #[test]
 fn base_fn8_precedes_a_call_argument_prv2_candidate() {
-    let source = br#"fn read(values: own array<u8, 4>, position: own u64) -> own u8 pure requires {
+    let source =
+        br#"fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "bound";
 } {
   return values[position];
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus pure {
+command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -564,20 +568,21 @@ command fn main(command.args as args: own Args) -> own ExitStatus pure {
 
 #[test]
 fn a_bridge_converts_to_direct_and_crosses_a_requirement_free_call() {
-    let source = br#"fn leaf(values: own array<u8, 4>, position: own u64) -> own u8 pure requires {
+    let source =
+        br#"fn leaf(values: own array<u8, 4>, position: own u64) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "leaf bound";
 } {
   return values[position];
 }
 
-fn wrapper(values: own array<u8, 4>, position: own u64) -> own u8 traps {
+fn wrapper(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
   let room = len(values);
   claim wrapper_assertion: ilt(position, room) because "wrapper assertion";
   return leaf(values: move values, position: position);
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -680,7 +685,7 @@ fn a_command_entry_bridge_terminates_at_its_call_argument_without_upstream_conti
 
 #[test]
 fn a_recursive_direct_route_uses_complete_state_identity_and_stays_finite() {
-    let source = br#"fn rotate(values: own array<u8, 4>, current: own u64, future: own u64, again: own Bool) -> own u8 traps {
+    let source = br#"fn rotate(values: own array<u8, 4>, current: own u64, future: own u64, again: own Bool) -> result: own u8 traps {
   if again {
     let stop = False();
     return rotate(values: move values, current: future, future: current, again: stop);
@@ -691,7 +696,7 @@ fn a_recursive_direct_route_uses_complete_state_identity_and_stays_finite() {
   }
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -729,14 +734,14 @@ command fn main(command.args as args: own Args) -> own ExitStatus traps {
 
 #[test]
 fn a_cross_function_system_result_retains_every_result_and_let_carrier() {
-    let source = br#"fn count_arguments(args: own Args) -> own u64 pure {
+    let source = br#"fn count_arguments(args: own Args) -> result: own u64 pure {
   region 'a {
     let total = args_count<'a>(args: &'a args);
     return total;
   }
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   let position = count_arguments(args: move args);
   let room = len(values);
@@ -773,7 +778,7 @@ command fn main(command.args as args: own Args) -> own ExitStatus traps {
 
 #[test]
 fn a_cross_function_system_write_keeps_write_context_before_the_true_origin() {
-    let source = br#"fn copy_host['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>) -> own u64 reads('v 'd), writes('d), traps {
+    let source = br#"fn copy_host['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>) -> result: own u64 reads('v 'd), writes('d), traps {
   region 'c {
     match host_copy_bytes<'v, 'c>(value: value, destination: &uniq 'c deref(destination), offset: 0_u64, capacity: 4_u64) {
       Ok(value: copied) => {
@@ -786,7 +791,7 @@ fn a_cross_function_system_write_keeps_write_context_before_the_true_origin() {
   }
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
   let bytes = buffer_new(4_u64, 0_u8);
   region 'a {
     match arg_get<'a>(args: &'a args, position: 0_u64) {
@@ -864,7 +869,7 @@ command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap
 
 #[test]
 fn an_alias_whole_place_write_taints_the_resolved_owner_and_retains_its_set_carrier() {
-    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
   let values = buffer_new(4_u64, 0_u8);
   let position = 0_u64;
   region 'a {
@@ -902,7 +907,8 @@ fn an_alias_whole_place_write_taints_the_resolved_owner_and_retains_its_set_carr
 
 #[test]
 fn a_simple_borrow_holder_route_keeps_the_holder_let_and_borrow_atom() {
-    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus traps {
+    let source =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   region 'a {
     let raw = args_count<'a>(args: &'a args);
     region 'r {
@@ -945,7 +951,7 @@ fn a_borrowed_match_payload_deref_reconstructs_a_prv3_carrier() {
   Item(value: u64);
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   region 'a {
     let raw = args_count<'a>(args: &'a args);
     let choice = Item(value: raw);
@@ -992,7 +998,7 @@ enum Wrap {
   Data(values: array<u64, count>);
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   region 'a {
     let raw = args_count<'a>(args: &'a args);
     let seeded = array_new<u64, count>(raw);
@@ -1032,12 +1038,12 @@ command fn main(command.args as args: own Args) -> own ExitStatus traps {
 
 #[test]
 fn a_parameter_backed_user_result_keeps_distinct_result_and_substitution_edges() {
-    let source = br#"fn relay(value: own u64) -> own u64 pure {
+    let source = br#"fn relay(value: own u64) -> result: own u64 pure {
   let copied = value;
   return copied;
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let outside = args_count<'a>(args: &'a args);
@@ -1079,12 +1085,13 @@ command fn main(command.args as args: own Args) -> own ExitStatus traps {
 
 #[test]
 fn a_parameter_backed_user_write_keeps_distinct_write_and_substitution_edges() {
-    let source = br#"fn store['r](output: &uniq 'r u64, value: own u64) -> own unit writes('r) {
+    let source =
+        br#"fn store['r](output: &uniq 'r u64, value: own u64) -> result: own unit writes('r) {
   set deref(output) = value;
   return unit;
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   let saved = 0_u64;
   region 'a {
@@ -1147,7 +1154,7 @@ fn a_selected_payload_witness_never_uses_an_external_sibling_root_path() {
   Second(value: u64);
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   region 'a {
     let first = args_count<'a>(args: &'a args);
     let second = args_count<'a>(args: &'a args);
@@ -1200,7 +1207,7 @@ fn an_external_result_payload_keeps_selectors_through_value_delivery_and_outer_e
   Missing();
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   region 'a {
     let raw = args_count<'a>(args: &'a args);
     let wrapped = match cvt<u64, u8>(raw) {
@@ -1256,7 +1263,8 @@ command fn main(command.args as args: own Args) -> own ExitStatus traps {
 
 #[test]
 fn a_real_branch_discharges_the_same_external_subject_without_a_provenance_rejection() {
-    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+    let source =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -1288,15 +1296,15 @@ fn a_real_branch_discharges_the_same_external_subject_without_a_provenance_rejec
 fn a_local_s4_bounds_leaf_retains_only_its_offset_subject() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<u8, count>, position: own u64) -> own u8 pure requires {
+fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "position in values";
 } {
   return values[position];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -1325,15 +1333,15 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_subjectless_leaf_still_retains_its_structural_bridge() {
-    let source = br#"fn first(values: own buffer<u8>) -> own u8 pure requires {
+    let source = br#"fn first(values: own buffer<u8>) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(0_u64, room) else trap "nonempty";
 } {
   return values[0_u64];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -1347,21 +1355,21 @@ fn main() -> own unit pure {
 fn bridges_compose_two_hops_and_through_a_local_value_transform() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<u8, count>, position: own u64) -> own u8 pure requires {
+fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "read bound";
 } {
   return values[position];
 }
 
-fn relay(values: own array<u8, count>, position: own u64) -> own u8 pure requires {
+fn relay(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "relay bound";
 } {
   return read(values: move values, position: position);
 }
 
-fn transformed(values: own array<u8, count>, position: own u64) -> own u8 pure requires {
+fn transformed(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "outer bound";
 } {
@@ -1369,8 +1377,8 @@ fn transformed(values: own array<u8, count>, position: own u64) -> own u8 pure r
   return relay(values: move values, position: shifted);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -1443,28 +1451,28 @@ fn main() -> own unit pure {
 fn an_equal_length_bridge_diamond_derives_its_legacy_predecessor_from_the_full_route() {
     let source = br#"const count: u64 = 4_u64;
 
-fn leaf(values: own array<u8, count>, position: own u64) -> own u8 pure requires {
+fn leaf(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "leaf bound";
 } {
   return values[position];
 }
 
-fn left(values: own array<u8, count>, position: own u64) -> own u8 pure requires {
+fn left(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "left bound";
 } {
   return leaf(values: move values, position: position);
 }
 
-fn right(values: own array<u8, count>, position: own u64) -> own u8 pure requires {
+fn right(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "right bound";
 } {
   return leaf(values: move values, position: position);
 }
 
-fn diamond(values: own array<u8, count>, position: own u64, choose_left: own Bool) -> own u8 pure requires {
+fn diamond(values: own array<u8, count>, position: own u64, choose_left: own Bool) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "diamond bound";
 } {
@@ -1475,8 +1483,8 @@ fn diamond(values: own array<u8, count>, position: own u64, choose_left: own Boo
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -1527,7 +1535,7 @@ fn main() -> own unit pure {
 fn recursive_and_mutually_recursive_bridges_converge_from_local_seeds() {
     let source = br#"const count: u64 = 4_u64;
 
-fn self_read(values: own array<u8, count>, position: own u64, again: own Bool) -> own u8 pure requires {
+fn self_read(values: own array<u8, count>, position: own u64, again: own Bool) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "self bound";
 } {
@@ -1539,14 +1547,14 @@ fn self_read(values: own array<u8, count>, position: own u64, again: own Bool) -
   }
 }
 
-fn left(values: own array<u8, count>, position: own u64, again: own Bool) -> own u8 pure requires {
+fn left(values: own array<u8, count>, position: own u64, again: own Bool) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "left bound";
 } {
   return right(values: move values, position: position, again: again);
 }
 
-fn right(values: own array<u8, count>, position: own u64, again: own Bool) -> own u8 pure requires {
+fn right(values: own array<u8, count>, position: own u64, again: own Bool) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "right bound";
 } {
@@ -1558,8 +1566,8 @@ fn right(values: own array<u8, count>, position: own u64, again: own Bool) -> ow
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -1640,20 +1648,20 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_seedless_requirement_cycle_has_no_bridge_or_call_link() {
-    let source = br#"fn empty_left(value: own u64) -> own unit pure requires {
+    let source = br#"fn empty_left(value: own u64) -> result: own unit pure requires {
   check ilt(value, 10_u64) else trap "left bound";
 } {
   return empty_right(value: value);
 }
 
-fn empty_right(value: own u64) -> own unit pure requires {
+fn empty_right(value: own u64) -> result: own unit pure requires {
   check ilt(value, 10_u64) else trap "right bound";
 } {
   return empty_left(value: value);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -1668,14 +1676,14 @@ fn main() -> own unit pure {
 fn a_counterfactual_call_goal_keeps_actual_obligation_failure_separate() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<u8, count>, position: own u64) -> own u8 pure requires {
+fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
   let room = len(values);
   check ilt(position, room) else trap "read bound";
 } {
   return values[position];
 }
 
-fn counterfactual(values: own array<u8, count>, positions: own array<u64, count>, selector: own u64) -> own u8 traps {
+fn counterfactual(values: own array<u8, count>, positions: own array<u64, count>, selector: own u64) -> result: own u8 traps {
   let below = ilt(selector, 1_u64);
   let above = ige(selector, 2_u64);
   let impossible = band(below, above);
@@ -1683,8 +1691,8 @@ fn counterfactual(values: own array<u8, count>, positions: own array<u64, count>
   return read(values: move values, position: positions[selector]);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -1709,18 +1717,19 @@ fn main() -> own unit pure {
 
 #[test]
 fn call_write_dependencies_compose_through_a_moved_unique_parameter() {
-    let source = br#"fn write['r](out: &uniq 'r u64, value: own u64) -> own unit writes('r) {
+    let source =
+        br#"fn write['r](out: &uniq 'r u64, value: own u64) -> result: own unit writes('r) {
   set deref(out) = value;
   return unit;
 }
 
-fn proxy['r](out: &uniq 'r u64, value: own u64) -> own unit writes('r) {
+fn proxy['r](out: &uniq 'r u64, value: own u64) -> result: own unit writes('r) {
   write<'r>(out: move out, value: value);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -1762,7 +1771,7 @@ fn a_unique_match_payload_write_resolves_to_the_scrutinee_root() {
   Item(value: u64);
 }
 
-fn update['r](input: &uniq 'r Payload, replacement: own u64) -> own unit reads('r), writes('r) {
+fn update['r](input: &uniq 'r Payload, replacement: own u64) -> result: own unit reads('r), writes('r) {
   match deref(input) {
     Item(value: selected) => {
       set deref(selected) = replacement;
@@ -1771,8 +1780,8 @@ fn update['r](input: &uniq 'r Payload, replacement: own u64) -> own unit reads('
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -1801,7 +1810,7 @@ fn a_unique_boxed_match_payload_write_resolves_to_the_outer_scrutinee_root() {
   Item(value: u64);
 }
 
-fn update['r](input: &uniq 'r box<Payload>, replacement: own u64) -> own unit reads('r), writes('r) {
+fn update['r](input: &uniq 'r box<Payload>, replacement: own u64) -> result: own unit reads('r), writes('r) {
   match deref(deref(input)) {
     Item(value: selected) => {
       set deref(selected) = replacement;
@@ -1810,13 +1819,13 @@ fn update['r](input: &uniq 'r box<Payload>, replacement: own u64) -> own unit re
   return unit;
 }
 
-fn proxy['r](input: &uniq 'r box<Payload>, replacement: own u64) -> own unit reads('r), writes('r) {
+fn proxy['r](input: &uniq 'r box<Payload>, replacement: own u64) -> result: own unit reads('r), writes('r) {
   update<'r>(input: move input, replacement: replacement);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -1848,7 +1857,7 @@ fn direct_enum_payload_dependencies_survive_match_and_call_composition() {
   Empty();
 }
 
-fn choose(input: own Choice, fallback: own u64) -> own u64 pure {
+fn choose(input: own Choice, fallback: own u64) -> result: own u64 pure {
   match move input {
     Value(data: selected) => {
       return selected;
@@ -1859,12 +1868,12 @@ fn choose(input: own Choice, fallback: own u64) -> own u64 pure {
   }
 }
 
-fn relay(input: own Choice, fallback: own u64) -> own u64 pure {
+fn relay(input: own Choice, fallback: own u64) -> result: own u64 pure {
   return choose(input: move input, fallback: fallback);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -1903,16 +1912,16 @@ fn main() -> own unit pure {
 
 #[test]
 fn checked_arithmetic_and_partial_conversion_seed_only_the_ok_projection() {
-    let source = br#"fn add(value: own u64) -> own Result<u64, Overflow> pure {
+    let source = br#"fn add(value: own u64) -> result: own Result<u64, Overflow> pure {
   return value +checked 1_u64;
 }
 
-fn narrow(value: own u64) -> own Result<u8, NarrowError> pure {
+fn narrow(value: own u64) -> result: own Result<u8, NarrowError> pure {
   return cvt<u64, u8>(value);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -1951,13 +1960,13 @@ fn main() -> own unit pure {
 #[test]
 fn propagation_keeps_ok_and_error_dependencies_componentwise() {
     let source =
-        br#"fn forward(input: own Result<u8, NarrowError>) -> own Result<u8, NarrowError> pure {
+        br#"fn forward(input: own Result<u8, NarrowError>) -> result: own Result<u8, NarrowError> pure {
   let value = propagate input;
   return Ok<u8, NarrowError>(value: value);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -2009,7 +2018,7 @@ enum Outer {
   Wrap(value: Inner);
 }
 
-fn unwrap(input: own Outer) -> own Inner pure {
+fn unwrap(input: own Outer) -> result: own Inner pure {
   match move input {
     Wrap(value: nested) => {
       return move nested;
@@ -2017,8 +2026,8 @@ fn unwrap(input: own Outer) -> own Inner pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -2057,14 +2066,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_counted_binder_depends_on_its_lower_endpoint_only() {
-    let source = br#"fn walk(lower: own u64, upper: own u64) -> own unit pure {
+    let source = br#"fn walk(lower: own u64, upper: own u64) -> result: own unit pure {
   for @items position in lower..upper {
   }
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -2092,7 +2101,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn system_results_and_writes_add_no_parameter_datum() {
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> own unit reads('o 's), writes('o), external, blocks, traps {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads('o 's), writes('o), external, blocks, traps {
   region 'attempt {
     match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: 0_u64, count: count) {
       Ok(value: written) => {
@@ -2104,7 +2113,7 @@ fn system_results_and_writes_add_no_parameter_datum() {
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
   let batch = buffer_new(1_u64, 0_u8);
   region 'publication {
     publish<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, count: 1_u64);

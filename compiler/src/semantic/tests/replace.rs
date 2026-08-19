@@ -23,14 +23,14 @@ fn with_holder(rest: &[u8]) -> Vec<u8> {
 #[test]
 fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
     let source = with_holder(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let second = buffer_new(2_u64, 9_u8);
   let old = replace holder.payload = move second;
   let size = len(old);
   claim previous_buffer_length: ieq(size, 4_u64) because "previous buffer length";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -58,11 +58,11 @@ fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
 #[test]
 fn replace_of_a_copy_place_rejects_citing_set2() {
     let source = with_holder(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let first = buffer_new(1_u64, 0_u8);
   let holder = Holder(payload: move first, count: 3_u64);
   let old = replace holder.count = 4_u64;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -79,12 +79,12 @@ fn replace_of_a_copy_place_rejects_citing_set2() {
 #[test]
 fn set_of_an_affine_place_still_rejects_and_names_replace() {
     let source = with_holder(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let first = buffer_new(1_u64, 0_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let second = buffer_new(1_u64, 0_u8);
   set holder.payload = move second;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -104,7 +104,7 @@ fn replace_kills_the_stale_length_fact_at_the_commit() {
     // discharge the post-replace subscript over the two-element buffer and
     // the accepted program would write out of bounds.
     let source = with_holder(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len(holder.payload);
@@ -112,7 +112,7 @@ fn replace_kills_the_stale_length_fact_at_the_commit() {
   let second = buffer_new(2_u64, 9_u8);
   let old = replace holder.payload = move second;
   set holder.payload[3_u64] = 5_u8;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -129,13 +129,13 @@ fn the_same_subscript_discharges_without_the_replace() {
     // The control for the kill test: identical program minus the commit.
     // Rejection above plus acceptance here attributes the kill to SET-2.
     let source = with_holder(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len(holder.payload);
   claim allocated_length: ieq(size, 4_u64) because "allocated length";
   set holder.payload[3_u64] = 5_u8;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -152,11 +152,11 @@ fn replace_leaves_the_target_root_live() {
     // The commit is not a consuming use [SET-2, OWN-1]: the root is read,
     // written, and finally moved after the replace.
     let source = with_holder(
-        br#"fn consume(h: own Holder) -> own unit pure {
+        br#"fn consume(h: own Holder) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let first = buffer_new(2_u64, 1_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let second = buffer_new(3_u64, 2_u8);
@@ -165,7 +165,7 @@ fn main() -> own unit allocates(heap), traps {
   let observed = holder.count;
   claim root_stays_live: ieq(observed, 1_u64) because "root stays live";
   let done = consume(h: move holder);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -180,17 +180,17 @@ fn main() -> own unit allocates(heap), traps {
 #[test]
 fn replace_of_a_dead_root_rejects_citing_own1() {
     let source = with_holder(
-        br#"fn sink(h: own Holder) -> own unit pure {
+        br#"fn sink(h: own Holder) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let first = buffer_new(2_u64, 1_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let gone = sink(h: move holder);
   let second = buffer_new(1_u64, 0_u8);
   let old = replace holder.payload = move second;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -205,7 +205,7 @@ fn main() -> own unit allocates(heap), traps {
 #[test]
 fn replace_through_a_shared_borrow_rejects() {
     let source = with_holder(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let first = buffer_new(2_u64, 1_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   region 'r {
@@ -213,7 +213,7 @@ fn replace_through_a_shared_borrow_rejects() {
     let second = buffer_new(1_u64, 0_u8);
     let old = replace deref(view).payload = move second;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -227,12 +227,12 @@ fn replace_through_a_shared_borrow_rejects() {
 
 #[test]
 fn element_position_replace_accepts_an_affine_element_and_keeps_its_checks() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let slots = buffer_vacant<u32>(4_u64);
   let filled = Some<u32>(value: 7_u32);
   let vacant = replace slots[2_u64] = move filled;
   let taken = replace slots[2_u64] = None<u32>();
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -275,7 +275,7 @@ fn element_position_replace_through_a_unique_holder_accepts() {
   fill: u64;
 }
 
-fn push['a](v: &uniq 'a OptVec, x: own u32) -> own unit reads('a), writes('a), traps {
+fn push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads('a), writes('a), traps {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
   let has_room = ilt(count, cap);
@@ -285,13 +285,13 @@ fn push['a](v: &uniq 'a OptVec, x: own u32) -> own unit reads('a), writes('a), t
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let empty = buffer_vacant<u32>(2_u64);
   let v = OptVec(buf: move empty, fill: 0_u64);
   region 'p {
     push<'p>(v: &uniq 'p v, x: 5_u32);
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -303,15 +303,15 @@ fn main() -> own unit allocates(heap), traps {
 
 #[test]
 fn element_position_replace_keeps_the_bounds_obligation() {
-    let source = br#"fn hollow(n: own u64) -> own unit allocates(heap), traps {
+    let source = br#"fn hollow(n: own u64) -> result: own unit allocates(heap), traps {
   let slots = buffer_vacant<u32>(n);
   let taken = replace slots[0_u64] = None<u32>();
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   hollow(n: 2_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -324,10 +324,10 @@ fn main() -> own unit allocates(heap), traps {
 
 #[test]
 fn element_replacement_rhs_must_be_the_exact_element_type() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let slots = buffer_vacant<u32>(4_u64);
   let taken = replace slots[0_u64] = 3_u32;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -342,10 +342,10 @@ fn element_replacement_rhs_must_be_the_exact_element_type() {
 fn affine_elements_leave_their_slots_only_through_replace() {
     // SET-1 on an affine element names replace [STOR-1].
     assert_rule(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let slots = buffer_vacant<u32>(4_u64);
   set slots[0_u64] = None<u32>();
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor1,
@@ -356,10 +356,10 @@ fn affine_elements_leave_their_slots_only_through_replace() {
     );
     // A bare element read would mint a second owner [OWN-1].
     assert_rule(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let slots = buffer_vacant<u32>(4_u64);
   let observed = slots[0_u64];
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own1,
@@ -369,10 +369,10 @@ fn affine_elements_leave_their_slots_only_through_replace() {
     );
     // `move` out of a slot is not an admitted element exit [TYPE-2].
     assert_rule(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let slots = buffer_vacant<u32>(4_u64);
   let observed = move slots[0_u64];
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Type2,
@@ -385,10 +385,10 @@ fn affine_elements_leave_their_slots_only_through_replace() {
 #[test]
 fn element_position_replace_rejects_while_every_element_is_copy() {
     let source = with_holder(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let first = buffer_new(2_u64, 1_u8);
   let old = replace first[0_u64] = 3_u8;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );
@@ -405,12 +405,12 @@ fn element_position_replace_rejects_while_every_element_is_copy() {
 #[test]
 fn replace_rhs_type_mismatch_rejects_citing_type5() {
     let source = with_holder(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let first = buffer_new(1_u64, 0_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let second = buffer_new(1_u64, 0_u16);
   let old = replace holder.payload = move second;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
     );

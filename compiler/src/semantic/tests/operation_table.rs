@@ -42,7 +42,7 @@ struct OpsRow {
 
 impl OpsRow {
     /// The parameter list of the `signature` cell, `(T, u32)` for
-    /// `` `(T, u32) -> own T` ``. A nullary row writes `()`, and the two place
+    /// `` `(T, u32) -> result: own T` ``. A nullary row writes `()`, and the two place
     /// rows write no parameter list at all.
     fn parameters(&self) -> Option<Vec<&str>> {
         let list = self.signature.strip_prefix('(')?.split_once(')')?.0;
@@ -54,10 +54,10 @@ impl OpsRow {
     }
 
     /// The written result of the `signature` cell, `T` for
-    /// `` `(T, T) -> own T` ``. Every row's result is `own`.
+    /// `` `(T, T) -> result: own T` ``. Every row's result is `own`.
     fn result(&self) -> &str {
         self.signature
-            .split_once("-> own ")
+            .split_once("-> result: own ")
             .expect("every wf-ops signature writes one `own` result")
             .1
     }

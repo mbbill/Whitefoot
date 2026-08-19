@@ -397,7 +397,7 @@ pub(super) fn run_emitted_on_deterministic_host(
 /// status, so its only host activity is the [SYS-5] release of one
 /// `DirectoryRead`.
 const RELEASES_ONE_DIRECTORY: &[u8] =
-    br#"command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus external, blocks {
+    br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus external, blocks {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -405,7 +405,7 @@ const RELEASES_ONE_DIRECTORY: &[u8] =
 /// A command that reads its own invocation vector and reaches no host object
 /// at all, so every row it uses is one both target columns share.
 const READS_ITS_ARGUMENTS: &[u8] =
-    br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+    br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
   region 'a {
     let total = args_count<'a>(args: &'a args);
     let narrowed = cvt<u64, u8>(total);
@@ -425,7 +425,7 @@ const READS_ITS_ARGUMENTS: &[u8] =
 /// while also binding the initial working directory so exactly one resource
 /// in the program releases with a close.
 const WRITES_THEN_RELEASES_BOTH: &[u8] =
-    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
   let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
@@ -758,7 +758,7 @@ fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
         "return exit_status(code: 199_u8);",
     );
     let source = format!(
-        r#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {{
+        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {{
   let bytes = buffer_new(2_u64, 119_u8);
   region 'o {{
     region 's {{

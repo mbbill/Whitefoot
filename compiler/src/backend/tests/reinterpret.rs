@@ -2,7 +2,7 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn every_reinterpret_pair_preserves_its_source_bits() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let u8_bits = reinterpret<i8, u8>(-1_i8);
   claim i8_to_u8: ieq(u8_bits, 255_u8) because "i8 to u8";
   let i8_bits = reinterpret<u8, i8>(255_u8);
@@ -35,7 +35,7 @@ fn every_reinterpret_pair_preserves_its_source_bits() {
   claim u64_to_f64_payload: fne(f64_from_u64, f64_from_u64) because "u64 to f64 payload";
   let u64_from_f64 = reinterpret<f64, u64>(f64_from_u64);
   claim f64_to_u64_payload: ieq(u64_from_f64, 9221120237041090562_u64) because "f64 to u64 payload";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);

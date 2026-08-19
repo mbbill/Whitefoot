@@ -2348,14 +2348,14 @@ struct Pair {
   count: u64;
 }
 
-fn below(value: own u64) -> own unit traps requires {
+fn below(value: own u64) -> result: own unit traps requires {
   check ilt(value, 4_u64) else trap "small";
 } {
   claim body: True() because "body";
   return unit;
 }
 
-fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 traps {
   if ile(i, p.count) {
     if ilt(p.count, 4_u64) {
       let item = values[i];
@@ -2369,8 +2369,8 @@ fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 traps
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -2410,7 +2410,7 @@ fn main() -> own unit pure {
 fn normalized_derivations_are_byte_identical_across_twenty_analyses() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64, left: own Bool) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64, left: own Bool) -> result: own i32 pure {
   if left {
     if ilt(i, 4_u64) {
     } else {
@@ -2423,8 +2423,8 @@ fn read(values: own array<i32, count>, i: own u64, left: own Bool) -> own i32 pu
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let first = entailment(source, "read");
@@ -2456,7 +2456,7 @@ fn main() -> own unit pure {
 fn a_dominating_branch_discharges_the_guarded_index_and_not_the_other_arm() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if ilt(i, 4_u64) {
     return values[i];
   } else {
@@ -2464,8 +2464,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -2483,14 +2483,14 @@ fn a_projected_bool_scrutinee_retains_its_exact_s1_carrier() {
   ready: Bool;
 }
 
-fn need_ready(value: own Bool) -> own unit traps requires {
+fn need_ready(value: own Bool) -> result: own unit traps requires {
   check value else trap "ready";
 } {
   claim body: True() because "body";
   return unit;
 }
 
-fn caller(flags: own Flags) -> own unit traps {
+fn caller(flags: own Flags) -> result: own unit traps {
   if flags.ready {
     need_ready(value: flags.ready);
   } else {
@@ -2499,8 +2499,8 @@ fn caller(flags: own Flags) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -2537,21 +2537,21 @@ fn main() -> own unit pure {
 
 #[test]
 fn s1_true_and_false_edges_retain_their_exact_comparison_roots() {
-    let source = br#"fn need_below(value: own u64) -> own unit traps requires {
+    let source = br#"fn need_below(value: own u64) -> result: own unit traps requires {
   check ilt(value, 4_u64) else trap "below";
 } {
   claim body: True() because "body";
   return unit;
 }
 
-fn need_at_least(value: own u64) -> own unit traps requires {
+fn need_at_least(value: own u64) -> result: own unit traps requires {
   check ige(value, 4_u64) else trap "at least";
 } {
   claim body: True() because "body";
   return unit;
 }
 
-fn caller(value: own u64) -> own unit traps {
+fn caller(value: own u64) -> result: own unit traps {
   if ilt(value, 4_u64) {
     need_below(value: value);
   } else {
@@ -2560,8 +2560,8 @@ fn caller(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "caller");
@@ -2590,14 +2590,14 @@ fn a_constant_offset_discharges_against_a_const_array_and_a_too_large_one_report
 
 const table: array<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
-fn read() -> own u8 pure {
+fn read() -> result: own u8 pure {
   let inside = table[2_u64];
   let outside = table[9_u64];
   return inside;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -2656,7 +2656,7 @@ fn main() -> own unit pure {
 fn a_bool_binding_carries_its_comparison_to_the_match_when_no_kill_intervenes() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   let flag = ilt(i, 4_u64);
   if flag {
     return values[i];
@@ -2665,8 +2665,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(discharge_flags(source, "read"), vec![true]);
@@ -2676,7 +2676,7 @@ fn main() -> own unit pure {
 fn a_set_between_initializer_and_use_invalidates_the_comparison_origin() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   let flag = ilt(i, 4_u64);
   set i = i +wrap 1_u64;
   if flag {
@@ -2686,8 +2686,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -2711,7 +2711,7 @@ struct Pair {
   other: u64;
 }
 
-fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 pure {
   if ile(i, p.count) {
     if ilt(p.count, 4_u64) {
       return values[i];
@@ -2723,8 +2723,8 @@ fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 pure 
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -2738,7 +2738,7 @@ fn main() -> own unit pure {
 fn disequality_strengthens_a_weak_bound_to_a_strict_one() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if ile(i, 4_u64) {
     if ieq(i, 4_u64) {
       return 0_i32;
@@ -2750,8 +2750,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -2763,27 +2763,28 @@ fn main() -> own unit pure {
 
 #[test]
 fn equality_retains_both_directed_parents_and_reflexive_implicit_support() {
-    let source = br#"fn need_equal(left: own u64, right: own u64) -> own unit traps requires {
+    let source =
+        br#"fn need_equal(left: own u64, right: own u64) -> result: own unit traps requires {
   check ieq(left, right) else trap "equal";
 } {
   claim body: True() because "body";
   return unit;
 }
 
-fn directed(left: own u64, right: own u64) -> own unit traps {
+fn directed(left: own u64, right: own u64) -> result: own unit traps {
   claim forward: ile(left, right) because "forward";
   claim reverse: ile(right, left) because "reverse";
   need_equal(left: left, right: right);
   return unit;
 }
 
-fn reflexive(value: own u64) -> own unit traps {
+fn reflexive(value: own u64) -> result: own unit traps {
   need_equal(left: value, right: value);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let directed = entailment(source, "directed");
@@ -2826,7 +2827,7 @@ fn main() -> own unit pure {
 fn a_contradictory_state_discharges_every_obligation() {
     let source = br#"const count: u64 = 4_u64;
 
-fn below_minimum(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn below_minimum(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if ilt(i, 0_u64) {
     return values[9_u64];
   } else {
@@ -2834,7 +2835,7 @@ fn below_minimum(values: own array<i32, count>, i: own u64) -> own i32 pure {
   }
 }
 
-fn above_maximum(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn above_maximum(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if igt(i, 18446744073709551615_u64) {
     return values[9_u64];
   } else {
@@ -2842,8 +2843,8 @@ fn above_maximum(values: own array<i32, count>, i: own u64) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     for (function, kind) in [
@@ -2882,11 +2883,11 @@ struct Pair {
   other: u64;
 }
 
-fn eat(p: own Pair) -> own unit pure {
+fn eat(p: own Pair) -> result: own unit pure {
   return unit;
 }
 
-fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 pure {
   if ile(i, p.count) {
     if ilt(p.count, 4_u64) {
       eat(p: move p);
@@ -2899,8 +2900,8 @@ fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 pure 
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -2930,7 +2931,7 @@ struct Pair {
   other: u64;
 }
 
-fn read(values: own array<i32, count>, p: own Pair) -> own i32 pure {
+fn read(values: own array<i32, count>, p: own Pair) -> result: own i32 pure {
   if ilt(p.count, 4_u64) {
     set p.other = 9_u64;
     let kept = values[p.count];
@@ -2942,8 +2943,8 @@ fn read(values: own array<i32, count>, p: own Pair) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -2965,12 +2966,12 @@ fn main() -> own unit pure {
 fn a_callee_writing_through_a_unique_borrow_kills_facts_on_that_place() {
     let source = br#"const count: u64 = 4_u64;
 
-fn bump['w](p: &uniq 'w u64) -> own unit writes('w) {
+fn bump['w](p: &uniq 'w u64) -> result: own unit writes('w) {
   set deref(p) = 9_u64;
   return unit;
 }
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if ilt(i, 4_u64) {
     region 'w {
       bump<'w>(p: &uniq 'w i);
@@ -2981,8 +2982,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -3003,11 +3004,11 @@ fn main() -> own unit pure {
 fn a_callee_with_no_writes_row_kills_nothing() {
     let source = br#"const count: u64 = 4_u64;
 
-fn peek['r](p: &'r u64) -> own u64 reads('r) {
+fn peek['r](p: &'r u64) -> result: own u64 reads('r) {
   return deref(p);
 }
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if ilt(i, 4_u64) {
     region 'r {
       let seen = peek<'r>(p: &'r i);
@@ -3018,8 +3019,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -3046,7 +3047,7 @@ fn a_join_keeps_the_weakest_bound_held_on_every_continuing_arm() {
 
 const count: u64 = 4_u64;
 
-fn read(wide: own array<i32, count>, narrow: own array<i32, two>, i: own u64) -> own i32 pure {
+fn read(wide: own array<i32, count>, narrow: own array<i32, two>, i: own u64) -> result: own i32 pure {
   if ilt(i, 2_u64) {
   } else if ilt(i, 4_u64) {
   } else {
@@ -3057,8 +3058,8 @@ fn read(wide: own array<i32, count>, narrow: own array<i32, two>, i: own u64) ->
   return in_wide;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -3082,25 +3083,26 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_join_keeps_a_disequality_derived_in_opposite_strict_orientations() {
-    let source = br#"fn need_distinct(left: own u64, right: own u64) -> own unit pure requires {
+    let source =
+        br#"fn need_distinct(left: own u64, right: own u64) -> result: own unit pure requires {
   check ine(left, right) else trap "distinct";
 } {
   return unit;
 }
 
-fn need_left_below_right(left: own u64, right: own u64) -> own unit pure requires {
+fn need_left_below_right(left: own u64, right: own u64) -> result: own unit pure requires {
   check ilt(left, right) else trap "left below right";
 } {
   return unit;
 }
 
-fn need_right_below_left(left: own u64, right: own u64) -> own unit pure requires {
+fn need_right_below_left(left: own u64, right: own u64) -> result: own unit pure requires {
   check ilt(right, left) else trap "right below left";
 } {
   return unit;
 }
 
-fn caller(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+fn caller(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
   if choose {
     claim left_below_right: ilt(left, right) because "left below right";
   } else {
@@ -3112,8 +3114,8 @@ fn caller(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "caller");
@@ -3151,13 +3153,13 @@ fn main() -> own unit pure {
 #[test]
 fn a_joined_derived_disequality_strengthens_a_later_weak_bound() {
     let source =
-        br#"fn need_left_below_right(left: own u64, right: own u64) -> own unit pure requires {
+        br#"fn need_left_below_right(left: own u64, right: own u64) -> result: own unit pure requires {
   check ilt(left, right) else trap "left below right";
 } {
   return unit;
 }
 
-fn caller(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+fn caller(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
   if choose {
     claim left_below_right: ilt(left, right) because "left below right";
   } else {
@@ -3168,8 +3170,8 @@ fn caller(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "caller");
@@ -3197,13 +3199,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_write_kills_a_disequality_materialized_by_a_join() {
-    let source = br#"fn need_distinct(left: own u64, right: own u64) -> own unit pure requires {
+    let source =
+        br#"fn need_distinct(left: own u64, right: own u64) -> result: own unit pure requires {
   check ine(left, right) else trap "distinct";
 } {
   return unit;
 }
 
-fn kept(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+fn kept(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
   if choose {
     claim left_below_right: ilt(left, right) because "left below right";
   } else {
@@ -3213,7 +3216,7 @@ fn kept(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   return unit;
 }
 
-fn killed(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+fn killed(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
   if choose {
     claim left_below_right: ilt(left, right) because "left below right";
   } else {
@@ -3224,8 +3227,8 @@ fn killed(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let kept_summary = entailment(source, "kept");
@@ -3256,13 +3259,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn joins_keep_disequality_across_same_strict_explicit_and_mixed_grounds() {
-    let source = br#"fn need_distinct(left: own u64, right: own u64) -> own unit pure requires {
+    let source =
+        br#"fn need_distinct(left: own u64, right: own u64) -> result: own unit pure requires {
   check ine(left, right) else trap "distinct";
 } {
   return unit;
 }
 
-fn same_strict(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+fn same_strict(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
   if choose {
     claim first_strict: ilt(left, right) because "first strict";
   } else {
@@ -3272,7 +3276,7 @@ fn same_strict(left: own u64, right: own u64, choose: own Bool) -> own unit trap
   return unit;
 }
 
-fn both_explicit(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+fn both_explicit(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
   if choose {
     claim first_distinct: ine(left, right) because "first distinct";
   } else {
@@ -3282,7 +3286,7 @@ fn both_explicit(left: own u64, right: own u64, choose: own Bool) -> own unit tr
   return unit;
 }
 
-fn mixed(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+fn mixed(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
   if choose {
     claim explicit: ine(left, right) because "explicit";
   } else {
@@ -3292,8 +3296,8 @@ fn mixed(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     for function in ["same_strict", "both_explicit", "mixed"] {
@@ -3332,13 +3336,13 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_many_way_join_keeps_mixed_disequality_and_ignores_a_contradictory_input() {
-    let source = br#"fn need_distinct(left: own u64, right: own u64) -> own unit pure requires {
+    let source = br#"fn need_distinct(left: own u64, right: own u64) -> result: own unit pure requires {
   check ine(left, right) else trap "distinct";
 } {
   return unit;
 }
 
-fn caller(left: own u64, right: own u64, first: own Bool, second: own Bool, third: own Bool) -> own unit traps {
+fn caller(left: own u64, right: own u64, first: own Bool, second: own Bool, third: own Bool) -> result: own unit traps {
   if first {
     claim left_below_right: ilt(left, right) because "left below right";
   } else if second {
@@ -3352,8 +3356,8 @@ fn caller(left: own u64, right: own u64, first: own Bool, second: own Bool, thir
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "caller");
@@ -3381,13 +3385,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn equality_missing_relation_and_a_kill_each_prevent_disequality_survival() {
-    let source = br#"fn need_distinct(left: own u64, right: own u64) -> own unit pure requires {
+    let source =
+        br#"fn need_distinct(left: own u64, right: own u64) -> result: own unit pure requires {
   check ine(left, right) else trap "distinct";
 } {
   return unit;
 }
 
-fn equality_input(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+fn equality_input(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
   if choose {
     claim strict: ilt(left, right) because "strict";
   } else {
@@ -3397,7 +3402,7 @@ fn equality_input(left: own u64, right: own u64, choose: own Bool) -> own unit t
   return unit;
 }
 
-fn missing_input(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+fn missing_input(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
   if choose {
     claim strict: ilt(left, right) because "strict";
   } else {
@@ -3407,7 +3412,7 @@ fn missing_input(left: own u64, right: own u64, choose: own Bool) -> own unit tr
   return unit;
 }
 
-fn killed_input(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+fn killed_input(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
   if choose {
     claim strict_then_killed: ilt(left, right) because "strict then killed";
     set left = left +wrap 1_u64;
@@ -3418,8 +3423,8 @@ fn killed_input(left: own u64, right: own u64, choose: own Bool) -> own unit tra
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     for function in ["equality_input", "missing_input", "killed_input"] {
@@ -3438,27 +3443,27 @@ fn main() -> own unit pure {
 
 #[test]
 fn derived_disequality_closure_preserves_contradiction_and_no_loop_induction() {
-    let source = br#"fn impossible() -> own unit pure requires {
+    let source = br#"fn impossible() -> result: own unit pure requires {
   check ilt(1_u64, 0_u64) else trap "impossible";
 } {
   return unit;
 }
 
-fn reverse_weak_transitivity_control(left: own u64, right: own u64) -> own unit traps {
+fn reverse_weak_transitivity_control(left: own u64, right: own u64) -> result: own unit traps {
   claim weak: ile(left, right) because "weak";
   claim strict_reverse: ilt(right, left) because "strict reverse";
   impossible();
   return unit;
 }
 
-fn both_strict(left: own u64, right: own u64) -> own unit traps {
+fn both_strict(left: own u64, right: own u64) -> result: own unit traps {
   claim first_strict: ilt(left, right) because "first strict";
   claim second_strict: ilt(right, left) because "second strict";
   impossible();
   return unit;
 }
 
-fn all_contradictory(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+fn all_contradictory(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
   if choose {
     claim left_contradiction: ilt(left, left) because "left contradiction";
   } else {
@@ -3468,7 +3473,7 @@ fn all_contradictory(left: own u64, right: own u64, choose: own Bool) -> own uni
   return unit;
 }
 
-fn no_induction(left: own u64, right: own u64, leave: own Bool) -> own unit traps {
+fn no_induction(left: own u64, right: own u64, leave: own Bool) -> result: own unit traps {
   loop @again {
     need_distinct(left: left, right: right);
     claim inside_only: ilt(left, right) because "inside only";
@@ -3479,14 +3484,14 @@ fn no_induction(left: own u64, right: own u64, leave: own Bool) -> own unit trap
   return unit;
 }
 
-fn need_distinct(left: own u64, right: own u64) -> own unit pure requires {
+fn need_distinct(left: own u64, right: own u64) -> result: own unit pure requires {
   check ine(left, right) else trap "distinct";
 } {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     for function in [
@@ -3539,7 +3544,7 @@ fn main() -> own unit pure {
 fn an_arm_that_leaves_by_return_contributes_nothing_to_the_join() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if ilt(i, 4_u64) {
   } else {
     return 0_i32;
@@ -3547,8 +3552,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -3565,7 +3570,7 @@ fn a_fresh_binding_reusing_an_expired_spelling_inherits_no_stale_fact() {
     // established for the first may attach to it.
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, pick: own Bool) -> own i32 pure {
+fn read(values: own array<i32, count>, pick: own Bool) -> result: own i32 pure {
   if pick {
     let j = 0_u64;
     if ilt(j, 4_u64) {
@@ -3579,8 +3584,8 @@ fn read(values: own array<i32, count>, pick: own Bool) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -3602,7 +3607,7 @@ fn main() -> own unit pure {
 fn a_fact_about_an_outer_binding_survives_a_region_exit() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   region 'a {
     if ilt(i, 4_u64) {
     } else {
@@ -3612,8 +3617,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -3638,7 +3643,7 @@ fn main() -> own unit pure {
 fn a_break_edge_carries_surviving_facts_to_the_loop_continuation() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   loop @l {
     if ilt(i, 4_u64) {
       break @l;
@@ -3649,8 +3654,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -3664,7 +3669,7 @@ fn main() -> own unit pure {
 fn a_kill_before_the_break_edge_leaves_the_continuation_unproved() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   loop @l {
     if ilt(i, 4_u64) {
       set i = i +wrap 1_u64;
@@ -3676,8 +3681,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -3691,7 +3696,7 @@ fn main() -> own unit pure {
 fn give_edges_join_at_the_value_match_continuation_with_arm_facts_dead() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   let picked = if ilt(i, 4_u64) {
     give values[i];
   } else {
@@ -3701,8 +3706,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   return picked;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outcomes = obligations(source, "read");
@@ -3719,13 +3724,13 @@ fn main() -> own unit pure {
 
 #[test]
 fn value_if_delivery_joins_unequal_bounds_through_direct_edge_parents() {
-    let source = br#"fn guard(value: own i32) -> own unit pure requires {
+    let source = br#"fn guard(value: own i32) -> result: own unit pure requires {
   check ilt(value, 128_i32) else trap "guard bound";
 } {
   return unit;
 }
 
-fn choose(value: own i32, narrow: own Bool) -> own unit traps {
+fn choose(value: own i32, narrow: own Bool) -> result: own unit traps {
   let picked = if narrow {
     claim narrow: ilt(value, 8_i32) because "narrow";
     give value;
@@ -3737,8 +3742,8 @@ fn choose(value: own i32, narrow: own Bool) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "choose");
@@ -3866,7 +3871,7 @@ fn missing_value_if_evidence_and_value_match_create_no_delivery_roots() {
   Wide();
 }
 
-fn missing(value: own i32, narrow: own Bool) -> own i32 traps {
+fn missing(value: own i32, narrow: own Bool) -> result: own i32 traps {
   let picked = if narrow {
     claim narrow: ilt(value, 8_i32) because "narrow";
     give value;
@@ -3876,7 +3881,7 @@ fn missing(value: own i32, narrow: own Bool) -> own i32 traps {
   return picked;
 }
 
-fn matched(value: own i32, choice: own Choice) -> own i32 traps {
+fn matched(value: own i32, choice: own Choice) -> result: own i32 traps {
   let picked = match choice {
     Narrow() => {
       claim narrow: ilt(value, 8_i32) because "narrow";
@@ -3890,8 +3895,8 @@ fn matched(value: own i32, choice: own Choice) -> own i32 traps {
   return picked;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     for function in ["missing", "matched"] {
@@ -3919,7 +3924,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn nonbare_carriers_and_branch_local_support_create_no_delivery_roots() {
-    let source = br#"fn computed(value: own i32, narrow: own Bool) -> own i32 traps {
+    let source = br#"fn computed(value: own i32, narrow: own Bool) -> result: own i32 traps {
   let picked = if narrow {
     claim narrow: ilt(value, 8_i32) because "narrow";
     give value +wrap 0_i32;
@@ -3930,7 +3935,7 @@ fn nonbare_carriers_and_branch_local_support_create_no_delivery_roots() {
   return picked;
 }
 
-fn scoped(value: own i32, narrow: own Bool) -> own i32 traps {
+fn scoped(value: own i32, narrow: own Bool) -> result: own i32 traps {
   let picked = if narrow {
     let limit = ixor(value, 1_i32);
     claim narrow: ine(value, limit) because "narrow";
@@ -3943,8 +3948,8 @@ fn scoped(value: own i32, narrow: own Bool) -> own i32 traps {
   return picked;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     for function in ["computed", "scoped"] {
@@ -3972,7 +3977,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_contradictory_first_delivery_edge_cannot_launder_the_fresh_receiver() {
-    let source = br#"fn choose(value: own i32, impossible: own Bool) -> own i32 traps {
+    let source = br#"fn choose(value: own i32, impossible: own Bool) -> result: own i32 traps {
   let picked = if impossible {
     claim contradiction: ilt(value, value) because "contradiction";
     give value;
@@ -3983,8 +3988,8 @@ fn a_contradictory_first_delivery_edge_cannot_launder_the_fresh_receiver() {
   return picked;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "choose");
@@ -4038,13 +4043,13 @@ fn main() -> own unit pure {
 
 #[test]
 fn one_structural_value_if_delivery_retains_exact_c_u_b_edge_order() {
-    let source = br#"fn guard(value: own i32) -> own unit pure requires {
+    let source = br#"fn guard(value: own i32) -> result: own unit pure requires {
   check ilt(value, 128_i32) else trap "guard bound";
 } {
   return unit;
 }
 
-fn choose(value: own i32, side: own Bool) -> own unit pure {
+fn choose(value: own i32, side: own Bool) -> result: own unit pure {
   if ilt(value, 128_i32) {
     let picked = if side {
       give value;
@@ -4058,8 +4063,8 @@ fn choose(value: own i32, side: own Bool) -> own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "choose");
@@ -4105,7 +4110,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_prv_event_discards_a_no_ensures_value_if_delivery_batch() {
-    let source = br#"fn choose(value: own i32, side: own Bool) -> own i32 pure {
+    let source = br#"fn choose(value: own i32, side: own Bool) -> result: own i32 pure {
   if ilt(value, 128_i32) {
     let picked = if side {
       give value;
@@ -4118,13 +4123,13 @@ fn a_prv_event_discards_a_no_ensures_value_if_delivery_batch() {
   }
 }
 
-fn read(values: own array<u8, 4>, position: own u64) -> own u8 traps {
+fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
   let room = len(values);
   claim bounded: ilt(position, room) because "claimed parameter bound";
   return values[position];
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -4155,7 +4160,7 @@ enum Fail {
   Bad();
 }
 
-fn source(flag: own Bool) -> own Result<u64, Fail> pure {
+fn source(flag: own Bool) -> result: own Result<u64, Fail> pure {
   if flag {
     return Ok<u64, Fail>(value: 1_u64);
   } else {
@@ -4164,7 +4169,7 @@ fn source(flag: own Bool) -> own Result<u64, Fail> pure {
   }
 }
 
-fn read(values: own array<i32, count>, i: own u64, flag: own Bool) -> own Result<i32, Fail> pure {
+fn read(values: own array<i32, count>, i: own u64, flag: own Bool) -> result: own Result<i32, Fail> pure {
   if ilt(i, 4_u64) {
     let v = propagate source(flag: flag);
     let a = values[i];
@@ -4174,8 +4179,8 @@ fn read(values: own array<i32, count>, i: own u64, flag: own Bool) -> own Result
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4193,7 +4198,7 @@ fn main() -> own unit pure {
 fn a_loop_body_kill_removes_the_fact_from_every_iteration_head() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if ilt(i, 4_u64) {
   } else {
     return 0_i32;
@@ -4210,8 +4215,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   return before;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -4233,7 +4238,7 @@ fn main() -> own unit pure {
 fn a_kill_free_loop_body_keeps_the_entry_fact_at_the_head() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if ilt(i, 4_u64) {
   } else {
     return 0_i32;
@@ -4245,8 +4250,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4260,7 +4265,7 @@ fn main() -> own unit pure {
 fn d1h_and_d1i_distinguish_a_return_inside_the_loop_from_one_after_it() {
     let source = br#"const count: u64 = 4_u64;
 
-fn return_inside(values: own array<i32, count>, i: own u64, stop: own Bool) -> own i32 pure {
+fn return_inside(values: own array<i32, count>, i: own u64, stop: own Bool) -> result: own i32 pure {
   if ilt(i, 4_u64) {
   } else {
     return 0_i32;
@@ -4275,7 +4280,7 @@ fn return_inside(values: own array<i32, count>, i: own u64, stop: own Bool) -> o
   return 0_i32;
 }
 
-fn return_after(values: own array<i32, count>, i: own u64, stop: own Bool) -> own i32 pure {
+fn return_after(values: own array<i32, count>, i: own u64, stop: own Bool) -> result: own i32 pure {
   if ilt(i, 4_u64) {
   } else {
     return 0_i32;
@@ -4290,8 +4295,8 @@ fn return_after(values: own array<i32, count>, i: own u64, stop: own Bool) -> ow
   return 0_i32;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4310,7 +4315,7 @@ fn main() -> own unit pure {
 fn a_kill_followed_only_by_the_current_loop_break_does_not_poison_the_head() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if ilt(i, 4_u64) {
   } else {
     return 0_i32;
@@ -4323,8 +4328,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   return 0_i32;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4338,7 +4343,7 @@ fn main() -> own unit pure {
 fn a_kill_followed_only_by_an_enclosing_break_does_not_poison_the_inner_head() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64, leave_outer: own Bool, leave_inner: own Bool) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64, leave_outer: own Bool, leave_inner: own Bool) -> result: own i32 pure {
   if ilt(i, 4_u64) {
   } else {
     return 0_i32;
@@ -4359,8 +4364,8 @@ fn read(values: own array<i32, count>, i: own u64, leave_outer: own Bool, leave_
   return 0_i32;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4378,7 +4383,7 @@ enum Fail {
   Bad();
 }
 
-fn source(fail: own Bool) -> own Result<u64, Fail> pure {
+fn source(fail: own Bool) -> result: own Result<u64, Fail> pure {
   if fail {
     let bad = Bad();
     return Err<u64, Fail>(error: bad);
@@ -4386,7 +4391,7 @@ fn source(fail: own Bool) -> own Result<u64, Fail> pure {
   return Ok<u64, Fail>(value: 1_u64);
 }
 
-fn read(values: own array<i32, count>, i: own u64, fail: own Bool, leave: own Bool) -> own Result<i32, Fail> pure {
+fn read(values: own array<i32, count>, i: own u64, fail: own Bool, leave: own Bool) -> result: own Result<i32, Fail> pure {
   if ilt(i, 4_u64) {
   } else {
     return Ok<i32, Fail>(value: 0_i32);
@@ -4401,8 +4406,8 @@ fn read(values: own array<i32, count>, i: own u64, fail: own Bool, leave: own Bo
   return Ok<i32, Fail>(value: 0_i32);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4416,7 +4421,7 @@ fn main() -> own unit pure {
 fn an_else_free_continuing_kill_still_poisons_the_loop_head() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64, mutate: own Bool, leave: own Bool) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64, mutate: own Bool, leave: own Bool) -> result: own i32 pure {
   if ilt(i, 4_u64) {
   } else {
     return 0_i32;
@@ -4433,8 +4438,8 @@ fn read(values: own array<i32, count>, i: own u64, mutate: own Bool, leave: own 
   return 0_i32;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4448,7 +4453,7 @@ fn main() -> own unit pure {
 fn a_give_to_an_initializer_inside_the_loop_carries_its_kill_to_the_head() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64, mutate: own Bool, leave: own Bool) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64, mutate: own Bool, leave: own Bool) -> result: own i32 pure {
   if ilt(i, 4_u64) {
   } else {
     return 0_i32;
@@ -4468,8 +4473,8 @@ fn read(values: own array<i32, count>, i: own u64, mutate: own Bool, leave: own 
   return 0_i32;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4483,7 +4488,7 @@ fn main() -> own unit pure {
 fn a_mixed_branch_ignores_the_return_only_kill_but_keeps_the_continuing_one() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(left: own array<i32, count>, right: own array<i32, count>, i: own u64, j: own u64, stop: own Bool, leave: own Bool) -> own i32 pure {
+fn read(left: own array<i32, count>, right: own array<i32, count>, i: own u64, j: own u64, stop: own Bool, leave: own Bool) -> result: own i32 pure {
   if ilt(i, 4_u64) {
   } else {
     return 0_i32;
@@ -4508,8 +4513,8 @@ fn read(left: own array<i32, count>, right: own array<i32, count>, i: own u64, j
   return 0_i32;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4523,7 +4528,7 @@ fn main() -> own unit pure {
 fn a_nested_loop_own_break_carries_kills_to_the_outer_loop_head() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64, leave_outer: own Bool) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64, leave_outer: own Bool) -> result: own i32 pure {
   if ilt(i, 4_u64) {
   } else {
     return 0_i32;
@@ -4541,8 +4546,8 @@ fn read(values: own array<i32, count>, i: own u64, leave_outer: own Bool) -> own
   return 0_i32;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4560,7 +4565,7 @@ fn main() -> own unit pure {
 fn a_counted_range_discharges_its_binder_and_safe_predecessor_indices() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>) -> own i32 pure {
+fn read(values: own array<i32, count>) -> result: own i32 pure {
   let total = 0_i32;
   for @items i in 1_u64..4_u64 {
     let previous = i -wrap 1_u64;
@@ -4572,8 +4577,8 @@ fn read(values: own array<i32, count>) -> own i32 pure {
   return total;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4587,7 +4592,7 @@ fn main() -> own unit pure {
 fn a_counted_range_does_not_prove_the_next_index_or_an_unrelated_carried_index() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, j: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, j: own u64) -> result: own i32 pure {
   let total = 0_i32;
   for @items i in 0_u64..4_u64 {
     let next = i +wrap 1_u64;
@@ -4601,8 +4606,8 @@ fn read(values: own array<i32, count>, j: own u64) -> own i32 pure {
   return total;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4616,7 +4621,7 @@ fn main() -> own unit pure {
 fn a_counted_upper_needs_an_independent_relation_to_the_storage_length() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, upper: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, upper: own u64) -> result: own i32 pure {
   let total = 0_i32;
   for @items i in 0_u64..upper {
     let value = values[i];
@@ -4625,8 +4630,8 @@ fn read(values: own array<i32, count>, upper: own u64) -> own i32 pure {
   return total;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -4640,7 +4645,7 @@ fn main() -> own unit pure {
 fn a_counted_preheader_closes_snapshot_consequences_before_body_kills() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>) -> own i32 pure {
+fn read(values: own array<i32, count>) -> result: own i32 pure {
   let upper = 4_u64;
   let total = 0_i32;
   for @items i in 0_u64..upper {
@@ -4651,7 +4656,7 @@ fn read(values: own array<i32, count>) -> own i32 pure {
   return total;
 }
 
-fn ordinary(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn ordinary(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   let upper = 4_u64;
   if ilt(i, upper) {
     set upper = 0_u64;
@@ -4661,8 +4666,8 @@ fn ordinary(values: own array<i32, count>, i: own u64) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -4697,7 +4702,7 @@ fn counted_roots_cover_hostile_control_edges_and_unused_s11_facts() {
   Failed();
 }
 
-fn maybe(fail: own Bool) -> own Result<unit, Stop> pure {
+fn maybe(fail: own Bool) -> result: own Result<unit, Stop> pure {
   if fail {
     let stopped = Failed();
     return Err<unit, Stop>(error: stopped);
@@ -4705,7 +4710,7 @@ fn maybe(fail: own Bool) -> own Result<unit, Stop> pure {
   return Ok<unit, Stop>(value: unit);
 }
 
-fn hostile(lower: own u64, upper: own u64, leave: own Bool, fail: own Bool) -> own Result<unit, Stop> pure {
+fn hostile(lower: own u64, upper: own u64, leave: own Bool, fail: own Bool) -> result: own Result<unit, Stop> pure {
   for @zero zero in 0_u64..0_u64 {
   }
   for @reversed reversed in 2_u64..1_u64 {
@@ -4751,8 +4756,8 @@ fn hostile(lower: own u64, upper: own u64, leave: own Bool, fail: own Bool) -> o
   return Ok<unit, Stop>(value: unit);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "hostile");
@@ -4800,7 +4805,7 @@ fn main() -> own unit pure {
 fn counted_roots_cover_contradictory_preheaders_and_neutral_join_predecessors() {
     let source = br#"const count: u64 = 1_u64;
 
-fn contradictory(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+fn contradictory(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
   if choose {
     claim left_contradiction: ilt(left, left) because "left contradiction";
   } else {
@@ -4811,7 +4816,7 @@ fn contradictory(left: own u64, right: own u64, choose: own Bool) -> own unit tr
   return unit;
 }
 
-fn joined(values: own array<i32, count>, x: own u64) -> own i32 pure {
+fn joined(values: own array<i32, count>, x: own u64) -> result: own i32 pure {
   let upper = 1_u64;
   if ilt(x, 0_u64) {
     let impossible = x;
@@ -4824,8 +4829,8 @@ fn joined(values: own array<i32, count>, x: own u64) -> own i32 pure {
   return total;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let contradictory = entailment(source, "contradictory");
@@ -4894,14 +4899,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn counted_root_mutations_fail_the_structural_checker() {
-    let source = br#"fn probe(upper: own u64) -> own unit pure {
+    let source = br#"fn probe(upper: own u64) -> result: own unit pure {
   for @items i in 0_u64..upper {
   }
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "probe");
@@ -4974,7 +4979,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn generic_counted_roots_are_deterministic_across_twenty_analyses() {
-    let source = br#"fn ranges<const n: u64>(values: own array<u8, n>) -> own unit pure {
+    let source = br#"fn ranges<const n: u64>(values: own array<u8, n>) -> result: own unit pure {
   let upper = len(values);
   for @first i in 0_u64..upper {
   }
@@ -4983,12 +4988,12 @@ fn generic_counted_roots_are_deterministic_across_twenty_analyses() {
   return unit;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let small = array_new<u8, 2>(0_u8);
   ranges<2>(values: move small);
   let large = array_new<u8, 5>(0_u8);
   ranges<5>(values: move large);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let normalized_instances = || {
@@ -5044,15 +5049,15 @@ fn main() -> own unit pure {
 fn a_break_free_zero_trip_counted_continuation_is_reachable_not_contradictory() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>) -> own i32 pure {
+fn read(values: own array<i32, count>) -> result: own i32 pure {
   for @empty i in 4_u64..4_u64 {
     let ignored = i;
   }
   return values[9_u64];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5066,7 +5071,7 @@ fn main() -> own unit pure {
 fn a_counted_body_fact_does_not_escape_through_the_zero_trip_edge() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   for @maybe n in 0_u64..1_u64 {
     if ilt(i, 4_u64) {
       let ignored = n;
@@ -5077,8 +5082,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5092,7 +5097,7 @@ fn main() -> own unit pure {
 fn a_nested_counted_loop_kill_can_reach_an_outer_ordinary_loop_head() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64, leave: own Bool) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64, leave: own Bool) -> result: own i32 pure {
   if ilt(i, 4_u64) {
   } else {
     return 0_i32;
@@ -5110,8 +5115,8 @@ fn read(values: own array<i32, count>, i: own u64, leave: own Bool) -> own i32 p
   return 0_i32;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5133,12 +5138,12 @@ struct Holder {
   data: array<u8, count>;
 }
 
-fn read(h: own Holder, i: own u64) -> own u8 pure {
+fn read(h: own Holder, i: own u64) -> result: own u8 pure {
   return h.data[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outcomes = obligations(source, "read");
@@ -5151,7 +5156,7 @@ fn main() -> own unit pure {
 fn a_nested_index_offset_is_no_term_and_renders_its_canonical_bytes() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(lens: own array<u8, count>, order: own array<u64, count>, j: own u64) -> own u8 pure {
+fn read(lens: own array<u8, count>, order: own array<u64, count>, j: own u64) -> result: own u8 pure {
   if ilt(j, 4_u64) {
     return lens[order[j]];
   } else {
@@ -5159,8 +5164,8 @@ fn read(lens: own array<u8, count>, order: own array<u64, count>, j: own u64) ->
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outcomes = obligations(source, "read");
@@ -5183,17 +5188,17 @@ fn main() -> own unit pure {
 fn a_buffer_or_slice_offset_renders_the_same_subscript_spelling() {
     let source = br#"const count: u64 = 4_u64;
 
-fn from_buffer(values: own array<u8, count>) -> own u8 allocates(heap), traps {
+fn from_buffer(values: own array<u8, count>) -> result: own u8 allocates(heap), traps {
   let b = buffer_new(4_u64, 0_u64);
   return values[b[0_u64]];
 }
 
-fn from_slice['r](values: own array<u8, count>, order: own slice<'r, u64>) -> own u8 reads('r) {
+fn from_slice['r](values: own array<u8, count>, order: own slice<'r, u64>) -> result: own u8 reads('r) {
   return values[order[0_u64]];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let buffer = obligations(source, "from_buffer");
@@ -5222,18 +5227,18 @@ fn main() -> own unit pure {
 
 #[test]
 fn an_allocation_length_equality_proves_a_constant_offset_and_a_runtime_length_does_not() {
-    let source = br#"fn sized() -> own u8 allocates(heap), traps {
+    let source = br#"fn sized() -> result: own u8 allocates(heap), traps {
   let b = buffer_new(4_u64, 0_u8);
   return b[3_u64];
 }
 
-fn runtime(n: own u64) -> own u8 allocates(heap), traps {
+fn runtime(n: own u64) -> result: own u8 allocates(heap), traps {
   let b = buffer_new(n, 0_u8);
   return b[3_u64];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let sized = entailment(source, "sized");
@@ -5260,7 +5265,7 @@ fn main() -> own unit pure {
 fn an_allocation_length_binding_carries_the_length_into_a_branch() {
     // `let m = len<T>(P)` establishes m = len(P), so a branch over m is a
     // branch over the length itself [ENT-3] S6.
-    let source = br#"fn read(n: own u64, i: own u64) -> own u8 allocates(heap), traps {
+    let source = br#"fn read(n: own u64, i: own u64) -> result: own u8 allocates(heap), traps {
   let b = buffer_new(n, 0_u8);
   let m = len(b);
   if ilt(i, m) {
@@ -5270,8 +5275,8 @@ fn an_allocation_length_binding_carries_the_length_into_a_branch() {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(discharge_flags(source, "read"), vec![true]);
@@ -5281,15 +5286,15 @@ fn main() -> own unit pure {
 fn a_slice_of_carries_its_source_length() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<u8, count>) -> own u8 pure {
+fn read(values: own array<u8, count>) -> result: own u8 pure {
   region 'view {
     let window = slice_of(&'view values);
     return window[3_u64];
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5305,7 +5310,7 @@ fn an_element_write_keeps_the_allocation_equality_that_a_write_to_its_length_kil
     // never kills its length fact; a write to the term the equality is held
     // against does. A buffer place is affine [STOR-1], so writing the root
     // binding itself is not a source shape the engine can be shown.
-    let source = br#"fn kept(n: own u64) -> own u8 allocates(heap), traps {
+    let source = br#"fn kept(n: own u64) -> result: own u8 allocates(heap), traps {
   let b = buffer_new(n, 0_u8);
   if ilt(3_u64, n) {
     set b[0_u64] = 1_u8;
@@ -5315,7 +5320,7 @@ fn an_element_write_keeps_the_allocation_equality_that_a_write_to_its_length_kil
   }
 }
 
-fn killed(n: own u64) -> own u8 allocates(heap), traps {
+fn killed(n: own u64) -> result: own u8 allocates(heap), traps {
   let b = buffer_new(n, 0_u8);
   if ilt(3_u64, n) {
     set n = 0_u64;
@@ -5325,8 +5330,8 @@ fn killed(n: own u64) -> own u8 allocates(heap), traps {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let kept = entailment(source, "kept");
@@ -5359,11 +5364,11 @@ fn consuming_the_buffer_kills_a_length_binding_that_survives_otherwise() {
     // away from it [ENT-5](c).
     let source = br#"const wide: u64 = 8_u64;
 
-fn eat(b: own buffer<u8>) -> own unit pure {
+fn eat(b: own buffer<u8>) -> result: own unit pure {
   return unit;
 }
 
-fn kept(other: own array<u8, wide>) -> own u8 allocates(heap), traps {
+fn kept(other: own array<u8, wide>) -> result: own u8 allocates(heap), traps {
   let b = buffer_new(4_u64, 0_u8);
   let m = len(b);
   let sample = other[m];
@@ -5371,7 +5376,7 @@ fn kept(other: own array<u8, wide>) -> own u8 allocates(heap), traps {
   return sample;
 }
 
-fn killed(other: own array<u8, wide>) -> own u8 allocates(heap), traps {
+fn killed(other: own array<u8, wide>) -> result: own u8 allocates(heap), traps {
   let b = buffer_new(4_u64, 0_u8);
   let m = len(b);
   eat(b: move b);
@@ -5379,8 +5384,8 @@ fn killed(other: own array<u8, wide>) -> own u8 allocates(heap), traps {
   return sample;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let kept = entailment(source, "kept");
@@ -5413,7 +5418,7 @@ fn main() -> own unit pure {
 fn set_targets_carry_the_same_obligation_in_target_position() {
     let source = br#"const count: u64 = 4_u64;
 
-fn write(values: own array<u16, count>, i: own u64) -> own u16 pure {
+fn write(values: own array<u16, count>, i: own u64) -> result: own u16 pure {
   if ilt(i, 4_u64) {
     set values[i] = 9_u16;
     return 1_u16;
@@ -5423,8 +5428,8 @@ fn write(values: own array<u16, count>, i: own u64) -> own u16 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outcomes = obligations(source, "write");
@@ -5445,19 +5450,19 @@ fn main() -> own unit pure {
 fn a_passed_claim_establishes_its_comparison_on_the_continuation() {
     let source = br#"const count: u64 = 4_u64;
 
-fn direct(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn direct(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
   claim i_must_be_in_range: ilt(i, 4_u64) because "i must be in range";
   return values[i];
 }
 
-fn through_origin(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn through_origin(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
   let ok = ilt(i, 4_u64);
   claim i_must_be_in_range: ok because "i must be in range";
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(discharge_flags(source, "direct"), vec![true]);
@@ -5476,15 +5481,15 @@ fn a_claim_on_a_band_establishes_its_conjuncts_not_a_whole_tree_relation() {
     // projection is what discharges the subscript.
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
   let low = ilt(i, 4_u64);
   let high = ige(i, 0_u64);
   claim i_must_be_in_range: band(low, high) because "i must be in range";
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(discharge_flags(source, "read"), vec![true]);
@@ -5498,7 +5503,7 @@ fn main() -> own unit pure {
 fn a_literal_a_copy_and_a_total_conversion_carry_the_value_forward() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>) -> own i32 pure {
+fn read(values: own array<i32, count>) -> result: own i32 pure {
   let k = 2_u64;
   let j = k;
   let narrow = 3_u16;
@@ -5508,8 +5513,8 @@ fn read(values: own array<i32, count>) -> own i32 pure {
   return first +wrap second;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -5538,7 +5543,7 @@ fn a_narrowing_conversion_carries_no_equality_into_its_ok_arm() {
     // the `Ok` binder inherits only its own type range.
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, n: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, n: own u64) -> result: own i32 pure {
   if ilt(n, 4_u64) {
     match cvt<u64, u8>(n) {
       Ok(value: small) => {
@@ -5554,8 +5559,8 @@ fn read(values: own array<i32, count>, n: own u64) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -5573,15 +5578,15 @@ fn main() -> own unit pure {
 fn unsigned_bit_and_and_shift_one_retain_exact_s7_sources_in_all_views() {
     let source = br#"const earlier_one: u32 = 1_u32;
 
-fn sources(left: own u32, right: own u32, count: own u32) -> own u32 pure {
+fn sources(left: own u32, right: own u32, count: own u32) -> result: own u32 pure {
   let masked = iand(left, right);
   let shifted_literal = ishl.wrap(1_u32, count);
   let shifted_named = ishl.wrap(earlier_one, count);
   return masked;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "sources");
@@ -5686,13 +5691,13 @@ fn main() -> own unit pure {
 
 #[test]
 fn repeated_bit_and_operands_keep_two_ordered_s7_roots_per_view() {
-    let source = br#"fn repeated(value: own u32) -> own u32 pure {
+    let source = br#"fn repeated(value: own u32) -> result: own u32 pure {
   let masked = iand(value, value);
   return masked;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "repeated");
@@ -5740,13 +5745,13 @@ fn main() -> own unit pure {
 fn one_ineligible_bit_and_operand_does_not_hide_the_other_s7_bound() {
     let source = br#"const count: u64 = 4_u64;
 
-fn independent(values: own array<u32, count>, admitted: own u32) -> own u32 pure {
+fn independent(values: own array<u32, count>, admitted: own u32) -> result: own u32 pure {
   let masked = iand(values[0_u64], admitted);
   return masked;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "independent");
@@ -5772,39 +5777,39 @@ fn main() -> own unit pure {
 
 #[test]
 fn signed_generic_local_nondirect_and_wrong_operation_shapes_have_no_s7_source() {
-    let source = br#"fn signed(left: own i32, right: own i32) -> own i32 pure {
+    let source = br#"fn signed(left: own i32, right: own i32) -> result: own i32 pure {
   let masked = iand(left, right);
   return masked;
 }
 
-fn generic<T: Int>(count: own u32) -> own T pure {
+fn generic<T: Int>(count: own u32) -> result: own T pure {
   let shifted = ishl.wrap(1_T, count);
   return shifted;
 }
 
-fn local(count: own u32) -> own u32 pure {
+fn local(count: own u32) -> result: own u32 pure {
   let one = 1_u32;
   let shifted = ishl.wrap(one, count);
   return shifted;
 }
 
-fn nondirect(count: own u32) -> own u32 pure {
+fn nondirect(count: own u32) -> result: own u32 pure {
   return ishl.wrap(1_u32, count);
 }
 
-fn wrong_bit_operation(left: own u32, right: own u32) -> own u32 pure {
+fn wrong_bit_operation(left: own u32, right: own u32) -> result: own u32 pure {
   let combined = ior(left, right);
   return combined;
 }
 
-fn wrong_shift_mode(count: own u32) -> own u32 traps {
+fn wrong_shift_mode(count: own u32) -> result: own u32 traps {
   let shifted = ishl(1_u32, count);
   return shifted;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let ignored = generic<u32>(count: 2_u32);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     for function in [
@@ -5826,7 +5831,8 @@ fn main() -> own unit pure {
 
 #[test]
 fn postcondition_exit_and_aggregate_roots_match_retained_metadata() {
-    let source = br#"fn identity(value: own i32, choose: own Bool) -> own i32 pure ensures result {
+    let source =
+        br#"fn identity(value: own i32, choose: own Bool) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "post";
 } {
   if choose {
@@ -5836,8 +5842,8 @@ fn postcondition_exit_and_aggregate_roots_match_retained_metadata() {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "identity");
@@ -5854,21 +5860,21 @@ fn main() -> own unit pure {
 
 #[test]
 fn caller_postcondition_sources_use_b_first_then_same_view_gv() {
-    let b_first = br#"fn callee(value: own i32) -> own i32 pure ensures result {
+    let b_first = br#"fn callee(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "callee post";
 } {
   return value;
 }
 
-fn caller(value: own i32) -> own i32 pure ensures result {
+fn caller(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "caller post";
 } {
   let called = callee(value: value);
   return called;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(b_first, "caller");
@@ -5910,7 +5916,7 @@ fn main() -> own unit pure {
         "a discharged B summary needs neither Gv nor requirement parents"
     );
 
-    let u_fallback = br#"fn normalized(value: own i32) -> own i32 pure requires {
+    let u_fallback = br#"fn normalized(value: own i32) -> result: own i32 pure requires {
   check ieq(value, 1_i32) else trap "required";
 } ensures result {
   check ieq(result, value) else trap "callee post";
@@ -5918,15 +5924,15 @@ fn main() -> own unit pure {
   return 1_i32;
 }
 
-fn caller() -> own i32 pure ensures result {
+fn caller() -> result: own i32 pure ensures result {
   check ieq(result, 1_i32) else trap "caller post";
 } {
   let called = normalized(value: 1_i32);
   return called;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let callee = entailment(u_fallback, "normalized");
@@ -5980,13 +5986,13 @@ fn main() -> own unit pure {
 #[test]
 fn direct_match_and_value_match_retain_only_selected_payload_routes() {
     let source =
-        br#"fn callee(value: own i32) -> own Result<i32, Overflow> pure ensures Ok(value: result) {
+        br#"fn callee(value: own i32) -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
   check ieq(result, value) else trap "callee post";
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
-fn direct(value: own i32) -> own i32 pure ensures result {
+fn direct(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "direct post";
 } {
   match callee(value: value) {
@@ -5999,7 +6005,7 @@ fn direct(value: own i32) -> own i32 pure ensures result {
   }
 }
 
-fn delivered(value: own i32) -> own i32 pure {
+fn delivered(value: own i32) -> result: own i32 pure {
   let selected = match callee(value: value) {
     Ok(value: payload) => {
       give payload;
@@ -6011,8 +6017,8 @@ fn delivered(value: own i32) -> own i32 pure {
   return selected;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     for function in ["direct", "delivered"] {
@@ -6070,31 +6076,32 @@ fn main() -> own unit pure {
 
 #[test]
 fn direct_and_selected_receivers_retain_exact_same_view_route_roots() {
-    let source = br#"fn choose(ignored: own i32, value: own i32) -> own i32 pure ensures result {
+    let source =
+        br#"fn choose(ignored: own i32, value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "choose post";
 } {
   return value;
 }
 
-fn selected(value: own i32) -> own Result<i32, Overflow> pure ensures Ok(value: result) {
+fn selected(value: own i32) -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
   check ieq(result, value) else trap "selected post";
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
-fn guard(left: own i32, right: own i32) -> own unit pure requires {
+fn guard(left: own i32, right: own i32) -> result: own unit pure requires {
   check ieq(left, right) else trap "guard pre";
 } {
   return unit;
 }
 
-fn same_binding(slot: own i32, replacement: own i32) -> own unit pure {
+fn same_binding(slot: own i32, replacement: own i32) -> result: own unit pure {
   set slot = choose(ignored: slot, value: replacement);
   guard(left: slot, right: replacement);
   return unit;
 }
 
-fn matched(outer: own i32, replacement: own i32) -> own unit pure {
+fn matched(outer: own i32, replacement: own i32) -> result: own unit pure {
   match selected(value: replacement) {
     Ok(value: payload) => {
       set outer = payload;
@@ -6106,7 +6113,7 @@ fn matched(outer: own i32, replacement: own i32) -> own unit pure {
   return unit;
 }
 
-fn valued(outer: own i32, replacement: own i32) -> own i32 pure {
+fn valued(outer: own i32, replacement: own i32) -> result: own i32 pure {
   let delivered = match selected(value: replacement) {
     Ok(value: payload) => {
       set outer = payload;
@@ -6120,8 +6127,8 @@ fn valued(outer: own i32, replacement: own i32) -> own i32 pure {
   return delivered;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     for (function, selected_route) in [("same_binding", false), ("matched", true), ("valued", true)]
@@ -6148,7 +6155,7 @@ fn main() -> own unit pure {
 fn a_trapping_offset_establishes_its_equality_unconditionally() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if ilt(i, 3_u64) {
     let next = i + 1_u64;
     return values[next];
@@ -6157,8 +6164,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -6193,7 +6200,7 @@ fn a_wrapping_offset_establishes_only_where_the_range_is_already_proved() {
     // closed state already proves the unwrapped result stays in range.
     let source = br#"const count: u64 = 4_u64;
 
-fn guarded(values: own array<i32, count>, p: own u64) -> own i32 pure {
+fn guarded(values: own array<i32, count>, p: own u64) -> result: own i32 pure {
   if ilt(p, 4_u64) {
     if ige(p, 1_u64) {
       let s = p -wrap 1_u64;
@@ -6206,7 +6213,7 @@ fn guarded(values: own array<i32, count>, p: own u64) -> own i32 pure {
   }
 }
 
-fn unguarded(values: own array<i32, count>, p: own u64) -> own i32 pure {
+fn unguarded(values: own array<i32, count>, p: own u64) -> result: own i32 pure {
   if ilt(p, 4_u64) {
     let s = p -wrap 1_u64;
     return values[s];
@@ -6215,8 +6222,8 @@ fn unguarded(values: own array<i32, count>, p: own u64) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -6235,7 +6242,7 @@ fn main() -> own unit pure {
 fn a_checked_offset_establishes_in_the_ok_arm_only_and_dies_with_its_base() {
     let source = br#"const count: u64 = 4_u64;
 
-fn direct(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn direct(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if ilt(i, 3_u64) {
     match i +checked 1_u64 {
       Ok(value: next) => {
@@ -6250,7 +6257,7 @@ fn direct(values: own array<i32, count>, i: own u64) -> own i32 pure {
   }
 }
 
-fn through_binding(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn through_binding(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if ilt(i, 3_u64) {
     let outcome = i +checked 1_u64;
     match outcome {
@@ -6266,7 +6273,7 @@ fn through_binding(values: own array<i32, count>, i: own u64) -> own i32 pure {
   }
 }
 
-fn killed(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn killed(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if ilt(i, 3_u64) {
     let outcome = i +checked 1_u64;
     set i = 9_u64;
@@ -6283,8 +6290,8 @@ fn killed(values: own array<i32, count>, i: own u64) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(discharge_flags(source, "direct"), vec![true]);
@@ -6312,18 +6319,18 @@ const inside: array<u64, count> =[0_u64, 1_u64, 3_u64, 2_u64];
 
 const outside: array<u64, count> =[0_u64, 1_u64, 4_u64, 2_u64];
 
-fn low(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn low(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   let bound = inside[i];
   return values[bound];
 }
 
-fn high(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn high(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   let bound = outside[i];
   return values[bound];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let low = entailment(source, "low");
@@ -6357,15 +6364,15 @@ fn main() -> own unit pure {
 fn a_requires_check_establishes_its_substituted_relation_at_body_entry() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure requires {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure requires {
   let ok = ilt(i, 4_u64);
   check ok else trap "i must be in range";
 } {
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -6386,7 +6393,7 @@ fn main() -> own unit pure {
 fn a_requires_chain_substitutes_repeatedly_and_reads_a_length_call() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure requires {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure requires {
   let n = len(values);
   let ok = ilt(i, n);
   check ok else trap "i must be in range";
@@ -6394,8 +6401,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure requires {
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -6412,7 +6419,7 @@ fn every_occurrence_of_a_requires_local_substitutes() {
     // len(values) < len(values), a contradictory entry state [ENT-4].
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>) -> own i32 pure requires {
+fn read(values: own array<i32, count>) -> result: own i32 pure requires {
   let n = len(values);
   let ok = ilt(n, n);
   check ok else trap "unsatisfiable by construction";
@@ -6420,8 +6427,8 @@ fn read(values: own array<i32, count>) -> own i32 pure requires {
   return values[9_u64];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outcomes = obligations(source, "read");
@@ -6437,7 +6444,7 @@ fn main() -> own unit pure {
 fn a_band_s4_goal_establishes_its_conjuncts_at_body_entry() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure requires {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure requires {
   let low = ilt(i, 4_u64);
   let high = ige(i, 0_u64);
   let ok = band(low, high);
@@ -6446,8 +6453,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 pure requires {
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -6463,7 +6470,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn one_system_call_retains_two_independent_ordered_range_obligations() {
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> own unit reads('o 's), writes('o), external, blocks {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads('o 's), writes('o), external, blocks {
   region 'attempt {
     match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end) {
       Ok(value: next) => {
@@ -6475,7 +6482,7 @@ fn one_system_call_retains_two_independent_ordered_range_obligations() {
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> own ExitStatus pure {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6512,7 +6519,7 @@ fn a_transfer_endpoint_is_bounded_by_end_and_not_beyond_it() {
     // so an endpoint equal to the table length proves nothing.
     let source = br#"const count: u64 = 4_u64;
 
-fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> own unit reads('o 's), writes('o), external, blocks {
+fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads('o 's), writes('o), external, blocks {
   let source_length = len(deref(source));
   let enough = ile(3_u64, source_length);
   if enough {
@@ -6529,7 +6536,7 @@ fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own arr
   return unit;
 }
 
-fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> own unit reads('o 's), writes('o), external, blocks {
+fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads('o 's), writes('o), external, blocks {
   let source_length = len(deref(source));
   let enough = ile(4_u64, source_length);
   if enough {
@@ -6546,7 +6553,7 @@ fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own arr
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   let batch = buffer_new(4_u64, 0_u8);
   let table = array_new<u8, count>(0_u8);
   region 'publication {
@@ -6585,7 +6592,7 @@ fn a_transfer_count_bound_enters_the_observing_arm_only() {
     // is an unrelated required size and gains nothing [ENT-3] S10.
     let source = br#"const count: u64 = 4_u64;
 
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
   let table = array_new<u8, count>(0_u8);
   let sink = buffer_new(8_u64, 0_u8);
   region 'a {
@@ -6628,7 +6635,7 @@ fn a_host_copy_utf8_success_count_is_bounded_by_capacity() {
     // byte-preserving copy producer: copied <= 3 < len(table).
     let source = br#"const count: u64 = 4_u64;
 
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
   let table = array_new<u8, count>(0_u8);
   let sink = buffer_new(8_u64, 0_u8);
   region 'a {
@@ -6666,7 +6673,7 @@ fn a_let_bound_transfer_outcome_carries_the_same_count_bound() {
     // path discipline as S7's checked-arithmetic origin.
     let source = br#"const count: u64 = 4_u64;
 
-fn deferred['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> own unit reads('s), external, blocks, traps {
+fn deferred['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads('s), external, blocks, traps {
   region 'attempt {
     let outcome = write_once<'attempt, 's>(output: &uniq 'attempt output, source: source, offset: 0_u64, count: 3_u64);
     match outcome {
@@ -6680,7 +6687,7 @@ fn deferred['s](output: own Output, source: &'s buffer<u8>, table: own array<u8,
   return unit;
 }
 
-fn killed['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> own unit reads('s), external, blocks, traps {
+fn killed['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads('s), external, blocks, traps {
   region 'attempt {
     let outcome = write_once<'attempt, 's>(output: &uniq 'attempt output, source: source, offset: 0_u64, count: limit);
     set limit = 9_u64;
@@ -6695,7 +6702,7 @@ fn killed['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, c
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
   let batch = buffer_new(1_u64, 0_u8);
   let table = array_new<u8, count>(0_u8);
   region 'publication {
@@ -6718,7 +6725,7 @@ fn a_read_once_count_is_observed_on_its_own_outcome_variant() {
     // `Result`, so the observing arm is named per operation [ENT-3] S10.
     let source = br#"const count: u64 = 4_u64;
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks, traps {
   let table = array_new<u8, count>(0_u8);
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
@@ -6774,15 +6781,15 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
 
 #[test]
 fn a_passed_claim_establishes_its_fact_on_the_continuation() {
-    let source = br#"fn read(values: own buffer<i32>, i: own u64) -> own i32 traps {
+    let source = br#"fn read(values: own buffer<i32>, i: own u64) -> result: own i32 traps {
   let n = len(values);
   let inside = ilt(i, n);
   claim in_range: inside because "the caller walks 0..len";
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "read");
@@ -6804,15 +6811,15 @@ fn main() -> own unit pure {
 
 #[test]
 fn the_claim_ledger_reports_exact_source_text_used_proof_and_provenance() {
-    let source = br#"fn read(values: own buffer<i32>, i: own u64) -> own i32 traps {
+    let source = br#"fn read(values: own buffer<i32>, i: own u64) -> result: own i32 traps {
   let n = len(values);
   let inside = ilt(i, n);
   claim in_range: inside because "the caller walks 0..len";
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -6911,7 +6918,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn the_claim_ledger_links_only_live_canonical_s3_premises() {
-    let source = br#"fn first_wins(values: own buffer<i32>, i: own u64) -> own i32 traps {
+    let source = br#"fn first_wins(values: own buffer<i32>, i: own u64) -> result: own i32 traps {
   let n = len(values);
   let inside = ilt(i, n);
   claim first: inside because "first proof";
@@ -6919,7 +6926,7 @@ fn the_claim_ledger_links_only_live_canonical_s3_premises() {
   return values[i];
 }
 
-fn killed(values: own buffer<i32>, i: own u64, replacement: own u64) -> own i32 traps {
+fn killed(values: own buffer<i32>, i: own u64, replacement: own u64) -> result: own i32 traps {
   let offset = i;
   let n = len(values);
   let inside = ilt(offset, n);
@@ -6928,7 +6935,7 @@ fn killed(values: own buffer<i32>, i: own u64, replacement: own u64) -> own i32 
   return values[offset];
 }
 
-fn joined(values: own buffer<i32>, i: own u64, choose: own Bool) -> own i32 traps {
+fn joined(values: own buffer<i32>, i: own u64, choose: own Bool) -> result: own i32 traps {
   let n = len(values);
   if choose {
     claim left: ilt(i, n) because "left edge";
@@ -6938,8 +6945,8 @@ fn joined(values: own buffer<i32>, i: own u64, choose: own Bool) -> own i32 trap
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -6985,13 +6992,13 @@ fn main() -> own unit pure {
 
 #[test]
 fn one_claim_can_support_multiple_bounds_and_a_call_goal() {
-    let source = br#"fn need(index: own u64) -> own unit pure requires {
+    let source = br#"fn need(index: own u64) -> result: own unit pure requires {
   check ilt(index, 4_u64) else trap "small";
 } {
   return unit;
 }
 
-fn read(values: own buffer<i32>, i: own u64) -> own i32 traps {
+fn read(values: own buffer<i32>, i: own u64) -> result: own i32 traps {
   let n = len(values);
   let inside = ilt(i, n);
   claim bounded: inside because "one proof, two reads";
@@ -7000,14 +7007,14 @@ fn read(values: own buffer<i32>, i: own u64) -> own i32 traps {
   return first;
 }
 
-fn caller(i: own u64) -> own unit traps {
+fn caller(i: own u64) -> result: own unit traps {
   claim small: ilt(i, 4_u64) because "the call is guarded";
   need(index: i);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -7081,7 +7088,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_zero_argument_call_goal_retains_an_empty_dense_provenance_inventory() {
-    let source = br#"fn need() -> own unit pure requires {
+    let source = br#"fn need() -> result: own unit pure requires {
   let first = ilt(0_u64, 1_u64);
   let second = ilt(1_u64, 2_u64);
   let complete = band(first, second);
@@ -7090,7 +7097,7 @@ fn a_zero_argument_call_goal_retains_an_empty_dense_provenance_inventory() {
   return unit;
 }
 
-fn caller() -> own unit traps {
+fn caller() -> result: own unit traps {
   let first = ilt(0_u64, 1_u64);
   let second = ilt(1_u64, 2_u64);
   let complete = band(first, second);
@@ -7099,8 +7106,8 @@ fn caller() -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -7129,7 +7136,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn postcondition_routes_retain_claim_premises_through_complete_a0_parents() {
-    let source = br#"fn normalized(value: own i32) -> own i32 pure requires {
+    let source = br#"fn normalized(value: own i32) -> result: own i32 pure requires {
   check ieq(value, 1_i32) else trap "required";
 } ensures result {
   check ieq(result, 1_i32) else trap "post";
@@ -7137,14 +7144,14 @@ fn postcondition_routes_retain_claim_premises_through_complete_a0_parents() {
   return 1_i32;
 }
 
-fn caller(value: own i32) -> own unit traps {
+fn caller(value: own i32) -> result: own unit traps {
   claim normalized_input: ieq(value, 1_i32) because "the call is guarded";
   let called = normalized(value: value);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -7194,7 +7201,7 @@ fn main() -> own unit pure {
 #[test]
 fn a_loop_body_claim_links_only_the_obligation_it_reaches() {
     let source =
-        br#"fn read(values: own buffer<i32>, i: own u64, leave: own Bool) -> own i32 traps {
+        br#"fn read(values: own buffer<i32>, i: own u64, leave: own Bool) -> result: own i32 traps {
   loop @again {
     let n = len(values);
     let inside = ilt(i, n);
@@ -7209,8 +7216,8 @@ fn a_loop_body_claim_links_only_the_obligation_it_reaches() {
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -7236,15 +7243,15 @@ fn main() -> own unit pure {
 
 #[test]
 fn concrete_generic_claims_keep_distinct_checked_program_identities() {
-    let source = br#"fn identity<T: Int>(value: own T) -> own T traps {
+    let source = br#"fn identity<T: Int>(value: own T) -> result: own T traps {
   claim reflexive: ieq(value, value) because "identity";
   return value;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let signed = identity<i32>(value: 1_i32);
   let unsigned = identity<u32>(value: 1_u32);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -7280,10 +7287,10 @@ fn main() -> own unit traps {
 
 #[test]
 fn a_claim_without_comparison_origin_is_retained_and_never_judged() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let flag = True();
   claim held: flag because "constructed";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "main");
@@ -7302,7 +7309,7 @@ fn a_claim_without_comparison_origin_is_retained_and_never_judged() {
 fn a_derivable_claim_is_redundant_and_reports_the_advisory_without_rejecting() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
   if ilt(i, 4_u64) {
     claim proven: ilt(i, 4_u64) because "already branched";
     return values[i];
@@ -7311,8 +7318,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -7345,7 +7352,7 @@ fn main() -> own unit pure {
 fn a_refuted_claim_is_a_clm2_rejection_with_predicate_and_negation() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
   if ige(i, 4_u64) {
     claim in_range: ilt(i, 4_u64) because "refuted by the branch";
     return values[i];
@@ -7354,8 +7361,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -7384,13 +7391,13 @@ fn main() -> own unit pure {
 
 #[test]
 fn integer_domain_normalization_drives_positive_and_negative_claim_lifecycle() {
-    let positive = br#"fn probe() -> own unit traps {
+    let positive = br#"fn probe() -> result: own unit traps {
   claim obvious: ishl.defined(1_u8, 1_u32) because "one is below eight";
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(positive, |outcome| {
@@ -7420,13 +7427,13 @@ fn main() -> own unit pure {
         ));
     });
 
-    let negative = br#"fn probe() -> own unit traps {
+    let negative = br#"fn probe() -> result: own unit traps {
   claim impossible: ishl.defined(1_u8, 8_u32) because "eight is outside the u8 shift domain";
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(negative, |outcome| {
@@ -7466,7 +7473,7 @@ fn a_contradictory_state_never_refutes_a_claim() {
     // reachability rules, so it returns from inside.
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
   if ilt(i, 0_u64) {
     claim absurd: ilt(i, 4_u64) because "under a false branch";
     return values[i];
@@ -7475,8 +7482,8 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     // i < 0 is unsatisfiable for u64: the True arm's state is contradictory,
@@ -7500,7 +7507,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn claim_lifecycle_roots_and_dense_ids_are_stable_across_repeated_analysis() {
-    let source = br#"fn inspect(values: own buffer<i32>, i: own u64) -> own unit traps {
+    let source = br#"fn inspect(values: own buffer<i32>, i: own u64) -> result: own unit traps {
   if ilt(i, 4_u64) {
     claim redundant: ilt(i, 4_u64) because "the branch established it";
     let n = len(values);
@@ -7513,8 +7520,8 @@ fn claim_lifecycle_roots_and_dense_ids_are_stable_across_repeated_analysis() {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let expected = entailment(source, "inspect");
@@ -7577,12 +7584,12 @@ fn main() -> own unit pure {
 
 #[test]
 fn an_undischarged_subscript_is_an_op4_rejection_with_the_exact_residual() {
-    let source = br#"fn read(values: own buffer<i32>, i: own u64) -> own i32 pure {
+    let source = br#"fn read(values: own buffer<i32>, i: own u64) -> result: own i32 pure {
   return values[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -7599,12 +7606,12 @@ fn main() -> own unit pure {
 fn a_discharged_program_accepts_and_retains_its_derivations() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>) -> own i32 pure {
+fn read(values: own array<i32, count>) -> result: own i32 pure {
   return values[2_u64];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -7646,7 +7653,7 @@ fn main() -> own unit pure {
 fn counted_counterfactual_views_publish_only_exact_outcome_shape() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>) -> own i32 pure {
+fn read(values: own array<i32, count>) -> result: own i32 pure {
   let total = 0_i32;
   for @items i in 0_u64..4_u64 {
     let value = values[i];
@@ -7655,8 +7662,8 @@ fn read(values: own array<i32, count>) -> own i32 pure {
   return total;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -8340,15 +8347,15 @@ fn counted_range_reads_a_dereferenced_projected_endpoint_as_an_s11_term() {
   value: box<u64>;
 }
 
-fn probe(holder: own Holder) -> own unit traps {
+fn probe(holder: own Holder) -> result: own unit traps {
   for @items i in deref(holder.value)..1_u64 {
     claim impossible: ine(i, 0_u64) because "the true edge fixes i to zero";
   }
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "probe");
@@ -8382,7 +8389,7 @@ fn counted_range_kills_a_borrowed_projected_endpoint_after_a_write() {
   upper: u64;
 }
 
-fn probe(limit: own Limit) -> own unit traps {
+fn probe(limit: own Limit) -> result: own unit traps {
   region 'r {
     let holder = &uniq 'r limit;
     for @items i in 0_u64..deref(holder).upper {
@@ -8393,8 +8400,8 @@ fn probe(limit: own Limit) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "probe");
@@ -8407,15 +8414,15 @@ fn main() -> own unit pure {
 
 #[test]
 fn counted_range_preserves_multiple_deref_projections_in_one_endpoint_term() {
-    let source = br#"fn probe(holder: own box<box<u64>>) -> own unit traps {
+    let source = br#"fn probe(holder: own box<box<u64>>) -> result: own unit traps {
   for @items i in deref(deref(holder))..1_u64 {
     claim impossible: ine(i, 0_u64) because "the true edge fixes i to zero";
   }
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "probe");
@@ -8431,15 +8438,15 @@ fn main() -> own unit pure {
 
 #[test]
 fn counted_range_restores_a_borrow_holder_deref_before_nested_box_derefs() {
-    let source = br#"fn probe['r](holder: &'r box<box<u64>>) -> own unit reads('r), traps {
+    let source = br#"fn probe['r](holder: &'r box<box<u64>>) -> result: own unit reads('r), traps {
   for @items i in deref(deref(deref(holder)))..1_u64 {
     claim impossible: igt(deref(deref(deref(holder))), i) because "the header proves the opposite";
   }
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outcomes = claims(source, "probe");
@@ -8460,15 +8467,15 @@ fn main() -> own unit pure {
 
 #[test]
 fn counted_range_does_not_treat_a_read_only_box_deref_as_a_consume() {
-    let source = br#"fn probe(holder: own box<u64>) -> own unit traps {
+    let source = br#"fn probe(holder: own box<u64>) -> result: own unit traps {
   for @items i in deref(holder)..1_u64 {
     claim impossible: igt(deref(holder), i) because "the captured lower endpoint cannot exceed the binder";
   }
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outcomes = claims(source, "probe");
@@ -8481,7 +8488,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn counted_range_does_not_duplicate_the_deref_of_a_let_bound_owning_box() {
-    let source = br#"fn probe() -> own unit allocates(heap), traps {
+    let source = br#"fn probe() -> result: own unit allocates(heap), traps {
   let holder = box_new(0_u64);
   for @items i in deref(holder)..1_u64 {
     claim impossible: igt(deref(holder), i) because "the captured lower endpoint cannot exceed the binder";
@@ -8489,8 +8496,8 @@ fn counted_range_does_not_duplicate_the_deref_of_a_let_bound_owning_box() {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outcomes = claims(source, "probe");
@@ -8508,19 +8515,19 @@ fn main() -> own unit pure {
 
 #[test]
 fn integer_domain_normalization_discharges_requires_and_ordinary_calls() {
-    let source = br#"fn shift_once(value: own u8) -> own u8 pure requires {
-  check ishl.defined(value, 1_u32) else trap "one-bit shift domain";
+    let source = br#"fn shift_once(value: own u8) -> result: own u8 pure contract {
+  requires ishl.defined(value, 1_u32);
 } {
   let shifted = ishl(value, 1_u32);
   return shifted;
 }
 
-fn caller(value: own u8) -> own u8 pure {
+fn caller(value: own u8) -> result: own u8 pure {
   return shift_once(value: value);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -8567,7 +8574,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn impossible_integer_domain_true_edge_closes_to_contradiction() {
-    let source = br#"fn impossible_branch(value: own u8) -> own u8 pure {
+    let source = br#"fn impossible_branch(value: own u8) -> result: own u8 pure {
   if ishl.defined(value, 8_u32) {
     let shifted = ishl(value, 8_u32);
     return shifted;
@@ -8576,8 +8583,8 @@ fn impossible_integer_domain_true_edge_closes_to_contradiction() {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -8613,7 +8620,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn impossible_integer_domain_false_edge_closes_to_contradiction() {
-    let source = br#"fn impossible_branch(value: own u8) -> own u8 pure {
+    let source = br#"fn impossible_branch(value: own u8) -> result: own u8 pure {
   if ishl.defined(value, 1_u32) {
     return value;
   } else {
@@ -8622,8 +8629,8 @@ fn impossible_integer_domain_false_edge_closes_to_contradiction() {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -8659,7 +8666,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn whole_goal_sources_discharge_atomically_while_children_do_not() {
-    let source = br#"fn guarded(value: own u64) -> own unit traps requires {
+    let source = br#"fn guarded(value: own u64) -> result: own unit traps requires {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -8669,7 +8676,7 @@ fn whole_goal_sources_discharge_atomically_while_children_do_not() {
   return unit;
 }
 
-fn from_branch(value: own u64) -> own unit traps {
+fn from_branch(value: own u64) -> result: own unit traps {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -8681,7 +8688,7 @@ fn from_branch(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn from_check(value: own u64) -> own unit traps {
+fn from_check(value: own u64) -> result: own unit traps {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -8690,7 +8697,7 @@ fn from_check(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn from_claim(value: own u64) -> own unit traps {
+fn from_claim(value: own u64) -> result: own unit traps {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -8699,7 +8706,7 @@ fn from_claim(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn from_children(value: own u64) -> own unit traps {
+fn from_children(value: own u64) -> result: own unit traps {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   if positive {
@@ -8714,7 +8721,7 @@ fn from_children(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn from_false(value: own u64) -> own unit traps {
+fn from_false(value: own u64) -> result: own unit traps {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -8726,8 +8733,8 @@ fn from_false(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
 
@@ -8754,14 +8761,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn an_exact_comparison_call_retains_every_positive_derivation_ground() {
-    let source = br#"fn below(value: own u64) -> own unit traps requires {
+    let source = br#"fn below(value: own u64) -> result: own unit traps requires {
   check ilt(value, 10_u64) else trap "small";
 } {
   claim body: True() because "body";
   return unit;
 }
 
-fn exact(value: own u64) -> own unit traps {
+fn exact(value: own u64) -> result: own unit traps {
   let small = ilt(value, 10_u64);
   if small {
     below(value: value);
@@ -8771,7 +8778,7 @@ fn exact(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn projected(value: own u64) -> own unit traps {
+fn projected(value: own u64) -> result: own unit traps {
   let at_most_nine = ile(value, 9_u64);
   if at_most_nine {
     below(value: value);
@@ -8781,8 +8788,8 @@ fn projected(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let exact = entailment(source, "exact");
@@ -8820,7 +8827,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn joined_whole_goals_require_the_same_sign_on_every_reachable_input() {
-    let source = br#"fn guarded(value: own u64) -> own unit traps requires {
+    let source = br#"fn guarded(value: own u64) -> result: own unit traps requires {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -8830,7 +8837,7 @@ fn joined_whole_goals_require_the_same_sign_on_every_reachable_input() {
   return unit;
 }
 
-fn both(value: own u64, choose: own Bool) -> own unit traps {
+fn both(value: own u64, choose: own Bool) -> result: own unit traps {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -8843,7 +8850,7 @@ fn both(value: own u64, choose: own Bool) -> own unit traps {
   return unit;
 }
 
-fn one(value: own u64, choose: own Bool) -> own unit traps {
+fn one(value: own u64, choose: own Bool) -> result: own unit traps {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -8856,8 +8863,8 @@ fn one(value: own u64, choose: own Bool) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let both = entailment(source, "both");
@@ -8881,21 +8888,21 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_computed_bool_truth_survives_an_origin_write_but_its_expansion_does_not() {
-    let source = br#"fn need_true(value: own Bool) -> own unit traps requires {
+    let source = br#"fn need_true(value: own Bool) -> result: own unit traps requires {
   check value else trap "true";
 } {
   claim body: True() because "body";
   return unit;
 }
 
-fn below(value: own u64) -> own unit traps requires {
+fn below(value: own u64) -> result: own unit traps requires {
   check ilt(value, 10_u64) else trap "small";
 } {
   claim body: True() because "body";
   return unit;
 }
 
-fn probe(value: own u64) -> own unit traps {
+fn probe(value: own u64) -> result: own unit traps {
   let small = ilt(value, 10_u64);
   if small {
     set value = 20_u64;
@@ -8907,8 +8914,8 @@ fn probe(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outcomes = call_goals(source, "probe");
@@ -8920,7 +8927,8 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_copy_referent_read_through_an_affine_box_is_an_exact_goal_origin() {
-    let source = br#"fn observe['r](value: &'r box<i32>) -> own unit reads('r), traps requires {
+    let source =
+        br#"fn observe['r](value: &'r box<i32>) -> result: own unit reads('r), traps requires {
   let positive = igt(deref(deref(value)), 0_i32);
   let small = ilt(deref(deref(value)), 10_i32);
   let complete = band(positive, small);
@@ -8931,7 +8939,7 @@ fn a_copy_referent_read_through_an_affine_box_is_an_exact_goal_origin() {
   return unit;
 }
 
-fn caller() -> own unit allocates(heap), traps {
+fn caller() -> result: own unit allocates(heap), traps {
   let owner = box_new(5_i32);
   let positive = igt(deref(owner), 0_i32);
   let small = ilt(deref(owner), 10_i32);
@@ -8946,8 +8954,8 @@ fn caller() -> own unit allocates(heap), traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "caller");
@@ -8966,14 +8974,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn setting_an_intermediate_bool_binding_stops_later_origin_expansion() {
-    let source = br#"fn guarded(value: own u64) -> own unit traps requires {
+    let source = br#"fn guarded(value: own u64) -> result: own unit traps requires {
   check igt(value, 0_u64) else trap "positive";
 } {
   claim body: True() because "body";
   return unit;
 }
 
-fn caller(value: own u64) -> own unit traps {
+fn caller(value: own u64) -> result: own unit traps {
   let positive = igt(value, 0_u64);
   let alias = positive;
   set positive = False();
@@ -8985,8 +8993,8 @@ fn caller(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outcomes = call_goals(source, "caller");
@@ -8997,7 +9005,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn resolved_writes_stop_future_expansion_of_the_written_origin_binding() {
-    let source = br#"fn need() -> own unit traps requires {
+    let source = br#"fn need() -> result: own unit traps requires {
   let first = ilt(0_u64, 1_u64);
   let second = ilt(1_u64, 2_u64);
   let complete = band(first, second);
@@ -9007,12 +9015,12 @@ fn resolved_writes_stop_future_expansion_of_the_written_origin_binding() {
   return unit;
 }
 
-fn mutate['r](value: &uniq 'r Bool) -> own unit writes('r) {
+fn mutate['r](value: &uniq 'r Bool) -> result: own unit writes('r) {
   set deref(value) = False();
   return unit;
 }
 
-fn through_holder() -> own unit traps {
+fn through_holder() -> result: own unit traps {
   let first = ilt(0_u64, 1_u64);
   let second = ilt(1_u64, 2_u64);
   let source = band(first, second);
@@ -9029,7 +9037,7 @@ fn through_holder() -> own unit traps {
   return unit;
 }
 
-fn through_call() -> own unit traps {
+fn through_call() -> result: own unit traps {
   let first = ilt(0_u64, 1_u64);
   let second = ilt(1_u64, 2_u64);
   let source = band(first, second);
@@ -9045,8 +9053,8 @@ fn through_call() -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     for function in ["through_holder", "through_call"] {
@@ -9059,7 +9067,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn combined_contradiction_is_absorbing_before_goal_and_l0_support_kills() {
-    let source = br#"fn guarded(value: own u64) -> own unit traps requires {
+    let source = br#"fn guarded(value: own u64) -> result: own unit traps requires {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -9069,7 +9077,7 @@ fn combined_contradiction_is_absorbing_before_goal_and_l0_support_kills() {
   return unit;
 }
 
-fn signed(value: own u64) -> own unit traps {
+fn signed(value: own u64) -> result: own unit traps {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -9084,7 +9092,7 @@ fn signed(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn l0(value: own u64) -> own unit traps {
+fn l0(value: own u64) -> result: own unit traps {
   claim low: ilt(value, 5_u64) because "low";
   claim high: ige(value, 5_u64) because "high";
   set value = 20_u64;
@@ -9092,8 +9100,8 @@ fn l0(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     for (function, is_goal) in [("signed", true), ("l0", false)] {
@@ -9126,7 +9134,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_discharged_whole_goal_is_accepted_on_the_ordinary_path() {
-    let source = br#"fn guarded(value: own u64) -> own unit traps requires {
+    let source = br#"fn guarded(value: own u64) -> result: own unit traps requires {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -9136,7 +9144,7 @@ fn a_discharged_whole_goal_is_accepted_on_the_ordinary_path() {
   return unit;
 }
 
-fn caller(value: own u64) -> own unit traps {
+fn caller(value: own u64) -> result: own unit traps {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -9148,8 +9156,8 @@ fn caller(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -9172,7 +9180,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn fn8_call_rejection_carries_the_complete_deterministic_payload() {
-    let source = br#"fn guarded(value: own u64) -> own unit traps requires {
+    let source = br#"fn guarded(value: own u64) -> result: own unit traps requires {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -9182,13 +9190,13 @@ fn fn8_call_rejection_carries_the_complete_deterministic_payload() {
   return unit;
 }
 
-fn caller(value: own u64) -> own unit traps {
+fn caller(value: own u64) -> result: own unit traps {
   guarded(value: value);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -9222,21 +9230,21 @@ fn main() -> own unit pure {
 
 #[test]
 fn actual_obligations_precede_fn8_and_ephemeral_goals_use_the_stronger_fix() {
-    let admitted_actual = br#"fn positive(value: own u8) -> own unit traps requires {
+    let admitted_actual = br#"fn positive(value: own u8) -> result: own unit traps requires {
   check ilt(value, 10_u8) else trap "small";
 } {
   claim body: True() because "body";
   return unit;
 }
 
-fn caller() -> own unit traps {
+fn caller() -> result: own unit traps {
   let values = array_new<u8, 2>(3_u8);
   positive(value: values[0_u64]);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(admitted_actual, |outcome| {
@@ -9287,21 +9295,21 @@ fn main() -> own unit pure {
     );
     assert!(admitted.call_goals[0].derivation.is_none());
 
-    let failed_actual = br#"fn positive(value: own u8) -> own unit traps requires {
+    let failed_actual = br#"fn positive(value: own u8) -> result: own unit traps requires {
   check ilt(value, 10_u8) else trap "small";
 } {
   claim body: True() because "body";
   return unit;
 }
 
-fn caller() -> own unit traps {
+fn caller() -> result: own unit traps {
   let values = array_new<u8, 2>(3_u8);
   positive(value: values[9_u64]);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(failed_actual, |outcome| {
@@ -9328,7 +9336,7 @@ fn main() -> own unit pure {
 #[test]
 fn a_call_is_judged_before_its_callee_write_and_that_write_kills_the_second_call() {
     let source =
-        br#"fn update['r](value: &uniq 'r u64) -> own unit reads('r), writes('r), traps requires {
+        br#"fn update['r](value: &uniq 'r u64) -> result: own unit reads('r), writes('r), traps requires {
   check ilt(deref(value), 10_u64) else trap "small";
 } {
   let old = deref(value);
@@ -9337,7 +9345,7 @@ fn a_call_is_judged_before_its_callee_write_and_that_write_kills_the_second_call
   return unit;
 }
 
-fn caller(value: own u64) -> own unit traps {
+fn caller(value: own u64) -> result: own unit traps {
   let small = ilt(value, 10_u64);
   if small {
     region 'first {
@@ -9352,8 +9360,8 @@ fn caller(value: own u64) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "caller");
@@ -9380,7 +9388,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn s4_discharges_the_body_call_until_a_body_write_kills_it() {
-    let source = br#"fn observe['r](value: &'r u64) -> own unit reads('r), traps requires {
+    let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads('r), traps requires {
   check ilt(deref(value), 10_u64) else trap "small";
 } {
   let seen = deref(value);
@@ -9388,7 +9396,7 @@ fn s4_discharges_the_body_call_until_a_body_write_kills_it() {
   return unit;
 }
 
-fn update['r](value: &uniq 'r u64) -> own unit reads('r), writes('r), traps requires {
+fn update['r](value: &uniq 'r u64) -> result: own unit reads('r), writes('r), traps requires {
   check ilt(deref(value), 10_u64) else trap "small";
 } {
   region 'first {
@@ -9403,8 +9411,8 @@ fn update['r](value: &uniq 'r u64) -> own unit reads('r), writes('r), traps requ
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outcomes = call_goals(source, "update");
@@ -9422,7 +9430,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn an_element_write_keeps_a_whole_goal_supported_only_by_length() {
-    let source = br#"fn sized(values: own array<u8, 2>) -> own unit traps requires {
+    let source = br#"fn sized(values: own array<u8, 2>) -> result: own unit traps requires {
   let size = len(values);
   let exact = ieq(size, 2_u64);
   let complete = band(exact, exact);
@@ -9432,7 +9440,7 @@ fn an_element_write_keeps_a_whole_goal_supported_only_by_length() {
   return unit;
 }
 
-fn caller(values: own array<u8, 2>) -> own unit traps {
+fn caller(values: own array<u8, 2>) -> result: own unit traps {
   let size = len(values);
   let exact = ieq(size, 2_u64);
   let complete = band(exact, exact);
@@ -9445,8 +9453,8 @@ fn caller(values: own array<u8, 2>) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outcomes = call_goals(source, "caller");
@@ -9463,14 +9471,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn array_fill_participates_only_in_body_origin_expansion() {
-    let source = br#"fn need_true(value: own Bool) -> own unit traps requires {
+    let source = br#"fn need_true(value: own Bool) -> result: own unit traps requires {
   check value else trap "true";
 } {
   claim body: True() because "body";
   return unit;
 }
 
-fn probe() -> own unit traps {
+fn probe() -> result: own unit traps {
   let values = array_new<u8, 4>(0_u8);
   let first_size = len(values);
   let first_exact = ieq(first_size, 4_u64);
@@ -9491,8 +9499,8 @@ fn probe() -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let outcomes = call_goals(source, "probe");
@@ -9503,7 +9511,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn s4_is_independent_of_forward_and_mutually_recursive_traversal_order() {
-    let source = br#"fn first(value: own u64) -> own unit traps requires {
+    let source = br#"fn first(value: own u64) -> result: own unit traps requires {
   check ilt(value, 10_u64) else trap "small";
 } {
   second(value: value);
@@ -9511,7 +9519,7 @@ fn s4_is_independent_of_forward_and_mutually_recursive_traversal_order() {
   return unit;
 }
 
-fn second(value: own u64) -> own unit traps requires {
+fn second(value: own u64) -> result: own unit traps requires {
   check ilt(value, 10_u64) else trap "small";
 } {
   first(value: value);
@@ -9519,8 +9527,8 @@ fn second(value: own u64) -> own unit traps requires {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     for function in ["first", "second"] {
@@ -9544,11 +9552,11 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_forward_concrete_generic_call_uses_its_substituted_goal() {
-    let source = br#"fn main() -> own unit pure {
-  return unit;
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 
-fn caller(value: own i32) -> own unit traps {
+fn caller(value: own i32) -> result: own unit traps {
   let positive = igt(value, 0_i32);
   if positive {
     let result = guarded<i32>(value: value);
@@ -9558,7 +9566,7 @@ fn caller(value: own i32) -> own unit traps {
   return unit;
 }
 
-fn guarded<T: Int>(value: own T) -> own T traps requires {
+fn guarded<T: Int>(value: own T) -> result: own T traps requires {
   check igt(value, 0_T) else trap "positive";
 } {
   claim body: True() because "body";
@@ -9589,16 +9597,16 @@ fn guarded<T: Int>(value: own T) -> own T traps requires {
 
 #[test]
 fn concrete_const_instances_keep_function_local_derivation_inventories() {
-    let source = br#"fn first<const n: u64>(values: own array<u8, n>) -> own u8 pure {
+    let source = br#"fn first<const n: u64>(values: own array<u8, n>) -> result: own u8 pure {
   return values[0_u64];
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let small = array_new<u8, 2>(7_u8);
   let small_first = first<2>(values: move small);
   let large = array_new<u8, 5>(9_u8);
   let large_first = first<5>(values: move large);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {

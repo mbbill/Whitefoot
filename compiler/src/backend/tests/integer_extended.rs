@@ -2,7 +2,7 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn executes_width_sensitive_integer_edges_for_every_unsigned_width() {
-    let template = r#"fn main() -> own unit traps {
+    let template = r#"command fn main() -> status: own ExitStatus traps {
   let shifted = ishl.wrap(1_$TYPE, $AMOUNT_u32);
   claim masked_shift: ieq(shifted, 2_$TYPE) because "masked shift";
   let rotated = irotl(1_$TYPE, $AMOUNT_u32);
@@ -15,7 +15,7 @@ fn executes_width_sensitive_integer_edges_for_every_unsigned_width() {
   claim zero_trailing_count: ieq(trailing, $WIDTH_u32) because "zero trailing count";
   let saturated = $MAX_$TYPE *sat 2_$TYPE;
   claim saturating_multiply: ieq(saturated, $MAX_$TYPE) because "saturating multiply";
-$BSWAP  return unit;
+$BSWAP  return exit_status(code: 0_u8);
 }
 "#;
     for (ty, width, maximum, swapped) in [
@@ -46,7 +46,7 @@ $BSWAP  return unit;
 
 #[test]
 fn executes_the_remaining_integer_family_and_defined_edges() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let anded = iand(240_u8, 15_u8);
   claim iand: ieq(anded, 0_u8) because "iand";
   let ored = ior(240_u8, 15_u8);
@@ -101,7 +101,7 @@ fn executes_the_remaining_integer_family_and_defined_edges() {
   claim idiv_exact: ieq(quotient, 4_i32) because "idiv exact";
   let remainder = 9_i32 % 2_i32;
   claim irem_exact: ieq(remainder, 1_i32) because "irem exact";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -135,10 +135,10 @@ fn executes_the_remaining_integer_family_and_defined_edges() {
 
 #[test]
 fn defined_shift_reports_false_without_executing_an_invalid_shift() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let is_defined = ishl.defined(1_u8, 8_u32);
   claim out_of_range_shift_is_undefined: bnot(is_defined) because "out-of-range shift must be undefined";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -151,11 +151,11 @@ fn defined_shift_reports_false_without_executing_an_invalid_shift() {
 
 #[test]
 fn defined_division_checks_zero_and_signed_overflow_without_dividing() {
-    let source = br#"fn division_is_defined(n: own i32, d: own i32) -> own Bool pure {
+    let source = br#"fn division_is_defined(n: own i32, d: own i32) -> result: own Bool pure {
   return n /defined d;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let zero = 0_i32;
   let one = 1_i32;
   let zero_defined = division_is_defined(n: one, d: zero);
@@ -166,7 +166,7 @@ fn main() -> own unit traps {
   claim signed_division_overflow_is_undefined: bnot(overflow_defined) because "signed division overflow must be undefined";
   let ordinary_defined = division_is_defined(n: one, d: one);
   claim ordinary_division_is_defined: ordinary_defined because "ordinary division must be defined";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);

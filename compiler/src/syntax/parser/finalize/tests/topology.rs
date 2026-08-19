@@ -15,7 +15,10 @@ use super::support::{FINALIZE_LIMITS, source_offsets, with_parsed};
 fn one_finalizer_proves_bundle_root_counts_and_ordered_source_extents() {
     let inputs = [
         SourceInput::new("empty.wf", b"\n"),
-        SourceInput::new("main.wf", b"fn main() -> own unit pure {\n}\n"),
+        SourceInput::new(
+            "main.wf",
+            b"command fn main() -> status: own ExitStatus pure {\n}\n",
+        ),
         SourceInput::new("constant.wf", b"const answer: i32 = 42_i32;\n"),
     ];
     let source_lengths = [1_u64, 31, 28];
@@ -57,7 +60,7 @@ fn assert_mutant(
 
 #[test]
 fn hostile_postorder_root_shape_and_extent_mutants_fail_closed() {
-    let source = b"fn main() -> own unit pure {\n}\n";
+    let source = b"command fn main() -> status: own ExitStatus pure {\n}\n";
     assert_mutant(
         source,
         |parsed| {
@@ -118,7 +121,7 @@ fn hostile_postorder_root_shape_and_extent_mutants_fail_closed() {
 
 #[test]
 fn hostile_token_identity_and_predicate_mutants_fail_closed() {
-    let source = b"fn main() -> own unit pure {\n  return unit;\n}\n";
+    let source = b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     assert_mutant(
         source,
         |parsed| {
@@ -180,7 +183,7 @@ fn hostile_token_identity_and_predicate_mutants_fail_closed() {
 
 #[test]
 fn exact_finalizer_resource_families_are_observable() {
-    let source = b"fn main() -> own unit pure {\n}\n";
+    let source = b"command fn main() -> status: own ExitStatus pure {\n}\n";
     let cases = [
         (
             FinalizeLimit::Work,

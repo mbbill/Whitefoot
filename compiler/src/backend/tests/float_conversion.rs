@@ -71,7 +71,7 @@ const NUMERIC_TYPES: [NumericType; 10] = [
 
 #[test]
 fn every_total_conversion_with_a_float_endpoint_executes() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let i8_f32 = cvt<i8, f32>(-8_i8);
   claim i8_to_f32: feq(i8_f32, -8.0_f32) because "i8 to f32";
   let i16_f32 = cvt<i16, f32>(32767_i16);
@@ -94,7 +94,7 @@ fn every_total_conversion_with_a_float_endpoint_executes() {
   claim u32_to_f64: feq(u32_f64, 4294967295.0_f64) because "u32 to f64";
   let f32_f64 = cvt<f32, f64>(1.5_f32);
   claim f32_to_f64: feq(f32_f64, 1.5_f64) because "f32 to f64";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -124,7 +124,7 @@ fn every_total_conversion_with_a_float_endpoint_executes() {
 
 #[test]
 fn every_partial_conversion_with_a_float_endpoint_has_exact_success_and_failure() {
-    let mut source = String::from("fn main() -> own unit traps {\n");
+    let mut source = String::from("command fn main() -> status: own ExitStatus traps {\n");
     let mut conversion = 0;
     for source_type in NUMERIC_TYPES {
         for destination_type in NUMERIC_TYPES {
@@ -139,7 +139,7 @@ fn every_partial_conversion_with_a_float_endpoint_has_exact_success_and_failure(
             conversion += 1;
         }
     }
-    source.push_str("  return unit;\n}\n");
+    source.push_str("  return exit_status(code: 0_u8);\n}\n");
     assert_eq!(conversion, 23);
 
     let llvm = compile(source.as_bytes());
@@ -166,7 +166,7 @@ fn every_partial_conversion_with_a_float_endpoint_has_exact_success_and_failure(
 
 #[test]
 fn partial_conversion_boundaries_never_execute_poisoning_llvm_casts() {
-    let source = br#"fn power_f32(exponent: own u32) -> own f32 pure {
+    let source = br#"fn power_f32(exponent: own u32) -> result: own f32 pure {
   let value = 1.0_f32;
   let counter = 0_u32;
   loop @powers {
@@ -180,7 +180,7 @@ fn partial_conversion_boundaries_never_execute_poisoning_llvm_casts() {
   return value;
 }
 
-fn power_f64(exponent: own u32) -> own f64 pure {
+fn power_f64(exponent: own u32) -> result: own f64 pure {
   let value = 1.0_f64;
   let counter = 0_u32;
   loop @powers {
@@ -194,7 +194,7 @@ fn power_f64(exponent: own u32) -> own f64 pure {
   return value;
 }
 
-fn reject_f32_i32(value: own f32) -> own unit traps {
+fn reject_f32_i32(value: own f32) -> result: own unit traps {
   match cvt<f32, i32>(value) {
     Ok(value: converted) => {
       claim f32_to_i32_boundary_succeeded: False() because "f32 to i32 boundary succeeded";
@@ -205,7 +205,7 @@ fn reject_f32_i32(value: own f32) -> own unit traps {
   return unit;
 }
 
-fn reject_f32_u32(value: own f32) -> own unit traps {
+fn reject_f32_u32(value: own f32) -> result: own unit traps {
   match cvt<f32, u32>(value) {
     Ok(value: converted) => {
       claim f32_to_u32_boundary_succeeded: False() because "f32 to u32 boundary succeeded";
@@ -216,7 +216,7 @@ fn reject_f32_u32(value: own f32) -> own unit traps {
   return unit;
 }
 
-fn reject_f64_i64(value: own f64) -> own unit traps {
+fn reject_f64_i64(value: own f64) -> result: own unit traps {
   match cvt<f64, i64>(value) {
     Ok(value: converted) => {
       claim f64_to_i64_boundary_succeeded: False() because "f64 to i64 boundary succeeded";
@@ -227,7 +227,7 @@ fn reject_f64_i64(value: own f64) -> own unit traps {
   return unit;
 }
 
-fn reject_f64_u64(value: own f64) -> own unit traps {
+fn reject_f64_u64(value: own f64) -> result: own unit traps {
   match cvt<f64, u64>(value) {
     Ok(value: converted) => {
       claim f64_to_u64_boundary_succeeded: False() because "f64 to u64 boundary succeeded";
@@ -238,7 +238,7 @@ fn reject_f64_u64(value: own f64) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let i32_boundary = power_f32(exponent: 31_u32);
   reject_f32_i32(value: i32_boundary);
   let u32_boundary = power_f32(exponent: 32_u32);
@@ -286,7 +286,7 @@ fn main() -> own unit traps {
   let narrow_nan_source = fnan<f32>();
   let wide_nan = cvt<f32, f64>(narrow_nan_source);
   claim wide_nan: fne(wide_nan, wide_nan) because "wide NaN";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);

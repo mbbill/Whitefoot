@@ -5,16 +5,16 @@ use super::{assert_rule, assert_unsupported, with_semantics};
 
 #[test]
 fn explicit_int_generic_function_builds_each_reachable_concrete_instance() {
-    let source = br#"fn identity<T: Int>(value: own T) -> own T pure {
+    let source = br#"fn identity<T: Int>(value: own T) -> result: own T pure {
   return value;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let first = identity<u32>(value: 7_u32);
   let second = identity<i64>(value: -9_i64);
   claim u32_generic_instance: ieq(first, 7_u32) because "u32 generic instance";
   claim i64_generic_instance: ieq(second, -9_i64) because "i64 generic instance";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -28,16 +28,16 @@ fn main() -> own unit traps {
 
 #[test]
 fn int_bound_selects_the_same_operation_row_for_every_concrete_instance() {
-    let source = br#"fn maximum<T: Int>(left: own T, right: own T) -> own T pure {
+    let source = br#"fn maximum<T: Int>(left: own T, right: own T) -> result: own T pure {
   return imax(left, right);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let small = maximum<u8>(left: 4_u8, right: 9_u8);
   let signed = maximum<i64>(left: -7_i64, right: -2_i64);
   claim u8_generic_maximum: ieq(small, 9_u8) because "u8 generic maximum";
   claim i64_generic_maximum: ieq(signed, -2_i64) because "i64 generic maximum";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -50,19 +50,19 @@ fn main() -> own unit traps {
 
 #[test]
 fn float_bound_selects_operations_and_identities_for_every_concrete_instance() {
-    let source = br#"fn affine<T: Float>(value: own T) -> own T pure {
+    let source = br#"fn affine<T: Float>(value: own T) -> result: own T pure {
   let zero = 0_T;
   let one = 1_T;
   let shifted = fadd.strict(value, one);
   return fadd.strict(zero, shifted);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let single = affine<f32>(value: 2.0_f32);
   let double = affine<f64>(value: 4.0_f64);
   claim f32_generic_operation: feq(single, 3.0_f32) because "f32 generic operation";
   claim f64_generic_operation: feq(double, 5.0_f64) because "f64 generic operation";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -75,13 +75,13 @@ fn main() -> own unit traps {
 
 #[test]
 fn float_bound_rejects_a_non_float_explicit_argument_under_fn3() {
-    let source = br#"fn identity<T: Float>(value: own T) -> own T pure {
+    let source = br#"fn identity<T: Float>(value: own T) -> result: own T pure {
   return value;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let invalid = identity<u32>(value: 7_u32);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(source, SemanticRule::Fn3, SemanticIssueKind::TypeMismatch);
@@ -89,12 +89,12 @@ fn main() -> own unit pure {
 
 #[test]
 fn numeric_identity_requires_an_int_or_float_bound() {
-    let source = br#"fn invalid<T>() -> own T pure {
+    let source = br#"fn invalid<T>() -> result: own T pure {
   return 0_T;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(source, SemanticRule::Form5, SemanticIssueKind::TypeMismatch);
@@ -102,14 +102,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn int_bound_identity_is_concretized_before_lowering() {
-    let source = br#"fn one<T: Int>() -> own T pure {
+    let source = br#"fn one<T: Int>() -> result: own T pure {
   return 1_T;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let value = one<u16>();
   claim generic_integer_identity: ieq(value, 1_u16) because "generic integer identity";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -122,13 +122,13 @@ fn main() -> own unit traps {
 
 #[test]
 fn generic_conversion_is_reported_as_unsupported_instead_of_invalid_source() {
-    let source = br#"fn convert<T: Int>(value: own T) -> own unit pure {
+    let source = br#"fn convert<T: Int>(value: own T) -> result: own unit pure {
   cvt<T, u64>(value);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_unsupported(source, UnsupportedSemanticFeature::Generics);
@@ -136,14 +136,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn int_bound_rejects_a_non_integer_explicit_argument_under_fn3() {
-    let source = br#"fn identity<T: Int>(value: own T) -> own T pure {
+    let source = br#"fn identity<T: Int>(value: own T) -> result: own T pure {
   return value;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let input = True();
   let invalid = identity<Bool>(value: input);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(source, SemanticRule::Fn3, SemanticIssueKind::TypeMismatch);
@@ -156,12 +156,12 @@ fn main() -> own unit pure {
 /// legal program it cannot yet monomorphize.
 #[test]
 fn generic_call_cycle_stops_before_concrete_instance_enumeration() {
-    let source = br#"fn recursive<T: Int>(value: own T) -> own T pure {
+    let source = br#"fn recursive<T: Int>(value: own T) -> result: own T pure {
   return recursive<T>(value: value);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_unsupported(source, UnsupportedSemanticFeature::Generics);
@@ -188,13 +188,13 @@ fn polymorphic_recursion_is_rejected_at_the_call_that_leaves_the_caller_paramete
     // A growing argument is the shape that would actually diverge: each
     // instance would demand a strictly larger one.
     assert_rule(
-        br#"fn poly<T>(x: own T) -> own T pure {
+        br#"fn poly<T>(x: own T) -> result: own T pure {
   let y = poly<array<T, 2>>(x: x);
   return x;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Fn6,
@@ -203,18 +203,18 @@ fn main() -> own unit pure {
     // A permutation cycle terminates, and FN-6 is deliberately stronger than
     // finiteness requires, so it is rejected all the same.
     assert_rule(
-        br#"fn left<A, B>(first: own A, second: own B) -> own A pure {
+        br#"fn left<A, B>(first: own A, second: own B) -> result: own A pure {
   let swapped = right<B, A>(first: second, second: first);
   return first;
 }
 
-fn right<A, B>(first: own A, second: own B) -> own A pure {
+fn right<A, B>(first: own A, second: own B) -> result: own A pure {
   let back = left<A, B>(first: first, second: second);
   return first;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Fn6,
@@ -232,18 +232,18 @@ fn main() -> own unit pure {
 /// unimplemented-capability report.
 #[test]
 fn a_cycle_through_a_nongeneric_caller_is_not_polymorphic_recursion() {
-    let source = br#"fn poly<T>(x: own T) -> own T pure {
+    let source = br#"fn poly<T>(x: own T) -> result: own T pure {
   let back = trampoline();
   return x;
 }
 
-fn trampoline() -> own i32 pure {
+fn trampoline() -> result: own i32 pure {
   let forward = poly<i32>(x: 0_i32);
   return forward;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_unsupported(source, UnsupportedSemanticFeature::Generics);
@@ -251,12 +251,12 @@ fn main() -> own unit pure {
 
 #[test]
 fn unused_int_generic_body_is_checked_for_the_complete_bound_domain() {
-    let source = br#"fn invalid<T: Int>(value: own T) -> own T pure {
+    let source = br#"fn invalid<T: Int>(value: own T) -> result: own T pure {
   return 0_u8;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(source, SemanticRule::Fn1, SemanticIssueKind::ReturnMismatch);
@@ -264,13 +264,13 @@ fn main() -> own unit pure {
 
 #[test]
 fn concretely_invalid_generic_body_is_rejected_during_instance_rechecking() {
-    let source = br#"fn transfer<T>(value: own T) -> own T pure {
+    let source = br#"fn transfer<T>(value: own T) -> result: own T pure {
   return move value;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let copied = transfer<u8>(value: 7_u8);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -284,20 +284,20 @@ fn main() -> own unit pure {
 
 #[test]
 fn nested_generic_calls_discover_reachable_instances_after_template_checking() {
-    let source = br#"fn select<T: Int>(value: own T) -> own T pure {
+    let source = br#"fn select<T: Int>(value: own T) -> result: own T pure {
   return imax(value, value);
 }
 
-fn forward<T: Int>(value: own T) -> own T pure {
+fn forward<T: Int>(value: own T) -> result: own T pure {
   return select<T>(value: value);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let small = forward<u8>(value: 7_u8);
   let signed = forward<i64>(value: -9_i64);
   claim nested_u8_instance: ieq(small, 7_u8) because "nested u8 instance";
   claim nested_i64_instance: ieq(signed, -9_i64) because "nested i64 instance";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -310,16 +310,17 @@ fn main() -> own unit traps {
 
 #[test]
 fn const_parameters_forward_symbolically_and_instantiate_at_reachable_sizes() {
-    let source = br#"fn preserve<const n: u64>(value: own array<u8, n>) -> own array<u8, n> pure {
+    let source =
+        br#"fn preserve<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure {
   let size = len(value);
   return move value;
 }
 
-fn forward<const n: u64>(value: own array<u8, n>) -> own array<u8, n> pure {
+fn forward<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure {
   return preserve<n>(value: move value);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let small_input = array_new<u8, 2>(7_u8);
   let small = forward<2>(value: move small_input);
   let large_input = array_new<u8, 5>(9_u8);
@@ -328,7 +329,7 @@ fn main() -> own unit traps {
   let second = large[4_u64];
   claim small_const_instance: ieq(first, 7_u8) because "small const instance";
   claim large_const_instance: ieq(second, 9_u8) because "large const instance";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -341,14 +342,14 @@ fn main() -> own unit traps {
 
 #[test]
 fn unbounded_type_parameters_build_only_explicit_reachable_instances() {
-    let source = br#"fn marker<T>() -> own unit pure {
+    let source = br#"fn marker<T>() -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   marker<u8>();
   marker<Bool>();
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -369,38 +370,38 @@ fn main() -> own unit pure {
 #[test]
 fn generic_argument_kinds_and_const_parameter_types_are_checked() {
     assert_rule(
-        br#"fn marker<T>() -> own unit pure {
+        br#"fn marker<T>() -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   marker<4>();
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Fn2,
         SemanticIssueKind::TypeMismatch,
     );
     assert_rule(
-        br#"fn sized<const n: u64>() -> own unit pure {
+        br#"fn sized<const n: u64>() -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   sized<u8>();
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Fn2,
         SemanticIssueKind::TypeMismatch,
     );
     assert_rule(
-        br#"fn invalid<const n: Bool>() -> own unit pure {
+        br#"fn invalid<const n: Bool>() -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Const1,
@@ -415,18 +416,18 @@ fn source_generic_structs_are_checked_symbolically_and_rechecked_per_instance() 
   right: T;
 }
 
-fn duplicate<T: Int>(value: own T) -> own Pair<T> pure {
+fn duplicate<T: Int>(value: own T) -> result: own Pair<T> pure {
   return Pair<T>(left: value, right: value);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let small = duplicate<u8>(value: 7_u8);
   let wide = duplicate<i64>(value: -9_i64);
   let small_left = small.left;
   let wide_right = wide.right;
   claim small_generic_struct: ieq(small_left, 7_u8) because "small generic struct";
   claim wide_generic_struct: ieq(wide_right, -9_i64) because "wide generic struct";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -452,7 +453,7 @@ fn source_generic_enums_use_the_concrete_instance_member_table() {
   Present(value: T);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let small = Present<u8>(value: 3_u8);
   match small {
     Missing() => {
@@ -471,7 +472,7 @@ fn main() -> own unit traps {
       claim wrong_payload_2: ieq(observed, -5_i64) because "wrong payload";
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -500,13 +501,13 @@ struct Holder<T> {
   value: T;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let short_bytes = array_new<u8, 2>(7_u8);
   let short = Packet<2>(bytes: move short_bytes);
   let long_bytes = array_new<u8, 5>(11_u8);
   let long = Packet<5>(bytes: move long_bytes);
   let held = Holder<Packet<2>>(value: move short);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -550,9 +551,9 @@ fn source_nominal_argument_arity_and_kinds_are_exact() {
   value: T;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let invalid = Pair<u8, u16>(value: 1_u8);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Type5,
@@ -563,10 +564,10 @@ fn main() -> own unit pure {
   bytes: array<u8, n>;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let bytes = array_new<u8, 1>(0_u8);
   let invalid = Packet<u8>(bytes: move bytes);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Type5,
@@ -581,7 +582,7 @@ fn constructor_only_generic_instances_still_reach_normal_type_diagnostics() {
   value: T;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   return Holder<u8>(value: 1_u8);
 }
 "#,
@@ -597,8 +598,8 @@ fn unused_generic_nominal_members_are_checked_under_their_declared_bounds() {
   values: array<T, 2>;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Type2,
@@ -613,8 +614,8 @@ fn recursive_generic_nominal_layouts_stop_before_concrete_enumeration() {
   next: Recursive<T>;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::RecursiveNominalLayout,
@@ -627,8 +628,8 @@ fn generic_nominals_may_contain_symbolic_prelude_instances() {
   value: Option<T>;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -641,14 +642,14 @@ fn main() -> own unit pure {
 #[test]
 fn checked_integer_results_are_available_during_template_and_concrete_rechecking() {
     let source =
-        br#"fn checked_sum<T: Int>(left: own T, right: own T) -> own Result<T, Overflow> pure {
+        br#"fn checked_sum<T: Int>(left: own T, right: own T) -> result: own Result<T, Overflow> pure {
   return left +checked right;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let small = checked_sum<u8>(left: 1_u8, right: 2_u8);
   let wide = checked_sum<i64>(left: -3_i64, right: 5_i64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -661,23 +662,23 @@ fn main() -> own unit pure {
 
 #[test]
 fn numeric_and_const_parameters_flow_through_flat_storage_operations() {
-    let source = br#"fn filled_array<T: Int, const n: u64>(value: own T) -> own array<T, n> pure {
+    let source = br#"fn filled_array<T: Int, const n: u64>(value: own T) -> result: own array<T, n> pure {
   return array_new<T, n>(value);
 }
 
-fn filled_buffer<T: Int>(length: own u64, value: own T) -> own buffer<T> allocates(heap), traps {
+fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap), traps {
   return buffer_new(length, value);
 }
 
-fn filled_float_array<T: Float, const n: u64>(value: own T) -> own array<T, n> pure {
+fn filled_float_array<T: Float, const n: u64>(value: own T) -> result: own array<T, n> pure {
   return array_new<T, n>(value);
 }
 
-fn filled_float_buffer<T: Float>(length: own u64, value: own T) -> own buffer<T> allocates(heap), traps {
+fn filled_float_buffer<T: Float>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap), traps {
   return buffer_new(length, value);
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let bytes = filled_array<u8, 2>(value: 7_u8);
   let words = filled_array<i64, 3>(value: -5_i64);
   let byte = bytes[1_u64];
@@ -699,7 +700,7 @@ fn main() -> own unit allocates(heap), traps {
   claim generic_buffer: ieq(buffered, 9_u16) because "generic buffer";
   claim generic_float_array: feq(sample, 1.5_f32) because "generic float array";
   claim generic_float_buffer: feq(weight, 2.5_f64) because "generic float buffer";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -716,17 +717,17 @@ fn region_bearing_function_and_nominal_arguments_reject_under_fn2() {
         mechanical_fix: "make the slice or arena a direct written parameter or result instead of a generic argument",
     };
     assert_rule(
-        br#"fn instantiate<T>() -> own unit pure {
+        br#"fn instantiate<T>() -> result: own unit pure {
   return unit;
 }
 
-fn invalid['r]() -> own unit pure {
+fn invalid['r]() -> result: own unit pure {
   instantiate<slice<'r, u8>>();
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Fn2,
@@ -736,41 +737,41 @@ fn main() -> own unit pure {
         br#"struct Marker<T> {
 }
 
-fn invalid['r](value: own Marker<slice<'r, u8>>) -> own unit pure {
+fn invalid['r](value: own Marker<slice<'r, u8>>) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Fn2,
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid['r](value: own Option<slice<'r, u8>>) -> own unit pure {
+        br#"fn invalid['r](value: own Option<slice<'r, u8>>) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Fn2,
         expected.clone(),
     );
     assert_rule(
-        br#"fn instantiate<T>() -> own unit pure {
+        br#"fn instantiate<T>() -> result: own unit pure {
   return unit;
 }
 
-fn invalid['r]() -> own unit pure {
+fn invalid['r]() -> result: own unit pure {
   instantiate<arena<'r, u8>>();
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Fn2,

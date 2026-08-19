@@ -52,8 +52,8 @@ fn marker_contract_and_empty_conformance_are_valid() {
 conform i32: Marker {
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -77,8 +77,8 @@ contract Marker {
 conform Wrapper<i32>: Marker {
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -107,11 +107,11 @@ fn contract_member_materializes_its_only_generic_nominal_instance() {
 }
 
 contract Factory {
-  fn make() -> own Wrapper<i32> pure;
+  fn make() -> result: own Wrapper<i32> pure;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -138,12 +138,12 @@ fn affine_const_is_not_usable_as_an_owned_law_identity() {
     let source = br#"const zero: array<u8, 1> =[0_u8];
 
 contract InvalidIdentity {
-  fn combine(x: own array<u8, 1>, y: own array<u8, 1>) -> own array<u8, 1> pure;
+  fn combine(x: own array<u8, 1>, y: own array<u8, 1>) -> result: own array<u8, 1> pure;
   law identity(combine, zero);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_issue_slice(
@@ -234,12 +234,12 @@ fn protected_fn4_cases_discharge_only_the_closed_table() {
 #[test]
 fn identity_wrong_literal_type_is_an_fn4_role_error() {
     let source = br#"contract BadIdentity {
-  fn combine(x: own u64, y: own u64) -> own u64 pure;
+  fn combine(x: own u64, y: own u64) -> result: own u64 pure;
   law identity(combine, unit);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_issue_slice(
@@ -255,11 +255,11 @@ fn earlier_same_typed_zero_constant_discharges_identity() {
     let source = br#"const zero: u64 = 0_u64;
 
 contract AddIdentity {
-  fn combine(x: own u64, y: own u64) -> own u64 pure;
+  fn combine(x: own u64, y: own u64) -> result: own u64 pure;
   law identity(combine, zero);
 }
 
-fn saturating_add(x: own u64, y: own u64) -> own u64 pure {
+fn saturating_add(x: own u64, y: own u64) -> result: own u64 pure {
   return x +sat y;
 }
 
@@ -267,8 +267,8 @@ conform u64: AddIdentity {
   combine = saturating_add;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -288,8 +288,8 @@ fn contract_generics_point_at_the_generic_child() {
     let source = br#"contract Generic<T> {
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_issue_slice(
@@ -303,12 +303,12 @@ fn main() -> own unit pure {
 #[test]
 fn repeated_member_points_at_the_later_signature() {
     let source = br#"contract Repeated {
-  fn value() -> own i32 pure;
-  fn value() -> own i32 pure;
+  fn value() -> result: own i32 pure;
+  fn value() -> result: own i32 pure;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_issue_slice(
@@ -317,7 +317,7 @@ fn main() -> own unit pure {
         SemanticIssueKind::DuplicateContractMember {
             member: "value".to_owned(),
         },
-        b"fn value() -> own i32 pure;",
+        b"fn value() -> result: own i32 pure;",
     );
 }
 
@@ -326,8 +326,8 @@ fn prelude_contract_points_at_its_type_identifier_token() {
     let source = br#"conform i32: Int {
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_issue_slice(
@@ -346,8 +346,8 @@ fn contract_arguments_point_at_the_targs_child() {
 conform i32: Plain<i32> {
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_issue_slice(
@@ -369,8 +369,8 @@ conform i32: Marker {
 conform i32: Marker {
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_issue_slice(
@@ -384,15 +384,15 @@ fn main() -> own unit pure {
 #[test]
 fn incompatible_and_out_of_order_bindings_point_at_the_fn_bind() {
     let source = br#"contract Pair {
-  fn first() -> own i32 pure;
-  fn second() -> own i32 pure;
+  fn first() -> result: own i32 pure;
+  fn second() -> result: own i32 pure;
 }
 
-fn make_first() -> own i32 pure {
+fn make_first() -> result: own i32 pure {
   return 1_i32;
 }
 
-fn make_second() -> own i32 pure {
+fn make_second() -> result: own i32 pure {
   return 2_i32;
 }
 
@@ -401,8 +401,8 @@ conform i32: Pair {
   first = make_first;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_issue_slice(
@@ -418,11 +418,11 @@ fn main() -> own unit pure {
 #[test]
 fn missing_binding_points_at_the_conformance_closing_brace() {
     let source = br#"contract Pair {
-  fn first() -> own i32 pure;
-  fn second() -> own i32 pure;
+  fn first() -> result: own i32 pure;
+  fn second() -> result: own i32 pure;
 }
 
-fn make_first() -> own i32 pure {
+fn make_first() -> result: own i32 pure {
   return 1_i32;
 }
 
@@ -430,8 +430,8 @@ conform i32: Pair {
   first = make_first;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_issue_slice(
@@ -449,12 +449,12 @@ fn source_contract_bound_points_at_the_bound_type_identifier() {
     let source = br#"contract Marker {
 }
 
-fn generic<T: Marker>() -> own unit pure {
+fn generic<T: Marker>() -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_issue_slice(
@@ -468,10 +468,10 @@ fn main() -> own unit pure {
 #[test]
 fn positional_region_alpha_equality_covers_modes_and_normalized_effect_sets() {
     let source = br#"contract LengthSum {
-  fn sum['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> own u64 reads('left 'right);
+  fn sum['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> result: own u64 reads('left 'right);
 }
 
-fn add_lengths['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> own u64 reads('b 'a) {
+fn add_lengths['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> result: own u64 reads('b 'a) {
   let first_length = len(deref(first));
   let second_length = len(deref(second));
   return first_length +wrap second_length;
@@ -481,8 +481,8 @@ conform buffer<u8>: LengthSum {
   sum = add_lengths;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -496,10 +496,10 @@ fn main() -> own unit pure {
 #[test]
 fn positional_region_alpha_equality_includes_slice_type_regions() {
     let source = br#"contract ByteReader {
-  fn first['source](values: own slice<'source, u8>) -> own u8 reads('source), traps;
+  fn first['source](values: own slice<'source, u8>) -> result: own u8 reads('source), traps;
 }
 
-fn read_first['input](bytes: own slice<'input, u8>) -> own u8 reads('input), traps {
+fn read_first['input](bytes: own slice<'input, u8>) -> result: own u8 reads('input), traps {
   let room = len(bytes);
   let ok = ilt(0_u64, room);
   claim nonempty: ok because "conforming callers pass a nonempty slice";
@@ -510,8 +510,8 @@ conform u8: ByteReader {
   first = read_first;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -525,10 +525,10 @@ fn main() -> own unit pure {
 #[test]
 fn positional_region_ordinal_swap_is_not_alpha_equal() {
     let source = br#"contract FirstLength {
-  fn length['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> own u64 reads('left);
+  fn length['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> result: own u64 reads('left);
 }
 
-fn second_length['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> own u64 reads('b) {
+fn second_length['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> result: own u64 reads('b) {
   return len(deref(second));
 }
 
@@ -536,8 +536,8 @@ conform buffer<u8>: FirstLength {
   length = second_length;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_issue_slice(
@@ -551,11 +551,11 @@ fn main() -> own unit pure {
 #[test]
 fn contract_slice_results_share_function_signature_formation() {
     let source = br#"contract SlicePass {
-  fn pass['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure;
+  fn pass['r](value: own slice<'r, u8>) -> result: own slice<'r, u8> pure;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -573,8 +573,8 @@ fn main() -> own unit pure {
   fn borrowed['descriptor, 'data](value: &uniq 'descriptor slice<'data, u8>) -> &uniq 'descriptor slice<'data, u8> pure;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Fn1,

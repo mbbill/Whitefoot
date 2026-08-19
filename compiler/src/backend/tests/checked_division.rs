@@ -2,7 +2,7 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn guards_every_integer_error_before_llvm() {
-    let template = r#"fn main() -> own unit traps {
+    let template = r#"command fn main() -> status: own ExitStatus traps {
   let quotient = 84_$TYPE /checked 2_$TYPE;
   match move quotient {
     Ok(value: quotient_value) => {
@@ -51,7 +51,7 @@ fn guards_every_integer_error_before_llvm() {
       }
     }
   }
-$SIGNED_CASES  return unit;
+$SIGNED_CASES  return exit_status(code: 0_u8);
 }
 "#;
     for (ty, width, signed, minimum) in [

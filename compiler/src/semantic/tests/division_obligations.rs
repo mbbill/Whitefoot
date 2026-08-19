@@ -66,14 +66,14 @@ fn division_outcomes(
 /// gone in every build mode, and the row is `pure`.
 #[test]
 fn a_dominating_check_discharges_an_unsigned_site_and_drops_its_check() {
-    let source = br#"fn ratio(n: own u64, d: own u64) -> own u64 traps {
+    let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
   claim positive_divisor: igt(d, 0_u64) because "positive divisor";
   let q = n / d;
   return q;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_division(source, |outcome| {
@@ -101,14 +101,14 @@ fn main() -> own unit pure {
 /// claim carries the function's `traps` effect.
 #[test]
 fn a_dominating_claim_discharges_the_site_and_carries_the_trap() {
-    let source = br#"fn ratio(n: own u64, d: own u64) -> own u64 traps {
+    let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
   claim nonzero: ine(d, 0_u64) because "callers pass a nonzero stride";
   let q = n / d;
   return q;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_division(source, |outcome| {
@@ -136,13 +136,13 @@ fn main() -> own unit pure {
 /// the `pure` row is the correct row for this body.
 #[test]
 fn an_unconstrained_divisor_rejects_citing_op2_with_the_exact_residual() {
-    let source = br#"fn ratio(n: own u64, d: own u64) -> own u64 pure {
+    let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 pure {
   let q = n / d;
   return q;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_division(source, |outcome| {
@@ -176,13 +176,13 @@ fn main() -> own unit pure {
 /// conjuncts serve both.
 #[test]
 fn the_remainder_row_carries_the_same_obligation() {
-    let source = br#"fn residue(n: own u64, d: own u64) -> own u64 pure {
+    let source = br#"fn residue(n: own u64, d: own u64) -> result: own u64 pure {
   let r = n % d;
   return r;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_division(source, |outcome| {
@@ -206,13 +206,13 @@ fn main() -> own unit pure {
 /// so the site discharges with no fact source at all and needs no `traps`.
 #[test]
 fn a_nonzero_constant_divisor_discharges_with_no_fact_source() {
-    let source = br#"fn halve(n: own i32) -> own i32 pure {
+    let source = br#"fn halve(n: own i32) -> result: own i32 pure {
   let q = n / 2_i32;
   return q;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_division(source, |outcome| {
@@ -238,11 +238,11 @@ fn main() -> own unit pure {
 /// there is no accepted always-trapping bare spelling.
 #[test]
 fn a_constant_zero_divisor_is_rejected_everywhere() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let x = 10_i32;
   let q = x / 0_i32;
   claim unreachable: igt(q, 0_i32) because "unreachable";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_division(source, |outcome| {
@@ -267,13 +267,13 @@ fn a_constant_zero_divisor_is_rejected_everywhere() {
 /// rejection.
 #[test]
 fn a_minus_one_divisor_demands_the_dividend_disequality() {
-    let source = br#"fn negate(n: own i32) -> own i32 pure {
+    let source = br#"fn negate(n: own i32) -> result: own i32 pure {
   let q = n / -1_i32;
   return q;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_division(source, |outcome| {
@@ -296,14 +296,14 @@ fn main() -> own unit pure {
 /// discharges both conjuncts and drops the whole trap.
 #[test]
 fn a_bounded_dividend_over_minus_one_discharges() {
-    let source = br#"fn negate(n: own i32) -> own i32 traps {
+    let source = br#"fn negate(n: own i32) -> result: own i32 traps {
   claim bounded_input: igt(n, -100_i32) because "bounded input";
   let q = n / -1_i32;
   return q;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_division(source, |outcome| {
@@ -326,13 +326,13 @@ fn main() -> own unit pure {
 /// record, still exhibits `traps`, and attaches no obligation.
 #[test]
 fn a_signed_two_variable_site_retains_the_trap_and_its_effect() {
-    let pure_row = br#"fn ratio(n: own i32, d: own i32) -> own i32 pure {
+    let pure_row = br#"fn ratio(n: own i32, d: own i32) -> result: own i32 pure {
   let q = n / d;
   return q;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_division(pure_row, |outcome| {
@@ -341,13 +341,13 @@ fn main() -> own unit pure {
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
     });
-    let traps_row = br#"fn ratio(n: own i32, d: own i32) -> own i32 traps {
+    let traps_row = br#"fn ratio(n: own i32, d: own i32) -> result: own i32 traps {
   let q = n / d;
   return q;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_division(traps_row, |outcome| {
@@ -363,15 +363,15 @@ fn main() -> own unit pure {
 /// remains a recoverable value rather than a source rejection.
 #[test]
 fn a_checked_division_attaches_no_obligation() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let n = 10_i64;
   let d = 0_i64;
   match n /checked d {
     Ok(value: v) => {
-      return unit;
+      return exit_status(code: 0_u8);
     }
     Err(error: e) => {
-      return unit;
+      return exit_status(code: 0_u8);
     }
   }
 }
@@ -394,14 +394,14 @@ fn a_checked_division_attaches_no_obligation() {
 /// EFF-2 disagreement — the row is judged before the undischarged divisor is.
 #[test]
 fn the_shipped_checker_rejects_the_v031_traps_row_on_a_class_site() {
-    let source = br#"fn ratio(n: own u64, d: own u64) -> own u64 traps {
+    let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
   let q = n / d;
   let r = n % d;
   return q;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -419,11 +419,11 @@ fn main() -> own unit pure {
 /// test-only entry.
 #[test]
 fn the_shipped_checker_rejects_a_constant_zero_divisor() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let x = 10_i32;
   let q = x / 0_i32;
   claim unreachable: igt(q, 0_i32) because "unreachable";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -448,13 +448,13 @@ fn the_shipped_checker_rejects_a_constant_zero_divisor() {
 /// the only newly accepted class the acceptance-set analysis records.
 #[test]
 fn the_shipped_checker_accepts_a_pure_row_over_a_discharged_class_site() {
-    let source = br#"fn halve(n: own i32) -> own i32 pure {
+    let source = br#"fn halve(n: own i32) -> result: own i32 pure {
   let q = n / 2_i32;
   return q;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -480,21 +480,21 @@ fn main() -> own unit pure {
 /// is outside the class, carries no obligation, and keeps its runtime trap.
 #[test]
 fn a_generic_divisor_site_exhibits_traps_at_every_instance() {
-    let source = br#"fn ratio<T: Int>(n: own T, d: own T) -> own T traps requires {
+    let source = br#"fn ratio<T: Int>(n: own T, d: own T) -> result: own T traps requires {
   check ine(d, 0_T) else trap "nonzero divisor";
 } {
   let q = n / d;
   return q;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let a = 10_i32;
   let b = 3_i32;
   let signed = ratio<i32>(n: a, d: b);
   let x = 10_u32;
   let y = 3_u32;
   let unsigned = ratio<u32>(n: x, d: y);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -503,18 +503,18 @@ fn main() -> own unit traps {
         };
         assert_eq!(issue.rule(), SemanticRule::Eff2);
     });
-    let pure_row = br#"fn ratio<T: Int>(n: own T, d: own T) -> own T pure requires {
+    let pure_row = br#"fn ratio<T: Int>(n: own T, d: own T) -> result: own T pure requires {
   check ine(d, 0_T) else trap "nonzero divisor";
 } {
   let q = n / d;
   return q;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let x = 10_u32;
   let y = 3_u32;
   let unsigned = ratio<u32>(n: x, d: y);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(pure_row, |outcome| {
@@ -534,14 +534,14 @@ fn main() -> own unit traps {
 /// through the type's own lower bound, are unchanged.
 #[test]
 fn the_signed_zero_divisor_conjunct_is_discharged_by_its_own_mechanical_fix() {
-    let claimed = br#"fn ratio(d: own i32) -> own i32 traps {
+    let claimed = br#"fn ratio(d: own i32) -> result: own i32 traps {
   claim nonzero: ine(d, 0_i32) because "callers pass a nonzero divisor";
   let q = 100_i32 / d;
   return q;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(claimed, |outcome| {
@@ -560,7 +560,7 @@ fn main() -> own unit pure {
                 .all(|outcome| outcome.discharged),
         );
     });
-    let branched = br#"fn ratio(d: own i32) -> own i32 pure {
+    let branched = br#"fn ratio(d: own i32) -> result: own i32 pure {
   if ine(d, 0_i32) {
     let q = 100_i32 / d;
     return q;
@@ -569,8 +569,8 @@ fn main() -> own unit pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(branched, |outcome| {
@@ -584,13 +584,13 @@ fn main() -> own unit pure {
         assert_eq!(discharged.len(), 1, "one source occurrence, one obligation");
         assert!(discharged.iter().all(|outcome| outcome.discharged));
     });
-    let unclaimed = br#"fn ratio(d: own i32) -> own i32 pure {
+    let unclaimed = br#"fn ratio(d: own i32) -> result: own i32 pure {
   let q = 100_i32 / d;
   return q;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(unclaimed, |outcome| {

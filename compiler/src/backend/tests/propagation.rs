@@ -13,7 +13,7 @@ fn propagate_binds_ok_payloads_and_returns_err_values() {
   Negative();
 }
 
-fn step(x: own i32) -> own Result<i32, StepError> pure {
+fn step(x: own i32) -> result: own Result<i32, StepError> pure {
   if ilt(x, 0_i32) {
     let negative_atom_0001 = Negative();
     return Err<i32, StepError>(error: negative_atom_0001);
@@ -22,14 +22,14 @@ fn step(x: own i32) -> own Result<i32, StepError> pure {
   }
 }
 
-fn forward(x: own i32) -> own Result<i32, StepError> pure {
+fn forward(x: own i32) -> result: own Result<i32, StepError> pure {
   doc "Ok binds y and the continuation runs; Err returns Err(err) with the same E [ERR-3].";
   let y = propagate step(x: x);
   let next = y +wrap 1_i32;
   return Ok<i32, StepError>(value: next);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let accepted = forward(x: 41_i32);
   match move accepted {
     Ok(value: accepted_value) => {
@@ -51,7 +51,7 @@ fn main() -> own unit traps {
       }
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let output = compile_and_run(&compile(source));

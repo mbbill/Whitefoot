@@ -2,7 +2,7 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn every_direct_float_operation_executes_for_both_widths() {
-    let template = r#"fn main() -> own unit traps {
+    let template = r#"command fn main() -> status: own ExitStatus traps {
   let sum = fadd.strict(1.5_$TYPE, 2.25_$TYPE);
   claim fadd: feq(sum, 3.75_$TYPE) because "fadd";
   let difference = fsub.strict(sum, 0.75_$TYPE);
@@ -52,7 +52,7 @@ fn every_direct_float_operation_executes_for_both_widths() {
   claim fmax_signed_zero: feq(maximum_reciprocal, infinity) because "fmax signed zero";
   claim fle: fle(absolute, sum) because "fle";
   claim fge: fge(sum, absolute) because "fge";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     for ty in ["f32", "f64"] {
@@ -102,24 +102,24 @@ fn every_direct_float_operation_executes_for_both_widths() {
 /// optimization level.
 #[test]
 fn strict_float_addition_rounds_every_step_and_is_never_reassociated() {
-    let source = br#"fn left(a: own f32, b: own f32, c: own f32) -> own f32 pure {
+    let source = br#"fn left(a: own f32, b: own f32, c: own f32) -> result: own f32 pure {
   let ab = fadd.strict(a, b);
   return fadd.strict(ab, c);
 }
 
-fn right(a: own f32, b: own f32, c: own f32) -> own f32 pure {
+fn right(a: own f32, b: own f32, c: own f32) -> result: own f32 pure {
   let bc = fadd.strict(b, c);
   return fadd.strict(a, bc);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let one = 1.0_f32;
   let half_ulp = 4.0e-8_f32;
   let stepwise = left(a: one, b: half_ulp, c: half_ulp);
   let regrouped = right(a: one, b: half_ulp, c: half_ulp);
   claim each_strict_addition_must_round_on_its_own: feq(stepwise, one) because "each strict addition must round on its own";
   claim strict_addition_was_reassociated: fne(stepwise, regrouped) because "strict addition was reassociated";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -145,13 +145,13 @@ fn float_constants_work_in_aggregates_arrays_and_buffers() {
 
 const values: array<f32, 2> =[1.5_f32, 2.5_f32];
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let sample = Sample(value: values[0_u64]);
   let storage = buffer_new(2_u64, 0.0_f32);
   set storage[1_u64] = sample.value;
   let loaded = storage[1_u64];
   claim float_storage: feq(loaded, 1.5_f32) because "float storage";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let output = compile_and_run(&compile(source));

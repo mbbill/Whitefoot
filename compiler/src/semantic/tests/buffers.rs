@@ -9,13 +9,13 @@ use super::{assert_rule, assert_unsupported, with_semantics, with_semantics_dark
 
 #[test]
 fn allocation_fit_is_static_exact_componentized_and_contradiction_closing() {
-    let unproved = br#"fn allocate(n: own u64) -> own unit allocates(heap) {
+    let unproved = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
   let values = buffer_new(n, 0_u16);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(unproved, |outcome| {
@@ -38,15 +38,15 @@ fn main() -> own unit pure {
         assert!(!allocation[0].discharged);
     });
 
-    let exact = br#"fn allocate(n: own u64) -> own unit allocates(heap), traps {
+    let exact = br#"fn allocate(n: own u64) -> result: own unit allocates(heap), traps {
   let fits = buffer_fits<u16>(n);
   claim reviewed_fit: fits because "the caller's size was reviewed";
   let values = buffer_new(n, 0_u16);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(exact, |outcome| {
@@ -56,7 +56,7 @@ fn main() -> own unit pure {
         );
     });
 
-    let component = br#"fn allocate(n: own u64) -> own unit allocates(heap) {
+    let component = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
   let within = ile(n, 9223372036854775807_u64);
   if within {
     let values = buffer_new(n, 0_u16);
@@ -64,8 +64,8 @@ fn main() -> own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(component, |outcome| {
@@ -90,7 +90,7 @@ fn main() -> own unit pure {
         ));
     });
 
-    let refuted = br#"fn allocate(n: own u64) -> own unit allocates(heap) {
+    let refuted = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) {
   let fits = buffer_fits<u8>(n);
   let does_not_fit = bnot(fits);
   if does_not_fit {
@@ -102,8 +102,8 @@ fn main() -> own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(refuted, |outcome| {
@@ -132,10 +132,10 @@ fn main() -> own unit pure {
 
 #[test]
 fn buffer_fits_admits_direct_region_free_array_and_buffer_types() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let array_fit = buffer_fits<array<u8, 4>>(0_u64);
   let buffer_fit = buffer_fits<buffer<u8>>(0_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -167,10 +167,10 @@ fn buffer_fits_admits_direct_region_free_array_and_buffer_types() {
 
 #[test]
 fn zero_length_arrays_have_the_empty_sequence_layout_ceiling() {
-    let source = br#"fn main() -> own unit allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let array_fit = buffer_fits<array<u64, 0>>(18446744073709551615_u64);
   let slots = buffer_vacant<array<u64, 0>>(0_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -212,13 +212,13 @@ fn zero_length_arrays_have_the_empty_sequence_layout_ceiling() {
 
 #[test]
 fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
-    let source = br#"fn make(n: own u64) -> own buffer<u16> allocates(heap), traps {
+    let source = br#"fn make(n: own u64) -> result: own buffer<u16> allocates(heap), traps {
   let fits = buffer_fits<u16>(n);
   claim allocation_fits: fits because "caller-selected length must fit";
   return buffer_new(n, 3_u16);
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let values = make(n: 4_u64);
   let length = len(values);
   let ok = ilt(2_u64, length);
@@ -227,7 +227,7 @@ fn main() -> own unit allocates(heap), traps {
   let stored = values[2_u64];
   claim length_drift: ieq(length, 4_u64) because "length drift";
   claim store_drift: ieq(stored, 9_u16) because "store drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -304,16 +304,16 @@ fn main() -> own unit allocates(heap), traps {
 #[test]
 fn buffer_effect_rows_are_checked_both_ways() {
     assert_rule(
-        b"fn main() -> own unit traps {\n  let values = buffer_new(2_u64, 0_u8);\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus traps {\n  let values = buffer_new(2_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     with_semantics(
-        b"fn main() -> own unit allocates(heap) {\n  let values = buffer_new(2_u64, 0_u8);\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let values = buffer_new(2_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_rule(
-        b"fn main() -> own unit allocates(heap), traps {\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap), traps {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
@@ -321,11 +321,11 @@ fn buffer_effect_rows_are_checked_both_ways() {
 
 #[test]
 fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let slots = buffer_vacant<box<u64>>(3_u64);
   let count = len(slots);
   claim vacant_length: ieq(count, 3_u64) because "vacant length";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -380,23 +380,23 @@ fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
 fn buffer_vacant_requires_its_written_payload_and_effect_row() {
     // [TYPE-5]: the element payload type is a retained written argument.
     assert_rule(
-        b"fn main() -> own unit allocates(heap), traps {\n  let slots = buffer_vacant(3_u64);\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap), traps {\n  let slots = buffer_vacant(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::InvalidOperation,
     );
     // [EFF-2]: allocation is the only effect; OP-9 is statically discharged.
     assert_rule(
-        b"fn main() -> own unit traps {\n  let slots = buffer_vacant<u32>(3_u64);\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus traps {\n  let slots = buffer_vacant<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     with_semantics(
-        b"fn main() -> own unit allocates(heap) {\n  let slots = buffer_vacant<u32>(3_u64);\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let slots = buffer_vacant<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     // [TYPE-5]: the one operand is the own u64 length.
     assert_rule(
-        b"fn main() -> own unit allocates(heap), traps {\n  let slots = buffer_vacant<u32>(3_u32);\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap), traps {\n  let slots = buffer_vacant<u32>(3_u32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
@@ -405,13 +405,13 @@ fn buffer_vacant_requires_its_written_payload_and_effect_row() {
 #[test]
 fn buffer_vacant_rejects_a_region_bearing_payload_under_stor5() {
     assert_rule(
-        br#"fn invalid['r](value: own slice<'r, u8>) -> own unit allocates(heap), traps {
+        br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit allocates(heap), traps {
   let slots = buffer_vacant<slice<'r, u8>>(2_u64);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor5,
@@ -426,12 +426,12 @@ fn affine_element_views_and_structural_composites_stop_explicitly() {
     // A slice over an affine-element buffer has no implemented in-place
     // read; it stops as capability, not as a source rejection.
     assert_unsupported(
-        br#"fn main() -> own unit allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let slots = buffer_vacant<u32>(4_u64);
   region 'v {
     let view = slice_of(&'v slots);
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::CompositeValues,
@@ -439,12 +439,12 @@ fn affine_element_views_and_structural_composites_stop_explicitly() {
     // A structural affine element (a nested buffer) is spec-formable
     // [TYPE-2] but has no implemented representation.
     assert_unsupported(
-        br#"fn keep(value: own buffer<buffer<u8>>) -> own unit pure {
+        br#"fn keep(value: own buffer<buffer<u8>>) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::CompositeValues,
@@ -454,12 +454,12 @@ fn main() -> own unit pure {
 #[test]
 fn array_elements_stay_copy_only_under_type2() {
     with_semantics(
-        br#"fn keep(value: own array<Option<u32>, 2>) -> own unit pure {
+        br#"fn keep(value: own array<Option<u32>, 2>) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         |outcome| {
@@ -474,7 +474,7 @@ fn main() -> own unit pure {
 #[test]
 fn buffer_new_keeps_its_primitive_only_operation_domain() {
     assert_rule(
-        b"fn main() -> own unit allocates(heap), traps {\n  let initial = False();\n  let values = buffer_new(2_u64, initial);\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap), traps {\n  let initial = False();\n  let values = buffer_new(2_u64, initial);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
@@ -487,7 +487,7 @@ fn struct_buffer_paths_and_reverse_cleanup_are_explicit() {
   right: buffer<u64>;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let left = buffer_new(4_u64, 0_u64);
   let right = buffer_new(4_u64, 0_u64);
   let columns = Columns(left: move left, right: move right);
@@ -499,7 +499,7 @@ fn main() -> own unit allocates(heap), traps {
   let value = columns.left[2_u64];
   claim length_drift: ieq(length, 4_u64) because "length drift";
   claim value_drift: ieq(value, 7_u64) because "value drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -549,7 +549,7 @@ fn main() -> own unit allocates(heap), traps {
 #[test]
 fn resource_bearing_enum_owners_have_one_variant_dependent_drop() {
     with_semantics(
-        b"enum MaybeBuffer {\n  Empty();\n  Full(value: buffer<u8>);\n}\n\nfn abandon(value: own MaybeBuffer) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"enum MaybeBuffer {\n  Empty();\n  Full(value: buffer<u8>);\n}\n\nfn abandon(value: own MaybeBuffer) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(checked) = outcome else {
                 panic!("resource-bearing enum payload must check: {outcome:?}");
@@ -578,12 +578,12 @@ struct Owner {
   suffix: buffer<u8>;
 }
 
-fn take(owner: own Owner) -> own buffer<u8> pure {
+fn take(owner: own Owner) -> result: own buffer<u8> pure {
   return move owner.pair.first;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -610,12 +610,12 @@ fn region_bearing_buffer_content_rejects_under_stor5() {
         mechanical_fix: "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
     };
     assert_rule(
-        br#"fn invalid['r](value: own buffer<slice<'r, u8>>) -> own unit pure {
+        br#"fn invalid['r](value: own buffer<slice<'r, u8>>) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor5,
@@ -630,13 +630,13 @@ fn main() -> own unit pure {
     // derived from its operand [STOR-2, OP-2], so that is where the recorded
     // rule and kind still fire, at the operand atom the rule names.
     assert_rule(
-        br#"fn invalid['r](value: own slice<'r, u8>) -> own unit allocates(heap), traps {
+        br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit allocates(heap), traps {
   box_new(move value);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor5,

@@ -2,7 +2,7 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn executes_every_absolute_mode_for_every_signed_width() {
-    let template = r#"fn main() -> own unit traps {
+    let template = r#"command fn main() -> status: own ExitStatus traps {
   let wrapped = iabs.wrap($MIN_$TYPE);
   claim wrapped_absolute_value_drift: ieq(wrapped, $MIN_$TYPE) because "wrapped absolute value drift";
   let exact = iabs(-42_$TYPE);
@@ -28,7 +28,7 @@ fn executes_every_absolute_mode_for_every_signed_width() {
     Err(error: overflow_error) => {
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     for (ty, width, minimum) in [
@@ -62,10 +62,10 @@ fn executes_every_absolute_mode_for_every_signed_width() {
 
 #[test]
 fn defined_minimum_reports_false_without_executing_absolute_value() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let is_defined = iabs.defined(-128_i8);
   claim minimum_is_not_defined: bnot(is_defined) because "minimum absolute value must be undefined";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);

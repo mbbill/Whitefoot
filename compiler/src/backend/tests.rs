@@ -436,14 +436,14 @@ fn emitted_drop_ids(function: &str) -> Vec<u32> {
 
 #[test]
 fn emitted_module_retains_checks_and_avoids_undefined_overflow_flags() {
-    let source = br#"fn add(x: own i32, y: own i32) -> own i32 traps {
+    let source = br#"fn add(x: own i32, y: own i32) -> result: own i32 traps {
   return x + y;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let answer = add(x: 40_i32, y: 2_i32);
   claim wrong_answer: ieq(answer, 42_i32) because "wrong answer";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = emit(source);
@@ -467,7 +467,7 @@ enum Payload {
   Value(number: i32);
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let flag = On();
   match flag {
     Off() => {
@@ -482,7 +482,7 @@ fn main() -> own unit pure {
     Value(number: value) => {
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = emit(source);
@@ -514,12 +514,12 @@ enum Holder {
   Empty();
 }
 
-fn make() -> own Cell pure {
+fn make() -> result: own Cell pure {
   let cell = Cell(value: 1_i32);
   return move cell;
 }
 
-fn cleanup() -> own unit pure {
+fn cleanup() -> result: own unit pure {
   make();
   let first = Cell(value: 2_i32);
   let second = Cell(value: 3_i32);
@@ -532,7 +532,7 @@ fn cleanup() -> own unit pure {
   return unit;
 }
 
-fn cleanup_match(value: own Holder, flag: own Bool) -> own i32 pure {
+fn cleanup_match(value: own Holder, flag: own Bool) -> result: own i32 pure {
   match move value {
     Held(cell: item) => {
     }
@@ -548,13 +548,13 @@ fn cleanup_match(value: own Holder, flag: own Bool) -> own i32 pure {
   return selected;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   cleanup();
   let cell = Cell(value: 8_i32);
   let holder = Held(cell: move cell);
   let flag = True();
   cleanup_match(value: move holder, flag: flag);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = emit(source);
@@ -587,7 +587,7 @@ struct Outer {
   other: i32;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let number = 1_i32;
   let inner = Inner(value: 2_i32);
   let outer = Outer(inner: move inner, other: 7_i32);
@@ -612,7 +612,7 @@ fn main() -> own unit traps {
   }
   claim value_match_result_failed: ieq(selected, 43_i32) because "value match result failed";
   claim value_match_set_failed: ieq(number, 43_i32) because "value match set failed";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = emit(source);
@@ -632,7 +632,7 @@ fn main() -> own unit traps {
 /// here is observable: a wrong one leaves a flag false and the check traps.
 #[test]
 fn bool_conditionals_execute_through_the_existing_match_lowering() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let flag = True();
   let other = False();
   let seen = False();
@@ -659,7 +659,7 @@ fn bool_conditionals_execute_through_the_existing_match_lowering() {
     give False();
   }
   claim the_else_if_chain_took_the_wrong_branch: chained because "the else-if chain took the wrong branch";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let output = compile_and_run(&compile(source));
@@ -673,12 +673,12 @@ fn bool_conditionals_execute_through_the_existing_match_lowering() {
 /// content reads back, and it is released. `box<u64>` is spelled nowhere.
 #[test]
 fn a_derived_box_nominal_allocates_reads_back_and_releases() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let flag = True();
   let owner = box_new(flag);
   let loaded = deref(owner);
   claim the_derived_box_did_not_read_back: loaded because "the derived box did not read back";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -693,7 +693,7 @@ fn a_derived_box_nominal_allocates_reads_back_and_releases() {
 /// saturates. Every result is checked, so a mis-selected row traps here.
 #[test]
 fn infix_operators_execute_the_rows_they_name() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let a = 20_i32;
   let b = a + 22_i32;
   let want = 42_i32;
@@ -719,7 +719,7 @@ fn infix_operators_execute_the_rows_they_name() {
   claim less_equal: ordered because "less equal";
   let reversed = ige(b, a);
   claim greater_equal: reversed because "greater equal";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let output = compile_and_run(&compile(source));
@@ -737,15 +737,15 @@ fn infix_operators_execute_the_rows_they_name() {
 /// trap, so a lost or inverted result fails here rather than passing quietly.
 #[test]
 fn an_infix_returned_from_a_function_executes() {
-    let source = br#"fn add(a: own i32, b: own i32) -> own i32 traps {
+    let source = br#"fn add(a: own i32, b: own i32) -> result: own i32 traps {
   return a + b;
 }
 
-fn eq(a: own i32, b: own i32) -> own Bool pure {
+fn eq(a: own i32, b: own i32) -> result: own Bool pure {
   return ieq(a, b);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let sum = add(a: 20_i32, b: 22_i32);
   let sum_ok = ieq(sum, 42_i32);
   claim the_returned_sum_is_wrong: sum_ok because "the returned sum is wrong";
@@ -756,7 +756,7 @@ fn main() -> own unit traps {
   if differ {
     claim a_false_returned_comparison_must_not_be_true: impossible because "a false returned comparison must not be true";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let output = compile_and_run(&compile(source));
@@ -771,11 +771,11 @@ fn main() -> own unit traps {
 /// as literals, so the site stays in the retained trapping class.
 #[test]
 fn bare_infix_overflow_traps_at_runtime() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let hi = 2147483647_i32;
   let one = 1_i32;
   let overflowed = hi + one;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let output = compile_and_run(&compile(source));
@@ -840,7 +840,7 @@ struct Envelope {
   residue: Pair;
 }
 
-fn step(value: own i32) -> own Result<i32, StepError> pure {
+fn step(value: own i32) -> result: own Result<i32, StepError> pure {
   if ilt(value, 0_i32) {
     let error = Failed();
     return Err<i32, StepError>(error: error);
@@ -849,13 +849,13 @@ fn step(value: own i32) -> own Result<i32, StepError> pure {
   }
 }
 
-fn forward(value: own i32) -> own Result<i64, StepError> pure {
+fn forward(value: own i32) -> result: own Result<i64, StepError> pure {
   let result = step(value: value);
   let accepted = propagate result;
   return Ok<i64, StepError>(value: 42_i64);
 }
 
-fn forward_field(value: own i32) -> own Result<i64, StepError> pure {
+fn forward_field(value: own i32) -> result: own Result<i64, StepError> pure {
   let result = step(value: value);
   let residue = Pair(left: 1_i32, right: 2_i32);
   let envelope = Envelope(result: move result, residue: move residue);
@@ -863,12 +863,12 @@ fn forward_field(value: own i32) -> own Result<i64, StepError> pure {
   return Ok<i64, StepError>(value: 42_i64);
 }
 
-fn make_pair() -> own Result<Pair, StepError> pure {
+fn make_pair() -> result: own Result<Pair, StepError> pure {
   let pair = Pair(left: 20_i32, right: 22_i32);
   return Ok<Pair, StepError>(value: move pair);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let arithmetic_result = 2147483647_i32 +checked 1_i32;
   match move arithmetic_result {
     Ok(value: sum) => {
@@ -938,7 +938,7 @@ fn main() -> own unit traps {
       claim unexpected_aggregate_result_error: False() because "unexpected aggregate Result error";
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -969,7 +969,7 @@ fn main() -> own unit traps {
 
 #[test]
 fn nested_loop_labels_route_breaks_to_the_resolved_exit() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let outer = 0_i32;
   loop @outer_loop {
     set outer = outer +wrap 1_i32;
@@ -985,7 +985,7 @@ fn nested_loop_labels_route_breaks_to_the_resolved_exit() {
     }
   }
   claim wrong_outer_exit: ieq(outer, 3_i32) because "wrong outer exit";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let output = compile_and_run(&compile(source));
@@ -1031,7 +1031,7 @@ fn compiler_independent_nominal_data_cases_execute_through_host_llvm() {
 
 #[test]
 fn every_lowered_integer_mode_and_comparison_executes_with_exact_width_and_sign() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let aw = 127_i8 +wrap 1_i8;
   let sw = 0_u8 -wrap 1_u8;
   let mw = 65535_u16 *wrap 2_u16;
@@ -1055,7 +1055,7 @@ fn every_lowered_integer_mode_and_comparison_executes_with_exact_width_and_sign(
   claim unsigned_ile_drift: ile(1_u32, 1_u32) because "unsigned ile drift";
   claim signed_igt_drift: igt(1_i32, -1_i32) because "signed igt drift";
   claim unsigned_ige_drift: ige(1_u32, 1_u32) because "unsigned ige drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let output = compile_and_run(&compile(source));
@@ -1066,11 +1066,11 @@ fn every_lowered_integer_mode_and_comparison_executes_with_exact_width_and_sign(
 
 #[test]
 fn unit_is_a_first_class_parameter_result_and_local() {
-    let source = br#"fn identity(value: own unit) -> own unit pure {
+    let source = br#"fn identity(value: own unit) -> result: own unit pure {
   return value;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let value = identity(value: unit);
   return value;
 }
@@ -1092,7 +1092,7 @@ fn main() -> own unit pure {
 /// version, which is what this pins.
 #[test]
 fn a_failing_entry_requirement_emits_the_exact_mandatory_record_shape() {
-    let source = b"fn main() -> own unit pure requires {\n  check ieq(0_u8, 1_u8) else trap \"bad \\\"quote\\\"\\nline\";\n} {\n  return unit;\n}\n";
+    let source = b"command fn main() -> status: own ExitStatus pure requires {\n  check ieq(0_u8, 1_u8) else trap \"bad \\\"quote\\\"\\nline\";\n} {\n  return exit_status(code: 0_u8);\n}\n";
     let output = compile_and_run(&compile(source));
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
@@ -1112,7 +1112,7 @@ fn a_failing_entry_requirement_emits_the_exact_mandatory_record_shape() {
 #[test]
 fn a_failing_claim_emits_the_exact_mandatory_record_shape() {
     let source =
-        b"fn main() -> own unit traps {\n  claim bad_quote_line: False() because \"bad \\\"quote\\\"\\nline\";\n  return unit;\n}\n";
+        b"command fn main() -> status: own ExitStatus traps {\n  claim bad_quote_line: False() because \"bad \\\"quote\\\"\\nline\";\n  return exit_status(code: 0_u8);\n}\n";
     let output = compile_and_run(&compile(source));
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
@@ -1170,11 +1170,11 @@ fn integer_overflow_reports_op2_before_abort() {
     // Both operands are bound, keeping the site in [OP-2]'s retained
     // trapping class: a written literal operand would carry a compile-time
     // overflow obligation instead and could never reach a runtime record.
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let hi = 127_i8;
   let one = 1_i8;
   let overflow = hi + one;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let output = compile_and_run(&compile(source));
@@ -1193,7 +1193,7 @@ fn required_check_survives_host_optimization_of_an_unfoldable_loop() {
     // count is far past any full-unroll budget. The failing condition
     // therefore cannot be decided before execution: whatever the optimizer
     // does, the check has to run.
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   doc "A mixing chain the host optimizer cannot fold feeds one required check.";
   let step = 0_u64;
   let state = 14695981039346656037_u64;
@@ -1206,7 +1206,7 @@ fn required_check_survives_host_optimization_of_an_unfoldable_loop() {
     set step = step + 1_u64;
   }
   claim mixing_chain_drift: ieq(state, 1_u64) because "mixing chain drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);

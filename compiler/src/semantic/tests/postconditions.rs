@@ -275,14 +275,14 @@ fn an_uninhabited_routed_ensure_needs_no_exit_and_publishes_no_summary() {
 
 #[test]
 fn a_checked_plain_postcondition_is_proved_at_its_selected_exit() {
-    let source = br#"fn identity(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn identity(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "post";
 } {
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -298,15 +298,15 @@ fn main() -> own unit pure {
 
 #[test]
 fn body_checks_and_s4_are_routed_to_the_fixed_postcondition_views() {
-    let body_check = br#"fn guarded(value: own i32) -> own i32 traps ensures result {
+    let body_check = br#"fn guarded(value: own i32) -> result: own i32 traps ensures result {
   check ieq(result, 1_i32) else trap "post";
 } {
   claim body: ieq(value, 1_i32) because "body";
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(body_check);
@@ -323,7 +323,7 @@ fn main() -> own unit pure {
     assert!(!proof.unasserted.discharged);
     assert!(!proof.s4_blinded.discharged);
 
-    let s4 = br#"fn constrained(value: own i32) -> own i32 pure requires {
+    let s4 = br#"fn constrained(value: own i32) -> result: own i32 pure requires {
   check ieq(value, 1_i32) else trap "pre";
 } ensures result {
   check ieq(result, 1_i32) else trap "post";
@@ -331,8 +331,8 @@ fn main() -> own unit pure {
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(s4);
@@ -352,15 +352,15 @@ fn main() -> own unit pure {
 
 #[test]
 fn entry_image_writes_are_retained_and_prevent_false_discharge() {
-    let source = br#"fn changed(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn changed(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "post";
 } {
   set value = 1_i32;
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let proof = postcondition_proof(source, "changed");
@@ -376,12 +376,12 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_moved_holder_consume_precedes_its_projected_call_write() {
-    let source = br#"fn overwrite['r](out: &uniq 'r i32) -> own unit writes('r) {
+    let source = br#"fn overwrite['r](out: &uniq 'r i32) -> result: own unit writes('r) {
   set deref(out) = 1_i32;
   return unit;
 }
 
-fn transfer['r](out: &uniq 'r i32) -> own i32 reads('r), writes('r) ensures result {
+fn transfer['r](out: &uniq 'r i32) -> result: own i32 reads('r), writes('r) ensures result {
   check ieq(result, deref(out)) else trap "post";
 } {
   let before = deref(out);
@@ -389,14 +389,14 @@ fn transfer['r](out: &uniq 'r i32) -> own i32 reads('r), writes('r) ensures resu
   return before;
 }
 
-fn plain['r](out: &uniq 'r i32) -> own i32 reads('r), writes('r) {
+fn plain['r](out: &uniq 'r i32) -> result: own i32 reads('r), writes('r) {
   let before = deref(out);
   overwrite<'r>(out: move out);
   return before;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -474,7 +474,8 @@ fn main() -> own unit pure {
 
 #[test]
 fn an_ordinary_loop_uses_the_exact_first_invalidation_event_without_a_snapshot() {
-    let source = br#"fn looped(value: own i32, stop: own Bool) -> own i32 pure ensures result {
+    let source =
+        br#"fn looped(value: own i32, stop: own Bool) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "post";
 } {
   loop @again {
@@ -487,8 +488,8 @@ fn an_ordinary_loop_uses_the_exact_first_invalidation_event_without_a_snapshot()
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -541,7 +542,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invalid_exit() {
-    let source = br#"fn append['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> own u64 reads('d 'm), writes('d) requires {
+    let source = br#"fn append['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> result: own u64 reads('d 'm), writes('d) requires {
   let capacity = len(deref(destination));
   let admitted = ile(filled, capacity);
   check admitted else trap "append filled exceeds destination";
@@ -568,8 +569,8 @@ fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invali
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -590,7 +591,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn length_entry_images_ignore_element_writes_but_not_root_replacement() {
-    let element = br#"fn kept(values: own array<u8, 2>) -> own u64 pure ensures result {
+    let element = br#"fn kept(values: own array<u8, 2>) -> result: own u64 pure ensures result {
   let size = len(values);
   check ieq(result, size) else trap "post";
 } {
@@ -598,8 +599,8 @@ fn length_entry_images_ignore_element_writes_but_not_root_replacement() {
   return len(values);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(element);
@@ -615,11 +616,11 @@ fn main() -> own unit pure {
             .all(|image| image.invalidation.is_none())
     );
 
-    let replacement = br#"fn consume(values: own array<u8, 2>) -> own unit pure {
+    let replacement = br#"fn consume(values: own array<u8, 2>) -> result: own unit pure {
   return unit;
 }
 
-fn replaced(values: own array<u8, 2>) -> own u64 pure ensures result {
+fn replaced(values: own array<u8, 2>) -> result: own u64 pure ensures result {
   let size = len(values);
   check ieq(result, size) else trap "post";
 } {
@@ -628,8 +629,8 @@ fn replaced(values: own array<u8, 2>) -> own u64 pure ensures result {
   return size;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let proof = postcondition_proof(replacement, "replaced");
@@ -647,7 +648,8 @@ fn main() -> own unit pure {
 
 #[test]
 fn selected_exits_aggregate_only_when_every_exit_in_the_view_discharges() {
-    let source = br#"fn branch(value: own i32, choose: own Bool) -> own i32 pure ensures result {
+    let source =
+        br#"fn branch(value: own i32, choose: own Bool) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "post";
 } {
   if choose {
@@ -657,8 +659,8 @@ fn selected_exits_aggregate_only_when_every_exit_in_the_view_discharges() {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -677,40 +679,40 @@ fn main() -> own unit pure {
 
 #[test]
 fn an_earlier_verified_postcondition_discharges_a_fresh_direct_result() {
-    let independent = br#"fn callee(value: own i32) -> own i32 pure ensures result {
+    let independent = br#"fn callee(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "callee post";
 } {
   return value;
 }
 
-fn caller(value: own i32) -> own i32 pure ensures result {
+fn caller(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "caller post";
 } {
   let ignored = callee(value: value);
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(independent);
 
-    let dependent = br#"fn callee(value: own i32) -> own i32 pure ensures result {
+    let dependent = br#"fn callee(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "callee post";
 } {
   return value;
 }
 
-fn caller(value: own i32) -> own i32 pure ensures result {
+fn caller(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "caller post";
 } {
   let called = callee(value: value);
   return called;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(dependent);
@@ -719,13 +721,13 @@ fn main() -> own unit pure {
 #[test]
 fn an_earlier_ok_summary_is_available_only_at_direct_match_arm_entry() {
     let source =
-        br#"fn callee(value: own i32) -> own Result<i32, Overflow> pure ensures Ok(value: result) {
+        br#"fn callee(value: own i32) -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
   check ieq(result, value) else trap "callee post";
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
-fn direct(value: own i32) -> own i32 pure ensures result {
+fn direct(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "direct post";
 } {
   match callee(value: value) {
@@ -738,7 +740,7 @@ fn direct(value: own i32) -> own i32 pure ensures result {
   }
 }
 
-fn delivered(value: own i32) -> own i32 pure {
+fn delivered(value: own i32) -> result: own i32 pure {
   let selected = match callee(value: value) {
     Ok(value: payload) => {
       give payload;
@@ -750,8 +752,8 @@ fn delivered(value: own i32) -> own i32 pure {
   return selected;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -763,21 +765,21 @@ fn a_borrowed_formal_substitution_consumes_its_one_formal_deref() {
   value: i32;
 }
 
-fn observe['r](pair: &'r Pair) -> own i32 reads('r) ensures result {
+fn observe['r](pair: &'r Pair) -> result: own i32 reads('r) ensures result {
   check ieq(result, deref(pair).value) else trap "observe post";
 } {
   return deref(pair).value;
 }
 
-fn caller['r](pair: &'r Pair) -> own i32 reads('r) ensures result {
+fn caller['r](pair: &'r Pair) -> result: own i32 reads('r) ensures result {
   check ieq(result, deref(pair).value) else trap "caller post";
 } {
   let observed = observe<'r>(pair: pair);
   return observed;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -790,14 +792,14 @@ fn a_moved_unique_actual_cannot_publish_a_stale_postcondition_relation() {
   changed: i32;
 }
 
-fn touch['r](pair: &uniq 'r Pair) -> own i32 reads('r), writes('r) ensures result {
+fn touch['r](pair: &uniq 'r Pair) -> result: own i32 reads('r), writes('r) ensures result {
   check ieq(result, deref(pair).kept) else trap "touch post";
 } {
   set deref(pair).changed = 1_i32;
   return deref(pair).kept;
 }
 
-fn caller(pair: own Pair) -> own i32 pure ensures result {
+fn caller(pair: own Pair) -> result: own i32 pure ensures result {
   check ieq(result, pair.kept) else trap "caller post";
 } {
   region 'r {
@@ -807,8 +809,8 @@ fn caller(pair: own Pair) -> own i32 pure ensures result {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_fn9_unproved(source);
@@ -849,13 +851,13 @@ fn main() -> own unit pure {
 #[test]
 fn a_box_deref_actual_cannot_survive_a_cross_formal_owner_move() {
     let source =
-        br#"fn observe(value: own i32, owner: own box<i32>) -> own i32 pure ensures result {
+        br#"fn observe(value: own i32, owner: own box<i32>) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "observe post";
 } {
   return value;
 }
 
-fn caller() -> own i32 allocates(heap) ensures result {
+fn caller() -> result: own i32 allocates(heap) ensures result {
   check ieq(result, 1_i32) else trap "caller post";
 } {
   let owner = box_new(1_i32);
@@ -863,8 +865,8 @@ fn caller() -> own i32 allocates(heap) ensures result {
   return observed;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_fn9_unproved(source);
@@ -891,23 +893,23 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_later_owner_move_kills_an_already_published_s12_relation() {
-    let source = br#"fn observe(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn observe(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "observe post";
 } {
   return value;
 }
 
-fn sink(owner: own box<i32>) -> own unit pure {
+fn sink(owner: own box<i32>) -> result: own unit pure {
   return unit;
 }
 
-fn guard(left: own i32, right: own i32) -> own unit pure requires {
+fn guard(left: own i32, right: own i32) -> result: own unit pure requires {
   check ieq(left, right) else trap "guard pre";
 } {
   return unit;
 }
 
-fn caller() -> own unit allocates(heap) {
+fn caller() -> result: own unit allocates(heap) {
   let owner = box_new(1_i32);
   let expected = deref(owner);
   let observed = observe(value: deref(owner));
@@ -916,8 +918,8 @@ fn caller() -> own unit allocates(heap) {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule_at(
@@ -929,23 +931,23 @@ fn main() -> own unit pure {
 
 #[test]
 fn an_ordinary_fallback_survives_when_the_same_s12_candidate_dies() {
-    let source = br#"fn observe(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn observe(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "observe post";
 } {
   return value;
 }
 
-fn sink(owner: own box<i32>) -> own unit pure {
+fn sink(owner: own box<i32>) -> result: own unit pure {
   return unit;
 }
 
-fn guard(left: own i32, right: own i32) -> own unit pure requires {
+fn guard(left: own i32, right: own i32) -> result: own unit pure requires {
   check ieq(left, right) else trap "guard pre";
 } {
   return unit;
 }
 
-fn caller() -> own unit allocates(heap), traps {
+fn caller() -> result: own unit allocates(heap), traps {
   let owner = box_new(1_i32);
   let expected = deref(owner);
   let observed = observe(value: deref(owner));
@@ -955,8 +957,8 @@ fn caller() -> own unit allocates(heap), traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -964,23 +966,23 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_joined_holder_free_consequence_survives_the_original_owner_move() {
-    let source = br#"fn observe(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn observe(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "observe post";
 } {
   return value;
 }
 
-fn sink(owner: own box<i32>) -> own unit pure {
+fn sink(owner: own box<i32>) -> result: own unit pure {
   return unit;
 }
 
-fn guard(left: own i32, right: own i32) -> own unit pure requires {
+fn guard(left: own i32, right: own i32) -> result: own unit pure requires {
   check ieq(left, right) else trap "guard pre";
 } {
   return unit;
 }
 
-fn caller(choose: own Bool) -> own unit allocates(heap) {
+fn caller(choose: own Bool) -> result: own unit allocates(heap) {
   let owner = box_new(1_i32);
   let expected = deref(owner);
   let observed = observe(value: deref(owner));
@@ -994,8 +996,8 @@ fn caller(choose: own Bool) -> own unit allocates(heap) {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -1003,26 +1005,27 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_direct_same_binding_call_result_establishes_only_after_the_target_kill() {
-    let source = br#"fn choose(ignored: own i32, value: own i32) -> own i32 pure ensures result {
+    let source =
+        br#"fn choose(ignored: own i32, value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "choose post";
 } {
   return value;
 }
 
-fn guard(left: own i32, right: own i32) -> own unit pure requires {
+fn guard(left: own i32, right: own i32) -> result: own unit pure requires {
   check ieq(left, right) else trap "guard pre";
 } {
   return unit;
 }
 
-fn caller(slot: own i32, replacement: own i32) -> own unit pure {
+fn caller(slot: own i32, replacement: own i32) -> result: own unit pure {
   set slot = choose(ignored: slot, value: replacement);
   guard(left: slot, right: replacement);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -1052,37 +1055,37 @@ fn main() -> own unit pure {
 
 #[test]
 fn direct_same_binding_near_misses_retain_no_receiver_root_or_special_event() {
-    let source = br#"fn echo(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn echo(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "echo post";
 } {
   return value;
 }
 
-fn choose(first: own i32, second: own i32, value: own i32) -> own i32 pure ensures result {
+fn choose(first: own i32, second: own i32, value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "choose post";
 } {
   return value;
 }
 
-fn mentions_receiver(slot: own i32) -> own i32 pure ensures result {
+fn mentions_receiver(slot: own i32) -> result: own i32 pure ensures result {
   check ieq(result, slot) else trap "caller post";
 } {
   set slot = echo(value: slot);
   return slot;
 }
 
-fn repeated_receiver(slot: own i32, replacement: own i32) -> own unit pure {
+fn repeated_receiver(slot: own i32, replacement: own i32) -> result: own unit pure {
   set slot = choose(first: slot, second: slot, value: replacement);
   return unit;
 }
 
-fn distinct_receiver(slot: own i32, other: own i32, replacement: own i32) -> own unit pure {
+fn distinct_receiver(slot: own i32, other: own i32, replacement: own i32) -> result: own unit pure {
   set slot = choose(first: other, second: other, value: replacement);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -1117,19 +1120,19 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_selected_payload_first_set_reestablishes_only_the_result_relation() {
-    let source = br#"fn selected(value: own i32) -> own Result<i32, Overflow> pure ensures Ok(value: result) {
+    let source = br#"fn selected(value: own i32) -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
   check ieq(result, value) else trap "selected post";
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
-fn guard(left: own i32, right: own i32) -> own unit pure requires {
+fn guard(left: own i32, right: own i32) -> result: own unit pure requires {
   check ieq(left, right) else trap "guard pre";
 } {
   return unit;
 }
 
-fn caller(outer: own i32, replacement: own i32) -> own unit pure {
+fn caller(outer: own i32, replacement: own i32) -> result: own unit pure {
   match selected(value: replacement) {
     Ok(value: payload) => {
       set outer = payload;
@@ -1141,8 +1144,8 @@ fn caller(outer: own i32, replacement: own i32) -> own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -1176,13 +1179,13 @@ fn selected_receiver_nonfirst_additional_write_and_call_actual_shapes_retain_no_
   value: i32;
 }
 
-fn selected(value: own i32) -> own Result<i32, Overflow> pure ensures Ok(value: result) {
+fn selected(value: own i32) -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
   check ieq(result, value) else trap "selected post";
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
-fn nonfirst(outer: own i32, replacement: own i32) -> own unit pure {
+fn nonfirst(outer: own i32, replacement: own i32) -> result: own unit pure {
   match selected(value: replacement) {
     Ok(value: payload) => {
       let intervening = 0_i32;
@@ -1194,7 +1197,7 @@ fn nonfirst(outer: own i32, replacement: own i32) -> own unit pure {
   return unit;
 }
 
-fn additional_write(outer: own i32, replacement: own i32) -> own unit pure {
+fn additional_write(outer: own i32, replacement: own i32) -> result: own unit pure {
   match selected(value: replacement) {
     Ok(value: payload) => {
       set outer = payload;
@@ -1206,7 +1209,7 @@ fn additional_write(outer: own i32, replacement: own i32) -> own unit pure {
   return unit;
 }
 
-fn call_actual(outer: own i32) -> own unit pure {
+fn call_actual(outer: own i32) -> result: own unit pure {
   match selected(value: outer) {
     Ok(value: payload) => {
       set outer = payload;
@@ -1217,7 +1220,7 @@ fn call_actual(outer: own i32) -> own unit pure {
   return unit;
 }
 
-fn projected(cell: own Cell, replacement: own i32) -> own unit pure {
+fn projected(cell: own Cell, replacement: own i32) -> result: own unit pure {
   match selected(value: replacement) {
     Ok(value: payload) => {
       set cell.value = payload;
@@ -1228,7 +1231,7 @@ fn projected(cell: own Cell, replacement: own i32) -> own unit pure {
   return unit;
 }
 
-fn computed(outer: own i32, replacement: own i32) -> own unit pure {
+fn computed(outer: own i32, replacement: own i32) -> result: own unit pure {
   match selected(value: replacement) {
     Ok(value: payload) => {
       set outer = iand(payload, 0_i32);
@@ -1239,8 +1242,8 @@ fn computed(outer: own i32, replacement: own i32) -> own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -1277,14 +1280,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_checked_ok_postcondition_selects_its_direct_payload() {
-    let source = br#"fn selected(value: own i32) -> own Result<i32, Overflow> pure ensures Ok(value: result) {
+    let source = br#"fn selected(value: own i32) -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
   check ieq(result, value) else trap "post";
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -1292,15 +1295,16 @@ fn main() -> own unit pure {
 
 #[test]
 fn an_ok_selector_rejects_an_empty_selected_exit_set() {
-    let source = br#"fn unselected() -> own Result<i32, Overflow> pure ensures Ok(value: result) {
+    let source =
+        br#"fn unselected() -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
   check ieq(result, 0_i32) else trap "post";
 } {
   let error = Overflow();
   return Err<i32, Overflow>(error: error);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -1315,15 +1319,15 @@ fn main() -> own unit pure {
 #[test]
 fn an_ok_selector_rejects_a_stored_whole_result_return() {
     let source =
-        br#"fn stored(value: own i32) -> own Result<i32, Overflow> pure ensures Ok(value: result) {
+        br#"fn stored(value: own i32) -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
   check ieq(result, value) else trap "post";
 } {
   let outcome = Ok<i32, Overflow>(value: value);
   return move outcome;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule_at(source, SemanticRule::Fn9, "return move outcome;");
@@ -1333,15 +1337,15 @@ fn main() -> own unit pure {
 fn relation_length_rejects_a_named_constant_root() {
     let source = br#"const values: array<i32, 1> =[0_i32];
 
-fn length() -> own u64 pure ensures result {
+fn length() -> result: own u64 pure ensures result {
   let size = len(values);
   check ieq(result, size) else trap "post";
 } {
   return 1_u64;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule_at(source, SemanticRule::Fn9, "ieq(result, size)");
@@ -1349,14 +1353,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn projected_result_is_rejected_at_the_complete_final_relation() {
-    let source = br#"fn projected(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn projected(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result.field, value) else trap "post";
 } {
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule_at(source, SemanticRule::Fn9, "ieq(result.field, value)");
@@ -1364,15 +1368,15 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_nonbare_result_use_in_an_unused_local_is_still_rejected() {
-    let source = br#"fn hidden(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn hidden(value: own i32) -> result: own i32 pure ensures result {
   let ignored = reinterpret<i32, u32>(deref(result));
   check ieq(result, value) else trap "post";
 } {
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule_at(
@@ -1392,27 +1396,27 @@ struct Values {
   items: array<u8, 2>;
 }
 
-fn from_box(owner: own box<Pair>) -> own i32 pure ensures result {
+fn from_box(owner: own box<Pair>) -> result: own i32 pure ensures result {
   check ieq(result, deref(owner).value) else trap "post";
 } {
   return deref(owner).value;
 }
 
-fn from_shared['r](owner: &'r Pair) -> own i32 reads('r) ensures result {
+fn from_shared['r](owner: &'r Pair) -> result: own i32 reads('r) ensures result {
   check ieq(result, deref(owner).value) else trap "post";
 } {
   return deref(owner).value;
 }
 
-fn field_length(values: own Values) -> own u64 pure ensures result {
+fn field_length(values: own Values) -> result: own u64 pure ensures result {
   let size = len(values.items);
   check ieq(result, size) else trap "post";
 } {
   return len(values.items);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -1424,15 +1428,15 @@ fn a_holder_alias_does_not_change_the_selected_return_term_identity() {
   value: i32;
 }
 
-fn from_shared_alias['r](owner: &'r Pair) -> own i32 reads('r) ensures result {
+fn from_shared_alias['r](owner: &'r Pair) -> result: own i32 reads('r) ensures result {
   check ieq(result, deref(owner).value) else trap "post";
 } {
   let alias = owner;
   return deref(alias).value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     let proof = postcondition_proof(source, "from_shared_alias");
@@ -1446,16 +1450,16 @@ fn main() -> own unit pure {
 #[test]
 fn a_concrete_const_substitution_is_retained_with_a_selected_length() {
     let source =
-        br#"fn count<const n: u64>(values: own array<u8, n>) -> own u64 pure ensures result {
+        br#"fn count<const n: u64>(values: own array<u8, n>) -> result: own u64 pure ensures result {
   check ieq(result, result) else trap "post";
 } {
   return len(values);
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 1>(0_u8);
   let one = count<1>(values: move values);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -1464,10 +1468,10 @@ fn main() -> own unit pure {
 #[test]
 fn an_ensures_bearing_conformance_binding_is_fn3_before_proof() {
     let source = br#"contract Maker {
-  fn make() -> own i32 pure;
+  fn make() -> result: own i32 pure;
 }
 
-fn make() -> own i32 pure ensures result {
+fn make() -> result: own i32 pure ensures result {
   check ieq(result, 1_i32) else trap "post";
 } {
   return 1_i32;
@@ -1477,8 +1481,8 @@ conform i32: Maker {
   make = make;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule_at(source, SemanticRule::Fn3, "make = make;");
@@ -1489,14 +1493,14 @@ fn an_invalid_contract_precedes_the_postcondition_proof_boundary() {
     let source = br#"contract Invalid<T> {
 }
 
-fn identity(value: own i32) -> own i32 pure ensures result {
+fn identity(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "post";
 } {
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -1509,18 +1513,18 @@ fn main() -> own unit pure {
 #[test]
 fn an_invalid_contract_law_precedes_the_postcondition_proof_boundary() {
     let source = br#"contract InvalidLaw {
-  fn combine(x: own u64, y: own u64) -> own u64 pure;
+  fn combine(x: own u64, y: own u64) -> result: own u64 pure;
   law identity(combine, unit);
 }
 
-fn identity(value: own i32) -> own i32 pure ensures result {
+fn identity(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "post";
 } {
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -1532,14 +1536,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn invalid_selector_precedes_an_unresolved_name_in_its_entry() {
-    let source = br#"fn invalid() -> own unit pure ensures result {
+    let source = br#"fn invalid() -> result: own unit pure ensures result {
   check ieq(result, missing) else trap "post";
 } {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -1551,20 +1555,20 @@ fn main() -> own unit pure {
 
 #[test]
 fn every_concrete_selector_is_admitted_before_any_entry_lookup() {
-    let source = br#"fn first(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn first(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, missing) else trap "post";
 } {
   return value;
 }
 
-fn second() -> own unit pure ensures result {
+fn second() -> result: own unit pure ensures result {
   check ieq(result, result) else trap "post";
 } {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -1576,14 +1580,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn admitted_selector_forwards_the_original_entry_lookup_issue() {
-    let source = br#"fn unresolved(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn unresolved(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, missing) else trap "post";
 } {
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1604,15 +1608,15 @@ fn main() -> own unit pure {
 
 #[test]
 fn entry_inventory_precedes_a_poisoned_body_constructor() {
-    let source = br#"fn poisoned(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn poisoned(value: own i32) -> result: own i32 pure ensures result {
   let ilt = ieq(result, value);
   check ilt else trap "post";
 } {
   return Missing();
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1629,14 +1633,14 @@ fn main() -> own unit pure {
 
 #[test]
 fn unused_generic_entry_issue_precedes_its_body_semantics() {
-    let source = br#"fn generic<T>(value: own T) -> own T pure ensures result {
+    let source = br#"fn generic<T>(value: own T) -> result: own T pure ensures result {
   check ieq(result, missing) else trap "post";
 } {
   return box_new(value);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1653,14 +1657,14 @@ fn a_successfully_resolved_foreign_variant_is_an_fn9_source_issue() {
   Other(value: i32);
 }
 
-fn selected(value: own i32) -> own Result<i32, Overflow> pure ensures Other(value: result) {
+fn selected(value: own i32) -> result: own Result<i32, Overflow> pure ensures Other(value: result) {
   check ieq(result, value) else trap "post";
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1683,17 +1687,17 @@ fn main() -> own unit pure {
 
 #[test]
 fn concrete_generic_instances_do_not_reuse_symbolic_selector_class() {
-    let source = br#"fn identity<T>(value: own T) -> own T pure ensures result {
+    let source = br#"fn identity<T>(value: own T) -> result: own T pure ensures result {
   check ieq(result, result) else trap "post";
 } {
   return value;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let good = identity<i32>(value: 1_i32);
   let flag = True();
   let bad = identity<Bool>(value: flag);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -1705,13 +1709,13 @@ fn main() -> own unit pure {
 
 #[test]
 fn delayed_entry_lookup_precedes_unrelated_entry_form_semantics() {
-    let source = br#"fn probe(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn probe(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, missing) else trap "post";
 } {
   return value;
 }
 
-fn main() -> own i32 pure {
+fn main() -> result: own i32 pure {
   return 0_i32;
 }
 "#;
@@ -1729,13 +1733,13 @@ fn main() -> own i32 pure {
 
 #[test]
 fn selector_preflight_precedes_unrelated_entry_form_semantics() {
-    let source = br#"fn invalid() -> own unit pure ensures result {
+    let source = br#"fn invalid() -> result: own unit pure ensures result {
   check ieq(result, result) else trap "post";
 } {
   return unit;
 }
 
-fn main() -> own i32 pure {
+fn main() -> result: own i32 pure {
   return 0_i32;
 }
 "#;
@@ -1748,14 +1752,14 @@ fn main() -> own i32 pure {
 
 #[test]
 fn unused_numeric_bounds_preserve_selector_class_information() {
-    let source = br#"fn invalid<T: Float>(value: own T) -> own T pure ensures result {
+    let source = br#"fn invalid<T: Float>(value: own T) -> result: own T pure ensures result {
   check feq(result, value) else trap "post";
 } {
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -1767,16 +1771,16 @@ fn main() -> own unit pure {
 
 #[test]
 fn unavailable_generic_type_argument_does_not_invent_a_selector_instance() {
-    let source = br#"fn generic<T>(value: own T) -> own T pure ensures result {
+    let source = br#"fn generic<T>(value: own T) -> result: own T pure ensures result {
   let ilt = ieq(result, result);
   check ilt else trap "post";
 } {
   return value;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let unavailable = generic<Missing>(value: unit);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1789,16 +1793,17 @@ fn main() -> own unit pure {
 
 #[test]
 fn unavailable_const_argument_does_not_invent_a_selector_instance() {
-    let source = br#"fn generic<T, const n: u64>(value: own T) -> own T pure ensures result {
+    let source =
+        br#"fn generic<T, const n: u64>(value: own T) -> result: own T pure ensures result {
   let ilt = ieq(result, result);
   check ilt else trap "post";
 } {
   return value;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let unavailable = generic<unit, missing>(value: unit);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1813,14 +1818,14 @@ fn main() -> own unit pure {
 fn unrelated_invalid_constant_does_not_suppress_an_independent_selector() {
     let source = br#"const bad: u8 = 1_u16;
 
-fn invalid() -> own unit pure ensures result {
+fn invalid() -> result: own unit pure ensures result {
   check ieq(result, missing) else trap "post";
 } {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -1836,14 +1841,14 @@ fn transitive_invalid_constant_does_not_become_a_compiler_failure() {
 
 const alias: u8 = bad;
 
-fn invalid() -> own unit pure ensures result {
+fn invalid() -> result: own unit pure ensures result {
   check ieq(result, result) else trap "post";
 } {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -1855,14 +1860,15 @@ fn main() -> own unit pure {
 
 #[test]
 fn unavailable_symbolic_header_does_not_forward_its_entry_issue() {
-    let source = br#"fn unavailable<T>(value: own array<T, 1>) -> own T pure ensures result {
+    let source =
+        br#"fn unavailable<T>(value: own array<T, 1>) -> result: own T pure ensures result {
   check ieq(result, missing) else trap "post";
 } {
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1875,20 +1881,21 @@ fn main() -> own unit pure {
 
 #[test]
 fn unavailable_record_does_not_suppress_a_later_independent_selector() {
-    let source = br#"fn unavailable<T>(value: own array<T, 1>) -> own T pure ensures result {
+    let source =
+        br#"fn unavailable<T>(value: own array<T, 1>) -> result: own T pure ensures result {
   check ieq(result, missing) else trap "post";
 } {
   return value;
 }
 
-fn invalid() -> own unit pure ensures result {
+fn invalid() -> result: own unit pure ensures result {
   check ieq(result, result) else trap "post";
 } {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -1900,15 +1907,15 @@ fn main() -> own unit pure {
 
 #[test]
 fn malformed_trailing_argument_does_not_enter_final_selector_metadata() {
-    let source = br#"fn generic<T: Int>(value: own T) -> own T pure ensures result {
+    let source = br#"fn generic<T: Int>(value: own T) -> result: own T pure ensures result {
   check ieq(result, result) else trap "post";
 } {
   return value;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let bad = generic<i32, i32>(value: 1_i32);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1921,18 +1928,18 @@ fn main() -> own unit pure {
 
 #[test]
 fn invalid_unrelated_function_template_does_not_suppress_selector_admission() {
-    let source = br#"fn broken<const n: Bool>() -> own unit pure {
+    let source = br#"fn broken<const n: Bool>() -> result: own unit pure {
   return unit;
 }
 
-fn invalid() -> own unit pure ensures result {
+fn invalid() -> result: own unit pure ensures result {
   check ieq(result, result) else trap "post";
 } {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -1948,14 +1955,14 @@ fn referenced_generic_nominal_must_pass_its_symbolic_template_judgment() {
   values: array<T, 2>;
 }
 
-fn probe(value: own Invalid<i32>) -> own unit pure ensures result {
+fn probe(value: own Invalid<i32>) -> result: own unit pure ensures result {
   check ieq(result, missing) else trap "post";
 } {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1972,14 +1979,14 @@ fn unrelated_invalid_generic_nominal_does_not_suppress_selector_admission() {
   values: array<T, 2>;
 }
 
-fn invalid() -> own unit pure ensures result {
+fn invalid() -> result: own unit pure ensures result {
   check ieq(result, missing) else trap "post";
 } {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -1991,33 +1998,33 @@ fn main() -> own unit pure {
 
 #[test]
 fn postcondition_components_are_callee_before_caller_and_publish_atomically() {
-    let source = br#"fn top(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn top(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "top post";
 } {
   let ignored = bridge(value: value);
   return value;
 }
 
-fn leaf(value: own i32) -> own i32 pure ensures result {
+fn leaf(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "leaf post";
 } {
   return value;
 }
 
-fn middle(value: own i32) -> own i32 pure ensures result {
+fn middle(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "middle post";
 } {
   let ignored = leaf(value: value);
   return value;
 }
 
-fn bridge(value: own i32) -> own i32 pure {
+fn bridge(value: own i32) -> result: own i32 pure {
   let ignored = middle(value: value);
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -2105,22 +2112,22 @@ fn main() -> own unit pure {
 
 #[test]
 fn an_independently_proved_mutual_component_publishes_summaries_in_function_order() {
-    let source = br#"fn first(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn first(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "first post";
 } {
   let ignored = second(value: value);
   return value;
 }
 
-fn second(value: own i32) -> own i32 pure ensures result {
+fn second(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "second post";
 } {
   let ignored = first(value: value);
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -2162,15 +2169,15 @@ fn main() -> own unit pure {
 
 #[test]
 fn an_independently_proved_self_recursive_component_publishes_its_summary() {
-    let source = br#"fn recursive(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn recursive(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "post";
 } {
   let ignored = recursive(value: value);
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -2204,22 +2211,22 @@ fn main() -> own unit pure {
 
 #[test]
 fn one_failed_mutual_member_withholds_the_whole_component_summary_batch() {
-    let source = br#"fn left(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn left(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "left post";
 } {
   let ignored = right(value: value);
   return value;
 }
 
-fn right(value: own i32) -> own i32 pure ensures result {
+fn right(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "right post";
 } {
   let called = left(value: value);
   return called;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -2279,22 +2286,22 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_seedless_mutual_postcondition_cycle_publishes_no_summary() {
-    let source = br#"fn first(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn first(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "first post";
 } {
   let called = second(value: value);
   return called;
 }
 
-fn second(value: own i32) -> own i32 pure ensures result {
+fn second(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "second post";
 } {
   let called = first(value: value);
   return called;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -2324,16 +2331,16 @@ fn main() -> own unit pure {
 
 #[test]
 fn concrete_generic_instances_receive_distinct_verified_summary_identities() {
-    let source = br#"fn identity<T: Int>(value: own T) -> own T pure ensures result {
+    let source = br#"fn identity<T: Int>(value: own T) -> result: own T pure ensures result {
   check ieq(result, value) else trap "post";
 } {
   return value;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let small = identity<i32>(value: 1_i32);
   let wide = identity<u64>(value: 1_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {
@@ -2366,7 +2373,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn accepted_provenance_views_use_the_finalized_function_derivation_ids() {
-    let source = br#"fn normalized(value: own i32) -> own i32 pure requires {
+    let source = br#"fn normalized(value: own i32) -> result: own i32 pure requires {
   check ieq(value, 1_i32) else trap "required";
 } ensures result {
   check ieq(result, value) else trap "normalized post";
@@ -2374,15 +2381,15 @@ fn accepted_provenance_views_use_the_finalized_function_derivation_ids() {
   return 1_i32;
 }
 
-fn caller() -> own i32 pure ensures result {
+fn caller() -> result: own i32 pure ensures result {
   check ieq(result, 1_i32) else trap "caller post";
 } {
   let called = normalized(value: 1_i32);
   return called;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -2419,26 +2426,26 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_provenance_event_rejects_the_whole_optimistic_postcondition_batch() {
-    let source = br#"fn identity(value: own i32) -> own i32 pure ensures result {
+    let source = br#"fn identity(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "identity post";
 } {
   return value;
 }
 
-fn relay(value: own i32) -> own i32 pure ensures result {
+fn relay(value: own i32) -> result: own i32 pure ensures result {
   check ieq(result, value) else trap "relay post";
 } {
   let observed = identity(value: value);
   return observed;
 }
 
-fn read(values: own array<u8, 4>, position: own u64) -> own u8 traps {
+fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
   let room = len(values);
   claim bounded: ilt(position, room) because "claimed parameter bound";
   return values[position];
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -2464,13 +2471,13 @@ command fn main(command.args as args: own Args) -> own ExitStatus traps {
 
 #[test]
 fn a_unit_without_postconditions_keeps_the_empty_schedule_fast_path() {
-    let source = br#"fn helper(value: own i32) -> own i32 pure {
+    let source = br#"fn helper(value: own i32) -> result: own i32 pure {
   return value;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let ignored = helper(value: 1_i32);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics_dark(source, |outcome| {

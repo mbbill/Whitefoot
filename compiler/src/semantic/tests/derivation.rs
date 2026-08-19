@@ -8,13 +8,13 @@ use super::{assert_rule, assert_rule_at, with_semantics};
 
 #[test]
 fn an_ordinary_let_takes_the_type_its_right_hand_side_produces() {
-    let source = br#"fn answer() -> own i32 pure {
+    let source = br#"fn answer() -> result: own i32 pure {
   let value = 40_i32;
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -31,13 +31,13 @@ fn main() -> own unit pure {
 #[test]
 fn a_derived_binding_still_faces_its_consumer_s_exactness_rule() {
     assert_rule(
-        br#"fn answer() -> own i32 pure {
+        br#"fn answer() -> result: own i32 pure {
   let value = 40_i64;
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Fn1,
@@ -47,7 +47,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn a_value_match_derives_its_binding_from_the_delivery_set() {
-    let source = br#"fn choose(flag: own Option<i32>) -> own i32 pure {
+    let source = br#"fn choose(flag: own Option<i32>) -> result: own i32 pure {
   let picked = match flag {
     Some(value: inner) => {
       give inner;
@@ -59,8 +59,8 @@ fn a_value_match_derives_its_binding_from_the_delivery_set() {
   return picked;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -75,7 +75,7 @@ fn main() -> own unit pure {
 #[test]
 fn a_second_give_of_another_type_rejects_at_that_give() {
     assert_rule(
-        br#"fn choose(flag: own Option<i32>) -> own unit pure {
+        br#"fn choose(flag: own Option<i32>) -> result: own unit pure {
   let picked = match flag {
     Some(value: inner) => {
       give inner;
@@ -87,8 +87,8 @@ fn a_second_give_of_another_type_rejects_at_that_give() {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Give1,
@@ -103,7 +103,7 @@ fn main() -> own unit pure {
 #[test]
 fn an_empty_delivery_set_rejects_at_the_let_statement() {
     assert_rule(
-        br#"fn choose(flag: own Option<i32>) -> own i32 pure {
+        br#"fn choose(flag: own Option<i32>) -> result: own i32 pure {
   let picked = match flag {
     Some(value: inner) => {
       return inner;
@@ -115,8 +115,8 @@ fn an_empty_delivery_set_rejects_at_the_let_statement() {
   return picked;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Give1,
@@ -129,10 +129,10 @@ fn main() -> own unit pure {
 /// is; [TYPE-5] therefore makes them mandatory in every position.
 #[test]
 fn a_nullary_prelude_construction_types_itself_from_written_arguments() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let absent = None<buffer<u8>>();
   let present = Some<i32>(value: 7_i32);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -157,9 +157,9 @@ fn a_nullary_prelude_construction_types_itself_from_written_arguments() {
 #[test]
 fn a_prelude_construction_without_its_arguments_rejects_at_the_construct() {
     assert_rule(
-        br#"fn main() -> own unit pure {
+        br#"command fn main() -> status: own ExitStatus pure {
   let absent = None();
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Type5,
@@ -169,11 +169,11 @@ fn a_prelude_construction_without_its_arguments_rejects_at_the_construct() {
 
 #[test]
 fn a_result_construction_writes_both_of_its_arguments() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let good = Ok<i32, Overflow>(value: 1_i32);
   let flag = Overflow();
   let bad = Err<i32, Overflow>(error: flag);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -195,16 +195,16 @@ fn a_result_construction_writes_both_of_its_arguments() {
 
 #[test]
 fn a_table_operation_selects_its_row_from_its_operands() {
-    let source = br#"fn smaller(x: own i32, y: own i32) -> own i32 pure {
+    let source = br#"fn smaller(x: own i32, y: own i32) -> result: own i32 pure {
   return imin(x, y);
 }
 
-fn widest(x: own u64, y: own u64) -> own u64 pure {
+fn widest(x: own u64, y: own u64) -> result: own u64 pure {
   return imin(x, y);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -221,12 +221,12 @@ fn a_written_type_argument_on_a_derived_operation_rejects() {
     assert_rule(
         // The written argument is the violation, so deleting it — which is
         // what A1 does to a legal call — leaves nothing to cite.
-        br#"fn smaller(x: own i32, y: own i32) -> own i32 pure {
+        br#"fn smaller(x: own i32, y: own i32) -> result: own i32 pure {
   return imin<i32>(x, y);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Op1,
@@ -240,12 +240,12 @@ fn main() -> own unit pure {
 #[test]
 fn disagreeing_operands_cite_type5_at_the_second_operand_atom() {
     assert_rule_at(
-        br#"fn smaller(x: own i32, y: own i64) -> own i32 pure {
+        br#"fn smaller(x: own i32, y: own i64) -> result: own i32 pure {
   return imin(x, y);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Type5,
@@ -259,12 +259,12 @@ fn main() -> own unit pure {
 #[test]
 fn a_first_operand_outside_the_closed_set_cites_op1() {
     assert_rule(
-        br#"fn smaller(x: own Bool, y: own Bool) -> own Bool pure {
+        br#"fn smaller(x: own Bool, y: own Bool) -> result: own Bool pure {
   return imin(x, y);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Op1,
@@ -276,10 +276,10 @@ fn main() -> own unit pure {
 /// its second operand, and `len` then derives from the place it is given.
 #[test]
 fn buffer_new_selects_its_element_from_the_fill_value() {
-    let source = br#"fn main() -> own unit allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
   let data = buffer_new(4_u64, 7_u8);
   let count = len(data);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -295,13 +295,13 @@ fn buffer_new_selects_its_element_from_the_fill_value() {
 #[test]
 fn box_content_that_bears_a_region_still_rejects_under_stor5() {
     assert_rule_at(
-        br#"fn invalid['r](value: own slice<'r, u8>) -> own unit allocates(heap) {
+        br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit allocates(heap) {
   box_new(move value);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Stor5,

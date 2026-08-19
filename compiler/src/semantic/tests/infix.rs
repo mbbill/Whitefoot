@@ -63,7 +63,7 @@ fn every_operator_token_selects_its_row() {
         // declare `traps`.
         let effects = if traps { "traps" } else { "pure" };
         let source = format!(
-            "fn main() -> own unit {effects} {{\n  let a = 6_i32;\n  let b = 7_i32;\n  let c = a {operator} b;\n  return unit;\n}}\n"
+            "command fn main() -> status: own ExitStatus {effects} {{\n  let a = 6_i32;\n  let b = 7_i32;\n  let c = a {operator} b;\n  return unit;\n}}\n"
         );
         let (operation, operand_type) = sole_operation(source.as_bytes());
         assert_eq!(operation, expected, "operator {operator:?} selects its row");
@@ -80,11 +80,11 @@ fn every_operator_token_selects_its_row() {
 /// disagreement is reported.
 #[test]
 fn a_disagreeing_second_operand_is_a_type5_rejection_at_that_operand() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let a = 1_i32;
   let b = 2_u64;
   let c = a + b;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule_at(source, SemanticRule::Type5, "b");
@@ -94,11 +94,11 @@ fn a_disagreeing_second_operand_is_a_type5_rejection_at_that_operand() {
 /// reports it at the whole expression rather than at one operand.
 #[test]
 fn an_operand_type_outside_every_row_is_an_op1_rejection() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let f = True();
   let g = False();
   let h = f + g;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule_at(source, SemanticRule::Op1, "f + g");
@@ -111,11 +111,11 @@ fn an_operand_type_outside_every_row_is_an_op1_rejection() {
 /// nothing, which `arithmetic_obligations` pins.
 #[test]
 fn bare_arithmetic_contributes_the_traps_effect() {
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let a = 20_i32;
   let b = 22_i32;
   let c = a + b;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -143,52 +143,52 @@ fn bare_arithmetic_contributes_the_traps_effect() {
 const EXPRESSION_POSITIONS: [(&str, &str); 10] = [
     (
         "ordinary_let_rhs",
-        "fn main() -> own unit traps {
+        "command fn main() -> status: own ExitStatus traps {
   let a = 6_u64;
   let b = 7_u64;
   let c = a + b;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 ",
     ),
     (
         "propagate_let_rhs",
-        "fn step(a: own u64) -> own Result<u64, Overflow> pure {
+        "fn step(a: own u64) -> result: own Result<u64, Overflow> pure {
   let b = 7_u64;
   let c = propagate a +checked b;
   return Ok<u64, Overflow>(value: c);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 ",
     ),
     (
         "set_stmt",
-        "fn main() -> own unit traps {
+        "command fn main() -> status: own ExitStatus traps {
   let a = 6_u64;
   let b = 7_u64;
   set a = a + b;
-  return unit;
+  return exit_status(code: 0_u8);
 }
 ",
     ),
     (
         "return_stmt",
-        "fn add(a: own u64) -> own u64 traps {
+        "fn add(a: own u64) -> result: own u64 traps {
   let b = 7_u64;
   return a + b;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 ",
     ),
     (
         "claim_stmt",
-        "fn main() -> own unit traps {
+        "command fn main() -> status: own ExitStatus traps {
   let a = 6_u64;
   let b = 7_u64;
   claim ordered: ile(a, b) because \"six is at most seven\";
@@ -198,7 +198,7 @@ fn main() -> own unit pure {
     ),
     (
         "give_stmt",
-        "fn main() -> own unit traps {
+        "command fn main() -> status: own ExitStatus traps {
   let a = 6_u64;
   let b = 7_u64;
   let f = True();
@@ -207,21 +207,21 @@ fn main() -> own unit pure {
   } else {
     give a;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 ",
     ),
     (
         "match_stmt scrutinee",
-        "fn main() -> own unit pure {
+        "command fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   match a +checked b {
     Ok(value: v) => {
-      return unit;
+      return exit_status(code: 0_u8);
     }
     Err(error: e) => {
-      return unit;
+      return exit_status(code: 0_u8);
     }
   }
 }
@@ -229,7 +229,7 @@ fn main() -> own unit pure {
     ),
     (
         "value_match scrutinee",
-        "fn main() -> own unit pure {
+        "command fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = match a +checked b {
@@ -240,25 +240,25 @@ fn main() -> own unit pure {
       give 2_u64;
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 ",
     ),
     (
         "if_stmt condition",
-        "fn main() -> own unit pure {
+        "command fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   if ile(a, b) {
-    return unit;
+    return exit_status(code: 0_u8);
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 ",
     ),
     (
         "value_if condition",
-        "fn main() -> own unit pure {
+        "command fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = if ile(a, b) {
@@ -266,7 +266,7 @@ fn main() -> own unit pure {
   } else {
     give 2_u64;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }
 ",
     ),
@@ -333,8 +333,8 @@ fn an_infix_returned_from_a_borrow_result_is_an_fn1_rejection() {
   return a + b;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(infix, SemanticRule::Fn1, SemanticIssueKind::ReturnMismatch);
@@ -342,8 +342,8 @@ fn main() -> own unit pure {
   return a;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(plain, SemanticRule::Fn1, SemanticIssueKind::ReturnMismatch);

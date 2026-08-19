@@ -49,24 +49,24 @@ fn const_arrays_are_immutable_globals_and_execute_through_index_and_len() {
 
 #[test]
 fn filled_arrays_cross_function_boundaries_and_keep_a_checked_read() {
-    let source = br#"fn make() -> own array<u16, 4> pure {
+    let source = br#"fn make() -> result: own array<u16, 4> pure {
   return array_new<u16, 4>(42_u16);
 }
 
-fn read(values: own array<u16, 4>, offset: own u64) -> own u16 traps {
+fn read(values: own array<u16, 4>, offset: own u64) -> result: own u16 traps {
   let in_range = ilt(offset, 4_u64);
   claim offset_in_range: in_range because "main reads offset three of four";
   let value = values[offset];
   return value;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let values = make();
   let length = len(values);
   claim length_drift: ieq(length, 4_u64) because "length drift";
   let value = read(values: move values, offset: 3_u64);
   claim fill_drift: ieq(value, 42_u16) because "fill drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -99,10 +99,10 @@ fn an_out_of_bounds_array_read_is_an_op4_compile_rejection() {
     // Under discharge-or-reject [OP-4] no runtime bounds trap exists: the
     // underivable obligation rejects at compile time with the exact
     // [ENT-6] residual.
-    let source = br#"fn main() -> own unit pure {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(7_u8);
   let value = values[2_u64];
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let failure = compile_rejection(source);
@@ -114,10 +114,10 @@ fn an_out_of_bounds_array_read_is_an_op4_compile_rejection() {
 fn a_failing_claim_reports_its_clm1_record_before_abort() {
     // The named claim is the retained runtime check: its trap record cites
     // CLM-1 and carries the claim name as the message [DIAG-3].
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let flag = False();
   claim expected_true: flag because "this test wants the trap record";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let output = compile_and_run(&compile(source));
@@ -142,17 +142,17 @@ fn compiler_independent_array_checksum_executes() {
 
 #[test]
 fn indexed_set_checks_before_rhs_and_updates_the_array() {
-    let source = br#"fn replacement() -> own u8 traps {
+    let source = br#"fn replacement() -> result: own u8 traps {
   claim replacement_drift: True() because "replacement drift";
   return 9_u8;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 2>(0_u8);
   set values[1_u64] = replacement();
   let stored = values[1_u64];
   claim set_drift: ieq(stored, 9_u8) because "set drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -183,15 +183,15 @@ fn main() -> own unit traps {
 fn an_out_of_bounds_indexed_set_is_an_op4_compile_rejection() {
     // A target whose obligation is underivable cannot reach runtime: the
     // program rejects at the subscript with the residual [OP-4, ENT-6].
-    let source = br#"fn replacement() -> own u8 traps {
+    let source = br#"fn replacement() -> result: own u8 traps {
   claim rhs_evaluated: False() because "RHS evaluated";
   return 9_u8;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 2>(0_u8);
   set values[2_u64] = replacement();
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let failure = compile_rejection(source);
@@ -206,7 +206,7 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
     // promoted away. The trip count is far past the point where one slot per
     // iteration would exhaust the process stack: 200000 iterations of two
     // 64-byte slots is about 25 MB, against a default 8 MB limit.
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   doc "A long loop reads and writes one fixed array through a rotating index.";
   let window = array_new<u64, 8>(1_u64);
   let step = 0_u64;
@@ -233,7 +233,7 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
   }
   claim stream_length_drift: ieq(step, 200000_u64) because "stream length drift";
   claim stream_cursor_drift: ieq(cursor, 0_u64) because "stream cursor drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -280,12 +280,12 @@ struct Outer {
   inner: Inner;
 }
 
-fn replacement() -> own u8 traps {
+fn replacement() -> result: own u8 traps {
   claim replacement_drift: True() because "replacement drift";
   return 9_u8;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 2>(0_u8);
   let inner = Inner(values: move values, sibling: 77_u16);
   let outer = Outer(prefix: 123_u32, inner: move inner);
@@ -294,7 +294,7 @@ fn main() -> own unit traps {
   claim array_update: ieq(stored, 9_u8) because "array update";
   claim inner_sibling: ieq(outer.inner.sibling, 77_u16) because "inner sibling";
   claim outer_sibling: ieq(outer.prefix, 123_u32) because "outer sibling";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
