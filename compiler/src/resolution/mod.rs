@@ -14,14 +14,14 @@ mod tests;
 
 use crate::{CanonicalSyntaxUnit, NodePath, SyntaxCoordinate};
 
-pub use engine::{resolve, resolve_with_traversal_surface};
+pub use engine::{resolve, resolve_with_inventory};
 
 pub use catalog::{
-    SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemConstructor, SystemEntity,
-    SystemField, SystemNominal, SystemOperation, SystemParameter, SystemParameterMode,
-    SystemRelease, SystemReleaseAction, SystemReleaseRow, SystemResourceBacking,
-    SystemResourceContract, SystemResourceType, SystemResultPayload, SystemTypeRef,
-    TRAVERSAL_SURFACE, operation_region_effects, system_constructor_declaration,
+    Inventory, OPEN_BY_NAME, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
+    SystemConstructor, SystemEntity, SystemField, SystemNominal, SystemOperation, SystemParameter,
+    SystemParameterMode, SystemRelease, SystemReleaseAction, SystemReleaseRow,
+    SystemResourceBacking, SystemResourceContract, SystemResourceType, SystemResultPayload,
+    SystemTypeRef, TRAVERSAL_SURFACE, operation_region_effects, system_constructor_declaration,
     system_constructor_index, system_constructors, system_entity, system_nominal_index,
     system_nominals, system_operation_index, system_operations, system_release_row,
     system_resource_contract,
@@ -922,7 +922,7 @@ pub struct ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
     lexical_uses: Vec<LexicalUseRecord>,
     deferred_uses: Vec<DeferredUseRecord>,
     postconditions: Vec<PostconditionResolutionRecord>,
-    traversal_surface: bool,
+    inventory: Inventory,
 }
 
 impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
@@ -973,11 +973,11 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
     ///
     /// Every later stage that turns a [SYS-2] declaration ordinal back into a
     /// nominal, constructor, or operation index must read the same inventory
-    /// state the records were built from, because the candidate's two extra
-    /// nominal types shift every constructor and operation ordinal.
+    /// state the records were built from, because a candidate's extra nominal
+    /// types shift every constructor and operation ordinal.
     #[must_use]
-    pub const fn traversal_surface(&self) -> bool {
-        self.traversal_surface
+    pub const fn inventory(&self) -> Inventory {
+        self.inventory
     }
 
     /// Returns all source declaration events D01 through D15.

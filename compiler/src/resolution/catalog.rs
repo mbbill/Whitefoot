@@ -273,29 +273,100 @@ const IO_ERROR: u8 = 13;
 const DIRECTORY_LIST: u8 = 14;
 const LIST_OUTCOME: u8 = 15;
 
-/// The v0.32-candidate traversal surface switch [SYS-2, SYS-14].
+/// The traversal surface switch [SYS-2, SYS-14], activated as v0.32.
 ///
-/// `false` admits exactly the v0.31 inventory: the extension rows below are
+/// `false` admits exactly the v0.31 inventory: the traversal rows below are
 /// unreachable, every declaration ordinal keeps its v0.31 value, and the
 /// resolver, checker, and backend see the same one hundred sixty-seven
-/// records they saw before. `true` admits the candidate directory-enumeration
+/// records they saw before. `true` admits the directory-enumeration
 /// surface — `DirectoryList`, `ListOutcome`, `open_directory`, `open_list`,
-/// and `list_once` — as the last row of each [SYS-2] table. The switch is read
-/// once, by `compile`, and is now `true`, so `compile_with_traversal_surface`
-/// selects the same inventory when it is passed `true`; the parameter keeps
-/// the inventory an argument of the compilation rather than a global, and
-/// keeps `false` reachable as the differential against the base tables.
+/// and `list_once` — as the last row of each [SYS-2] table. It is now `true`,
+/// because v0.32 is the active specification; `false` stays reachable as the
+/// differential against the base tables.
 pub const TRAVERSAL_SURFACE: bool = true;
 
-/// The v0.31 nominal-type count: the prefix of [`SYSTEM_NOMINALS`] the active
-/// specification declares.
+/// The v0.33-candidate file-open-by-name switch [SYS-2, SYS-11].
+///
+/// `false` admits exactly the active v0.32 inventory: the `open_file` row
+/// below is unreachable, every declaration ordinal keeps its v0.32 value, and
+/// the resolver, checker, and backend see the same one hundred ninety-two
+/// records they see today. `true` admits the candidate operation — the
+/// `open_read` sibling that takes a caller-owned single path component
+/// instead of a `RelativePath` — as the last row of the [SYS-2] operation
+/// table. It is `false` until the owner approves the candidate bytes; the
+/// candidate inventory is reachable only by naming it at a compilation, which
+/// is what the end-to-end evidence does.
+pub const OPEN_BY_NAME: bool = false;
+
+/// One selected [SYS-2] inventory state.
+///
+/// The three states are strictly nested prefixes of the tables below, taken
+/// in normative order, so a state is a length rather than a set of
+/// independent features: every declaration ordinal an earlier state assigns
+/// keeps exactly that value in a later one. That is what lets one differential
+/// test show that switching a candidate off leaves every earlier program's
+/// emitted module byte-identical.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Inventory {
+    /// The v0.31 inventory: the tables with no candidate row at all.
+    Base,
+    /// The active v0.32 inventory: [`Inventory::Base`] plus the [SYS-14]
+    /// traversal surface.
+    Traversal,
+    /// The v0.33 candidate inventory: [`Inventory::Traversal`] plus the
+    /// [SYS-11] `open_file` operation.
+    OpenByName,
+}
+
+impl Inventory {
+    /// The inventory the shipped compilation path selects, fixed by the two
+    /// switches above and read once, by `compile` and `resolve`.
+    pub const ACTIVE: Self = if OPEN_BY_NAME {
+        Self::OpenByName
+    } else if TRAVERSAL_SURFACE {
+        Self::Traversal
+    } else {
+        Self::Base
+    };
+
+    /// How many [`SYSTEM_NOMINALS`] rows this state admits.
+    const fn nominals(self) -> usize {
+        match self {
+            Self::Base => BASE_NOMINALS,
+            Self::Traversal | Self::OpenByName => SYSTEM_NOMINALS.len(),
+        }
+    }
+
+    /// How many [`SYSTEM_CONSTRUCTORS`] rows this state admits.
+    const fn constructors(self) -> usize {
+        match self {
+            Self::Base => BASE_CONSTRUCTORS,
+            Self::Traversal | Self::OpenByName => SYSTEM_CONSTRUCTORS.len(),
+        }
+    }
+
+    /// How many [`SYSTEM_OPERATIONS`] rows this state admits.
+    const fn operations(self) -> usize {
+        match self {
+            Self::Base => BASE_OPERATIONS,
+            Self::Traversal => TRAVERSAL_OPERATIONS,
+            Self::OpenByName => SYSTEM_OPERATIONS.len(),
+        }
+    }
+}
+
+/// The v0.31 nominal-type count: the prefix of [`SYSTEM_NOMINALS`] the v0.31
+/// specification declared.
 const BASE_NOMINALS: usize = 14;
 /// The v0.31 constructor count: the prefix of [`SYSTEM_CONSTRUCTORS`] the
-/// active specification declares.
+/// v0.31 specification declared.
 const BASE_CONSTRUCTORS: usize = 39;
-/// The v0.31 operation count: the prefix of [`SYSTEM_OPERATIONS`] the active
-/// specification declares.
+/// The v0.31 operation count: the prefix of [`SYSTEM_OPERATIONS`] the v0.31
+/// specification declared.
 const BASE_OPERATIONS: usize = 11;
+/// The v0.32 operation count: the prefix of [`SYSTEM_OPERATIONS`] the active
+/// specification declares.
+const TRAVERSAL_OPERATIONS: usize = 14;
 
 /// The [SYS-2] nominal types in normative table order.
 ///
@@ -323,35 +394,20 @@ pub const SYSTEM_NOMINALS: [SystemNominal; 16] = [
 
 /// The [SYS-2] nominal types one inventory state admits.
 #[must_use]
-pub fn system_nominals(traversal_surface: bool) -> &'static [SystemNominal] {
-    let count = if traversal_surface {
-        SYSTEM_NOMINALS.len()
-    } else {
-        BASE_NOMINALS
-    };
-    &SYSTEM_NOMINALS[..count]
+pub fn system_nominals(inventory: Inventory) -> &'static [SystemNominal] {
+    &SYSTEM_NOMINALS[..inventory.nominals()]
 }
 
 /// The [SYS-2] enum-variant constructors one inventory state admits.
 #[must_use]
-pub fn system_constructors(traversal_surface: bool) -> &'static [SystemConstructor] {
-    let count = if traversal_surface {
-        SYSTEM_CONSTRUCTORS.len()
-    } else {
-        BASE_CONSTRUCTORS
-    };
-    &SYSTEM_CONSTRUCTORS[..count]
+pub fn system_constructors(inventory: Inventory) -> &'static [SystemConstructor] {
+    &SYSTEM_CONSTRUCTORS[..inventory.constructors()]
 }
 
 /// The [SYS-2] operations one inventory state admits.
 #[must_use]
-pub fn system_operations(traversal_surface: bool) -> &'static [SystemOperation] {
-    let count = if traversal_surface {
-        SYSTEM_OPERATIONS.len()
-    } else {
-        BASE_OPERATIONS
-    };
-    &SYSTEM_OPERATIONS[..count]
+pub fn system_operations(inventory: Inventory) -> &'static [SystemOperation] {
+    &SYSTEM_OPERATIONS[..inventory.operations()]
 }
 
 const fn nominal(spelling: &'static str, opaque: bool) -> SystemNominal {
@@ -473,9 +529,9 @@ const fn ok_u64(err: u8) -> SystemTypeRef {
 
 /// The [SYS-2] operation signatures in normative table order.
 ///
-/// The first eleven are the active specification's; the last three are the
-/// traversal-surface candidate's and are admitted only under
-/// [`TRAVERSAL_SURFACE`].
+/// The first eleven are v0.31's; the next three are the [SYS-14] traversal
+/// surface's, admitted under [`TRAVERSAL_SURFACE`]; the last is the
+/// file-open-by-name candidate's, admitted only under [`OPEN_BY_NAME`].
 ///
 /// Each row registers the declared region parameters, value parameters, result
 /// type, and the fixed `external`/`blocks`/`traps` classification. The
@@ -484,7 +540,7 @@ const fn ok_u64(err: u8) -> SystemTypeRef {
 /// `'r` contributes `reads('r)`, and every `&uniq 'r` parameter (each one is
 /// changed by its operation in this inventory) additionally contributes
 /// `writes('r)` — which [`operation_region_effects`] performs.
-pub const SYSTEM_OPERATIONS: [SystemOperation; 14] = [
+pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
     SystemOperation {
         spelling: "args_count",
         regions: &["'a"],
@@ -732,6 +788,31 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 14] = [
         blocks: true,
         traps: true,
     },
+    // The file-open-by-name candidate row [SYS-11]: `open_read`'s sibling
+    // over a caller-owned single path component, taking exactly the name
+    // range `open_directory` takes.
+    SystemOperation {
+        spelling: "open_file",
+        regions: &["'c", "'n"],
+        parameters: &[
+            parameter(
+                "root",
+                SystemParameterMode::Borrow(0),
+                SystemTypeRef::Nominal(DIRECTORY_READ),
+            ),
+            parameter(
+                "name",
+                SystemParameterMode::Borrow(1),
+                SystemTypeRef::BufferU8,
+            ),
+            parameter("offset", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("count", SystemParameterMode::Own, SystemTypeRef::U64),
+        ],
+        result: ok_nominal(READ_FILE, IO_ERROR),
+        external: true,
+        blocks: true,
+        traps: true,
+    },
 ];
 
 /// Derives one operation's `reads`/`writes` region entries from its modes.
@@ -966,21 +1047,21 @@ pub fn system_release_row(nominal: u8) -> SystemReleaseRow {
 
 /// Maps one lookup-class [SYS-2] declaration to its nominal-table index.
 #[must_use]
-pub fn system_nominal_index(id: SystemDeclarationId, traversal_surface: bool) -> Option<u8> {
+pub fn system_nominal_index(id: SystemDeclarationId, inventory: Inventory) -> Option<u8> {
     let ordinal = id.ordinal();
-    (usize::from(ordinal) < system_nominals(traversal_surface).len()).then_some(ordinal)
+    (usize::from(ordinal) < system_nominals(inventory).len()).then_some(ordinal)
 }
 
 /// Maps one lookup-class [SYS-2] declaration to its constructor-table index.
 #[must_use]
-pub fn system_constructor_index(id: SystemDeclarationId, traversal_surface: bool) -> Option<u8> {
+pub fn system_constructor_index(id: SystemDeclarationId, inventory: Inventory) -> Option<u8> {
     let mut ordinal = usize::from(id.ordinal());
-    let nominals = system_nominals(traversal_surface).len();
+    let nominals = system_nominals(inventory).len();
     if ordinal < nominals {
         return None;
     }
     ordinal -= nominals;
-    for (index, constructor) in system_constructors(traversal_surface).iter().enumerate() {
+    for (index, constructor) in system_constructors(inventory).iter().enumerate() {
         if ordinal == 0 {
             return u8::try_from(index).ok();
         }
@@ -997,11 +1078,11 @@ pub fn system_constructor_index(id: SystemDeclarationId, traversal_surface: bool
 #[must_use]
 pub fn system_constructor_declaration(
     index: u8,
-    traversal_surface: bool,
+    inventory: Inventory,
 ) -> Option<SystemDeclarationId> {
-    let mut ordinal = system_nominals(traversal_surface).len();
+    let mut ordinal = system_nominals(inventory).len();
     for (constructor_index, constructor) in
-        system_constructors(traversal_surface).iter().enumerate()
+        system_constructors(inventory).iter().enumerate()
     {
         if constructor_index == usize::from(index) {
             return u8::try_from(ordinal).ok().map(SystemDeclarationId::new);
@@ -1013,17 +1094,17 @@ pub fn system_constructor_declaration(
 
 /// Maps one lookup-class [SYS-2] declaration to its operation-table index.
 #[must_use]
-pub fn system_operation_index(id: SystemDeclarationId, traversal_surface: bool) -> Option<u8> {
+pub fn system_operation_index(id: SystemDeclarationId, inventory: Inventory) -> Option<u8> {
     let mut ordinal = usize::from(id.ordinal());
-    let nominals = system_nominals(traversal_surface).len();
+    let nominals = system_nominals(inventory).len();
     if ordinal < nominals {
         return None;
     }
     ordinal -= nominals;
-    for constructor in system_constructors(traversal_surface) {
+    for constructor in system_constructors(inventory) {
         ordinal = ordinal.checked_sub(1 + constructor.fields.len())?;
     }
-    for (index, operation) in system_operations(traversal_surface).iter().enumerate() {
+    for (index, operation) in system_operations(inventory).iter().enumerate() {
         if ordinal == 0 {
             return u8::try_from(index).ok();
         }
@@ -1046,7 +1127,7 @@ pub fn system_operation_index(id: SystemDeclarationId, traversal_surface: bool) 
 ///
 /// The active specification's inventory is one hundred sixty-seven records;
 /// the traversal-surface candidate's is one hundred ninety-two.
-pub(crate) fn system_declarations(traversal_surface: bool) -> Vec<SystemDeclarationRecord> {
+pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclarationRecord> {
     let mut records = Vec::with_capacity(192);
     let push = |spelling: &'static str, class: Option<DeclarationClass>, records: &mut Vec<_>| {
         let Ok(ordinal) = u8::try_from(records.len()) else {
@@ -1058,14 +1139,14 @@ pub(crate) fn system_declarations(traversal_surface: bool) -> Vec<SystemDeclarat
             class,
         });
     };
-    for nominal in system_nominals(traversal_surface) {
+    for nominal in system_nominals(inventory) {
         push(
             nominal.spelling,
             Some(DeclarationClass::NominalType),
             &mut records,
         );
     }
-    for constructor in system_constructors(traversal_surface) {
+    for constructor in system_constructors(inventory) {
         push(
             constructor.spelling,
             Some(DeclarationClass::EnumVariant),
@@ -1075,7 +1156,7 @@ pub(crate) fn system_declarations(traversal_surface: bool) -> Vec<SystemDeclarat
             push(field.name, None, &mut records);
         }
     }
-    for operation in system_operations(traversal_surface) {
+    for operation in system_operations(inventory) {
         push(
             operation.spelling,
             Some(DeclarationClass::Function),
@@ -1095,14 +1176,14 @@ pub(crate) fn system_declarations(traversal_surface: bool) -> Vec<SystemDeclarat
 ///
 /// Returns `None` for an owner-local field, region-parameter, or
 /// value-parameter ordinal, which never enters source lookup.
-pub fn system_entity(id: SystemDeclarationId, traversal_surface: bool) -> Option<SystemEntity> {
+pub fn system_entity(id: SystemDeclarationId, inventory: Inventory) -> Option<SystemEntity> {
     let mut ordinal = usize::from(id.ordinal());
-    let nominals = system_nominals(traversal_surface);
+    let nominals = system_nominals(inventory);
     if ordinal < nominals.len() {
         return Some(SystemEntity::Nominal(&nominals[ordinal]));
     }
     ordinal -= nominals.len();
-    for constructor in system_constructors(traversal_surface) {
+    for constructor in system_constructors(inventory) {
         if ordinal == 0 {
             return Some(SystemEntity::Constructor(constructor));
         }
@@ -1112,7 +1193,7 @@ pub fn system_entity(id: SystemDeclarationId, traversal_surface: bool) -> Option
         }
         ordinal -= constructor.fields.len();
     }
-    for operation in system_operations(traversal_surface) {
+    for operation in system_operations(inventory) {
         if ordinal == 0 {
             return Some(SystemEntity::Operation(operation));
         }
@@ -1150,7 +1231,7 @@ mod tests {
     use super::{
         DeclarationClass, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS, ReservedNameClass,
         SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemDeclarationId, SystemEntity,
-        SystemParameterMode, SystemResultPayload, SystemTypeRef, TRAVERSAL_SURFACE,
+        Inventory, SystemParameterMode, SystemResultPayload, SystemTypeRef,
         operation_region_effects, reserved_name, system_constructors, system_declarations,
         system_entity, system_nominals, system_operations,
     };
@@ -1161,9 +1242,9 @@ mod tests {
         // constructors, sixty-four variant fields, eleven operations,
         // fourteen operation region parameters, twenty-five operation value
         // parameters — one hundred sixty-seven records in preorder.
-        let nominals = system_nominals(false);
-        let constructors = system_constructors(false);
-        let operations = system_operations(false);
+        let nominals = system_nominals(Inventory::Base);
+        let constructors = system_constructors(Inventory::Base);
+        let operations = system_operations(Inventory::Base);
         assert_eq!(nominals.len(), 14);
         assert_eq!(nominals.iter().filter(|n| n.opaque).count(), 7);
         assert_eq!(constructors.len(), 39);
@@ -1190,7 +1271,7 @@ mod tests {
             25
         );
 
-        let records = system_declarations(false);
+        let records = system_declarations(Inventory::Base);
         assert_eq!(records.len(), 167);
         assert!(
             records
@@ -1319,8 +1400,8 @@ mod tests {
         let mut constructors = 0;
         let mut operations = 0;
         let mut owner_local = 0;
-        for record in system_declarations(false) {
-            match (record.lookup_class(), system_entity(record.id(), false)) {
+        for record in system_declarations(Inventory::Base) {
+            match (record.lookup_class(), system_entity(record.id(), Inventory::Base)) {
                 (Some(DeclarationClass::NominalType), Some(SystemEntity::Nominal(nominal))) => {
                     assert_eq!(nominal.spelling, record.spelling());
                     nominals += 1;
@@ -1346,8 +1427,8 @@ mod tests {
             (nominals, constructors, operations, owner_local),
             (14, 39, 11, 103)
         );
-        assert!(system_entity(SystemDeclarationId::new(167), false).is_none());
-        assert!(system_entity(SystemDeclarationId::new(u8::MAX), false).is_none());
+        assert!(system_entity(SystemDeclarationId::new(167), Inventory::Base).is_none());
+        assert!(system_entity(SystemDeclarationId::new(u8::MAX), Inventory::Base).is_none());
     }
 
     /// The candidate inventory is the v0.31 inventory plus exactly the
@@ -1358,9 +1439,9 @@ mod tests {
     /// rather than patching the other.
     #[test]
     fn traversal_candidate_inventory_matches_its_counted_totals() {
-        let nominals = system_nominals(true);
-        let constructors = system_constructors(true);
-        let operations = system_operations(true);
+        let nominals = system_nominals(Inventory::Traversal);
+        let constructors = system_constructors(Inventory::Traversal);
+        let operations = system_operations(Inventory::Traversal);
         assert_eq!(nominals.len(), 16);
         assert_eq!(nominals.iter().filter(|n| n.opaque).count(), 8);
         assert_eq!(constructors.len(), 42);
@@ -1387,7 +1468,7 @@ mod tests {
             34
         );
 
-        let records = system_declarations(true);
+        let records = system_declarations(Inventory::Traversal);
         assert_eq!(records.len(), 192);
         assert!(
             records
@@ -1415,8 +1496,8 @@ mod tests {
         let mut constructors = 0;
         let mut operations = 0;
         let mut owner_local = 0;
-        for record in system_declarations(true) {
-            match (record.lookup_class(), system_entity(record.id(), true)) {
+        for record in system_declarations(Inventory::Traversal) {
+            match (record.lookup_class(), system_entity(record.id(), Inventory::Traversal)) {
                 (Some(DeclarationClass::NominalType), Some(SystemEntity::Nominal(nominal))) => {
                     assert_eq!(nominal.spelling, record.spelling());
                     nominals += 1;
@@ -1442,7 +1523,67 @@ mod tests {
             (nominals, constructors, operations, owner_local),
             (16, 42, 14, 120)
         );
-        assert!(system_entity(SystemDeclarationId::new(192), true).is_none());
+        assert!(system_entity(SystemDeclarationId::new(192), Inventory::Traversal).is_none());
+    }
+
+    /// The [SYS-11] file-open-by-name candidate's own counted totals.
+    ///
+    /// The candidate adds one operation and nothing else, so the delta is
+    /// exactly one operation record, its two region-parameter records, and
+    /// its four value-parameter records: 192 + 7 = 199. Because the row is
+    /// appended, every ordinal the active inventory assigns is unchanged,
+    /// which is the property the differential program tests rest on.
+    #[test]
+    fn open_by_name_candidate_inventory_matches_its_counted_totals() {
+        let nominals = system_nominals(Inventory::OpenByName);
+        let constructors = system_constructors(Inventory::OpenByName);
+        let operations = system_operations(Inventory::OpenByName);
+        assert_eq!(nominals.len(), 16);
+        assert_eq!(constructors.len(), 42);
+        assert_eq!(operations.len(), 15);
+        assert_eq!(
+            operations
+                .iter()
+                .map(|operation| operation.regions.len())
+                .sum::<usize>(),
+            21
+        );
+        assert_eq!(
+            operations
+                .iter()
+                .map(|operation| operation.parameters.len())
+                .sum::<usize>(),
+            38
+        );
+
+        let records = system_declarations(Inventory::OpenByName);
+        assert_eq!(records.len(), 199);
+        // Every active-inventory record keeps its exact ordinal and spelling.
+        for (ordinal, record) in system_declarations(Inventory::Traversal).iter().enumerate() {
+            assert_eq!(records[ordinal].spelling(), record.spelling());
+        }
+        for (ordinal, spelling) in [
+            (192, "open_file"),
+            (193, "'c"),
+            (194, "'n"),
+            (195, "root"),
+            (196, "name"),
+            (197, "offset"),
+            (198, "count"),
+        ] {
+            assert_eq!(records[ordinal].spelling(), spelling, "ordinal {ordinal}");
+        }
+        let open_file = SystemDeclarationId::new(192);
+        let Some(SystemEntity::Operation(operation)) =
+            system_entity(open_file, Inventory::OpenByName)
+        else {
+            panic!("the candidate ordinal must name the candidate operation");
+        };
+        assert_eq!(operation.spelling, "open_file");
+        assert_eq!((operation.external, operation.blocks, operation.traps), (true, true, true));
+        // Off, the same ordinal is past the inventory and names nothing.
+        assert!(system_entity(open_file, Inventory::Traversal).is_none());
+        assert!(system_entity(SystemDeclarationId::new(199), Inventory::OpenByName).is_none());
     }
 
     #[test]
@@ -1464,7 +1605,7 @@ mod tests {
             .collect();
         assert_eq!(
             opaque,
-            system_nominals(TRAVERSAL_SURFACE)
+            system_nominals(Inventory::ACTIVE)
                 .iter()
                 .filter(|nominal| nominal.opaque)
                 .map(|nominal| nominal.spelling)
@@ -1511,12 +1652,12 @@ mod tests {
                     .push((variant.to_owned(), fields));
             }
         }
-        let catalog_enums: Vec<ExtractedEnum> = system_nominals(TRAVERSAL_SURFACE)
+        let catalog_enums: Vec<ExtractedEnum> = system_nominals(Inventory::ACTIVE)
             .iter()
             .enumerate()
             .filter(|(_, nominal)| !nominal.opaque)
             .map(|(owner, nominal)| {
-                let variants = system_constructors(TRAVERSAL_SURFACE)
+                let variants = system_constructors(Inventory::ACTIVE)
                     .iter()
                     .filter(|constructor| usize::from(constructor.owner) == owner)
                     .map(|constructor| {
@@ -1547,7 +1688,7 @@ mod tests {
             .map(|line| line.strip_prefix("fn ").expect("SYS-2 operation line"))
             .map(str::to_owned)
             .collect();
-        let catalog_operations: Vec<_> = system_operations(TRAVERSAL_SURFACE)
+        let catalog_operations: Vec<_> = system_operations(Inventory::ACTIVE)
             .iter()
             .map(render_operation)
             .collect();

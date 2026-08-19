@@ -48,6 +48,7 @@ const EXIT_STATUS: u8 = 10;
 const OPEN_DIRECTORY: u8 = 11;
 const OPEN_LIST: u8 = 12;
 const LIST_ONCE: u8 = 13;
+const OPEN_FILE: u8 = 14;
 
 /// The longest single path component the [SYS-14] name operations admit.
 ///
@@ -213,6 +214,11 @@ pub(super) fn emit_system_interface(
                 record_io_error(&mut io_error, shape.failed_type)?;
                 definitions.push_str(&emit_list_once(program, implementation, &shape, target)?);
             }
+            OPEN_FILE => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                definitions.push_str(&emit_open_file(program, implementation, &shape, target)?);
+            }
             _ => return Err(BackendFailure::InvalidIr),
         }
         for declaration in operation_declarations(ordinal, target)? {
@@ -299,7 +305,7 @@ fn operation_declarations(
                 target.file_open_symbol()
             )]);
         }
-        OPEN_DIRECTORY => {
+        OPEN_DIRECTORY | OPEN_FILE => {
             return Ok(vec![
                 format!(
                     "declare i32 @{}(i32, ptr, i32, ...)",
@@ -1339,6 +1345,47 @@ fn component_validation(buffer: &str, root: u32) -> String {
 }
 
 /// Emits the approved implementation of `open_directory` [SYS-14].
+fn emit_open_directory(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    emit_open_by_name(
+        program,
+        implementation,
+        shape,
+        target,
+        SystemResourceType::DirectoryRead,
+        target.directory_open_flags(),
+    )
+}
+
+/// Emits the approved implementation of the candidate `open_file` [SYS-11].
+///
+/// It differs from `open_directory` in exactly the two places the two rows
+/// differ: the flags the target's own directory-relative facility is handed,
+/// and the resource the returned descriptor becomes. Everything the shared
+/// emitter performs — the [SYS-8] range trap, the component validation, the
+/// bounded terminating slot, the one host call, the one cold mapper — is the
+/// same because [SYS-11] states it by mirroring [SYS-14].
+fn emit_open_file(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    emit_open_by_name(
+        program,
+        implementation,
+        shape,
+        target,
+        SystemResourceType::ReadFile,
+        target.file_open_flags(),
+    )
+}
+
+/// Emits one open-by-name implementation [SYS-11, SYS-14].
 ///
 /// The name arrives as caller-owned bytes and never becomes a path value, so
 /// [HOST-3]'s command-lifetime backing and [PATH-1]'s inline lease are
@@ -1346,13 +1393,16 @@ fn component_validation(buffer: &str, root: u32) -> String {
 /// only to terminate it for the target's own directory-relative facility,
 /// which then resolves it against the capability's directory object exactly
 /// as `open_read` does [PATH-2].
-fn emit_open_directory(
+fn emit_open_by_name(
     program: &IrProgram<'_, '_, '_>,
     implementation: ApprovedImplementation,
     shape: &OutcomeShape,
     target: SystemTarget,
+    opened: SystemResourceType,
+    flags: i32,
 ) -> Result<String, BackendFailure> {
     let directory = representation(SystemResourceType::DirectoryRead);
+    let opened = representation(opened);
     let buffer = llvm_type(
         program,
         IrType::Buffer {
@@ -1362,7 +1412,7 @@ fn emit_open_directory(
             },
         },
     )?;
-    if shape.ok_llvm != directory {
+    if shape.ok_llvm != opened {
         return Err(BackendFailure::InvalidIr);
     }
     let OutcomeShape {
@@ -1394,13 +1444,13 @@ fn emit_open_directory(
          call void @llvm.memcpy.p0.p0.i64(ptr %component, ptr %text, i64 %count, i1 false)\n  \
          %terminator = getelementptr inbounds i8, ptr %component, i64 %count\n  \
          store i8 0, ptr %terminator, align 1\n  \
-         %descriptor = call {directory} (i32, ptr, i32, ...) @{open}({directory} %root, \
+         %descriptor = call {opened} (i32, ptr, i32, ...) @{open}({directory} %root, \
          ptr %component, i32 {flags})\n  \
-         %opened = icmp sge {directory} %descriptor, 0\n  \
+         %opened = icmp sge {opened} %descriptor, 0\n  \
          br i1 %opened, label %live, label %failure\n\
          live:\n  \
          %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
-         %ok = insertvalue {llvm} %ok.tag, {directory} %descriptor, {ok_index}\n  \
+         %ok = insertvalue {llvm} %ok.tag, {opened} %descriptor, {ok_index}\n  \
          ret {llvm} %ok\n\
          failure:\n\
          {read_error}  \
@@ -1418,7 +1468,6 @@ fn emit_open_directory(
          }}\n\n",
         symbol = implementation.symbol(),
         open = target.file_open_symbol(),
-        flags = target.directory_open_flags()
     ))
 }
 

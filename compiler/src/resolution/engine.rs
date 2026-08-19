@@ -184,20 +184,20 @@ impl From<ResolutionCompilerFailure> for BuildStop {
 pub fn resolve<'classified, 'lexed, 'source>(
     syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> ResolutionOutcome<'classified, 'lexed, 'source> {
-    resolve_with_traversal_surface(syntax, crate::TRAVERSAL_SURFACE)
+    resolve_with_inventory(syntax, crate::Inventory::ACTIVE)
 }
 
-/// [`resolve`] against one selected [SYS-2] inventory state.
+/// [`resolve`] against one named [SYS-2] inventory state.
 ///
-/// `traversal_surface` selects the v0.32-candidate directory-enumeration
-/// inventory; `false` is the active specification's and is what [`resolve`]
-/// passes outside the candidate path.
+/// `inventory` selects which prefix of the [SYS-2] tables this unit resolves
+/// against; [`crate::Inventory::ACTIVE`] is the active specification's and is
+/// what [`resolve`] passes outside a candidate path.
 #[must_use]
-pub fn resolve_with_traversal_surface<'classified, 'lexed, 'source>(
+pub fn resolve_with_inventory<'classified, 'lexed, 'source>(
     syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
-    traversal_surface: bool,
+    inventory: crate::Inventory,
 ) -> ResolutionOutcome<'classified, 'lexed, 'source> {
-    match build_tables(&syntax, traversal_surface) {
+    match build_tables(&syntax, inventory) {
         Ok(tables) => ResolutionOutcome::Complete(ResolvedSyntaxUnit {
             syntax,
             scopes: tables.scopes,
@@ -208,7 +208,7 @@ pub fn resolve_with_traversal_surface<'classified, 'lexed, 'source>(
             lexical_uses: tables.lexical_uses,
             deferred_uses: tables.deferred_uses,
             postconditions: tables.postconditions,
-            traversal_surface,
+            inventory,
         }),
         Err(BuildStop::Issue(issue)) => ResolutionOutcome::SourceIssue {
             syntax,
@@ -220,7 +220,7 @@ pub fn resolve_with_traversal_surface<'classified, 'lexed, 'source>(
 
 fn build_tables(
     syntax: &CanonicalSyntaxUnit<'_, '_, '_>,
-    traversal_surface: bool,
+    inventory: crate::Inventory,
 ) -> Result<Tables, BuildStop> {
     let topology = &syntax.finalized.topology;
     let scopes = ScopeBuild::build(topology)?;
@@ -237,7 +237,7 @@ fn build_tables(
     // third declaration source ([SYS-1]); every other unit admits none of it,
     // so a system spelling there is an ordinary undeclared or source name.
     let system = if unit_program_kind(topology).is_some() {
-        system_declarations(traversal_surface)
+        system_declarations(inventory)
     } else {
         Vec::new()
     };
