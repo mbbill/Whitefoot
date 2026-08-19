@@ -1,0 +1,24 @@
+fn divide_safely(n: own i32, d: own i32) -> own i32 traps requires {
+  let dividend_ok = ine(n, -2147483648_i32);
+  let divisor_ok = ine(d, -1_i32);
+  let safe = bor(dividend_ok, divisor_ok);
+  check safe else trap "division is defined on these operands";
+} {
+  doc "Same requirement.";
+  let q = n / d;
+  return q;
+}
+
+fn caller(n: own i32, d: own i32) -> own i32 traps {
+  doc "Negative control: evidence for one child of the `bor` never composes toward the parent [FN-8, ENT-4].";
+  let dividend_ok = ine(n, -2147483648_i32);
+  claim dividend_not_minimum: dividend_ok because "the caller knows the dividend is above the minimum";
+  let q = divide_safely(n: n, d: d);
+  return q;
+}
+
+fn main() -> own unit traps {
+  doc "Driver.";
+  let observed = caller(n: 8_i32, d: 2_i32);
+  return unit;
+}

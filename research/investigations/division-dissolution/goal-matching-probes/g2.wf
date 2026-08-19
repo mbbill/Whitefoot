@@ -1,0 +1,28 @@
+deny_claims fn divide_safely(n: own i32, d: own i32) -> own i32 traps requires {
+  let dividend_ok = ine(n, -2147483648_i32);
+  let divisor_ok = ine(d, -1_i32);
+  let safe = bor(dividend_ok, divisor_ok);
+  check safe else trap "division is defined on these operands";
+} {
+  doc "The same requirement, on a marked strict root, so only a non-assertion fact source can discharge it.";
+  let q = n / d;
+  return q;
+}
+
+fn caller(n: own i32, d: own i32) -> own i32 traps {
+  doc "A dominating real branch on the same `bor` expression: [ENT-3.S1] establishes each goal in the condition's goal-origin set at the then-block entry.";
+  let dividend_ok = ine(n, -2147483648_i32);
+  let divisor_ok = ine(d, -1_i32);
+  let safe = bor(dividend_ok, divisor_ok);
+  if safe {
+    let q = divide_safely(n: n, d: d);
+    return q;
+  }
+  return 0_i32;
+}
+
+fn main() -> own unit traps {
+  doc "Driver.";
+  let observed = caller(n: 8_i32, d: 2_i32);
+  return unit;
+}

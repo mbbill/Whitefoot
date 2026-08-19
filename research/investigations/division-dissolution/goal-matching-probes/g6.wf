@@ -1,0 +1,16 @@
+fn divide_safely<T: Int>(n: own T, d: own T) -> own T traps requires {
+  let dividend_ok = ine(n, -2147483648_T);
+  let divisor_ok = ine(d, -1_T);
+  let safe = bor(dividend_ok, divisor_ok);
+  check safe else trap "division is defined on these operands";
+} {
+  doc "Can a symbolic generic body even spell min(T)? A literal carries a mandatory written type suffix [FORM-5].";
+  let q = n / d;
+  return q;
+}
+
+fn main() -> own unit traps {
+  doc "Driver.";
+  let observed = divide_safely<i32>(n: 8_i32, d: 2_i32);
+  return unit;
+}

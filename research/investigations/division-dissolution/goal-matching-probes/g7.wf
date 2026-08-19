@@ -1,0 +1,30 @@
+fn divide_safely(n: own i32, d: own i32) -> own i32 traps requires {
+  let dividend_ok = ine(n, -2147483648_i32);
+  let divisor_ok = ine(d, -1_i32);
+  let safe = bor(dividend_ok, divisor_ok);
+  check safe else trap "division is defined on these operands";
+} {
+  doc "Same requirement.";
+  let q = n / d;
+  return q;
+}
+
+fn caller(values: own array<i32, 4>, d: own i32) -> own i32 traps {
+  doc "The dividend is a subscripted place, which [ENT-3] gives no goal origin at all, so the claim establishes nothing usable and [FN-8] substitutes an ephemeral actual-value datum for the argument.";
+  let index = 0_u64;
+  let room = len(values);
+  claim inside: ilt(index, room) because "the index is inside the array";
+  let dividend_ok = ine(values[index], -2147483648_i32);
+  let divisor_ok = ine(d, -1_i32);
+  let safe = bor(dividend_ok, divisor_ok);
+  claim division_safe: safe because "the subscripted dividend is not the minimum";
+  let q = divide_safely(n: values[index], d: d);
+  return q;
+}
+
+fn main() -> own unit traps {
+  doc "Driver.";
+  let values = array_new<i32, 4>(8_i32);
+  let observed = caller(values: move values, d: 2_i32);
+  return unit;
+}
