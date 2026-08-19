@@ -1,15 +1,15 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 42 (batch 0070: adapter fully green; v0.31 candidate prepared on branch)
+Revision: 43 (owner-selected claim-only runtime trap surface and static contracts)
 
 The active language authority is v0.32 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
 `5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5`.
 Exact v0.8 through v0.31 are immutable flat archives. The execution plan at
-[`docs/current-plan.md`](current-plan.md) is PROPOSED (wfgrep functional
-legs and trap-endpoint closure) and awaits owner approval; PROPOSED
-authorizes no execution. Project law is the
+[`docs/current-plan.md`](current-plan.md) is ACTIVE (claim-only runtime trap
+surface and static contracts). It carries batch 0072's unactivated v0.33
+deltas into one successor candidate. Project law is the
 [`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -55,7 +55,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.31]` `[current: safe-Rust compiler]`
+`[current: spec v0.32]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -67,7 +67,7 @@ The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
-active [v0.31 specification](../spec/kernel-spec.md) remains semantic authority.
+active [v0.32 specification](../spec/kernel-spec.md) remains semantic authority.
 The first-slice system interface compiles and runs end-to-end on the native
 macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
 remain ahead of any performance claim.
@@ -80,6 +80,13 @@ Which gap matters next is selected by a project, never by checklist length.
   sequence is now complete, so outline:CAND-8 is unparked; choosing or executing its
   next bounded slice still requires a new owner-approved plan. Mapped direction
   items inform that plan, but none authorizes work by itself.
+- outline:PROOF-9 is the owner-selected successor to terminal outline:PROOF-8.
+  It takes the explicit-obligation model language-wide, makes `claim` the only
+  writer-reachable runtime rejection point, and replaces the historical entry
+  contract exception with one closed-world command entry. The ACTIVE plan owns
+  this successor and composes batch 0072's completed outline:CAND-8 language
+  deltas into the same candidate; neither direction independently authorizes
+  activation.
 - outline:PERF-1 establishes ordinary code quality before a new optimizer fact or
   strategy is blamed or credited.
 - Every production fact consumer in outline:PROOF-1 through outline:PROOF-4 and outline:PROOF-7 depends
@@ -376,6 +383,46 @@ creating writer trust or weakening the checked safety envelope.
   [taint](../research/investigations/obligation-discharge/PROBE-TAINT.md) ·
   [codegen](../research/investigations/obligation-discharge/PROBE-CODEGEN.md) ·
   [stable specification model](../governance/spec-evolution/stable-spec-filename-proposal.md).
+
+### outline:PROOF-9 — Claim-only runtime trap surface and static contracts
+
+`[current: owner-selected 2026-08-19; ACTIVE implementation plan]`
+`[next: complete one unactivated v0.33 candidate and exact-byte owner packet]`
+
+- **Goal:** make `claim` the only writer-reachable source of a language-level
+  runtime rejection. Every hazardous operation is either total, returns a
+  typed expected outcome, or carries a deterministic proof obligation that is
+  discharged by machine facts, a real branch, or an executed named claim.
+  Function contracts are erased proof structures rather than statement-shaped
+  pseudo-runtime blocks.
+- **Selection:** every function result is explicitly named; one unified
+  `contract` block contains erased symbolic definitions and independent
+  `requires` and `ensures` clauses, including selected `Result` routes.
+  Requirements are internal-call obligations only. The sole entry is an
+  uncallable `command fn main` with a named `ExitStatus` result and no contract.
+  A checker-detected contradictory requirement set denotes an uninhabited
+  function and lowers to an ABI-preserving unreachable stub, never to an
+  unchecked version of its source body.
+- **Current:** v0.32 still has a runtime requirement check at program start,
+  nine integer trapping forms, two allocation-size traps, and six active
+  system range traps. Batch 0072 additionally prepared the unactivated
+  `open_file` range-bearing system row. The contract surface still borrows
+  `let` plus final `check ... else trap` syntax even though ordinary
+  requirements and every postcondition are static templates. Bounded design
+  research has mapped the compiler, corpus, proof, provenance, effect, IR, and
+  backend changes; implementation begins from main at `e5b30704`.
+- **Required closure:** the candidate grammar contains no contract-local
+  statement or trap spelling; accepted integer, allocation, and affected
+  system-operation IR carries no runtime trap site; all requirement calls are
+  proved before transfer; every retained language trap record is owned by an
+  executed claim; exact checked/wrapping/saturating arithmetic, typed host and
+  content failures, target qualification, and resource-exhaustion boundaries
+  retain their distinct semantics. Protected evidence and specification bytes
+  remain candidates until separately approved by exact identity.
+- **Facts:** [contract surface design space](../research/investigations/contract-surface/DESIGN-SPACE.md) ·
+  [terminal obligation-discharge direction](#outlineproof-8) ·
+  [system capability architecture](#outlinebound-1) ·
+  [batch 0072 closure](done/0072-searching-wfgrep.md).
 
 ## Verification and compiler trust
 
