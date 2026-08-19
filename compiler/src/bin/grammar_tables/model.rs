@@ -140,8 +140,8 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("claim", "Claim"),
         ("because", "Because"),
         // FLOOR-5 additions: `if` plus the twenty `infix_op` spellings.
-        // `else` already exists (check_stmt). Verified against the fixed
-        // delta's [GRAM-5] block, not guessed.
+        // `else` already exists for statement and value conditionals. Verified
+        // against the fixed delta's [GRAM-5] block, not guessed.
         ("if", "If"),
         ("+", "Plus"),
         ("+defined", "PlusDefined"),

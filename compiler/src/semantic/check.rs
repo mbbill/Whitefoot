@@ -663,21 +663,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [EFF-2] the body-syntactic contribution of one checked function,
     /// judged once on the written body.
     ///
-    /// Two classes read the selected type of a bare operator call, and one
-    /// of them — [OP-2]'s divisor class, which a written generic type
-    /// parameter enters or leaves with the instance's signedness — therefore
-    /// contributes differently to two concrete instances of one written
-    /// body. The specification resolves that on the written body: a bare `/`
-    /// or `%` whose written selected type is a generic type parameter and
-    /// whose operand atoms are non-constant is outside the class for this
-    /// contribution and exhibits `traps`, while the obligation and its
-    /// discharge stay per concrete instance, so a discharged unsigned
-    /// instance under that row simply executes no test.
-    ///
-    /// The written body is exactly what the symbolic validation instance
-    /// checks, so its contribution is recorded there and reused by every
-    /// instance of the same declaration. The release contribution is not
-    /// syntactic and stays per instance [STOR-3].
+    /// A generic declaration has one written body even though the checker
+    /// validates concrete instances separately. The symbolic validation is
+    /// the authority for that declaration-wide syntactic contribution, so
+    /// its row is recorded once and reused by every concrete instance.
+    /// Instance-specific proofs may discharge static obligations, but they do
+    /// not erase a written claim or a written call's declared effects. The
+    /// release contribution is not syntactic and stays per instance [STOR-3].
     fn written_body_effects(
         &self,
         signature: &FunctionSignature,
