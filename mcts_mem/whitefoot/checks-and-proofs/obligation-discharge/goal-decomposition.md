@@ -1,5 +1,5 @@
 - A signed Boolean goal decomposes at establishment through operator structure: a positive conjunction establishes both members positively, a negative disjunction establishes both members negatively, negation flips the sign, recursively; each member whose entire root is a comparison also projects to the scalar relation fragment.
-- Decomposition attaches at every establishment source — branch edges in both signs, executed checks, claims, and requirement transfer — never at use sites.
+- Decomposition attaches at every establishment source — branch edges in both signs, claims, and requirement transfer — never at use sites.
 - No composition exists: members never assemble a parent goal, and sign patterns other than the three above stay opaque.
 - Members are ordinary signed atomic goals; support, kills, joins, and contradiction govern them identically to root goals.
 

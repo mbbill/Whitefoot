@@ -130,36 +130,38 @@ recurrence vectorized at width 16 while the integer form used width 2x4, a
 forms, but this floor result has not been revalidated on a selected project.
 Replaces: integer state flags, branchy per-byte match chains.
 
-## P8. Traps to the boundary
+## P8. Claims to the boundary
 
-Potential problem for a future totality consumer: one trapping op in a hot leaf
-may block a `willreturn` proof for the call tower and inhibit transformations.
-Pattern status: DEFERRED as a totality/optimization pattern. v0.17 has no
-termination checker, `pure` does not promise return, the compiler never emits
-`willreturn`, and no `--totality` report exists. It remains valid ordinary
-design advice to validate at a boundary and use `.wrap` only where modular
-behavior is the intended semantics; it is not current optimizer authority and
-must never weaken a required trap.
+Potential problem for a future totality consumer: one retained claim in a hot
+leaf may block a `willreturn` proof for the call tower and inhibit
+transformations. Pattern status: DEFERRED as a totality/optimization pattern.
+The current language has no termination checker, `pure` does not promise
+return, the compiler never emits `willreturn`, and no `--totality` report
+exists. It remains valid ordinary design advice to establish an invariant at a
+boundary and keep its auditable claim outside the hot loop when the same fact
+dominates every use. Use `.wrap` only where modular behavior is the intended
+semantics; it must never evade an exact operation's static domain obligation.
 Historical speed evidence: the retired wc line-count experiment found that a
 trap-per-increment form produced no vector operations while the semantically
 valid wrapping-counter form reached full SIMD and roughly 2x throughput. A
 future totality consumer needs its own selected project and proof boundary.
-Replaces: sprinkling checks uniformly and paying for them in the one loop
-that matters.
+Replaces: sprinkling invariant claims uniformly and paying for them in the one
+loop that matters.
 
 ## P9. Exact capacity contract or recoverable shortage
 
 Problem: an encoder/decoder writes caller-owned output, but the amount may be
 fixed-ratio, cheaply preflightable, or genuinely data-dependent.  A
-worst-case entry contract can make the inner loop look perfect by forcing
-ordinary callers to overallocate or trap.
+worst-case requirement can make the inner loop look perfect by forcing ordinary
+callers to overallocate or making legitimate calls impossible to prove.
 Pattern: use a `requires` clause only when a false predicate means the caller has
 violated the actual API contract.  For a fixed-ratio transform, state the
 weakest overflow-safe capacity relation that covers the body.  If insufficient
 capacity is an expected runtime outcome, test the next token/burst before any
 of its effects and return a value such as `NeedMoreOutput`; do not turn that
-outcome into a contract trap.  A preflight/exact-allocation API is appropriate
-only when its validated size remains bound to the input it describes.  Never
+outcome into a requirement or claim. A preflight/exact-allocation API is
+appropriate only when its validated size remains bound to the input it
+describes. Never
 put a merely common-case size or a rare worst-case allocation in `requires`.
 Current value: one `contract` block may state several independent `requires`
 goals. Every ordinary caller establishes every goal in the same pre-transfer

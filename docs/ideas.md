@@ -64,29 +64,31 @@ selection beats a fixed compiler choice without expanding the trusted base.
 
 ## A proof-gap performance coach
 
-The compiler could explain each retained check and missed optimization in
-terms the writer can act on. A report might say that an index check remains
-because no dominating fact proves `offset + 16 <= len`, or that a loop cannot
-vectorize because two live places may overlap.
+The compiler could explain each residual static obligation, retained claim,
+and missed optimization in terms the writer can act on. A report might say
+that an index is rejected because no dominating fact proves
+`offset + 16 <= len`, that a hot path still executes a named claim, or that a
+loop cannot vectorize because two live places may overlap.
 
 An automated tool could propose a rewrite constrained to the canonical
 patterns, run the checker and performance protocol, and present the source
 diff, proof delta, and measurement for human approval. The tool would never add
-an assumption or weaken a check. It would change source structure until the
-checker derives the needed fact.
+an assumption, remove a claim, or weaken an obligation. It would change source
+structure until the checker derives the needed fact.
 
 First experiment: use the observational proof reports planned for the
-facts-on compiler. Select ten retained bounds or alias checks, generate one
-mechanical suggestion for each, and measure suggestion validity, proof closure,
-code-shape change, and runtime change. Preserve every failed suggestion as a
-regression for the diagnostic or rewrite rule that produced it.
+facts-on compiler. Select ten rejected proof gaps, hot claims, or alias
+barriers, generate one mechanical suggestion for each, and measure suggestion
+validity, proof closure, code-shape change, and runtime change. Preserve every
+failed suggestion as a regression for the diagnostic or rewrite rule that
+produced it.
 
 ## Multiple backends as mutual oracles
 
 Independent LLVM, C, and future WebAssembly backends could compile the same
-checked program. A differential runner would compare values, traps, external
-effects, and resource teardown. Each disagreement would produce the smallest
-practical regression before a backend fix closes.
+checked program. A differential runner would compare values, claim records,
+external effects, and resource teardown. Each disagreement would produce the
+smallest practical regression before a backend fix closes.
 
 This approach can catch a lowering defect that source conformance misses. It
 also gives the C backend value before its generated code reaches the LLVM
@@ -135,9 +137,10 @@ the extractor or Whitefoot checker to reject the corresponding program.
 ## Resource certificates
 
 The compiler could emit a machine-readable resource certificate beside an
-artifact. Depending on the program and its entry contracts, the certificate
-could record stack and heap bounds, allocation counts, remaining trap sites,
-input-size constraints, external effects, and proved loop bounds.
+artifact. Depending on the program's declared inputs and any future explicitly
+designed export adapter, the certificate could record stack and heap bounds,
+allocation counts, named claim sites, input-size constraints, external effects,
+proved loop bounds, and the distinct resource/TCB abort boundaries.
 
 Embedded, real-time, and serverless systems could check the certificate against
 a deployment budget before running the program. Unknown bounds must remain

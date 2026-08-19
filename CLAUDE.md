@@ -3,7 +3,8 @@
 Whitefoot is a systems language for AI-written, human-approved code. Accepted
 programs must make memory corruption, data races, uninitialized reads, and
 silent overflow unrepresentable. There is no writer-accessible unsafe escape.
-Required runtime checks remain unless a machine-verified proof discharges them.
+Every partial operation is admitted only after machine proof of its domain; a
+written claim is the sole writer-reachable runtime trap and is never removed.
 
 ## Project goal
 
@@ -235,10 +236,10 @@ upheld by discipline.
   function name, signature, source shape, project, corpus, or test identity.
 - Keep one normal semantic and lowering path. A temporary unsupported
   capability must be explicit rather than misreported as invalid source.
-- Never remove a required source or runtime check for speed. Proof is the only
-  authority for check elision.
+- Never remove or weaken a written claim for speed. Required static proof is
+  the only authority for admitting a partial operation.
 - Keep facts-off compilation correct. An optimizer fact may improve an accepted
-  program but may not change acceptance.
+  program but may not change acceptance or claim execution.
 - Prefer simple implementations and normal collections. Fix measured
   performance or resource problems instead of designing for imagined scale.
 - Keep files cohesive and reviewable. Split by invariant-bearing

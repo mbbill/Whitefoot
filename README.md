@@ -3,8 +3,9 @@
 Whitefoot is a systems language for AI-written, human-approved code. It is
 designed so that memory corruption, data races, uninitialized reads, and silent
 overflow are unrepresentable in accepted source. There is no writer-accessible
-unsafe escape. Runtime safety checks remain enabled unless a machine-verified
-proof authorizes their removal.
+unsafe escape. Every partial operation is admitted only after machine proof of
+its domain; a written claim is the sole writer-reachable runtime trap and is
+never removed.
 
 ## Project goal
 

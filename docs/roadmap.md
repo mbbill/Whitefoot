@@ -108,20 +108,21 @@ Which gap matters next is selected by a project, never by checklist length.
 Serves Constitution P0, W3, T1, and T2: useful facts must improve code without
 creating writer trust or weakening the checked safety envelope.
 
-### outline:PROOF-1 — Relational bounds proofs and check elision
+### outline:PROOF-1 — Relational bounds proofs and static discharge
 
 `[current: compiler]` `[historical: measured]` `[next: project pressure]`
 
-- **Goal:** remove a required bounds check only when a deterministic proof
-  establishes the exact proposition that makes the operation safe.
+- **Goal:** admit a proof-required bounds operation only when a deterministic
+  derivation establishes the exact proposition that makes it safe.
 - **Current:** the compiler discharges exact L0 bounds obligations and admits a
   proved `requires` goal as the callee-body S4 axiom. Ordinary callers prove
   that complete goal before transfer; no callee prologue or `llvm.assume` is
   emitted. Opaque Boolean goal identity adds no Boolean decomposition or new
   optimizer authority.
-- **Missing / next:** a selected workload must first show retained-check
-  pressure; then build one finite proof family with exact producers,
-  invalidators, negative canaries, facts-off identity, and attribution. O11
+- **Missing / next:** a selected workload must first show a concrete proof gap
+  or hot retained-claim pressure; then build one finite proof family with exact
+  producers, invalidators, negative canaries, facts-off identity, and
+  attribution. O11
   Boolean-goal composition stays an open question with four recorded findings
   and a de-pairing ruling (`governance/APPROVALS.md`); its trigger is a real
   program whose discharge needs a composed Boolean goal, and it re-enters only
@@ -403,14 +404,14 @@ creating writer trust or weakening the checked safety envelope.
   A checker-detected contradictory requirement set denotes an uninhabited
   function and lowers to an ABI-preserving unreachable stub, never to an
   unchecked version of its source body.
-- **Current:** v0.32 still has a runtime requirement check at program start,
-  nine integer trapping forms, two allocation-size traps, and six active
-  system range traps. Batch 0072 additionally prepared the unactivated
-  `open_file` range-bearing system row. The contract surface still borrows
-  `let` plus final `check ... else trap` syntax even though ordinary
-  requirements and every postcondition are static templates. Bounded design
-  research has mapped the compiler, corpus, proof, provenance, effect, IR, and
-  backend changes; implementation begins from main at `e5b30704`.
+- **Current:** v0.32 remains the active language with the superseded entry,
+  contract, integer, allocation, and system-range trap forms. The branch's
+  unactivated v0.33 candidate and compiler implement named results, the unified
+  erased contract surface, plural static proofs, command-only entry, exact
+  operation/allocation/system obligations, and claim-only DIAG-3 lowering.
+  Ordinary programs and fixtures use the candidate surface. Exact candidate
+  specification corrections, protected-compliance migration, and activation
+  remain behind the owner approval boundary.
 - **Required closure:** the candidate grammar contains no contract-local
   statement or trap spelling; accepted integer, allocation, and affected
   system-operation IR carries no runtime trap site; all requirement calls are
@@ -435,9 +436,10 @@ facts-off evidence rather than trust in the compiler or writer.
 
 - **Goal:** make memory corruption, data races, uninitialized reads, and silent
   overflow unrepresentable across success, failure, and cleanup paths.
-- **Current:** the active language forbids writer trust; the compiler retains
-  hazardous-operation checks, exact trap records, affine cleanup, checked
-  indexing, and allocation-domain guards on its implemented path.
+- **Current:** the active language forbids writer trust; the candidate compiler
+  admits partial operations only after static discharge, retains exact
+  claim-owned DIAG-3 records, affine cleanup, proof-required indexing, and
+  distinct target/resource guards on its implemented path.
 - **Missing / next:** validate malformed input and language-level failures
   separately from target or allocator resource failure, then exercise partial
   results, transfer, and teardown in the first selected medium project.
@@ -468,11 +470,11 @@ facts-off evidence rather than trust in the compiler or writer.
 `[historical: measured]` `[next: with first fact consumer]`
 
 - **Goal:** prove that an optional optimizer fact changes only justified code
-  shape, never acceptance, outputs, required traps, or cleanup.
+  shape, never acceptance, outputs, written-claim execution, or cleanup.
 - **Current:** historical experiments have local controls; the current compiler
   has no production check-elision fact family and therefore no global claim.
 - **Missing / next:** the first fact consumer must ship with legal-program
-  differential generation, hostile premise mutation, output and trap identity,
+  differential generation, hostile premise mutation, output and claim identity,
   and attribution before timing.
 - **Facts:** [experiment index](../research/experiments/README.md) ·
   [fact-channel design memory](../mcts_mem/whitefoot/fact-channels.md).
@@ -505,16 +507,17 @@ and every slower-but-accepted divergence becomes a measured finding.
   proof channel, special writer trick, or project-specific lowering.
 - **Current:** the compiler has one conservative LLVM path and executable
   program witnesses, but no current medium-project comparison of scalar code
-  shape, retained checks, vectorization, and target output. `RG-BASE` completed
+  shape, proof gaps, retained claims, vectorization, and target output. `RG-BASE` completed
   one correctness-green upstream selection attempt; host cache-position noise
   defeated its precision gate, so it selected no comparator and made no
   performance claim. Its medians remain a development-cost table, not a
   baseline.
 - **Missing / next:** require every newly runnable `wfgrep` slice to pass its
   correctness oracle and scoped cost-shape or performance gate before adding
-  downstream behavior. Attribute each material loss to algorithm, required
-  check, source shape, compiler lowering, LLVM recovery, runtime, I/O, output,
-  or target, resolve its owning layer generally, and rerun the same slice. The
+  downstream behavior. Attribute each material loss to algorithm, static proof
+  gap, retained claim, source shape, compiler lowering, LLVM recovery, runtime,
+  I/O, output, or target, resolve its owning layer generally, and rerun the same
+  slice. The
   full paired suite is reserved for a later public-claim candidate rather than
   the edit loop.
 - **Facts:** [compiler backend boundary](../compiler/README.md) ·
@@ -568,9 +571,9 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 - **Goal:** give the AI deterministic, actionable failures that shorten the
   path from rejected source to a correct, efficient program.
-- **Current:** v0.17 requires deterministic rule/location diagnostics and exact
-  trap records; single-shot writability and repair effectiveness are not
-  established.
+- **Current:** the candidate requires deterministic rule/location diagnostics
+  and exact named-claim records; single-shot writability and repair
+  effectiveness are not established.
 - **Missing / next:** measure repair-to-green on real project failures and turn
   repeated confusion into a diagnostic or teaching defect.
 - **Facts:** v0.17 `DIAG-*` · [honest limitation](why-whitefoot.md#part-vi-what-it-does-not-beat-and-what-is-not-yet-known).
