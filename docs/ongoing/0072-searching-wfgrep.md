@@ -89,29 +89,28 @@ more token than instructed, because 489 was never measured at the v0.31
 candidate and correcting only the number would replace one false
 statement with another. Attribution inventory recorded.
 
-### Evidence changes the lead made, and why
+### Evidence changes: the lead's were reverted, the executor's stand
 
-Three test-evidence edits were the lead's own and are the audit's first
-target, since editing evidence to go green is a breach even when nothing
-blocks it:
+The lead made three test-evidence edits believing the executor had died
+mid-task. It had not; it finished and took the option the lead had
+preferred, so all three lead edits are reverted and the executor's
+replace them:
 
-- The frozen receiver-route count moved 12 -> 10 because the rewrite
-  removed two `append_slice` call sites, counted in the source.
-- The frozen A10 section was REMOVED, not repaired: the rewrite replaced
-  the `value_if` that delivered an `ensures`-bearing result with
-  match-shaped control flow, so no `PostconditionDeliveryJoin` node
-  exists in the frozen source and every assertion there was keyed on the
-  binding it produced. THE ROUTE NOW HAS NO REAL-PROGRAM WITNESS — no
-  other program under `tests/programs` delivers a postcondition through
-  a `value_if`. The mechanism stays pinned by a synthetic test. The loss
-  is stated in place in the source and is an owner item below.
-- wfgrep left the earlier-program inventory differential because it now
-  requires the traversal rows and can no longer witness that appending
-  them changes nothing.
+- The frozen A10 section is KEPT, not removed. The executor rebuilt
+  `report_failure` to assemble one diagnostic and clamp it with a
+  `value_if`, so the postcondition delivery route keeps its real-program
+  witness. The shape earns itself independently: one host write instead
+  of three, so the pieces cannot separate in a shared sink. THERE IS NO
+  COVERAGE LOSS.
+- The frozen receiver-route count is 11, derived from the restored
+  source's eleven `append_slice` call sites — not the lead's 10, which
+  was derived before the restoration.
+- wfgrep leaves the earlier-program inventory differential in the
+  executor's own commit, for the same reason: it now requires the
+  traversal rows.
 
-An executor's attempt to restore the A10 witness by rewriting wfgrep's
-error-reporting path was discarded: contorting a program to satisfy a
-test inverts what the corpus is for.
+The lead's premature edits and their reverts are on the branch as
+history rather than rewritten, so the exit audit can see both.
 
 ### Honest state
 
@@ -127,11 +126,11 @@ specification byte moves; nothing activates.
 
 Decisions folded into that review:
 
-1. **A coverage loss, stated rather than repaired.** The value-if
-   postcondition delivery route lost its only real-program witness. A
-   real witness means a program that wants that shape, which is a corpus
-   decision. Ruling wanted: leave it synthetic-only, or commission a
-   program that uses the shape.
+1. **Two wfgrep diagnostics retired.** `wfgrep: broken pipe` and
+   `wfgrep: write error` went with the publication loop they belonged
+   to; a failed publication now reads `wfgrep: PATH: cannot read`. Their
+   constants were deleted rather than left unread. Ruling wanted: accept
+   the coarser error reporting, or restore the two cases.
 2. **Protected surface:** six conformance renames (verdicts verified
    unchanged) and the adapter ignore-reason tally correction.
 3. **The Linux qualification correction** is specified but not landed;
