@@ -1132,7 +1132,6 @@ impl IrProgram<'_, '_, '_> {
     /// Test-only malformed-IR probe: retypes one command parameter while
     /// keeping the function's local value table internally consistent.
     #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn retype_main_parameter_for_test(&mut self, parameter: usize, ty: IrType) -> bool {
         let Some(main) = self.functions.get_mut(self.main as usize) else {
             return false;
@@ -1148,10 +1147,20 @@ impl IrProgram<'_, '_, '_> {
         true
     }
 
+    /// Test-only malformed-IR probe: retypes the command result while leaving
+    /// its semantic entry identity unchanged.
+    #[cfg(test)]
+    pub(crate) fn retype_main_result_for_test(&mut self, ty: IrType) -> bool {
+        let Some(main) = self.functions.get_mut(self.main as usize) else {
+            return false;
+        };
+        main.result = ty;
+        true
+    }
+
     /// Test-only malformed-IR probe: retypes one argument of the first
     /// system call without changing its semantic operation identity.
     #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn retype_first_system_argument_for_test(
         &mut self,
         argument: usize,
@@ -1185,7 +1194,6 @@ impl IrProgram<'_, '_, '_> {
     /// Test-only malformed-IR probe: retypes the first system call's result
     /// while preserving the operation identity and local SSA agreement.
     #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn retype_first_system_result_for_test(&mut self, ty: IrType) -> bool {
         for function in &mut self.functions {
             let selected = function

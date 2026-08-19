@@ -31,6 +31,15 @@ pub(super) fn with_ir<ResultValue>(
     with_ir_for(source, crate::Inventory::ACTIVE, run)
 }
 
+fn with_mutated_ir<ResultValue>(
+    source: &[u8],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        &mut IrProgram<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    with_mutated_ir_for(source, crate::Inventory::ACTIVE, run)
+}
+
 /// [`with_ir`] against one named [SYS-2] inventory state.
 ///
 /// The cost-shape anchor is a real corpus program, and that program now uses
@@ -41,6 +50,16 @@ pub(super) fn with_ir_for<ResultValue>(
     inventory: crate::Inventory,
     run: impl for<'classified, 'lexed, 'source> FnOnce(
         &IrProgram<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    with_mutated_ir_for(source, inventory, |program| run(program))
+}
+
+fn with_mutated_ir_for<ResultValue>(
+    source: &[u8],
+    inventory: crate::Inventory,
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        &mut IrProgram<'classified, 'lexed, 'source>,
     ) -> ResultValue,
 ) -> ResultValue {
     let inputs = [SourceInput::new("test.wf", source)];
@@ -73,8 +92,8 @@ pub(super) fn with_ir_for<ResultValue>(
     let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
         panic!("system test source must check");
     };
-    let ir = lower_checked(*checked).expect("checked system program must lower");
-    run(&ir)
+    let mut ir = lower_checked(*checked).expect("checked system program must lower");
+    run(&mut ir)
 }
 
 /// Reads one argument's bytes and returns their wrapping sum as the status.
@@ -726,6 +745,187 @@ fn component_open_flags_and_status_abis_are_target_exact() {
         assert_eq!(target.file_status_size(), size, "{triple}");
         assert_eq!(target.file_status_mode_offset(), mode, "{triple}");
     }
+}
+
+#[test]
+fn command_entry_rejects_abi_equivalent_but_semantically_wrong_ir_types() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus external, blocks {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_mutated_ir(source, |program| {
+        let main = &program.functions()[program.main_ordinal() as usize];
+        let wrong_resource = main.parameters()[1].1;
+        assert!(program.retype_main_parameter_for_test(0, wrong_resource));
+        let target = SystemTarget::for_triple("aarch64-apple-darwin")
+            .expect("the probe target is qualified");
+        assert!(matches!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::InvalidIr)
+        ));
+    });
+
+    with_mutated_ir(source, |program| {
+        assert!(program.retype_main_result_for_test(crate::IrType::Integer {
+            width: 8,
+            signed: false,
+        }));
+        let target = SystemTarget::for_triple("aarch64-apple-darwin")
+            .expect("the probe target is qualified");
+        assert!(matches!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::InvalidIr)
+        ));
+    });
+}
+
+#[test]
+fn system_calls_reject_abi_equivalent_but_semantically_wrong_ir_arguments() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+  let bytes = buffer_new(1_u64, 65_u8);
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+        Ok(value: next) => {
+        }
+        Err(error: problem) => {
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_mutated_ir(source, |program| {
+        let main = &program.functions()[program.main_ordinal() as usize];
+        let directory = main.parameters()[0].1;
+        assert!(program.retype_first_system_argument_for_test(0, directory));
+        let target = SystemTarget::for_triple("aarch64-apple-darwin")
+            .expect("the probe target is qualified");
+        assert!(matches!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::InvalidIr)
+        ));
+    });
+
+    with_mutated_ir(source, |program| {
+        assert!(program.retype_first_system_argument_for_test(
+            1,
+            crate::IrType::Buffer {
+                element: crate::IrFlatElement::Integer {
+                    width: 8,
+                    signed: true,
+                },
+            },
+        ));
+        let target = SystemTarget::for_triple("aarch64-apple-darwin")
+            .expect("the probe target is qualified");
+        assert!(matches!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::InvalidIr)
+        ));
+    });
+
+    with_mutated_ir(source, |program| {
+        assert!(program.retype_first_system_argument_for_test(
+            2,
+            crate::IrType::Integer {
+                width: 64,
+                signed: true,
+            },
+        ));
+        let target = SystemTarget::for_triple("aarch64-apple-darwin")
+            .expect("the probe target is qualified");
+        assert!(matches!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::InvalidIr)
+        ));
+    });
+}
+
+#[test]
+fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
+    let scalar =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+  region 'a {
+    let count = args_count<'a>(args: &'a args);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_mutated_ir(scalar, |program| {
+        assert!(
+            program.retype_first_system_result_for_test(crate::IrType::Integer {
+                width: 64,
+                signed: true,
+            },)
+        );
+        let target = SystemTarget::for_triple("aarch64-apple-darwin")
+            .expect("the probe target is qualified");
+        assert!(matches!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::InvalidIr)
+        ));
+    });
+
+    let composite = br#"command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+  region 'a {
+    match arg_get<'a>(args: &'a args, position: 0_u64) {
+      Ok(value: text) => {
+      }
+      Err(error: absent) => {
+      }
+    }
+  }
+  let bytes = buffer_new(1_u64, 65_u8);
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+        Ok(value: next) => {
+        }
+        Err(error: problem) => {
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_mutated_ir(composite, |program| {
+        let first_result = program
+            .functions()
+            .iter()
+            .flat_map(|function| function.blocks())
+            .flat_map(|block| block.instructions())
+            .find_map(|instruction| {
+                let crate::IrInstruction::Define {
+                    ty,
+                    operation: crate::IrOperation::SystemCall { .. },
+                    ..
+                } = instruction
+                else {
+                    return None;
+                };
+                Some(*ty)
+            })
+            .expect("the probe contains a system call");
+        let wrong_result = program
+            .nominals()
+            .iter()
+            .find(|nominal| {
+                nominal.identity() == crate::IrNominalIdentity::PreludeResult
+                    && crate::IrType::Nominal(nominal.id()) != first_result
+            })
+            .map(|nominal| crate::IrType::Nominal(nominal.id()))
+            .expect("the probe instantiates two distinct Result shapes");
+        assert!(program.retype_first_system_result_for_test(wrong_result));
+        let target = SystemTarget::for_triple("aarch64-apple-darwin")
+            .expect("the probe target is qualified");
+        assert!(matches!(
+            emit_llvm_for_target(program, target),
+            Err(crate::BackendFailure::InvalidIr)
+        ));
+    });
 }
 
 #[test]
