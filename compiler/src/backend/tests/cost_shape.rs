@@ -640,12 +640,12 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     // descriptor. Derived from source: `search_file` publishes twice to the
     // standard-output owner — one flush of a full batch and one of the
     // remainder — and the standard-error owner is reached by
-    // `report_failure`'s one assembled diagnostic plus `main`'s one startup
-    // diagnostic. The two owners are separate and stay separate descriptors
-    // [SYS-12].
+    // `report_failure`'s one assembled diagnostic plus `main`'s two startup
+    // diagnostics (general startup failure and an overlong root name). The
+    // two owners are separate and stay separate descriptors [SYS-12].
     let published = publications();
     assert_eq!(published.iter().filter(|fd| **fd == 1).count(), 2);
-    assert_eq!(published.iter().filter(|fd| **fd == 2).count(), 2);
+    assert_eq!(published.iter().filter(|fd| **fd == 2).count(), 3);
     // Each transfer is alone on its path: the block that holds it computes an
     // address and makes one call, so nothing allocates, copies the transferred
     // bytes, takes a lock, or touches a signal disposition beside the transfer
@@ -693,20 +693,24 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
 /// attempt, and an ambiguous close is never retried.
 #[test]
 fn every_release_close_is_one_discarded_attempt() {
-    // Only the two closing owners close: `DirectoryRead` and `ReadFile`. The
-    // program holds both, so both appear.
+    // The three closing resource kinds close: `DirectoryRead`, `DirectoryList`,
+    // and `ReadFile`. The program holds all three, so all three appear. Two
+    // additional close sites consume provisional `open_file` descriptors that
+    // failed classification; those are distinguished below from releases.
     let closes = program().matches("@close(").count();
     assert!(
-        closes >= 2,
-        "both closing owners must release:\n{}",
+        closes >= 5,
+        "three closing resource kinds and two provisional cleanups must appear:\n{}",
         program()
     );
     // Every close result is named once and never read again. Nothing compares
     // it, branches on it, or feeds it to a retry: the diagnostic is discarded,
-    // which is what makes "never retry an ambiguous fd close" a property of
-    // the emitted code rather than a convention [SYS-5]. Value names are
-    // function-local, so each function is read on its own.
-    let mut inspected = 0;
+    // which makes "never retry an ambiguous fd close" a property of emitted
+    // code rather than a convention [SYS-5]. This applies equally to normal
+    // resource releases and to `open_file`'s two provisional cleanup paths.
+    // Value names are function-local, so each function is read on its own.
+    let mut releases = 0;
+    let mut provisional_cleanups = 0;
     for function in program_functions() {
         for line in function.lines() {
             let trimmed = line.trim_start();
@@ -717,17 +721,30 @@ fn every_release_close_is_one_discarded_attempt() {
                 .split_once(" = ")
                 .map(|(name, _)| name)
                 .unwrap_or_else(|| panic!("a close result must be named:\n{line}"));
+            let occurrences = function.matches(&format!("{name} ")).count()
+                + function.matches(&format!("{name},")).count()
+                + function.matches(&format!("{name})")).count();
+            if name.starts_with("%release.") {
+                releases += 1;
+            } else {
+                assert!(
+                    name.starts_with("%inspection.close") || name.starts_with("%kind.close"),
+                    "an unclassified close site escaped the release/provisional split: {name}"
+                );
+                provisional_cleanups += 1;
+            }
             assert_eq!(
-                function.matches(&format!("{name} ")).count()
-                    + function.matches(&format!("{name},")).count()
-                    + function.matches(&format!("{name})")).count(),
-                1,
-                "the close diagnostic must be discarded, not inspected: {name}"
+                occurrences, 1,
+                "a close diagnostic must be discarded, not inspected or retried: {name}"
             );
-            inspected += 1;
         }
     }
-    assert_eq!(inspected, closes);
+    assert!(
+        releases >= 3,
+        "all three closing resource kinds must release"
+    );
+    assert_eq!(provisional_cleanups, 2);
+    assert_eq!(releases + provisional_cleanups, closes);
 }
 
 /// §9.1 rows 9 and 10 — the value releases and the `Output` release reach no
@@ -767,7 +784,9 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             "open" | "signal"
             // The first slice's own host operations, including the [SYS-14]
             // enumeration facility this target's [QUAL-1] row names.
-            | "openat" | "read" | "write" | "close" | "__getdirentries64"
+            | "openat" | "fstat" | "read" | "write" | "close" | "__getdirentries64"
+            // Darwin's native error-slot access on failed host operations.
+            | "__error"
             // The lease length pass and the path NUL scan.
             | "strlen" | "memchr"
             // Buffer allocation and language cleanup.
@@ -805,7 +824,7 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
     // itself. Derived from source, function by function: `main` allocates the
     // pattern (4096), the root name (256), the root path (1024), and the
     // diagnostic report (1280); `walk` allocates its enumeration batch (8192),
-    // its collected entry records (16512), its visit order (64 u64 slots, 512
+    // its collected names (65664), its visit order (64 u64 slots, 512
     // bytes), one child path (1024), and its own report (1280); `search_file`
     // allocates the read input (4096) and the publication batch (8192).
     //
@@ -825,7 +844,7 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
         ("@calloc(i64 1, i64 8192)", 2),
         ("@calloc(i64 1, i64 1280)", 2),
         ("@calloc(i64 1, i64 1024)", 2),
-        ("@calloc(i64 1, i64 16512)", 1),
+        ("@calloc(i64 1, i64 65664)", 1),
         ("@calloc(i64 1, i64 512)", 1),
         ("@calloc(i64 1, i64 256)", 1),
     ] {

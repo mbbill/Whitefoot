@@ -1,6 +1,6 @@
-//! The v0.32-candidate [SYS-14] directory-enumeration surface, end to end.
+//! The [SYS-14] directory-enumeration surface, end to end.
 //!
-//! Every case here compiles a real corpus program against the candidate
+//! Every case here compiles a real corpus program against the declared
 //! inventory, links it, and runs it against a real directory tree the harness
 //! writes with ordinary filesystem calls. Nothing is injected into the
 //! program's address space: it opens, enumerates, and descends through the
@@ -8,7 +8,7 @@
 
 use super::support::{
     build_program, compile_program, compile_program_rejection_without_traversal_surface,
-    compile_program_with_traversal_surface, compile_program_without_traversal_surface,
+    compile_program_with_open_by_name, compile_program_with_traversal_surface,
     compile_rejection_with_traversal_surface, fixture_directory,
 };
 
@@ -116,27 +116,27 @@ fn the_traversal_source_is_admitted_only_by_the_declaring_inventory() {
     );
 }
 
-/// Every earlier program keeps its exact emitted module when the traversal
-/// rows are appended, because appending only adds declarations: no earlier
-/// spelling, ordinal, or lowering decision moves. Both sides are compiled
-/// against explicitly named inventories, so this is the inventory
+/// Every traversal-era program keeps its exact emitted module when the final
+/// `open_file` row is appended, because appending only adds a declaration: no
+/// earlier spelling, ordinal, or lowering decision moves. Both sides are
+/// compiled against explicitly named inventories, so this is the inventory
 /// differential and not one inventory compared with itself.
 #[test]
-fn appending_the_traversal_inventory_leaves_every_earlier_program_byte_identical() {
-    // `wfgrep.wf` was on this list until it became a recursive search and
-    // started using the traversal surface itself, so it is no longer an
-    // earlier program. `prefix_expression.wf` replaces it as the
-    // system-touching witness: nine system-surface spellings and no traversal
-    // operation, so it exercises the property — appending rows moves no
-    // earlier spelling, ordinal, or lowering decision — where a program that
-    // touches no system operation at all cannot detect a moved ordinal.
+fn appending_open_file_leaves_every_traversal_program_byte_identical() {
+    // `wfgrep.wf` is no longer an earlier program because its recursive search
+    // uses `open_file` itself. `prefix_expression.wf` remains the
+    // system-touching witness: nine earlier system-surface spellings and no
+    // `open_file`, so it exercises the property — appending the final row
+    // moves no earlier spelling, ordinal, or lowering decision — where a
+    // program that touches no system operation at all cannot detect a moved
+    // ordinal.
     // `raw_deflate_boundary.wf` has more system references still, but is not a
     // standalone compilation unit, which is what this entry compiles.
     for name in ["prefix_expression.wf", "byte_string.wf", "growable_vec.wf"] {
         assert_eq!(
-            compile_program_without_traversal_surface(name),
             compile_program_with_traversal_surface(name),
-            "{name} emits different bytes once the traversal rows are appended"
+            compile_program_with_open_by_name(name),
+            "{name} emits different bytes once the open_file row is appended"
         );
     }
 }
@@ -146,7 +146,7 @@ fn appending_the_traversal_inventory_leaves_every_earlier_program_byte_identical
 /// from ownership rather than from any traversal-specific rule.
 #[test]
 fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> own ExitStatus external, blocks, traps {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   doc "Moves one enumeration handle and then uses the moved binding.";
   let scratch = buffer_new(64_u64, 0_u8);
   region 'listing {
@@ -154,8 +154,8 @@ fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
       Ok(value: list) => {
         let taken = move list;
         region 'step {
-          match list_once<'step, 'step>(list: &uniq 'step list, destination: &uniq 'step scratch, offset: 0_u64, capacity: 64_u64) {
-            ListBytes(count: bytes, entries: reported) => {
+          match list_once<'step, 'step>(list: &uniq 'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
+            ListBytes(next: endpoint, entries: reported) => {
             }
             ListEnd() => {
             }
@@ -183,7 +183,7 @@ fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
 /// even with the traversal surface admitted.
 #[test]
 fn program_bytes_still_cannot_become_a_path_value() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> own ExitStatus external, blocks, traps {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   doc "Attempts to construct a relative path from program bytes.";
   let name = buffer_new(8_u64, 97_u8);
   region 'attempt {
@@ -209,15 +209,15 @@ fn program_bytes_still_cannot_become_a_path_value() {
 /// missing arm is a rejection rather than a silent fallthrough.
 #[test]
 fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> own ExitStatus external, blocks, traps {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   doc "Omits one enumeration outcome from an otherwise complete match.";
   let scratch = buffer_new(64_u64, 0_u8);
   region 'listing {
     match open_list<'listing>(directory: &'listing cwd) {
       Ok(value: list) => {
         region 'step {
-          match list_once<'step, 'step>(list: &uniq 'step list, destination: &uniq 'step scratch, offset: 0_u64, capacity: 64_u64) {
-            ListBytes(count: bytes, entries: reported) => {
+          match list_once<'step, 'step>(list: &uniq 'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
+            ListBytes(next: endpoint, entries: reported) => {
             }
             ListEnd() => {
             }
@@ -255,8 +255,8 @@ fn the_component_validation_precedes_every_host_call() {
     let body_end = body_start + llvm[body_start..].find("\n}\n").expect("its closing brace");
     let shim = &llvm[body_start..body_end];
 
-    assert!(shim.contains("%oversize = icmp ugt i64 %count, 255"));
-    assert!(shim.contains("%vacant = icmp eq i64 %count, 0"));
+    assert!(shim.contains("%oversize = icmp ugt i64 %extent, 1023"));
+    assert!(shim.contains("%vacant = icmp eq i64 %extent, 0"));
     assert!(shim.contains("%separating = icmp eq i32 %byte.value, 47"));
     assert!(shim.contains("%terminating = icmp eq i32 %byte.value, 0"));
 

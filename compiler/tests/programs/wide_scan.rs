@@ -1,4 +1,4 @@
-//! Trap-identity oracle for the check-aware wide-probe lowering.
+//! Trap-identity oracle for the claim-aware wide-probe lowering.
 //!
 //! The program below carries five recognized byte-walk loops. The
 //! equivalence walks pin the exact per-byte results (needle positions at
@@ -16,11 +16,14 @@ use std::os::unix::process::ExitStatusExt;
 
 use super::support::{build_program, compile_sources, fixture_directory};
 
-const ORACLE: &[u8] = br#"fn opaque_length(n: own u64) -> own u64 pure {
+const ORACLE: &[u8] = br#"fn opaque_length(n: own u64) -> result: own u64 pure {
   return n;
 }
 
-fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
+fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes('o), external, blocks contract {
+  define source_length = len(deref(source));
+  requires ile(length, source_length);
+} {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @publish {
@@ -29,11 +32,10 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
     } else {
       break @publish;
     }
-    let remaining = length -wrap sent;
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: sent, count: remaining) {
-        Ok(value: written) => {
-          set sent = sent +wrap written;
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+        Ok(value: next) => {
+          set sent = next;
         }
         Err(error: problem) => {
           return Err<unit, IoError>(error: move problem);
@@ -44,7 +46,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.args as args: own Args, command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
   doc "Runs three equivalence byte walks, publishes their recorded positions, then runs one argument-selected hostile walk that must trap at its exact byte.";
   let selector = 111_u8;
   let choice = buffer_new(8_u64, 0_u8);
@@ -53,9 +55,9 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     match arg_get<'pick>(args: &'pick args, position: 1_u64) {
       Ok(value: text) => {
         region 'copy {
-          match host_copy_bytes<'copy, 'copy>(value: &'copy text, destination: &uniq 'copy choice, offset: 0_u64, capacity: 8_u64) {
-            Ok(value: copied) => {
-              set chosen = copied;
+          match host_copy_bytes<'copy, 'copy>(value: &'copy text, destination: &uniq 'copy choice, start: 0_u64, end: 8_u64) {
+            Ok(value: next) => {
+              set chosen = next;
             }
             Err(error: too_small) => {
             }
@@ -189,11 +191,15 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   claim third_sentinel_in_found: third_sentinel_ok because "the found log holds every hit of this bounded scan";
   set found[count] = 202_u8;
   set count = count +wrap 1_u64;
-  region 'phase_publish {
-    match publish_all<'phase_publish, 'phase_publish>(output: &uniq 'phase_publish out, source: &'phase_publish found, length: count) {
-      Ok(value: published) => {
-      }
-      Err(error: problem) => {
+  let phase_room = len(found);
+  let phase_fits = ile(count, phase_room);
+  if phase_fits {
+    region 'phase_publish {
+      match publish_all<'phase_publish, 'phase_publish>(output: &uniq 'phase_publish out, source: &'phase_publish found, length: count) {
+        Ok(value: published) => {
+        }
+        Err(error: problem) => {
+        }
       }
     }
   }

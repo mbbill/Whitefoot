@@ -50,16 +50,6 @@ pub fn compile_program_with_traversal_surface(name: &str) -> String {
     compile_program_with(name, Inventory::Traversal)
 }
 
-/// Compiles one corpus program against the base [SYS-2] inventory: the
-/// tables without the traversal rows appended.
-///
-/// This is the other side of every inventory differential — the traversal
-/// spellings are undeclared names here, and every earlier program must keep
-/// its exact emitted module.
-pub fn compile_program_without_traversal_surface(name: &str) -> String {
-    compile_program_with(name, Inventory::Base)
-}
-
 /// Compiles one corpus program against the file-open-by-name candidate
 /// inventory: the traversal tables with `open_file` appended.
 pub fn compile_program_with_open_by_name(name: &str) -> String {
@@ -76,7 +66,7 @@ pub fn compile_program_rejection_with(name: &str, inventory: Inventory) -> Strin
     }
 }
 
-/// [`compile_program_without_traversal_surface`]'s rejection direction.
+/// Rejection direction against the base tables without traversal rows.
 pub fn compile_program_rejection_without_traversal_surface(name: &str) -> String {
     compile_program_rejection_with(name, Inventory::Base)
 }

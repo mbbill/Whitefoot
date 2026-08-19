@@ -208,18 +208,18 @@ fn boundary_append_preserves_its_clause_stripped_invalid_domain_behavior() {
         .expect("append_slice declaration end");
     let declaration = &rest[..end];
     let clauses = declaration
-        .find(" requires {")
-        .expect("append_slice requires clause");
+        .find(" contract {")
+        .expect("append_slice unified contract");
     let body = declaration
         .find("} {\n  doc")
-        .expect("append_slice body after ensures");
+        .expect("append_slice body after contract");
     let declaration = format!("{} {}", &declaration[..clauses], &declaration[body + 2..])
         .trim_end()
         .to_owned();
     let control = format!(
         r#"{declaration}
 
-fn main() -> own unit allocates(heap), traps {{
+command fn main() -> status: own ExitStatus allocates(heap), traps {{
   let empty_text = buffer_new(0_u64, 1_u8);
   let empty_destination = buffer_new(3_u64, 9_u8);
   region 'empty_text_view {{
@@ -244,7 +244,7 @@ fn main() -> own unit allocates(heap), traps {{
   claim nonempty_byte_zero: ieq(nonempty_destination[0_u64], 9_u8) because "nonempty byte zero";
   claim nonempty_byte_one: ieq(nonempty_destination[1_u64], 9_u8) because "nonempty byte one";
   claim nonempty_byte_two: ieq(nonempty_destination[2_u64], 9_u8) because "nonempty byte two";
-  return unit;
+  return exit_status(code: 0_u8);
 }}
 "#
     );

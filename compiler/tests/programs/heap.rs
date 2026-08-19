@@ -112,7 +112,7 @@ fn search_layer_with_entry() -> String {
     let layer = &source[start..end];
     format!(
         "{layer}
-fn main() -> own unit allocates(heap), traps {{
+command fn main() -> status: own ExitStatus allocates(heap) {{
   let backing = buffer_new(1_u64, 7_u8);
   let subject = ByteString(buf: move backing, fill: 1_u64);
   let needle_backing = buffer_new(1_u64, 7_u8);
@@ -125,7 +125,7 @@ fn main() -> own unit allocates(heap), traps {{
       }}
     }}
   }}
-  return unit;
+  return exit_status(code: 0_u8);
 }}
 "
     )
@@ -166,18 +166,25 @@ fn the_byte_accessor_without_its_capacity_branch_is_an_op4_rejection() {
 /// the claim node. The search layer is claim-free because it must be.
 #[test]
 fn a_claim_injected_into_the_strict_search_is_a_clm3_rejection() {
-    let declaration = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> own Option<u64> reads('h 'n) {";
-    let trapping = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> own Option<u64> reads('h 'n), traps {";
+    let declaration = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads('h 'n) {";
+    let trapping = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads('h 'n), traps {";
+    let entry = "command fn main() -> status: own ExitStatus allocates(heap) {";
+    let trapping_entry = "command fn main() -> status: own ExitStatus allocates(heap), traps {";
     let anchor = "  let last = hay_length -wrap needle_length;\n";
     let asserted = "  let last = hay_length -wrap needle_length;
   let ordered = ile(needle_length, hay_length);
   claim needle_fits: ordered because \"the earlier branch left the needle no longer than the haystack\";
 ";
     let source = search_layer_with_entry();
-    let retyped = source.replace(declaration, trapping);
+    let retyped_function = source.replace(declaration, trapping);
     assert_ne!(
-        retyped, source,
+        retyped_function, source,
         "the bs_find declaration must have been found"
+    );
+    let retyped = retyped_function.replace(entry, trapping_entry);
+    assert_ne!(
+        retyped, retyped_function,
+        "the command effect row must track the injected trap"
     );
     let claiming = retyped.replace(anchor, asserted);
     assert_ne!(claiming, retyped, "the claim anchor must have been found");
