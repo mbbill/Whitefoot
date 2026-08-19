@@ -314,7 +314,6 @@ fn operation_declarations(
                 ),
                 format!("declare i32 @{}(i32, ptr)", target.file_status_symbol()),
                 format!("declare i32 @{}(i32)", target.close_symbol()),
-                "declare void @abort() noreturn".to_owned(),
                 "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)".to_owned(),
             ]);
         }
@@ -1493,8 +1492,9 @@ fn emit_open_directory(
 ///
 /// The provisional descriptor is opened without following the terminal link
 /// and without blocking on a non-regular object, then classified through the
-/// target ABI before it becomes a `ReadFile`. A rejected descriptor is closed;
-/// inability to consume it is a resource/TCB failure and cannot continue.
+/// target ABI before it becomes a `ReadFile`. A rejected descriptor receives
+/// one best-effort close attempt; its diagnostic is discarded without retry,
+/// and the selected inspection or classification error is returned unchanged.
 fn emit_open_file(
     program: &IrProgram<'_, '_, '_>,
     implementation: ApprovedImplementation,

@@ -312,8 +312,9 @@ int wf_test_fstat(int descriptor, struct stat *status) {\n\
         return -1;\n\
     }\n\
     if (wf_test_file_status_error != 0) {\n\
-        snprintf(line, sizeof line, \"wf_test fstat fd=%d outcome=error\\n\",\n\
-                 descriptor);\n\
+        snprintf(line, sizeof line,\n\
+                 \"wf_test fstat fd=%d outcome=error code=%d\\n\", descriptor,\n\
+                 wf_test_file_status_error);\n\
         wf_test_trace(line);\n\
         errno = wf_test_file_status_error;\n\
         return -1;\n\
@@ -495,26 +496,32 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
 }
 "#;
 
-/// Opens the deterministic fixture through `open_file` and makes its typed
-/// success or error visible as the command status. Descriptor inspection and
-/// provisional cleanup are therefore on the same emitted path under test.
-const OPENS_ONE_FILE: &[u8] =
-    br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+/// Opens the deterministic fixture through `open_file` and makes a selected
+/// error class and its detail visible as the command status. Descriptor
+/// inspection and provisional cleanup are therefore on the same emitted path
+/// under test.
+fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
+    let arms = class_arms(12, named, default);
+    format!(
+        r#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {{
   let name = buffer_new(1_u64, 65_u8);
-  region 'c {
-    region 'n {
-      match open_file<'c, 'n>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
-        Ok(value: file) => {
+  region 'c {{
+    region 'n {{
+      match open_file<'c, 'n>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {{
+        Ok(value: file) => {{
           return exit_status(code: 24_u8);
-        }
-        Err(error: problem) => {
-          return exit_status(code: 23_u8);
-        }
-      }
-    }
-  }
+        }}
+        Err(error: problem) => {{
+          match move problem {{
+{arms}          }}
+        }}
+      }}
+    }}
+  }}
+}}
+"#
+    )
 }
-"#;
 
 #[test]
 fn a_program_reaching_no_host_object_emits_identically_on_both_targets() {
@@ -647,8 +654,15 @@ fn an_inspection_error_survives_a_failed_provisional_close() {
     // close exactly one best-effort cleanup attempt whose own diagnostic is
     // discarded, so even an interrupted close cannot replace the typed error
     // with a process abort.
+    let source = opens_one_file(
+        &[(
+            "DeviceFailure",
+            "if ieq(o, 4_u8) {\n  let narrowed = cvt<u32, u8>(c);\n  match narrowed {\n    Ok(value: code) => {\n      return exit_status(code: code);\n    }\n    Err(error: overflowed) => {\n      return exit_status(code: 250_u8);\n    }\n  }\n} else {\n  return exit_status(code: 251_u8);\n}",
+        )],
+        "return exit_status(code: 199_u8);",
+    );
     let run = run_on_deterministic_host(
-        OPENS_ONE_FILE,
+        source.as_bytes(),
         &HostScript::new()
             .file(b"x")
             .file_status(HostFileStatus::Fail(HostError::DeviceFailure))
@@ -659,12 +673,15 @@ fn an_inspection_error_survives_a_failed_provisional_close() {
         &[],
     );
 
-    assert_eq!(
-        run.output.status.code(),
-        Some(23),
-        "trace was {:?}",
-        run.trace()
-    );
+    let inspection_code = run
+        .trace()
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("wf_test fstat fd=42 outcome=error code=")
+                .and_then(|code| code.parse::<i32>().ok())
+        })
+        .expect("the failing inspection reports its native code");
+    assert_eq!(run.output.status.code(), Some(inspection_code));
     assert_eq!(run.attempts("fstat"), 1);
     assert_eq!(run.attempts("close"), 2);
     assert!(run.trace().contains("wf_test fstat fd=42 outcome=error"));
@@ -677,8 +694,15 @@ fn a_nonregular_result_survives_a_failed_provisional_close() {
     // The classification error is compiler-owned, but provisional cleanup has
     // the same SYS-5 rule: one close attempt, no retry, and no replacement of
     // the already selected source-visible outcome.
+    let source = opens_one_file(
+        &[(
+            "IsDirectory",
+            "if ieq(c, 0_u32) {\n  if ieq(o, 0_u8) {\n    return exit_status(code: 23_u8);\n  } else {\n    return exit_status(code: 24_u8);\n  }\n} else {\n  return exit_status(code: 25_u8);\n}",
+        )],
+        "return exit_status(code: 199_u8);",
+    );
     let run = run_on_deterministic_host(
-        OPENS_ONE_FILE,
+        source.as_bytes(),
         &HostScript::new()
             .file(b"x")
             .file_status(HostFileStatus::Directory)
