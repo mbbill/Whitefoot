@@ -213,9 +213,9 @@ fn checked(source: &[u8], run: impl FnOnce(&CheckedProgramData)) {
 fn a_bridge_subject_excludes_the_requirement_bound_and_protected_base() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read_below(values: own array<u8, count>, limit: own u64, position: own u64) -> result: own u8 pure requires {
-  let room = len(values);
-  check ile(limit, room) else trap "limit in values";
+fn read_below(values: own array<u8, count>, limit: own u64, position: own u64) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ile(limit, room);
 } {
   if ilt(position, limit) {
     return values[position];
@@ -248,9 +248,9 @@ command fn main() -> status: own ExitStatus pure {
 fn full_only_check_and_claim_calls_differ_from_an_unasserted_branch_call() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "read bound";
+fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   return values[position];
 }
@@ -542,9 +542,9 @@ fn base_op4_precedes_a_local_prv3_candidate() {
 #[test]
 fn base_fn8_precedes_a_call_argument_prv2_candidate() {
     let source =
-        br#"fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "bound";
+        br#"fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   return values[position];
 }
@@ -569,9 +569,9 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
 #[test]
 fn a_bridge_converts_to_direct_and_crosses_a_requirement_free_call() {
     let source =
-        br#"fn leaf(values: own array<u8, 4>, position: own u64) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "leaf bound";
+        br#"fn leaf(values: own array<u8, 4>, position: own u64) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   return values[position];
 }
@@ -780,7 +780,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 fn a_cross_function_system_write_keeps_write_context_before_the_true_origin() {
     let source = br#"fn copy_host['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>) -> result: own u64 reads('v 'd), writes('d), traps {
   region 'c {
-    match host_copy_bytes<'v, 'c>(value: value, destination: &uniq 'c deref(destination), offset: 0_u64, capacity: 4_u64) {
+    match host_copy_bytes<'v, 'c>(value: value, destination: &uniq 'c deref(destination), start: 0_u64, end: 4_u64) {
       Ok(value: copied) => {
         return copied;
       }
@@ -822,12 +822,12 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus alloca
         let target = &detail.targets[0];
         assert_eq!(
             coordinate_bytes(source, &target.origin_coordinate),
-            b"host_copy_bytes<'v, 'c>(value: value, destination: &uniq 'c deref(destination), offset: 0_u64, capacity: 4_u64)"
+            b"host_copy_bytes<'v, 'c>(value: value, destination: &uniq 'c deref(destination), start: 0_u64, end: 4_u64)"
         );
         assert!(target.carrier.last().is_some_and(|step| {
             step.call_role == Some(crate::ProvenanceCarrierCallRole::SystemWrite)
                 && coordinate_bytes(source, &step.coordinate)
-                    == b"host_copy_bytes<'v, 'c>(value: value, destination: &uniq 'c deref(destination), offset: 0_u64, capacity: 4_u64)"
+                    == b"host_copy_bytes<'v, 'c>(value: value, destination: &uniq 'c deref(destination), start: 0_u64, end: 4_u64)"
         }));
         let system_write = target.carrier.last().expect("system write origin");
         let system_context = system_write
@@ -1296,9 +1296,9 @@ fn a_real_branch_discharges_the_same_external_subject_without_a_provenance_rejec
 fn a_local_s4_bounds_leaf_retains_only_its_offset_subject() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "position in values";
+fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   return values[position];
 }
@@ -1333,9 +1333,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_subjectless_leaf_still_retains_its_structural_bridge() {
-    let source = br#"fn first(values: own buffer<u8>) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(0_u64, room) else trap "nonempty";
+    let source = br#"fn first(values: own buffer<u8>) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(0_u64, room);
 } {
   return values[0_u64];
 }
@@ -1355,23 +1355,23 @@ command fn main() -> status: own ExitStatus pure {
 fn bridges_compose_two_hops_and_through_a_local_value_transform() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "read bound";
+fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   return values[position];
 }
 
-fn relay(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "relay bound";
+fn relay(values: own array<u8, count>, position: own u64) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   return read(values: move values, position: position);
 }
 
-fn transformed(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "outer bound";
+fn transformed(values: own array<u8, count>, position: own u64) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   let shifted = position +wrap 0_u64;
   return relay(values: move values, position: shifted);
@@ -1451,30 +1451,30 @@ command fn main() -> status: own ExitStatus pure {
 fn an_equal_length_bridge_diamond_derives_its_legacy_predecessor_from_the_full_route() {
     let source = br#"const count: u64 = 4_u64;
 
-fn leaf(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "leaf bound";
+fn leaf(values: own array<u8, count>, position: own u64) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   return values[position];
 }
 
-fn left(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "left bound";
+fn left(values: own array<u8, count>, position: own u64) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   return leaf(values: move values, position: position);
 }
 
-fn right(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "right bound";
+fn right(values: own array<u8, count>, position: own u64) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   return leaf(values: move values, position: position);
 }
 
-fn diamond(values: own array<u8, count>, position: own u64, choose_left: own Bool) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "diamond bound";
+fn diamond(values: own array<u8, count>, position: own u64, choose_left: own Bool) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   if choose_left {
     return left(values: move values, position: position);
@@ -1535,9 +1535,9 @@ command fn main() -> status: own ExitStatus pure {
 fn recursive_and_mutually_recursive_bridges_converge_from_local_seeds() {
     let source = br#"const count: u64 = 4_u64;
 
-fn self_read(values: own array<u8, count>, position: own u64, again: own Bool) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "self bound";
+fn self_read(values: own array<u8, count>, position: own u64, again: own Bool) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   if again {
     let stop = False();
@@ -1547,16 +1547,16 @@ fn self_read(values: own array<u8, count>, position: own u64, again: own Bool) -
   }
 }
 
-fn left(values: own array<u8, count>, position: own u64, again: own Bool) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "left bound";
+fn left(values: own array<u8, count>, position: own u64, again: own Bool) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   return right(values: move values, position: position, again: again);
 }
 
-fn right(values: own array<u8, count>, position: own u64, again: own Bool) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "right bound";
+fn right(values: own array<u8, count>, position: own u64, again: own Bool) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   if again {
     let stop = False();
@@ -1648,14 +1648,14 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_seedless_requirement_cycle_has_no_bridge_or_call_link() {
-    let source = br#"fn empty_left(value: own u64) -> result: own unit pure requires {
-  check ilt(value, 10_u64) else trap "left bound";
+    let source = br#"fn empty_left(value: own u64) -> result: own unit pure contract {
+  requires ilt(value, 10_u64);
 } {
   return empty_right(value: value);
 }
 
-fn empty_right(value: own u64) -> result: own unit pure requires {
-  check ilt(value, 10_u64) else trap "right bound";
+fn empty_right(value: own u64) -> result: own unit pure contract {
+  requires ilt(value, 10_u64);
 } {
   return empty_left(value: value);
 }
@@ -1676,9 +1676,9 @@ command fn main() -> status: own ExitStatus pure {
 fn a_counterfactual_call_goal_keeps_actual_obligation_failure_separate() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure requires {
-  let room = len(values);
-  check ilt(position, room) else trap "read bound";
+fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure contract {
+  define room = len(values);
+  requires ilt(position, room);
 } {
   return values[position];
 }
@@ -2103,7 +2103,7 @@ command fn main() -> status: own ExitStatus pure {
 fn system_results_and_writes_add_no_parameter_datum() {
     let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads('o 's), writes('o), external, blocks, traps {
   region 'attempt {
-    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: 0_u64, count: count) {
+    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: count) {
       Ok(value: written) => {
       }
       Err(error: problem) => {

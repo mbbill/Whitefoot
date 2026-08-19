@@ -300,11 +300,11 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn band_requirement_establishes_body_conjuncts_and_composes_nothing_upward() {
     let source =
-        br#"fn pick(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure requires {
-  let low_ok = ilt(low, 8_u64);
-  let high_ok = ilt(high, 8_u64);
-  let both = band(low_ok, high_ok);
-  check both else trap "pair in range";
+        br#"fn pick(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure contract {
+  define low_ok = ilt(low, 8_u64);
+  define high_ok = ilt(high, 8_u64);
+  define both = band(low_ok, high_ok);
+  requires both;
 } {
   let first = table[low];
   return first;

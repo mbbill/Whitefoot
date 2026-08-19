@@ -73,7 +73,7 @@ fn an_empty_else_is_a_gram6_rejection_at_the_if() {
     assert_rule_at(
         source,
         SemanticRule::Gram6,
-        "if flag {\n    return unit;\n  } else {\n  }",
+        "if flag {\n    return exit_status(code: 0_u8);\n  } else {\n  }",
     );
 }
 
@@ -95,7 +95,7 @@ fn an_unflattened_else_if_is_a_gram6_rejection_at_the_nested_if() {
     assert_rule_at(
         source,
         SemanticRule::Gram6,
-        "if flag {\n      return unit;\n    } else {\n      return unit;\n    }",
+        "if flag {\n      return exit_status(code: 0_u8);\n    } else {\n      return exit_status(code: 0_u8);\n    }",
     );
 }
 

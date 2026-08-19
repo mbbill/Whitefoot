@@ -225,9 +225,9 @@ command fn main() -> status: own ExitStatus traps {
 #[test]
 fn a_load_bearing_claim_cannot_authorize_a_strict_required_call() {
     let asserted =
-        br#"fn required(value: own u64, limit: own u64) -> result: own unit pure requires {
-  let allowed = ilt(value, limit);
-  check allowed else trap "required";
+        br#"fn required(value: own u64, limit: own u64) -> result: own unit pure contract {
+  define allowed = ilt(value, limit);
+  requires allowed;
 } {
   return unit;
 }
@@ -301,9 +301,9 @@ command fn main() -> status: own ExitStatus traps {
 #[test]
 fn an_outside_caller_must_prove_a_marked_root_requirement_in_its_own_u_view() {
     let source =
-        br#"deny_claims fn guarded(value: own u64, limit: own u64) -> result: own unit pure requires {
-  let allowed = ilt(value, limit);
-  check allowed else trap "guarded";
+        br#"deny_claims fn guarded(value: own u64, limit: own u64) -> result: own unit pure contract {
+  define allowed = ilt(value, limit);
+  requires allowed;
 } {
   return unit;
 }
@@ -335,9 +335,9 @@ command fn main() -> status: own ExitStatus traps {
 
 #[test]
 fn an_outside_call_does_not_demand_its_actual_expression_obligations_in_u() {
-    let source = br#"deny_claims fn sink(value: own u8) -> result: own unit pure requires {
-  let valid = ieq(0_u64, 0_u64);
-  check valid else trap "constant boundary";
+    let source = br#"deny_claims fn sink(value: own u8) -> result: own unit pure contract {
+  define valid = ieq(0_u64, 0_u64);
+  requires valid;
 } {
   return unit;
 }
@@ -389,23 +389,20 @@ command fn main() -> status: own ExitStatus traps {
 
 #[test]
 fn a_real_value_branch_and_verified_result_pass_with_remapped_strict_roots() {
-    let source = br#"fn relay(value: own u64) -> result: own u64 pure ensures result {
-  check ieq(result, value) else trap "relay result";
+    let source = br#"fn relay(value: own u64) -> result: own u64 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
 
-fn accept(value: own u64, limit: own u64) -> result: own u64 pure requires {
-  let allowed = ile(value, limit);
-  check allowed else trap "accepted bound";
+fn accept(value: own u64, limit: own u64) -> result: own u64 pure contract {
+  define allowed = ile(value, limit);
+  requires allowed;
 } {
   return value;
 }
 
-deny_claims command fn main() -> status: own ExitStatus pure requires {
-  let valid = ieq(0_u64, 0_u64);
-  check valid else trap "entry relation";
-} {
+deny_claims command fn main() -> status: own ExitStatus pure {
   let candidate = 7_u64;
   let prior = 0_u64;
   let limit = 8_u64;
@@ -417,7 +414,7 @@ deny_claims command fn main() -> status: own ExitStatus pure requires {
   }
   let relayed = relay(value: bounded);
   let accepted = accept(value: relayed, limit: limit);
-  return unit;
+  return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -589,8 +586,8 @@ deny_claims command fn main() -> status: own ExitStatus traps {
 
 #[test]
 fn a_dark_strict_ephemeral_failure_keeps_the_bind_first_repair() {
-    let source = br#"fn positive(value: own u8) -> result: own unit pure requires {
-  check ilt(value, 10_u8) else trap "small";
+    let source = br#"fn positive(value: own u8) -> result: own unit pure contract {
+  requires ilt(value, 10_u8);
 } {
   return unit;
 }

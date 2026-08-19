@@ -1,9 +1,9 @@
 use crate::{
-    LexicalUseRole, ResolutionIssueKind, ResolutionRule, SemanticIssueKind, SemanticLocation,
-    SemanticOutcome, SemanticRule,
+    LexicalUseRole, ResolutionIssueKind, ResolutionOutcome, ResolutionRule, SemanticIssueKind,
+    SemanticLocation, SemanticOutcome, SemanticRule,
 };
 
-use super::{assert_rule, assert_rule_at, with_semantics, with_semantics_dark};
+use super::{assert_rule, assert_rule_at, with_resolution, with_semantics, with_semantics_dark};
 use crate::semantic::entailment::{
     DerivationNode, FlowEventKind, FunctionPostconditionProof, PostconditionDisposition, ProofView,
 };
@@ -74,12 +74,12 @@ const COMMAND_MAIN: &str =
     "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[test]
-fn candidate_command_entry_smoke() {
+fn command_entry_smoke() {
     assert_complete(COMMAND_MAIN.as_bytes());
 }
 
 #[test]
-fn candidate_requires_smoke() {
+fn requires_smoke() {
     let source = format!(
         "fn identity(value: own i32) -> out: own i32 pure contract {{\n  requires ieq(value, value);\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
     );
@@ -87,7 +87,7 @@ fn candidate_requires_smoke() {
 }
 
 #[test]
-fn candidate_ensures_smoke() {
+fn ensures_smoke() {
     let source = format!(
         "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures ieq(out, value);\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
     );
@@ -102,7 +102,7 @@ fn a_non_bool_ensures_predicate_cites_op5() {
     assert_rule(
         source.as_bytes(),
         SemanticRule::Op5,
-        SemanticIssueKind::InvalidCheckCondition,
+        SemanticIssueKind::InvalidPredicateCondition,
     );
 }
 
@@ -275,8 +275,8 @@ fn an_uninhabited_routed_ensure_needs_no_exit_and_publishes_no_summary() {
 
 #[test]
 fn a_checked_plain_postcondition_is_proved_at_its_selected_exit() {
-    let source = br#"fn identity(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "post";
+    let source = br#"fn identity(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
@@ -297,9 +297,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn body_checks_and_s4_are_routed_to_the_fixed_postcondition_views() {
-    let body_check = br#"fn guarded(value: own i32) -> result: own i32 traps ensures result {
-  check ieq(result, 1_i32) else trap "post";
+fn body_claims_and_s4_are_routed_to_the_fixed_postcondition_views() {
+    let body_claim = br#"fn guarded(value: own i32) -> result: own i32 traps contract {
+  ensures ieq(result, 1_i32);
 } {
   claim body: ieq(value, 1_i32) because "body";
   return value;
@@ -309,8 +309,8 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_complete(body_check);
-    let proof = postcondition_proof(body_check, "guarded");
+    assert_complete(body_claim);
+    let proof = postcondition_proof(body_claim, "guarded");
     assert_eq!(
         dispositions(&proof),
         vec![[
@@ -323,10 +323,9 @@ command fn main() -> status: own ExitStatus pure {
     assert!(!proof.unasserted.discharged);
     assert!(!proof.s4_blinded.discharged);
 
-    let s4 = br#"fn constrained(value: own i32) -> result: own i32 pure requires {
-  check ieq(value, 1_i32) else trap "pre";
-} ensures result {
-  check ieq(result, 1_i32) else trap "post";
+    let s4 = br#"fn constrained(value: own i32) -> result: own i32 pure contract {
+  requires ieq(value, 1_i32);
+  ensures ieq(result, 1_i32);
 } {
   return value;
 }
@@ -352,8 +351,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn entry_image_writes_are_retained_and_prevent_false_discharge() {
-    let source = br#"fn changed(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "post";
+    let source = br#"fn changed(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   set value = 1_i32;
   return value;
@@ -381,8 +380,8 @@ fn a_moved_holder_consume_precedes_its_projected_call_write() {
   return unit;
 }
 
-fn transfer['r](out: &uniq 'r i32) -> result: own i32 reads('r), writes('r) ensures result {
-  check ieq(result, deref(out)) else trap "post";
+fn transfer['r](out: &uniq 'r i32) -> result: own i32 reads('r), writes('r) contract {
+  ensures ieq(result, deref(out));
 } {
   let before = deref(out);
   overwrite<'r>(out: move out);
@@ -474,9 +473,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_ordinary_loop_uses_the_exact_first_invalidation_event_without_a_snapshot() {
-    let source =
-        br#"fn looped(value: own i32, stop: own Bool) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "post";
+    let source = br#"fn looped(value: own i32, stop: own Bool) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   loop @again {
     set value = 1_i32;
@@ -542,13 +540,11 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invalid_exit() {
-    let source = br#"fn append['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> result: own u64 reads('d 'm), writes('d) requires {
-  let capacity = len(deref(destination));
-  let admitted = ile(filled, capacity);
-  check admitted else trap "append filled exceeds destination";
-} ensures result {
-  let capacity = len(deref(destination));
-  check ile(result, capacity) else trap "append result exceeds destination";
+    let source = br#"fn append['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> result: own u64 reads('d 'm), writes('d) contract {
+  define capacity = len(deref(destination));
+  define admitted = ile(filled, capacity);
+  requires admitted;
+  ensures ile(result, capacity);
 } {
   let capacity = len(deref(destination));
   let admitted = ile(filled, capacity);
@@ -591,9 +587,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn length_entry_images_ignore_element_writes_but_not_root_replacement() {
-    let element = br#"fn kept(values: own array<u8, 2>) -> result: own u64 pure ensures result {
-  let size = len(values);
-  check ieq(result, size) else trap "post";
+    let element = br#"fn kept(values: own array<u8, 2>) -> result: own u64 pure contract {
+  define size = len(values);
+  ensures ieq(result, size);
 } {
   set values[0_u64] = 1_u8;
   return len(values);
@@ -620,9 +616,9 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-fn replaced(values: own array<u8, 2>) -> result: own u64 pure ensures result {
-  let size = len(values);
-  check ieq(result, size) else trap "post";
+fn replaced(values: own array<u8, 2>) -> result: own u64 pure contract {
+  define size = len(values);
+  ensures ieq(result, size);
 } {
   let size = len(values);
   let ignored = consume(values: move values);
@@ -648,9 +644,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn selected_exits_aggregate_only_when_every_exit_in_the_view_discharges() {
-    let source =
-        br#"fn branch(value: own i32, choose: own Bool) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "post";
+    let source = br#"fn branch(value: own i32, choose: own Bool) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   if choose {
     return value;
@@ -679,14 +674,14 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_earlier_verified_postcondition_discharges_a_fresh_direct_result() {
-    let independent = br#"fn callee(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "callee post";
+    let independent = br#"fn callee(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
 
-fn caller(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "caller post";
+fn caller(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let ignored = callee(value: value);
   return value;
@@ -698,14 +693,14 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     assert_complete(independent);
 
-    let dependent = br#"fn callee(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "callee post";
+    let dependent = br#"fn callee(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
 
-fn caller(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "caller post";
+fn caller(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let called = callee(value: value);
   return called;
@@ -720,15 +715,14 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_earlier_ok_summary_is_available_only_at_direct_match_arm_entry() {
-    let source =
-        br#"fn callee(value: own i32) -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
-  check ieq(result, value) else trap "callee post";
+    let source = br#"fn callee(value: own i32) -> result: own Result<i32, Overflow> pure contract {
+  ensures when Ok(value: payload): ieq(payload, value);
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
-fn direct(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "direct post";
+fn direct(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   match callee(value: value) {
     Ok(value: payload) => {
@@ -765,14 +759,14 @@ fn a_borrowed_formal_substitution_consumes_its_one_formal_deref() {
   value: i32;
 }
 
-fn observe['r](pair: &'r Pair) -> result: own i32 reads('r) ensures result {
-  check ieq(result, deref(pair).value) else trap "observe post";
+fn observe['r](pair: &'r Pair) -> result: own i32 reads('r) contract {
+  ensures ieq(result, deref(pair).value);
 } {
   return deref(pair).value;
 }
 
-fn caller['r](pair: &'r Pair) -> result: own i32 reads('r) ensures result {
-  check ieq(result, deref(pair).value) else trap "caller post";
+fn caller['r](pair: &'r Pair) -> result: own i32 reads('r) contract {
+  ensures ieq(result, deref(pair).value);
 } {
   let observed = observe<'r>(pair: pair);
   return observed;
@@ -792,15 +786,15 @@ fn a_moved_unique_actual_cannot_publish_a_stale_postcondition_relation() {
   changed: i32;
 }
 
-fn touch['r](pair: &uniq 'r Pair) -> result: own i32 reads('r), writes('r) ensures result {
-  check ieq(result, deref(pair).kept) else trap "touch post";
+fn touch['r](pair: &uniq 'r Pair) -> result: own i32 reads('r), writes('r) contract {
+  ensures ieq(result, deref(pair).kept);
 } {
   set deref(pair).changed = 1_i32;
   return deref(pair).kept;
 }
 
-fn caller(pair: own Pair) -> result: own i32 pure ensures result {
-  check ieq(result, pair.kept) else trap "caller post";
+fn caller(pair: own Pair) -> result: own i32 pure contract {
+  ensures ieq(result, pair.kept);
 } {
   region 'r {
     let holder = &uniq 'r pair;
@@ -851,14 +845,14 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_box_deref_actual_cannot_survive_a_cross_formal_owner_move() {
     let source =
-        br#"fn observe(value: own i32, owner: own box<i32>) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "observe post";
+        br#"fn observe(value: own i32, owner: own box<i32>) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
 
-fn caller() -> result: own i32 allocates(heap) ensures result {
-  check ieq(result, 1_i32) else trap "caller post";
+fn caller() -> result: own i32 allocates(heap) contract {
+  ensures ieq(result, 1_i32);
 } {
   let owner = box_new(1_i32);
   let observed = observe(value: deref(owner), owner: move owner);
@@ -893,8 +887,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_later_owner_move_kills_an_already_published_s12_relation() {
-    let source = br#"fn observe(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "observe post";
+    let source = br#"fn observe(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
@@ -903,8 +897,8 @@ fn sink(owner: own box<i32>) -> result: own unit pure {
   return unit;
 }
 
-fn guard(left: own i32, right: own i32) -> result: own unit pure requires {
-  check ieq(left, right) else trap "guard pre";
+fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
+  requires ieq(left, right);
 } {
   return unit;
 }
@@ -931,8 +925,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_ordinary_fallback_survives_when_the_same_s12_candidate_dies() {
-    let source = br#"fn observe(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "observe post";
+    let source = br#"fn observe(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
@@ -941,8 +935,8 @@ fn sink(owner: own box<i32>) -> result: own unit pure {
   return unit;
 }
 
-fn guard(left: own i32, right: own i32) -> result: own unit pure requires {
-  check ieq(left, right) else trap "guard pre";
+fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
+  requires ieq(left, right);
 } {
   return unit;
 }
@@ -966,8 +960,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_joined_holder_free_consequence_survives_the_original_owner_move() {
-    let source = br#"fn observe(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "observe post";
+    let source = br#"fn observe(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
@@ -976,8 +970,8 @@ fn sink(owner: own box<i32>) -> result: own unit pure {
   return unit;
 }
 
-fn guard(left: own i32, right: own i32) -> result: own unit pure requires {
-  check ieq(left, right) else trap "guard pre";
+fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
+  requires ieq(left, right);
 } {
   return unit;
 }
@@ -1005,15 +999,14 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_direct_same_binding_call_result_establishes_only_after_the_target_kill() {
-    let source =
-        br#"fn choose(ignored: own i32, value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "choose post";
+    let source = br#"fn choose(ignored: own i32, value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
 
-fn guard(left: own i32, right: own i32) -> result: own unit pure requires {
-  check ieq(left, right) else trap "guard pre";
+fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
+  requires ieq(left, right);
 } {
   return unit;
 }
@@ -1055,20 +1048,20 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn direct_same_binding_near_misses_retain_no_receiver_root_or_special_event() {
-    let source = br#"fn echo(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "echo post";
+    let source = br#"fn echo(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
 
-fn choose(first: own i32, second: own i32, value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "choose post";
+fn choose(first: own i32, second: own i32, value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
 
-fn mentions_receiver(slot: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, slot) else trap "caller post";
+fn mentions_receiver(slot: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, slot);
 } {
   set slot = echo(value: slot);
   return slot;
@@ -1120,14 +1113,15 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_selected_payload_first_set_reestablishes_only_the_result_relation() {
-    let source = br#"fn selected(value: own i32) -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
-  check ieq(result, value) else trap "selected post";
+    let source =
+        br#"fn selected(value: own i32) -> result: own Result<i32, Overflow> pure contract {
+  ensures when Ok(value: payload): ieq(payload, value);
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
-fn guard(left: own i32, right: own i32) -> result: own unit pure requires {
-  check ieq(left, right) else trap "guard pre";
+fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
+  requires ieq(left, right);
 } {
   return unit;
 }
@@ -1179,8 +1173,8 @@ fn selected_receiver_nonfirst_additional_write_and_call_actual_shapes_retain_no_
   value: i32;
 }
 
-fn selected(value: own i32) -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
-  check ieq(result, value) else trap "selected post";
+fn selected(value: own i32) -> result: own Result<i32, Overflow> pure contract {
+  ensures when Ok(value: payload): ieq(payload, value);
 } {
   return Ok<i32, Overflow>(value: value);
 }
@@ -1280,8 +1274,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_checked_ok_postcondition_selects_its_direct_payload() {
-    let source = br#"fn selected(value: own i32) -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
-  check ieq(result, value) else trap "post";
+    let source =
+        br#"fn selected(value: own i32) -> result: own Result<i32, Overflow> pure contract {
+  ensures when Ok(value: payload): ieq(payload, value);
 } {
   return Ok<i32, Overflow>(value: value);
 }
@@ -1295,9 +1290,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_ok_selector_rejects_an_empty_selected_exit_set() {
-    let source =
-        br#"fn unselected() -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
-  check ieq(result, 0_i32) else trap "post";
+    let source = br#"fn unselected() -> result: own Result<i32, Overflow> pure contract {
+  ensures when Ok(value: payload): ieq(payload, 0_i32);
 } {
   let error = Overflow();
   return Err<i32, Overflow>(error: error);
@@ -1318,9 +1312,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_ok_selector_rejects_a_stored_whole_result_return() {
-    let source =
-        br#"fn stored(value: own i32) -> result: own Result<i32, Overflow> pure ensures Ok(value: result) {
-  check ieq(result, value) else trap "post";
+    let source = br#"fn stored(value: own i32) -> result: own Result<i32, Overflow> pure contract {
+  ensures when Ok(value: payload): ieq(payload, value);
 } {
   let outcome = Ok<i32, Overflow>(value: value);
   return move outcome;
@@ -1337,9 +1330,9 @@ command fn main() -> status: own ExitStatus pure {
 fn relation_length_rejects_a_named_constant_root() {
     let source = br#"const values: array<i32, 1> =[0_i32];
 
-fn length() -> result: own u64 pure ensures result {
-  let size = len(values);
-  check ieq(result, size) else trap "post";
+fn length() -> result: own u64 pure contract {
+  define size = len(values);
+  ensures ieq(result, size);
 } {
   return 1_u64;
 }
@@ -1353,8 +1346,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn projected_result_is_rejected_at_the_complete_final_relation() {
-    let source = br#"fn projected(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result.field, value) else trap "post";
+    let source = br#"fn projected(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result.field, value);
 } {
   return value;
 }
@@ -1367,10 +1360,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_nonbare_result_use_in_an_unused_local_is_still_rejected() {
-    let source = br#"fn hidden(value: own i32) -> result: own i32 pure ensures result {
-  let ignored = reinterpret<i32, u32>(deref(result));
-  check ieq(result, value) else trap "post";
+fn a_nonbare_result_use_in_an_ensures_expression_is_still_rejected() {
+    let source = br#"fn hidden(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(deref(result), value);
 } {
   return value;
 }
@@ -1379,11 +1371,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_at(
-        source,
-        SemanticRule::Fn9,
-        "reinterpret<i32, u32>(deref(result))",
-    );
+    assert_rule_at(source, SemanticRule::Fn9, "ieq(deref(result), value)");
 }
 
 #[test]
@@ -1396,21 +1384,21 @@ struct Values {
   items: array<u8, 2>;
 }
 
-fn from_box(owner: own box<Pair>) -> result: own i32 pure ensures result {
-  check ieq(result, deref(owner).value) else trap "post";
+fn from_box(owner: own box<Pair>) -> result: own i32 pure contract {
+  ensures ieq(result, deref(owner).value);
 } {
   return deref(owner).value;
 }
 
-fn from_shared['r](owner: &'r Pair) -> result: own i32 reads('r) ensures result {
-  check ieq(result, deref(owner).value) else trap "post";
+fn from_shared['r](owner: &'r Pair) -> result: own i32 reads('r) contract {
+  ensures ieq(result, deref(owner).value);
 } {
   return deref(owner).value;
 }
 
-fn field_length(values: own Values) -> result: own u64 pure ensures result {
-  let size = len(values.items);
-  check ieq(result, size) else trap "post";
+fn field_length(values: own Values) -> result: own u64 pure contract {
+  define size = len(values.items);
+  ensures ieq(result, size);
 } {
   return len(values.items);
 }
@@ -1428,8 +1416,8 @@ fn a_holder_alias_does_not_change_the_selected_return_term_identity() {
   value: i32;
 }
 
-fn from_shared_alias['r](owner: &'r Pair) -> result: own i32 reads('r) ensures result {
-  check ieq(result, deref(owner).value) else trap "post";
+fn from_shared_alias['r](owner: &'r Pair) -> result: own i32 reads('r) contract {
+  ensures ieq(result, deref(owner).value);
 } {
   let alias = owner;
   return deref(alias).value;
@@ -1450,8 +1438,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_concrete_const_substitution_is_retained_with_a_selected_length() {
     let source =
-        br#"fn count<const n: u64>(values: own array<u8, n>) -> result: own u64 pure ensures result {
-  check ieq(result, result) else trap "post";
+        br#"fn count<const n: u64>(values: own array<u8, n>) -> result: own u64 pure contract {
+  ensures ieq(result, result);
 } {
   return len(values);
 }
@@ -1471,8 +1459,8 @@ fn an_ensures_bearing_conformance_binding_is_fn3_before_proof() {
   fn make() -> result: own i32 pure;
 }
 
-fn make() -> result: own i32 pure ensures result {
-  check ieq(result, 1_i32) else trap "post";
+fn make() -> result: own i32 pure contract {
+  ensures ieq(result, 1_i32);
 } {
   return 1_i32;
 }
@@ -1493,8 +1481,8 @@ fn an_invalid_contract_precedes_the_postcondition_proof_boundary() {
     let source = br#"contract Invalid<T> {
 }
 
-fn identity(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "post";
+fn identity(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
@@ -1517,8 +1505,8 @@ fn an_invalid_contract_law_precedes_the_postcondition_proof_boundary() {
   law identity(combine, unit);
 }
 
-fn identity(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "post";
+fn identity(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
@@ -1536,8 +1524,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn invalid_selector_precedes_an_unresolved_name_in_its_entry() {
-    let source = br#"fn invalid() -> result: own unit pure ensures result {
-  check ieq(result, missing) else trap "post";
+    let source = br#"fn invalid() -> result: own unit pure contract {
+  ensures ieq(result, missing);
 } {
   return unit;
 }
@@ -1555,14 +1543,14 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn every_concrete_selector_is_admitted_before_any_entry_lookup() {
-    let source = br#"fn first(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, missing) else trap "post";
+    let source = br#"fn first(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, missing);
 } {
   return value;
 }
 
-fn second() -> result: own unit pure ensures result {
-  check ieq(result, result) else trap "post";
+fn second() -> result: own unit pure contract {
+  ensures ieq(result, result);
 } {
   return unit;
 }
@@ -1580,8 +1568,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn admitted_selector_forwards_the_original_entry_lookup_issue() {
-    let source = br#"fn unresolved(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, missing) else trap "post";
+    let source = br#"fn unresolved(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, missing);
 } {
   return value;
 }
@@ -1608,9 +1596,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn entry_inventory_precedes_a_poisoned_body_constructor() {
-    let source = br#"fn poisoned(value: own i32) -> result: own i32 pure ensures result {
-  let ilt = ieq(result, value);
-  check ilt else trap "post";
+    let source = br#"fn poisoned(value: own i32) -> result: own i32 pure contract {
+  define ilt = ieq(value, value);
+  ensures ieq(result, value);
 } {
   return Missing();
 }
@@ -1619,9 +1607,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::ResolutionIssue { issue } = outcome else {
-            panic!("expected delayed inventory issue, got {outcome:?}");
+    with_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("expected contract-definition inventory issue, got {outcome:?}");
         };
         assert_eq!(issue.rule(), ResolutionRule::Form3);
         assert!(matches!(
@@ -1633,8 +1621,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unused_generic_entry_issue_precedes_its_body_semantics() {
-    let source = br#"fn generic<T>(value: own T) -> result: own T pure ensures result {
-  check ieq(result, missing) else trap "post";
+    let source = br#"fn generic<T>(value: own T) -> result: own T pure contract {
+  ensures ieq(result, missing);
 } {
   return box_new(value);
 }
@@ -1654,11 +1642,11 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_successfully_resolved_foreign_variant_is_an_fn9_source_issue() {
     let source = br#"enum Foreign {
-  Other(value: i32);
+  ForeignCase(value: i32);
 }
 
-fn selected(value: own i32) -> result: own Result<i32, Overflow> pure ensures Other(value: result) {
-  check ieq(result, value) else trap "post";
+fn selected(value: own i32) -> result: own Result<i32, Overflow> pure contract {
+  ensures when ForeignCase(value: payload): ieq(payload, value);
 } {
   return Ok<i32, Overflow>(value: value);
 }
@@ -1681,14 +1669,14 @@ command fn main() -> status: own ExitStatus pure {
         };
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
-        assert_eq!(&source[start..end], b"Other(value: result)");
+        assert_eq!(&source[start..end], b"ForeignCase(value: payload)");
     });
 }
 
 #[test]
 fn concrete_generic_instances_do_not_reuse_symbolic_selector_class() {
-    let source = br#"fn identity<T>(value: own T) -> result: own T pure ensures result {
-  check ieq(result, result) else trap "post";
+    let source = br#"fn identity<T>(value: own T) -> result: own T pure contract {
+  ensures ieq(result, result);
 } {
   return value;
 }
@@ -1709,8 +1697,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn delayed_entry_lookup_precedes_unrelated_entry_form_semantics() {
-    let source = br#"fn probe(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, missing) else trap "post";
+    let source = br#"fn probe(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, missing);
 } {
   return value;
 }
@@ -1733,8 +1721,8 @@ fn main() -> result: own i32 pure {
 
 #[test]
 fn selector_preflight_precedes_unrelated_entry_form_semantics() {
-    let source = br#"fn invalid() -> result: own unit pure ensures result {
-  check ieq(result, result) else trap "post";
+    let source = br#"fn invalid() -> result: own unit pure contract {
+  ensures ieq(result, result);
 } {
   return unit;
 }
@@ -1752,8 +1740,8 @@ fn main() -> result: own i32 pure {
 
 #[test]
 fn unused_numeric_bounds_preserve_selector_class_information() {
-    let source = br#"fn invalid<T: Float>(value: own T) -> result: own T pure ensures result {
-  check feq(result, value) else trap "post";
+    let source = br#"fn invalid<T: Float>(value: own T) -> result: own T pure contract {
+  ensures feq(result, value);
 } {
   return value;
 }
@@ -1771,9 +1759,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unavailable_generic_type_argument_does_not_invent_a_selector_instance() {
-    let source = br#"fn generic<T>(value: own T) -> result: own T pure ensures result {
-  let ilt = ieq(result, result);
-  check ilt else trap "post";
+    let source = br#"fn generic<T>(value: own T) -> result: own T pure contract {
+  define ilt = ieq(value, value);
+  ensures ieq(result, value);
 } {
   return value;
 }
@@ -1783,9 +1771,11 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::ResolutionIssue { issue } = outcome else {
-            panic!("entry inventory must beat an unavailable type argument: {outcome:?}");
+    with_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!(
+                "contract-definition inventory must beat an unavailable type argument: {outcome:?}"
+            );
         };
         assert_eq!(issue.rule(), ResolutionRule::Form3);
     });
@@ -1793,10 +1783,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unavailable_const_argument_does_not_invent_a_selector_instance() {
-    let source =
-        br#"fn generic<T, const n: u64>(value: own T) -> result: own T pure ensures result {
-  let ilt = ieq(result, result);
-  check ilt else trap "post";
+    let source = br#"fn generic<T, const n: u64>(value: own T) -> result: own T pure contract {
+  define ilt = ieq(value, value);
+  ensures ieq(result, value);
 } {
   return value;
 }
@@ -1806,9 +1795,11 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::ResolutionIssue { issue } = outcome else {
-            panic!("entry inventory must beat an unavailable const argument: {outcome:?}");
+    with_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!(
+                "contract-definition inventory must beat an unavailable const argument: {outcome:?}"
+            );
         };
         assert_eq!(issue.rule(), ResolutionRule::Form3);
     });
@@ -1818,8 +1809,8 @@ command fn main() -> status: own ExitStatus pure {
 fn unrelated_invalid_constant_does_not_suppress_an_independent_selector() {
     let source = br#"const bad: u8 = 1_u16;
 
-fn invalid() -> result: own unit pure ensures result {
-  check ieq(result, missing) else trap "post";
+fn invalid() -> result: own unit pure contract {
+  ensures ieq(result, missing);
 } {
   return unit;
 }
@@ -1841,8 +1832,8 @@ fn transitive_invalid_constant_does_not_become_a_compiler_failure() {
 
 const alias: u8 = bad;
 
-fn invalid() -> result: own unit pure ensures result {
-  check ieq(result, result) else trap "post";
+fn invalid() -> result: own unit pure contract {
+  ensures ieq(result, result);
 } {
   return unit;
 }
@@ -1860,9 +1851,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unavailable_symbolic_header_does_not_forward_its_entry_issue() {
-    let source =
-        br#"fn unavailable<T>(value: own array<T, 1>) -> result: own T pure ensures result {
-  check ieq(result, missing) else trap "post";
+    let source = br#"fn unavailable<T>(value: own array<T, 1>) -> result: own T pure contract {
+  ensures ieq(result, missing);
 } {
   return value;
 }
@@ -1881,15 +1871,14 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unavailable_record_does_not_suppress_a_later_independent_selector() {
-    let source =
-        br#"fn unavailable<T>(value: own array<T, 1>) -> result: own T pure ensures result {
-  check ieq(result, missing) else trap "post";
+    let source = br#"fn unavailable<T>(value: own array<T, 1>) -> result: own T pure contract {
+  ensures ieq(result, missing);
 } {
   return value;
 }
 
-fn invalid() -> result: own unit pure ensures result {
-  check ieq(result, result) else trap "post";
+fn invalid() -> result: own unit pure contract {
+  ensures ieq(result, result);
 } {
   return unit;
 }
@@ -1907,8 +1896,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn malformed_trailing_argument_does_not_enter_final_selector_metadata() {
-    let source = br#"fn generic<T: Int>(value: own T) -> result: own T pure ensures result {
-  check ieq(result, result) else trap "post";
+    let source = br#"fn generic<T: Int>(value: own T) -> result: own T pure contract {
+  ensures ieq(result, result);
 } {
   return value;
 }
@@ -1932,8 +1921,8 @@ fn invalid_unrelated_function_template_does_not_suppress_selector_admission() {
   return unit;
 }
 
-fn invalid() -> result: own unit pure ensures result {
-  check ieq(result, result) else trap "post";
+fn invalid() -> result: own unit pure contract {
+  ensures ieq(result, result);
 } {
   return unit;
 }
@@ -1955,8 +1944,8 @@ fn referenced_generic_nominal_must_pass_its_symbolic_template_judgment() {
   values: array<T, 2>;
 }
 
-fn probe(value: own Invalid<i32>) -> result: own unit pure ensures result {
-  check ieq(result, missing) else trap "post";
+fn probe(value: own Invalid<i32>) -> result: own unit pure contract {
+  ensures ieq(result, missing);
 } {
   return unit;
 }
@@ -1979,8 +1968,8 @@ fn unrelated_invalid_generic_nominal_does_not_suppress_selector_admission() {
   values: array<T, 2>;
 }
 
-fn invalid() -> result: own unit pure ensures result {
-  check ieq(result, missing) else trap "post";
+fn invalid() -> result: own unit pure contract {
+  ensures ieq(result, missing);
 } {
   return unit;
 }
@@ -1998,21 +1987,21 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn postcondition_components_are_callee_before_caller_and_publish_atomically() {
-    let source = br#"fn top(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "top post";
+    let source = br#"fn top(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let ignored = bridge(value: value);
   return value;
 }
 
-fn leaf(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "leaf post";
+fn leaf(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
 
-fn middle(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "middle post";
+fn middle(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let ignored = leaf(value: value);
   return value;
@@ -2112,15 +2101,15 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_independently_proved_mutual_component_publishes_summaries_in_function_order() {
-    let source = br#"fn first(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "first post";
+    let source = br#"fn first(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let ignored = second(value: value);
   return value;
 }
 
-fn second(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "second post";
+fn second(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let ignored = first(value: value);
   return value;
@@ -2169,8 +2158,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_independently_proved_self_recursive_component_publishes_its_summary() {
-    let source = br#"fn recursive(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "post";
+    let source = br#"fn recursive(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let ignored = recursive(value: value);
   return value;
@@ -2211,15 +2200,15 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn one_failed_mutual_member_withholds_the_whole_component_summary_batch() {
-    let source = br#"fn left(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "left post";
+    let source = br#"fn left(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let ignored = right(value: value);
   return value;
 }
 
-fn right(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "right post";
+fn right(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let called = left(value: value);
   return called;
@@ -2286,15 +2275,15 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_seedless_mutual_postcondition_cycle_publishes_no_summary() {
-    let source = br#"fn first(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "first post";
+    let source = br#"fn first(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let called = second(value: value);
   return called;
 }
 
-fn second(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "second post";
+fn second(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let called = first(value: value);
   return called;
@@ -2331,8 +2320,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn concrete_generic_instances_receive_distinct_verified_summary_identities() {
-    let source = br#"fn identity<T: Int>(value: own T) -> result: own T pure ensures result {
-  check ieq(result, value) else trap "post";
+    let source = br#"fn identity<T: Int>(value: own T) -> result: own T pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
@@ -2373,16 +2362,15 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn accepted_provenance_views_use_the_finalized_function_derivation_ids() {
-    let source = br#"fn normalized(value: own i32) -> result: own i32 pure requires {
-  check ieq(value, 1_i32) else trap "required";
-} ensures result {
-  check ieq(result, value) else trap "normalized post";
+    let source = br#"fn normalized(value: own i32) -> result: own i32 pure contract {
+  requires ieq(value, 1_i32);
+  ensures ieq(result, value);
 } {
   return 1_i32;
 }
 
-fn caller() -> result: own i32 pure ensures result {
-  check ieq(result, 1_i32) else trap "caller post";
+fn caller() -> result: own i32 pure contract {
+  ensures ieq(result, 1_i32);
 } {
   let called = normalized(value: 1_i32);
   return called;
@@ -2426,14 +2414,14 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_provenance_event_rejects_the_whole_optimistic_postcondition_batch() {
-    let source = br#"fn identity(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "identity post";
+    let source = br#"fn identity(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
 
-fn relay(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "relay post";
+fn relay(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let observed = identity(value: value);
   return observed;

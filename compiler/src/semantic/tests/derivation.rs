@@ -276,7 +276,7 @@ command fn main() -> status: own ExitStatus pure {
 /// its second operand, and `len` then derives from the place it is given.
 #[test]
 fn buffer_new_selects_its_element_from_the_fill_value() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(4_u64, 7_u8);
   let count = len(data);
   return exit_status(code: 0_u8);

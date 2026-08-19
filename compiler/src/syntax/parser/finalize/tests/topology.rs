@@ -21,7 +21,7 @@ fn one_finalizer_proves_bundle_root_counts_and_ordered_source_extents() {
         ),
         SourceInput::new("constant.wf", b"const answer: i32 = 42_i32;\n"),
     ];
-    let source_lengths = [1_u64, 31, 28];
+    let source_lengths = [1_u64, 53, 28];
     with_parsed(&inputs, |parsed| {
         let token_count = parsed.terminal_count();
         let production_count = parsed.production_count();
@@ -121,7 +121,7 @@ fn hostile_postorder_root_shape_and_extent_mutants_fail_closed() {
 
 #[test]
 fn hostile_token_identity_and_predicate_mutants_fail_closed() {
-    let source = b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"fn probe() -> result: own unit pure {\n  return unit;\n}\n";
     assert_mutant(
         source,
         |parsed| {

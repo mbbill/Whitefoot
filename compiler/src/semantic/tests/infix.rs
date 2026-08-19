@@ -41,29 +41,33 @@ fn sole_operation(source: &[u8]) -> (CheckedIntegerOperation, CheckedType) {
 
 #[test]
 fn every_operator_token_selects_its_row() {
-    for (operator, expected, traps) in [
-        ("+", CheckedIntegerOperation::AddExact, true),
-        ("+wrap", CheckedIntegerOperation::AddWrap, false),
-        ("+checked", CheckedIntegerOperation::AddChecked, false),
-        ("+sat", CheckedIntegerOperation::AddSaturating, false),
-        ("-", CheckedIntegerOperation::SubtractExact, true),
-        ("-wrap", CheckedIntegerOperation::SubtractWrap, false),
-        ("-checked", CheckedIntegerOperation::SubtractChecked, false),
-        ("-sat", CheckedIntegerOperation::SubtractSaturating, false),
-        ("*", CheckedIntegerOperation::MultiplyExact, true),
-        ("*wrap", CheckedIntegerOperation::MultiplyWrap, false),
-        ("*checked", CheckedIntegerOperation::MultiplyChecked, false),
-        ("*sat", CheckedIntegerOperation::MultiplySaturating, false),
-        ("/", CheckedIntegerOperation::DivideExact, true),
-        ("/checked", CheckedIntegerOperation::DivideChecked, false),
-        ("%", CheckedIntegerOperation::RemainderExact, true),
-        ("%checked", CheckedIntegerOperation::RemainderChecked, false),
+    for (operator, expected) in [
+        ("+", CheckedIntegerOperation::AddExact),
+        ("+wrap", CheckedIntegerOperation::AddWrap),
+        ("+defined", CheckedIntegerOperation::AddDefined),
+        ("+checked", CheckedIntegerOperation::AddChecked),
+        ("+sat", CheckedIntegerOperation::AddSaturating),
+        ("-", CheckedIntegerOperation::SubtractExact),
+        ("-wrap", CheckedIntegerOperation::SubtractWrap),
+        ("-defined", CheckedIntegerOperation::SubtractDefined),
+        ("-checked", CheckedIntegerOperation::SubtractChecked),
+        ("-sat", CheckedIntegerOperation::SubtractSaturating),
+        ("*", CheckedIntegerOperation::MultiplyExact),
+        ("*wrap", CheckedIntegerOperation::MultiplyWrap),
+        ("*defined", CheckedIntegerOperation::MultiplyDefined),
+        ("*checked", CheckedIntegerOperation::MultiplyChecked),
+        ("*sat", CheckedIntegerOperation::MultiplySaturating),
+        ("/", CheckedIntegerOperation::DivideExact),
+        ("/defined", CheckedIntegerOperation::DivideDefined),
+        ("/checked", CheckedIntegerOperation::DivideChecked),
+        ("%", CheckedIntegerOperation::RemainderExact),
+        ("%defined", CheckedIntegerOperation::RemainderDefined),
+        ("%checked", CheckedIntegerOperation::RemainderChecked),
     ] {
-        // [EFF-2] the row is exact, so only the trapping operators may
-        // declare `traps`.
-        let effects = if traps { "traps" } else { "pure" };
+        // Proof-required exact rows are statically discharged for these
+        // constant operands and therefore contribute no runtime effect.
         let source = format!(
-            "command fn main() -> status: own ExitStatus {effects} {{\n  let a = 6_i32;\n  let b = 7_i32;\n  let c = a {operator} b;\n  return unit;\n}}\n"
+            "command fn main() -> status: own ExitStatus pure {{\n  let c = 6_i32 {operator} 7_i32;\n  return exit_status(code: 0_u8);\n}}\n"
         );
         let (operation, operand_type) = sole_operation(source.as_bytes());
         assert_eq!(operation, expected, "operator {operator:?} selects its row");
@@ -80,7 +84,7 @@ fn every_operator_token_selects_its_row() {
 /// disagreement is reported.
 #[test]
 fn a_disagreeing_second_operand_is_a_type5_rejection_at_that_operand() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let a = 1_i32;
   let b = 2_u64;
   let c = a + b;
@@ -94,7 +98,7 @@ fn a_disagreeing_second_operand_is_a_type5_rejection_at_that_operand() {
 /// reports it at the whole expression rather than at one operand.
 #[test]
 fn an_operand_type_outside_every_row_is_an_op1_rejection() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let f = True();
   let g = False();
   let h = f + g;
@@ -104,26 +108,28 @@ fn an_operand_type_outside_every_row_is_an_op1_rejection() {
     assert_rule_at(source, SemanticRule::Op1, "f + g");
 }
 
-/// [EFF-2] bare infix arithmetic outside [OP-2]'s constant-operand class is
-/// the trapping row, so it contributes `traps` exactly as the named `.trap`
-/// spelling did. Both operands are non-constant here; a site with a constant
-/// operand instead carries the [ENT-6] overflow obligation and contributes
-/// nothing, which `arithmetic_obligations` pins.
+/// A bare exact operator is proof-required for every operand shape and never
+/// contributes a runtime `traps` effect. Unknown parameters therefore leave a
+/// static [OP-2, ENT-6] obligation instead of making the function trapping.
 #[test]
-fn bare_arithmetic_contributes_the_traps_effect() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  let a = 20_i32;
-  let b = 22_i32;
-  let c = a + b;
+fn bare_arithmetic_is_a_static_obligation_not_a_traps_effect() {
+    let source = br#"fn add(a: own i32, b: own i32) -> result: own i32 pure {
+  return a + b;
+}
+
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("a pure function may not trap: {outcome:?}");
+            panic!("an unproved exact operation must be rejected statically: {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Eff2);
-        assert_eq!(issue.kind(), &SemanticIssueKind::EffectMismatch);
+        assert_eq!(issue.rule(), SemanticRule::Op2);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedIntegerDomainObligation { .. }
+        ));
     });
 }
 
@@ -132,10 +138,9 @@ fn bare_arithmetic_contributes_the_traps_effect() {
 /// and `value_if` conditions, `ordinary_let_rhs`, `propagate_let_rhs`,
 /// `set_stmt`, `return_stmt`, `claim_stmt`, `give_stmt`, and the `match_stmt`
 /// and `value_match` scrutinees. `expr_stmt := call ";"` takes a `call`, so
-/// infix cannot be written there and it is deliberately absent. v0.32 removes
-/// `check_stmt` from the [GRAM-4] alternation, so its former entry here goes
-/// with it: the production survives only as the contract final, whose
-/// condition [FN-8] restricts to a pure total row, which no infix here is.
+/// infix cannot be written there and it is deliberately absent. v0.33 has no
+/// `check_stmt`; contract clauses are not statements and are covered by the
+/// contract tests instead.
 ///
 /// Each source writes one infix over `a` and `b` at the named position and
 /// binds the second operand with the exact line [`DISAGREEING_OPERAND`]
@@ -143,10 +148,10 @@ fn bare_arithmetic_contributes_the_traps_effect() {
 const EXPRESSION_POSITIONS: [(&str, &str); 10] = [
     (
         "ordinary_let_rhs",
-        "command fn main() -> status: own ExitStatus traps {
+        "command fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
-  let c = a + b;
+  let c = a +wrap b;
   return exit_status(code: 0_u8);
 }
 ",
@@ -166,19 +171,19 @@ command fn main() -> status: own ExitStatus pure {
     ),
     (
         "set_stmt",
-        "command fn main() -> status: own ExitStatus traps {
+        "command fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
-  set a = a + b;
+  set a = a +wrap b;
   return exit_status(code: 0_u8);
 }
 ",
     ),
     (
         "return_stmt",
-        "fn add(a: own u64) -> result: own u64 traps {
+        "fn add(a: own u64) -> result: own u64 pure {
   let b = 7_u64;
-  return a + b;
+  return a +wrap b;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -191,19 +196,19 @@ command fn main() -> status: own ExitStatus pure {
         "command fn main() -> status: own ExitStatus traps {
   let a = 6_u64;
   let b = 7_u64;
-  claim ordered: ile(a, b) because \"six is at most seven\";
-  return unit;
+  claim addition_defined: a +defined b because \"six plus seven is defined\";
+  return exit_status(code: 0_u8);
 }
 ",
     ),
     (
         "give_stmt",
-        "command fn main() -> status: own ExitStatus traps {
+        "command fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let f = True();
   let c = if f {
-    give a + b;
+    give a +wrap b;
   } else {
     give a;
   }
@@ -249,7 +254,7 @@ command fn main() -> status: own ExitStatus pure {
         "command fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
-  if ile(a, b) {
+  if a +defined b {
     return exit_status(code: 0_u8);
   }
   return exit_status(code: 0_u8);
@@ -261,7 +266,7 @@ command fn main() -> status: own ExitStatus pure {
         "command fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
-  let c = if ile(a, b) {
+  let c = if a +defined b {
     give 1_u64;
   } else {
     give 2_u64;
@@ -328,9 +333,9 @@ fn a_disagreeing_operand_is_reported_at_that_operand_from_every_position() {
 /// so the infix path is held to the citation the position already produced.
 #[test]
 fn an_infix_returned_from_a_borrow_result_is_an_fn1_rejection() {
-    let infix = br#"fn pick['r](x: &'r u64, a: own u64) -> &'r u64 reads('r), traps {
+    let infix = br#"fn pick['r](x: &'r u64, a: own u64) -> result: &'r u64 reads('r) {
   let b = 7_u64;
-  return a + b;
+  return a +wrap b;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -338,7 +343,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     assert_rule(infix, SemanticRule::Fn1, SemanticIssueKind::ReturnMismatch);
-    let plain = br#"fn pick['r](x: &'r u64, a: own u64) -> &'r u64 reads('r), traps {
+    let plain = br#"fn pick['r](x: &'r u64, a: own u64) -> result: &'r u64 reads('r) {
   return a;
 }
 

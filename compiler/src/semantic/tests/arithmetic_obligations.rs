@@ -1,10 +1,8 @@
-//! The arithmetic-mode dissolution behind its integration switch [OP-2,
-//! ENT-6]: a bare `+`/`-`/`*` with a constant operand carries an overflow
-//! obligation judged like a subscript bounds obligation — discharged sites
-//! lose their runtime check and `traps` contribution, undischarged sites
-//! reject citing OP-2 — while two-variable bare sites and every suffixed
-//! mode keep their v0.30 semantics. The default-switch controls at the end
-//! pin the v0.30 behavior the shipped compiler retains.
+//! Static integer-domain obligations for exact `+`, `-`, and `*` operations
+//! [OP-2, ENT-6]. Every exact site must establish its canonical `.defined`
+//! predicate. A proof discharges the obligation without adding an effect; an
+//! unproved or refuted obligation rejects under OP-2. Total suffixed modes do
+//! not carry this obligation.
 
 use crate::{
     SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, StaticObligationDisposition,
@@ -13,30 +11,10 @@ use crate::{
 use super::super::entailment::{
     ObligationFamily, OverflowConjuncts, overflow_conjuncts_for_values,
 };
-use super::super::model::{
-    CheckedExpression, CheckedFunction, CheckedIntegerOperation, CheckedStatement, IntegerType,
-};
-use super::{with_semantics, with_semantics_arithmetic};
+use super::super::model::{CheckedFunction, CheckedIntegerOperation, IntegerType};
+use super::with_semantics;
 
 const OVERFLOW_FIX: &str = "add a dominating `claim` of the `.defined` predicate or a dominating branch establishing its fixed normalization, or use an available total non-exact row";
-
-/// The trap disposition of every bare-add site in one checked function.
-fn add_trap_records(function: &CheckedFunction) -> Vec<bool> {
-    let mut records = Vec::new();
-    for statement in &function.body {
-        let CheckedStatement::Let { value, .. } = statement else {
-            continue;
-        };
-        if let CheckedExpression::IntegerOperation {
-            operation: CheckedIntegerOperation::AddExact,
-            ..
-        } = value
-        {
-            records.push(false);
-        }
-    }
-    records
-}
 
 fn named<'functions>(
     functions: &'functions [CheckedFunction],
@@ -48,12 +26,10 @@ fn named<'functions>(
         .expect("named function is checked")
 }
 
-/// A dominating branch-class fact source (here a `check`) discharges the
-/// literal-operand site: the program is accepted, both overflow conjuncts
-/// are discharged, and the site retains no trap record — the runtime check
-/// is gone in every build mode.
+/// A stronger claimed bound discharges the literal-operand site: the program
+/// is accepted and both overflow conjuncts are proved.
 #[test]
-fn a_dominating_check_discharges_the_literal_site_and_drops_its_check() {
+fn a_stronger_claim_discharges_the_literal_site() {
     let source = br#"fn bump(x: own u64) -> result: own u64 traps {
   claim bounded_input: ilt(x, 1000_u64) because "bounded input";
   let y = x + 1_u64;
@@ -64,16 +40,11 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_arithmetic(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("a check-dominated literal site must be accepted: {outcome:?}");
+            panic!("a claim-dominated literal site must be accepted: {outcome:?}");
         };
         let bump = named(&checked.data.functions, "bump");
-        assert_eq!(
-            add_trap_records(bump),
-            vec![false],
-            "the discharged class site must drop its trap record",
-        );
         let overflow: Vec<_> = bump
             .entailment
             .obligations
@@ -84,7 +55,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(overflow[0].components.len(), 2);
         assert!(
             overflow.iter().all(|outcome| outcome.discharged),
-            "both conjuncts discharge: the check bounds the operand and the \
+            "both conjuncts discharge: the claim bounds the operand and the \
              implicit type bound closes the trivial side",
         );
     });
@@ -104,7 +75,7 @@ fn the_counted_binder_increment_discharges_by_transitive_closure() {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_arithmetic(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("a counted-binder increment must be accepted: {outcome:?}");
         };
@@ -122,8 +93,8 @@ fn the_counted_binder_increment_discharges_by_transitive_closure() {
 
 /// An operand nothing bounds leaves the binding conjunct underivable: the
 /// program rejects citing OP-2 at the `infix` node with the exact folded
-/// residual, and — because the class site contributes no `traps` — the
-/// `pure` effect row is the correct row for this body.
+/// residual. Exact arithmetic contributes no runtime effect, so `pure` is the
+/// correct row for this body.
 #[test]
 fn an_unbounded_literal_site_rejects_citing_op2_with_the_folded_residual() {
     let source = br#"fn bump(x: own u64) -> result: own u64 pure {
@@ -135,7 +106,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_arithmetic(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("an unbounded literal site must reject: {outcome:?}");
         };
@@ -161,11 +132,10 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// A dominating claim is the named runtime backstop: it establishes the
-/// residual, the site discharges and loses its own check, and the claim —
-/// which still executes — carries the function's `traps` effect.
+/// A dominating claim establishes the residual and discharges the exact-site
+/// obligation. The claim itself remains the function's `traps` effect source.
 #[test]
-fn a_dominating_claim_discharges_the_site_and_carries_the_trap() {
+fn a_dominating_claim_discharges_the_site() {
     let source = br#"fn bump(x: own u64) -> result: own u64 traps {
   claim small: ile(x, 100_u64) because "callers pass a byte count";
   let y = x + 1_u64;
@@ -176,16 +146,11 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_arithmetic(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("a claim-backed literal site must be accepted: {outcome:?}");
         };
         let bump = named(&checked.data.functions, "bump");
-        assert_eq!(
-            add_trap_records(bump),
-            vec![false],
-            "the claim carries the runtime check; the site itself has none",
-        );
         assert!(
             bump.entailment
                 .obligations
@@ -197,8 +162,8 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// `.wrap` is untouched by the dissolution: no obligation attaches, the
-/// operation stays pure, and the checked program keeps its wrap identity.
+/// `.wrap` is total: no exact-domain obligation attaches, the operation stays
+/// pure, and the checked program keeps its wrap identity.
 #[test]
 fn a_wrap_site_attaches_no_obligation() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
@@ -207,7 +172,7 @@ fn a_wrap_site_attaches_no_obligation() {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_arithmetic(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("a wrap site must be accepted: {outcome:?}");
         };
@@ -233,7 +198,7 @@ fn a_two_variable_site_requires_its_canonical_goal() {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_arithmetic(pure_row, |outcome| {
+    with_semantics(pure_row, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("a two-variable exact site must require proof: {outcome:?}");
         };
@@ -246,7 +211,7 @@ fn a_two_variable_site_requires_its_canonical_goal() {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_arithmetic(traps_row, |outcome| {
+    with_semantics(traps_row, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("declaring traps cannot bypass the proof obligation: {outcome:?}");
         };
@@ -255,9 +220,7 @@ fn a_two_variable_site_requires_its_canonical_goal() {
 }
 
 /// Two constant operands make the obligation ground: an in-range result
-/// discharges (and drops the check), while an inevitable overflow is a
-/// compile-time rejection — there is no accepted always-trapping bare
-/// spelling in the class.
+/// discharges, while an inevitable overflow is a compile-time rejection.
 #[test]
 fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() {
     let in_range = br#"command fn main() -> status: own ExitStatus pure {
@@ -265,19 +228,26 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_arithmetic(in_range, |outcome| {
+    with_semantics(in_range, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("an in-range constant fold must be accepted: {outcome:?}");
         };
         let main = named(&checked.data.functions, "main");
-        assert_eq!(add_trap_records(main), vec![false]);
+        let overflow: Vec<_> = main
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .collect();
+        assert_eq!(overflow.len(), 1, "one exact site, one obligation");
+        assert!(overflow[0].discharged, "the ground obligation is true");
     });
     let overflowing = br#"command fn main() -> status: own ExitStatus pure {
   let x = 255_u8 + 1_u8;
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_arithmetic(overflowing, |outcome| {
+    with_semantics(overflowing, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("an inevitable constant overflow must reject: {outcome:?}");
         };
@@ -305,7 +275,7 @@ fn a_subscripted_class_operand_is_underivable_and_rejects() {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_arithmetic(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("a non-term class operand must reject: {outcome:?}");
         };
@@ -321,14 +291,12 @@ fn a_subscripted_class_operand_is_underivable_and_rejects() {
     });
 }
 
-/// The shipped switch is on: the default `check_semantics` path is the
-/// candidate judgment, not a v0.30 fallback. A `traps` row whose only trap
-/// contributor was a constant-operand-class site now disagrees with the
-/// exhibited row under EFF-2, the `pure` spelling of the same body reaches
-/// the OP-2 rejection its undischarged obligation earns, and an inevitable
-/// constant overflow is no longer an accepted always-trapping call.
+/// Rule precedence is stable on the default semantic path: a declared
+/// `traps` row with no effect source rejects under EFF-2 before an unproved
+/// exact-site obligation, while the matching `pure` row reaches OP-2. A
+/// ground-false exact obligation also rejects under OP-2.
 #[test]
-fn the_shipped_switch_selects_the_candidate_judgment() {
+fn effect_mismatch_precedes_static_integer_domain_rejection() {
     let traps_row = br#"fn bump(x: own u64) -> result: own u64 traps {
   let y = x + 1_u64;
   return y;
@@ -340,7 +308,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(traps_row, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the class site no longer exhibits traps: {outcome:?}");
+            panic!("an exact site does not justify a traps row: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Eff2);
         assert_eq!(issue.kind(), &SemanticIssueKind::EffectMismatch);

@@ -229,7 +229,7 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
 "#;
 
     let direct_move = format!(
-        r#"{OWNER}command fn main() -> status: own ExitStatus allocates(heap), traps {{
+        r#"{OWNER}command fn main() -> status: own ExitStatus allocates(heap) {{
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -252,7 +252,7 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
   return unit;
 }}
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {{
+command fn main() -> status: own ExitStatus allocates(heap) {{
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -280,7 +280,7 @@ struct Owner {
   sibling: Slot;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let source = buffer_new(1_u64, 0_u8);
   let sibling_value = buffer_new(1_u64, 0_u8);
   let sibling = Full(value: move sibling_value);
@@ -304,7 +304,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     );
 
     let given = format!(
-        r#"{OWNER}command fn main() -> status: own ExitStatus allocates(heap), traps {{
+        r#"{OWNER}command fn main() -> status: own ExitStatus allocates(heap) {{
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -351,7 +351,7 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     let ended_region = format!(
-        r#"{OWNER}command fn main() -> status: own ExitStatus allocates(heap), traps {{
+        r#"{OWNER}command fn main() -> status: own ExitStatus allocates(heap) {{
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -702,7 +702,7 @@ command fn main() -> status: own ExitStatus pure {
         },
     );
     assert_rule(
-        br#"fn invalid['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> &'descriptor slice<'data, u8> pure {
+        br#"fn invalid['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: &'descriptor slice<'data, u8> pure {
   return value;
 }
 

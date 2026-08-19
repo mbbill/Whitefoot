@@ -666,7 +666,9 @@ fn numeric_and_const_parameters_flow_through_flat_storage_operations() {
   return array_new<T, n>(value);
 }
 
-fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap), traps {
+fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap) contract {
+  requires buffer_fits<T>(length);
+} {
   return buffer_new(length, value);
 }
 
@@ -674,7 +676,9 @@ fn filled_float_array<T: Float, const n: u64>(value: own T) -> result: own array
   return array_new<T, n>(value);
 }
 
-fn filled_float_buffer<T: Float>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap), traps {
+fn filled_float_buffer<T: Float>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap) contract {
+  requires buffer_fits<T>(length);
+} {
   return buffer_new(length, value);
 }
 

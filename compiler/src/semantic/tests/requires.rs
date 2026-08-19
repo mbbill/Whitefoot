@@ -22,7 +22,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Op5,
-        SemanticIssueKind::InvalidCheckCondition,
+        SemanticIssueKind::InvalidPredicateCondition,
     );
 }
 
@@ -131,10 +131,10 @@ fn contains_array_fill(expression: &GoalExpression) -> bool {
 }
 
 #[test]
-fn checked_requires_retains_one_goal_and_trap_without_a_second_expression_tree() {
-    let source = br#"fn bounded(x: own i32) -> result: own i32 pure requires {
-  let permitted = ige(x, 0_i32);
-  check permitted else trap "x must be nonnegative";
+fn requires_retains_one_static_goal_without_a_second_expression_tree() {
+    let source = br#"fn bounded(x: own i32) -> result: own i32 pure contract {
+  define permitted = ige(x, 0_i32);
+  requires permitted;
 } {
   return x;
 }
@@ -175,10 +175,10 @@ fn requires_rejects_user_calls_and_trapping_operations() {
 }
 
 #[test]
-fn requires_check_is_not_an_eff2_contribution_but_keeps_op5_typing() {
+fn requires_is_static_and_keeps_op5_typing() {
     with_semantics(
-        br#"fn admitted(value: own i32) -> result: own i32 pure requires {
-  check ige(value, 0_i32) else trap "nonnegative";
+        br#"fn admitted(value: own i32) -> result: own i32 pure contract {
+  requires ige(value, 0_i32);
 } {
   return value;
 }
@@ -196,7 +196,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_rule(
         include_bytes!("../../../../tests/conformance/cases/fn8-neg-requires-non-bool-check.wf"),
         SemanticRule::Op5,
-        SemanticIssueKind::InvalidCheckCondition,
+        SemanticIssueKind::InvalidPredicateCondition,
     );
 }
 
@@ -206,13 +206,14 @@ command fn main() -> status: own ExitStatus pure {
 /// The infix shape is the one that hides operands: an `expr`'s own atom is the
 /// left operand and the tail carries the operator and the right, so a pass
 /// that stops at the first `atom` child validates a third of the expression
-/// and admits a trapping row, a `move`, a borrow, or a subscript in the rest.
+/// and admits a proof-required row, a `move`, a borrow, or a subscript in the
+/// rest.
 #[test]
 fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     with_semantics(
-        b"fn f(a: own u64) -> result: own u64 pure requires {\n  \
-          let doubled = a *wrap 2_u64;\n  \
-          check ile(doubled, 16_u64) else trap \"bounded\";\n} {\n  \
+        b"fn f(a: own u64) -> result: own u64 pure contract {\n  \
+          define doubled = a *wrap 2_u64;\n  \
+          requires ile(doubled, 16_u64);\n} {\n  \
           return a;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
@@ -222,11 +223,11 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
             };
         },
     );
-    // A bare `+` carries the trapping mode with no `.trap` in its spelling.
+    // A bare `+` is proof-required and therefore unavailable in a definition.
     assert_rule(
-        b"fn f(x: own i32) -> result: own i32 pure requires {\n  \
-          let raised = x + 1_i32;\n  \
-          check igt(raised, x) else trap \"increases\";\n} {\n  \
+        b"fn f(x: own i32) -> result: own i32 pure contract {\n  \
+          define raised = x + 1_i32;\n  \
+          requires igt(raised, x);\n} {\n  \
           return x;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
@@ -235,9 +236,9 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     );
     // Reached only through the infix tail's own atom, never the expr's.
     assert_rule(
-        b"fn f(xs: own array<u64, 4>, a: own u64) -> result: own u64 pure requires {\n  \
-          let sum = a +wrap xs[1_u64];\n  \
-          check ile(sum, 8_u64) else trap \"bounded\";\n} {\n  \
+        b"fn f(xs: own array<u64, 4>, a: own u64) -> result: own u64 pure contract {\n  \
+          define sum = a +wrap xs[1_u64];\n  \
+          requires ile(sum, 8_u64);\n} {\n  \
           return a;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
@@ -246,9 +247,9 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     );
     // An initializer is a computation, so a bare atom is not one.
     assert_rule(
-        b"fn f(x: own i32) -> result: own i32 pure requires {\n  \
-          let candidate = x;\n  \
-          check igt(candidate, 0_i32) else trap \"positive\";\n} {\n  \
+        b"fn f(x: own i32) -> result: own i32 pure contract {\n  \
+          define candidate = x;\n  \
+          requires igt(candidate, 0_i32);\n} {\n  \
           return x;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
@@ -268,9 +269,9 @@ fn requires_holds_a_clause_local_to_a_copy_type() {
     // Non-copy by shape: `array_new` is the reachable aggregate row, since
     // `slice_of` needs a borrow operand the clause subset already rejects.
     assert_rule(
-        b"fn f(a: own u64) -> result: own u64 pure requires {\n  \
-          let xs = array_new<i32, 4>(0_i32);\n  \
-          check ilt(a, 8_u64) else trap \"bounded\";\n} {\n  \
+        b"fn f(a: own u64) -> result: own u64 pure contract {\n  \
+          define xs = array_new<i32, 4>(0_i32);\n  \
+          requires ilt(a, 8_u64);\n} {\n  \
           return a;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
@@ -281,9 +282,9 @@ fn requires_holds_a_clause_local_to_a_copy_type() {
     // before FN-8 applies the same copy-local rejection. Returning a compiler
     // failure here would make the generic surface traversal-order dependent.
     assert_rule(
-        br#"fn invalid<T: Int>(x: own T) -> result: own T pure requires {
-  let raised = x +checked 1_T;
-  check igt(x, 0_T) else trap "positive";
+        br#"fn invalid<T: Int>(x: own T) -> result: own T pure contract {
+  define raised = x +checked 1_T;
+  requires igt(x, 0_T);
 } {
   return x;
 }
@@ -298,9 +299,9 @@ command fn main() -> status: own ExitStatus pure {
     // Non-copy by payload: `Result<i32, Overflow>` has a payload variant, and
     // `CheckedNominal::is_copy` holds only for all-fieldless-variant enums.
     assert_rule(
-        b"fn f(x: own i32) -> result: own i32 pure requires {\n  \
-          let raised = x +checked 1_i32;\n  \
-          check igt(x, 0_i32) else trap \"positive\";\n} {\n  \
+        b"fn f(x: own i32) -> result: own i32 pure contract {\n  \
+          define raised = x +checked 1_i32;\n  \
+          requires igt(x, 0_i32);\n} {\n  \
           return x;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
@@ -310,9 +311,9 @@ command fn main() -> status: own ExitStatus pure {
     // The positive control: a copy-typed clause local is still admitted, or
     // the gate above has over-rejected into every clause `let`.
     with_semantics(
-        b"fn f(a: own u64) -> result: own u64 pure requires {\n  \
-          let ok = ilt(a, 8_u64);\n  \
-          check ok else trap \"bounded\";\n} {\n  \
+        b"fn f(a: own u64) -> result: own u64 pure contract {\n  \
+          define ok = ilt(a, 8_u64);\n  \
+          requires ok;\n} {\n  \
           return a;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
@@ -335,10 +336,14 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn resolved_system_calls_in_requires_are_fn8_source_rejections() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure requires {
-  let status = exit_status(code: 0_u8);
-  check ieq(0_u8, 0_u8) else trap "never reached";
+        br#"fn invalid() -> result: own ExitStatus pure contract {
+  define status = exit_status(code: 0_u8);
+  requires ieq(0_u8, 0_u8);
 } {
+  return exit_status(code: 0_u8);
+}
+
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -349,9 +354,9 @@ fn resolved_system_calls_in_requires_are_fn8_source_rejections() {
 
 #[test]
 fn requires_locals_are_distinct_from_same_named_body_locals() {
-    let source = br#"fn increment(x: own i32) -> result: own i32 pure requires {
-  let value = ige(x, 0_i32);
-  check value else trap "x must be nonnegative";
+    let source = br#"fn increment(x: own i32) -> result: own i32 pure contract {
+  define value = ige(x, 0_i32);
+  requires value;
 } {
   let value = x +wrap 1_i32;
   return value;
@@ -377,23 +382,23 @@ command fn main() -> status: own ExitStatus traps {
 
 #[test]
 fn goal_templates_ignore_clause_spelling_and_local_sharing() {
-    let source = br#"fn shared(a: own u64, b: own u64) -> result: own u64 pure requires {
-  let sum = a +wrap b;
-  let below = ilt(sum, 100_u64);
-  let above = igt(sum, 0_u64);
-  let bounded = band(below, above);
-  check bounded else trap "bounded";
+    let source = br#"fn shared(a: own u64, b: own u64) -> result: own u64 pure contract {
+  define sum = a +wrap b;
+  define below = ilt(sum, 100_u64);
+  define above = igt(sum, 0_u64);
+  define bounded = band(below, above);
+  requires bounded;
 } {
   return a;
 }
 
-fn duplicated(left: own u64, right: own u64) -> result: own u64 pure requires {
-  let first_sum = left +wrap right;
-  let low_half = ilt(first_sum, 100_u64);
-  let second_sum = left +wrap right;
-  let high_half = igt(second_sum, 0_u64);
-  let complete = band(low_half, high_half);
-  check complete else trap "same predicate";
+fn duplicated(left: own u64, right: own u64) -> result: own u64 pure contract {
+  define first_sum = left +wrap right;
+  define low_half = ilt(first_sum, 100_u64);
+  define second_sum = left +wrap right;
+  define high_half = igt(second_sum, 0_u64);
+  define complete = band(low_half, high_half);
+  requires complete;
 } {
   return left;
 }
@@ -428,26 +433,26 @@ fn goal_templates_retain_order_row_and_named_const_identity() {
 
 const second_limit: u64 = 8_u64;
 
-fn baseline(value: own u64) -> result: own u64 pure requires {
-  check ilt(value, first_limit) else trap "baseline";
+fn baseline(value: own u64) -> result: own u64 pure contract {
+  requires ilt(value, first_limit);
 } {
   return value;
 }
 
-fn swapped(value: own u64) -> result: own u64 pure requires {
-  check ilt(first_limit, value) else trap "swapped";
+fn swapped(value: own u64) -> result: own u64 pure contract {
+  requires ilt(first_limit, value);
 } {
   return value;
 }
 
-fn different_row(value: own u64) -> result: own u64 pure requires {
-  check ile(value, first_limit) else trap "different row";
+fn different_row(value: own u64) -> result: own u64 pure contract {
+  requires ile(value, first_limit);
 } {
   return value;
 }
 
-fn different_const(value: own u64) -> result: own u64 pure requires {
-  check ilt(value, second_limit) else trap "different const";
+fn different_const(value: own u64) -> result: own u64 pure contract {
+  requires ilt(value, second_limit);
 } {
   return value;
 }
@@ -479,8 +484,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn goal_box_deref_projection_retains_the_selected_referent_type() {
-    let source = br#"fn positive(owner: own box<i32>) -> result: own box<i32> pure requires {
-  check igt(deref(owner), 0_i32) else trap "positive referent";
+    let source = br#"fn positive(owner: own box<i32>) -> result: own box<i32> pure contract {
+  requires igt(deref(owner), 0_i32);
 } {
   return move owner;
 }
@@ -519,9 +524,9 @@ fn goal_field_projection_retains_the_selected_array_type() {
   values: array<u8, 2>;
 }
 
-fn measured(envelope: own Envelope) -> result: own Envelope pure requires {
-  let size = len(envelope.values);
-  check ieq(size, size) else trap "stable length";
+fn measured(envelope: own Envelope) -> result: own Envelope pure contract {
+  define size = len(envelope.values);
+  requires ieq(size, size);
 } {
   return move envelope;
 }
@@ -570,23 +575,23 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn concrete_equal_const_arguments_produce_equal_goal_templates() {
     let source =
-        br#"fn left<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure requires {
-  let size = len(value);
-  check ieq(size, size) else trap "sized";
+        br#"fn left<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure contract {
+  define size = len(value);
+  requires ieq(size, size);
 } {
   return move value;
 }
 
-fn right<const count: u64>(input: own array<u8, count>) -> result: own array<u8, count> pure requires {
-  let extent = len(input);
-  check ieq(extent, extent) else trap "same size";
+fn right<const count: u64>(input: own array<u8, count>) -> result: own array<u8, count> pure contract {
+  define extent = len(input);
+  requires ieq(extent, extent);
 } {
   return move input;
 }
 
-fn different<const width: u64>(items: own array<u8, width>) -> result: own array<u8, width> pure requires {
-  let amount = len(items);
-  check ieq(amount, amount) else trap "different size";
+fn different<const width: u64>(items: own array<u8, width>) -> result: own array<u8, width> pure contract {
+  define amount = len(items);
+  requires ieq(amount, amount);
 } {
   return move items;
 }
@@ -625,8 +630,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unused_generic_requirement_is_retained_symbolically_without_a_concrete_function() {
-    let source = br#"fn positive<T: Int>(value: own T) -> result: own T pure requires {
-  check igt(value, 0_T) else trap "positive";
+    let source = br#"fn positive<T: Int>(value: own T) -> result: own T pure contract {
+  requires igt(value, 0_T);
 } {
   return value;
 }
@@ -659,8 +664,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn called_generic_keeps_concrete_instances_and_one_symbolic_requirement() {
-    let source = br#"fn positive<T: Int>(value: own T) -> result: own T pure requires {
-  check igt(value, 0_T) else trap "positive";
+    let source = br#"fn positive<T: Int>(value: own T) -> result: own T pure contract {
+  requires igt(value, 0_T);
 } {
   return value;
 }
@@ -702,14 +707,14 @@ command fn main() -> status: own ExitStatus traps {
 
 #[test]
 fn generic_to_generic_discovery_does_not_duplicate_symbolic_requirements() {
-    let source = br#"fn inner<T: Int>(value: own T) -> result: own T pure requires {
-  check igt(value, 0_T) else trap "inner positive";
+    let source = br#"fn inner<T: Int>(value: own T) -> result: own T pure contract {
+  requires igt(value, 0_T);
 } {
   return value;
 }
 
-fn outer<T: Int>(value: own T) -> result: own T pure requires {
-  check igt(value, 0_T) else trap "outer positive";
+fn outer<T: Int>(value: own T) -> result: own T pure contract {
+  requires igt(value, 0_T);
 } {
   return inner<T>(value: value);
 }
@@ -746,8 +751,8 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-fn below(value: own u64) -> result: own u64 pure requires {
-  check ilt(value, requirement_limit) else trap "below limit";
+fn below(value: own u64) -> result: own u64 pure contract {
+  requires ilt(value, requirement_limit);
 } {
   return value;
 }
@@ -887,8 +892,8 @@ fn below(value: own u64) -> result: own u64 pure requires {
 
 #[test]
 fn direct_subscript_actual_uses_one_occurrence_local_ephemeral_image() {
-    let source = br#"fn positive(value: own u8) -> result: own unit pure requires {
-  check ilt(value, 10_u8) else trap "small";
+    let source = br#"fn positive(value: own u8) -> result: own unit pure contract {
+  requires ilt(value, 10_u8);
 } {
   return unit;
 }
@@ -961,8 +966,8 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn borrow_substitution_removes_callee_deref_and_retains_caller_opaque_deref() {
-    let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads('r) requires {
-  check igt(deref(value), 0_u64) else trap "positive";
+    let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads('r) contract {
+  requires igt(deref(value), 0_u64);
 } {
   let copied = deref(value);
   return unit;
@@ -1061,19 +1066,19 @@ command fn main() -> status: own ExitStatus pure {
 fn call_goal_substitutes_type_const_and_slice_region_arguments() {
     let source = br#"const bytes: array<u8, 2> =[4_u8, 9_u8];
 
-fn inspect['r](values: own slice<'r, u8>) -> result: own unit pure requires {
-  let size = len(values);
-  check ieq(size, size) else trap "stable size";
+fn inspect['r](values: own slice<'r, u8>) -> result: own unit pure contract {
+  define size = len(values);
+  requires ieq(size, size);
 } {
   return unit;
 }
 
-fn guarded<T: Int, const n: u64>(value: own T, values: own array<u8, n>) -> result: own T pure requires {
-  let positive = igt(value, 0_T);
-  let size = len(values);
-  let exact = ieq(size, size);
-  let complete = band(positive, exact);
-  check complete else trap "guarded";
+fn guarded<T: Int, const n: u64>(value: own T, values: own array<u8, n>) -> result: own T pure contract {
+  define positive = igt(value, 0_T);
+  define size = len(values);
+  define exact = ieq(size, size);
+  define complete = band(positive, exact);
+  requires complete;
 } {
   return value;
 }
@@ -1245,27 +1250,19 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// The OWN-1 bare-affine rejection inside a requires clause carries a
-/// position-conditional mechanical fix [#35]: under v0.30 semantics it is the
-/// ordinary `write move p` instruction, and under the v0.31 candidate switch
-/// it is the clause-specific repair, because [FN-8] rejects `move` itself
-/// inside the block and the ordinary instruction would send the writer from
-/// one hard error to another. The expectation follows the switch, so this
-/// test pins the exact wording on whichever side is shipped.
+/// The OWN-1 bare-affine rejection inside a static requirement carries the
+/// clause-specific repair because [FN-8] rejects `move` inside a contract.
 #[test]
-fn requires_clause_bare_affine_use_carries_the_clause_conditional_repair() {
-    let expected_fix = if crate::semantic::V031_CANDIDATE_SEMANTICS {
-        "restate the clause over copy operands or non-consuming admitted reads; a requires block admits no `move`"
-    } else {
-        "write `move p` for the affine place"
-    };
+fn requires_clause_bare_affine_use_carries_the_static_repair() {
+    let expected_fix =
+        "restate the definition or clause over copy operands or non-consuming admitted reads";
     assert_rule(
         br#"enum Holder {
   Value(content: u64);
 }
 
-fn inspect(holder: own Holder) -> result: own unit pure requires {
-  check eeq(holder, holder) else trap "same holder";
+fn inspect(holder: own Holder) -> result: own unit pure contract {
+  requires eeq(holder, holder);
 } {
   return unit;
 }

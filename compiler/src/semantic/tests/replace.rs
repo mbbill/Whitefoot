@@ -226,8 +226,8 @@ fn replace_through_a_shared_borrow_rejects() {
 }
 
 #[test]
-fn element_position_replace_accepts_an_affine_element_and_keeps_its_checks() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+fn element_position_replace_accepts_an_affine_element_and_keeps_its_bounds_obligations() {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let slots = buffer_vacant<u32>(4_u64);
   let filled = Some<u32>(value: 7_u32);
   let vacant = replace slots[2_u64] = move filled;
@@ -303,13 +303,15 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
 
 #[test]
 fn element_position_replace_keeps_the_bounds_obligation() {
-    let source = br#"fn hollow(n: own u64) -> result: own unit allocates(heap), traps {
+    let source = br#"fn hollow(n: own u64) -> result: own unit allocates(heap) contract {
+  requires buffer_fits<Option<u32>>(n);
+} {
   let slots = buffer_vacant<u32>(n);
   let taken = replace slots[0_u64] = None<u32>();
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   hollow(n: 2_u64);
   return exit_status(code: 0_u8);
 }

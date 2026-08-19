@@ -5,7 +5,7 @@
 //! `effects` were re-encoded by hand in `semantic::model` and nothing compared
 //! them with the specification. The measured consequence of a one-sided mirror
 //! was sixteen unreachable match arms naming operation spellings the table had
-//! stopped containing; the same class covers a trap classification, a result
+//! stopped containing; the same class covers an effect classification, a result
 //! type, or an operand domain drifting from its cell in silence.
 //!
 //! These locks close that in both directions. Extraction keys on the
@@ -15,7 +15,7 @@
 //! new compiler operation cannot be added without naming its row, and a row
 //! whose spelling no operation claims fails the coverage assertion.
 //!
-//! A green run establishes that every modelled row's trap classification,
+//! A green run establishes that every modelled row's effect classification,
 //! result type, operand count, argument types, and operand domain agree with
 //! the specification's own cells, and that the modelled spellings and the
 //! table's spellings are the same set. It does not establish that the
@@ -42,7 +42,7 @@ struct OpsRow {
 
 impl OpsRow {
     /// The parameter list of the `signature` cell, `(T, u32)` for
-    /// `` `(T, u32) -> result: own T` ``. A nullary row writes `()`, and the two place
+    /// `` `(T, u32) -> own T` ``. A nullary row writes `()`, and the two place
     /// rows write no parameter list at all.
     fn parameters(&self) -> Option<Vec<&str>> {
         let list = self.signature.strip_prefix('(')?.split_once(')')?.0;
@@ -54,10 +54,10 @@ impl OpsRow {
     }
 
     /// The written result of the `signature` cell, `T` for
-    /// `` `(T, T) -> result: own T` ``. Every row's result is `own`.
+    /// `` `(T, T) -> own T` ``. Every row's result is `own`.
     fn result(&self) -> &str {
         self.signature
-            .split_once("-> result: own ")
+            .split_once("-> own ")
             .expect("every wf-ops signature writes one `own` result")
             .1
     }
@@ -333,7 +333,8 @@ const BOOLEAN_SPELLINGS: [(&str, usize); 4] = [("band", 2), ("bor", 2), ("bxor",
 /// value operands. Listing them explicitly is what makes the coverage
 /// assertion below two-sided — a new row is a failure unless someone decides
 /// which side it belongs on.
-const UNMODELLED_ROW_SPELLINGS: [&str; 11] = [
+const UNMODELLED_ROW_SPELLINGS: [&str; 12] = [
+    "buffer_fits",
     "buffer_vacant",
     "eeq",
     "ene",
@@ -404,14 +405,14 @@ fn the_wf_ops_table_and_the_compilers_operations_name_the_same_spellings() {
 
 /// Every integer row is statically total or proof-required and therefore pure.
 #[test]
-fn the_effects_column_decides_the_trap_classification() {
+fn the_effects_column_keeps_every_modelled_row_pure() {
     let rows = ops_rows();
     for operation in INTEGER_OPERATIONS {
         let spelling = integer_spelling(operation);
         let row = row_of(&rows, spelling);
         assert_eq!(row.effects, "pure", "{spelling}");
     }
-    // [OP-3]: every float row rounds or is exact, and none traps.
+    // [OP-3]: every float row rounds or is exact, and all are pure.
     for operation in FLOAT_OPERATIONS {
         let spelling = float_spelling(operation);
         assert_eq!(row_of(&rows, spelling).effects, "pure", "{spelling}");

@@ -100,6 +100,44 @@ fn with_semantics<ResultValue>(
     with_semantics_inputs(&inputs, run)
 }
 
+/// Runs the ordinary front end through canonicalization and exposes the
+/// resolver outcome directly. Contract definitions now precede every
+/// postcondition in one block, so lookup failures in those definitions are
+/// resolver-owned rather than delayed semantic entry failures.
+fn with_resolution<ResultValue>(
+    source: &[u8],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        ResolutionOutcome<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
+        panic!("resolution test bundle must be valid");
+    };
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("resolution test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("resolution test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("resolution test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("resolution test derivation must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("resolution test source must be canonical");
+    };
+    run(resolve(canonical))
+}
+
 fn with_semantics_inputs<ResultValue>(
     inputs: &[SourceInput<'_>],
     run: impl for<'classified, 'lexed, 'source> FnOnce(
@@ -190,90 +228,6 @@ fn with_semantics_dark<ResultValue>(
         panic!("semantic test source must resolve");
     };
     run(super::check::check_semantics_dark(resolved))
-}
-
-/// [`with_semantics`] through the test-only entry that forces the
-/// arithmetic-mode dissolution switch on [OP-2, ENT-6]. The shipped switch is
-/// on too, so this entry selects the same judgment as the default one and
-/// records which judgment its callers mean.
-fn with_semantics_arithmetic<ResultValue>(
-    source: &[u8],
-    run: impl for<'classified, 'lexed, 'source> FnOnce(
-        SemanticOutcome<'classified, 'lexed, 'source>,
-    ) -> ResultValue,
-) -> ResultValue {
-    let inputs = [SourceInput::new("test.wf", source)];
-    let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
-        panic!("semantic test bundle must be valid");
-    };
-    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
-        panic!("semantic test source must lex");
-    };
-    let TerminalOutcome::Complete(classified) = classify_terminals(
-        &lexed,
-        ACTIVE_KERNEL_SPEC_HASH,
-        TerminalLimits {
-            max_tokens: LEX_LIMITS.max_tokens,
-        },
-    ) else {
-        panic!("semantic test source must classify");
-    };
-    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
-        panic!("semantic test source must parse");
-    };
-    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
-        panic!("semantic test derivation must finalize");
-    };
-    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
-        panic!("semantic test source must be canonical");
-    };
-    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
-        panic!("semantic test source must resolve");
-    };
-    run(super::check::check_semantics_arithmetic_obligations(
-        resolved,
-    ))
-}
-
-/// [`with_semantics`] through the test-only entry that forces the division
-/// dissolution switch on [OP-2, ENT-6]. The shipped switch is on too, so this
-/// entry selects the same judgment as the default one and records which
-/// judgment its callers mean.
-fn with_semantics_division<ResultValue>(
-    source: &[u8],
-    run: impl for<'classified, 'lexed, 'source> FnOnce(
-        SemanticOutcome<'classified, 'lexed, 'source>,
-    ) -> ResultValue,
-) -> ResultValue {
-    let inputs = [SourceInput::new("test.wf", source)];
-    let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
-        panic!("semantic test bundle must be valid");
-    };
-    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
-        panic!("semantic test source must lex");
-    };
-    let TerminalOutcome::Complete(classified) = classify_terminals(
-        &lexed,
-        ACTIVE_KERNEL_SPEC_HASH,
-        TerminalLimits {
-            max_tokens: LEX_LIMITS.max_tokens,
-        },
-    ) else {
-        panic!("semantic test source must classify");
-    };
-    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
-        panic!("semantic test source must parse");
-    };
-    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
-        panic!("semantic test derivation must finalize");
-    };
-    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
-        panic!("semantic test source must be canonical");
-    };
-    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
-        panic!("semantic test source must resolve");
-    };
-    run(super::check::check_semantics_division_obligations(resolved))
 }
 
 /// [`with_semantics`] through the test-only extension checker, which admits
@@ -436,12 +390,12 @@ fn a_non_bool_claim_condition_is_a_clm1_rejection() {
     assert_rule(
         source,
         SemanticRule::Clm1,
-        SemanticIssueKind::InvalidCheckCondition,
+        SemanticIssueKind::InvalidPredicateCondition,
     );
 }
 
 #[test]
-fn scalar_constants_calls_operations_and_checks_publish_one_checked_program() {
+fn scalar_constants_calls_operations_and_claims_publish_one_checked_program() {
     let source = br#"const base: i32 = 40_i32;
 
 fn add(x: own i32, y: own i32) -> result: own i32 pure {
@@ -478,15 +432,15 @@ fn semantic_rule_owners_remain_distinct() {
     assert_rule(
         b"command fn main() -> status: own ExitStatus traps {\n  claim bad: 1_i32 because \"bad\";\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Clm1,
-        SemanticIssueKind::InvalidCheckCondition,
+        SemanticIssueKind::InvalidPredicateCondition,
     );
     assert_rule(
-        b"fn main() -> result: own unit pure {\n  claim bad: True() because \"bad\";\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn helper() -> result: own unit pure {\n  claim bad: True() because \"bad\";\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
-        b"fn main() -> result: own unit traps {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn helper() -> result: own unit traps {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
@@ -800,19 +754,19 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // borrow-matched through `&'r` whose scrutinee stays live for a second
     // read, with each derived binder explicitly dereferenced.
     with_semantics(
-        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\nfn main() -> result: own unit traps {\n  let c = Full(v: 20_i32);\n  region 'r {\n    let p = &'r c;\n    let a = match deref(p) {\n      Full(v: x) => {\n        give deref(x);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    let q = &'r c;\n    let b = match deref(q) {\n      Full(v: y) => {\n        give deref(y);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    claim borrow_payload_drift: ieq(a, 20_i32) because \"borrow payload drift\";\n    claim second_read_drift: ieq(b, 20_i32) because \"second read drift\";\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\ncommand fn main() -> status: own ExitStatus traps {\n  let c = Full(v: 20_i32);\n  region 'r {\n    let p = &'r c;\n    let a = match deref(p) {\n      Full(v: x) => {\n        give deref(x);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    let q = &'r c;\n    let b = match deref(q) {\n      Full(v: y) => {\n        give deref(y);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    claim borrow_payload_drift: ieq(a, 20_i32) because \"borrow payload drift\";\n    claim second_read_drift: ieq(b, 20_i32) because \"second read drift\";\n  }\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_unsupported(
-        b"struct Node {\n  next: Node;\n}\n\nfn main() -> result: own unit pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Node {\n  next: Node;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         UnsupportedSemanticFeature::RecursiveNominalLayout,
     );
     assert_unsupported(
-        b"enum Flag {\n  A();\n  B();\n}\n\nfn main() -> result: own unit pure {\n  let flag = A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Flag {\n  A();\n  B();\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let flag = A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         UnsupportedSemanticFeature::DuplicateMatchArm,
     );
     assert_unsupported(
-        b"struct Cell {\n  value: i32;\n}\n\nfn main() -> result: own unit pure {\n  let cell = Cell(value: 1_i32);\n  let flag = True();\n  if flag {\n    let consumed = move cell;\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Cell {\n  value: i32;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let cell = Cell(value: 1_i32);\n  let flag = True();\n  if flag {\n    let consumed = move cell;\n  }\n  return exit_status(code: 0_u8);\n}\n",
         UnsupportedSemanticFeature::OwnershipJoin,
     );
 }
@@ -947,8 +901,8 @@ fn direct(error: own StepError) -> result: own Result<Pair, StepError> pure {
   return Ok<Pair, StepError>(value: move pair);
 }
 
-fn bare(result: own Result<i32, StepError>) -> result: own Result<Pair, StepError> pure {
-  let accepted = propagate result;
+fn bare(outcome: own Result<i32, StepError>) -> result: own Result<Pair, StepError> pure {
+  let accepted = propagate outcome;
   let pair = Pair(value: accepted);
   return Ok<Pair, StepError>(value: move pair);
 }
@@ -981,9 +935,9 @@ command fn main() -> status: own ExitStatus pure {
   Failed();
 }
 
-fn reuse(result: own Result<i32, StepError>) -> result: own Result<i32, StepError> pure {
-  let accepted = propagate result;
-  match result {
+fn reuse(outcome: own Result<i32, StepError>) -> result: own Result<i32, StepError> pure {
+  let accepted = propagate outcome;
+  match outcome {
     Ok(value: second_value) => {
     }
     Err(error: second_error) => {

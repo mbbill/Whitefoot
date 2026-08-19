@@ -570,7 +570,7 @@ command fn main() -> status: own ExitStatus pure {
 
     assert_rule(
         br#"contract Invalid {
-  fn borrowed['descriptor, 'data](value: &uniq 'descriptor slice<'data, u8>) -> &uniq 'descriptor slice<'data, u8> pure;
+  fn borrowed['descriptor, 'data](value: &uniq 'descriptor slice<'data, u8>) -> result: &uniq 'descriptor slice<'data, u8> pure;
 }
 
 command fn main() -> status: own ExitStatus pure {

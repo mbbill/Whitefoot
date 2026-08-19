@@ -61,8 +61,8 @@ fn ordered_canonical_sources_keep_independent_forests() {
 
 #[test]
 fn nested_blocks_arms_and_requires_follow_tree_depth() {
-    let source = br#"fn guarded(value: own i32) -> result: own unit traps requires {
-  check ieq(value, 0_i32) else trap "precondition";
+    let source = br#"fn guarded(value: own i32) -> result: own unit traps contract {
+  requires ieq(value, 0_i32);
 } {
   match value {
     Some(payload: item) => {
@@ -84,17 +84,15 @@ fn nested_blocks_arms_and_requires_follow_tree_depth() {
 
 #[test]
 fn plain_and_variant_ensures_round_trip_with_clause_joins() {
-    let source = br#"fn plain(value: own i32) -> result: own i32 pure ensures result {
-  check ieq(result, value) else trap "post";
+    let source = br#"fn plain(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
 
-fn selected(value: own i32) -> result: own Result<i32, i32> pure requires {
-  check ieq(value, value) else trap "pre";
-} ensures Ok(value: result) {
-  let same = ieq(result, value);
-  check same else trap "post";
+fn selected(value: own i32) -> result: own Result<i32, i32> pure contract {
+  requires ieq(value, value);
+  ensures when Ok(value: payload): ieq(payload, value);
 } {
   return Ok<i32, i32>(value: value);
 }
@@ -326,11 +324,18 @@ fn only_these_trivia_bytes_render(canonical: &[u8]) {
     for position in trivia_positions {
         let mut removed = canonical.to_vec();
         removed.remove(position);
-        assert!(!reaches_canonical_syntax(&removed));
+        assert!(
+            !reaches_canonical_syntax(&removed),
+            "removing canonical trivia at byte {position} unexpectedly stayed canonical: {:?}",
+            String::from_utf8_lossy(&removed)
+        );
 
         let mut duplicated = canonical.to_vec();
         duplicated.insert(position, canonical[position]);
-        assert!(!reaches_canonical_syntax(&duplicated));
+        assert!(
+            !reaches_canonical_syntax(&duplicated),
+            "duplicating canonical trivia at byte {position} unexpectedly stayed canonical"
+        );
 
         let mut replaced = canonical.to_vec();
         replaced[position] = if canonical[position] == b' ' {
@@ -338,7 +343,10 @@ fn only_these_trivia_bytes_render(canonical: &[u8]) {
         } else {
             b' '
         };
-        assert!(!reaches_canonical_syntax(&replaced));
+        assert!(
+            !reaches_canonical_syntax(&replaced),
+            "replacing canonical trivia at byte {position} unexpectedly stayed canonical"
+        );
 
         // Whatever a mutation derives, rendering it lands on canonical bytes
         // and stays there. A mutation that keeps the token stream renders back
@@ -356,7 +364,7 @@ fn only_these_trivia_bytes_render(canonical: &[u8]) {
 
 #[test]
 fn generated_trivia_mutations_never_bypass_the_exact_forest_renderer() {
-    only_these_trivia_bytes_render(b"const first: i32 = 1_i32;\n\ncommand fn main() -> status: own ExitStatus pure {\n  let value = 2_i32;\n  return exit_status(code: 0_u8);\n}\n");
+    only_these_trivia_bytes_render(b"const first: i32 = 1_i32;\n\ncommand fn main() -> status: own ExitStatus pure {\n  let value = 2_i32;\n  return unit;\n}\n");
 }
 
 /// The one canonical byte sequence [FN-7] states for a complete four-input
@@ -458,7 +466,7 @@ fn if_else_renders_its_join_line_and_indents_both_blocks() {
     );
     // A `value_if` initializer delivers from both branches.
     only_these_trivia_bytes_render(
-        b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  let picked = if flag {\n    give 1_i32;\n  } else {\n    give 2_i32;\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  let picked = if flag {\n    give 1_i32;\n  } else {\n    give 2_i32;\n  }\n  return unit;\n}\n",
     );
     // A three-deep chain renders flat: every arm sits at one indent level.
     // This is structural, not a special case. An else-position `if_stmt`
@@ -477,7 +485,7 @@ fn if_else_renders_its_join_line_and_indents_both_blocks() {
 fn counted_range_attaches_its_endpoints_and_round_trips_canonically() {
     let canonical = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index in lower..upper {\n    break @range;\n  }\n  return unit;\n}\n";
     only_these_trivia_bytes_render(canonical);
-    let sloppy = b"fn probe(lower:own u64,upper:own u64)->own unit pure{\nfor @range index in lower .. upper{\nbreak @range;\n}\nreturn unit;\n}\n";
+    let sloppy = b"fn probe(lower:own u64,upper:own u64)->result:own unit pure{\nfor @range index in lower .. upper{\nbreak @range;\n}\nreturn unit;\n}\n";
     assert_eq!(
         rendered_bytes(sloppy).as_deref(),
         Some(canonical.as_slice())

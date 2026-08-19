@@ -46,26 +46,37 @@ fn invalid_label(label: &str) -> SemanticIssueKind {
 
 #[test]
 fn an_unmarked_main_is_not_an_alternate_entry_form() {
-    let source = b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("an unmarked main must be rejected by FN-7: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Fn7);
-        assert_eq!(issue.kind(), &SemanticIssueKind::InvalidMain);
-    });
+    let source = b"fn main() -> result: own unit pure {\n  return unit;\n}\n";
+    assert_rule_at(
+        source,
+        SemanticRule::Fn7,
+        SemanticIssueKind::InvalidMain,
+        b"fn main() -> result: own unit pure {\n  return unit;\n}",
+    );
 }
 
 #[test]
-fn the_unlabelled_entry_keeps_its_exact_four_effect_rows() {
-    // [FN-7] admits exactly these four rows for this form. A body that does
-    // not exhibit a declared row is [EFF-2]'s rejection, not FN-7's, so this
-    // asserts only that the FN-7 judgment lets each one through.
+fn the_no_input_command_entry_admits_every_effect_subset() {
+    // [FN-7] admits every canonical subset of the four command effects. A
+    // body that does not exhibit a declared row is [EFF-2]'s rejection, not
+    // FN-7's, so this asserts only that the entry judgment lets each through.
     for row in [
         &b"pure"[..],
         &b"allocates(heap)"[..],
+        &b"external"[..],
+        &b"blocks"[..],
         &b"traps"[..],
+        &b"allocates(heap), external"[..],
+        &b"allocates(heap), blocks"[..],
         &b"allocates(heap), traps"[..],
+        &b"external, blocks"[..],
+        &b"external, traps"[..],
+        &b"blocks, traps"[..],
+        &b"allocates(heap), external, blocks"[..],
+        &b"allocates(heap), external, traps"[..],
+        &b"allocates(heap), blocks, traps"[..],
+        &b"external, blocks, traps"[..],
+        &b"allocates(heap), external, blocks, traps"[..],
     ] {
         let mut source = b"command fn main() -> status: own ExitStatus ".to_vec();
         source.extend_from_slice(row);
@@ -84,16 +95,16 @@ fn the_unlabelled_entry_keeps_its_exact_four_effect_rows() {
 }
 
 #[test]
-fn the_unlabelled_entry_keeps_its_ordinary_callee_status() {
-    // [FN-7] rejects a call only to a *kind-declaring* entry; the unlabelled
-    // entry stays an ordinary callee [TYPE-6, OP-1].
+fn the_command_entry_has_no_source_call_route() {
     let source = b"fn helper() -> result: own unit pure {\n  main();\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "a call to the unlabelled entry must remain admitted: {outcome:?}"
-        );
-    });
+    assert_rule_at(
+        source,
+        SemanticRule::Fn7,
+        SemanticIssueKind::CallToKindDeclaringEntry {
+            entry: "main".to_owned(),
+        },
+        b"main()",
+    );
 }
 
 #[test]
@@ -118,13 +129,13 @@ fn a_missing_entry_is_the_one_bundle_root_rejection() {
 #[test]
 fn the_entry_is_nongeneric_and_declares_no_region_parameter() {
     assert_rule_at(
-        b"fn main<T>() -> result: own unit pure {\n  return unit;\n}\n",
+        b"command fn main<T>() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn7,
         SemanticIssueKind::InvalidMain,
         b"<T>",
     );
     assert_rule_at(
-        b"fn main['a]() -> result: own unit pure {\n  return unit;\n}\n",
+        b"command fn main['a]() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn7,
         SemanticIssueKind::InvalidMain,
         b"['a]",
@@ -132,14 +143,12 @@ fn the_entry_is_nongeneric_and_declares_no_region_parameter() {
 }
 
 #[test]
-fn the_unlabelled_entry_fixes_its_result_and_its_four_rows() {
+fn a_missing_command_marker_outranks_legacy_signature_details() {
     assert_rule_at(
         b"fn main() -> result: own i32 pure {\n  return 0_i32;\n}\n",
         SemanticRule::Fn7,
-        SemanticIssueKind::InvalidEntryResult {
-            required: "own unit",
-        },
-        b"own i32",
+        SemanticIssueKind::InvalidMain,
+        b"fn main() -> result: own i32 pure {\n  return 0_i32;\n}",
     );
     assert_rule_at(
         b"fn main(value: own i32) -> result: own unit pure {\n  return unit;\n}\n",
@@ -150,31 +159,22 @@ fn the_unlabelled_entry_fixes_its_result_and_its_four_rows() {
 }
 
 #[test]
-fn an_inadmissible_entry_row_outranks_the_unsupported_effect_category() {
-    // The [DIAG-1] ordering this task repaired: an unsupported compiler
-    // capability establishes no source violation, so an `external` or
-    // `blocks` category must not mask the FN-7 rejection the checker can
-    // already establish. `external` is not one of the unlabelled form's four
-    // rows, so this source is rejected, not stopped.
-    assert_rule_at(
+fn admitted_but_unexhibited_entry_effects_reach_eff2() {
+    // `external` and `blocks` are ordinary members of the command entry's
+    // four-effect powerset. These bodies do not exhibit them, so they pass
+    // FN-7 and are rejected later by EFF-2.
+    assert_rule(
         b"command fn main() -> status: own ExitStatus external {\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Fn7,
-        SemanticIssueKind::InvalidEntryEffects {
-            admitted: "exactly one of `pure`, `allocates(heap)`, `traps`, `allocates(heap), traps`",
-        },
-        b"external",
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
     );
-    assert_rule_at(
+    assert_rule(
         b"command fn main() -> status: own ExitStatus blocks {\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Fn7,
-        SemanticIssueKind::InvalidEntryEffects {
-            admitted: "exactly one of `pure`, `allocates(heap)`, `traps`, `allocates(heap), traps`",
-        },
-        b"blocks",
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
     );
-    // The same category on a declaration FN-7 does not govern is [EFF-2]'s
-    // judgment: a non-kind-declaring function can never exhibit it, so
-    // declaring it is declared-but-unexhibited.
+    // The same category on a non-entry declaration is likewise an ordinary
+    // declared-but-unexhibited effect mismatch.
     assert_rule(
         b"fn probe() -> result: own unit external {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
@@ -226,13 +226,6 @@ fn the_standard_input_table_is_closed_at_its_input_label_node() {
         SemanticRule::Fn7,
         invalid_label("command.env"),
         b"command.env as",
-    );
-    // Foreign kind prefix.
-    assert_rule_at(
-        b"command fn main(app.args as args: own Args) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Fn7,
-        invalid_label("app.args"),
-        b"app.args as",
     );
     // Repeated row: distinct binders do not make it two inputs, because
     // ordinal identity selects the supplied value.
@@ -321,24 +314,23 @@ fn an_input_label_outside_the_entry_is_rejected_at_its_own_node() {
         },
         b"command.args as",
     );
-    // In a unit whose entry is the unlabelled form, where no parameter of any
-    // declaration may carry one.
+    // Placement outranks whether the label would select a table row.
     assert_rule_at(
-        b"fn helper(app.input as value: own i32) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn helper(command.env as value: own i32) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn7,
         SemanticIssueKind::StandardInputLabelOutsideEntry {
-            label: "app.input".to_owned(),
+            label: "command.env".to_owned(),
         },
-        b"app.input as",
+        b"command.env as",
     );
     // In a `fn_sig`, which [FN-7] names separately.
     assert_rule_at(
-        b"contract Sink {\n  fn emit(app.out as value: own i32) -> result: own unit pure;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"contract Sink {\n  fn emit(command.stdout as value: own i32) -> result: own unit pure;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn7,
         SemanticIssueKind::StandardInputLabelOutsideEntry {
-            label: "app.out".to_owned(),
+            label: "command.stdout".to_owned(),
         },
-        b"app.out as",
+        b"command.stdout as",
     );
 }
 

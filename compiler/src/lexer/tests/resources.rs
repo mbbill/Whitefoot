@@ -144,9 +144,9 @@ fn different_sufficient_limits_produce_identical_partitions() {
         max_sources: 1,
         max_source_bytes: source.total_bytes(),
         max_total_source_bytes: source.total_bytes(),
-        max_token_bytes: 4,
-        max_tokens: 7,
-        max_lexemes: 14,
+        max_token_bytes: 6,
+        max_tokens: 9,
+        max_lexemes: 15,
     };
     assert_eq!(render(generous), render(exact));
 }

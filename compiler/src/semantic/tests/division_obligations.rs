@@ -1,43 +1,18 @@
-//! The division dissolution behind its integration switch [OP-2, ENT-6]: a
-//! bare `/` or `%` in the divisor class carries a division obligation judged
-//! like a subscript bounds obligation — discharged sites lose their runtime
-//! check and `traps` contribution, undischarged sites reject citing OP-2 —
-//! while a signed site with two non-constant operands keeps its v0.31
-//! trapping semantics, because its `iK::MIN / -1` safe condition is a
-//! disjunction the [ENT-4] fragment cannot state. The default-switch
-//! controls at the end pin the v0.31 behavior the shipped compiler retains.
+//! Static integer-domain obligations for exact `/` and `%` operations [OP-2,
+//! ENT-6]. Every exact site must establish its complete typed `.defined`
+//! predicate, including nonzero-divisor and signed `MIN / -1` safety. A proof
+//! discharges the obligation without adding an effect; an unproved or refuted
+//! obligation rejects under OP-2.
 
 use crate::{
     SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, StaticObligationDisposition,
 };
 
 use super::super::entailment::ObligationFamily;
-use super::super::model::{
-    CheckedExpression, CheckedFunction, CheckedIntegerOperation, CheckedStatement,
-};
-use super::{with_semantics, with_semantics_division};
+use super::super::model::CheckedFunction;
+use super::with_semantics;
 
 const DIVISION_FIX: &str = "add a dominating `claim` of the `.defined` predicate or a dominating branch establishing its fixed normalization, or use an available total non-exact row";
-
-/// The trap disposition of every bare divide/remainder site in one checked
-/// function, in source order.
-fn division_trap_records(function: &CheckedFunction) -> Vec<bool> {
-    let mut records = Vec::new();
-    for statement in &function.body {
-        let CheckedStatement::Let { value, .. } = statement else {
-            continue;
-        };
-        if let CheckedExpression::IntegerOperation {
-            operation:
-                CheckedIntegerOperation::DivideExact | CheckedIntegerOperation::RemainderExact,
-            ..
-        } = value
-        {
-            records.push(false);
-        }
-    }
-    records
-}
 
 fn named<'functions>(
     functions: &'functions [CheckedFunction],
@@ -60,12 +35,10 @@ fn division_outcomes(
         .collect()
 }
 
-/// A dominating branch-class fact source discharges the zero-divisor
-/// conjunct of an unsigned site: the program is accepted, both conjuncts
-/// discharge, and the site retains no trap record — the runtime check is
-/// gone in every build mode, and the row is `pure`.
+/// A stronger claimed bound discharges the zero-divisor conjunct of an
+/// unsigned site: the program is accepted and both conjuncts are proved.
 #[test]
-fn a_dominating_check_discharges_an_unsigned_site_and_drops_its_check() {
+fn a_stronger_claim_discharges_an_unsigned_site() {
     let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
   claim positive_divisor: igt(d, 0_u64) because "positive divisor";
   let q = n / d;
@@ -76,31 +49,25 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_division(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("a check-dominated unsigned site must be accepted: {outcome:?}");
+            panic!("a claim-dominated unsigned site must be accepted: {outcome:?}");
         };
         let ratio = named(&checked.data.functions, "ratio");
-        assert_eq!(
-            division_trap_records(ratio),
-            vec![false],
-            "the discharged class site must drop its trap record",
-        );
         let division = division_outcomes(ratio);
         assert_eq!(division.len(), 1, "one source occurrence, one obligation");
         assert_eq!(division[0].components.len(), 2);
         assert!(
             division.iter().all(|outcome| outcome.discharged),
-            "the check derives `d != 0` and the unsigned overflow conjunct is ground true",
+            "the claim derives `d != 0` and the unsigned overflow conjunct is ground true",
         );
     });
 }
 
-/// The same discharge through the named runtime backstop: a dominating
-/// claim establishes the disequality, the site loses its own check, and the
-/// claim carries the function's `traps` effect.
+/// A claim spelling the canonical disequality discharges the obligation. The
+/// claim itself remains the function's `traps` effect source.
 #[test]
-fn a_dominating_claim_discharges_the_site_and_carries_the_trap() {
+fn a_canonical_claim_discharges_the_site() {
     let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
   claim nonzero: ine(d, 0_u64) because "callers pass a nonzero stride";
   let q = n / d;
@@ -111,16 +78,11 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_division(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("a claim-backed site must be accepted: {outcome:?}");
         };
         let ratio = named(&checked.data.functions, "ratio");
-        assert_eq!(
-            division_trap_records(ratio),
-            vec![false],
-            "the claim carries the runtime check; the site itself has none",
-        );
         assert!(
             division_outcomes(ratio)
                 .iter()
@@ -132,8 +94,8 @@ command fn main() -> status: own ExitStatus pure {
 
 /// A divisor nothing bounds leaves the zero-divisor conjunct underivable:
 /// the program rejects citing OP-2 at the `infix` node with the exact
-/// residual `d != 0`, and — because the class site contributes no `traps` —
-/// the `pure` row is the correct row for this body.
+/// residual `d != 0`. Exact division contributes no runtime effect, so the
+/// `pure` row is correct for this body.
 #[test]
 fn an_unconstrained_divisor_rejects_citing_op2_with_the_exact_residual() {
     let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 pure {
@@ -145,7 +107,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_division(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("an unconstrained divisor must reject: {outcome:?}");
         };
@@ -185,7 +147,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_division(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("an unconstrained remainder divisor must reject: {outcome:?}");
         };
@@ -202,8 +164,8 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 /// A nonzero constant divisor makes the zero-divisor conjunct ground true
-/// and — over a signed type — decides the `-1` half of the trapping pair,
-/// so the site discharges with no fact source at all and needs no `traps`.
+/// and, over a signed type, decides the `-1` half of the exceptional pair, so
+/// the site discharges with no fact source.
 #[test]
 fn a_nonzero_constant_divisor_discharges_with_no_fact_source() {
     let source = br#"fn halve(n: own i32) -> result: own i32 pure {
@@ -215,16 +177,11 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_division(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("a nonzero constant divisor must be accepted: {outcome:?}");
         };
         let halve = named(&checked.data.functions, "halve");
-        assert_eq!(
-            division_trap_records(halve),
-            vec![false],
-            "a constant divisor leaves nothing to test at runtime",
-        );
         assert!(
             division_outcomes(halve)
                 .iter()
@@ -234,8 +191,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 /// A constant zero divisor instantiates a ground false zero-divisor
-/// conjunct and is therefore rejected at every non-contradictory point:
-/// there is no accepted always-trapping bare spelling.
+/// conjunct and is therefore rejected at every non-contradictory point.
 #[test]
 fn a_constant_zero_divisor_is_rejected_everywhere() {
     let source = br#"command fn main() -> status: own ExitStatus traps {
@@ -245,7 +201,7 @@ fn a_constant_zero_divisor_is_rejected_everywhere() {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_division(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("a constant zero divisor must reject: {outcome:?}");
         };
@@ -276,7 +232,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_division(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("an unconstrained dividend over -1 must reject: {outcome:?}");
         };
@@ -293,7 +249,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 /// The same site with the dividend bounded away from the type minimum
-/// discharges both conjuncts and drops the whole trap.
+/// discharges both conjuncts.
 #[test]
 fn a_bounded_dividend_over_minus_one_discharges() {
     let source = br#"fn negate(n: own i32) -> result: own i32 traps {
@@ -306,12 +262,11 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_division(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("a bounded dividend over -1 must be accepted: {outcome:?}");
         };
         let negate = named(&checked.data.functions, "negate");
-        assert_eq!(division_trap_records(negate), vec![false]);
         assert!(
             division_outcomes(negate)
                 .iter()
@@ -320,12 +275,11 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// A signed site with two non-constant operands is outside the class: its
-/// safe condition `dividend != iK::MIN or divisor != -1` is a disjunction
-/// the conjunctive fragment cannot state, so it keeps its complete trap
-/// record, still exhibits `traps`, and attaches no obligation.
+/// A signed site with two non-constant operands still requires its complete
+/// typed domain predicate. A `traps` declaration cannot replace that proof;
+/// EFF-2 retains precedence when the declared row already disagrees.
 #[test]
-fn a_signed_two_variable_site_retains_the_trap_and_its_effect() {
+fn a_signed_two_variable_site_requires_static_domain_proof() {
     let pure_row = br#"fn ratio(n: own i32, d: own i32) -> result: own i32 pure {
   let q = n / d;
   return q;
@@ -335,9 +289,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_division(pure_row, |outcome| {
+    with_semantics(pure_row, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("a signed two-variable site still exhibits traps: {outcome:?}");
+            panic!("a signed two-variable site must require proof: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
     });
@@ -350,7 +304,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_division(traps_row, |outcome| {
+    with_semantics(traps_row, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("a traps row cannot restore a runtime fallback: {outcome:?}");
         };
@@ -358,9 +312,9 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// `/checked` is untouched by the dissolution: no obligation attaches, the
-/// row stays a total `Result`-returning operation, and the zero divisor
-/// remains a recoverable value rather than a source rejection.
+/// `/checked` is total: no exact-domain obligation attaches, the row stays a
+/// `Result`-returning operation, and a zero divisor remains a recoverable
+/// value rather than a source rejection.
 #[test]
 fn a_checked_division_attaches_no_obligation() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
@@ -376,7 +330,7 @@ fn a_checked_division_attaches_no_obligation() {
   }
 }
 "#;
-    with_semantics_division(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("a checked division must be accepted: {outcome:?}");
         };
@@ -388,12 +342,10 @@ fn a_checked_division_attaches_no_obligation() {
     });
 }
 
-/// The shipped switch is on, so the default checker and the test-only entry
-/// are one judgment: a divisor-class site carries the obligation and no
-/// longer contributes `traps`, so the `traps` row v0.31 required is now the
-/// EFF-2 disagreement — the row is judged before the undischarged divisor is.
+/// On the default checker, an unjustified `traps` declaration is judged under
+/// EFF-2 before the undischarged exact-division obligation is reported.
 #[test]
-fn the_shipped_checker_rejects_the_v031_traps_row_on_a_class_site() {
+fn effect_mismatch_precedes_static_division_rejection() {
     let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
   let q = n / d;
   let r = n % d;
@@ -406,19 +358,16 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("a class site contributes no traps, so the row disagrees: {outcome:?}");
+            panic!("exact division does not justify a traps row: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Eff2);
     });
 }
 
-/// The same unification on the constant-zero case: v0.31 accepted
-/// `x / 0_i32` as a well-typed always-trapping call, and the shipped path
-/// now reaches the ground-false zero-divisor conjunct that
-/// `a_constant_zero_divisor_is_rejected_everywhere` pins through the
-/// test-only entry.
+/// The default checker reaches the same ground-false zero-divisor conjunct as
+/// the obligation-focused test entry.
 #[test]
-fn the_shipped_checker_rejects_a_constant_zero_divisor() {
+fn the_default_checker_rejects_a_constant_zero_divisor() {
     let source = br#"command fn main() -> status: own ExitStatus traps {
   let x = 10_i32;
   let q = x / 0_i32;
@@ -428,7 +377,7 @@ fn the_shipped_checker_rejects_a_constant_zero_divisor() {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the shipped path rejects a constant zero divisor: {outcome:?}");
+            panic!("the default path rejects a constant zero divisor: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
         assert_eq!(
@@ -442,12 +391,10 @@ fn the_shipped_checker_rejects_a_constant_zero_divisor() {
     });
 }
 
-/// The one direction in which the candidate accepts more, now on the shipped
-/// path: a body whose only trap contributor was a divisor-class bare site
-/// writes the narrower `pure` row, which v0.31 rejected under EFF-2. This is
-/// the only newly accepted class the acceptance-set analysis records.
+/// The default checker accepts a `pure` body whose exact-division obligation
+/// is statically discharged.
 #[test]
-fn the_shipped_checker_accepts_a_pure_row_over_a_discharged_class_site() {
+fn the_default_checker_accepts_a_discharged_exact_division() {
     let source = br#"fn halve(n: own i32) -> result: own i32 pure {
   let q = n / 2_i32;
   return q;
@@ -460,34 +407,25 @@ command fn main() -> status: own ExitStatus pure {
     with_semantics(source, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),
-            "the discharged class site contributes no traps, so `pure` is correct: {outcome:?}",
+            "a discharged exact site has no runtime effect, so `pure` is correct: {outcome:?}",
         );
     });
 }
 
-/// [EFF-2] the body-syntactic contribution is judged once on the written
-/// body, so a bare `/` whose written selected type is a generic type
-/// parameter and whose operand atoms are non-constant is outside [OP-2]'s
-/// divisor class for that contribution and exhibits `traps` — at every
-/// instance, whatever that instance's signedness makes of the class. One
-/// written row therefore serves both instantiations of one written body;
-/// judged per instance instead, no single row could, because the unsigned
-/// instance would demand `pure` and the signed one `traps`.
-///
-/// The obligation and its discharge stay per concrete instance underneath
-/// that row: the unsigned instance is in the class, discharges through the
-/// requirement, and executes no test, while the signed two-variable instance
-/// is outside the class, carries no obligation, and keeps its runtime trap.
+/// A generic exact division is pure only when its complete typed domain
+/// predicate is a static requirement. The one `/defined` goal covers both
+/// zero divisors and the signed `MIN / -1` case; concrete callers discharge
+/// that same template for either instance.
 #[test]
-fn a_generic_divisor_site_exhibits_traps_at_every_instance() {
-    let source = br#"fn ratio<T: Int>(n: own T, d: own T) -> result: own T traps requires {
-  check ine(d, 0_T) else trap "nonzero divisor";
+fn a_generic_divisor_site_uses_one_static_domain_requirement() {
+    let source = br#"fn ratio<T: Int>(n: own T, d: own T) -> result: own T pure contract {
+  requires n /defined d;
 } {
   let q = n / d;
   return q;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let a = 10_i32;
   let b = 3_i32;
   let signed = ratio<i32>(n: a, d: b);
@@ -498,30 +436,10 @@ command fn main() -> status: own ExitStatus traps {
 }
 "#;
     with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("proof-required exact division contributes no traps: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Eff2);
-    });
-    let pure_row = br#"fn ratio<T: Int>(n: own T, d: own T) -> result: own T pure requires {
-  check ine(d, 0_T) else trap "nonzero divisor";
-} {
-  let q = n / d;
-  return q;
-}
-
-command fn main() -> status: own ExitStatus traps {
-  let x = 10_u32;
-  let y = 3_u32;
-  let unsigned = ratio<u32>(n: x, d: y);
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(pure_row, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the written body exhibits traps, so `pure` disagrees: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Eff2);
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "the generic domain requirement must discharge both concrete instances: {outcome:?}"
+        );
     });
 }
 
@@ -549,11 +467,6 @@ command fn main() -> status: own ExitStatus pure {
             panic!("the claimed disequality must discharge the conjunct: {outcome:?}");
         };
         let ratio = named(&checked.data.functions, "ratio");
-        assert_eq!(
-            division_trap_records(ratio),
-            vec![false],
-            "the claim carries the runtime check; the site itself has none",
-        );
         assert!(
             division_outcomes(ratio)
                 .iter()
