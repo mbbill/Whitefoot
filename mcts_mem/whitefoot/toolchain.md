@@ -1,9 +1,9 @@
 - Build one serious research compiler in safe Rust, with private interfaces that may evolve as language experiments demand.
 - Advance through general end-to-end capabilities: frontend, resolution, checking, simple IR, LLVM, execution, then measured optimization.
 - Preserve compiler-independent conformance data as evidence alongside the production compiler.
-- Required runtime checks remain in facts-off compilation. An optional fact may remove a check only after focused proof and negative-canary testing.
+- Written claims remain executable in facts-off compilation and no optimizer fact may remove them; every other hazardous condition must discharge before lowering.
 - Treat artifacts, replay, stable protocols, release machinery, and product-scale resource controls as optional later hardening, not compiler prerequisites.
-- Keep runtime performance measurements in research experiments; keep deterministic execution, check-retention, and proof-elision regressions near the backend.
+- Keep runtime performance measurements in research experiments; keep deterministic execution, claim-retention, and static-obligation regressions near the backend.
 
 ## Facts
 

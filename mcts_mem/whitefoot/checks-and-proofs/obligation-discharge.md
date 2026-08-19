@@ -16,7 +16,7 @@
 - A finite two-stratum explicit-dataflow provenance judgment freezes value, storage, result, and write component pairs before subject-only protected demands, requirement bridges, call targets, and rejection events converge.
 - Claim accountability is one deterministic read-only checked-program projection over the sole finalized function-local derivation DAGs: lifecycle and obligation links retain existing remapped proof identities, and the projection neither replays closure nor creates portable proof authority.
 - An opt-in claim-free root demands its finite outgoing concrete-call/SCC closure in the existing unasserted view: direct or imported claims and unproved protected obligations reject, the closure never flows upward into unrelated callers, and no second flow analysis or proof authority exists.
-- After complete-state local discharge and ordinary-call requirement success, an unconditionally external constrained subject cannot authorize a protected index leaf solely through a body check, claim, or S4-blinded requirement bridge; local leaves reject at the subscript and downstream leaves at the responsible call argument.
+- After complete-state local discharge and ordinary-call requirement success, an unconditionally external constrained subject cannot authorize a protected index leaf solely through a claim or S4-blinded requirement bridge; local leaves reject at the subscript and downstream leaves at the responsible call argument.
 - The entailment fragment is part of the trusted computing base beside the type and borrow checkers; a wrong discharge is a memory-safety defect rather than an optimizer defect.
 
 ## Facts

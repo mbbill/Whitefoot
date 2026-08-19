@@ -1,6 +1,6 @@
 - The lowering recognizes a byte-walk loop form on the checked statements alone — outside-bound exit guard, one guarded `u8` load at the induction binding, a neutral middle whose only observable exits are dominated by equality tests of the loaded byte, and a single-step increment — with no name, source file, or calling context participating.
 - A recognized loop gains a header fast path built on one IR operation (`buffer.probe.skip`): an internally guarded 16-byte probe returning how many upcoming iterations are provably effect-free, after which the induction advances by that count and the header re-probes.
-- Every byte where anything observable can happen — a needle hit, the exit bound, any trap — executes the unchanged scalar body; the probe window is bounded by both the walk's exit bound and the buffer length, and the probe itself carries no trap site and publishes no effect.
+- Every byte where anything observable can happen — a needle hit, the exit bound, or a claim — executes the unchanged scalar body; the probe window is bounded by both the walk's exit bound and the buffer length, and the probe itself carries no claim site and publishes no effect.
 - Recognition failure, an addressed probe input, or any representation mismatch falls back to the ordinary lowering with zero change; acceptance is never consulted or altered by the fast path.
 
 ## Facts
