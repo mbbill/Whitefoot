@@ -7950,8 +7950,8 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
                     } if root_view == view
                 ))
                 .count(),
-            10,
-            "wfgrep has exactly ten append_slice receiver routes",
+            12,
+            "wfgrep has exactly twelve append_slice receiver routes",
         );
     }
 
