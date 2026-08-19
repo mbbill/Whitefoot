@@ -1,5 +1,5 @@
 use crate::Production;
-use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId};
+use crate::syntax::{FinalizedExtent, FinalizedTopology};
 
 use super::super::catalog::{PRELUDE_DECLARATIONS, reserved_name};
 use super::super::scopes::ScopeBuild;
@@ -41,36 +41,7 @@ pub(super) fn check_declaration_inventory(
         index,
         declaration_by_role,
         system,
-        |role| ancestor_with_production(topology, role.owner, Production::EnsuresEntry).is_none(),
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn check_ensures_entry_inventory(
-    topology: &FinalizedTopology,
-    scopes: &ScopeBuild,
-    roles: &[ClassifiedRole],
-    declarations: &[DeclarationRecord],
-    metas: &[DeclarationMeta],
-    index: &DeclarationIndex,
-    declaration_by_role: &[Option<usize>],
-    system: &[SystemDeclarationRecord],
-    block: NodeId,
-) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
-    check_inventory(
-        topology,
-        scopes,
-        roles,
-        declarations,
-        metas,
-        index,
-        declaration_by_role,
-        system,
-        |role| {
-            ancestor_with_production(topology, role.owner, Production::EnsuresEntry).is_some()
-                && ancestor_with_production(topology, role.owner, Production::EnsuresBlock)
-                    == Some(block)
-        },
+        |_| true,
     )
 }
 

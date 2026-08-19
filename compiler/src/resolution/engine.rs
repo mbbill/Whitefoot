@@ -20,8 +20,8 @@ mod lookup;
 mod roles;
 
 use admission::check_clause_blocks;
-use inventory::{check_declaration_inventory, check_ensures_entry_inventory};
-use lookup::{resolve_uses, resolve_uses_deferred, resolve_uses_without_verdict};
+use inventory::check_declaration_inventory;
+use lookup::{resolve_uses, resolve_uses_deferred};
 use roles::classify_roles;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -293,8 +293,9 @@ fn build_tables(
                     owner_chain: role.owner_chain.clone(),
                     function_owner: function_owner(topology, role.owner),
                 };
-                if ancestor_with_production(topology, role.owner, Production::EnsuresEntry)
-                    .is_some()
+                if use_role != LexicalUseRole::EnsuresVariant
+                    && ancestor_with_production(topology, role.owner, Production::EnsuresClause)
+                        .is_some()
                 {
                     postcondition_entry_uses.push(use_meta);
                 } else {
@@ -328,82 +329,14 @@ fn build_tables(
     )? {
         return Err(BuildStop::Issue(Box::new(issue)));
     }
-    // An ensures-entry inventory issue is deliberately reported only after
-    // concrete FN-9 selector admission.  It nevertheless remains an
-    // inventory-stage event and therefore outranks *every* lookup event.  In
-    // that case collect all independently successful non-entry links without
-    // publishing a lookup verdict; semantic admission consumes only the
-    // links needed to form concrete signatures and then forwards the original
-    // stored inventory issue.  This also prevents an invalid ensures local
-    // from poisoning a body lookup before its own FORM-3/TYPE-6 event wins.
-    let pending_entry_inventory = first_ensures_entry_inventory_issue(
-        topology,
+    let lexical_uses = resolve_uses(
         &scopes,
-        &roles,
         &declarations,
         &declaration_metas,
         &declaration_index,
-        &declaration_by_role,
+        &uses,
         &system,
-    )?
-    .is_some();
-    let lexical_uses = if pending_entry_inventory {
-        let (pre_admission, later): (Vec<_>, Vec<_>) = uses.iter().cloned().partition(|usage| {
-            usage.role == LexicalUseRole::EnsuresVariant
-                || ancestor_with_production(topology, usage.owner, Production::Stmt).is_none()
-        });
-        // Leading selector lookup and declaration/header lookup are true
-        // prerequisites of concrete signature substitution and therefore
-        // retain their original resolver verdict.  In particular an unknown
-        // variant never degrades into a semantic InvalidResolution merely
-        // because an entry inventory event is also pending.
-        let mut resolved = resolve_uses(
-            &scopes,
-            &declarations,
-            &declaration_metas,
-            &declaration_index,
-            &pre_admission,
-            &system,
-        )?;
-        resolved.extend(resolve_uses_without_verdict(
-            &scopes,
-            &declarations,
-            &declaration_metas,
-            &declaration_index,
-            &later,
-            &system,
-        )?);
-        resolved.sort_by(|left, right| {
-            let left = left.origin();
-            let right = right.origin();
-            (
-                left.coordinate().source().ordinal(),
-                left.coordinate().start().value(),
-                left.coordinate().end().value(),
-                left.node().components(),
-                left.role_ordinal(),
-                left.subtoken_ordinal(),
-            )
-                .cmp(&(
-                    right.coordinate().source().ordinal(),
-                    right.coordinate().start().value(),
-                    right.coordinate().end().value(),
-                    right.node().components(),
-                    right.role_ordinal(),
-                    right.subtoken_ordinal(),
-                ))
-        });
-        resolved
-    } else {
-        resolve_uses(
-            &scopes,
-            &declarations,
-            &declaration_metas,
-            &declaration_index,
-            &uses,
-            &system,
-        )?
-    };
+    )?;
     let postconditions = build_postcondition_records(
         topology,
         &scopes,
@@ -411,7 +344,6 @@ fn build_tables(
         &declarations,
         &declaration_metas,
         &declaration_index,
-        &declaration_by_role,
         &postcondition_entry_uses,
         &lexical_uses,
         &system,
@@ -429,58 +361,6 @@ fn build_tables(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn first_ensures_entry_inventory_issue(
-    topology: &FinalizedTopology,
-    scopes: &ScopeBuild,
-    roles: &[ClassifiedRole],
-    declarations: &[DeclarationRecord],
-    declaration_metas: &[DeclarationMeta],
-    declaration_index: &DeclarationIndex,
-    declaration_by_role: &[Option<usize>],
-    system: &[SystemDeclarationRecord],
-) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
-    let mut blocks = topology
-        .nodes
-        .iter()
-        .enumerate()
-        .filter_map(|(index, record)| {
-            (record.production == Production::EnsuresBlock)
-                .then(|| NodeId::from_index(index))
-                .flatten()
-        })
-        .collect::<Vec<_>>();
-    blocks.sort_by_key(|block| {
-        let record = &topology.nodes[block.index()];
-        let (source, start, end) = match record.extent {
-            FinalizedExtent::Source { source, start, end } => {
-                (source.ordinal(), start.value(), end.value())
-            }
-            FinalizedExtent::BundleRoot => (u32::MAX, u64::MAX, u64::MAX),
-        };
-        let path = scopes
-            .path(*block)
-            .map_or_else(|_| Vec::new(), |path| path.components().to_vec());
-        (source, start, end, path)
-    });
-    for block in blocks {
-        if let Some(issue) = check_ensures_entry_inventory(
-            topology,
-            scopes,
-            roles,
-            declarations,
-            declaration_metas,
-            declaration_index,
-            declaration_by_role,
-            system,
-            block,
-        )? {
-            return Ok(Some(issue));
-        }
-    }
-    Ok(None)
-}
-
-#[allow(clippy::too_many_arguments)]
 fn build_postcondition_records(
     topology: &FinalizedTopology,
     scopes: &ScopeBuild,
@@ -488,14 +368,13 @@ fn build_postcondition_records(
     declarations: &[DeclarationRecord],
     declaration_metas: &[DeclarationMeta],
     declaration_index: &DeclarationIndex,
-    declaration_by_role: &[Option<usize>],
     entry_uses: &[UseMeta],
     lexical_uses: &[LexicalUseRecord],
     system: &[SystemDeclarationRecord],
 ) -> Result<Vec<PostconditionResolutionRecord>, BuildStop> {
     let mut blocks = Vec::new();
     for (index, record) in topology.nodes.iter().enumerate() {
-        if record.production == Production::EnsuresBlock {
+        if record.production == Production::EnsuresClause {
             blocks
                 .push(NodeId::from_index(index).ok_or(ResolutionCompilerFailure::CounterOverflow)?);
         }
@@ -518,7 +397,18 @@ fn build_postcondition_records(
     for block in blocks {
         let function = ancestor_with_production(topology, block, Production::FnDecl)
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
-        let selector = topology
+        let result_binding = topology
+            .node_children(function)
+            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
+            .iter()
+            .copied()
+            .find(|child| {
+                topology
+                    .node(*child)
+                    .is_some_and(|record| record.production == Production::ResultBinding)
+            })
+            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+        let route = topology
             .node_children(block)
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
             .iter()
@@ -526,17 +416,21 @@ fn build_postcondition_records(
             .find(|child| {
                 topology
                     .node(*child)
-                    .is_some_and(|record| record.production == Production::EnsuresSelector)
-            })
-            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+                    .is_some_and(|record| record.production == Production::ResultRoute)
+            });
+        let selector = route.unwrap_or(result_binding);
         let selector_path = scopes.path(selector)?;
         let selector_roles: Vec<_> = roles.iter().filter(|role| role.owner == selector).collect();
-        let (class, plain_candidate, variant_target) = if let [candidate] =
-            selector_roles.as_slice()
-            && matches!(
+        let (class, plain_candidate, variant_target) = if route.is_none() {
+            let [candidate] = selector_roles.as_slice() else {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
+            };
+            if !matches!(
                 candidate.kind,
                 RawRoleKind::Selector(SelectorRole::PlainCandidate)
             ) {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
+            }
             (
                 PostconditionSelectorClass::Plain,
                 Some(build_postcondition_candidate(
@@ -580,7 +474,7 @@ fn build_postcondition_records(
                     role.kind,
                     RawRoleKind::Selector(SelectorRole::VariantField)
                         | RawRoleKind::Selector(SelectorRole::VariantCandidate)
-                ) && ancestor_with_production(topology, role.owner, Production::EnsuresBlock)
+                ) && ancestor_with_production(topology, role.owner, Production::EnsuresClause)
                     == Some(block)
             })
             .collect();
@@ -630,7 +524,7 @@ fn build_postcondition_records(
         let mut ordinary_entry_uses = Vec::new();
         let mut selector_uses = Vec::new();
         for use_record in entry_uses.iter().filter(|use_record| {
-            ancestor_with_production(topology, use_record.owner, Production::EnsuresBlock)
+            ancestor_with_production(topology, use_record.owner, Production::EnsuresClause)
                 == Some(block)
         }) {
             if use_record.role == LexicalUseRole::PlaceBase
@@ -644,18 +538,8 @@ fn build_postcondition_records(
                 ordinary_entry_uses.push(use_record.clone());
             }
         }
-        let entry_inventory_issue = check_ensures_entry_inventory(
-            topology,
-            scopes,
-            roles,
-            declarations,
-            declaration_metas,
-            declaration_index,
-            declaration_by_role,
-            system,
-            block,
-        )?;
-        let (provisional_uses, entry_resolution_issue) = if entry_inventory_issue.is_some() {
+        let entry_inventory_issue = None;
+        let (provisional_uses, entry_resolution_issue) = if ordinary_entry_uses.is_empty() {
             (Vec::new(), None)
         } else {
             let (resolved, issue) = resolve_uses_deferred(
@@ -747,7 +631,8 @@ fn build_postcondition_candidate(
                 && EventKey::from_origin(&declaration.origin) > EventKey::from_origin(&role.origin)
         })
         .find(|(_, owner)| {
-            ancestor_with_production(topology, *owner, Production::EnsuresBlock) == Some(block)
+            ancestor_with_production(topology, *owner, Production::ContractBlock)
+                == ancestor_with_production(topology, block, Production::ContractBlock)
         })
         .map(|(declaration, _)| declaration.origin.clone());
     Ok(PostconditionCandidateRecord {

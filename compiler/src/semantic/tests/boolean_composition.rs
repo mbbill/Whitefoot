@@ -112,11 +112,11 @@ fn assert_comparison_member(
     assert_eq!(*held, bound);
 }
 
-/// S2: a passed `check` on a `band` tree establishes the positive conjuncts
+/// S3: a passed claim on a `band` tree establishes the positive conjuncts
 /// with their exact projections, so both guarded subscripts discharge from
-/// the one conjoined guard.
+/// the one conjoined predicate.
 #[test]
-fn passed_band_check_establishes_positive_conjuncts_and_discharges_both() {
+fn passed_band_claim_establishes_positive_conjuncts_and_discharges_both() {
     let source =
         br#"fn read_pair(table: own array<u8, 8>, low: own u64, high: own u64) -> own u8 traps {
   let low_ok = ilt(low, 8_u64);

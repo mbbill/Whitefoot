@@ -115,6 +115,39 @@ fn every_external_shape_is_classified_context_free() {
 }
 
 #[test]
+fn retired_check_is_an_identifier_but_bare_trap_remains_reserved() {
+    let check_inputs = [SourceInput::new("check.wf", b"check")];
+    let check_bundle = source_bundle(&check_inputs).expect("check source must be constructible");
+    let check_lexed = lexed(&check_bundle).expect("check must remain a lower-word token");
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &check_lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits { max_tokens: 1 },
+    ) else {
+        panic!("retired check spelling must classify as an ordinary identifier");
+    };
+    assert_eq!(classified.tokens().len(), 1);
+    assert!(
+        classified.tokens()[0]
+            .terminals()
+            .contains(TerminalPredicate::Identifier)
+    );
+    assert_eq!(classified.tokens()[0].terminals().len(), 1);
+
+    let trap_inputs = [SourceInput::new("trap.wf", b"trap")];
+    let trap_bundle = source_bundle(&trap_inputs).expect("trap source must be constructible");
+    let trap_lexed = lexed(&trap_bundle).expect("trap must remain one lower-word token");
+    let TerminalOutcome::SourceIssue(issue) = classify_terminals(
+        &trap_lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits { max_tokens: 1 },
+    ) else {
+        panic!("bare trap must remain reserved outside terminal membership");
+    };
+    assert_eq!(issue.owner(), TerminalIssueOwner::Form3);
+}
+
+#[test]
 fn unit_retains_fixed_and_literal_memberships() {
     let inputs = [SourceInput::new("unit.wf", b"unit")];
     let Ok(bundle) = source_bundle(&inputs) else {

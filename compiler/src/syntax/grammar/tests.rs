@@ -1,8 +1,8 @@
 #![allow(clippy::panic)]
 
 use super::{
-    DecisionContext, DecisionKind, GrammarNodeKind, LookaheadPredicate, Production,
-    diagnostic_terminal_order, grammar_node, productions,
+    DecisionKind, GrammarNodeKind, LookaheadPredicate, Production, diagnostic_terminal_order,
+    grammar_node, productions,
 };
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 
@@ -14,160 +14,31 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 #[test]
 fn complete_inventory_is_pinned() {
     assert_eq!(productions().len(), 74);
-    assert_eq!(DECISIONS.len(), 96);
-    assert_eq!(SELECT_ROWS.len(), 3_788);
-    assert_eq!(diagnostic_terminal_order().len(), 99);
+    assert_eq!(DECISIONS.len(), 93);
+    assert_eq!(SELECT_ROWS.len(), 3_725);
+    assert_eq!(diagnostic_terminal_order().len(), 105);
     assert_eq!(productions()[0], Production::Program);
-    assert_eq!(productions()[12], Production::EnsuresBlock);
-    assert_eq!(productions()[13], Production::EnsuresSelector);
-    assert_eq!(productions()[14], Production::EnsuresEntry);
-    assert_eq!(productions()[45], Production::ForStmt);
+    assert_eq!(productions()[12], Production::ContractDefine);
+    assert_eq!(productions()[13], Production::RequiresClause);
+    assert_eq!(productions()[14], Production::EnsuresClause);
+    assert_eq!(productions()[15], Production::ResultRoute);
+    assert_eq!(productions()[46], Production::ForStmt);
     assert_eq!(productions()[73], Production::Effect);
     assert_eq!(Production::ForStmt.index(), 69);
-    assert_eq!(Production::EnsuresBlock.index(), 70);
-    assert_eq!(Production::EnsuresSelector.index(), 71);
-    assert_eq!(Production::EnsuresEntry.index(), 72);
+    assert_eq!(Production::RequiresClause.index(), 70);
+    assert_eq!(Production::EnsuresClause.index(), 71);
+    assert_eq!(Production::ResultRoute.index(), 72);
     assert_eq!(Production::ReplaceLetRhs.index(), 73);
-    assert_eq!(DECISIONS[84].production(), Production::ForStmt);
-    assert_eq!(DECISIONS[84].kind(), DecisionKind::Repeat0);
-    assert_eq!(DECISIONS[85].production(), Production::FnDecl);
-    assert_eq!(DECISIONS[85].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[86].production(), Production::EnsuresBlock);
-    assert_eq!(DECISIONS[86].kind(), DecisionKind::Repeat0);
-    assert_eq!(DECISIONS[87].production(), Production::EnsuresSelector);
-    assert_eq!(DECISIONS[87].kind(), DecisionKind::Choice);
-    assert_eq!(DECISIONS[88].production(), Production::EnsuresSelector);
-    assert_eq!(DECISIONS[88].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[89].production(), Production::EnsuresEntry);
-    assert_eq!(DECISIONS[89].kind(), DecisionKind::Choice);
-    assert_eq!(DECISIONS[90].production(), Production::FnDecl);
-    assert_eq!(DECISIONS[90].kind(), DecisionKind::Optional);
-}
-
-#[test]
-fn v028_decision_slots_retain_their_exact_shapes() {
-    macro_rules! shape {
-        ($production:ident, $kind:ident, $context:ident, $arms:literal) => {
-            (
-                Production::$production,
-                DecisionKind::$kind,
-                DecisionContext::$context,
-                $arms,
-            )
-        };
-    }
-    let expected = [
-        shape!(Program, Repeat0, ProgramItems, 2),
-        shape!(Item, Choice, ConstructEntry, 6),
-        shape!(StructDecl, Optional, Ordinary, 2),
-        shape!(StructDecl, Optional, Ordinary, 2),
-        shape!(StructDecl, Repeat0, Ordinary, 2),
-        shape!(EnumDecl, Optional, Ordinary, 2),
-        shape!(EnumDecl, Optional, Ordinary, 2),
-        shape!(EnumDecl, Repeat0, Ordinary, 2),
-        shape!(Variant, Optional, Ordinary, 2),
-        shape!(VfieldList, Repeat0, Ordinary, 2),
-        shape!(FnDecl, Optional, Ordinary, 2),
-        shape!(FnDecl, Optional, Ordinary, 2),
-        shape!(FnDecl, Optional, Ordinary, 2),
-        shape!(FnDecl, Optional, Ordinary, 2),
-        shape!(FnDecl, Optional, Ordinary, 2),
-        shape!(FnDecl, Optional, Ordinary, 2),
-        shape!(FnDecl, Repeat0, ConstructEntry, 2),
-        shape!(RequiresBlock, Repeat0, ConstructEntry, 2),
-        // v0.32 admits the contract final `check_stmt` directly at the
-        // entry, so this choice carries `doc | stmt | check_stmt`.
-        shape!(RequiresEntry, Choice, ConstructEntry, 3),
-        shape!(ContractDecl, Optional, Ordinary, 2),
-        shape!(ContractDecl, Optional, Ordinary, 2),
-        shape!(ContractDecl, Repeat0, Ordinary, 2),
-        shape!(ContractDecl, Repeat0, Ordinary, 2),
-        shape!(FnSig, Optional, Ordinary, 2),
-        shape!(FnSig, Optional, Ordinary, 2),
-        shape!(Law, Optional, Ordinary, 2),
-        shape!(Law, Repeat0, Ordinary, 2),
-        shape!(LawArg, Choice, Ordinary, 2),
-        shape!(ConformDecl, Optional, Ordinary, 2),
-        shape!(ConformDecl, Optional, Ordinary, 2),
-        shape!(ConformDecl, Repeat0, Ordinary, 2),
-        shape!(Generics, Repeat0, Ordinary, 2),
-        shape!(Gparam, Choice, Ordinary, 2),
-        shape!(Gparam, Optional, Ordinary, 2),
-        shape!(RegionParams, Repeat0, Ordinary, 2),
-        shape!(ParamList, Repeat0, Ordinary, 2),
-        shape!(Param, Optional, Ordinary, 2),
-        shape!(Type, Choice, Ordinary, 17),
-        shape!(Type, Optional, Ordinary, 2),
-        shape!(Mode, Choice, Ordinary, 3),
-        shape!(Targs, Repeat0, Ordinary, 2),
-        shape!(Targ, Choice, Ordinary, 3),
-        // v0.32 retires the body `check` statement: `check_stmt` left
-        // this alternation for the two contract entries.
-        shape!(Stmt, Choice, ConstructEntry, 12),
-        shape!(InfixOp, Choice, Ordinary, 16),
-        shape!(Callee, Choice, Ordinary, 2),
-        shape!(Place, Repeat0, Ordinary, 2),
-        shape!(Pbase, Choice, Ordinary, 2),
-        // v0.31 adds `replace_let_rhs` as a fifth let_stmt alternative;
-        // the decision slot and shape are otherwise the v0.28 record.
-        shape!(LetStmt, Choice, Ordinary, 5),
-        shape!(IfStmt, Repeat0, ConstructEntry, 2),
-        shape!(IfStmt, Optional, Ordinary, 2),
-        shape!(IfStmt, Choice, Ordinary, 2),
-        shape!(IfStmt, Repeat0, ConstructEntry, 2),
-        shape!(ValueIf, Repeat0, ConstructEntry, 2),
-        shape!(ValueIf, Choice, Ordinary, 2),
-        shape!(ValueIf, Repeat0, ConstructEntry, 2),
-        shape!(LoopStmt, Repeat0, ConstructEntry, 2),
-        shape!(RegionStmt, Repeat0, ConstructEntry, 2),
-        shape!(MatchStmt, Repeat1, Ordinary, 2),
-        shape!(ValueMatch, Repeat1, Ordinary, 2),
-        shape!(Arm, Optional, Ordinary, 2),
-        shape!(Arm, Repeat0, ConstructEntry, 2),
-        shape!(FieldbindList, Repeat0, Ordinary, 2),
-        shape!(Expr, Choice, Ordinary, 3),
-        shape!(Expr, Optional, Ordinary, 2),
-        shape!(Atom, Choice, Ordinary, 4),
-        shape!(Call, Optional, Ordinary, 2),
-        shape!(Call, Optional, Ordinary, 2),
-        shape!(Call, Choice, Ordinary, 2),
-        shape!(Construct, Optional, Ordinary, 2),
-        shape!(Construct, Optional, Ordinary, 2),
-        shape!(FieldinitList, Repeat0, Ordinary, 2),
-        shape!(BorrowExpr, Choice, Ordinary, 2),
-        shape!(AtomList, Repeat0, Ordinary, 2),
-        shape!(Psuffix, Choice, Ordinary, 2),
-        shape!(Const, Choice, Ordinary, 2),
-        shape!(Cvalue, Choice, Ordinary, 4),
-        shape!(Cvalue, Repeat0, Ordinary, 2),
-        shape!(Effects, Choice, Ordinary, 2),
-        shape!(Effects, Repeat0, Ordinary, 2),
-        shape!(Effect, Choice, Ordinary, 6),
-        shape!(Effect, Repeat1, Ordinary, 2),
-        shape!(Effect, Repeat1, Ordinary, 2),
-        shape!(Effect, Repeat1, Ordinary, 2),
-        shape!(Effect, Choice, Ordinary, 2),
-        shape!(ForStmt, Repeat0, ConstructEntry, 2),
-        shape!(FnDecl, Optional, Ordinary, 2),
-        shape!(EnsuresBlock, Repeat0, ConstructEntry, 2),
-        shape!(EnsuresSelector, Choice, Ordinary, 2),
-        shape!(EnsuresSelector, Optional, Ordinary, 2),
-        shape!(EnsuresEntry, Choice, ConstructEntry, 3),
-    ];
-    assert_eq!(expected.len(), 90);
-    for (slot, expected) in expected.into_iter().enumerate() {
-        let decision = DECISIONS[slot];
-        assert_eq!(
-            (
-                decision.production(),
-                decision.kind(),
-                decision.context(),
-                decision.arm_count(),
-            ),
-            expected,
-            "historical decision slot {slot} changed shape"
-        );
-    }
+    assert_eq!(DECISIONS[55].production(), Production::ForStmt);
+    assert_eq!(DECISIONS[55].kind(), DecisionKind::Repeat0);
+    assert_eq!(DECISIONS[18].production(), Production::ContractBlock);
+    assert_eq!(DECISIONS[18].kind(), DecisionKind::Repeat0);
+    assert_eq!(DECISIONS[19].production(), Production::ContractBlock);
+    assert_eq!(DECISIONS[19].kind(), DecisionKind::Repeat0);
+    assert_eq!(DECISIONS[20].production(), Production::ContractBlock);
+    assert_eq!(DECISIONS[20].kind(), DecisionKind::Repeat0);
+    assert_eq!(DECISIONS[21].production(), Production::EnsuresClause);
+    assert_eq!(DECISIONS[21].kind(), DecisionKind::Optional);
 }
 
 #[test]

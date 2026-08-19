@@ -6,7 +6,9 @@
 
 use std::cmp::Ordering;
 
-use super::entailment::{CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence};
+use super::entailment::{
+    CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome,
+};
 use super::model::{
     BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedIntegerOperation,
     CheckedMatchArm, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedSetTarget,
@@ -204,12 +206,11 @@ pub(crate) struct FunctionDependencies {
     pub(crate) writes: Vec<ProvenanceDependency>,
 }
 
-/// Exact checked occurrence of one concrete requirement.
+/// Exact checked occurrence of one concrete ordered requirement set.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct RequirementOccurrence {
     pub(crate) function: FunctionId,
-    pub(crate) final_check: NodePath,
-    pub(crate) conjunct: u32,
+    pub(crate) clauses: Vec<NodePath>,
 }
 
 /// Exact protected ENT-6 leaf identity.
@@ -377,7 +378,7 @@ pub(crate) struct LocalLeafDisposition {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProvenanceMetadata {
     pub(crate) functions: Vec<FunctionDependencies>,
-    /// S2/S3-disabled view with the body-entry S4 goal retained.
+    /// S3-disabled view with the body-entry S4 goal retained.
     pub(crate) unasserted: Vec<super::entailment::FunctionEntailmentView>,
     /// The same view with S4 and its exact L0 projection omitted.
     pub(crate) s4_blinded: Vec<super::entailment::FunctionEntailmentView>,
@@ -582,15 +583,12 @@ pub(super) fn system_external_writes(operation: u8) -> ProvenanceResult<&'static
 }
 
 fn occurrence_cmp(left: &RequirementOccurrence, right: &RequirementOccurrence) -> Ordering {
-    left.function
-        .0
-        .cmp(&right.function.0)
-        .then_with(|| {
-            left.final_check
-                .components()
-                .cmp(right.final_check.components())
-        })
-        .then_with(|| left.conjunct.cmp(&right.conjunct))
+    left.function.0.cmp(&right.function.0).then_with(|| {
+        left.clauses
+            .iter()
+            .map(NodePath::components)
+            .cmp(right.clauses.iter().map(NodePath::components))
+    })
 }
 
 fn leaf_cmp(left: &ProtectedLeaf, right: &ProtectedLeaf) -> Ordering {
@@ -606,14 +604,14 @@ fn leaf_cmp(left: &ProtectedLeaf, right: &ProtectedLeaf) -> Ordering {
 }
 
 fn requirement_occurrence(function: &CheckedFunction) -> Option<RequirementOccurrence> {
-    function
-        .requirement
-        .as_ref()
-        .map(|requirement| RequirementOccurrence {
-            function: function.id,
-            final_check: requirement.trap.node_path.clone(),
-            conjunct: 0,
-        })
+    (!function.requirements.is_empty()).then(|| RequirementOccurrence {
+        function: function.id,
+        clauses: function
+            .requirements
+            .iter()
+            .map(|requirement| requirement.clause.clone())
+            .collect(),
+    })
 }
 
 struct FunctionPass<'check> {
@@ -766,7 +764,6 @@ impl<'check> FunctionPass<'check> {
                 | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
-                | CheckedStatement::Check { .. }
                 | CheckedStatement::Claim { .. }
                 | CheckedStatement::Return { .. }
                 | CheckedStatement::Give { .. }
@@ -1019,8 +1016,7 @@ impl<'check> FunctionPass<'check> {
                 | CheckedStatement::DropExpression { value, .. } => {
                     self.expression(value, summaries)?;
                 }
-                CheckedStatement::Check { condition, .. }
-                | CheckedStatement::Claim { condition, .. } => {
+                CheckedStatement::Claim { condition, .. } => {
                     self.expression(condition, summaries)?;
                 }
                 CheckedStatement::Return { value, .. } => {
@@ -1466,7 +1462,6 @@ fn binding_maximum(statements: &[CheckedStatement], maximum: &mut Option<u32>) {
             CheckedStatement::Set { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. }
-            | CheckedStatement::Check { .. }
             | CheckedStatement::Claim { .. }
             | CheckedStatement::Return { .. }
             | CheckedStatement::Give { .. }
@@ -1706,10 +1701,10 @@ fn demand_state_route_cmp(left: &DemandState, right: &DemandState) -> Ordering {
                 ..
             },
         ) => left_requirement
-            .final_check
-            .components()
-            .cmp(right_requirement.final_check.components())
-            .then_with(|| left_requirement.conjunct.cmp(&right_requirement.conjunct))
+            .clauses
+            .iter()
+            .map(NodePath::components)
+            .cmp(right_requirement.clauses.iter().map(NodePath::components))
             .then_with(|| left_subject.cmp(right_subject))
             .then_with(|| {
                 left_requirement
@@ -1826,9 +1821,6 @@ fn collect_block_sites(
             CheckedStatement::Let { value, .. }
             | CheckedStatement::Evaluate(value)
             | CheckedStatement::DropExpression { value, .. }
-            | CheckedStatement::Check {
-                condition: value, ..
-            }
             | CheckedStatement::Claim {
                 condition: value, ..
             }
@@ -1917,7 +1909,7 @@ fn collect_expression_sites(
             call,
             argument_nodes,
             arguments,
-            requirement,
+            requirements,
             ..
         } => {
             for argument in arguments {
@@ -1929,16 +1921,18 @@ fn collect_expression_sites(
                 call: call.clone(),
                 argument_nodes: argument_nodes.clone(),
                 arguments: arguments.clone(),
-                has_requirement: requirement.is_some(),
+                has_requirement: !requirements.is_empty(),
             });
-            if let Some(requirement) = requirement {
+            if !requirements.is_empty() {
                 calls.push(CallSite {
                     caller: function,
                     call: call.clone(),
                     downstream_requirement: RequirementOccurrence {
                         function: *callee,
-                        final_check: requirement.final_check.clone(),
-                        conjunct: 0,
+                        clauses: requirements
+                            .iter()
+                            .map(|requirement| requirement.requires_clause.clone())
+                            .collect(),
                     },
                     argument_nodes: argument_nodes.clone(),
                     arguments: arguments.clone(),
@@ -2877,7 +2871,6 @@ impl<'check> CarrierReconstructor<'check> {
                 | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
-                | CheckedStatement::Check { .. }
                 | CheckedStatement::Claim { .. }
                 | CheckedStatement::Return { .. }
                 | CheckedStatement::Give { .. }
@@ -2938,7 +2931,6 @@ impl<'check> CarrierReconstructor<'check> {
                 | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
-                | CheckedStatement::Check { .. }
                 | CheckedStatement::Claim { .. }
                 | CheckedStatement::Return { .. }
                 | CheckedStatement::Break { .. } => {}
@@ -3158,9 +3150,6 @@ impl<'check> CarrierReconstructor<'check> {
                 }
                 CheckedStatement::Evaluate(value)
                 | CheckedStatement::DropExpression { value, .. }
-                | CheckedStatement::Check {
-                    condition: value, ..
-                }
                 | CheckedStatement::Claim {
                     condition: value, ..
                 }
@@ -3479,7 +3468,6 @@ impl<'check> CarrierReconstructor<'check> {
                 | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
-                | CheckedStatement::Check { .. }
                 | CheckedStatement::Claim { .. }
                 | CheckedStatement::Give { .. }
                 | CheckedStatement::Break { .. } => {}
@@ -3551,9 +3539,6 @@ impl<'check> CarrierReconstructor<'check> {
                 CheckedStatement::Let { value, .. }
                 | CheckedStatement::Evaluate(value)
                 | CheckedStatement::DropExpression { value, .. }
-                | CheckedStatement::Check {
-                    condition: value, ..
-                }
                 | CheckedStatement::Claim {
                     condition: value, ..
                 }
@@ -3667,11 +3652,38 @@ impl<'check> CarrierReconstructor<'check> {
     }
 }
 
-fn call_counterfactual<'outcome>(
+fn call_counterfactuals<'outcome>(
     outcomes: &'outcome [CallGoalCounterfactual],
     call: &NodePath,
-) -> Option<&'outcome CallGoalCounterfactual> {
-    outcomes.iter().find(|outcome| outcome.node_path == *call)
+    clauses: &[NodePath],
+) -> Option<Vec<&'outcome CallGoalCounterfactual>> {
+    let selected = outcomes
+        .iter()
+        .filter(|outcome| outcome.node_path == *call)
+        .collect::<Vec<_>>();
+    (selected.len() == clauses.len()
+        && selected
+            .iter()
+            .zip(clauses)
+            .all(|(outcome, clause)| outcome.requires_clause == *clause))
+    .then_some(selected)
+}
+
+fn call_outcomes<'outcome>(
+    outcomes: &'outcome [CallGoalOutcome],
+    call: &NodePath,
+    clauses: &[NodePath],
+) -> Option<Vec<&'outcome CallGoalOutcome>> {
+    let selected = outcomes
+        .iter()
+        .filter(|outcome| outcome.node_path == *call)
+        .collect::<Vec<_>>();
+    (selected.len() == clauses.len()
+        && selected
+            .iter()
+            .zip(clauses)
+            .all(|(outcome, clause)| outcome.requires_clause == *clause))
+    .then_some(selected)
 }
 
 fn call_actuals_have_failed_obligation(
@@ -3689,11 +3701,18 @@ fn call_actuals_have_failed_obligation(
     })
 }
 
-fn counterfactual_view(outcome: &CallGoalCounterfactual) -> BridgeGoalView {
+fn counterfactual_view(outcomes: &[&CallGoalCounterfactual]) -> BridgeGoalView {
     BridgeGoalView {
-        actual_obligations_ok: outcome.actual_obligations_ok,
-        goal_disposition: outcome.goal_disposition,
-        goal_evidence: outcome.goal_evidence.clone(),
+        actual_obligations_ok: outcomes.iter().all(|outcome| outcome.actual_obligations_ok),
+        goal_disposition: outcomes
+            .iter()
+            .map(|outcome| outcome.goal_disposition)
+            .find(|disposition| *disposition != CallGoalDisposition::Discharged)
+            .unwrap_or(CallGoalDisposition::Discharged),
+        goal_evidence: outcomes
+            .iter()
+            .flat_map(|outcome| outcome.goal_evidence.iter().copied())
+            .collect(),
     }
 }
 
@@ -3743,11 +3762,11 @@ fn build_call_inventory(
             .get(function.id.0 as usize)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         for site in sites {
-            let full = function
-                .entailment
-                .call_goals
-                .iter()
-                .find(|outcome| outcome.node_path == site.call);
+            let full = call_outcomes(
+                &function.entailment.call_goals,
+                &site.call,
+                &site.downstream_requirement.clauses,
+            );
             let Some(full) = full else {
                 // ENT-6 publishes no FN-8 outcome after an actual's own OP-4
                 // failure. That base failure is a normal inapplicable PRV
@@ -3758,13 +3777,24 @@ fn build_call_inventory(
                 }
                 return Err(SemanticCompilerFailure::InvalidResolution);
             };
-            if full.disposition != CallGoalDisposition::Discharged {
+            if full
+                .iter()
+                .any(|outcome| outcome.disposition != CallGoalDisposition::Discharged)
+            {
                 continue;
             }
-            let unasserted = call_counterfactual(&unasserted.call_goals, &site.call)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let blinded = call_counterfactual(&blinded.call_goals, &site.call)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let unasserted = call_counterfactuals(
+                &unasserted.call_goals,
+                &site.call,
+                &site.downstream_requirement.clauses,
+            )
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let blinded = call_counterfactuals(
+                &blinded.call_goals,
+                &site.call,
+                &site.downstream_requirement.clauses,
+            )
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             let actuals = actual_values(
                 function,
                 function_dependencies,
@@ -3778,11 +3808,14 @@ fn build_call_inventory(
                 actuals,
                 full: BridgeGoalView {
                     actual_obligations_ok: true,
-                    goal_disposition: full.disposition,
-                    goal_evidence: full.evidence.clone(),
+                    goal_disposition: CallGoalDisposition::Discharged,
+                    goal_evidence: full
+                        .iter()
+                        .flat_map(|outcome| outcome.evidence.iter().copied())
+                        .collect(),
                 },
-                unasserted: counterfactual_view(unasserted),
-                blinded: counterfactual_view(blinded),
+                unasserted: counterfactual_view(&unasserted),
+                blinded: counterfactual_view(&blinded),
             });
         }
     }
@@ -3821,12 +3854,13 @@ fn build_direct_call_inventory(
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         for site in sites {
             if site.has_requirement {
-                let outcome = function
+                let outcomes = function
                     .entailment
                     .call_goals
                     .iter()
-                    .find(|outcome| outcome.node_path == site.call);
-                let Some(outcome) = outcome else {
+                    .filter(|outcome| outcome.node_path == site.call)
+                    .collect::<Vec<_>>();
+                let Some(first) = outcomes.first() else {
                     if call_actuals_have_failed_obligation(function, &site.argument_nodes) {
                         continue;
                     }
@@ -3835,7 +3869,11 @@ fn build_direct_call_inventory(
                 // The dark checker deliberately retains base-failing calls so
                 // entailment tests can inspect them; ordinary accepted source
                 // never reaches provenance with this disposition.
-                if outcome.disposition != CallGoalDisposition::Discharged {
+                if first.disposition != CallGoalDisposition::Discharged
+                    || outcomes
+                        .iter()
+                        .any(|outcome| outcome.disposition != CallGoalDisposition::Discharged)
+                {
                     continue;
                 }
             }

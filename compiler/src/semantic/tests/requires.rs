@@ -8,13 +8,111 @@ use super::super::model::{
 };
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
+#[test]
+fn a_non_bool_requires_predicate_cites_op5() {
+    assert_rule(
+        br#"fn invalid(value: own i32) -> out: own i32 pure contract {
+  requires value;
+} {
+  return value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Op5,
+        SemanticIssueKind::InvalidCheckCondition,
+    );
+}
+
+#[test]
+fn plural_requires_keep_every_source_occurrence_at_the_call() {
+    let source = br#"fn exact(value: own i32) -> out: own i32 pure contract {
+  requires ieq(value, 1_i32);
+  requires ieq(value, 1_i32);
+} {
+  return value;
+}
+
+command fn main() -> status: own ExitStatus traps {
+  let value = 1_i32;
+  claim exact_value: ieq(value, 1_i32) because "the test establishes the call boundary";
+  let observed = exact(value: value);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("both requirement occurrences must discharge: {outcome:?}");
+        };
+        let exact = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "exact")
+            .expect("exact function");
+        assert_eq!(exact.requirements.len(), 2);
+        let main = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("command main");
+        let CheckedStatement::Let {
+            value: CheckedExpression::UserCall { requirements, .. },
+            ..
+        } = &main.body[2]
+        else {
+            panic!("the third statement must retain the user call");
+        };
+        assert_eq!(requirements.len(), 2);
+        assert_eq!(main.entailment.call_goals.len(), 2);
+        assert_ne!(
+            main.entailment.call_goals[0].requires_clause,
+            main.entailment.call_goals[1].requires_clause
+        );
+    });
+}
+
+#[test]
+fn a_later_requires_clause_is_not_dropped_after_an_earlier_success() {
+    let source = br#"fn exact(value: own i32) -> out: own i32 pure contract {
+  requires ieq(value, 1_i32);
+  requires ieq(value, 2_i32);
+} {
+  return value;
+}
+
+command fn main() -> status: own ExitStatus traps {
+  let value = 1_i32;
+  claim exact_value: ieq(value, 1_i32) because "the first clause is deliberately established";
+  let observed = exact(value: value);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("the refuted second requirement must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn8);
+        let SemanticIssueKind::UndischargedCallRequirement(detail) = issue.kind() else {
+            panic!("FN-8 must identify the failing requirement clause: {issue:?}");
+        };
+        assert_eq!(
+            detail.disposition,
+            crate::CallRequirementDisposition::Refuted
+        );
+        assert!(!detail.requires_clause.components().is_empty());
+    });
+}
+
 fn instantiated_call_goal_arguments(call: &CheckedExpression) -> &[GoalExpression] {
-    let CheckedExpression::UserCall {
-        requirement: Some(requirement),
-        ..
-    } = call
-    else {
+    let CheckedExpression::UserCall { requirements, .. } = call else {
         panic!("call must carry its instantiated requirement");
+    };
+    let [requirement] = requirements.as_slice() else {
+        panic!("call must carry exactly one instantiated requirement");
     };
     let GoalExpression::Operation { arguments, .. } = &requirement.goal.root else {
         panic!("call requirement must remain an operation goal");
@@ -55,11 +153,10 @@ fn main() -> own unit traps {
         };
         let function = &checked.data.functions[0];
         let requirement = function
-            .requirement
-            .as_ref()
+            .requirements
+            .first()
             .expect("checked requires retains its boundary metadata");
-        assert_eq!(requirement.trap.message, "x must be nonnegative");
-        assert_eq!(requirement.trap.function, "bounded");
+        assert!(!requirement.clause.components().is_empty());
     });
 }
 
@@ -224,8 +321,8 @@ fn main() -> own unit pure {
                 panic!("a Bool clause local is a copy value: {outcome:?}");
             };
             let requirement = checked.data.functions[0]
-                .requirement
-                .as_ref()
+                .requirements
+                .first()
                 .expect("f carries its admitted requirement");
             assert!(
                 !contains_array_fill(&requirement.template.root),
@@ -273,7 +370,7 @@ fn main() -> own unit traps {
             panic!("requires and body scopes must remain disjoint: {outcome:?}");
         };
         let function = &checked.data.functions[0];
-        assert!(function.requirement.is_some());
+        assert!(!function.requirements.is_empty());
         assert!(matches!(function.body[0], CheckedStatement::Let { .. }));
     });
 }
@@ -315,13 +412,13 @@ fn main() -> own unit pure {
                 .functions
                 .iter()
                 .find(|function| function.name == name)
-                .and_then(|function| function.requirement.as_ref())
+                .and_then(|function| function.requirements.first())
                 .unwrap_or_else(|| panic!("missing requirement for {name}"))
         };
         let shared = requirement("shared");
         let duplicated = requirement("duplicated");
         assert_eq!(shared.template, duplicated.template);
-        assert_ne!(shared.trap.node_path, duplicated.trap.node_path);
+        assert_ne!(shared.clause, duplicated.clause);
     });
 }
 
@@ -369,7 +466,7 @@ fn main() -> own unit pure {
                 .functions
                 .iter()
                 .find(|function| function.name == name)
-                .and_then(|function| function.requirement.as_ref())
+                .and_then(|function| function.requirements.first())
                 .unwrap_or_else(|| panic!("missing requirement for {name}"))
                 .template
         };
@@ -397,8 +494,8 @@ fn main() -> own unit pure {
             panic!("an admitted box-referent goal must check: {outcome:?}");
         };
         let root = &checked.data.functions[0]
-            .requirement
-            .as_ref()
+            .requirements
+            .first()
             .expect("positive has a requirement")
             .template
             .root;
@@ -438,8 +535,8 @@ fn main() -> own unit pure {
             panic!("an admitted projected-array goal must check: {outcome:?}");
         };
         let GoalExpression::Operation { arguments, .. } = &checked.data.functions[0]
-            .requirement
-            .as_ref()
+            .requirements
+            .first()
             .expect("measured has a requirement")
             .template
             .root
@@ -517,7 +614,7 @@ fn main() -> own unit pure {
                 .functions
                 .iter()
                 .find(|function| function.name == name)
-                .and_then(|function| function.requirement.as_ref())
+                .and_then(|function| function.requirements.first())
                 .unwrap_or_else(|| panic!("missing concrete requirement for {name}"))
                 .template
         };
@@ -596,8 +693,8 @@ fn main() -> own unit traps {
         );
         assert!(concrete.iter().all(|function| {
             function
-                .requirement
-                .as_ref()
+                .requirements
+                .first()
                 .is_some_and(|requirement| requirement.template.root.ty() == CheckedType::Bool)
         }));
     });
@@ -683,15 +780,18 @@ fn below(value: own u64) -> own u64 pure requires {
             let CheckedExpression::UserCall {
                 call,
                 argument_nodes,
-                requirement: Some(requirement),
+                requirements,
                 ..
             } = call
             else {
                 unreachable!();
             };
+            let [requirement] = requirements.as_slice() else {
+                panic!("call must retain exactly one requirement");
+            };
             assert_eq!(argument_nodes.len(), 1);
             assert_ne!(*call, argument_nodes[0]);
-            assert_ne!(*call, requirement.final_check);
+            assert_ne!(*call, requirement.requires_clause);
         }
         let call_paths = calls
             .iter()
@@ -818,11 +918,14 @@ fn main() -> own unit pure {
             argument_nodes,
             arguments,
             goal_arguments,
-            requirement: Some(requirement),
+            requirements,
             ..
         } = call
         else {
             unreachable!();
+        };
+        let [requirement] = requirements.as_slice() else {
+            panic!("call must retain exactly one requirement");
         };
         assert!(matches!(arguments[0], CheckedExpression::ArrayIndex { .. }));
         assert_eq!(argument_nodes.len(), 1);
@@ -893,12 +996,12 @@ fn main() -> own unit pure {
         let CheckedStatement::Region { body, .. } = &proxy.body[0] else {
             panic!("proxy must retain child region");
         };
-        let CheckedStatement::Evaluate(CheckedExpression::UserCall {
-            requirement: Some(requirement),
-            ..
-        }) = &body[0]
+        let CheckedStatement::Evaluate(CheckedExpression::UserCall { requirements, .. }) = &body[0]
         else {
             panic!("proxy child must retain its call requirement");
+        };
+        let [requirement] = requirements.as_slice() else {
+            panic!("proxy call must retain exactly one requirement");
         };
         let GoalExpression::Operation { arguments, .. } = &requirement.goal.root else {
             panic!("observe requirement must remain a comparison");
@@ -927,12 +1030,12 @@ fn main() -> own unit pure {
         let CheckedStatement::Region { body, .. } = &main.body[1] else {
             panic!("main direct region");
         };
-        let CheckedStatement::Evaluate(CheckedExpression::UserCall {
-            requirement: Some(requirement),
-            ..
-        }) = &body[0]
+        let CheckedStatement::Evaluate(CheckedExpression::UserCall { requirements, .. }) = &body[0]
         else {
             panic!("main direct call requirement");
+        };
+        let [requirement] = requirements.as_slice() else {
+            panic!("main call must retain exactly one requirement");
         };
         let GoalExpression::Operation { arguments, .. } = &requirement.goal.root else {
             panic!("observe requirement must remain a comparison");
@@ -1013,11 +1116,14 @@ fn main() -> own unit pure {
         };
         let CheckedStatement::Evaluate(CheckedExpression::UserCall {
             goal_arguments,
-            requirement: Some(requirement),
+            requirements,
             ..
         }) = &body[1]
         else {
             panic!("inspect call metadata");
+        };
+        let [requirement] = requirements.as_slice() else {
+            panic!("inspect call must retain exactly one requirement");
         };
         let GoalExpression::Datum(GoalDatum::Place {
             ty:
@@ -1053,13 +1159,16 @@ fn main() -> own unit pure {
                     call,
                     argument_nodes,
                     goal_arguments,
-                    requirement: Some(requirement),
+                    requirements,
                     ..
                 },
             ..
         } = &main.body[2]
         else {
             panic!("guarded call metadata");
+        };
+        let [requirement] = requirements.as_slice() else {
+            panic!("guarded call must retain exactly one requirement");
         };
         assert_eq!(argument_nodes.len(), 2);
         assert!(argument_nodes[0].components() < argument_nodes[1].components());

@@ -363,39 +363,42 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    pub(super) fn postcondition_selector_for_signature(
+    pub(super) fn postcondition_selectors_for_signature(
         &self,
         signature: &FunctionSignature,
-    ) -> Result<Option<CheckedPostconditionSelector>, CheckStop> {
-        if let Some(selector) = self
+    ) -> Result<Vec<CheckedPostconditionSelector>, CheckStop> {
+        let selectors = self
             .postcondition_selectors
             .iter()
-            .find(|selector| selector.function == signature.id)
-        {
-            return Ok(Some(selector.clone()));
+            .filter(|selector| selector.function == signature.id)
+            .cloned()
+            .collect::<Vec<_>>();
+        if !selectors.is_empty() {
+            return Ok(selectors);
         }
         if signature.substitution.is_concrete() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
         let function = self.tree.path(signature.node)?;
-        let Some(record) = self
+        let mut selectors = Vec::new();
+        for record in self
             .resolved
             .postconditions()
             .iter()
-            .find(|record| &record.function == function)
-        else {
-            return Ok(None);
-        };
-        let selector = self.admit_postcondition_selector(record, signature, true)?;
-        // An unbounded symbolic type has no concrete FN-2 fragment judgment
-        // yet. Its selector was provisionally admitted for resolution order,
-        // but clause typing and selected-return classification wait for a
-        // concrete instance. A declared Int bound already supplies the exact
-        // symbolic integer row used by ordinary generic validation.
-        if matches!(selector.result_type, CheckedType::Generic(_)) {
-            return Ok(None);
+            .filter(|record| &record.function == function)
+        {
+            let selector = self.admit_postcondition_selector(record, signature, true)?;
+            // An unbounded symbolic type has no concrete FN-2 fragment
+            // judgment yet. Its selector is provisionally admitted for
+            // resolution order, but clause typing and selected-return
+            // classification wait for a concrete instance. A declared Int
+            // bound already supplies the exact symbolic integer row used by
+            // ordinary generic validation.
+            if !matches!(selector.result_type, CheckedType::Generic(_)) {
+                selectors.push(selector);
+            }
         }
-        Ok(Some(selector))
+        Ok(selectors)
     }
 
     pub(super) fn check_postcondition_clause(
@@ -411,11 +414,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .find(|record| record.block == selector.block)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let block = self
+        let clause = self
             .tree
             .node_with_path(&record.block)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let entries = self.tree.children_with(block, Production::EnsuresEntry)?;
+        let contract = self
+            .tree
+            .first_child_with(function.node, Production::ContractBlock)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         self.with_postcondition_context(record, selector.result_type, || {
             let mut expanded_bindings = HashMap::<BindingId, ExpandedClauseExpression>::new();
             for (ordinal, parameter) in function.parameters.iter().enumerate() {
@@ -432,17 +438,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }),
                 );
             }
-            let mut relation = None;
-            for entry in entries {
-                let statement = self.clause_entry_statement(entry)?;
-                self.validate_clause_statement(
+            for definition in self
+                .tree
+                .children_with(contract, Production::ContractDefine)?
+            {
+                let expression = self
+                    .tree
+                    .first_child_with(definition, Production::Expr)?
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                if !self.validate_clause_computation(
                     ClauseKind::Postcondition(record),
-                    entry,
-                    statement,
-                )?;
+                    definition,
+                    expression,
+                )? {
+                    return self.invalid_clause(ClauseKind::Postcondition(record), definition);
+                }
                 let checked = self.check_statement(
                     function,
-                    statement,
+                    definition,
                     bindings,
                     counters,
                     ControlScope {
@@ -453,42 +466,43 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if !checked.can_continue {
                     return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
                 }
-                let expression = self.clause_statement_expression(statement)?;
-                match &checked.statement {
-                    CheckedStatement::Let { binding, value, .. } => {
-                        self.validate_clause_copy_local(
-                            ClauseKind::Postcondition(record),
-                            entry,
-                            *binding,
-                            bindings,
-                        )?;
-                        let expanded = self.build_clause_expression(
-                            expression,
-                            value,
-                            bindings,
-                            &expanded_bindings,
-                        )?;
-                        if expanded.contains_invalid_selector_use() {
-                            return self.invalid_postcondition_relation(expression);
-                        }
-                        expanded_bindings.insert(*binding, expanded);
-                    }
-                    CheckedStatement::Check { condition, .. } => {
-                        if relation.is_some() || condition.ty() != CheckedType::Bool {
-                            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-                        }
-                        let expanded = self.build_clause_expression(
-                            expression,
-                            condition,
-                            bindings,
-                            &expanded_bindings,
-                        )?;
-                        relation = Some(self.postcondition_relation(expression, expanded)?);
-                    }
-                    _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+                let CheckedStatement::Let { binding, value, .. } = &checked.statement else {
+                    return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+                };
+                self.validate_clause_copy_local(
+                    ClauseKind::Postcondition(record),
+                    definition,
+                    *binding,
+                    bindings,
+                )?;
+                let expanded =
+                    self.build_clause_expression(expression, value, bindings, &expanded_bindings)?;
+                if expanded.contains_invalid_selector_use() {
+                    return self.invalid_postcondition_relation(expression);
                 }
+                expanded_bindings.insert(*binding, expanded);
             }
-            relation.ok_or(SemanticCompilerFailure::InvalidCanonicalTree.into())
+            let expression = self
+                .tree
+                .first_child_with(clause, Production::Expr)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            self.validate_clause_condition(ClauseKind::Postcondition(record), clause, expression)?;
+            let condition = self.check_expression(function, expression, bindings, 0)?;
+            if condition.mode != CheckedMode::Own || condition.expression.ty() != CheckedType::Bool
+            {
+                return self.issue_node(
+                    SemanticRule::Op5,
+                    expression,
+                    SemanticIssueKind::InvalidCheckCondition,
+                );
+            }
+            let expanded = self.build_clause_expression(
+                expression,
+                &condition.expression,
+                bindings,
+                &expanded_bindings,
+            )?;
+            self.postcondition_relation(expression, expanded)
         })
     }
 
@@ -684,20 +698,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .components()
                 .cmp(right.statement.components())
         });
-        if selected_returns.is_empty() {
-            let record = self
-                .resolved
-                .postconditions()
-                .iter()
-                .find(|record| record.block == selector.block)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            return self.issue_selector(
-                record,
-                SemanticIssueKind::NoSelectedNormalExit {
-                    residual: "no selected normal exit",
-                },
-            );
-        }
         Ok(CheckedPostcondition {
             selector,
             type_substitutions,

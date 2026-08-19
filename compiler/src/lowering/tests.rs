@@ -667,13 +667,10 @@ fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
 
 #[test]
 fn the_entry_retains_the_standard_input_rows_and_the_may_alias_pair() {
-    let both = "command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let both = "command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(both.as_bytes(), |program| {
-        let IrEntry::Command { inputs, aliases } = program.entry() else {
-            panic!("a kind-declaring entry must lower as a command entry");
-        };
+        let IrEntry::Command { inputs, aliases } = program.entry();
         assert_eq!(inputs, &vec![2, 3]);
-        assert!(program.entry_goal().is_none());
         // [SYS-12]: redirection may make the two `Output` owners one sink.
         // Nothing here reads the link; it is retained so a later
         // cross-resource reordering fact cannot treat them as disjoint.
@@ -683,24 +680,13 @@ fn the_entry_retains_the_standard_input_rows_and_the_may_alias_pair() {
         assert_eq!((alias.left(), alias.right()), (2, 3));
     });
 
-    let one = "command fn main(command.stdout as out: own Output) -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let one = "command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(one.as_bytes(), |program| {
-        let IrEntry::Command { inputs, aliases } = program.entry() else {
-            panic!("a kind-declaring entry must lower as a command entry");
-        };
+        let IrEntry::Command { inputs, aliases } = program.entry();
         assert_eq!(inputs, &vec![2]);
-        assert!(program.entry_goal().is_none());
         // One selected sink has nothing to alias with.
         assert!(aliases.is_empty());
     });
-
-    with_ir(
-        b"fn main() -> own unit pure {\n  return unit;\n}\n",
-        |program| {
-            assert_eq!(program.entry(), &IrEntry::Unlabelled);
-            assert!(program.entry_goal().is_none());
-        },
-    );
 }
 
 #[test]
@@ -732,29 +718,33 @@ fn main() -> own unit traps {
 }
 
 #[test]
-fn program_start_retains_one_private_straight_line_requirement_goal() {
-    let source = br#"const expected: u8 = 7_u8;
-
-fn main() -> own unit pure requires {
-  let same = ieq(expected, 7_u8);
-  check same else trap "entry requirement";
+fn an_uninhabited_function_keeps_its_abi_and_lowers_to_one_unreachable_block() {
+    let source = br#"fn impossible(value: own i32) -> out: own i32 pure contract {
+  requires ieq(value, 0_i32);
+  requires ine(value, 0_i32);
 } {
-  return unit;
+  return value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
 "#;
     with_ir(source, |program| {
-        let goal = program
-            .entry_goal()
-            .expect("a required entry must retain one wrapper goal");
-        assert_eq!(goal.ty(goal.condition()), Some(IrType::Bool));
-        assert_eq!(goal.trap().rule_id, "OP-5");
-        assert_eq!(goal.trap().message, "entry requirement");
-        assert_eq!(goal.trap().function, "main");
-        assert!(
-            goal.definitions()
-                .iter()
-                .all(|definition| !matches!(definition.operation(), IrOperation::ArrayFill { .. }))
+        let impossible = function(program, "impossible");
+        assert_eq!(impossible.parameters().len(), 1);
+        assert_eq!(
+            impossible.result(),
+            IrType::Integer {
+                width: 32,
+                signed: true,
+            }
         );
+        let [entry] = impossible.blocks() else {
+            panic!("an uninhabited function must lower to exactly one block");
+        };
+        assert!(entry.instructions().is_empty());
+        assert_eq!(entry.terminator(), &IrTerminator::Unreachable);
     });
 }
 

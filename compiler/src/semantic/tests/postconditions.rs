@@ -7,7 +7,7 @@ use super::{assert_rule, assert_rule_at, with_semantics, with_semantics_dark};
 use crate::semantic::entailment::{
     DerivationNode, FlowEventKind, FunctionPostconditionProof, PostconditionDisposition, ProofView,
 };
-use crate::semantic::model::{CheckedExpression, CheckedStatement};
+use crate::semantic::model::{CheckedBodyDisposition, CheckedExpression, CheckedStatement};
 
 fn assert_complete(source: &[u8]) {
     with_semantics(source, |outcome| {
@@ -46,8 +46,9 @@ fn postcondition_proof(source: &[u8], function: &str) -> FunctionPostconditionPr
             .find(|candidate| candidate.name == function)
             .unwrap_or_else(|| panic!("function {function} must exist"))
             .entailment
-            .postcondition
-            .clone()
+            .postconditions
+            .first()
+            .cloned()
             .unwrap_or_else(|| panic!("function {function} must retain a postcondition proof"))
     })
 }
@@ -67,6 +68,209 @@ fn dispositions(proof: &FunctionPostconditionProof) -> Vec<[PostconditionDisposi
             ]
         })
         .collect()
+}
+
+const COMMAND_MAIN: &str =
+    "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+
+#[test]
+fn candidate_command_entry_smoke() {
+    assert_complete(COMMAND_MAIN.as_bytes());
+}
+
+#[test]
+fn candidate_requires_smoke() {
+    let source = format!(
+        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  requires ieq(value, value);\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+    );
+    assert_complete(source.as_bytes());
+}
+
+#[test]
+fn candidate_ensures_smoke() {
+    let source = format!(
+        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures ieq(out, value);\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+    );
+    assert_complete(source.as_bytes());
+}
+
+#[test]
+fn a_non_bool_ensures_predicate_cites_op5() {
+    let source = format!(
+        "fn invalid(value: own i32) -> out: own i32 pure contract {{\n  ensures value;\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+    );
+    assert_rule(
+        source.as_bytes(),
+        SemanticRule::Op5,
+        SemanticIssueKind::InvalidCheckCondition,
+    );
+}
+
+#[test]
+fn plural_ensures_are_proved_and_published_as_independent_relations() {
+    let source = format!(
+        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures ieq(out, value);\n  ensures ige(out, value);\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+    );
+    with_semantics_dark(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("plural ensures fixture must check: {outcome:?}");
+        };
+        let identity = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "identity")
+            .expect("identity function");
+        assert_eq!(identity.postconditions.len(), 2);
+        assert_eq!(identity.entailment.postconditions.len(), 2);
+        for (ordinal, proof) in identity.entailment.postconditions.iter().enumerate() {
+            assert_eq!(proof.relation_ordinal as usize, ordinal);
+            assert!(proof.complete.discharged);
+            assert!(proof.summary.is_some());
+        }
+        let component = checked
+            .data
+            .postcondition_schedule
+            .components
+            .iter()
+            .find(|component| component.functions.contains(&identity.id))
+            .expect("identity component");
+        assert_eq!(component.summaries.len(), 2);
+        assert_eq!(component.summaries[0].relation_ordinal, 0);
+        assert_eq!(component.summaries[1].relation_ordinal, 1);
+    });
+}
+
+#[test]
+fn one_failed_ensure_withholds_every_summary_in_its_component() {
+    let source = format!(
+        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures ieq(out, value);\n  ensures ige(out, 0_i32);\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+    );
+    with_semantics_dark(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("dark plural failure fixture must remain inspectable: {outcome:?}");
+        };
+        let identity = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "identity")
+            .expect("identity function");
+        let [first, second] = identity.entailment.postconditions.as_slice() else {
+            panic!("both relation proofs must be retained");
+        };
+        assert!(first.complete.discharged);
+        assert!(!second.complete.discharged);
+        assert!(first.summary.is_none());
+        assert!(second.summary.is_none());
+        let component = checked
+            .data
+            .postcondition_schedule
+            .components
+            .iter()
+            .find(|component| component.functions.contains(&identity.id))
+            .expect("identity component");
+        assert!(component.summaries.is_empty());
+    });
+    assert_fn9_unproved(source.as_bytes());
+}
+
+#[test]
+fn one_failed_relation_withholds_every_summary_in_a_mutual_scc() {
+    let source = format!(
+        "fn left(value: own i32) -> out: own i32 pure contract {{\n  ensures ieq(out, value);\n}} {{\n  let ignored = right(value: value);\n  return value;\n}}\n\nfn right(value: own i32) -> out: own i32 pure contract {{\n  ensures ieq(out, value);\n  ensures ige(out, 0_i32);\n}} {{\n  let ignored = left(value: value);\n  return value;\n}}\n\n{COMMAND_MAIN}"
+    );
+    with_semantics_dark(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("dark mutual failure fixture must remain inspectable: {outcome:?}");
+        };
+        let members = checked
+            .data
+            .functions
+            .iter()
+            .filter(|function| matches!(function.name.as_str(), "left" | "right"))
+            .collect::<Vec<_>>();
+        assert_eq!(members.len(), 2);
+        let component = checked
+            .data
+            .postcondition_schedule
+            .components
+            .iter()
+            .find(|component| component.functions.contains(&members[0].id))
+            .expect("mutual component");
+        assert_eq!(component.functions.len(), 2);
+        assert!(component.summaries.is_empty());
+        assert!(members.iter().all(|function| {
+            function
+                .entailment
+                .postconditions
+                .iter()
+                .all(|proof| proof.summary.is_none())
+        }));
+        let left = members
+            .iter()
+            .find(|function| function.name == "left")
+            .expect("left function");
+        assert!(left.entailment.postconditions[0].complete.discharged);
+        let right = members
+            .iter()
+            .find(|function| function.name == "right")
+            .expect("right function");
+        assert!(right.entailment.postconditions[0].complete.discharged);
+        assert!(!right.entailment.postconditions[1].complete.discharged);
+    });
+    assert_fn9_unproved(source.as_bytes());
+}
+
+#[test]
+fn an_inhabited_routed_ensure_without_a_selected_exit_is_rejected() {
+    let source = format!(
+        "fn only_error(value: own i32) -> out: own Result<i32, i32> pure contract {{\n  ensures when Ok(value: payload): ieq(payload, value);\n}} {{\n  return Err<i32, i32>(error: value);\n}}\n\n{COMMAND_MAIN}"
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("inhabited empty route must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn9);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::NoSelectedNormalExit { .. }
+        ));
+    });
+}
+
+#[test]
+fn an_uninhabited_routed_ensure_needs_no_exit_and_publishes_no_summary() {
+    let source = format!(
+        "fn impossible(value: own i32) -> out: own Result<i32, i32> pure contract {{\n  requires ieq(value, 0_i32);\n  requires ine(value, 0_i32);\n  ensures when Ok(value: payload): ieq(payload, value);\n}} {{\n  return Err<i32, i32>(error: value);\n}}\n\n{COMMAND_MAIN}"
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("uninhabited empty route must be accepted: {outcome:?}");
+        };
+        let impossible = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "impossible")
+            .expect("impossible function");
+        assert!(matches!(
+            impossible.body_disposition,
+            CheckedBodyDisposition::Uninhabited { .. }
+        ));
+        assert!(impossible.entailment.postconditions.is_empty());
+        assert!(
+            checked
+                .data
+                .postcondition_schedule
+                .components
+                .iter()
+                .all(|component| component
+                    .summaries
+                    .iter()
+                    .all(|summary| summary.function != impossible.id))
+        );
+    });
 }
 
 #[test]
@@ -207,8 +411,8 @@ fn main() -> own unit pure {
             .expect("transfer function");
         let proof = transfer
             .entailment
-            .postcondition
-            .as_ref()
+            .postconditions
+            .first()
             .expect("transfer postcondition proof");
         let invalidation = proof.exits[0].entry_images[0]
             .invalidation
@@ -256,7 +460,7 @@ fn main() -> own unit pure {
             .iter()
             .find(|function| function.name == "plain")
             .expect("plain function");
-        assert!(plain.entailment.postcondition.is_none());
+        assert!(plain.entailment.postconditions.is_empty());
         assert!(
             plain
                 .entailment
@@ -299,8 +503,8 @@ fn main() -> own unit pure {
             .expect("looped function");
         let proof = function
             .entailment
-            .postcondition
-            .as_ref()
+            .postconditions
+            .first()
             .expect("looped postcondition proof");
         let invalidation = proof.exits[0].entry_images[0]
             .invalidation
@@ -621,8 +825,8 @@ fn main() -> own unit pure {
         assert!(
             touch
                 .entailment
-                .postcondition
-                .as_ref()
+                .postconditions
+                .first()
                 .is_some_and(|proof| proof.complete.discharged),
             "the callee summary premise is independently available"
         );
@@ -1885,8 +2089,8 @@ fn main() -> own unit pure {
         for function in [leaf, middle, top] {
             let proof = function
                 .entailment
-                .postcondition
-                .as_ref()
+                .postconditions
+                .first()
                 .expect("postcondition proof");
             let summary = proof.summary.as_ref().expect("published summary");
             assert_eq!(summary.function, function.id);
@@ -1946,8 +2150,8 @@ fn main() -> own unit pure {
         for summary in &component.summaries {
             let proof = checked.data.functions[summary.function.0 as usize]
                 .entailment
-                .postcondition
-                .as_ref()
+                .postconditions
+                .first()
                 .expect("mutual proof");
             assert_eq!(proof.summary.as_ref(), Some(summary));
             assert!(proof.complete.discharged);
@@ -1989,8 +2193,8 @@ fn main() -> own unit pure {
         assert_eq!(component.functions, vec![recursive.id]);
         let summary = recursive
             .entailment
-            .postcondition
-            .as_ref()
+            .postconditions
+            .first()
             .and_then(|proof| proof.summary.as_ref())
             .expect("independent recursive summary publishes");
         assert_eq!(component.summaries, vec![summary.clone()]);
@@ -2041,8 +2245,8 @@ fn main() -> own unit pure {
         assert!(members.iter().all(|function| {
             function
                 .entailment
-                .postcondition
-                .as_ref()
+                .postconditions
+                .first()
                 .is_some_and(|proof| proof.summary.is_none())
         }));
         assert!(
@@ -2051,8 +2255,8 @@ fn main() -> own unit pure {
                 .find(|function| function.name == "left")
                 .unwrap()
                 .entailment
-                .postcondition
-                .as_ref()
+                .postconditions
+                .first()
                 .unwrap()
                 .complete
                 .discharged
@@ -2063,8 +2267,8 @@ fn main() -> own unit pure {
                 .find(|function| function.name == "right")
                 .unwrap()
                 .entailment
-                .postcondition
-                .as_ref()
+                .postconditions
+                .first()
                 .unwrap()
                 .complete
                 .discharged
@@ -2110,7 +2314,7 @@ fn main() -> own unit pure {
             .iter()
             .map(|id| &checked.data.functions[id.0 as usize])
         {
-            let proof = function.entailment.postcondition.as_ref().unwrap();
+            let proof = function.entailment.postconditions.first().unwrap();
             assert!(!proof.complete.discharged);
             assert!(proof.summary.is_none());
         }
@@ -2148,8 +2352,8 @@ fn main() -> own unit pure {
             .map(|function| {
                 function
                     .entailment
-                    .postcondition
-                    .as_ref()
+                    .postconditions
+                    .first()
                     .and_then(|proof| proof.summary.as_ref())
                     .expect("concrete summary")
             })

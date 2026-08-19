@@ -270,7 +270,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 arguments,
                 goal_arguments,
                 goal_regions: actual_regions,
-                requirement: None,
+                requirements: Vec::new(),
                 result,
                 slice_origins,
                 result_borrow,

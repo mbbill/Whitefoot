@@ -570,8 +570,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Err(CheckStop::PostconditionPrerequisiteUnavailable);
         }
         let checkpoint = self.nominal_checkpoint();
-        let signature = match self
-            .ensure_nominals_in_function_signature(template.node, &substitution)
+        let prepared = self.ensure_nominals_in_function_signature(template.node, &substitution);
+        let signature = match prepared
             .and_then(|()| self.build_function_signature(&template, substitution, id))
         {
             Ok(signature) => signature,
@@ -593,13 +593,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         function: NodeId,
     ) -> Result<bool, CheckStop> {
-        for owner in [Production::ParamList, Production::Rtype] {
-            let Some(node) = self.tree.first_child_with(function, owner)? else {
-                if owner == Production::Rtype {
-                    return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-                }
-                continue;
-            };
+        let mut header_nodes = self.tree.children_with(function, Production::ParamList)?;
+        let result_binding = self
+            .tree
+            .first_child_with(function, Production::ResultBinding)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        header_nodes.push(result_binding);
+        for node in header_nodes {
             let path = self.tree.path(node)?.components();
             if self.resolved.lexical_uses().iter().any(|usage| {
                 let usage_path = usage.origin().node().components();
@@ -679,9 +679,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         let region_parameters = self.parse_region_parameters(template.node)?;
         let parameters = self.parse_parameters_with(template.node, &substitution)?;
+        let result_binding = self
+            .tree
+            .first_child_with(template.node, Production::ResultBinding)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let rtype = self
             .tree
-            .first_child_with(template.node, Production::Rtype)?
+            .first_child_with(result_binding, Production::Rtype)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let (result_mode, result) = self.parse_rtype_with(rtype, &substitution)?;
         // [STOR-4] a value of type `arena<'r, T>` may not be returned, so a
@@ -782,12 +786,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     if checked.function.declaration != *declaration {
                         return Err(SemanticCompilerFailure::InvalidResolution.into());
                     }
-                    if let Some(requirement) = checked.function.requirement {
+                    for requirement in checked.function.requirements {
                         if !goal_uses_nominal_prefix(&requirement.template.root, nominal_checkpoint)
-                            || self
-                                .generic_requirements
-                                .iter()
-                                .any(|entry| entry.declaration == *declaration)
                         {
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 mod buffers;
-mod entry_goal;
 mod loops;
 mod probe;
 mod results;
@@ -17,7 +16,6 @@ use crate::semantic::{
 };
 
 use super::*;
-use entry_goal::lower_entry_goal;
 use loops::LoopTarget;
 use storage::collect_addressed_bindings;
 
@@ -27,7 +25,6 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     let entry = lower_entry(&checked.data.entry);
     let nominals = lower_nominals(&checked.data)?;
     let constants = lower_constants(&checked.data)?;
-    let entry_goal = lower_entry_goal(&checked.data, &nominals)?;
     // Each function's declared IR result carries its result *mode*: a borrow
     // of addressed content is an address. A call site must produce exactly
     // the callee's declared result type, so the declared results are computed
@@ -57,7 +54,6 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         constants,
         functions,
         entry,
-        entry_goal,
     })
 }
 
@@ -69,18 +65,16 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
 /// between them; constructing the values and mapping the returned
 /// `ExitStatus` belongs to the target stage.
 fn lower_entry(entry: &CheckedEntryForm) -> IrEntry {
-    match entry {
-        CheckedEntryForm::Unlabelled => IrEntry::Unlabelled,
-        CheckedEntryForm::Command { inputs, aliases } => IrEntry::Command {
-            inputs: inputs.clone(),
-            aliases: aliases
-                .iter()
-                .map(|alias| IrResourceAlias {
-                    left: alias.left,
-                    right: alias.right,
-                })
-                .collect(),
-        },
+    IrEntry::Command {
+        inputs: entry.inputs.clone(),
+        aliases: entry
+            .aliases
+            .iter()
+            .map(|alias| IrResourceAlias {
+                left: alias.left,
+                right: alias.right,
+            })
+            .collect(),
     }
 }
 
@@ -210,7 +204,16 @@ fn lower_function(
     constants: &[IrGlobalConstant],
     function_results: &[IrType],
 ) -> Result<IrFunction, LoweringFailure> {
-    let addressed_bindings = collect_addressed_bindings(function);
+    let uninhabited = matches!(
+        function.body_disposition,
+        crate::semantic::CheckedBodyDisposition::Uninhabited { .. }
+    );
+    // An uninhabited body must not be traversed even for storage planning.
+    let addressed_bindings = if uninhabited {
+        std::collections::HashSet::new()
+    } else {
+        collect_addressed_bindings(function)
+    };
     let result = *function_results
         .get(function.id.0 as usize)
         .ok_or(LoweringFailure::InvalidCheckedProgram)?;
@@ -230,7 +233,11 @@ fn lower_function(
         builder.parameters.push((value, ty));
         builder.promote_binding_if_needed(parameter.binding)?;
     }
-    builder.lower_statements(&function.body, None)?;
+    if uninhabited {
+        builder.terminate(IrTerminator::Unreachable)?;
+    } else {
+        builder.lower_statements(&function.body, None)?;
+    }
     if builder.current.is_some()
         || builder
             .blocks
@@ -475,18 +482,10 @@ impl<'program> IrBuilder<'program> {
                         .instructions
                         .push(IrInstruction::Drop(drop));
                 }
-                CheckedStatement::Check { condition, trap } => {
-                    let condition = self.expression(condition)?;
-                    self.current_block_mut()?
-                        .instructions
-                        .push(IrInstruction::Check {
-                            condition,
-                            trap: trap.clone().into(),
-                        });
-                }
-                // A claim executes exactly as a check; its trap record
-                // carries rule CLM-1 and the claim name [DIAG-3]. The
-                // justification is compile-time data and lowers to nothing.
+                // A claim is the sole writer-visible runtime assertion. Its
+                // trap record carries rule CLM-1 and the claim name [DIAG-3];
+                // the justification is compile-time data and lowers to
+                // nothing.
                 CheckedStatement::Claim {
                     condition, trap, ..
                 } => {

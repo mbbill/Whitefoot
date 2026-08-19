@@ -46,8 +46,8 @@ const ENUM_ORDER: &[&str] = &[
     "vfield_list",
     "vfield",
     "fn_decl",
-    "requires_block",
-    "requires_entry",
+    "result_binding",
+    "contract_block",
     "contract_decl",
     "fn_sig",
     "law",
@@ -76,7 +76,7 @@ const ENUM_ORDER: &[&str] = &[
     "loop_stmt",
     "break_stmt",
     "region_stmt",
-    "check_stmt",
+    "contract_define",
     "give_stmt",
     "match_stmt",
     "value_match",
@@ -107,125 +107,24 @@ const ENUM_ORDER: &[&str] = &[
     "infix_tail",
     "infix_op",
     "for_stmt",
-    "ensures_block",
-    "ensures_selector",
-    "ensures_entry",
+    "requires_clause",
+    "ensures_clause",
+    "result_route",
 ];
 
-/// The decision index is the second stable dense index, and is historical for
-/// the same reason: a decision keeps its slot and a newly written one appends.
-/// A grammar node's raw arena ID changes whenever an earlier production gains
-/// nodes, so each historical row is instead `(stable production slot,
-/// production-relative node offset)`. `for_stmt`'s repetition keeps released
-/// slot 84 after the preceding decisions and before v0.28's five additions.
-const HISTORICAL_DECISIONS: &[(usize, usize)] = &[
-    (0, 0), // program
-    (1, 0), // item
-    (2, 3), // struct_decl
-    (2, 6),
-    (2, 8),
-    (4, 3), // enum_decl
-    (4, 6),
-    (4, 8),
-    (5, 3), // variant
-    (6, 2), // vfield_list
-    // v0.29 inserted `deny_claims?` before every earlier fn_decl child. The
-    // new optional decision is absent here so it appends after all released
-    // decision indices.
-    (8, 3), // fn_decl
-    (8, 7),
-    (8, 9),
-    (8, 12),
-    (8, 18),
-    // v0.28 inserted `ensures_block?` before the body. These two target paths
-    // are the old body `doc?` and `stmt*` decisions after that insertion; the
-    // new selector-clause decision is deliberately absent and appends later.
-    (8, 23),
-    (8, 25),
-    (9, 3),  // requires_block
-    (10, 0), // requires_entry
-    (11, 3), // contract_decl
-    (11, 6),
-    (11, 8),
-    (11, 10),
-    (12, 3), // fn_sig
-    (12, 6),
-    (13, 4), // law
-    (13, 8),
-    (14, 0), // law_arg
-    (15, 5), // conform_decl
-    (15, 8),
-    (15, 10),
-    (19, 3), // generics
-    (20, 0), // gparam
-    (20, 3),
-    (21, 3), // region_params
-    (22, 2), // param_list
-    (23, 1), // param
-    (24, 0), // type
-    (24, 14),
-    (26, 0), // mode
-    (27, 3), // targs
-    (28, 0), // targ
-    (29, 0), // stmt
-    (68, 0), // infix_op
-    (49, 0), // callee
-    (55, 2), // place
-    (56, 0), // pbase
-    (30, 5), // let_stmt
-    (65, 4), // if_stmt
-    (65, 7),
-    (65, 12),
-    (65, 16),
-    (66, 4), // value_if
-    (66, 9),
-    (66, 13),
-    (36, 4), // loop_stmt
-    (38, 4), // region_stmt
-    (41, 4), // match_stmt
-    (42, 4), // value_match
-    (43, 3), // arm
-    (43, 8),
-    (44, 2), // fieldbind_list
-    (46, 0), // expr
-    (46, 3),
-    (47, 0), // atom
-    (48, 2), // call
-    (48, 5),
-    (48, 7),
-    (50, 2), // construct
-    (50, 5),
-    (51, 2), // fieldinit_list
-    (53, 0), // borrow_expr
-    (54, 2), // atom_list
-    (57, 0), // psuffix
-    // v0.31 wraps `const`'s term choice in a concat with the optional
-    // one-operation tail, so the released term-choice decision sits one node
-    // inside the production root instead of at it. `cvalue`'s own offsets are
-    // unchanged: its choice is still the root and its array repetition still
-    // sits six nodes in, with the construction alternative appended after.
-    (58, 2), // const
-    (59, 0), // cvalue
-    (59, 6),
-    (60, 0), // effects
-    (60, 4),
-    (61, 0), // effect
-    (61, 4),
-    (61, 10),
-    (61, 16),
-    (61, 18),
-    (69, 9), // for_stmt
-    // v0.28 decisions keep their released slots after v0.29 adds the earlier
-    // fn_decl marker decision. The fn_decl path includes v0.29's +2 shift.
-    (8, 20), // fn_decl ensures_block?
-    (70, 4), // ensures_block entries
-    (71, 0), // ensures_selector choice
-    (71, 5), // ensures_selector payload binder
-    (72, 0), // ensures_entry
-];
+/// v0.33 deliberately replaces the old pseudo-statement contract grammar.
+/// Decision identities are regenerated from source order because none is a
+/// source- or artifact-visible language identity.
+const HISTORICAL_DECISIONS: &[(usize, usize)] = &[];
 
 /// Productions whose entry frontier carries DIAG-1 construct-entry behaviour.
-const CONSTRUCT_ENTRY: &[&str] = &["item", "stmt", "requires_entry", "ensures_entry"];
+const CONSTRUCT_ENTRY: &[&str] = &[
+    "item",
+    "stmt",
+    "contract_define",
+    "requires_clause",
+    "ensures_clause",
+];
 
 fn camel(name: &str) -> String {
     name.split('_')
@@ -258,9 +157,16 @@ fn main() {
     let mut arguments = std::env::args().skip(1);
     let mut check = false;
     let mut source: Option<String> = None;
-    for argument in &mut arguments {
+    let mut output: Option<String> = None;
+    while let Some(argument) = arguments.next() {
         if argument == "--check" {
             check = true;
+        } else if argument == "--output" {
+            output = arguments.next();
+            if output.is_none() {
+                eprintln!("whitefoot-grammar-tables: --output requires a path");
+                std::process::exit(1);
+            }
         } else {
             source = Some(argument);
         }
@@ -292,6 +198,11 @@ fn main() {
             eprintln!(
                 "whitefoot-grammar-tables: the committed tables are not the tables the grammar of {path} implies; regenerate them"
             );
+            std::process::exit(1);
+        }
+    } else if let Some(output) = output {
+        if let Err(error) = std::fs::write(&output, derived) {
+            eprintln!("whitefoot-grammar-tables: cannot write {output}: {error}");
             std::process::exit(1);
         }
     } else {

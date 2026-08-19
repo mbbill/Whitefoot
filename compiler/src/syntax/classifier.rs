@@ -203,6 +203,7 @@ pub fn classify_terminals<'lexed, 'source>(
             };
             let Some(terminals) = membership(*token) else {
                 let owner = match token.kind() {
+                    TokenKind::LowerWordForm => Some(TerminalIssueOwner::Form3),
                     TokenKind::NumberForm => Some(TerminalIssueOwner::Form5),
                     TokenKind::OperatorForm => Some(TerminalIssueOwner::Gram1),
                     _ => None,

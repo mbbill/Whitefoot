@@ -140,9 +140,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .to_owned();
         let region_parameters = self.parse_region_parameters(node)?;
         let parameters = self.parse_parameters_with(node, &GenericSubstitution::default())?;
+        let result_binding = self
+            .tree
+            .first_child_with(node, Production::ResultBinding)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let rtype = self
             .tree
-            .first_child_with(node, Production::Rtype)?
+            .first_child_with(result_binding, Production::Rtype)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let (result_mode, result) =
             self.parse_rtype_with(rtype, &GenericSubstitution::default())?;
@@ -409,11 +413,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if !template.generic_parameters.is_empty()
                     || self
                         .tree
-                        .first_child_with(template.node, Production::RequiresBlock)?
-                        .is_some()
-                    || self
-                        .tree
-                        .first_child_with(template.node, Production::EnsuresBlock)?
+                        .first_child_with(template.node, Production::ContractBlock)?
                         .is_some()
                 {
                     return self.issue_node(
@@ -709,7 +709,7 @@ fn discharge_domain(
         || function.result != subject
         || function.declared_traps
         || function.declared_allocates_heap
-        || function.requirement.is_some()
+        || !function.requirements.is_empty()
     {
         return None;
     }

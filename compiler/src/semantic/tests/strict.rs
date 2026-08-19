@@ -3,11 +3,10 @@
 
 use crate::{
     SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule,
-    StrictClaimLifecycleDisposition, StrictProofView,
+    StrictClaimLifecycleDisposition,
 };
 
 use super::super::entailment::{ProofView, StrictDerivationRootKind};
-use super::super::model::StrictProgramStartDisposition;
 use super::{with_semantics, with_semantics_dark};
 
 fn rejection(source: &[u8], rule: SemanticRule, cited: &str) -> SemanticIssue {
@@ -138,15 +137,11 @@ fn main() -> own unit traps {
 
 /// No writer assertion can authorize a strict bounds query.
 ///
-/// v0.31 stated this through the [ENT-3.S2] blinding: a body `check` was
-/// legal inside a demanded closure and its fact was merely invisible in the
-/// unasserted view, so the subscript stayed undischarged and OP-4 reported a
-/// strict residual. v0.32 retires the body check, so the only writer
-/// assertion left is a `claim`, and [CLM-3] refuses it outright at the claim
-/// itself — `deny_claims` now means literally "no writer assertion in the
-/// demanded closure" rather than "no *named* one". The claim here is
-/// load-bearing and reachable, which is what separates this case from the
-/// unreachable-redundant one above.
+/// The only writer assertion is a `claim`, and [CLM-3] refuses it outright at
+/// the claim itself. `deny_claims` therefore means literally "no writer
+/// assertion in the demanded closure". The claim here is load-bearing and
+/// reachable, which separates this case from the unreachable-redundant one
+/// above.
 #[test]
 fn a_load_bearing_claim_cannot_authorize_a_strict_bounds_query() {
     let asserted =
@@ -253,45 +248,6 @@ fn main() -> own unit traps {
     assert_eq!(detail.concrete_callee, "leaf");
     assert_eq!(detail.least_downstream_claim.concrete_function, "leaf");
     assert_eq!(detail.least_downstream_claim.name, "leaf_authorization");
-}
-
-#[test]
-fn the_entry_wrapper_cannot_authorize_its_own_opaque_conjunction() {
-    let source = br#"deny_claims fn main() -> own unit pure requires {
-  let first = ilt(0_u64, 1_u64);
-  let second = ilt(1_u64, 2_u64);
-  let together = band(first, second);
-  check together else trap "entry conjunction";
-} {
-  return unit;
-}
-"#;
-    let issue = rejection(
-        source,
-        SemanticRule::Fn8,
-        "check together else trap \"entry conjunction\";",
-    );
-    let SemanticIssueKind::StrictProgramStartRequirement(detail) = issue.kind() else {
-        panic!("expected strict program-start detail: {issue:?}");
-    };
-    // Exhaustive destructuring locks the program-start payload to the fields
-    // authorized by FN-8; unlike a call failure, it carries no repair advice.
-    let crate::StrictProgramStartRequirementDetail {
-        strict_root,
-        concrete_function,
-        final_check,
-        instantiated_goal,
-        disposition: _,
-        view,
-    } = detail.as_ref();
-    assert_eq!(strict_root, "main");
-    assert_eq!(concrete_function, "main");
-    assert_eq!(*view, StrictProofView::Unasserted);
-    let SemanticLocation::SourceNode(path, _) = issue.location() else {
-        unreachable!()
-    };
-    assert_eq!(final_check, path);
-    assert!(instantiated_goal.contains("Boolean(And)"));
 }
 
 #[test]
@@ -422,10 +378,6 @@ deny_claims fn main() -> own unit pure requires {
         };
         let strict = &program.data.strict_partition;
         assert_eq!(strict.roots.len(), 1);
-        assert_eq!(
-            strict.roots[0].program_start,
-            StrictProgramStartDisposition::Discharged
-        );
         assert!(
             strict
                 .components
@@ -456,7 +408,7 @@ deny_claims fn main() -> own unit pure requires {
             main.entailment
                 .strict_roots
                 .iter()
-                .any(|root| { root.kind == StrictDerivationRootKind::ProgramStart })
+                .all(|root| root.kind == StrictDerivationRootKind::CallGoal)
         );
     });
 }

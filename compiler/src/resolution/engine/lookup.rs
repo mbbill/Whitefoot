@@ -204,35 +204,6 @@ pub(super) fn resolve_uses_deferred(
     Ok((resolved, None))
 }
 
-/// Resolves every independently valid use while deliberately retaining no
-/// lookup verdict.  This path is used only when an FN-9 entry inventory issue
-/// is already pending: that inventory event must survive selector admission
-/// and outrank every lookup event, but concrete signature discovery still
-/// needs the successful header/callee links that do not depend on the poison
-/// declaration.  No partial prefix is exposed and no failed use is guessed.
-pub(super) fn resolve_uses_without_verdict(
-    scopes: &ScopeBuild,
-    declarations: &[DeclarationRecord],
-    metas: &[DeclarationMeta],
-    index: &DeclarationIndex,
-    uses: &[UseMeta],
-    system: &[SystemDeclarationRecord],
-) -> Result<Vec<LexicalUseRecord>, ResolutionCompilerFailure> {
-    let mut resolved = Vec::new();
-    for use_record in uses {
-        let (mut one, _) = resolve_uses_deferred(
-            scopes,
-            declarations,
-            metas,
-            index,
-            std::slice::from_ref(use_record),
-            system,
-        )?;
-        resolved.append(&mut one);
-    }
-    Ok(resolved)
-}
-
 /// Whether one lexical-use role admits an admitted system entry at all.
 ///
 /// TYPE-6's admitted-uses column and [SYS-2]'s own exclusion are

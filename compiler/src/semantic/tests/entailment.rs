@@ -25,7 +25,8 @@ use super::super::entailment::{
     build_claim_ledger, type_range,
 };
 use super::super::model::{
-    CheckedExpression, CheckedProgramData, CheckedStatement, CheckedValue, FunctionId, IntegerType,
+    CheckedBodyDisposition, CheckedExpression, CheckedProgramData, CheckedStatement, CheckedValue,
+    FunctionId, IntegerType,
 };
 use super::super::provenance::LocalLeafProvenanceDisposition;
 use super::{assert_rule, with_semantics, with_semantics_dark};
@@ -174,8 +175,7 @@ fn collect_direct_calls<'checked>(
             | CheckedStatement::DropExpression { value, .. } => record(value, callee, calls),
             CheckedStatement::PropagateLet { scrutinee, .. } => record(scrutinee, callee, calls),
             CheckedStatement::Evaluate(expression) => record(expression, callee, calls),
-            CheckedStatement::Check { condition, .. }
-            | CheckedStatement::Claim { condition, .. } => record(condition, callee, calls),
+            CheckedStatement::Claim { condition, .. } => record(condition, callee, calls),
             CheckedStatement::Match {
                 scrutinee, arms, ..
             }
@@ -1430,7 +1430,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
         conclusions.push(conclusion);
     }
 
-    if let Some(postcondition) = &summary.postcondition {
+    for postcondition in &summary.postconditions {
         for exit in &postcondition.exits {
             for image in &exit.entry_images {
                 if let Some(event) = image.invalidation {
@@ -1503,10 +1503,11 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
     let mut seen_claim_lifecycle = vec![false; summary.claims.len()];
     let mut seen_strict = vec![false; summary.strict_roots.len()];
     let mut seen_postcondition_exits = summary
-        .postcondition
-        .as_ref()
-        .map(|proof| vec![[false; 3]; proof.exits.len()]);
-    let mut seen_postcondition_aggregates = [false; 3];
+        .postconditions
+        .iter()
+        .map(|proof| vec![[false; 3]; proof.exits.len()])
+        .collect::<Vec<_>>();
+    let mut seen_postcondition_aggregates = vec![[false; 3]; summary.postconditions.len()];
     let mut seen_s12 = 0u32;
     let mut seen_s12_nodes = vec![false; summary.derivations.nodes.len()];
     let mut seen_delivery_gives = 0u32;
@@ -1517,6 +1518,15 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
     for root in &summary.derivations.roots {
         let conclusion = retained_conclusion(&conclusions, root.node);
         match root.kind {
+            DerivationRootKind::BodyEntryContradiction => {
+                let CheckedBodyDisposition::Uninhabited { contradiction } =
+                    summary.body_disposition
+                else {
+                    panic!("a body-entry contradiction root requires uninhabited metadata");
+                };
+                assert_eq!(contradiction, root.node);
+                assert_eq!(conclusion, &DerivationConclusion::Contradiction);
+            }
             DerivationRootKind::BoundsObligation(ordinal) => {
                 let ordinal = ordinal as usize;
                 let outcome = summary
@@ -1604,7 +1614,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert_eq!(outcome.disposition, CallGoalDisposition::Discharged);
                 assert_eq!(outcome.derivation, Some(root.node));
                 assert!(!outcome.node_path.components().is_empty());
-                assert!(!outcome.final_check.components().is_empty());
+                assert!(!outcome.requires_clause.components().is_empty());
                 match conclusion {
                     DerivationConclusion::Goal {
                         goal,
@@ -1716,10 +1726,14 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     _ => panic!("S7 root kind, metadata, and relation must agree"),
                 }
             }
-            DerivationRootKind::PostconditionExit { occurrence, view } => {
+            DerivationRootKind::PostconditionExit {
+                relation_ordinal,
+                occurrence,
+                view,
+            } => {
                 let proof = summary
-                    .postcondition
-                    .as_ref()
+                    .postconditions
+                    .get(relation_ordinal as usize)
                     .expect("a postcondition root requires retained proof metadata");
                 let occurrence = occurrence as usize;
                 let exit = proof
@@ -1729,9 +1743,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 let outcome = postcondition_exit_view(exit, view);
                 assert_eq!(outcome.disposition, PostconditionDisposition::Discharged);
                 assert_eq!(outcome.derivation, Some(root.node));
-                let seen = &mut seen_postcondition_exits
-                    .as_mut()
-                    .expect("postcondition roots require a seen inventory")[occurrence]
+                let seen = &mut seen_postcondition_exits[relation_ordinal as usize][occurrence]
                     [proof_view_index(view)];
                 assert!(!*seen, "one exact root per discharged exit and view");
                 *seen = true;
@@ -1748,25 +1760,33 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert_eq!(statement, &exit.statement);
                 assert_eq!(relation, &exit.relation);
             }
-            DerivationRootKind::PostconditionAggregate { view } => {
+            DerivationRootKind::PostconditionAggregate {
+                relation_ordinal,
+                view,
+            } => {
                 let proof = summary
-                    .postcondition
-                    .as_ref()
+                    .postconditions
+                    .get(relation_ordinal as usize)
                     .expect("an aggregate root requires retained proof metadata");
                 let aggregate = postcondition_aggregate_view(proof, view);
                 assert!(aggregate.discharged);
                 assert_eq!(aggregate.derivation, Some(root.node));
-                let seen = &mut seen_postcondition_aggregates[proof_view_index(view)];
+                let seen = &mut seen_postcondition_aggregates[relation_ordinal as usize]
+                    [proof_view_index(view)];
                 assert!(!*seen, "one exact root per discharged aggregate and view");
                 *seen = true;
                 assert_eq!(summary.derivations.node_views[root.node.0 as usize], view);
                 assert_eq!(conclusion, &DerivationConclusion::PostconditionAggregate);
-                let DerivationNode::PostconditionAggregate { block, parents } =
-                    &summary.derivations.nodes[root.node.0 as usize]
+                let DerivationNode::PostconditionAggregate {
+                    block,
+                    relation_ordinal: node_ordinal,
+                    parents,
+                } = &summary.derivations.nodes[root.node.0 as usize]
                 else {
                     panic!("postcondition aggregate root must name an aggregate node");
                 };
                 assert_eq!(block, &proof.block);
+                assert_eq!(*node_ordinal, relation_ordinal);
                 let expected = proof
                     .exits
                     .iter()
@@ -1991,38 +2011,39 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
         "every counted statement must retain all eight atomic roots"
     );
     assert!(seen_s7.into_iter().all(|seen| seen));
-    match (&summary.postcondition, seen_postcondition_exits) {
-        (Some(proof), Some(seen)) => {
-            for (ordinal, exit) in proof.exits.iter().enumerate() {
-                for view in [
-                    ProofView::Complete,
-                    ProofView::Unasserted,
-                    ProofView::S4Blinded,
-                ] {
-                    let discharged = postcondition_exit_view(exit, view).disposition
-                        == PostconditionDisposition::Discharged;
-                    assert_eq!(
-                        postcondition_exit_view(exit, view).derivation.is_some(),
-                        discharged
-                    );
-                    assert_eq!(seen[ordinal][proof_view_index(view)], discharged);
-                }
-            }
+    for ((proof, seen), seen_aggregates) in summary
+        .postconditions
+        .iter()
+        .zip(seen_postcondition_exits)
+        .zip(seen_postcondition_aggregates)
+    {
+        for (ordinal, exit) in proof.exits.iter().enumerate() {
             for view in [
                 ProofView::Complete,
                 ProofView::Unasserted,
                 ProofView::S4Blinded,
             ] {
-                let aggregate = postcondition_aggregate_view(proof, view);
-                assert_eq!(aggregate.derivation.is_some(), aggregate.discharged);
+                let discharged = postcondition_exit_view(exit, view).disposition
+                    == PostconditionDisposition::Discharged;
                 assert_eq!(
-                    seen_postcondition_aggregates[proof_view_index(view)],
-                    aggregate.discharged
+                    postcondition_exit_view(exit, view).derivation.is_some(),
+                    discharged
                 );
+                assert_eq!(seen[ordinal][proof_view_index(view)], discharged);
             }
         }
-        (None, None) => assert!(seen_postcondition_aggregates.iter().all(|seen| !seen)),
-        _ => panic!("postcondition root inventory and metadata must agree"),
+        for view in [
+            ProofView::Complete,
+            ProofView::Unasserted,
+            ProofView::S4Blinded,
+        ] {
+            let aggregate = postcondition_aggregate_view(proof, view);
+            assert_eq!(aggregate.derivation.is_some(), aggregate.discharged);
+            assert_eq!(
+                seen_aggregates[proof_view_index(view)],
+                aggregate.discharged
+            );
+        }
     }
     let expected_counted_order: Vec<_> = summary
         .counted_derivations
@@ -5404,11 +5425,11 @@ fn main() -> own unit pure {
 }
 
 // ---------------------------------------------------------------------
-// [ENT-3] S2 check facts
+// [ENT-3] S3 claim facts
 // ---------------------------------------------------------------------
 
 #[test]
-fn a_passed_check_establishes_its_comparison_on_the_continuation() {
+fn a_passed_claim_establishes_its_comparison_on_the_continuation() {
     let source = br#"const count: u64 = 4_u64;
 
 fn direct(values: own array<i32, count>, i: own u64) -> own i32 traps {
@@ -5430,14 +5451,14 @@ fn main() -> own unit pure {
     assert_eq!(
         discharge_flags(source, "through_origin"),
         vec![true],
-        "the check reads comparison-origin shape (b) exactly as a match does"
+        "the claim reads comparison-origin shape (b) exactly as a match does"
     );
 }
 
 #[test]
-fn a_check_on_a_band_establishes_its_conjuncts_not_a_whole_tree_relation() {
+fn a_claim_on_a_band_establishes_its_conjuncts_not_a_whole_tree_relation() {
     // `band` itself has no comparison projection [ENT-3], so the whole tree
-    // delivers no L0 relation of its own; its passed check instead
+    // delivers no L0 relation of its own; its passed claim instead
     // establishes the signed decomposition members, and `ilt(i, 4)`'s
     // projection is what discharges the subscript.
     let source = br#"const count: u64 = 4_u64;
@@ -5809,8 +5830,8 @@ fn main() -> own unit pure {
     let summary = entailment(source, "identity");
     validate_derivations(&summary);
     let proof = summary
-        .postcondition
-        .as_ref()
+        .postconditions
+        .first()
         .expect("identity retains its local proof");
     assert_eq!(proof.exits.len(), 2);
     assert!(proof.complete.discharged);
@@ -5898,8 +5919,8 @@ fn main() -> own unit pure {
     let callee = entailment(u_fallback, "normalized");
     validate_derivations(&callee);
     let proof = callee
-        .postcondition
-        .as_ref()
+        .postconditions
+        .first()
         .expect("normalized retains a postcondition proof");
     assert!(proof.complete.discharged);
     assert!(proof.unasserted.discharged);
@@ -9169,7 +9190,7 @@ fn main() -> own unit pure {
             );
         };
         assert_eq!(detail.concrete_callee, "guarded");
-        assert!(!detail.final_check.components().is_empty());
+        assert!(!detail.requires_clause.components().is_empty());
         assert!(detail.instantiated_goal.contains("Boolean(And)"));
         assert!(detail.instantiated_goal.contains("Integer(U64)"));
         assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);

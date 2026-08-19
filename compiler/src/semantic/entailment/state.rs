@@ -380,11 +380,13 @@ pub(crate) enum DerivationNode {
     },
     PostconditionExit {
         statement: NodePath,
+        relation_ordinal: u32,
         relation: Relation,
         parent: DerivationId,
     },
     PostconditionAggregate {
         block: NodePath,
+        relation_ordinal: u32,
         parents: Vec<DerivationId>,
     },
     /// Caller-local S12 evidence for one instantiated earlier-component
@@ -650,12 +652,12 @@ pub(crate) enum ClaimLifecycleKind {
 pub(crate) enum StrictDerivationRootKind {
     Obligation,
     CallGoal,
-    ProgramStart,
 }
 
 /// Which mandatory checked-program query owns a retained root.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum DerivationRootKind {
+    BodyEntryContradiction,
     BoundsObligation(u32),
     IntegerDomainObligation(u32),
     CallGoal(u32),
@@ -666,10 +668,12 @@ pub(crate) enum DerivationRootKind {
         atom: CountedRootAtom,
     },
     PostconditionExit {
+        relation_ordinal: u32,
         occurrence: u32,
         view: ProofView,
     },
     PostconditionAggregate {
+        relation_ordinal: u32,
         view: ProofView,
     },
     PostconditionDirectResult {

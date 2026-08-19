@@ -7,7 +7,6 @@
 
 use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
 
-use super::super::model::CheckedEntryForm;
 use super::{assert_rule, with_semantics};
 
 /// Asserts the rule, premise, and the exact source bytes the location selects.
@@ -45,26 +44,15 @@ fn invalid_label(label: &str) -> SemanticIssueKind {
     }
 }
 
-fn invalid_kind(kind: &str) -> SemanticIssueKind {
-    SemanticIssueKind::InvalidProgramKind {
-        kind: kind.to_owned(),
-        admitted_kinds: vec!["command".to_owned()],
-    }
-}
-
 #[test]
-fn the_unlabelled_entry_is_admitted_and_recorded_unchanged() {
-    let source = b"fn main() -> own unit pure {\n  return unit;\n}\n";
+fn an_unmarked_main_is_not_an_alternate_entry_form() {
+    let source = b"fn main() -> result: own unit pure {\n  return unit;\n}\n";
     with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the unlabelled entry must stay admitted: {outcome:?}");
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("an unmarked main must be rejected by FN-7: {outcome:?}");
         };
-        match checked.entry_form() {
-            CheckedEntryForm::Unlabelled => {}
-            CheckedEntryForm::Command { inputs, .. } => {
-                panic!("an unlabelled entry must not record command inputs {inputs:?}");
-            }
-        }
+        assert_eq!(issue.rule(), SemanticRule::Fn7);
+        assert_eq!(issue.kind(), &SemanticIssueKind::InvalidMain);
     });
 }
 
@@ -192,21 +180,6 @@ fn an_inadmissible_entry_row_outranks_the_unsupported_effect_category() {
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
-}
-
-#[test]
-fn the_kind_table_is_closed_at_its_program_kind_node() {
-    for kind in ["service", "embedded", "daemon"] {
-        let source = format!(
-            "{kind} fn main() -> own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
-        );
-        assert_rule_at(
-            source.as_bytes(),
-            SemanticRule::Fn7,
-            invalid_kind(kind),
-            kind.as_bytes(),
-        );
-    }
 }
 
 #[test]
@@ -392,7 +365,7 @@ fn a_command_entry_fixes_its_own_exit_status_result() {
 #[test]
 fn a_source_call_to_a_kind_declaring_entry_is_rejected_at_that_call() {
     assert_rule_at(
-        b"command fn main() -> own ExitStatus pure {\n  return main();\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  return main();\n}\n",
         SemanticRule::Fn7,
         SemanticIssueKind::CallToKindDeclaringEntry {
             entry: "main".to_owned(),
@@ -400,7 +373,7 @@ fn a_source_call_to_a_kind_declaring_entry_is_rejected_at_that_call() {
         b"main()",
     );
     assert_rule_at(
-        b"fn helper() -> own unit pure {\n  main();\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn helper() -> out: own unit pure {\n  main();\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn7,
         SemanticIssueKind::CallToKindDeclaringEntry {
             entry: "main".to_owned(),

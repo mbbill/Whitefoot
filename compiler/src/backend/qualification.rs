@@ -21,8 +21,8 @@
 //!   and no weaker operation is substituted for an unqualified one.
 
 use crate::{
-    IrEntry, IrInstruction, IrNominalKind, IrOperation, IrProgram, IrSystemOperation,
-    SystemReleaseAction, SystemResourceContract, SystemResourceType,
+    IrInstruction, IrNominalKind, IrOperation, IrProgram, IrSystemOperation, SystemReleaseAction,
+    SystemResourceContract, SystemResourceType,
 };
 
 use super::emitter::BackendFailure;
@@ -173,8 +173,6 @@ impl HostFacilities {
 /// The [FN-7] program kind one build produces.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ProgramKind {
-    /// The unlabelled entry: no standard input and no produced status.
-    Unlabelled,
     /// A natively compiled `command`.
     Command,
 }
@@ -1193,19 +1191,14 @@ pub(crate) fn qualify_program(
     target: SystemTarget,
     program: &IrProgram<'_, '_, '_>,
 ) -> Result<Qualification, BackendFailure> {
-    let kind = match program.entry() {
-        IrEntry::Unlabelled => ProgramKind::Unlabelled,
-        IrEntry::Command { .. } => ProgramKind::Command,
-    };
+    let kind = ProgramKind::Command;
     let mut qualification = Qualification {
         target,
         kind,
         operations: [None; OPERATION_COUNT],
         resources: [None; RESOURCE_COUNT],
     };
-    if kind == ProgramKind::Command {
-        command_entry_row(target).map_err(BackendFailure::TargetQualification)?;
-    }
+    command_entry_row(target).map_err(BackendFailure::TargetQualification)?;
     for nominal in program.nominals() {
         let IrNominalKind::SystemResource(contract) = nominal.kind() else {
             continue;

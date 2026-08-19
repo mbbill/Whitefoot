@@ -58,10 +58,8 @@ pub enum ScopeKind {
     FunctionSignature,
     /// One contract-member signature.
     ContractSignature,
-    /// The disjoint lexical block of a function's requires clause.
-    RequiresBlock,
-    /// The disjoint lexical block of a function's ensures clause.
-    EnsuresBlock,
+    /// The erased definition and proof-clause scope of one function contract.
+    ContractBlock,
     /// A concrete function body.
     FunctionBody,
     /// The statement body nested under an arm, loop, or local region.

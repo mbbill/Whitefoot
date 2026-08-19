@@ -28,11 +28,13 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
             | Production::FnBind
             | Production::ConstDecl
             | Production::Doc
+            | Production::ContractDefine
+            | Production::RequiresClause
+            | Production::EnsuresClause
             | Production::SetStmt
             | Production::ExprStmt
             | Production::ReturnStmt
             | Production::BreakStmt
-            | Production::CheckStmt
             | Production::ClaimStmt
             | Production::GiveStmt
     );
@@ -65,8 +67,7 @@ fn is_block_bearing(production: Production) -> bool {
             | Production::ContractDecl
             | Production::ConformDecl
             | Production::FnDecl
-            | Production::RequiresBlock
-            | Production::EnsuresBlock
+            | Production::ContractBlock
             | Production::LoopStmt
             | Production::ForStmt
             | Production::RegionStmt
@@ -175,10 +176,8 @@ pub(super) fn build_gap_styles(
             // Both keep the close brace and what follows on one line, so the
             // break after the close is suppressed exactly there. The last
             // block of a construct always breaks.
-            let joins_a_continuation = matches!(
-                record.production,
-                Production::RequiresBlock | Production::EnsuresBlock
-            ) || (index == 0 && record.has_else);
+            let joins_a_continuation = matches!(record.production, Production::ContractBlock)
+                || (index == 0 && record.has_else);
             if !joins_a_continuation {
                 let after_close = close
                     .checked_add(1)

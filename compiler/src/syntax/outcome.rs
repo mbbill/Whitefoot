@@ -96,6 +96,8 @@ pub enum TerminalCompilerFailure {
 /// The numbered rule owning a terminal-membership rejection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TerminalIssueOwner {
+    /// FORM-3 lexical-class membership and reserved lower-word spellings.
+    Form3,
     /// FORM-5 literal spelling membership.
     Form5,
     /// GRAM-1 operator-form suffix membership.
@@ -107,6 +109,7 @@ impl TerminalIssueOwner {
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
+            Self::Form3 => "FORM-3",
             Self::Form5 => "FORM-5",
             Self::Gram1 => "GRAM-1",
         }

@@ -255,22 +255,17 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::ProgramKind => add_single(
-            classified,
-            owner,
-            &names,
-            RawRoleKind::TableChecked,
-            roles,
-            complete_counts,
-        )?,
+        Production::ProgramKind if !names.is_empty() => {
+            return Err(ResolutionCompilerFailure::InvalidRoleShape);
+        }
         Production::InputLabel => {
-            let [_, _] = names.as_slice() else {
+            let [label] = names.as_slice() else {
                 return Err(ResolutionCompilerFailure::InvalidRoleShape);
             };
-            add_all(
+            add_complete(
                 classified,
                 owner,
-                &names,
+                *label,
                 RawRoleKind::TableChecked,
                 roles,
                 complete_counts,
@@ -284,7 +279,7 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::LetStmt => add_single(
+        Production::LetStmt | Production::ContractDefine => add_single(
             classified,
             owner,
             &names,
@@ -358,26 +353,26 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::EnsuresSelector => {
-            let [selector] = names.as_slice() else {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape);
-            };
-            let kind = match name_predicate(classified, *selector) {
-                Some(TerminalPredicate::Identifier) => {
-                    RawRoleKind::Selector(SelectorRole::PlainCandidate)
-                }
-                Some(TerminalPredicate::TypeIdentifier) => {
-                    RawRoleKind::LexicalUse(LexicalUseRole::EnsuresVariant)
-                }
-                _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
-            };
-            add_complete(classified, owner, *selector, kind, roles, complete_counts)?;
-        }
+        Production::ResultBinding => add_single(
+            classified,
+            owner,
+            &names,
+            RawRoleKind::Selector(SelectorRole::PlainCandidate),
+            roles,
+            complete_counts,
+        )?,
+        Production::ResultRoute => add_single(
+            classified,
+            owner,
+            &names,
+            RawRoleKind::LexicalUse(LexicalUseRole::EnsuresVariant),
+            roles,
+            complete_counts,
+        )?,
         Production::Fieldbind => {
             if let [field, binder] = names.as_slice() {
                 let selector_field =
-                    ancestor_with_production(topology, owner, Production::EnsuresSelector)
-                        .is_some();
+                    ancestor_with_production(topology, owner, Production::ResultRoute).is_some();
                 add_complete(
                     classified,
                     owner,

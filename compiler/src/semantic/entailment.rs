@@ -15,7 +15,7 @@
 //! crosses a call boundary.
 //!
 //! Implemented fact sources: S1 branch and match facts with both
-//! comparison-origin shapes, S2 check facts, S3 claim facts, S4 requires
+//! comparison-origin shapes, S3 claim facts, S4 requires
 //! facts, S5 copy and conversion equalities, S6 length facts, S7
 //! constant-offset arithmetic, S9 const-array element ranges, and S10
 //! boundary count facts; the label S8 is retired, not reused [ENT-3]. An
@@ -100,16 +100,11 @@ pub(crate) struct EntailmentContext<'check> {
     /// Published earlier-component FN-9 declarations and proofs, indexed by
     /// concrete [`FunctionId`]. Same-component entries remain absent until
     /// the component's atomic publication boundary.
-    pub(crate) verified_postconditions: &'check [Option<&'check CheckedPostcondition>],
-    pub(crate) verified_postcondition_proofs:
-        &'check [Option<&'check FunctionPostconditionProof>],
+    pub(crate) verified_postconditions: &'check [Vec<&'check CheckedPostcondition>],
+    pub(crate) verified_postcondition_proofs: &'check [Vec<&'check FunctionPostconditionProof>],
     /// Binding names in dense [`super::model::BindingId`] order, for the
     /// [ENT-6] canonical residual rendering.
     pub(crate) binding_names: &'check [String],
-    /// True only for the marked concrete program-entry instance. The flow
-    /// uses this bit solely to retain the post-setup, pre-S4 U judgment that
-    /// CLM-3 later consumes.
-    pub(crate) marked_program_start: bool,
 }
 
 impl EntailmentContext<'_> {
@@ -131,21 +126,29 @@ impl EntailmentContext<'_> {
             .find_map(|(declaration, id)| (*id == constant).then_some(*declaration))
     }
 
-    pub(crate) fn verified_postcondition(
+    pub(crate) fn verified_postconditions(
         &self,
         function: FunctionId,
-    ) -> Option<(&CheckedPostcondition, &FunctionPostconditionProof)> {
-        let postcondition = self
-            .verified_postconditions
-            .get(function.0 as usize)?
-            .as_ref()
-            .copied()?;
-        let proof = self
+    ) -> Option<Vec<(&CheckedPostcondition, &FunctionPostconditionProof)>> {
+        let postconditions = self.verified_postconditions.get(function.0 as usize)?;
+        let proofs = self
             .verified_postcondition_proofs
-            .get(function.0 as usize)?
-            .as_ref()
-            .copied()?;
-        (proof.summary.as_ref()?.function == function).then_some((postcondition, proof))
+            .get(function.0 as usize)?;
+        if postconditions.len() != proofs.len() {
+            return None;
+        }
+        postconditions
+            .iter()
+            .copied()
+            .zip(proofs.iter().copied())
+            .enumerate()
+            .map(|(ordinal, (postcondition, proof))| {
+                let summary = proof.summary.as_ref()?;
+                (summary.function == function
+                    && summary.relation_ordinal == u32::try_from(ordinal).ok()?)
+                .then_some((postcondition, proof))
+            })
+            .collect()
     }
 }
 
@@ -566,6 +569,7 @@ pub(crate) struct PostconditionAggregate {
 pub(crate) struct FunctionPostconditionProof {
     pub(crate) block: NodePath,
     pub(crate) selector: NodePath,
+    pub(crate) relation_ordinal: u32,
     /// Present only after the concrete-call SCC scheduler publishes every
     /// independently verified summary in this component atomically. This is
     /// checked-program-private identity; a caller never imports this proof's
@@ -755,8 +759,8 @@ pub(crate) struct CallGoalOutcome {
     /// Exact source `call` occurrence.
     pub(crate) node_path: NodePath,
     pub(crate) callee: FunctionId,
-    /// Exact final-check occurrence in the concrete callee.
-    pub(crate) final_check: NodePath,
+    /// Exact `requires_clause` occurrence in the concrete callee.
+    pub(crate) requires_clause: NodePath,
     pub(crate) goal: ConcreteGoal,
     /// Exact declared-order actual count at this concrete call occurrence.
     /// This remains zero for a legal zero-argument call with a requirement.
@@ -784,7 +788,7 @@ pub(crate) struct CallGoalOutcome {
 pub(crate) struct CallGoalCounterfactual {
     pub(crate) node_path: NodePath,
     pub(crate) callee: FunctionId,
-    pub(crate) final_check: NodePath,
+    pub(crate) requires_clause: NodePath,
     pub(crate) goal: ConcreteGoal,
     pub(crate) actual_obligations_ok: bool,
     pub(crate) goal_disposition: CallGoalDisposition,
@@ -829,21 +833,6 @@ pub(crate) struct FunctionEntailmentView {
     pub(crate) call_goals: Vec<CallGoalCounterfactual>,
 }
 
-/// The marked program entry's pre-wrapper, pre-S4 U requirement judgment.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ProgramStartGoalOutcome {
-    /// Exact final requirement check occurrence.
-    pub(crate) final_check: NodePath,
-    /// Concrete requirement over the entry parameter images.
-    pub(crate) goal: ConcreteGoal,
-    /// Existing U-view goal disposition.
-    pub(crate) disposition: CallGoalDisposition,
-    /// Deterministic complete U-view evidence.
-    pub(crate) evidence: Vec<CallGoalEvidence>,
-    /// Existing positive or contradiction proof on success.
-    pub(crate) derivation: Option<DerivationId>,
-}
-
 /// One successful CLM-3 query rooted in the owning function's existing U
 /// derivation arena. Registration precedes the sole finish/remap boundary.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -880,18 +869,19 @@ pub(crate) struct BooleanGoalDecomposition {
 /// Retained summary of one function's entailment analysis [DIAG-2].
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct FunctionEntailment {
+    /// Checked disposition after all independent S4 sources close at body
+    /// entry. An uninhabited function retains the exact contradiction root.
+    pub(crate) body_disposition: super::model::CheckedBodyDisposition,
     /// Bounds obligations in deterministic source walk order.
     pub(crate) obligations: Vec<ObligationOutcome>,
     /// Claim lifecycle outcomes in deterministic source walk order.
     pub(crate) claims: Vec<ClaimOutcome>,
     /// Ordinary call-goal judgments in deterministic checked-tree walk order.
     pub(crate) call_goals: Vec<CallGoalOutcome>,
-    /// S2/S3-disabled judgments with body-entry S4 retained.
+    /// S3-disabled judgments with body-entry S4 retained.
     pub(crate) unasserted: FunctionEntailmentView,
     /// The unasserted view with S4 and its exact projection omitted.
     pub(crate) s4_blinded: FunctionEntailmentView,
-    /// Present only for a marked program entry carrying a requirement.
-    pub(crate) program_start: Option<ProgramStartGoalOutcome>,
     /// Exact existing-U roots demanded by successful CLM-3 validation.
     pub(crate) strict_roots: Vec<StrictEntailmentRoot>,
     /// One complete five-relation/eight-atomic S11 group per counted
@@ -900,8 +890,8 @@ pub(crate) struct FunctionEntailment {
     /// Every admitted S7 relation, in structural source / C-U-B view /
     /// operand order. Each entry owns one required source root.
     pub(crate) s7_derivations: Vec<S7Derivation>,
-    /// Present exactly for a concrete function carrying an FN-9 declaration.
-    pub(crate) postcondition: Option<FunctionPostconditionProof>,
+    /// One entry per source-ordered FN-9 relation on a concrete function.
+    pub(crate) postconditions: Vec<FunctionPostconditionProof>,
     /// O11 candidate decomposition sets recorded at complete-view signed-goal
     /// establishments; never an acceptance input in this version.
     pub(crate) boolean_decompositions: Vec<BooleanGoalDecomposition>,
@@ -966,21 +956,34 @@ impl FunctionEntailment {
         &mut self,
         node_path: &NodePath,
     ) -> Result<(), SemanticCompilerFailure> {
-        let outcome = self
+        let outcomes = self
             .unasserted
             .call_goals
             .iter()
-            .find(|outcome| outcome.node_path == *node_path)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        if !outcome.actual_obligations_ok
-            || outcome.goal_disposition != CallGoalDisposition::Discharged
-        {
+            .filter(|outcome| outcome.node_path == *node_path)
+            .map(|outcome| {
+                (
+                    outcome.requires_clause.clone(),
+                    outcome.actual_obligations_ok,
+                    outcome.goal_disposition,
+                    outcome.derivation,
+                )
+            })
+            .collect::<Vec<_>>();
+        if outcomes.is_empty() {
             return Err(SemanticCompilerFailure::InvalidResolution);
         }
-        let derivation = outcome
-            .derivation
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        self.register_strict_root(node_path, StrictDerivationRootKind::CallGoal, derivation)
+        for (requires_clause, actual_obligations_ok, disposition, derivation) in outcomes {
+            if !actual_obligations_ok || disposition != CallGoalDisposition::Discharged {
+                return Err(SemanticCompilerFailure::InvalidResolution);
+            }
+            self.register_strict_root(
+                &requires_clause,
+                StrictDerivationRootKind::CallGoal,
+                derivation.ok_or(SemanticCompilerFailure::InvalidResolution)?,
+            )?;
+        }
+        Ok(())
     }
 
     /// Retains one successful outside-caller-to-marked-root U goal. The
@@ -991,39 +994,33 @@ impl FunctionEntailment {
         &mut self,
         node_path: &NodePath,
     ) -> Result<(), SemanticCompilerFailure> {
-        let outcome = self
+        let outcomes = self
             .unasserted
             .call_goals
             .iter()
-            .find(|outcome| outcome.node_path == *node_path)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        if outcome.goal_disposition != CallGoalDisposition::Discharged {
+            .filter(|outcome| outcome.node_path == *node_path)
+            .map(|outcome| {
+                (
+                    outcome.requires_clause.clone(),
+                    outcome.goal_disposition,
+                    outcome.derivation,
+                )
+            })
+            .collect::<Vec<_>>();
+        if outcomes.is_empty() {
             return Err(SemanticCompilerFailure::InvalidResolution);
         }
-        let derivation = outcome
-            .derivation
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        self.register_strict_root(node_path, StrictDerivationRootKind::CallGoal, derivation)
-    }
-
-    /// Retains the marked entry's already-successful pre-S4 U proof.
-    pub(crate) fn register_strict_program_start(&mut self) -> Result<(), SemanticCompilerFailure> {
-        let outcome = self
-            .program_start
-            .as_ref()
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        if outcome.disposition != CallGoalDisposition::Discharged {
-            return Err(SemanticCompilerFailure::InvalidResolution);
+        for (requires_clause, disposition, derivation) in outcomes {
+            if disposition != CallGoalDisposition::Discharged {
+                return Err(SemanticCompilerFailure::InvalidResolution);
+            }
+            self.register_strict_root(
+                &requires_clause,
+                StrictDerivationRootKind::CallGoal,
+                derivation.ok_or(SemanticCompilerFailure::InvalidResolution)?,
+            )?;
         }
-        let node_path = outcome.final_check.clone();
-        let derivation = outcome
-            .derivation
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        self.register_strict_root(
-            &node_path,
-            StrictDerivationRootKind::ProgramStart,
-            derivation,
-        )
+        Ok(())
     }
 }
 
@@ -1256,10 +1253,9 @@ pub(crate) fn postcondition_schedule<'function>(
     functions: impl IntoIterator<Item = &'function CheckedFunction>,
 ) -> Option<PostconditionSchedule> {
     let functions = functions.into_iter().collect::<Vec<_>>();
-    if !functions
-        .iter()
-        .any(|function| function.postcondition.is_some() || function.deny_claims_marker.is_some())
-    {
+    if !functions.iter().any(|function| {
+        !function.postconditions.is_empty() || function.deny_claims_marker.is_some()
+    }) {
         return Some(PostconditionSchedule::default());
     }
     let mut graph = vec![Vec::new(); functions.len()];
@@ -1415,9 +1411,6 @@ fn collect_statement_calls(
             CheckedStatement::Let { value, .. }
             | CheckedStatement::Evaluate(value)
             | CheckedStatement::DropExpression { value, .. }
-            | CheckedStatement::Check {
-                condition: value, ..
-            }
             | CheckedStatement::Claim {
                 condition: value, ..
             }

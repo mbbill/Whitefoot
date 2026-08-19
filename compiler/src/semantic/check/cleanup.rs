@@ -149,8 +149,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         });
                     }
                 }
-                CheckedStatement::Check { condition, .. }
-                | CheckedStatement::Claim { condition, .. } => {
+                CheckedStatement::Claim { condition, .. } => {
                     self.collect_expression_release_sites(condition, sites)?;
                 }
                 CheckedStatement::Return { value, drops, .. } => {

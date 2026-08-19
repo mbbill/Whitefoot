@@ -605,9 +605,9 @@ const CLAIM_SPELLINGS_AS_IDENTIFIERS: &[u8] =
     b"fn probe() -> own unit pure {\n  let claim = 0_i32;\n  return unit;\n}\n";
 
 const BODY_CHECK_STATEMENT: &[u8] =
-    b"fn probe() -> own unit traps {\n  let flag = True();\n  check flag else trap \"held\";\n  return unit;\n}\n";
+    b"fn probe() -> result: own unit traps {\n  let flag = True();\n  check flag else trap \"held\";\n  return unit;\n}\n";
 
-const CONTRACT_FINAL_CHECK: &[u8] = b"fn probe(value: own i32) -> own i32 pure requires {\n  let admitted = ieq(value, value);\n  check admitted else trap \"pre\";\n} {\n  return value;\n}\n";
+const UNIFIED_CONTRACT: &[u8] = b"fn probe(value: own i32) -> result: own i32 pure contract {\n  define admitted = ieq(value, value);\n  requires admitted;\n  ensures ieq(result, value);\n} {\n  return value;\n}\n";
 
 const COUNTED_RANGE_STATEMENT: &[u8] = b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for @range index in lower..upper {\n    break @range;\n  }\n  return unit;\n}\n";
 
@@ -702,16 +702,13 @@ fn active_contract_rejects_a_body_check_statement() {
     assert_eq!(&BODY_CHECK_STATEMENT[start..end], b"check");
 }
 
-/// The same `check_stmt` production survives as the contract final, which
-/// [GRAM-2] now admits directly at `requires_entry`: with `check_stmt` gone
-/// from `stmt`, no `stmt` wrapper can select it, so the final check is the
-/// entry's own selected child while an ordinary clause `let` still arrives
-/// through `stmt`.
+/// The unified contract owns erased definitions followed by plural requires
+/// and ensures clauses, with no body-statement wrapper.
 #[test]
-fn active_contract_parses_the_contract_final_as_a_direct_entry_child() {
-    let outcome = parse_active("contract-final.wf", CONTRACT_FINAL_CHECK);
+fn active_contract_parses_definitions_and_clauses_as_direct_children() {
+    let outcome = parse_active("contract.wf", UNIFIED_CONTRACT);
     let ParseOutcome::Complete(parsed) = outcome else {
-        panic!("the contract final check must still parse: {outcome:?}");
+        panic!("the unified contract must parse: {outcome:?}");
     };
     let FinalizeOutcome::Complete(finalized) = finalize(
         parsed,
@@ -725,24 +722,39 @@ fn active_contract_parses_the_contract_final_as_a_direct_entry_child() {
             max_sources: 16,
         },
     ) else {
-        panic!("the contract final fixture must finalize");
+        panic!("the unified contract fixture must finalize");
     };
     let topology = &finalized.topology;
     let mut selected = Vec::new();
     for (index, node) in topology.nodes.iter().enumerate() {
-        if node.production != Production::RequiresEntry {
+        if node.production != Production::ContractBlock {
             continue;
         }
-        let id = NodeId::from_index(index).expect("entry node id");
-        let [child] = topology.node_children(id).expect("entry has one child") else {
-            panic!("a requires entry selects exactly one child");
-        };
-        selected.push(topology.node(*child).expect("child record").production);
+        let id = NodeId::from_index(index).expect("contract node id");
+        selected.extend(
+            topology
+                .node_children(id)
+                .expect("contract has children")
+                .iter()
+                .filter_map(|child| topology.node(*child).map(|record| record.production))
+                .filter(|production| {
+                    matches!(
+                        production,
+                        Production::ContractDefine
+                            | Production::RequiresClause
+                            | Production::EnsuresClause
+                    )
+                }),
+        );
     }
     assert_eq!(
         selected,
-        vec![Production::Stmt, Production::CheckStmt],
-        "the clause let arrives through `stmt`; the final check is direct"
+        vec![
+            Production::ContractDefine,
+            Production::RequiresClause,
+            Production::EnsuresClause,
+        ],
+        "definitions and clauses retain source order in one contract"
     );
 }
 

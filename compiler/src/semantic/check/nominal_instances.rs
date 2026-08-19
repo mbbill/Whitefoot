@@ -210,8 +210,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         if self
             .tree
-            .first_child_with(function, Production::EnsuresBlock)?
-            .is_none()
+            .descendants_with(function, Production::EnsuresClause)?
+            .is_empty()
         {
             return self.ensure_nominals_in_node(function, substitution);
         }
@@ -251,9 +251,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             self.ensure_nominals_in_node(parameters, substitution)?;
         }
+        let result_binding = self
+            .tree
+            .first_child_with(function, Production::ResultBinding)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let result = self
             .tree
-            .first_child_with(function, Production::Rtype)?
+            .first_child_with(result_binding, Production::Rtype)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         self.ensure_nominals_in_node(result, substitution)
     }

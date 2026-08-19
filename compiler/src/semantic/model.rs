@@ -901,8 +901,9 @@ pub(crate) enum CheckedExpression {
         /// Concrete caller regions supplied for the callee's formal region
         /// parameters, in declaration order.
         goal_regions: Vec<DeclarationId>,
-        /// Filled from the complete phase-A inventory before entailment runs.
-        requirement: Option<Box<super::goal::CheckedCallRequirement>>,
+        /// Filled from the complete phase-A inventory before entailment runs,
+        /// in callee `requires_clause` source order.
+        requirements: Vec<super::goal::CheckedCallRequirement>,
         result: CheckedType,
         slice_origins: Vec<CheckedSliceOrigin>,
         /// For a borrow-mode result admitted under the reborrow extension:
@@ -1372,14 +1373,9 @@ pub(crate) enum CheckedStatement {
         value: CheckedExpression,
         release: crate::SystemRelease,
     },
-    Check {
-        condition: CheckedExpression,
-        trap: TrapSite,
-    },
-    /// A named runtime check [CLM-1]: check-else-trap semantics with the
-    /// claim name as the DIAG-3 message. The justification STRING is
-    /// compile-time review data the checked program retains [DIAG-2]; it
-    /// never reaches runtime behavior.
+    /// A named runtime assertion [CLM-1]. The claim name is the DIAG-3
+    /// message; the justification STRING is compile-time review data retained
+    /// by the checked program [DIAG-2] and never reaches runtime behavior.
     Claim {
         name: String,
         /// Exact canonical spelling of the checked predicate expression.
@@ -1470,16 +1466,34 @@ pub(crate) struct CheckedFunction {
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
     pub(crate) declared_traps: bool,
     pub(crate) declared_allocates_heap: bool,
-    /// The callable-boundary predicate and its diagnostic occurrence.
-    pub(crate) requirement: Option<super::goal::CheckedRequirement>,
-    /// Verified-relation surface and selected exits. H1 constructs this
-    /// metadata; the shared entailment flow proves it at every selected exit.
-    pub(crate) postcondition: Option<super::postcondition::CheckedPostcondition>,
+    /// Callable-boundary predicates in `requires_clause` source order.
+    pub(crate) requirements: Vec<super::goal::CheckedRequirement>,
+    /// Verified-relation surfaces in `ensures_clause` source order. H1
+    /// constructs this metadata; the shared entailment flow proves every
+    /// clause at every selected exit.
+    pub(crate) postconditions: Vec<super::postcondition::CheckedPostcondition>,
     pub(crate) body: Vec<CheckedStatement>,
+    /// Whether the independently established body-entry requirements close to
+    /// a contradiction. The contradiction is retained proof metadata.
+    pub(crate) body_disposition: CheckedBodyDisposition,
     /// Retained [ENT] analysis summary [DIAG-2]. Semantic acceptance and
     /// diagnostics read it; lowering deliberately does not.
     #[allow(dead_code)]
     pub(crate) entailment: super::entailment::FunctionEntailment,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedBodyDisposition {
+    Inhabited,
+    Uninhabited {
+        contradiction: super::entailment::DerivationId,
+    },
+}
+
+impl Default for CheckedBodyDisposition {
+    fn default() -> Self {
+        Self::Inhabited
+    }
 }
 
 /// The one source-canonical symbolic requirement retained for a generic
@@ -1580,22 +1594,15 @@ pub(crate) struct CheckedLawDerivation {
 
 /// The [FN-7] entry form the checker admitted for one compilation unit.
 ///
-/// Lowering needs the shape rather than the declaration: the two forms take
-/// different program-start bootstraps [PROG-3]. The `command` variant carries
-/// the standard-input table ordinals the entry selected, in the same order as
-/// its declared parameters, because ordinal identity — never type identity —
-/// selects each supplied value.
+/// The only admitted entry is `command`. Lowering retains the standard-input
+/// table ordinals in declaration order because ordinal identity — never type
+/// identity — selects each supplied value.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum CheckedEntryForm {
-    /// The unlabelled entry: no program kind, no standard input, `own unit`.
-    Unlabelled,
-    /// A `command` entry and the standard-input rows it selected.
-    Command {
-        /// Selected [FN-7] table ordinals in strictly increasing order.
-        inputs: Vec<u8>,
-        /// Retained conservative alias links between selected inputs.
-        aliases: Vec<CheckedResourceAlias>,
-    },
+pub(crate) struct CheckedEntryForm {
+    /// Selected [FN-7] table ordinals in strictly increasing order.
+    pub(crate) inputs: Vec<u8>,
+    /// Retained conservative alias links between selected inputs.
+    pub(crate) aliases: Vec<CheckedResourceAlias>,
 }
 
 /// One retained conservative alias link between two standard-input resource
@@ -1638,17 +1645,6 @@ pub(crate) enum StrictRootDisposition {
     Succeeded,
 }
 
-/// Marked-entry program-start disposition retained after strict success.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum StrictProgramStartDisposition {
-    /// This strict root is not the concrete program entry.
-    NotProgramEntry,
-    /// The marked entry declares no requirement.
-    RequirementFree,
-    /// Its post-setup, pre-wrapper, pre-S4 U requirement discharged.
-    Discharged,
-}
-
 /// One component of the shared FN-9/CLM-3 concrete-call condensation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct StrictComponentMetadata {
@@ -1681,8 +1677,6 @@ pub(crate) struct StrictRootMetadata {
     pub(crate) closure: Vec<u32>,
     /// Successful atomic root disposition.
     pub(crate) disposition: StrictRootDisposition,
-    /// Exact marked-entry boundary disposition.
-    pub(crate) program_start: StrictProgramStartDisposition,
 }
 
 /// Read-only CLM-3 checked-program metadata. Lowering never consumes it.

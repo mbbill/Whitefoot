@@ -2,24 +2,21 @@ use crate::{DeclarationId, NodePath};
 
 use super::model::{
     BindingId, CheckedBooleanOperation, CheckedConst, CheckedFlatElement, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedNumericType, CheckedType, CheckedValue, FunctionId, TrapSite,
+    CheckedIntegerOperation, CheckedNumericType, CheckedType, CheckedValue, FunctionId,
 };
 
 /// One function requirement, split into predicate and occurrence identity.
 ///
-/// The final-check path belongs to diagnostics and retained metadata. It is
+/// The requires-clause path belongs to diagnostics and retained metadata. It is
 /// deliberately outside [`GoalTemplate`]'s equality, so two requirements with
 /// the same alpha-expanded typed predicate compare equal even when their
 /// source occurrences differ.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedRequirement {
     pub(crate) template: GoalTemplate,
-    /// Exact OP-5 dynamic-boundary record of the final source check.
-    ///
-    /// Its node path is also the requirement occurrence path. Keeping the
-    /// complete record lets entry lowering survive removal of the legacy
-    /// executable clause statements without re-reading source.
-    pub(crate) trap: TrapSite,
+    /// Exact `requires_clause` occurrence. It is diagnostic/provenance
+    /// identity only and never an executable trap record.
+    pub(crate) clause: NodePath,
 }
 
 /// The finite typed predicate carried by one [FN-8] callable boundary.
@@ -53,11 +50,11 @@ impl ConcreteGoal {
 /// The concrete predicate and source occurrence retained for one user call.
 ///
 /// The callee instance is the surrounding `CheckedExpression::UserCall`
-/// function id. The final-check path is occurrence/provenance identity only;
+/// function id. The requires-clause path is occurrence/provenance identity only;
 /// it is deliberately absent from `ConcreteGoal` equality.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedCallRequirement {
-    pub(crate) final_check: NodePath,
+    pub(crate) requires_clause: NodePath,
     pub(crate) goal: ConcreteGoal,
 }
 

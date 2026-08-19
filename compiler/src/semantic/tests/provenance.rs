@@ -640,7 +640,7 @@ fn a_two_hop_bridge_diagnostic_retains_every_boundary_and_terminal_origin() {
         assert!(target.boundaries[2].caller_continuation.is_none());
         assert!(target.boundaries.iter().all(|boundary| {
             boundary.callee.demand_kind == crate::ProvenanceDemandKind::RequirementBridge
-                && boundary.callee.requirement.is_some()
+                && !boundary.callee.requirements.is_empty()
                 && boundary.callee.parameter.ordinal == 1
         }));
         assert_eq!(
@@ -670,7 +670,7 @@ fn a_command_entry_bridge_terminates_at_its_call_argument_without_upstream_conti
         assert_eq!(target.boundaries.len(), 1);
         assert!(target.boundaries[0].caller_continuation.is_none());
         assert_eq!(target.boundaries[0].callee.parameter.ordinal, 1);
-        assert!(target.boundaries[0].callee.requirement.is_some());
+        assert!(!target.boundaries[0].callee.requirements.is_empty());
         assert_eq!(
             coordinate_bytes(source, &target.origin_coordinate),
             b"args_count<'a>(args: &'a args)"

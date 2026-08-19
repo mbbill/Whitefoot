@@ -16,7 +16,7 @@
 //! right facts — the flow tests in `entailment.rs` cover that — and it does not
 //! re-derive the behavioural consequence of the unasserted split, which
 //! `strict::an_outside_call_does_not_demand_its_actual_expression_obligations_in_u`
-//! already gates by compiling a program whose only support is an S2 check.
+//! already gates through a writer-assertion-free strict call path.
 
 use std::collections::BTreeSet;
 
@@ -140,7 +140,7 @@ fn the_ent3_sub_rules_and_the_compilers_flow_events_name_the_same_sources() {
     assert_eq!(
         defined,
         BTreeSet::from([1, 3, 4, 5, 6, 7, 9, 10, 11, 12]),
-        "ENT-3 defines ten sources; S8 and S2 are retired"
+        "ENT-3 defines the ten active sources"
     );
 
     let modelled: BTreeSet<u8> = FLOW_EVENT_KINDS

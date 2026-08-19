@@ -313,18 +313,12 @@ fn plain_postcondition_selector_is_private_and_clause_scopes_are_disjoint() {
                 .all(|usage| usage.spelling() != "result")
         );
 
-        let requires = resolved
+        let contracts = resolved
             .scopes()
             .iter()
-            .find(|scope| scope.kind() == ScopeKind::RequiresBlock)
-            .expect("requires scope");
-        let ensures = resolved
-            .scopes()
-            .iter()
-            .find(|scope| scope.kind() == ScopeKind::EnsuresBlock)
-            .expect("ensures scope");
-        assert_ne!(requires.id(), ensures.id());
-        assert_eq!(requires.parent(), ensures.parent());
+            .filter(|scope| scope.kind() == ScopeKind::ContractBlock)
+            .collect::<Vec<_>>();
+        assert_eq!(contracts.len(), 1, "requires and ensures share one scope");
     });
 }
 

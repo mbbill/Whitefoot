@@ -7,8 +7,7 @@ use super::super::entailment::{
 use super::super::goal::{first_ephemeral_argument, render_goal};
 use super::super::model::{
     CheckedFunction, FunctionId, StrictClaimIdentity, StrictComponentDisposition,
-    StrictComponentMetadata, StrictPartitionMetadata, StrictProgramStartDisposition,
-    StrictRootDisposition, StrictRootMetadata,
+    StrictComponentMetadata, StrictPartitionMetadata, StrictRootDisposition, StrictRootMetadata,
 };
 use super::super::{CheckStop, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticRule};
 use super::Checker;
@@ -30,23 +29,20 @@ enum StrictFailure {
     Call {
         function: FunctionId,
         node_path: NodePath,
-    },
-    ProgramStart {
-        function: FunctionId,
-        node_path: NodePath,
+        requires_clause: NodePath,
     },
 }
 
 impl StrictFailure {
     fn function(&self) -> FunctionId {
         match self {
-            Self::Call { function, .. } | Self::ProgramStart { function, .. } => *function,
+            Self::Call { function, .. } => *function,
         }
     }
 
     fn node_path(&self) -> &NodePath {
         match self {
-            Self::Call { node_path, .. } | Self::ProgramStart { node_path, .. } => node_path,
+            Self::Call { node_path, .. } => node_path,
         }
     }
 }
@@ -56,7 +52,6 @@ struct StrictRegistrations {
     obligations: Vec<(FunctionId, NodePath)>,
     calls: Vec<(FunctionId, NodePath)>,
     boundary_calls: Vec<(FunctionId, NodePath)>,
-    program_starts: Vec<FunctionId>,
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -86,7 +81,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         functions: &mut [CheckedFunction],
         schedule: &PostconditionSchedule,
-        main: FunctionId,
         markers: Vec<NodePath>,
     ) -> Result<StrictPartitionMetadata, CheckStop> {
         let roots = functions
@@ -186,28 +180,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
 
             let mut failures = self.strict_closure_failures(functions, &closure, &components)?;
-            let program_start = if root == main {
-                if root_function.requirement.is_none() {
-                    StrictProgramStartDisposition::RequirementFree
-                } else {
-                    let outcome = root_function
-                        .entailment
-                        .program_start
-                        .as_ref()
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    if outcome.disposition != CallGoalDisposition::Discharged {
-                        failures.push(StrictFailure::ProgramStart {
-                            function: root,
-                            node_path: outcome.final_check.clone(),
-                        });
-                    } else {
-                        registrations.program_starts.push(root);
-                    }
-                    StrictProgramStartDisposition::Discharged
-                }
-            } else {
-                StrictProgramStartDisposition::NotProgramEntry
-            };
 
             self.collect_outside_root_failures(
                 functions,
@@ -261,7 +233,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 component: root_component,
                 closure,
                 disposition: StrictRootDisposition::Succeeded,
-                program_start,
             });
         }
 
@@ -273,10 +244,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .boundary_calls
             .sort_by(Self::registration_order);
         registrations.boundary_calls.dedup();
-        registrations
-            .program_starts
-            .sort_by_key(|function| function.0);
-        registrations.program_starts.dedup();
         for (function, path) in registrations.obligations {
             functions[function.0 as usize]
                 .entailment
@@ -291,11 +258,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             functions[function.0 as usize]
                 .entailment
                 .register_strict_boundary_call(&path)?;
-        }
-        for function in registrations.program_starts {
-            functions[function.0 as usize]
-                .entailment
-                .register_strict_program_start()?;
         }
 
         Ok(StrictPartitionMetadata {
@@ -418,6 +380,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .map(|outcome| StrictFailure::Call {
                             function: *function,
                             node_path: outcome.node_path.clone(),
+                            requires_clause: outcome.requires_clause.clone(),
                         }),
                 );
             }
@@ -434,7 +397,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         failures: &mut Vec<StrictFailure>,
         registrations: &mut StrictRegistrations,
     ) -> Result<(), CheckStop> {
-        if functions[root.0 as usize].requirement.is_none() {
+        if functions[root.0 as usize].requirements.is_empty() {
             return Ok(());
         }
         for call in schedule.calls.iter().filter(|call| call.callee == root) {
@@ -446,19 +409,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get(call.caller.0 as usize)
                 .filter(|function| function.id == call.caller)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let outcome = caller
+            let outcomes = caller
                 .entailment
                 .unasserted
                 .call_goals
                 .iter()
-                .find(|outcome| outcome.node_path == call.node_path && outcome.callee == root)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            if outcome.goal_disposition != CallGoalDisposition::Discharged {
-                failures.push(StrictFailure::Call {
-                    function: call.caller,
-                    node_path: call.node_path.clone(),
-                });
-            } else {
+                .filter(|outcome| outcome.node_path == call.node_path && outcome.callee == root)
+                .collect::<Vec<_>>();
+            if outcomes.is_empty() {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+            let mut all_discharged = true;
+            for outcome in outcomes {
+                if outcome.goal_disposition != CallGoalDisposition::Discharged {
+                    all_discharged = false;
+                    failures.push(StrictFailure::Call {
+                        function: call.caller,
+                        node_path: call.node_path.clone(),
+                        requires_clause: outcome.requires_clause.clone(),
+                    });
+                }
+            }
+            if all_discharged {
                 registrations
                     .boundary_calls
                     .push((call.caller, call.node_path.clone()));
@@ -538,8 +510,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let function = &functions[failure.function().0 as usize];
         let location = self.strict_location(failure.node_path())?;
         match failure {
-            StrictFailure::Call { node_path, .. } => {
-                let outcome = Self::strict_call_outcome(function, node_path)?;
+            StrictFailure::Call {
+                node_path,
+                requires_clause,
+                ..
+            } => {
+                let outcome = Self::strict_call_outcome(function, node_path, requires_clause)?;
                 let callee = &functions[outcome.callee.0 as usize];
                 let mechanical_fix = if first_ephemeral_argument(&outcome.goal.root).is_some() {
                     STRICT_EPHEMERAL_REPAIR
@@ -554,32 +530,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             strict_root,
                             concrete_caller: function.symbol.clone(),
                             concrete_callee: callee.symbol.clone(),
-                            final_check: outcome.final_check.clone(),
+                            requires_clause: outcome.requires_clause.clone(),
                             instantiated_goal: render_goal(&outcome.goal.root),
                             disposition: Self::strict_disposition(outcome.goal_disposition)?,
                             view: crate::StrictProofView::Unasserted,
                             mechanical_fix,
-                        },
-                    )),
-                }))
-            }
-            StrictFailure::ProgramStart { .. } => {
-                let outcome = function
-                    .entailment
-                    .program_start
-                    .as_ref()
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                Err(CheckStop::source_issue(SemanticIssue {
-                    rule: SemanticRule::Fn8,
-                    location,
-                    kind: SemanticIssueKind::StrictProgramStartRequirement(Box::new(
-                        crate::StrictProgramStartRequirementDetail {
-                            strict_root,
-                            concrete_function: function.symbol.clone(),
-                            final_check: outcome.final_check.clone(),
-                            instantiated_goal: render_goal(&outcome.goal.root),
-                            disposition: Self::strict_disposition(outcome.disposition)?,
-                            view: crate::StrictProofView::Unasserted,
                         },
                     )),
                 }))
@@ -590,13 +545,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn strict_call_outcome<'function>(
         function: &'function CheckedFunction,
         node_path: &NodePath,
+        requires_clause: &NodePath,
     ) -> Result<&'function CallGoalCounterfactual, CheckStop> {
         function
             .entailment
             .unasserted
             .call_goals
             .iter()
-            .find(|outcome| outcome.node_path == *node_path)
+            .find(|outcome| {
+                outcome.node_path == *node_path && outcome.requires_clause == *requires_clause
+            })
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 

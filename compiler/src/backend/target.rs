@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    IrArrayRoot, IrEntryGoal, IrFlatElement, IrFunction, IrInstruction, IrNominalId, IrNominalKind,
-    IrOperation, IrProgram, IrTargetDomainObligation, IrTrapSite, IrType,
+    IrArrayRoot, IrFlatElement, IrFunction, IrInstruction, IrNominalId, IrNominalKind, IrOperation,
+    IrProgram, IrTargetDomainObligation, IrTrapSite, IrType,
 };
 
-use super::emitter::{entry_goal_operation, trap_record};
+use super::emitter::trap_record;
 use super::qualification::Qualification;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -129,36 +129,6 @@ pub(super) fn validate_program(
     }
     for function in program.functions() {
         validate_function(&mut layouts, function)?;
-    }
-    if let Some(goal) = program.entry_goal() {
-        validate_entry_goal(&mut layouts, goal)?;
-    }
-    Ok(())
-}
-
-fn validate_entry_goal(
-    layouts: &mut LayoutComputer<'_, '_, '_, '_>,
-    goal: &IrEntryGoal,
-) -> Result<(), TargetLayoutFailure> {
-    validate_trap_record(layouts.target, goal.trap())?;
-    for (value, ty) in goal.inputs() {
-        if goal.ty(*value) != Some(*ty) {
-            return Err(TargetLayoutFailure::InvalidIr);
-        }
-        layouts
-            .layout(*ty)
-            .map_err(|failure| as_object(failure, TargetObject::FunctionAbi))?;
-    }
-    for definition in goal.definitions() {
-        if goal.ty(definition.result()) != Some(definition.ty())
-            || !entry_goal_operation(definition.operation())
-        {
-            return Err(TargetLayoutFailure::InvalidIr);
-        }
-        layouts.layout(definition.ty())?;
-    }
-    if goal.ty(goal.condition()) != Some(IrType::Bool) {
-        return Err(TargetLayoutFailure::InvalidIr);
     }
     Ok(())
 }

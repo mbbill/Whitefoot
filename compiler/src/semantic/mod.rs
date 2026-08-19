@@ -26,16 +26,15 @@ pub(crate) use check::check_semantics_division_obligations;
 #[cfg(test)]
 pub(crate) use check::check_semantics_reborrow_extension;
 
-pub(crate) use goal::{GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 pub(crate) use model::{
-    BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedBufferRoot,
-    CheckedBufferSetTarget, CheckedConst, CheckedDrop, CheckedEntryForm, CheckedEnumType,
+    BindingId, CheckedArrayRoot, CheckedBodyDisposition, CheckedBooleanOperation,
+    CheckedBufferRoot, CheckedBufferSetTarget, CheckedDrop, CheckedEntryForm, CheckedEnumType,
     CheckedExpression, CheckedFlatElement, CheckedFloatOperation, CheckedFunction,
     CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
     CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter,
     CheckedProgramData, CheckedProjectedDrop, CheckedRuntimeTargetObligations, CheckedSetTarget,
     CheckedSliceRoot, CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation,
-    CheckedType, CheckedValue, IntegerType, NominalId, PropagationContext, TrapSite,
+    CheckedType, CheckedValue, NominalId, PropagationContext, TrapSite,
 };
 
 /// Master switch for the v0.31 candidate's gated semantic surface:
@@ -405,8 +404,8 @@ pub enum CallRequirementDisposition {
 pub struct UndischargedCallRequirementDetail {
     /// The resolved concrete, possibly generic, callee instance.
     pub concrete_callee: String,
-    /// The callee requirement occurrence's final-check path.
-    pub final_check: NodePath,
+    /// The callee requirement occurrence's `requires_clause` path.
+    pub requires_clause: NodePath,
     /// Stable structural rendering of the complete instantiated typed goal.
     pub instantiated_goal: String,
     /// The exact non-discharged disposition.
@@ -418,7 +417,7 @@ pub struct UndischargedCallRequirementDetail {
 /// The fixed proof view used by every [CLM-3] non-claim query.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StrictProofView {
-    /// Existing S2/S3-disabled U view, with independently proved S4 retained.
+    /// Existing S3-disabled U view, with independently proved S4 retained.
     Unasserted,
 }
 
@@ -470,22 +469,11 @@ pub struct StrictUndischargedCallRequirementDetail {
     pub strict_root: String,
     pub concrete_caller: String,
     pub concrete_callee: String,
-    pub final_check: NodePath,
+    pub requires_clause: NodePath,
     pub instantiated_goal: String,
     pub disposition: CallRequirementDisposition,
     pub view: StrictProofView,
     pub mechanical_fix: &'static str,
-}
-
-/// A marked program entry whose post-setup, pre-S4 U query fails [FN-8].
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StrictProgramStartRequirementDetail {
-    pub strict_root: String,
-    pub concrete_function: String,
-    pub final_check: NodePath,
-    pub instantiated_goal: String,
-    pub disposition: CallRequirementDisposition,
-    pub view: StrictProofView,
 }
 
 /// One non-discharged complete-view [FN-9] relation disposition.
@@ -554,9 +542,9 @@ pub struct ProvenanceDemandStateDetail {
     /// Concrete function that owns this boundary state.
     pub function: String,
     pub parameter: ProvenanceParameterDatumDetail,
-    /// Exact occurrence identity for a requirement-bridge state.
-    pub requirement: Option<NodePath>,
-    pub requirement_conjunct: Option<u32>,
+    /// Exact source-ordered occurrence identity for a requirement-bridge
+    /// state. Empty for a direct state.
+    pub requirements: Vec<NodePath>,
     pub protected_function: String,
     pub protected_leaf: NodePath,
     pub protected_conjunct: u32,
@@ -628,10 +616,8 @@ pub struct ProvenanceTargetDetail {
     pub protected_conjunct: u32,
     /// Concrete function owning an exact requirement occurrence, if bridged.
     pub requirement_function: Option<String>,
-    /// Exact final-check occurrence for a requirement bridge.
-    pub requirement: Option<NodePath>,
-    /// Requirement conjunct ordinal when `requirement` is present.
-    pub requirement_conjunct: Option<u32>,
+    /// Exact source-ordered clause set for a requirement bridge.
+    pub requirements: Vec<NodePath>,
     /// Present only for an entry-local PRV-3 leaf whose U success came from
     /// its own S4 requirement while B failed.
     pub local_bridge_predecessor: Option<ProvenanceLocalBridgePredecessor>,
@@ -819,8 +805,6 @@ pub enum SemanticIssueKind {
     /// A demanded call or outside caller-to-marked-root boundary fails the
     /// existing unasserted U goal judgment [FN-8, CLM-3].
     StrictUndischargedCallRequirement(Box<StrictUndischargedCallRequirementDetail>),
-    /// A marked entry requirement fails before its wrapper check and S4 [FN-8].
-    StrictProgramStartRequirement(Box<StrictProgramStartRequirementDetail>),
     /// A full-state-accepted call passes an unconditionally external actual
     /// into one or more protected downstream subjects [PRV-2].
     ExternalProtectedCallArgument(Box<ProvenanceGateDetail>),
@@ -929,13 +913,6 @@ pub enum SemanticIssueKind {
     InvalidMain,
     /// No source `main` declaration exists.
     MissingMain,
-    /// A `program_kind` IDENT equals no row of FN-7's closed kind table.
-    InvalidProgramKind {
-        /// Written kind IDENT.
-        kind: String,
-        /// Kinds for which FN-7 defines an entry form in this version.
-        admitted_kinds: Vec<String>,
-    },
     /// A declaration other than the unit's entry carries a `program_kind`.
     NonEntryProgramKind {
         /// Function that declared the program kind.
@@ -1186,13 +1163,6 @@ impl CheckedProgram<'_, '_, '_> {
             .functions
             .get(self.data.main.0 as usize)
             .map_or("", |function| function.name.as_str())
-    }
-
-    /// Returns the [FN-7] entry form the checker admitted for this unit.
-    #[must_use]
-    #[cfg(test)]
-    pub(crate) const fn entry_form(&self) -> &CheckedEntryForm {
-        &self.data.entry
     }
 }
 

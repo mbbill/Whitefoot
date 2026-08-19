@@ -17,7 +17,9 @@ mod sources;
 
 use std::collections::{HashMap, HashSet};
 
-use super::super::goal::{ConcreteGoal, GoalDatum, GoalExpression, GoalOperation, GoalProjection};
+use super::super::goal::{
+    CheckedRequirement, ConcreteGoal, GoalDatum, GoalExpression, GoalOperation, GoalProjection,
+};
 use super::super::model::{
     BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedConst, CheckedConstructor,
     CheckedEnumType, CheckedExpression, CheckedFloatOperation, CheckedFunction,
@@ -26,8 +28,8 @@ use super::super::model::{
     ValueInitializerKind,
 };
 use super::super::postcondition::{
-    NormalizedRelation, PostconditionPlaceRoot, PostconditionReturnDatum, PostconditionReturnPlace,
-    PostconditionReturnPlaceRoot, RelationDatum, RelationTemplate,
+    CheckedPostcondition, NormalizedRelation, PostconditionPlaceRoot, PostconditionReturnDatum,
+    PostconditionReturnPlace, PostconditionReturnPlaceRoot, RelationDatum, RelationTemplate,
 };
 use super::state::{
     ClaimLifecycleKind, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
@@ -449,16 +451,16 @@ pub(super) fn analyze_candidate(
 ) -> FunctionEntailment {
     let run = run(function, context);
     FunctionEntailment {
+        body_disposition: run.body_disposition,
         obligations: run.obligations,
         claims: run.claims,
         call_goals: run.call_goals,
         unasserted: run.unasserted,
         s4_blinded: run.s4_blinded,
-        program_start: run.program_start,
         strict_roots: Vec::new(),
         counted_derivations: run.counted_derivations,
         s7_derivations: run.s7_derivations,
-        postcondition: run.postcondition,
+        postconditions: run.postconditions,
         boolean_decompositions: run.boolean_decompositions,
         derivations: run.derivations,
         inventory: run.inventory,
@@ -466,15 +468,15 @@ pub(super) fn analyze_candidate(
 }
 
 struct AnalysisRun {
+    body_disposition: super::super::model::CheckedBodyDisposition,
     obligations: Vec<ObligationOutcome>,
     claims: Vec<ClaimOutcome>,
     call_goals: Vec<CallGoalOutcome>,
     unasserted: FunctionEntailmentView,
     s4_blinded: FunctionEntailmentView,
-    program_start: Option<super::ProgramStartGoalOutcome>,
     counted_derivations: Vec<CountedDerivationSet>,
     s7_derivations: Vec<S7Derivation>,
-    postcondition: Option<super::FunctionPostconditionProof>,
+    postconditions: Vec<super::FunctionPostconditionProof>,
     boolean_decompositions: Vec<super::BooleanGoalDecomposition>,
     derivations: DerivationLedger,
     inventory: DerivationInventory,
@@ -497,9 +499,10 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         s4_blinded_call_goals: Vec::new(),
         counted_derivations: Vec::new(),
         s7_derivations: Vec::new(),
-        postcondition: None,
+        postconditions: Vec::new(),
         boolean_decompositions: Vec::new(),
         entry_images: Vec::new(),
+        postcondition_entry_images: Vec::new(),
         encountered_counted: 0,
         completed_counted_roots: 0,
         s12_roots: 0,
@@ -511,7 +514,6 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
     };
     analyzer.collect_bindings();
     analyzer.collect_postcondition_entry_images();
-    analyzer.initialize_postcondition_proof();
     let mut state = ViewStates {
         entry_images: vec![None; analyzer.entry_images.len()],
         ..ViewStates::default()
@@ -519,37 +521,35 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
     analyzer
         .scopes
         .push(function.parameters.iter().map(|p| p.binding).collect());
-    // [CLM-3, PROG-3] The marked entry query observes the existing U proof
-    // state after parameter setup but before the retained wrapper check or S4
-    // can authorize the body. It is computed by the same analyzer and DAG.
-    let program_start = if context.marked_program_start {
-        let requirement = function
-            .requirement
-            .as_ref()
-            .expect("a marked program-start query exists only with a requirement");
-        let goal = ConcreteGoal::new(
-            analyzer
-                .body_requirement_goal()
-                .expect("a checked concrete requirement has a body image"),
+    // [ENT-3] S4: every substituted `requires` goal independently enters the
+    // body state in source order. No clause derives another clause.
+    for requirement in &function.requirements {
+        let event = analyzer.proof_event(FlowEventKind::S4, Some(&requirement.clause));
+        analyzer.establish_requires_facts(requirement, &mut state.complete, event);
+        analyzer.establish_requires_facts(requirement, &mut state.unasserted, event);
+    }
+    let body_disposition = {
+        let closed = close(
+            &state.complete,
+            &analyzer.terms,
+            &analyzer.goals,
+            &mut analyzer.derivations,
         );
-        let (disposition, evidence, derivation) =
-            analyzer.call_goal_disposition(&goal, &state.unasserted);
-        Some(super::ProgramStartGoalOutcome {
-            final_check: requirement.trap.node_path.clone(),
-            goal,
-            disposition,
-            evidence,
-            derivation,
-        })
-    } else {
-        None
+        match closed.contradiction_proof() {
+            Some(contradiction) => {
+                analyzer
+                    .derivations
+                    .add_root(DerivationRootKind::BodyEntryContradiction, contradiction);
+                super::super::model::CheckedBodyDisposition::Uninhabited { contradiction }
+            }
+            None => super::super::model::CheckedBodyDisposition::Inhabited,
+        }
     };
-    // [ENT-3] S4: the substituted `requires` relation enters the body's entry
-    // fact state, the one fact that crosses into the body [ENT-2, FN-8].
-    if let Some(requirement) = &function.requirement {
-        let event = analyzer.proof_event(FlowEventKind::S4, Some(&requirement.trap.node_path));
-        analyzer.establish_requires_facts(&mut state.complete, event);
-        analyzer.establish_requires_facts(&mut state.unasserted, event);
+    if matches!(
+        body_disposition,
+        super::super::model::CheckedBodyDisposition::Inhabited
+    ) {
+        analyzer.initialize_postcondition_proofs();
     }
     analyzer.walk_block(&function.body, &mut state);
     analyzer.scopes.pop();
@@ -565,6 +565,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         goals: analyzer.goals.into_inventory(),
     };
     AnalysisRun {
+        body_disposition,
         obligations: analyzer.obligations,
         claims: analyzer.claims,
         call_goals: analyzer.call_goals,
@@ -576,10 +577,9 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
             obligations: analyzer.s4_blinded_obligations,
             call_goals: analyzer.s4_blinded_call_goals,
         },
-        program_start,
         counted_derivations: analyzer.counted_derivations,
         s7_derivations: analyzer.s7_derivations,
-        postcondition: analyzer.postcondition,
+        postconditions: analyzer.postconditions,
         boolean_decompositions: analyzer.boolean_decompositions,
         derivations: analyzer.derivations,
         inventory,
@@ -591,13 +591,23 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
 /// candidate function inventory without ever calling this boundary.
 pub(super) fn finish(entailment: &mut FunctionEntailment) {
     let event_roots = entailment
-        .postcondition
+        .postconditions
         .iter()
         .flat_map(|proof| &proof.exits)
         .flat_map(|exit| &exit.entry_images)
         .filter_map(|image| image.invalidation)
         .collect::<Vec<_>>();
     let remap = entailment.derivations.finish_with_event_roots(&event_roots);
+    if let super::super::model::CheckedBodyDisposition::Uninhabited { contradiction } =
+        &mut entailment.body_disposition
+    {
+        *contradiction = remap
+            .nodes
+            .get(contradiction.0 as usize)
+            .copied()
+            .flatten()
+            .expect("body-entry contradiction root retained by finish");
+    }
     for outcome in &mut entailment.obligations {
         outcome.derivation = outcome
             .derivation
@@ -619,11 +629,6 @@ pub(super) fn finish(entailment: &mut FunctionEntailment) {
         .iter_mut()
         .chain(&mut entailment.s4_blinded.obligations)
     {
-        outcome.derivation = outcome
-            .derivation
-            .and_then(|id| remap.nodes.get(id.0 as usize).copied().flatten());
-    }
-    if let Some(outcome) = &mut entailment.program_start {
         outcome.derivation = outcome
             .derivation
             .and_then(|id| remap.nodes.get(id.0 as usize).copied().flatten());
@@ -661,7 +666,7 @@ pub(super) fn finish(entailment: &mut FunctionEntailment) {
             .node_event(source.parent)
             .expect("S7 source parent retains its shared structural event");
     }
-    if let Some(postcondition) = &mut entailment.postcondition {
+    for postcondition in &mut entailment.postconditions {
         remap_postcondition(postcondition, &remap.nodes, &remap.events);
     }
 }
@@ -764,11 +769,15 @@ struct Analyzer<'check, 'unit> {
     s4_blinded_call_goals: Vec<CallGoalCounterfactual>,
     counted_derivations: Vec<CountedDerivationSet>,
     s7_derivations: Vec<S7Derivation>,
-    postcondition: Option<super::FunctionPostconditionProof>,
+    postconditions: Vec<super::FunctionPostconditionProof>,
     /// O11 candidate decomposition sets, recorded at complete-view
     /// signed-goal establishments and never established as facts.
     boolean_decompositions: Vec<super::BooleanGoalDecomposition>,
     entry_images: Vec<EntryImageRecord>,
+    /// Global entry-image indices used by each source-ordered relation. The
+    /// flow state tracks invalidation once per structural image, while each
+    /// FN-9 proof consults only the images its own relation references.
+    postcondition_entry_images: Vec<Vec<usize>>,
     encountered_counted: u32,
     completed_counted_roots: u32,
     s12_roots: u32,
@@ -781,149 +790,176 @@ struct Analyzer<'check, 'unit> {
 }
 
 impl Analyzer<'_, '_> {
-    fn initialize_postcondition_proof(&mut self) {
-        let Some(postcondition) = &self.function.postcondition else {
-            return;
-        };
+    fn initialize_postcondition_proofs(&mut self) {
         let aggregate = |view| PostconditionAggregate {
             view,
             discharged: false,
             derivation: None,
         };
-        self.postcondition = Some(FunctionPostconditionProof {
-            block: postcondition.selector.block.clone(),
-            selector: postcondition.selector.selector.clone(),
-            summary: None,
-            exits: Vec::new(),
-            complete: aggregate(ProofView::Complete),
-            unasserted: aggregate(ProofView::Unasserted),
-            s4_blinded: aggregate(ProofView::S4Blinded),
-        });
+        self.postconditions = self
+            .function
+            .postconditions
+            .iter()
+            .enumerate()
+            .map(|(ordinal, postcondition)| FunctionPostconditionProof {
+                block: postcondition.selector.block.clone(),
+                selector: postcondition.selector.selector.clone(),
+                relation_ordinal: u32::try_from(ordinal)
+                    .expect("postcondition relation ordinal exceeds u32"),
+                summary: None,
+                exits: Vec::new(),
+                complete: aggregate(ProofView::Complete),
+                unasserted: aggregate(ProofView::Unasserted),
+                s4_blinded: aggregate(ProofView::S4Blinded),
+            })
+            .collect();
     }
 
     fn finalize_postcondition_aggregates(&mut self) {
-        let Some(proof) = &self.postcondition else {
-            return;
-        };
-        let block = proof.block.clone();
-        let collect = |view: ProofView| {
-            proof
-                .exits
-                .iter()
-                .map(|exit| match view {
-                    ProofView::Complete => &exit.complete,
-                    ProofView::Unasserted => &exit.unasserted,
-                    ProofView::S4Blinded => &exit.s4_blinded,
-                })
-                .map(|outcome| {
-                    (outcome.disposition == PostconditionDisposition::Discharged)
-                        .then_some(outcome.derivation)
-                        .flatten()
-                })
-                .collect::<Option<Vec<_>>>()
-        };
-        let complete = collect(ProofView::Complete);
-        let unasserted = collect(ProofView::Unasserted);
-        let s4_blinded = collect(ProofView::S4Blinded);
-        let retain = |this: &mut Self, view, parents: Option<Vec<DerivationId>>| {
-            let Some(parents) = parents.filter(|parents| !parents.is_empty()) else {
-                return PostconditionAggregate {
-                    view,
-                    discharged: false,
-                    derivation: None,
-                };
+        for index in 0..self.postconditions.len() {
+            let block = self.postconditions[index].block.clone();
+            let relation_ordinal = self.postconditions[index].relation_ordinal;
+            let collect = |view: ProofView| {
+                self.postconditions[index]
+                    .exits
+                    .iter()
+                    .map(|exit| match view {
+                        ProofView::Complete => &exit.complete,
+                        ProofView::Unasserted => &exit.unasserted,
+                        ProofView::S4Blinded => &exit.s4_blinded,
+                    })
+                    .map(|outcome| {
+                        (outcome.disposition == PostconditionDisposition::Discharged)
+                            .then_some(outcome.derivation)
+                            .flatten()
+                    })
+                    .collect::<Option<Vec<_>>>()
             };
-            let node = this.derivations.intern_for(
-                view,
-                super::state::DerivationNode::PostconditionAggregate {
-                    block: block.clone(),
-                    parents,
-                },
+            let complete = collect(ProofView::Complete);
+            let unasserted = collect(ProofView::Unasserted);
+            let s4_blinded = collect(ProofView::S4Blinded);
+            let complete = self.retain_postcondition_aggregate(
+                &block,
+                relation_ordinal,
+                ProofView::Complete,
+                complete,
             );
-            this.derivations
-                .add_root(DerivationRootKind::PostconditionAggregate { view }, node);
-            PostconditionAggregate {
+            let unasserted = self.retain_postcondition_aggregate(
+                &block,
+                relation_ordinal,
+                ProofView::Unasserted,
+                unasserted,
+            );
+            let s4_blinded = self.retain_postcondition_aggregate(
+                &block,
+                relation_ordinal,
+                ProofView::S4Blinded,
+                s4_blinded,
+            );
+            let proof = &mut self.postconditions[index];
+            proof.complete = complete;
+            proof.unasserted = unasserted;
+            proof.s4_blinded = s4_blinded;
+        }
+    }
+
+    fn retain_postcondition_aggregate(
+        &mut self,
+        block: &crate::NodePath,
+        relation_ordinal: u32,
+        view: ProofView,
+        parents: Option<Vec<DerivationId>>,
+    ) -> PostconditionAggregate {
+        let Some(parents) = parents.filter(|parents| !parents.is_empty()) else {
+            return PostconditionAggregate {
                 view,
-                discharged: true,
-                derivation: Some(node),
-            }
+                discharged: false,
+                derivation: None,
+            };
         };
-        let complete = retain(self, ProofView::Complete, complete);
-        let unasserted = retain(self, ProofView::Unasserted, unasserted);
-        let s4_blinded = retain(self, ProofView::S4Blinded, s4_blinded);
-        let proof = self
-            .postcondition
-            .as_mut()
-            .expect("postcondition proof initialized above");
-        proof.complete = complete;
-        proof.unasserted = unasserted;
-        proof.s4_blinded = s4_blinded;
+        let node = self.derivations.intern_for(
+            view,
+            super::state::DerivationNode::PostconditionAggregate {
+                block: block.clone(),
+                relation_ordinal,
+                parents,
+            },
+        );
+        self.derivations.add_root(
+            DerivationRootKind::PostconditionAggregate {
+                relation_ordinal,
+                view,
+            },
+            node,
+        );
+        PostconditionAggregate {
+            view,
+            discharged: true,
+            derivation: Some(node),
+        }
     }
 
     fn judge_postcondition_return(&mut self, statement: &crate::NodePath, states: &ViewStates) {
-        let Some(postcondition) = &self.function.postcondition else {
+        if self.postconditions.is_empty() {
             return;
-        };
-        let Some(selected) = postcondition
-            .selected_returns
-            .iter()
-            .find(|selected| selected.statement == *statement)
-            .cloned()
-        else {
-            return;
-        };
-        let result = self
-            .postcondition_return_term(&selected.value)
-            .expect("H1 selected-return datum must remain in the ENT-2 term fragment");
-        let relation = self
-            .instantiate_postcondition_relation(result)
-            .expect("H1 relation template must remain in the ENT-2 term fragment");
-        let residual = self.render_relation(&relation);
-        let entry_images = self
-            .entry_images
-            .iter()
-            .zip(&states.entry_images)
-            .map(|(image, invalidation)| PostconditionEntryImageOutcome {
-                datum: image.datum.clone(),
-                invalidation: *invalidation,
-            })
-            .collect::<Vec<_>>();
-        let occurrence = self
-            .postcondition
-            .as_ref()
-            .map_or(0, |proof| proof.exits.len());
-        let unavailable = entry_images
-            .iter()
-            .any(|image| image.invalidation.is_some());
-        let complete = self.judge_postcondition_view(
-            ProofView::Complete,
-            occurrence,
-            statement,
-            &relation,
-            &states.complete,
-            unavailable,
-        );
-        let unasserted = self.judge_postcondition_view(
-            ProofView::Unasserted,
-            occurrence,
-            statement,
-            &relation,
-            &states.unasserted,
-            unavailable,
-        );
-        let s4_blinded = self.judge_postcondition_view(
-            ProofView::S4Blinded,
-            occurrence,
-            statement,
-            &relation,
-            &states.s4_blinded,
-            unavailable,
-        );
-        self.postcondition
-            .as_mut()
-            .expect("postcondition proof initialized")
-            .exits
-            .push(PostconditionExit {
+        }
+        for index in 0..self.function.postconditions.len() {
+            let postcondition = &self.function.postconditions[index];
+            let Some(selected) = postcondition
+                .selected_returns
+                .iter()
+                .find(|selected| selected.statement == *statement)
+                .cloned()
+            else {
+                continue;
+            };
+            let result = self
+                .postcondition_return_term(&selected.value)
+                .expect("H1 selected-return datum must remain in the ENT-2 term fragment");
+            let relation = self
+                .instantiate_postcondition_relation(postcondition, result)
+                .expect("H1 relation template must remain in the ENT-2 term fragment");
+            let residual = self.render_relation(&relation);
+            let entry_images = self.postcondition_entry_images[index]
+                .iter()
+                .map(|entry_index| PostconditionEntryImageOutcome {
+                    datum: self.entry_images[*entry_index].datum.clone(),
+                    invalidation: states.entry_images[*entry_index],
+                })
+                .collect::<Vec<_>>();
+            let occurrence = self.postconditions[index].exits.len();
+            let relation_ordinal = self.postconditions[index].relation_ordinal;
+            let unavailable = entry_images
+                .iter()
+                .any(|image| image.invalidation.is_some());
+            let complete = self.judge_postcondition_view(
+                ProofView::Complete,
+                relation_ordinal,
+                occurrence,
+                statement,
+                &relation,
+                &states.complete,
+                unavailable,
+            );
+            let unasserted = self.judge_postcondition_view(
+                ProofView::Unasserted,
+                relation_ordinal,
+                occurrence,
+                statement,
+                &relation,
+                &states.unasserted,
+                unavailable,
+            );
+            let s4_blinded = self.judge_postcondition_view(
+                ProofView::S4Blinded,
+                relation_ordinal,
+                occurrence,
+                statement,
+                &relation,
+                &states.s4_blinded,
+                unavailable,
+            );
+            self.postconditions[index].exits.push(PostconditionExit {
                 statement: statement.clone(),
                 relation,
                 residual,
@@ -932,11 +968,13 @@ impl Analyzer<'_, '_> {
                 unasserted,
                 s4_blinded,
             });
+        }
     }
 
     fn judge_postcondition_view(
         &mut self,
         view: ProofView,
+        relation_ordinal: u32,
         occurrence: usize,
         statement: &crate::NodePath,
         relation: &Relation,
@@ -959,12 +997,14 @@ impl Analyzer<'_, '_> {
                 view,
                 super::state::DerivationNode::PostconditionExit {
                     statement: statement.clone(),
+                    relation_ordinal,
                     relation: relation.clone(),
                     parent,
                 },
             );
             self.derivations.add_root(
                 DerivationRootKind::PostconditionExit {
+                    relation_ordinal,
                     occurrence: u32::try_from(occurrence)
                         .expect("postcondition exits exceed the u32 identity space"),
                     view,
@@ -989,8 +1029,11 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    fn instantiate_postcondition_relation(&mut self, result: TermId) -> Option<Relation> {
-        let postcondition = self.function.postcondition.as_ref()?;
+    fn instantiate_postcondition_relation(
+        &mut self,
+        postcondition: &CheckedPostcondition,
+        result: TermId,
+    ) -> Option<Relation> {
         let operands = postcondition
             .relation
             .operands
@@ -1181,25 +1224,30 @@ impl Analyzer<'_, '_> {
         Some(term)
     }
 
-    fn available_postcondition(
+    fn available_postconditions(
         &self,
         function: super::super::model::FunctionId,
-    ) -> Option<AvailablePostcondition> {
-        let (postcondition, proof) = self.context.verified_postcondition(function)?;
-        let summary = proof.summary.clone()?;
-        Some(AvailablePostcondition {
-            relation: postcondition.relation.clone(),
-            variant: postcondition.selector.variant,
-            field: postcondition
-                .selector
-                .field
-                .as_ref()
-                .map(|field| field.declaration),
-            summary,
-            complete: proof.complete.discharged,
-            unasserted: proof.unasserted.discharged,
-            s4_blinded: proof.s4_blinded.discharged,
-        })
+    ) -> Vec<AvailablePostcondition> {
+        self.context
+            .verified_postconditions(function)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(postcondition, proof)| {
+                Some(AvailablePostcondition {
+                    relation: postcondition.relation.clone(),
+                    variant: postcondition.selector.variant,
+                    field: postcondition
+                        .selector
+                        .field
+                        .as_ref()
+                        .map(|field| field.declaration),
+                    summary: proof.summary.clone()?,
+                    complete: proof.complete.discharged,
+                    unasserted: proof.unasserted.discharged,
+                    s4_blinded: proof.s4_blinded.discharged,
+                })
+            })
+            .collect()
     }
 
     fn append_holder_chain(&self, binding: BindingId, holders: &mut Vec<BindingId>) {
@@ -1719,53 +1767,52 @@ impl Analyzer<'_, '_> {
         {
             return;
         }
-        let Some(available) = self.available_postcondition(*function) else {
-            return;
-        };
-        if available.variant.is_some() {
-            return;
-        }
         let Some(result_term) =
             self.postcondition_place_term(PlaceRoot::Binding(binding), &[], *result)
         else {
             return;
         };
-        let Some(instantiated) = self.instantiate_call_postcondition_relation(
-            *function,
-            &available.relation,
-            arguments,
-            goal_arguments,
-            result_term,
-        ) else {
-            return;
-        };
-        if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills) {
-            return;
+        for available in self.available_postconditions(*function) {
+            if available.variant.is_some() {
+                continue;
+            }
+            let Some(instantiated) = self.instantiate_call_postcondition_relation(
+                *function,
+                &available.relation,
+                arguments,
+                goal_arguments,
+                result_term,
+            ) else {
+                continue;
+            };
+            if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills) {
+                continue;
+            }
+            self.retain_direct_result_view(
+                statement,
+                binding,
+                &instantiated,
+                &available,
+                prepared,
+                &mut states.complete,
+            );
+            self.retain_direct_result_view(
+                statement,
+                binding,
+                &instantiated,
+                &available,
+                prepared,
+                &mut states.unasserted,
+            );
+            self.retain_direct_result_view(
+                statement,
+                binding,
+                &instantiated,
+                &available,
+                prepared,
+                &mut states.s4_blinded,
+            );
         }
-        self.retain_direct_result_view(
-            statement,
-            binding,
-            &instantiated,
-            &available,
-            prepared,
-            &mut states.complete,
-        );
-        self.retain_direct_result_view(
-            statement,
-            binding,
-            &instantiated,
-            &available,
-            prepared,
-            &mut states.unasserted,
-        );
-        self.retain_direct_result_view(
-            statement,
-            binding,
-            &instantiated,
-            &available,
-            prepared,
-            &mut states.s4_blinded,
-        );
     }
 
     fn receiver_argument_overlaps(
@@ -1898,7 +1945,7 @@ impl Analyzer<'_, '_> {
         value: &CheckedExpression,
         prepared: &PreparedCall,
         target_events: &[KillEvent],
-    ) -> Option<DirectReceiverCandidate> {
+    ) -> Vec<DirectReceiverCandidate> {
         let CheckedExpression::UserCall {
             function,
             arguments,
@@ -1906,35 +1953,42 @@ impl Analyzer<'_, '_> {
             ..
         } = value
         else {
-            return None;
+            return Vec::new();
         };
-        let available = self.available_postcondition(*function)?;
-        if available.variant.is_some() {
-            return None;
-        }
-        let result_term =
-            self.postcondition_place_term(PlaceRoot::Binding(route.binding), &[], route.ty)?;
-        let instantiated = self.instantiate_call_postcondition_relation(
-            *function,
-            &available.relation,
-            arguments,
-            goal_arguments,
-            result_term,
-        )?;
-        if instantiated
-            .substitutions
-            .iter()
-            .any(|substitution| substitution.formal == route.formal)
-            || !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills)
-            || !self.s12_substitutions_survive(&instantiated.substitutions, target_events)
-        {
-            return None;
-        }
-        Some(DirectReceiverCandidate {
-            route,
-            available,
-            instantiated,
-        })
+        let Some(result_term) =
+            self.postcondition_place_term(PlaceRoot::Binding(route.binding), &[], route.ty)
+        else {
+            return Vec::new();
+        };
+        self.available_postconditions(*function)
+            .into_iter()
+            .filter_map(|available| {
+                if available.variant.is_some() {
+                    return None;
+                }
+                let instantiated = self.instantiate_call_postcondition_relation(
+                    *function,
+                    &available.relation,
+                    arguments,
+                    goal_arguments,
+                    result_term,
+                )?;
+                if instantiated
+                    .substitutions
+                    .iter()
+                    .any(|substitution| substitution.formal == route.formal)
+                    || !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills)
+                    || !self.s12_substitutions_survive(&instantiated.substitutions, target_events)
+                {
+                    return None;
+                }
+                Some(DirectReceiverCandidate {
+                    route,
+                    available,
+                    instantiated,
+                })
+            })
+            .collect()
     }
 
     fn establish_direct_receiver(
@@ -2010,7 +2064,7 @@ impl Analyzer<'_, '_> {
         arm: &CheckedMatchArm,
         prepared: &PreparedCall,
         states: &mut ViewStates,
-    ) -> Option<EstablishedDirectMatch> {
+    ) -> Vec<EstablishedDirectMatch> {
         let CheckedExpression::UserCall {
             function,
             call,
@@ -2020,85 +2074,100 @@ impl Analyzer<'_, '_> {
             ..
         } = scrutinee
         else {
-            return None;
+            return Vec::new();
         };
         let CheckedEnumType::Nominal(match_nominal) = enum_type else {
-            return None;
+            return Vec::new();
         };
         if *function != prepared.function
             || *call != prepared.call
             || *result_nominal != match_nominal
         {
-            return None;
+            return Vec::new();
         }
-        let available = self.available_postcondition(*function)?;
-        let (Some(selector_variant), Some(selector_field)) = (available.variant, available.field)
-        else {
-            return None;
+        let Some(nominal) = self.context.nominals.get(result_nominal.0 as usize) else {
+            return Vec::new();
         };
-        let nominal = self.context.nominals.get(result_nominal.0 as usize)?;
         let CheckedNominalKind::Enum { variants } = &nominal.kind else {
-            return None;
+            return Vec::new();
         };
-        let variant = variants.iter().find(|variant| {
-            variant.tag == arm.tag
-                && variant.constructor == CheckedConstructor::Prelude(selector_variant)
-        })?;
-        let binder = arm.binders.iter().find(|binder| binder.field == 0)?;
-        let [selected_field] = variant.fields.as_slice() else {
-            return None;
+        let Some(binder) = arm.binders.iter().find(|binder| binder.field == 0) else {
+            return Vec::new();
         };
-        if binder.mode != CheckedMode::Own
-            || binder.ty != selected_field.ty
-            || fragment_type(binder.ty).is_none()
-        {
-            return None;
+        let Some(result_term) =
+            self.postcondition_place_term(PlaceRoot::Binding(binder.binding), &[], binder.ty)
+        else {
+            return Vec::new();
+        };
+        let mut established = Vec::new();
+        for available in self.available_postconditions(*function) {
+            let (Some(selector_variant), Some(selector_field)) =
+                (available.variant, available.field)
+            else {
+                continue;
+            };
+            let Some(variant) = variants.iter().find(|variant| {
+                variant.tag == arm.tag
+                    && variant.constructor == CheckedConstructor::Prelude(selector_variant)
+            }) else {
+                continue;
+            };
+            let [selected_field] = variant.fields.as_slice() else {
+                continue;
+            };
+            if binder.mode != CheckedMode::Own
+                || binder.ty != selected_field.ty
+                || fragment_type(binder.ty).is_none()
+            {
+                continue;
+            }
+            let Some(instantiated) = self.instantiate_call_postcondition_relation(
+                *function,
+                &available.relation,
+                arguments,
+                goal_arguments,
+                result_term,
+            ) else {
+                continue;
+            };
+            if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills) {
+                continue;
+            }
+            let route = DirectMatchRoute {
+                variant: selector_variant,
+                field: selector_field,
+                tag: arm.tag,
+                binding: binder.binding,
+                ty: binder.ty,
+            };
+            let complete = self.retain_direct_match_view(
+                route,
+                &instantiated,
+                &available,
+                prepared,
+                &mut states.complete,
+            );
+            let unasserted = self.retain_direct_match_view(
+                route,
+                &instantiated,
+                &available,
+                prepared,
+                &mut states.unasserted,
+            );
+            let s4_blinded = self.retain_direct_match_view(
+                route,
+                &instantiated,
+                &available,
+                prepared,
+                &mut states.s4_blinded,
+            );
+            established.push(EstablishedDirectMatch {
+                route,
+                instantiated,
+                parents: [complete, unasserted, s4_blinded],
+            });
         }
-        let result_term =
-            self.postcondition_place_term(PlaceRoot::Binding(binder.binding), &[], binder.ty)?;
-        let instantiated = self.instantiate_call_postcondition_relation(
-            *function,
-            &available.relation,
-            arguments,
-            goal_arguments,
-            result_term,
-        )?;
-        if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills) {
-            return None;
-        }
-        let route = DirectMatchRoute {
-            variant: selector_variant,
-            field: selector_field,
-            tag: arm.tag,
-            binding: binder.binding,
-            ty: binder.ty,
-        };
-        let complete = self.retain_direct_match_view(
-            route,
-            &instantiated,
-            &available,
-            prepared,
-            &mut states.complete,
-        );
-        let unasserted = self.retain_direct_match_view(
-            route,
-            &instantiated,
-            &available,
-            prepared,
-            &mut states.unasserted,
-        );
-        let s4_blinded = self.retain_direct_match_view(
-            route,
-            &instantiated,
-            &available,
-            prepared,
-            &mut states.s4_blinded,
-        );
-        Some(EstablishedDirectMatch {
-            route,
-            instantiated,
-            parents: [complete, unasserted, s4_blinded],
-        })
+        established
     }
 
     fn replace_relation_term(relation: &Relation, from: TermId, to: TermId) -> Relation {
@@ -2274,9 +2343,6 @@ impl Analyzer<'_, '_> {
             CheckedStatement::Let { value, .. }
             | CheckedStatement::Evaluate(value)
             | CheckedStatement::DropExpression { value, .. }
-            | CheckedStatement::Check {
-                condition: value, ..
-            }
             | CheckedStatement::Claim {
                 condition: value, ..
             }
@@ -2331,7 +2397,6 @@ impl Analyzer<'_, '_> {
             | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. }
-            | CheckedStatement::Check { .. }
             | CheckedStatement::Claim { .. }
             | CheckedStatement::Loop { .. }
             | CheckedStatement::CountedRange { .. } => true,
@@ -2519,39 +2584,49 @@ impl Analyzer<'_, '_> {
     }
 
     fn collect_postcondition_entry_images(&mut self) {
-        let Some(postcondition) = &self.function.postcondition else {
-            return;
-        };
         let mut data = Vec::new();
-        for operand in &postcondition.relation.operands {
-            let datum = match operand {
-                RelationDatum::Parameter {
-                    ordinal,
-                    projections,
-                    ..
-                } => Some(PostconditionEntryImage {
-                    parameter: *ordinal,
-                    projections: projections.clone(),
-                    length: false,
-                }),
-                RelationDatum::Length(place) => match place.root {
-                    PostconditionPlaceRoot::Parameter { ordinal } => {
-                        Some(PostconditionEntryImage {
-                            parameter: ordinal,
-                            projections: place.projections.clone(),
-                            length: true,
-                        })
+        let mut relation_images = Vec::with_capacity(self.function.postconditions.len());
+        for postcondition in &self.function.postconditions {
+            let mut indices = Vec::new();
+            for operand in &postcondition.relation.operands {
+                let datum = match operand {
+                    RelationDatum::Parameter {
+                        ordinal,
+                        projections,
+                        ..
+                    } => Some(PostconditionEntryImage {
+                        parameter: *ordinal,
+                        projections: projections.clone(),
+                        length: false,
+                    }),
+                    RelationDatum::Length(place) => match place.root {
+                        PostconditionPlaceRoot::Parameter { ordinal } => {
+                            Some(PostconditionEntryImage {
+                                parameter: ordinal,
+                                projections: place.projections.clone(),
+                                length: true,
+                            })
+                        }
+                    },
+                    RelationDatum::Result { .. }
+                    | RelationDatum::NamedConst { .. }
+                    | RelationDatum::Literal { .. } => None,
+                };
+                if let Some(datum) = datum {
+                    let index = data
+                        .iter()
+                        .position(|existing| existing == &datum)
+                        .unwrap_or_else(|| {
+                            let index = data.len();
+                            data.push(datum);
+                            index
+                        });
+                    if !indices.contains(&index) {
+                        indices.push(index);
                     }
-                },
-                RelationDatum::Result { .. }
-                | RelationDatum::NamedConst { .. }
-                | RelationDatum::Literal { .. } => None,
-            };
-            if let Some(datum) = datum
-                && !data.contains(&datum)
-            {
-                data.push(datum);
+                }
             }
+            relation_images.push(indices);
         }
         self.entry_images = data
             .into_iter()
@@ -2574,6 +2649,7 @@ impl Analyzer<'_, '_> {
                 }
             })
             .collect();
+        self.postcondition_entry_images = relation_images;
     }
 
     fn collect_block_bindings(&mut self, statements: &[CheckedStatement]) {
@@ -4011,8 +4087,7 @@ impl Analyzer<'_, '_> {
         })
     }
 
-    fn body_requirement_goal(&self) -> Option<GoalExpression> {
-        let requirement = self.function.requirement.as_ref()?;
+    fn body_requirement_goal(&self, requirement: &CheckedRequirement) -> Option<GoalExpression> {
         self.body_goal_expression(&requirement.template.root)
     }
 
@@ -4249,7 +4324,7 @@ impl Analyzer<'_, '_> {
                 function,
                 call,
                 arguments,
-                requirement,
+                requirements,
                 ..
             } => {
                 let complete_start = self.obligations.len();
@@ -4270,78 +4345,84 @@ impl Analyzer<'_, '_> {
                     .iter()
                     .map(|outcome| outcome.discharged.then_some(outcome.derivation).flatten())
                     .collect::<Option<Vec<_>>>();
-                let mut complete_goal_parent = None;
-                let mut unasserted_goal_parent = None;
-                let mut blinded_goal_parent = None;
-                let mut complete_goal_ok = requirement.is_none();
+                let mut complete_goal_parents = Vec::with_capacity(requirements.len());
+                let mut unasserted_goal_parents = Vec::with_capacity(requirements.len());
+                let mut blinded_goal_parents = Vec::with_capacity(requirements.len());
+                let mut complete_goal_ok = true;
                 // FN-8 begins only after every actual-expression obligation
                 // succeeds. A failed OP-4 actual therefore publishes no call
                 // judgment for diagnostic selection to reorder.
-                if let Some(requirement) = requirement {
+                for requirement in requirements {
                     if complete_actual_parents.is_some() {
                         let (disposition, derivation) = self.judge_call_goal(
                             *function,
                             call,
-                            requirement.final_check.clone(),
+                            requirement.requires_clause.clone(),
                             requirement.goal.clone(),
                             arguments.len(),
                             &states.complete,
                         );
-                        complete_goal_ok = disposition == CallGoalDisposition::Discharged;
-                        complete_goal_parent = derivation;
+                        complete_goal_ok &= disposition == CallGoalDisposition::Discharged;
+                        if let Some(derivation) = derivation {
+                            complete_goal_parents.push(derivation);
+                        }
                     }
                     let unasserted = self.call_goal_counterfactual(
                         *function,
                         call,
-                        requirement.final_check.clone(),
+                        requirement.requires_clause.clone(),
                         requirement.goal.clone(),
                         unasserted_actual_parents.is_some(),
                         &states.unasserted,
                     );
                     if unasserted.actual_obligations_ok
                         && unasserted.goal_disposition == CallGoalDisposition::Discharged
+                        && let Some(derivation) = unasserted.derivation
                     {
-                        unasserted_goal_parent = unasserted.derivation;
+                        unasserted_goal_parents.push(derivation);
                     }
                     self.unasserted_call_goals.push(unasserted);
                     let blinded = self.call_goal_counterfactual(
                         *function,
                         call,
-                        requirement.final_check.clone(),
+                        requirement.requires_clause.clone(),
                         requirement.goal.clone(),
                         blinded_actual_parents.is_some(),
                         &states.s4_blinded,
                     );
                     if blinded.actual_obligations_ok
                         && blinded.goal_disposition == CallGoalDisposition::Discharged
+                        && let Some(derivation) = blinded.derivation
                     {
-                        blinded_goal_parent = blinded.derivation;
+                        blinded_goal_parents.push(derivation);
                     }
                     self.s4_blinded_call_goals.push(blinded);
                 }
                 let mut a0_parents = complete_actual_parents?;
-                if requirement.is_some() {
-                    if !complete_goal_ok {
+                if !complete_goal_ok || complete_goal_parents.len() != requirements.len() {
+                    return None;
+                }
+                a0_parents.extend(complete_goal_parents);
+                let unasserted = unasserted_actual_parents.and_then(|mut parents| {
+                    if unasserted_goal_parents.len() != requirements.len() {
                         return None;
                     }
-                    a0_parents.push(complete_goal_parent?);
-                }
-                let unasserted = unasserted_actual_parents.and_then(|mut parents| {
-                    if requirement.is_some() {
-                        parents.push(unasserted_goal_parent?);
-                    }
+                    parents.extend(unasserted_goal_parents);
                     Some(PreparedCallView { parents })
                 });
                 let s4_blinded = blinded_actual_parents.and_then(|mut parents| {
-                    if requirement.is_some() {
-                        parents.push(blinded_goal_parent?);
+                    if blinded_goal_parents.len() != requirements.len() {
+                        return None;
                     }
+                    parents.extend(blinded_goal_parents);
                     Some(PreparedCallView { parents })
                 });
                 // Only an earlier-component verified summary can publish an
                 // S12 carrier. Calls without one retain the exact pre-H3 kill
                 // path and create no transient postcondition events.
-                self.context.verified_postcondition(*function)?;
+                if self.context.verified_postconditions(*function)?.is_empty() {
+                    return None;
+                }
                 Some(PreparedCall {
                     function: *function,
                     call: call.clone(),
@@ -4473,7 +4554,7 @@ impl Analyzer<'_, '_> {
         &mut self,
         callee: super::super::model::FunctionId,
         node_path: &crate::NodePath,
-        final_check: crate::NodePath,
+        requires_clause: crate::NodePath,
         goal: ConcreteGoal,
         argument_count: usize,
         state: &FactState,
@@ -4488,7 +4569,7 @@ impl Analyzer<'_, '_> {
         self.call_goals.push(CallGoalOutcome {
             node_path: node_path.clone(),
             callee,
-            final_check,
+            requires_clause,
             goal,
             argument_count: u32::try_from(argument_count)
                 .expect("ENT call argument count exceeds the u32 identity space"),
@@ -4503,7 +4584,7 @@ impl Analyzer<'_, '_> {
         &mut self,
         callee: super::super::model::FunctionId,
         node_path: &crate::NodePath,
-        final_check: crate::NodePath,
+        requires_clause: crate::NodePath,
         goal: ConcreteGoal,
         actual_obligations_ok: bool,
         state: &FactState,
@@ -4513,7 +4594,7 @@ impl Analyzer<'_, '_> {
         CallGoalCounterfactual {
             node_path: node_path.clone(),
             callee,
-            final_check,
+            requires_clause,
             goal,
             actual_obligations_ok,
             goal_disposition,
@@ -6243,10 +6324,13 @@ impl Analyzer<'_, '_> {
                 });
             }
         }
-        let receiver = prepared.as_ref().and_then(|prepared| {
-            self.prepare_direct_receiver(receiver_route?, value, prepared, &target_kills)
-        });
-        let target_event = (force_target_event || receiver.is_some())
+        let receivers =
+            if let (Some(prepared), Some(receiver_route)) = (prepared.as_ref(), receiver_route) {
+                self.prepare_direct_receiver(receiver_route, value, prepared, &target_kills)
+            } else {
+                Vec::new()
+            };
+        let target_event = (force_target_event || !receivers.is_empty())
             .then(|| self.proof_event(FlowEventKind::PostconditionReceiverWrite, Some(node_path)));
         if let Some(target_event) = target_event {
             for event in &target_kills {
@@ -6262,10 +6346,10 @@ impl Analyzer<'_, '_> {
         } else {
             self.apply_kills(state, &target_kills);
         }
-        if let (Some(prepared), Some(receiver), Some(target_event)) =
-            (&prepared, receiver, target_event)
-        {
-            self.establish_direct_receiver(node_path, &receiver, prepared, target_event, state);
+        if let (Some(prepared), Some(target_event)) = (&prepared, target_event) {
+            for receiver in &receivers {
+                self.establish_direct_receiver(node_path, receiver, prepared, target_event, state);
+            }
         }
         SetWalkOutcome { target_event }
     }
@@ -6355,16 +6439,6 @@ impl Analyzer<'_, '_> {
             }
             CheckedStatement::Evaluate(value) | CheckedStatement::DropExpression { value, .. } => {
                 let _ = self.expression_effects(value, state);
-                true
-            }
-            // v0.32 has no body `check_stmt`: the production survives only
-            // as the contract final, which [FN-8] consumes into the
-            // requirement and [FN-9] into the postcondition rather than into
-            // a body statement list. [ENT-3.S2] retires with the statement,
-            // so no body statement establishes a passed condition; `claim`
-            // [CLM-1] is the sole writer-stated source, at S3.
-            CheckedStatement::Check { condition, .. } => {
-                let _ = self.expression_effects(condition, state);
                 true
             }
             CheckedStatement::Claim {
@@ -6481,13 +6555,8 @@ impl Analyzer<'_, '_> {
                     lifecycle_derivation,
                 });
                 // [ENT-3] S3: the passed predicate holds on the normal
-                // continuation, exactly as S2 establishes a check's.
-                self.establish_passed_condition(
-                    FlowEventKind::S3,
-                    &trap.node_path,
-                    condition,
-                    &mut state.complete,
-                );
+                // continuation as the sole writer-stated fact source.
+                self.establish_claim_condition(&trap.node_path, condition, &mut state.complete);
                 true
             }
             CheckedStatement::Return {
@@ -6861,33 +6930,45 @@ impl Analyzer<'_, '_> {
             s1_event,
             outcome_event,
         );
-        let direct_match = direct_call.and_then(|(scrutinee, enum_type, prepared)| {
-            self.establish_direct_match(scrutinee, enum_type, arm, prepared, &mut state)
-        });
+        let direct_matches =
+            direct_call.map_or_else(Vec::new, |(scrutinee, enum_type, prepared)| {
+                self.establish_direct_match(scrutinee, enum_type, arm, prepared, &mut state)
+            });
         self.scopes
             .push(arm.binders.iter().map(|b| b.binding).collect());
         let mut continues = true;
         let mut first = 0usize;
-        if let (Some((scrutinee, _, _)), Some(direct_match), Some(statement)) =
-            (direct_call, direct_match.as_ref(), arm.body.first())
-            && let Some(candidate) =
-                self.prepare_selected_receiver(arm, statement, scrutinee, direct_match)
-        {
-            let CheckedStatement::Set {
-                node_path,
-                target,
-                value,
-            } = statement
-            else {
-                unreachable!("selected receiver preparation admits only a set statement");
-            };
-            let outcome = self.walk_set(node_path, target, value, true, &mut state);
-            let target_event = outcome
-                .target_event
-                .expect("an admitted selected receiver retains its target event");
-            self.establish_selected_receiver(node_path, &candidate, target_event, &mut state);
-            continues = true;
-            first = 1;
+        if let (Some((scrutinee, _, _)), Some(statement)) = (direct_call, arm.body.first()) {
+            let candidates = direct_matches
+                .iter()
+                .filter_map(|direct_match| {
+                    self.prepare_selected_receiver(arm, statement, scrutinee, direct_match)
+                })
+                .collect::<Vec<_>>();
+            if !candidates.is_empty() {
+                let CheckedStatement::Set {
+                    node_path,
+                    target,
+                    value,
+                } = statement
+                else {
+                    unreachable!("selected receiver preparation admits only a set statement");
+                };
+                let outcome = self.walk_set(node_path, target, value, true, &mut state);
+                let target_event = outcome
+                    .target_event
+                    .expect("an admitted selected receiver retains its target event");
+                for candidate in &candidates {
+                    self.establish_selected_receiver(
+                        node_path,
+                        candidate,
+                        target_event,
+                        &mut state,
+                    );
+                }
+                continues = true;
+                first = 1;
+            }
         }
         for statement in &arm.body[first..] {
             if !continues {
@@ -7008,7 +7089,6 @@ impl Analyzer<'_, '_> {
             | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. }
-            | CheckedStatement::Check { .. }
             | CheckedStatement::Claim { .. } => normal_reaches,
             CheckedStatement::Return { .. } => false,
             CheckedStatement::Give { .. } => reachability.gives.last().copied().unwrap_or(false),
@@ -7093,9 +7173,6 @@ impl Analyzer<'_, '_> {
             CheckedStatement::Let { value, .. }
             | CheckedStatement::Evaluate(value)
             | CheckedStatement::DropExpression { value, .. }
-            | CheckedStatement::Check {
-                condition: value, ..
-            }
             | CheckedStatement::Claim {
                 condition: value, ..
             }

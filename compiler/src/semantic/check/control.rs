@@ -147,7 +147,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
         match self.tree.production(node)? {
-            Production::LetStmt => self.check_let(function, node, bindings, counters, scope),
+            Production::LetStmt | Production::ContractDefine => {
+                self.check_let(function, node, bindings, counters, scope)
+            }
             Production::ExprStmt => {
                 let call = self
                     .tree
@@ -265,42 +267,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     give_states: Vec::new(),
                     break_states: Vec::new(),
                 })
-            }
-            // v0.32 [GRAM-4] holds no `check_stmt`, so this arm is reached
-            // only for the final `check_stmt` of a `requires`/`ensures`
-            // block: FN-8/FN-9 contract syntax, not a body statement. A body
-            // `check` is a [FORM-3] parse rejection and never gets here.
-            Production::CheckStmt => {
-                let expression_node = self
-                    .tree
-                    .first_child_with(node, Production::Expr)?
-                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                let condition =
-                    self.check_expression(function, expression_node, bindings, scope.loops.len())?;
-                if condition.expression.ty() != CheckedType::Bool
-                    || condition.mode != CheckedMode::Own
-                {
-                    return Err(CheckStop::source_issue(SemanticIssue {
-                        rule: SemanticRule::Op5,
-                        location: SemanticLocation::SourceNode(
-                            self.tree.path(node)?.clone(),
-                            self.tree.coordinate(expression_node)?,
-                        ),
-                        kind: SemanticIssueKind::InvalidCheckCondition,
-                    }));
-                }
-                Ok(Self::continuing_statement(
-                    CheckedStatement::Check {
-                        condition: condition.expression,
-                        trap: TrapSite {
-                            rule_id: "OP-5",
-                            message: self.check_message(node)?,
-                            function: function.name.clone(),
-                            node_path: self.tree.path(node)?.clone(),
-                        },
-                    },
-                    condition.effects.union(EffectSet::TRAPS),
-                ))
             }
             // [GRAM-6] the Bool conditional checks into the same two-armed
             // Bool match the `match` spelling produced, so everything below
@@ -632,13 +598,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 scope,
             );
         }
-        let rhs = self
-            .tree
-            .first_child_with(node, Production::OrdinaryLetRhs)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let expression_owner = if self.tree.production(node)? == Production::ContractDefine {
+            node
+        } else {
+            self.tree
+                .first_child_with(node, Production::OrdinaryLetRhs)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?
+        };
         let expression_node = self
             .tree
-            .first_child_with(rhs, Production::Expr)?
+            .first_child_with(expression_owner, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         // An `ordinary_let_rhs` is always self-typed [TYPE-5], so it is
         // checked with no expectation and the binder takes what it produces.

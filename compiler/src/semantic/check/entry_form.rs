@@ -1,12 +1,8 @@
 //! The [FN-7] entry-form admission judgment over one closed compilation unit.
 //!
-//! [FN-7] fixes exactly two entry shapes. The unlabelled entry carries no
-//! `program_kind` child, declares no value parameter, writes `own unit`, and
-//! writes one of four exact effect rows. A kind-declaring entry carries one
-//! `program_kind` child whose IDENT must equal one row of a closed kind table;
-//! that row fixes the entry's written result and the effect categories its row
-//! may draw from, and the entry declares its standard inputs as labelled value
-//! parameters selected from that kind's closed standard-input table.
+//! [FN-7] fixes exactly one entry shape. The entry carries the fixed `command`
+//! marker, a writer-named `own ExitStatus` result, no contract, and labelled
+//! value parameters selected from the closed command-input table.
 //!
 //! The judgment is whole-unit: no other declaration may carry a `program_kind`
 //! or an `input_label` child, and a `call` whose callee resolves to a
@@ -48,13 +44,6 @@ const fn input(tail: &'static str, written: &'static str, nominal: &'static str)
     }
 }
 
-/// The only [FN-7] program-kind row with a defined entry form in v0.18.
-///
-/// `service` and `embedded` are reserved spellings with no form; [FN-7] makes
-/// naming one the same hard error as naming no row at all, so the closed
-/// admitted set is exactly this table.
-const ADMITTED_KINDS: [&str; 1] = ["command"];
-
 /// [FN-7]'s closed standard-input table for kind `command`, in table-ordinal
 /// order. Ordinal identity, never type identity, selects the supplied value:
 /// `command.stdout` and `command.stderr` share one type and stay two inputs.
@@ -73,10 +62,6 @@ const COMMAND_RESULT: &str = "own ExitStatus";
 const COMMAND_RESULT_NOMINAL: &str = "ExitStatus";
 const COMMAND_EFFECTS: &str =
     "any subset of `allocates(heap), external, blocks, traps` in EFF-1 canonical order";
-
-const UNLABELLED_RESULT: &str = "own unit";
-const UNLABELLED_EFFECTS: &str =
-    "exactly one of `pure`, `allocates(heap)`, `traps`, `allocates(heap), traps`";
 
 /// Returns the conservative alias links the entry's selected inputs carry.
 ///
@@ -112,23 +97,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
         self.reject_entry_polymorphism(entry)?;
-
-        let form = match entry_kind {
-            None => {
-                self.check_unlabelled_entry(entry)?;
-                CheckedEntryForm::Unlabelled
-            }
-            Some(kind) => {
-                let inputs = self.check_kind_declaring_entry(entry, kind)?;
-                let aliases = command_resource_aliases(&inputs);
-                CheckedEntryForm::Command { inputs, aliases }
-            }
-        };
-        self.reject_foreign_input_labels(entry, entry_kind)?;
-        if entry_kind.is_some() {
-            self.reject_calls_to_entry(entry)?;
+        if self
+            .tree
+            .first_child_with(entry, Production::ContractBlock)?
+            .is_some()
+        {
+            return self.issue_node(SemanticRule::Fn7, entry, SemanticIssueKind::InvalidMain);
         }
-        Ok(form)
+        let Some(kind) = entry_kind else {
+            return self.issue_node(SemanticRule::Fn7, entry, SemanticIssueKind::InvalidMain);
+        };
+        let inputs = self.check_command_entry(entry, kind)?;
+        self.reject_foreign_input_labels(entry)?;
+        self.reject_calls_to_entry(entry)?;
+        let aliases = command_resource_aliases(&inputs);
+        Ok(CheckedEntryForm { inputs, aliases })
     }
 
     /// Selects the unique top-level `fn_decl` named `main`.
@@ -197,59 +180,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// Checks the complete unlabelled entry form: no value parameter, written
-    /// result `own unit`, and exactly one of four written effect rows.
-    fn check_unlabelled_entry(&self, entry: NodeId) -> Result<(), CheckStop> {
-        if self
-            .tree
-            .first_child_with(entry, Production::ParamList)?
-            .is_some()
-        {
-            // [FN-7] names no more specific node for this violation, so it
-            // takes the stated `fn_decl` fallback.
-            return self.issue_node(SemanticRule::Fn7, entry, SemanticIssueKind::InvalidMain);
+    /// Checks the one command entry and returns its selected input ordinals.
+    fn check_command_entry(&self, entry: NodeId, kind_node: NodeId) -> Result<Vec<u8>, CheckStop> {
+        if !self.has_fixed(kind_node, FixedTerminal::Command)? {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
-        let (rtype, mode, ty) = self.entry_result(entry)?;
-        if !self.has_fixed(mode, FixedTerminal::Own)? || !self.has_fixed(ty, FixedTerminal::Unit)? {
-            return self.issue_node(
-                SemanticRule::Fn7,
-                rtype,
-                SemanticIssueKind::InvalidEntryResult {
-                    required: UNLABELLED_RESULT,
-                },
-            );
-        }
-        let effects = self.entry_effects(entry)?;
-        if !self.unlabelled_effects_admitted(effects)? {
-            return self.issue_node(
-                SemanticRule::Fn7,
-                effects,
-                SemanticIssueKind::InvalidEntryEffects {
-                    admitted: UNLABELLED_EFFECTS,
-                },
-            );
-        }
-        Ok(())
-    }
-
-    /// Checks a kind-declaring entry and returns its selected input ordinals.
-    fn check_kind_declaring_entry(
-        &self,
-        entry: NodeId,
-        kind_node: NodeId,
-    ) -> Result<Vec<u8>, CheckStop> {
-        let kind = self.identifier(kind_node)?;
-        if !ADMITTED_KINDS.contains(&kind.as_str()) {
-            return self.issue_node(
-                SemanticRule::Fn7,
-                kind_node,
-                SemanticIssueKind::InvalidProgramKind {
-                    kind,
-                    admitted_kinds: ADMITTED_KINDS.iter().map(|row| (*row).to_owned()).collect(),
-                },
-            );
-        }
-        let inputs = self.check_standard_inputs(entry, &kind)?;
+        let inputs = self.check_standard_inputs(entry)?;
 
         let (rtype, mode, ty) = self.entry_result(entry)?;
         if !self.has_fixed(mode, FixedTerminal::Own)?
@@ -279,12 +215,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Checks every value parameter of a `command` entry against [FN-7]'s
     /// closed standard-input table and returns the selected ordinals.
     ///
-    /// Every parameter carries an `input_label`; the label's first IDENT
-    /// equals the entry's kind IDENT and its second equals a row's label tail;
-    /// each row is selected at most once and selected rows appear in strictly
-    /// increasing table-ordinal order; and the written mode and type equal the
-    /// row exactly, with no conversion, default, or inferred mode.
-    fn check_standard_inputs(&self, entry: NodeId, kind: &str) -> Result<Vec<u8>, CheckStop> {
+    /// Every parameter carries an `input_label`; its IDENT equals one row's
+    /// label tail. Each row is selected at most once and selected rows appear
+    /// in strictly increasing table-ordinal order; the written mode and type
+    /// equal the row exactly, with no conversion, default, or inferred mode.
+    fn check_standard_inputs(&self, entry: NodeId) -> Result<Vec<u8>, CheckStop> {
         let Some(list) = self.tree.first_child_with(entry, Production::ParamList)? else {
             // [FN-7] admits a `command` entry that selects no row; it simply
             // receives no standard input.
@@ -304,21 +239,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 );
             };
-            let (prefix, tail) = self.label_identifiers(label)?;
+            let tail = self.label_identifier(label)?;
             let ordinal = COMMAND_INPUTS
                 .iter()
                 .position(|row| row.tail == tail)
                 .and_then(|ordinal| u8::try_from(ordinal).ok());
-            let Some(ordinal) = ordinal.filter(|_| prefix == kind) else {
-                return self.invalid_label(label, &prefix, &tail);
+            let Some(ordinal) = ordinal else {
+                return self.invalid_label(label, &tail);
             };
             if selected.last().is_some_and(|last| *last >= ordinal) {
                 // Repeated and out-of-order selections are the same rejection:
                 // ordinal identity selects the supplied value, and declared
                 // order is the one legal byte sequence [FORM-1, GRAM-8].
-                return self.invalid_label(label, &prefix, &tail);
+                return self.invalid_label(label, &tail);
             }
-            self.check_standard_input_binding(parameter, &prefix, &tail, ordinal)?;
+            self.check_standard_input_binding(parameter, &tail, ordinal)?;
             selected.push(ordinal);
         }
         Ok(selected)
@@ -329,7 +264,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn check_standard_input_binding(
         &self,
         parameter: NodeId,
-        prefix: &str,
         tail: &str,
         ordinal: u8,
     ) -> Result<(), CheckStop> {
@@ -351,7 +285,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticRule::Fn7,
                 parameter,
                 SemanticIssueKind::InvalidStandardInput {
-                    label: format!("{prefix}.{tail}"),
+                    label: format!("command.{tail}"),
                     declared: row.written,
                 },
             );
@@ -359,43 +293,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// Rejects an `input_label` anywhere outside an admitted kind-declaring
-    /// entry's own parameters, including one written in a `fn_sig`.
-    fn reject_foreign_input_labels(
-        &self,
-        entry: NodeId,
-        entry_kind: Option<NodeId>,
-    ) -> Result<(), CheckStop> {
-        let admitted = match entry_kind {
+    /// Rejects an `input_label` anywhere outside the command entry's own
+    /// parameters, including one written in a `fn_sig`.
+    fn reject_foreign_input_labels(&self, entry: NodeId) -> Result<(), CheckStop> {
+        let admitted = match self.tree.first_child_with(entry, Production::ParamList)? {
             None => Vec::new(),
-            Some(_) => match self.tree.first_child_with(entry, Production::ParamList)? {
-                None => Vec::new(),
-                Some(list) => self.tree.descendants_with(list, Production::InputLabel)?,
-            },
+            Some(list) => self.tree.descendants_with(list, Production::InputLabel)?,
         };
         for label in self.nodes_with(Production::InputLabel)? {
             if admitted.contains(&label) {
                 continue;
             }
-            let (prefix, tail) = self.label_identifiers(label)?;
+            let tail = self.label_identifier(label)?;
             return self.issue_node(
                 SemanticRule::Fn7,
                 label,
                 SemanticIssueKind::StandardInputLabelOutsideEntry {
-                    label: format!("{prefix}.{tail}"),
+                    label: format!("command.{tail}"),
                 },
             );
         }
         Ok(())
     }
 
-    /// Rejects a source `call` whose callee resolves to a kind-declaring
-    /// entry.
+    /// Rejects a source `call` whose callee resolves to the command entry.
     ///
     /// That entry is invoked exactly once, by program start [PROG-3]: its
     /// standard inputs are supplied there and are neither constructible nor
-    /// forgeable by source. The unlabelled entry keeps its ordinary callee
-    /// status [TYPE-6, OP-1].
+    /// forgeable by source.
     fn reject_calls_to_entry(&self, entry: NodeId) -> Result<(), CheckStop> {
         let declaration = self.declaration_at(entry, DeclarationRole::Function)?;
         let entry_id = declaration.id();
@@ -430,14 +355,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn invalid_label<ResultValue>(
         &self,
         label: NodeId,
-        prefix: &str,
         tail: &str,
     ) -> Result<ResultValue, CheckStop> {
         self.issue_node(
             SemanticRule::Fn7,
             label,
             SemanticIssueKind::InvalidStandardInputLabel {
-                label: format!("{prefix}.{tail}"),
+                label: format!("command.{tail}"),
                 declared_labels: COMMAND_INPUTS
                     .iter()
                     .map(|row| format!("command.{}", row.tail))
@@ -448,9 +372,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// Returns the entry's `rtype` node with its written mode and type.
     fn entry_result(&self, entry: NodeId) -> Result<(NodeId, NodeId, NodeId), CheckStop> {
+        let result_binding = self
+            .tree
+            .first_child_with(entry, Production::ResultBinding)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let rtype = self
             .tree
-            .first_child_with(entry, Production::Rtype)?
+            .first_child_with(result_binding, Production::Rtype)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let mode = self
             .tree
@@ -467,25 +395,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.tree
             .first_child_with(entry, Production::Effects)?
             .ok_or_else(|| SemanticCompilerFailure::InvalidCanonicalTree.into())
-    }
-
-    /// Reports whether an unlabelled entry's row is one of [FN-7]'s four.
-    fn unlabelled_effects_admitted(&self, effects: NodeId) -> Result<bool, CheckStop> {
-        if self.has_fixed(effects, FixedTerminal::Pure)? {
-            return Ok(true);
-        }
-        let written = self.tree.children_with(effects, Production::Effect)?;
-        let spellings = written
-            .iter()
-            .map(|effect| self.tree.direct_spelling(*effect))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(matches!(
-            spellings.as_slice(),
-            [one] if one == b"traps" || one == b"allocates(heap)"
-        ) || matches!(
-            spellings.as_slice(),
-            [first, second] if first == b"allocates(heap)" && second == b"traps"
-        ))
     }
 
     /// Reports whether every category written in a `command` entry's row is
@@ -537,12 +446,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ))
     }
 
-    /// Returns the two IDENT spellings of one `input_label`.
-    fn label_identifiers(&self, label: NodeId) -> Result<(String, String), CheckStop> {
-        let [prefix, tail] = self.tree.direct_identifiers(label)?[..] else {
+    /// Returns the writer-chosen tail IDENT of one fixed-command input label.
+    fn label_identifier(&self, label: NodeId) -> Result<String, CheckStop> {
+        let [tail] = self.tree.direct_identifiers(label)?[..] else {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         };
-        Ok((self.decoded(prefix)?, self.decoded(tail)?))
+        self.decoded(tail)
     }
 
     fn decoded(&self, terminal: usize) -> Result<String, CheckStop> {

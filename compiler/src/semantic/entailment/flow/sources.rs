@@ -8,10 +8,11 @@
 //! source's stated form contributes nothing, which only under-derives, the
 //! version-monotone direction [ENT-1].
 //!
-//! Implemented here: S1 (through the parent's arm entry), S2 and S3 (one
-//! shared clause: a passed `check` or `claim` condition), S4, S5, S6, S7,
-//! S9, and S10. The label S8 is retired, not reused [ENT-3].
+//! Implemented here: S1 (through the parent's arm entry), S3 (a passed claim
+//! condition), S4, S5, S6, S7, S9, and S10. Retired labels are not reused
+//! [ENT-3].
 
+use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedEnumType, CheckedExpression, CheckedIntegerArgumentSource,
     CheckedIntegerOperation, CheckedMatchArm, CheckedNominalKind, CheckedSliceSource, CheckedType,
@@ -234,20 +235,18 @@ impl Analyzer<'_, '_> {
     }
 
     // ------------------------------------------------------------------
-    // S2 check facts and S3 claim facts
+    // S3 claim facts
     // ------------------------------------------------------------------
 
-    /// [ENT-3] S2/S3: after `check e else trap "…"` or `claim n: e because
-    /// "…"` whose `e` has comparison origin R, R holds on the normal
-    /// continuation.
-    pub(super) fn establish_passed_condition(
+    /// [ENT-3] S3: after `claim n: e because "…"` whose `e` has comparison
+    /// origin R, R holds on the normal continuation.
+    pub(super) fn establish_claim_condition(
         &mut self,
-        event_kind: FlowEventKind,
         node_path: &crate::NodePath,
         condition: &CheckedExpression,
         state: &mut FactState,
     ) {
-        let event = self.proof_event(event_kind, Some(node_path));
+        let event = self.proof_event(FlowEventKind::S3, Some(node_path));
         let goals = self.goal_origin_set(condition, state);
         let view = state.proof_view();
         for goal in &goals {
@@ -279,8 +278,13 @@ impl Analyzer<'_, '_> {
 
     /// [ENT-3] S4: the complete concrete body goal enters as a positive opaque
     /// fact, with its one exact comparison-root projection when present.
-    pub(super) fn establish_requires_facts(&mut self, state: &mut FactState, event: FlowEventId) {
-        let Some(goal) = self.body_requirement_goal() else {
+    pub(super) fn establish_requires_facts(
+        &mut self,
+        requirement: &CheckedRequirement,
+        state: &mut FactState,
+        event: FlowEventId,
+    ) {
+        let Some(goal) = self.body_requirement_goal(requirement) else {
             return;
         };
         let goal = self.intern_goal_expression(goal);

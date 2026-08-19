@@ -850,7 +850,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         self.install_call_requirements(&mut function_inventory)?;
         let optimistic_batch = function_inventory.iter().any(|checked| {
-            checked.function.postcondition.is_some()
+            !checked.function.postconditions.is_empty()
                 || Self::statements_contain_value_if(&checked.function.body)
         }) || !strict_markers.is_empty();
 
@@ -868,28 +868,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 &phase_a_functions,
                 &ProvenanceContext {
                     nominals: &self.nominals,
-                    external_entry: matches!(
-                        &entry,
-                        super::model::CheckedEntryForm::Command { .. }
-                    )
-                    .then_some(main),
+                    external_entry: Some(main),
                 },
             )?)
         };
-        let postcondition_schedule = self.analyze_function_inventory(
-            &mut function_inventory,
-            &callees,
-            optimistic_batch,
-            main,
-        )?;
+        let postcondition_schedule =
+            self.analyze_function_inventory(&mut function_inventory, &callees, optimistic_batch)?;
         let mut functions = function_inventory
             .into_iter()
             .map(|checked| checked.function)
             .collect::<Vec<_>>();
         let provenance_context = ProvenanceContext {
             nominals: &self.nominals,
-            external_entry: matches!(&entry, super::model::CheckedEntryForm::Command { .. })
-                .then_some(main),
+            external_entry: Some(main),
         };
         let mut provenance_analysis = match frozen_provenance {
             Some(frozen) => {
@@ -905,17 +896,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [CLM-3] consumes only the already-successful ordinary and PRV
         // scratch. It registers successful existing-U roots before the one
         // derivation finish and never reads the observational ClaimLedger.
-        let strict_partition = self.check_strict_partition(
-            &mut functions,
-            &postcondition_schedule,
-            main,
-            strict_markers,
-        )?;
+        let strict_partition =
+            self.check_strict_partition(&mut functions, &postcondition_schedule, strict_markers)?;
         if optimistic_batch {
             for function in &mut functions {
                 finalize_function_entailment(&mut function.entailment);
             }
             provenance_analysis.refresh_entailment_views(&functions);
+        }
+        for function in &mut functions {
+            function.body_disposition = function.entailment.body_disposition;
         }
         let provenance = provenance_analysis.metadata;
 
@@ -1369,31 +1359,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             claim_names: &mut claim_names,
         };
         let parameter_bindings = bindings.clone();
-        let requirement = if let Some(node) = self
+        let requirements = if let Some(node) = self
             .tree
-            .first_child_with(signature.node, Production::RequiresBlock)?
+            .first_child_with(signature.node, Production::ContractBlock)?
         {
             let mut requires_bindings = parameter_bindings.clone();
-            Some(
-                self.check_requires(signature, node, &mut requires_bindings, &mut counters)?
-                    .requirement,
-            )
+            self.check_requires(signature, node, &mut requires_bindings, &mut counters)?
+                .requirements
         } else {
-            None
+            Vec::new()
         };
 
-        let postcondition_selector = self.postcondition_selector_for_signature(signature)?;
-        let postcondition_relation = if let Some(selector) = &postcondition_selector {
+        let postcondition_selectors = self.postcondition_selectors_for_signature(signature)?;
+        let mut postcondition_relations = Vec::with_capacity(postcondition_selectors.len());
+        for selector in &postcondition_selectors {
             let mut postcondition_bindings = parameter_bindings.clone();
-            Some(self.check_postcondition_clause(
+            postcondition_relations.push(self.check_postcondition_clause(
                 signature,
                 selector,
                 &mut postcondition_bindings,
                 &mut counters,
-            )?)
-        } else {
-            None
-        };
+            )?);
+        }
 
         bindings = parameter_bindings;
         let statements = self.tree.children_with(signature.node, Production::Stmt)?;
@@ -1481,19 +1468,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::EffectMismatch,
             );
         }
-        let postcondition = match (postcondition_selector, postcondition_relation) {
-            (Some(selector), Some(relation)) if signature.substitution.is_concrete() => {
-                Some(self.build_checked_postcondition(
-                    signature,
-                    &parameters,
-                    selector,
-                    relation,
-                    &checked.statements,
-                )?)
-            }
-            (Some(_), Some(_)) => None,
-            (None, None) => None,
-            _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+        let postconditions = if signature.substitution.is_concrete() {
+            postcondition_selectors
+                .into_iter()
+                .zip(postcondition_relations)
+                .map(|(selector, relation)| {
+                    self.build_checked_postcondition(
+                        signature,
+                        &parameters,
+                        selector,
+                        relation,
+                        &checked.statements,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
         };
         // TEMPORARY capability stop, judged only after every source rejection
         // above had its chance: arena-typed parameters check under their
@@ -1523,9 +1513,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             slice_return_ceiling: signature.slice_return_ceiling.clone(),
             declared_traps: signature.declared_effects.traps,
             declared_allocates_heap: signature.declared_effects.allocates_heap,
-            requirement,
-            postcondition,
+            requirements,
+            postconditions,
             body: checked.statements,
+            body_disposition: super::model::CheckedBodyDisposition::Inhabited,
             entailment: super::entailment::FunctionEntailment::default(),
         };
         Ok(CheckedFunctionInventory {
@@ -1554,7 +1545,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. }
-            | CheckedStatement::Check { .. }
             | CheckedStatement::Claim { .. }
             | CheckedStatement::Return { .. }
             | CheckedStatement::Give { .. }
@@ -1571,7 +1561,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         functions: &mut [CheckedFunctionInventory],
         callees: &[EntailmentCallee],
         optimistic_batch: bool,
-        main: FunctionId,
     ) -> Result<PostconditionSchedule, CheckStop> {
         // The [ENT] engine is acceptance-bearing [ENT-1]: it computes the
         // closed fact states, obligation and ordinary-call goal dispositions,
@@ -1591,9 +1580,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     verified_postconditions: &[],
                     verified_postcondition_proofs: &[],
                     binding_names: &checked.binding_names,
-                    marked_program_start: checked.function.id == main
-                        && checked.function.deny_claims_marker.is_some()
-                        && checked.function.requirement.is_some(),
                 };
                 checked.function.entailment = if optimistic_batch {
                     analyze_function_candidate(&checked.function, &context)
@@ -1611,11 +1597,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             checked
                                 .function
                                 .entailment
-                                .postcondition
-                                .as_ref()
-                                .and_then(|proof| proof.summary.as_ref())
-                                .filter(|summary| summary.component < component.ordinal)
-                                .and(checked.function.postcondition.as_ref())
+                                .postconditions
+                                .iter()
+                                .filter(|proof| {
+                                    proof.summary.as_ref().is_some_and(|summary| {
+                                        summary.component < component.ordinal
+                                    })
+                                })
+                                .filter_map(|proof| {
+                                    checked
+                                        .function
+                                        .postconditions
+                                        .get(proof.relation_ordinal as usize)
+                                })
+                                .collect::<Vec<_>>()
                         })
                         .collect::<Vec<_>>();
                     let verified_postcondition_proofs = functions
@@ -1624,13 +1619,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             checked
                                 .function
                                 .entailment
-                                .postcondition
-                                .as_ref()
+                                .postconditions
+                                .iter()
                                 .filter(|proof| {
                                     proof.summary.as_ref().is_some_and(|summary| {
                                         summary.component < component.ordinal
                                     })
                                 })
+                                .collect::<Vec<_>>()
                         })
                         .collect::<Vec<_>>();
                     let checked = functions
@@ -1647,9 +1643,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             verified_postconditions: &verified_postconditions,
                             verified_postcondition_proofs: &verified_postcondition_proofs,
                             binding_names: &checked.binding_names,
-                            marked_program_start: checked.function.id == main
-                                && checked.function.deny_claims_marker.is_some()
-                                && checked.function.requirement.is_some(),
                         },
                     );
                     drop(verified_postconditions);
@@ -1659,27 +1652,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
                 let publish = component.functions.iter().all(|function| {
                     let checked = &functions[function.0 as usize].function;
-                    checked.postcondition.is_none()
-                        || checked
-                            .entailment
-                            .postcondition
-                            .as_ref()
-                            .is_some_and(|proof| proof.complete.discharged)
+                    matches!(
+                        checked.entailment.body_disposition,
+                        super::model::CheckedBodyDisposition::Uninhabited { .. }
+                    ) || checked.postconditions.is_empty()
+                        || (checked.entailment.postconditions.len() == checked.postconditions.len()
+                            && checked
+                                .entailment
+                                .postconditions
+                                .iter()
+                                .all(|proof| proof.complete.discharged))
                 });
                 if publish {
                     for function in &component.functions {
                         let checked = &mut functions[function.0 as usize].function;
-                        let Some(proof) = &mut checked.entailment.postcondition else {
+                        if matches!(
+                            checked.entailment.body_disposition,
+                            super::model::CheckedBodyDisposition::Uninhabited { .. }
+                        ) {
                             continue;
-                        };
-                        let summary = VerifiedPostconditionSummary {
-                            function: *function,
-                            block: proof.block.clone(),
-                            relation_ordinal: 0,
-                            component: component.ordinal,
-                        };
-                        proof.summary = Some(summary.clone());
-                        component.summaries.push(summary);
+                        }
+                        for proof in &mut checked.entailment.postconditions {
+                            let summary = VerifiedPostconditionSummary {
+                                function: *function,
+                                block: proof.block.clone(),
+                                relation_ordinal: proof.relation_ordinal,
+                                component: component.ordinal,
+                            };
+                            proof.summary = Some(summary.clone());
+                            component.summaries.push(summary);
+                        }
                     }
                 }
             }
@@ -1701,7 +1703,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         let requirements = functions
             .iter()
-            .map(|checked| checked.function.requirement.clone())
+            .map(|checked| checked.function.requirements.clone())
             .collect::<Vec<_>>();
         for checked in functions {
             self.install_statement_call_requirements(&mut checked.function.body, &requirements)?;
@@ -1712,16 +1714,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn install_statement_call_requirements(
         &self,
         statements: &mut [CheckedStatement],
-        requirements: &[Option<CheckedRequirement>],
+        requirements: &[Vec<CheckedRequirement>],
     ) -> Result<(), CheckStop> {
         for statement in statements {
             match statement {
                 CheckedStatement::Let { value, .. }
                 | CheckedStatement::Evaluate(value)
                 | CheckedStatement::DropExpression { value, .. }
-                | CheckedStatement::Check {
-                    condition: value, ..
-                }
                 | CheckedStatement::Claim {
                     condition: value, ..
                 }
@@ -1779,7 +1778,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn install_expression_call_requirements(
         &self,
         expression: &mut CheckedExpression,
-        requirements: &[Option<CheckedRequirement>],
+        requirements: &[Vec<CheckedRequirement>],
     ) -> Result<(), CheckStop> {
         match expression {
             CheckedExpression::UserCall {
@@ -1787,7 +1786,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 arguments,
                 goal_arguments,
                 goal_regions,
-                requirement,
+                requirements: call_requirements,
                 ..
             } => {
                 for argument in arguments {
@@ -1800,18 +1799,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let boundary = requirements
                     .get(function.0 as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                *requirement = match boundary {
-                    Some(boundary) => Some(Box::new(CheckedCallRequirement {
-                        final_check: boundary.trap.node_path.clone(),
-                        goal: ConcreteGoal::new(self.instantiate_goal_expression(
-                            &boundary.template.root,
-                            signature,
-                            goal_regions,
-                            goal_arguments,
-                        )?),
-                    })),
-                    None => None,
-                };
+                *call_requirements = boundary
+                    .iter()
+                    .map(|boundary| {
+                        Ok(CheckedCallRequirement {
+                            requires_clause: boundary.clause.clone(),
+                            goal: ConcreteGoal::new(self.instantiate_goal_expression(
+                                &boundary.template.root,
+                                signature,
+                                goal_regions,
+                                goal_arguments,
+                            )?),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, CheckStop>>()?;
             }
             CheckedExpression::SystemCall { arguments, .. }
             | CheckedExpression::IntegerOperation { arguments, .. }
@@ -2357,8 +2358,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             demand_kind,
             function: owner.symbol.clone(),
             parameter: Self::provenance_datum(parameter),
-            requirement: requirement.map(|requirement| requirement.final_check.clone()),
-            requirement_conjunct: requirement.map(|requirement| requirement.conjunct),
+            requirements: requirement
+                .map(|requirement| requirement.clauses.clone())
+                .unwrap_or_default(),
             protected_function: protected.symbol.clone(),
             protected_leaf: leaf.obligation.clone(),
             protected_conjunct: leaf.conjunct,
@@ -2418,7 +2420,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut witness = vec![target.leaf.obligation.clone()];
         for boundary in &target.boundaries {
             if let super::provenance::DemandState::Bridge { requirement, .. } = &boundary.callee {
-                witness.push(requirement.final_check.clone());
+                witness.extend(requirement.clauses.iter().cloned());
             }
             witness.push(boundary.call.clone());
             witness.push(boundary.argument_node.clone());
@@ -2436,14 +2438,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             protected_leaf: target.leaf.obligation.clone(),
             protected_conjunct: target.leaf.conjunct,
             requirement_function,
-            requirement: target
+            requirements: target
                 .requirement
                 .as_ref()
-                .map(|requirement| requirement.final_check.clone()),
-            requirement_conjunct: target
-                .requirement
-                .as_ref()
-                .map(|requirement| requirement.conjunct),
+                .map(|requirement| requirement.clauses.clone())
+                .unwrap_or_default(),
             local_bridge_predecessor: None,
             residual,
             companion_parameter_datums: target
@@ -2540,7 +2539,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let mut witness = vec![leaf.obligation.clone()];
                 if let Some(requirement) = requirement {
-                    witness.push(requirement.final_check.clone());
+                    witness.extend(requirement.clauses.iter().cloned());
                 }
                 witness.extend(carrier.paths());
                 let carrier = self.provenance_carrier(carrier)?;
@@ -2569,10 +2568,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 protected_leaf: leaf.obligation.clone(),
                                 protected_conjunct: leaf.conjunct,
                                 requirement_function,
-                                requirement: requirement
-                                    .map(|requirement| requirement.final_check.clone()),
-                                requirement_conjunct: requirement
-                                    .map(|requirement| requirement.conjunct),
+                                requirements: requirement
+                                    .map(|requirement| requirement.clauses.clone())
+                                    .unwrap_or_default(),
                                 local_bridge_predecessor: requirement
                                     .map(|_| crate::ProvenanceLocalBridgePredecessor::Local),
                                 residual,
@@ -2786,7 +2784,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         kind: SemanticIssueKind::UndischargedCallRequirement(Box::new(
                             crate::UndischargedCallRequirementDetail {
                                 concrete_callee: signature.symbol.clone(),
-                                final_check: outcome.final_check.clone(),
+                                requires_clause: outcome.requires_clause.clone(),
                                 instantiated_goal: render_goal(&outcome.goal.root),
                                 disposition,
                                 mechanical_fix,
@@ -2821,45 +2819,67 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
         }
 
-        let Some(proof) = &function.entailment.postcondition else {
+        if matches!(
+            function.entailment.body_disposition,
+            super::model::CheckedBodyDisposition::Uninhabited { .. }
+        ) {
             return Ok(());
-        };
-        let Some(exit) = proof.exits.iter().find(|exit| {
-            exit.complete.disposition != super::entailment::PostconditionDisposition::Discharged
-        }) else {
-            return Ok(());
-        };
-        let disposition = match exit.complete.disposition {
-            super::entailment::PostconditionDisposition::Discharged => {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        for proof in &function.entailment.postconditions {
+            if proof.exits.is_empty() {
+                let node = self
+                    .tree
+                    .node_with_path(&proof.selector)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                return Err(CheckStop::source_issue(SemanticIssue {
+                    rule: SemanticRule::Fn9,
+                    location: SemanticLocation::SourceNode(
+                        proof.selector.clone(),
+                        self.tree.coordinate(node)?,
+                    ),
+                    kind: SemanticIssueKind::NoSelectedNormalExit {
+                        residual: "no selected normal exit",
+                    },
+                }));
             }
-            super::entailment::PostconditionDisposition::Refuted => {
-                crate::PostconditionProofDisposition::Refuted
-            }
-            super::entailment::PostconditionDisposition::Unproved => {
-                crate::PostconditionProofDisposition::Unproved
-            }
-        };
-        let node = self
-            .tree
-            .node_with_path(&exit.statement)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        Err(CheckStop::source_issue(SemanticIssue {
-            rule: SemanticRule::Fn9,
-            location: SemanticLocation::SourceNode(
-                exit.statement.clone(),
-                self.tree.coordinate(node)?,
-            ),
-            kind: SemanticIssueKind::UndischargedPostcondition(Box::new(
-                crate::UndischargedPostconditionDetail {
-                    concrete_function: function.symbol.clone(),
-                    postcondition: proof.block.clone(),
-                    conjunct: 0,
-                    selector: proof.selector.clone(),
-                    relation: exit.residual.clone(),
-                    disposition,
-                },
-            )),
-        }))
+            let Some(exit) = proof.exits.iter().find(|exit| {
+                exit.complete.disposition != super::entailment::PostconditionDisposition::Discharged
+            }) else {
+                continue;
+            };
+            let disposition = match exit.complete.disposition {
+                super::entailment::PostconditionDisposition::Discharged => {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                super::entailment::PostconditionDisposition::Refuted => {
+                    crate::PostconditionProofDisposition::Refuted
+                }
+                super::entailment::PostconditionDisposition::Unproved => {
+                    crate::PostconditionProofDisposition::Unproved
+                }
+            };
+            let node = self
+                .tree
+                .node_with_path(&exit.statement)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            return Err(CheckStop::source_issue(SemanticIssue {
+                rule: SemanticRule::Fn9,
+                location: SemanticLocation::SourceNode(
+                    exit.statement.clone(),
+                    self.tree.coordinate(node)?,
+                ),
+                kind: SemanticIssueKind::UndischargedPostcondition(Box::new(
+                    crate::UndischargedPostconditionDetail {
+                        concrete_function: function.symbol.clone(),
+                        postcondition: proof.block.clone(),
+                        conjunct: proof.relation_ordinal,
+                        selector: proof.selector.clone(),
+                        relation: exit.residual.clone(),
+                        disposition,
+                    },
+                )),
+            }));
+        }
+        Ok(())
     }
 }

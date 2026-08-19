@@ -85,14 +85,9 @@ impl ScopeBuild {
                             .production;
                         child_scopes[index] = match production {
                             Production::Generics => generic,
-                            Production::RequiresBlock => build.push_scope(
+                            Production::ContractBlock => build.push_scope(
                                 Some(signature),
-                                ScopeKind::RequiresBlock,
-                                path.clone(),
-                            )?,
-                            Production::EnsuresBlock => build.push_scope(
-                                Some(signature),
-                                ScopeKind::EnsuresBlock,
+                                ScopeKind::ContractBlock,
                                 path.clone(),
                             )?,
                             Production::Doc | Production::Stmt => body,

@@ -241,16 +241,15 @@ pub(super) fn emit_system_interface(
         declarations.insert(format!("declare i32 @{symbol}(i32)"));
     }
 
-    if let IrEntry::Command { inputs, .. } = program.entry() {
-        declarations.insert("declare ptr @signal(i32, ptr)".to_owned());
-        declarations.insert("declare void @exit(i32) noreturn".to_owned());
-        if inputs.contains(&1) {
-            declarations.insert(format!(
-                "declare i32 @{}(ptr, i32, ...)",
-                qualification.target().directory_open_symbol()
-            ));
-            needs_working_directory = true;
-        }
+    let IrEntry::Command { inputs, .. } = program.entry();
+    declarations.insert("declare ptr @signal(i32, ptr)".to_owned());
+    declarations.insert("declare void @exit(i32) noreturn".to_owned());
+    if inputs.contains(&1) {
+        declarations.insert(format!(
+            "declare i32 @{}(ptr, i32, ...)",
+            qualification.target().directory_open_symbol()
+        ));
+        needs_working_directory = true;
     }
     if needs_working_directory {
         constants.push_str(&format!(
@@ -1978,48 +1977,13 @@ fn emit_utf8_validator() -> String {
 
 /// Emits the process entry for one program.
 ///
-/// For a `command` this is the [QUAL-3] bootstrap; for the unlabelled entry it
-/// is the unchanged wrapper that produces no status [FN-7, PROG-3].
+/// This is the one [QUAL-3] command bootstrap [FN-7, PROG-3].
 pub(super) fn emit_entry(
     program: &IrProgram<'_, '_, '_>,
     qualification: &Qualification,
     main: &IrFunction,
-    target_layout: TargetLayout,
-    traps: &mut Vec<Vec<u8>>,
-    intrinsics: &mut BTreeSet<IntrinsicDeclaration>,
 ) -> Result<String, BackendFailure> {
-    let IrEntry::Command { inputs, .. } = program.entry() else {
-        if qualification.kind() != ProgramKind::Unlabelled
-            || main.result() != IrType::Unit
-            || !main.parameters().is_empty()
-        {
-            return Err(BackendFailure::InvalidIr);
-        }
-        if let Some(goal) = program.entry_goal() {
-            let emitted = FunctionEmitter::new(
-                program,
-                qualification,
-                main,
-                target_layout,
-                traps,
-                intrinsics,
-            )
-            .with_entry_goal(goal, Vec::new())?
-            .emit_entry_goal()?;
-            return Ok(format!(
-                "define i32 @main() {{\nentry:\n{}  br i1 {}, label %enter, label %entry.requirement.trap\nentry.requirement.trap:\n  call void @wf_trap(ptr @.wf_trap.{}, i64 {})\n  unreachable\nenter:\n  %result = call i8 @{}()\n  ret i32 0\n}}\n",
-                emitted.definitions,
-                emitted.condition,
-                emitted.trap,
-                emitted.trap_length,
-                source_symbol(main.name())
-            ));
-        }
-        return Ok(format!(
-            "define i32 @main() {{\nentry:\n  %result = call i8 @{}()\n  ret i32 0\n}}\n",
-            source_symbol(main.name())
-        ));
-    };
+    let IrEntry::Command { inputs, .. } = program.entry();
     if qualification.kind() != ProgramKind::Command || main.parameters().len() != inputs.len() {
         return Err(BackendFailure::InvalidIr);
     }
@@ -2057,7 +2021,6 @@ pub(super) fn emit_entry(
     .map_err(|_| BackendFailure::TextEmission)?;
 
     let mut supplied = Vec::with_capacity(inputs.len());
-    let mut supplied_names = Vec::with_capacity(inputs.len());
     let mut opens_directory = false;
     for (ordinal, (_, ty)) in inputs.iter().zip(main.parameters()) {
         let expected = expected_input(*ordinal)?;
@@ -2075,7 +2038,6 @@ pub(super) fn emit_entry(
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
                 supplied.push(format!("{args} %args"));
-                supplied_names.push("%args".to_owned());
             }
             1 => {
                 opens_directory = true;
@@ -2087,7 +2049,6 @@ pub(super) fn emit_entry(
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
                 supplied.push("i32 %cwd".to_owned());
-                supplied_names.push("%cwd".to_owned());
             }
             // The standard output and standard error entry bindings supply
             // separate affine owners over the invocation's own descriptors
@@ -2095,54 +2056,24 @@ pub(super) fn emit_entry(
             // lock.
             2 => {
                 supplied.push("i32 1".to_owned());
-                supplied_names.push("1".to_owned());
             }
             3 => {
                 supplied.push("i32 2".to_owned());
-                supplied_names.push("2".to_owned());
             }
             _ => return Err(BackendFailure::InvalidIr),
         }
     }
-    let entry_goal = program
-        .entry_goal()
-        .map(|goal| {
-            FunctionEmitter::new(
-                program,
-                qualification,
-                main,
-                target_layout,
-                traps,
-                intrinsics,
-            )
-            .with_entry_goal(goal, supplied_names)?
-            .emit_entry_goal()
-        })
-        .transpose()?;
-    let post_setup = if entry_goal.is_some() {
-        "entry.goal"
-    } else {
-        "enter"
-    };
     if opens_directory {
         // [PROG-3]: supplying each declared standard input is a start-time
         // obligation of the selected target; when it cannot supply one, start
         // fails before the entry is invoked.
         writeln!(
             body,
-            "  %cwd.opened = icmp sge i32 %cwd, 0\n  br i1 %cwd.opened, label %{post_setup}, label %start.failure"
+            "  %cwd.opened = icmp sge i32 %cwd, 0\n  br i1 %cwd.opened, label %enter, label %start.failure"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
     } else {
-        writeln!(body, "  br label %{post_setup}").map_err(|_| BackendFailure::TextEmission)?;
-    }
-    if let Some(emitted) = entry_goal {
-        write!(
-            body,
-            "entry.goal:\n{}  br i1 {}, label %enter, label %entry.requirement.trap\nentry.requirement.trap:\n  call void @wf_trap(ptr @.wf_trap.{}, i64 {})\n  unreachable\n",
-            emitted.definitions, emitted.condition, emitted.trap, emitted.trap_length
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
+        writeln!(body, "  br label %enter").map_err(|_| BackendFailure::TextEmission)?;
     }
     writeln!(
         body,
