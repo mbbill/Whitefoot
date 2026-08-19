@@ -497,7 +497,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     // written argument on any other de-argumented row. So A1's deletion,
     // correct on every legal call, would remove the very violation this
     // asserts — the `derivation.rs:224` class.
-    // migrate: keep — the written `<'view, u8>` IS the subject.
+    // The written `<'view, u8>` IS the subject and must stay written.
     assert_rule(
         br#"fn main() -> own unit allocates(heap), traps {
   let data = buffer_new(4_u64, 0_u8);
