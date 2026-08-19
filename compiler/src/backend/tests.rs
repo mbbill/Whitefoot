@@ -435,8 +435,10 @@ fn emitted_drop_ids(function: &str) -> Vec<u32> {
 }
 
 #[test]
-fn emitted_module_retains_checks_and_avoids_undefined_overflow_flags() {
-    let source = br#"fn add(x: own i32, y: own i32) -> result: own i32 traps {
+fn emitted_module_retains_claims_without_an_integer_runtime_guard() {
+    let source = br#"fn add(x: own i32, y: own i32) -> result: own i32 pure contract {
+  requires x +defined y;
+} {
   return x + y;
 }
 
@@ -447,9 +449,10 @@ command fn main() -> status: own ExitStatus traps {
 }
 "#;
     let llvm = emit(source);
-    assert!(llvm.contains("@llvm.sadd.with.overflow.i32"));
+    assert!(!llvm.contains("@llvm.sadd.with.overflow.i32"));
     assert!(llvm.contains("br i1"));
-    assert!(llvm.contains("call void @wf_trap"));
+    assert_eq!(llvm.matches("call void @wf_trap").count(), 1);
+    assert!(!llvm.contains("\"rule_id\":\"OP-2\""));
     assert!(!llvm.contains(" nsw "));
     assert!(!llvm.contains(" nuw "));
     assert!(!llvm.contains("llvm.assume"));
@@ -767,23 +770,20 @@ command fn main() -> status: own ExitStatus traps {
     assert!(output.stderr.is_empty());
 }
 
-/// [OP-2] bare infix arithmetic outside the constant-operand class keeps the
-/// trapping semantics its named `.trap` spelling had: the required check is
-/// not lost to the shorter form. Both operands are bound rather than written
-/// as literals, so the site stays in the retained trapping class.
+/// [OP-2] bare exact arithmetic is rejected when its domain is refuted; there
+/// is no implicit runtime fallback.
 #[test]
-fn bare_infix_overflow_traps_at_runtime() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+fn bare_infix_overflow_is_a_static_op2_rejection() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let hi = 2147483647_i32;
   let one = 1_i32;
   let overflowed = hi + one;
   return exit_status(code: 0_u8);
 }
 "#;
-    let output = compile_and_run(&compile(source));
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(stderr.starts_with("{\"rule_id\":\"OP-2\",\"message\":\"integer overflow\""));
+    let failure = compile_rejection(source);
+    assert_eq!(failure.rule_id(), Some("OP-2"));
+    assert!(failure.detail().contains("hi +defined one"));
 }
 
 #[test]
@@ -1083,29 +1083,23 @@ command fn main() -> status: own ExitStatus pure {
     assert!(output.stderr.is_empty());
 }
 
-/// The [OP-5] record shape, including the exact [FORM-5] decoding of a
-/// message carrying an embedded quote and newline.
-///
-/// v0.32 retires the body `check` statement, so the entry requirement's
-/// final `check_stmt` is the sole remaining [OP-5] record carrier whose
-/// `message` is a writer-chosen STRING — a migrated body check becomes a
-/// [CLM-1] record whose `message` is an IDENT and can carry neither byte.
-/// The record shape and the message decoding are unchanged across the
-/// version, which is what this pins.
+/// A failed ordinary contract is a caller-side compile rejection. No entry
+/// wrapper or [OP-5] runtime-record path exists.
 #[test]
-fn a_failing_entry_requirement_emits_the_exact_mandatory_record_shape() {
-    let source = b"command fn main() -> status: own ExitStatus pure requires {\n  check ieq(0_u8, 1_u8) else trap \"bad \\\"quote\\\"\\nline\";\n} {\n  return exit_status(code: 0_u8);\n}\n";
-    let output = compile_and_run(&compile(source));
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(
-        stderr.starts_with(
-            "{\"rule_id\":\"OP-5\",\"message\":\"bad \\\"quote\\\"\\nline\",\"function\":\"main\",\"node_path\":["
-        ),
-        "unexpected record: {stderr}"
-    );
-    assert!(stderr.ends_with("]}\n"));
-    assert_eq!(stderr.lines().count(), 1);
+fn a_failing_contract_is_a_static_fn8_rejection() {
+    let source = br#"fn only_one(value: own u8) -> result: own unit pure contract {
+  requires ieq(value, 1_u8);
+} {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  only_one(value: 0_u8);
+  return exit_status(code: 0_u8);
+}
+"#;
+    let failure = compile_rejection(source);
+    assert_eq!(failure.rule_id(), Some("FN-8"));
 }
 
 /// The [CLM-1] record a migrated body check now emits: same mandatory
@@ -1168,24 +1162,17 @@ fn a_diag3_record_preserves_the_exact_utf8_bytes_of_its_message() {
 }
 
 #[test]
-fn integer_overflow_reports_op2_before_abort() {
-    // Both operands are bound, keeping the site in [OP-2]'s retained
-    // trapping class: a written literal operand would carry a compile-time
-    // overflow obligation instead and could never reach a runtime record.
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+fn integer_overflow_has_no_op2_runtime_record_path() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let hi = 127_i8;
   let one = 1_i8;
   let overflow = hi + one;
   return exit_status(code: 0_u8);
 }
 "#;
-    let output = compile_and_run(&compile(source));
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(stderr.starts_with(
-        "{\"rule_id\":\"OP-2\",\"message\":\"integer overflow\",\"function\":\"main\",\"node_path\":["
-    ));
-    assert!(stderr.ends_with("]}\n"));
+    let failure = compile_rejection(source);
+    assert_eq!(failure.rule_id(), Some("OP-2"));
+    assert!(failure.detail().contains("hi +defined one"));
 }
 
 #[test]

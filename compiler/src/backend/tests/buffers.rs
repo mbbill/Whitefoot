@@ -48,48 +48,32 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
 }
 
 #[test]
-fn op9_overflow_traps_before_allocation() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+fn op9_overflow_is_rejected_before_lowering() {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let values = buffer_new(18446744073709551615_u64, 0_u64);
   return exit_status(code: 0_u8);
 }
 "#;
-    let llvm = compile(source);
-    let main = emitted_function(&llvm, "main");
-    let multiply = main
-        .find("@llvm.umul.with.overflow.i64")
-        .expect("buffer_new must retain checked byte multiplication");
-    let overflow = main
-        .find("buffer.fill.overflow")
-        .expect("overflow must have its OP-9 trap edge");
-    let allocation = main
-        .find("call ptr @malloc")
-        .expect("allocation must remain after the overflow branch");
-    assert!(multiply < overflow && overflow < allocation);
-
-    let output = compile_and_run(&llvm);
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(stderr.starts_with(
-        "{\"rule_id\":\"OP-9\",\"message\":\"\",\"function\":\"main\",\"node_path\":["
-    ));
-    assert_eq!(stderr.lines().count(), 1);
+    let failure = compile_rejection(source);
+    assert_eq!(failure.rule_id(), Some("OP-9"));
+    assert!(
+        failure
+            .detail()
+            .contains("UndischargedAllocationFitObligation")
+    );
 }
 
 #[test]
 fn target_domain_failure_aborts_before_allocation_without_a_language_record() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let values = buffer_new(18446744073709551615_u64, 0_u8);
   return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
     let main = emitted_function(&llvm, "main");
-    let multiply = main
-        .find("@llvm.umul.with.overflow.i64")
-        .expect("OP-9 multiplication must remain first");
     let target_check = main
-        .find("buffer.fill.target.check")
+        .find("icmp ule i64")
         .expect("STOR-6 must retain its target-domain guard");
     let target_failure = main
         .find("buffer.fill.target.failure")
@@ -97,9 +81,8 @@ fn target_domain_failure_aborts_before_allocation_without_a_language_record() {
     let allocation = main
         .find("call ptr @malloc")
         .expect("allocation must follow both guards");
-    assert!(
-        multiply < target_check && target_check < target_failure && target_failure < allocation
-    );
+    assert!(target_check < target_failure && target_failure < allocation);
+    assert!(!main.contains("@llvm.umul.with.overflow.i64"));
     assert!(main[target_failure..allocation].contains("call void @abort()"));
     assert!(!main[target_failure..allocation].contains("@wf_trap"));
 
@@ -499,11 +482,11 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
 "#;
     let llvm = compile(source);
     let main = emitted_function(&llvm, "main");
-    // OP-9: the byte size is the target layout of the element aggregate,
-    // multiplied with the same overflow check as buffer_new.
-    assert!(main.contains("@llvm.umul.with.overflow.i64"));
+    // OP-9 was discharged statically. Target qualification supplies the
+    // selected layout, so no language overflow guard remains.
+    assert!(!main.contains("@llvm.umul.with.overflow.i64"));
     assert!(main.contains("ptrtoint (ptr getelementptr (%wf.t"));
-    assert!(main.contains("buffer.vacant.overflow"));
+    assert!(!main.contains("buffer.vacant.overflow"));
     // Every element starts as the tag-zero None(): the aggregate
     // zeroinitializer stored through the init loop.
     let body = main
@@ -556,30 +539,17 @@ fn trivially_droppable_affine_elements_keep_the_single_free() {
 }
 
 #[test]
-fn buffer_vacant_op9_overflow_traps_before_allocation() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+fn buffer_vacant_op9_overflow_is_rejected_before_lowering() {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let slots = buffer_vacant<u64>(18446744073709551615_u64);
   return exit_status(code: 0_u8);
 }
 "#;
-    let llvm = compile(source);
-    let main = emitted_function(&llvm, "main");
-    let multiply = main
-        .find("@llvm.umul.with.overflow.i64")
-        .expect("buffer_vacant must retain checked byte multiplication");
-    let overflow = main
-        .find("buffer.vacant.overflow")
-        .expect("overflow must have its OP-9 trap edge");
-    let allocation = main
-        .find("call ptr @malloc")
-        .expect("allocation must remain after the overflow branch");
-    assert!(multiply < overflow && overflow < allocation);
-
-    let output = compile_and_run(&llvm);
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(stderr.starts_with(
-        "{\"rule_id\":\"OP-9\",\"message\":\"\",\"function\":\"main\",\"node_path\":["
-    ));
-    assert_eq!(stderr.lines().count(), 1);
+    let failure = compile_rejection(source);
+    assert_eq!(failure.rule_id(), Some("OP-9"));
+    assert!(
+        failure
+            .detail()
+            .contains("UndischargedAllocationFitObligation")
+    );
 }
