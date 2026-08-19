@@ -7955,128 +7955,22 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
         );
     }
 
-    let report = program
-        .functions
-        .iter()
-        .find(|function| function.name == "report_failure")
-        .expect("report_failure function");
-    let mut delivery_receivers = report
-        .entailment
-        .derivations
-        .nodes
-        .iter()
-        .filter_map(|node| match node {
-            DerivationNode::PostconditionDeliveryJoin { receiver, .. } => Some(*receiver),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert!(
-        !delivery_receivers.is_empty(),
-        "A10 must deliver one receiver"
-    );
-    let bounded_length = delivery_receivers[0];
-    assert!(
-        delivery_receivers
-            .drain(..)
-            .all(|receiver| receiver == bounded_length),
-        "A10 is the only value_if delivery in report_failure",
-    );
-    let mut delivery_views = report
-        .entailment
-        .derivations
-        .nodes
-        .iter()
-        .enumerate()
-        .filter_map(|(index, node)| {
-            matches!(node, DerivationNode::PostconditionDeliveryJoin { .. })
-                .then_some(report.entailment.derivations.node_views[index])
-        })
-        .collect::<Vec<_>>();
-    delivery_views.sort_by_key(|view| proof_view_index(*view));
-    delivery_views.dedup();
-    assert_eq!(
-        delivery_views,
-        vec![
-            ProofView::Complete,
-            ProofView::Unasserted,
-            ProofView::S4Blinded,
-        ]
-    );
-
-    let mut bounded_routes = report
-        .entailment
-        .derivations
-        .nodes
-        .iter()
-        .enumerate()
-        .filter_map(|(index, node)| {
-            let DerivationNode::PostconditionDirectReceiver {
-                statement,
-                binding,
-                parent,
-                ..
-            } = node
-            else {
-                return None;
-            };
-            (*binding == bounded_length).then_some((
-                statement.clone(),
-                report.entailment.derivations.node_views[index],
-                *parent,
-            ))
-        })
-        .collect::<Vec<_>>();
-    bounded_routes.sort_by(|left, right| {
-        left.0
-            .components()
-            .cmp(right.0.components())
-            .then_with(|| proof_view_index(left.1).cmp(&proof_view_index(right.1)))
-    });
-    assert_eq!(
-        bounded_routes.len(),
-        21,
-        "the separator and six following reason appends use bounded_length",
-    );
-    for route in bounded_routes.chunks_exact(3) {
-        assert_eq!(route[0].0, route[1].0);
-        assert_eq!(route[1].0, route[2].0);
-        assert_eq!(
-            route.iter().map(|entry| entry.1).collect::<Vec<_>>(),
-            vec![
-                ProofView::Complete,
-                ProofView::Unasserted,
-                ProofView::S4Blinded,
-            ]
-        );
-        for (_, _, parent) in route {
-            assert!(
-                root_contains(&report.entailment, *parent, |node| matches!(
-                    node,
-                    DerivationNode::PostconditionDeliveryJoin { receiver, .. }
-                        if *receiver == bounded_length
-                )),
-                "each A11-A16 receiver chain must descend from A10",
-            );
-        }
-    }
-
-    let publish = program
-        .functions
-        .iter()
-        .find(|function| function.name == "publish_all")
-        .expect("publish_all function")
-        .id;
-    let mut publish_calls = Vec::new();
-    collect_direct_calls(&report.body, publish, &mut publish_calls);
-    assert_eq!(publish_calls.len(), 1);
-    assert!(matches!(
-        &publish_calls[0].1[2],
-        CheckedExpression::Binding {
-            binding,
-            consume_root: false,
-            ..
-        } if *binding == bounded_length
-    ));
+    // COVERAGE LOST HERE, deliberately and on the record. This section pinned
+    // `report_failure`'s A10 chain: a `value_if` that delivered an
+    // `ensures`-bearing call result, the A11-A16 receiver chains descending from
+    // it, and the `publish_all` call consuming its binding. The batch-0072
+    // searching rewrite replaced that control flow with match-shaped code, so no
+    // `PostconditionDeliveryJoin` node exists in the frozen source any more, and
+    // every assertion here was keyed on the binding it produced.
+    //
+    // No other program under tests/programs delivers a postcondition through a
+    // `value_if` — raw_deflate delivers `read_bits` through `match` — so the
+    // route has no real-program witness at all now. The mechanism itself stays
+    // pinned by the synthetic
+    // `value_if_delivery_joins_unequal_bounds_through_direct_edge_parents`.
+    //
+    // Restoring a real witness means a program that wants that shape, not a
+    // program contorted to carry it; that is a corpus decision, not a test fix.
 }
 
 #[test]
