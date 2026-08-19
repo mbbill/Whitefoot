@@ -123,11 +123,7 @@ fn the_traversal_source_is_admitted_only_by_the_declaring_inventory() {
 /// differential and not one inventory compared with itself.
 #[test]
 fn appending_the_traversal_inventory_leaves_every_earlier_program_byte_identical() {
-    // `wfgrep.wf` left this list when the searching rewrite made it a consumer
-    // of the traversal surface: it no longer compiles without those rows, so it
-    // cannot witness that appending them changes nothing. The two programs that
-    // remain use none of the new operations, which is exactly the property.
-    for name in ["byte_string.wf", "growable_vec.wf"] {
+    for name in ["wfgrep.wf", "byte_string.wf", "growable_vec.wf"] {
         assert_eq!(
             compile_program_without_traversal_surface(name),
             compile_program_with_traversal_surface(name),
