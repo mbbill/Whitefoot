@@ -1964,7 +1964,7 @@ No contract clause, exact operation, allocation, subscript, system range, typed 
 JSON string encoding is canonical for the complete character set defined here: `"` becomes `\"`, `\` becomes `\\`, LF becomes `\n`, and every other permitted ASCII byte is emitted unchanged.
 A final single LF terminates the record.
 
-Identical bound source bytes reaching the same failing checked site therefore produce byte-identical report bytes in every conforming implementation.
+Identical bound source bytes reaching the same failing claim site produce byte-identical report bytes in every conforming implementation.
 Dynamic call-stack attribution, artifact identity, successful-check reports, lifetime reports, check-density reports, and optimizer-development reports are not normative outputs.
 An implementation may provide additional developer output only on a separately selected channel that cannot alter, prefix, suffix, or replace the mandatory trap record.
 
@@ -2306,11 +2306,10 @@ A synchronous transfer lowers to its required source and target checks [STOR-6],
 That path performs no heap allocation, no copy of the transferred data, no global system lock acquisition, and no per-call signal-disposition operation.
 The compiler wrapper is inlined, or any remaining call is shown to be immaterial, as a condition of qualification.
 One-time per-invocation normalization belongs to the command bootstrap before entry rather than to any transfer: on the first native command targets that bootstrap owns the process and installs the ignored disposition for the write-to-closed-pipe signal, so a closed output destination reaches source as a recoverable outcome [ERR-4].
-A program kind whose process the bootstrap does not own obtains an equivalent host guarantee under its own qualification and never changes a surrounding host process's signal policy.
 This rule fixes the required emitted shape; the evidence establishing it is inspection of emitted code and symbols, not a machine-checked language judgment.
 
 [TRAP-1] A failing executed claim in a program holding system resources retains [SCOPE-4] and [EFF-4] exactly: the runtime attempts the mandatory [DIAG-3] record and then aborts the whole process without unwinding and without running language cleanup; no status is produced [PROG-3].
-No release, close, flush, detach, or completion action fixed by a system resource contract [STOR-3] runs after a contract violation, and no source-visible cleanup, handler, or recovery point exists.
+No release, close, flush, detach, or completion action fixed by a system resource contract [STOR-3] runs after a failed claim, and no source-visible cleanup, handler, or recovery point exists.
 Process-local memory, native descriptors, and every other process-local system object held at that moment are reclaimed by operating-system process teardown, which is a property of the host inside the [SCOPE-3] trusted computing base rather than a language cleanup guarantee.
 External effects already performed are not rolled back: bytes already written remain written, an object already created remains created, and a persistent object or already-started external work retains the semantics its own family gives it.
 A host that requires a Whitefoot instance to fail without ending its process runs that instance in a separate process.
