@@ -583,7 +583,7 @@ pub(crate) struct FunctionPostconditionProof {
 
 /// One verified concrete FN-9 summary identity made referenceable by the SCC
 /// schedule. The single relation ordinal is retained explicitly because the
-/// occurrence identity is `(function, ensures block, 0)`.
+/// occurrence identity is `(function, ensures clause, 0)`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct VerifiedPostconditionSummary {
     pub(crate) function: FunctionId,

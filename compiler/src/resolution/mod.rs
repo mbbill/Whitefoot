@@ -739,22 +739,11 @@ pub enum ReservedDeclarationRole {
     LocalRegion,
 }
 
-/// Why an FN-8 direct entry or block was rejected.
+/// Why an FN-8/FN-9 contract block was rejected by early admission.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RequiresShapeIssue {
-    /// The block is empty or contains only ordinary lets.
-    MissingFinalCheck,
-    /// A direct entry is not an admitted nonfinal let or final check.
-    InvalidEntry,
-}
-
-/// Why an FN-9 direct entry or block was rejected by early structural admission.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EnsuresShapeIssue {
-    /// The block is empty or contains only ordinary lets.
-    MissingFinalCheck,
-    /// A direct entry is not an admitted nonfinal let or final check.
-    InvalidEntry,
+pub enum ContractShapeIssue {
+    /// The block contains definitions but no proof clause.
+    MissingClause,
 }
 
 /// One declaration conflict carried by a TYPE-6 issue.
@@ -788,10 +777,8 @@ impl DeclarationConflict {
 /// Structured payload of one deterministic resolver rejection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResolutionIssueKind {
-    /// Early FN-8 structural-admission failure.
-    RequiresShape(RequiresShapeIssue),
-    /// Early FN-9 structural-admission failure.
-    EnsuresShape(EnsuresShapeIssue),
+    /// Early FN-8/FN-9 contract structural-admission failure.
+    ContractShape(ContractShapeIssue),
     /// A declaration uses a derived reserved lower name.
     ReservedName {
         /// Unsigiled spelling for a region, otherwise the declaration spelling.

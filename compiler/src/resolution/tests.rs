@@ -218,7 +218,7 @@ fn requires_shape_is_checked_before_names_inside_the_invalid_block() {
         assert_eq!(issue.rule(), ResolutionRule::Fn8);
         assert!(matches!(
             issue.kind(),
-            ResolutionIssueKind::RequiresShape(_)
+            ResolutionIssueKind::ContractShape(_)
         ));
     });
 }
@@ -649,7 +649,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
         assert_eq!(issue.rule(), ResolutionRule::Fn8);
         assert!(matches!(
             issue.kind(),
-            ResolutionIssueKind::RequiresShape(_)
+            ResolutionIssueKind::ContractShape(_)
         ));
     });
 

@@ -260,11 +260,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(CheckedRequires { requirements })
     }
 
-    /// The clause-conditional OWN-1 bare-affine repair [#35, v0.31
-    /// candidate]. OWN-1's ordinary mechanical fix is `write move p`, but
-    /// [FN-8] rejects `move` inside a requires block, so that instruction
-    /// would send the writer from one hard error to another. Inside the
-    /// clause the same rejection instead carries the clause-specific repair.
+    /// The contract-conditional OWN-1 bare-affine repair [#35]. OWN-1's
+    /// ordinary mechanical fix is `write move p`, but [FN-8] rejects `move`
+    /// inside a contract block, so that instruction would send the writer
+    /// from one hard error to another. A definition or clause instead carries
+    /// the contract-specific repair.
     /// Inert while `V031_CANDIDATE_SEMANTICS` is false.
     fn clause_conditional_repair(stop: CheckStop) -> CheckStop {
         if !crate::semantic::V031_CANDIDATE_SEMANTICS {
@@ -277,7 +277,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             && matches!(issue.rule, SemanticRule::Own1)
         {
             issue.kind = SemanticIssueKind::BareAffineUse {
-                mechanical_fix: "restate the clause over copy operands or non-consuming admitted reads; a requires block admits no `move`",
+                mechanical_fix: "restate the definition or clause over copy operands or non-consuming admitted reads",
             };
         }
         CheckStop::Issue(issue)
@@ -712,9 +712,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if self.validate_clause_computation(clause, entry, expression)? {
             return Ok(());
         }
-        // [FN-8] admits one further shape here that a clause `let` does not:
-        // "the final check condition is either a Bool clause atom or one such
-        // operation returning Bool".
+        // [FN-8] admits one further shape here that a contract definition does
+        // not: a predicate may be either a Bool clause atom or one admitted
+        // operation returning Bool.
         let Some(atom) = self.tree.first_child_with(expression, Production::Atom)? else {
             return self.invalid_clause(clause, entry);
         };

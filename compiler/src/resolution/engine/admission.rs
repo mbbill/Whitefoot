@@ -3,7 +3,7 @@ use crate::{Production, SyntaxCoordinate};
 
 use super::super::scopes::ScopeBuild;
 use super::super::{
-    RequiresShapeIssue, ResolutionCompilerFailure, ResolutionIssue, ResolutionIssueKind,
+    ContractShapeIssue, ResolutionCompilerFailure, ResolutionIssue, ResolutionIssueKind,
     ResolutionRule, SourceOrigin,
 };
 use super::EventKey;
@@ -34,9 +34,7 @@ pub(super) fn check_clause_blocks(
             candidates.push(ResolutionIssue {
                 rule: ResolutionRule::Fn8,
                 origin: node_origin(topology, scopes, id)?,
-                // This existing public payload now means "no proof clause";
-                // grammar already excludes every former invalid-entry shape.
-                kind: ResolutionIssueKind::RequiresShape(RequiresShapeIssue::MissingFinalCheck),
+                kind: ResolutionIssueKind::ContractShape(ContractShapeIssue::MissingClause),
             });
         }
     }
