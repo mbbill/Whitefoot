@@ -2,6 +2,8 @@
 
 Owner: lead. Workspace: `batch-0072` branch with executor worktrees on
 file-disjoint briefs. Base: main at the v0.32 activation.
+Status: DONE (2026-08-19). Frozen coordination history.
+
 Registered: 2026-08-18 under the ACTIVE Current Plan (W1, W3, W4, W5).
 
 ## Authority
@@ -197,3 +199,25 @@ Decisions folded into that review:
 - Five pre-batch wfgrep test cases retired with no replacement; the
   behaviours they covered were verified still working, so this is
   coverage loss rather than regression.
+
+## Final disposition — DONE (2026-08-19)
+
+Owner approval 2026-08-19 ("把东西都合并进main吧"), merged at `938ba1ef`.
+No specification byte moved; nothing activated; the chain tail is still
+v0.32 `5ea3927a…6bf5` at 24 activations.
+
+Carried forward to the next plan, in the order the batch established:
+
+1. **Remove wfgrep's fixed bounds** by collecting entries through a
+   growable container. Raising the constant would move the defect. The
+   deeper cause is recorded and is not wfgrep's: a container cannot be
+   shared today because `growable_vec.wf` is a demo program carrying its
+   own `main` rather than a `main`-free file a unit can include, and it
+   cannot be generic at all until the recorded generics-with-regions gap
+   closes. Until a container is a container, every program open-codes
+   growth and grows its own constant.
+2. **W2's flagship re-attribution against ripgrep**, which item 1 gates.
+3. The v0.33 candidate: `open_file`, strict retirement, the Linux
+   qualification correction, and whatever the contract-surface decision
+   composes into it.
+4. The owner rulings the packet lists and this closure does not decide.
