@@ -1,7 +1,8 @@
 //! Check dissolution (#47): `claim` [CLM-1] is the sole writer-stated trap
 //! construct, and the body `check` statement retires.
 //!
-//! v0.32 removes `check_stmt` from the [GRAM-4] `stmt` alternation, so the
+//! The v0.33 candidate removes `check_stmt` from the [GRAM-4] `stmt`
+//! alternation, so the
 //! retirement is a parse rejection rather than a semantic one; that half is
 //! pinned in `syntax::parser::tests`. What remains checkable here is the two
 //! things the grammar removal must *not* have broken: the non-executable
