@@ -635,11 +635,12 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     // descriptor. Derived from source: `search_file` publishes twice to the
     // standard-output owner — one flush of a full batch and one of the
     // remainder — and the standard-error owner is reached by
-    // `report_failure`'s three writes plus `main`'s one startup diagnostic.
-    // The two owners are separate and stay separate descriptors [SYS-12].
+    // `report_failure`'s one assembled diagnostic plus `main`'s one startup
+    // diagnostic. The two owners are separate and stay separate descriptors
+    // [SYS-12].
     let published = publications();
     assert_eq!(published.iter().filter(|fd| **fd == 1).count(), 2);
-    assert_eq!(published.iter().filter(|fd| **fd == 2).count(), 4);
+    assert_eq!(published.iter().filter(|fd| **fd == 2).count(), 2);
     // Each transfer is alone on its path: the block that holds it computes an
     // address and makes one call, so nothing allocates, copies the transferred
     // bytes, takes a lock, or touches a signal disposition beside the transfer

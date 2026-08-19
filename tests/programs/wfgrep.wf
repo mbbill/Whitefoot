@@ -12,13 +12,11 @@ const reason_denied: array<u8, 18> =[112_u8, 101_u8, 114_u8, 109_u8, 105_u8, 115
 
 const reason_directory: array<u8, 15> =[105_u8, 115_u8, 32_u8, 97_u8, 32_u8, 100_u8, 105_u8, 114_u8, 101_u8, 99_u8, 116_u8, 111_u8, 114_u8, 121_u8, 10_u8];
 
+const reason_invalid_path: array<u8, 22> =[105_u8, 110_u8, 118_u8, 97_u8, 108_u8, 105_u8, 100_u8, 32_u8, 114_u8, 101_u8, 108_u8, 97_u8, 116_u8, 105_u8, 118_u8, 101_u8, 32_u8, 112_u8, 97_u8, 116_u8, 104_u8, 10_u8];
+
 const reason_long_line: array<u8, 14> =[108_u8, 105_u8, 110_u8, 101_u8, 32_u8, 116_u8, 111_u8, 111_u8, 32_u8, 108_u8, 111_u8, 110_u8, 103_u8, 10_u8];
 
 const reason_unreadable: array<u8, 12> =[99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 114_u8, 101_u8, 97_u8, 100_u8, 10_u8];
-
-const reason_broken_pipe: array<u8, 20> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 98_u8, 114_u8, 111_u8, 107_u8, 101_u8, 110_u8, 32_u8, 112_u8, 105_u8, 112_u8, 101_u8, 10_u8];
-
-const reason_write_error: array<u8, 20> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 119_u8, 114_u8, 105_u8, 116_u8, 101_u8, 32_u8, 101_u8, 114_u8, 114_u8, 111_u8, 114_u8, 10_u8];
 
 const reason_pattern_too_long: array<u8, 25> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 112_u8, 97_u8, 116_u8, 116_u8, 101_u8, 114_u8, 110_u8, 32_u8, 116_u8, 111_u8, 111_u8, 32_u8, 108_u8, 111_u8, 110_u8, 103_u8, 10_u8];
 
@@ -290,23 +288,37 @@ fn report_failure['e, 'r, 'n](err: &uniq 'e Output, report: &uniq 'r buffer<u8>,
       set length = append_slice<'prefix_append, 'report_prefix>(destination: &uniq 'prefix_append deref(report), filled: length, text: move view);
     }
   }
-  region 'prefix_write {
-    match publish_all<'prefix_write, 'prefix_write>(output: &uniq 'prefix_write deref(err), source: &'prefix_write deref(report), length: length) {
-      Ok(value: published) => {
-      }
-      Err(error: problem) => {
-      }
+  let prior_length = length;
+  let report_capacity = len(deref(report));
+  let path_room = len(deref(path));
+  let copied_count = 0_u64;
+  loop @name {
+    let done = ige(copied_count, path_length);
+    if done {
+      break @name;
     }
-  }
-  region 'path_write {
-    match publish_all<'path_write, 'n>(output: &uniq 'path_write deref(err), source: path, length: path_length) {
-      Ok(value: published) => {
-      }
-      Err(error: problem) => {
-      }
+    let readable = ilt(copied_count, path_room);
+    if readable {
+    } else {
+      break @name;
     }
+    let target_at = prior_length +wrap copied_count;
+    let writable = ilt(target_at, report_capacity);
+    if writable {
+    } else {
+      break @name;
+    }
+    let byte = deref(path)[copied_count];
+    set deref(report)[target_at] = byte;
+    set copied_count = copied_count +wrap 1_u64;
   }
-  let tail = 0_u64;
+  let candidate_length = prior_length +wrap copied_count;
+  let candidate_fits = ile(candidate_length, report_capacity);
+  let tail = if candidate_fits {
+    give candidate_length;
+  } else {
+    give prior_length;
+  }
   region 'report_separator {
     let view = slice_of(&'report_separator error_separator);
     region 'separator_append {
@@ -338,6 +350,15 @@ fn report_failure['e, 'r, 'n](err: &uniq 'e Output, report: &uniq 'r buffer<u8>,
       let view = slice_of(&'reason_directory_view reason_directory);
       region 'reason_directory_append {
         set tail = append_slice<'reason_directory_append, 'reason_directory_view>(destination: &uniq 'reason_directory_append deref(report), filled: tail, text: move view);
+      }
+    }
+  }
+  if ieq(status, 5_u8) {
+    set named = 1_u8;
+    region 'reason_path_view {
+      let view = slice_of(&'reason_path_view reason_invalid_path);
+      region 'reason_path_append {
+        set tail = append_slice<'reason_path_append, 'reason_path_view>(destination: &uniq 'reason_path_append deref(report), filled: tail, text: move view);
       }
     }
   }
@@ -1126,6 +1147,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
               }
             }
             Err(error: rejected) => {
+              set root_status = 5_u8;
             }
           }
         }

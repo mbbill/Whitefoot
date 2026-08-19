@@ -7931,6 +7931,15 @@ fn assert_real_raw_append_routes(program: &CheckedProgramData) {
     }
 }
 
+/// The `append_slice` receiver routes and the A10-A16 delivery chain the
+/// searching `wfgrep` retains.
+///
+/// One route per source `append_slice` call site, and the count is derived
+/// from source, never from the module: `report_failure` appends the prefix
+/// and then, after the A10 clamp, the separator and six reasons — eight
+/// sites — and `main` appends one of three startup messages — three sites.
+/// The argv-list version had the same eight in `report_failure` and four in
+/// `main`, which is where the twelve this asserted before came from.
 fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
     for view in [
         ProofView::Complete,
@@ -7950,8 +7959,8 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
                     } if root_view == view
                 ))
                 .count(),
-            12,
-            "wfgrep has exactly twelve append_slice receiver routes",
+            11,
+            "wfgrep has exactly eleven append_slice receiver routes",
         );
     }
 
@@ -7970,6 +7979,14 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
             _ => None,
         })
         .collect::<Vec<_>>();
+    // A10 survives the searching rewrite because the diagnostic still wants
+    // the shape: `report_failure` assembles `wfgrep: PATH: reason` in one
+    // reusable buffer and publishes it with one host write, so it has to
+    // clamp the assembled length against the buffer's capacity, and a
+    // `value_if` over the fits test is how that clamp is written. Publishing
+    // the three pieces separately would drop the clamp — and the delivery
+    // route with it — at the price of three host writes for one diagnostic
+    // and no guarantee that the pieces stay adjacent in a shared sink.
     assert!(
         !delivery_receivers.is_empty(),
         "A10 must deliver one receiver"
