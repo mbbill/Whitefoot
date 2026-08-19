@@ -52,11 +52,12 @@ mod tests {
         classify_terminals,
     };
 
-    const UNLABELLED_ENTRY: &[u8] = b"fn main() -> own unit pure {\n  return unit;\n}\n";
+    const UNLABELLED_ENTRY: &[u8] =
+        b"fn main() -> result: own unit pure {\n  return unit;\n}\n";
 
-    const COMMAND_ENTRY: &[u8] = b"command fn main(command.args as args: own Args) -> own ExitStatus pure {\n  return unit;\n}\n";
+    const COMMAND_ENTRY: &[u8] = b"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
-    const NON_ENTRY_KIND: &[u8] = b"command fn helper() -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
+    const NON_ENTRY_KIND: &[u8] = b"command fn helper() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n\nfn main() -> result: own unit pure {\n  return unit;\n}\n";
 
     fn with_topology<ResultValue>(
         source: &[u8],
