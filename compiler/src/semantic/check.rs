@@ -2015,11 +2015,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             GoalOperation::BufferFits {
                 element,
-                maximum_length,
-            } => GoalOperation::BufferFits {
-                element: self.instantiate_goal_type(element, signature, regions)?,
-                maximum_length,
-            },
+                maximum_length: _,
+            } => {
+                let element = self.instantiate_goal_type(element, signature, regions)?;
+                let maximum_length = self
+                    .instantiated_layout_ceiling(element)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                    .stride
+                    .allocation_limit();
+                GoalOperation::BufferFits {
+                    element,
+                    maximum_length,
+                }
+            }
             GoalOperation::SliceLength { region, element } => GoalOperation::SliceLength {
                 region: self.instantiate_goal_region(region, signature, regions)?,
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,

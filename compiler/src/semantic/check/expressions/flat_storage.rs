@@ -342,9 +342,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<TypedExpression, CheckStop> {
         self.reject_region_bearing_storage_operation_argument(node, "buffer_fits", function, 1, 0)?;
         let ty = self.retained_operation_type_argument(node, function)?;
-        if !ty.is_concrete() {
-            return self.unsupported(UnsupportedSemanticFeature::Generics, node);
-        }
         let element = match self.buffer_element(ty)? {
             Some(_) => ty,
             None if matches!(ty, CheckedType::Array { .. } | CheckedType::Buffer { .. }) => ty,
@@ -388,6 +385,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.layout_ceiling_inner(ty, &mut visiting).ok_or_else(|| {
             self.issue_value(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation)
         })
+    }
+
+    /// Recomputes the OP-9 ceiling after a generic GoalTemplate's element
+    /// type has been instantiated. Keeping this calculation at the type
+    /// authority prevents a symbolic template's conservative ceiling from
+    /// becoming the identity of a concrete call requirement.
+    pub(in crate::semantic::check) fn instantiated_layout_ceiling(
+        &self,
+        ty: CheckedType,
+    ) -> Option<CheckedLayoutCeiling> {
+        self.layout_ceiling_inner(ty, &mut HashSet::new())
     }
 
     fn layout_ceiling_inner(
@@ -460,9 +468,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 visiting.remove(&id);
                 result
             }
-            CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => {
-                None
-            }
+            // Symbolic generic bodies are validated but never lowered. A
+            // bound-wide ceiling lets that structural pass retain the same
+            // expression shape; every concrete instance is checked again and
+            // receives its exact ceiling. Int and Float are at most 64 bits.
+            CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => primitive(8),
+            // An unbounded parameter has no buffer-storable bound. Retain an
+            // exact abstract upper observation for nested symbolic layout;
+            // operations that require a buffer element still reject the type
+            // before reaching this calculation.
+            CheckedType::Generic(_) => Some(CheckedLayoutCeiling {
+                size: CheckedLayoutMagnitude::AboveU64,
+                align: 16,
+                stride: CheckedLayoutMagnitude::AboveU64,
+            }),
         }
     }
 
