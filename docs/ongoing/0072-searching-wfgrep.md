@@ -145,17 +145,55 @@ specification byte moves; nothing activates.
 
 Decisions folded into that review:
 
-1. **Two wfgrep diagnostics retired.** `wfgrep: broken pipe` and
+1. **The silent search bounds** (above). Ruling wanted: merge with the
+   bounds disclosed and repair them first in the next batch, or hold the
+   merge until `walk` collects through the growable layer.
+2. **A misattributed failure class.** `io_class` maps `BrokenPipe` to 4,
+   and `report_failure` names 1, 2, 3, 5, 6 — so 4 falls through to
+   "cannot read". A STANDARD OUTPUT write failure inside `search_file`
+   is therefore reported as the INPUT FILE being unreadable. The two
+   retired diagnostics (`broken pipe`, `write error`) went with the
+   publication loop they belonged to. Ruling wanted: accept the coarser
+   reporting, or restore the classes.
+3. **Two wfgrep diagnostics retired.** `wfgrep: broken pipe` and
    `wfgrep: write error` went with the publication loop they belonged
    to; a failed publication now reads `wfgrep: PATH: cannot read`. Their
    constants were deleted rather than left unread. Ruling wanted: accept
    the coarser error reporting, or restore the two cases.
-2. **Protected surface:** six conformance renames (verdicts verified
+4. **Protected surface:** six conformance renames (verdicts verified
    unchanged) and the adapter ignore-reason tally correction.
-3. **The Linux qualification correction** is specified but not landed;
+5. **The Linux qualification correction** is specified but not landed;
    it rides the v0.33 candidate.
-4. **The attribution gaps** the batch inventoried: OWN-6 has zero
+6. **The attribution gaps** the batch inventoried: OWN-6 has zero
    reject-citing cases while its `InvalidChildReborrow` surface has three
    separable conditions pinned only by lib tests; OP-5 has one citing
    case while 42 cases exercise its condition judgment. Both need case
    additions the lead did not make unilaterally.
+
+7. **Un-scoped research landed on this branch, and it now gates a scoped
+   deliverable.** Five contract-surface documents (~300 KB) were written
+   under owner direction mid-batch, under no plan item, and the record
+   then cites the pending contract decision as the reason W3's v0.33
+   candidate was not composed. The documents are split onto main; the
+   sequencing decision is the owner's: compose v0.33 now from the three
+   deltas that exist, or hold it for the contract surface.
+8. **A compiler-ahead-of-spec window.** ACTIVE v0.32 still states the
+   strict-in-U OP-2 and OP-4 rejections in writing; the batch removed
+   the arms that emit them and kept the invariant as an internal
+   consistency guard. The accepted set cannot move, but a program v0.32
+   requires be rejected as invalid source would now surface as a
+   compiler failure. The window closes when the v0.33 candidate lands.
+
+### Known defects carried, not fixed
+
+- `report_failure` open-codes an 18-line copy loop that duplicates
+  `copy_range`, which is declared in the same file and already used for
+  exactly this job. The repair touches the proof structure the A10
+  witness depends on and needs its own verification round.
+- The `value_if` clamp's else branch is unreachable at runtime: the copy
+  loop already bounds the length. It is a proof device for the following
+  `append_slice`, which is legitimate, but the batch described the shape
+  as better code without saying so.
+- Five pre-batch wfgrep test cases retired with no replacement; the
+  behaviours they covered were verified still working, so this is
+  coverage loss rather than regression.
