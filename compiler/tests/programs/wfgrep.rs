@@ -65,7 +65,13 @@ fn reference(root: &Path, display: &[u8], pattern: &[u8]) -> (Vec<u8>, i32) {
     (published, i32::from(!matched))
 }
 
-fn visit(directory: &Path, display: &[u8], pattern: &[u8], published: &mut Vec<u8>, hit: &mut bool) {
+fn visit(
+    directory: &Path,
+    display: &[u8],
+    pattern: &[u8],
+    published: &mut Vec<u8>,
+    hit: &mut bool,
+) {
     let mut entries: Vec<_> = std::fs::read_dir(directory)
         .expect("read the reference fixture directory")
         .map(|entry| entry.expect("one reference fixture entry"))
@@ -115,7 +121,10 @@ fn lines(content: &[u8]) -> Vec<&[u8]> {
 }
 
 fn occurs(line: &[u8], pattern: &[u8]) -> bool {
-    pattern.is_empty() || line.windows(pattern.len().max(1)).any(|window| window == pattern)
+    pattern.is_empty()
+        || line
+            .windows(pattern.len().max(1))
+            .any(|window| window == pattern)
 }
 
 /// Runs wfgrep over one fixture tree and compares it with the reference.

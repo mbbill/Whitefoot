@@ -1081,9 +1081,7 @@ pub fn system_constructor_declaration(
     inventory: Inventory,
 ) -> Option<SystemDeclarationId> {
     let mut ordinal = system_nominals(inventory).len();
-    for (constructor_index, constructor) in
-        system_constructors(inventory).iter().enumerate()
-    {
+    for (constructor_index, constructor) in system_constructors(inventory).iter().enumerate() {
         if constructor_index == usize::from(index) {
             return u8::try_from(ordinal).ok().map(SystemDeclarationId::new);
         }
@@ -1229,9 +1227,9 @@ mod tests {
     use std::collections::HashSet;
 
     use super::{
-        DeclarationClass, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS, ReservedNameClass,
-        SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemDeclarationId, SystemEntity,
-        Inventory, SystemParameterMode, SystemResultPayload, SystemTypeRef,
+        DeclarationClass, Inventory, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS,
+        ReservedNameClass, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
+        SystemDeclarationId, SystemEntity, SystemParameterMode, SystemResultPayload, SystemTypeRef,
         operation_region_effects, reserved_name, system_constructors, system_declarations,
         system_entity, system_nominals, system_operations,
     };
@@ -1401,7 +1399,10 @@ mod tests {
         let mut operations = 0;
         let mut owner_local = 0;
         for record in system_declarations(Inventory::Base) {
-            match (record.lookup_class(), system_entity(record.id(), Inventory::Base)) {
+            match (
+                record.lookup_class(),
+                system_entity(record.id(), Inventory::Base),
+            ) {
                 (Some(DeclarationClass::NominalType), Some(SystemEntity::Nominal(nominal))) => {
                     assert_eq!(nominal.spelling, record.spelling());
                     nominals += 1;
@@ -1497,7 +1498,10 @@ mod tests {
         let mut operations = 0;
         let mut owner_local = 0;
         for record in system_declarations(Inventory::Traversal) {
-            match (record.lookup_class(), system_entity(record.id(), Inventory::Traversal)) {
+            match (
+                record.lookup_class(),
+                system_entity(record.id(), Inventory::Traversal),
+            ) {
                 (Some(DeclarationClass::NominalType), Some(SystemEntity::Nominal(nominal))) => {
                     assert_eq!(nominal.spelling, record.spelling());
                     nominals += 1;
@@ -1580,7 +1584,10 @@ mod tests {
             panic!("the candidate ordinal must name the candidate operation");
         };
         assert_eq!(operation.spelling, "open_file");
-        assert_eq!((operation.external, operation.blocks, operation.traps), (true, true, true));
+        assert_eq!(
+            (operation.external, operation.blocks, operation.traps),
+            (true, true, true)
+        );
         // Off, the same ordinal is past the inventory and names nothing.
         assert!(system_entity(open_file, Inventory::Traversal).is_none());
         assert!(system_entity(SystemDeclarationId::new(199), Inventory::OpenByName).is_none());
