@@ -43,7 +43,7 @@ pub(crate) use term::{
 
 use std::collections::{BTreeSet, HashMap};
 
-use super::goal::ConcreteGoal;
+use super::goal::{ConcreteGoal, GoalExpression};
 use super::model::{
     BindingId, CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFunction,
     CheckedIntegerOperation, CheckedMode, CheckedNominal, CheckedSetTarget, CheckedStatement,
@@ -149,48 +149,37 @@ impl EntailmentContext<'_> {
     }
 }
 
-/// The [ENT-6] obligation family one outcome belongs to. The bounds family
-/// rejects citing OP-4 at its `psuffix` node; the overflow and division
-/// families reject citing OP-2 at their `infix` node. All three share one
-/// outcome inventory, derivation-root namespace, and strict U re-judgment.
+/// The [ENT-6] obligation family one outcome belongs to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ObligationFamily {
     /// A subscript bounds obligation `i < len(P)` [OP-4].
     Bounds,
-    /// A constant-operand-class bare `+`/`-`/`*` overflow obligation [OP-2].
-    Overflow,
-    /// A divisor-class bare `/`/`%` well-defined-division obligation [OP-2].
-    Division,
+    /// One canonical `.defined` goal for a proof-required exact integer
+    /// operation [OP-2, ENT-6].
+    IntegerDomain,
 }
 
-/// [ENT-6] disposition of one obligation conjunct, judged at its source node.
+/// [ENT-6] disposition of one source obligation, judged at its source node.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ObligationOutcome {
     /// The subscript's `psuffix` node or the class call's `infix` node the
     /// obligation is attached to — one record per subscript in a chain and
     /// one per overflow conjunct [ENT-6].
     pub(crate) node_path: NodePath,
-    /// The obligation family this conjunct belongs to.
+    /// The obligation family this occurrence belongs to.
     pub(crate) family: ObligationFamily,
-    /// The bounds obligation has one upper-bound conjunct at ordinal zero;
-    /// the overflow obligation has its upper conjunct at ordinal zero and
-    /// its lower conjunct at ordinal one; the division obligation has its
-    /// zero-divisor conjunct at ordinal zero and its signed-overflow
-    /// conjunct at ordinal one [ENT-6].
-    pub(crate) conjunct: u8,
-    /// The normalized conjunct. The bounds family requests
-    /// `offset - len(base) <= -1`; the overflow family requests
-    /// `operand - Z <= c` at ordinal zero and `Z - operand <= c` at ordinal
-    /// one, with both sides Z for a ground conjunct; the division family
-    /// requests the disequality `divisor != Z` at ordinal zero and either
-    /// one operand disequality or the ground true bound at ordinal one, its
-    /// term pair recorded in the identity order the derivation normalizes
-    /// to. `left` is absent only when the checked operand is outside
-    /// ENT-2's term vocabulary; the exact checked expression remains
-    /// recoverable from `node_path` in the same function.
-    pub(crate) requested: BoundsRequest,
+    /// The canonical total Bool domain predicate. Bounds obligations carry
+    /// `None`; an integer-domain obligation carries `Some` whenever every
+    /// operand belongs to ENT-2's finite goal vocabulary.
+    pub(crate) canonical_goal: Option<GoalExpression>,
+    /// Fixed family normalization used only as an alternate proof route.
+    /// Components never receive source-obligation identities.
+    pub(crate) components: Vec<BoundsRequest>,
     /// The closed fact state at the node derives the normalized relation.
     pub(crate) discharged: bool,
+    /// The noncontradictory state proves the canonical goal false, or proves
+    /// one fixed normalization component false.
+    pub(crate) refuted: bool,
     /// The state at the node was contradictory, discharging everything.
     pub(crate) contradictory: bool,
     /// The exact residual rendering for an undischarged obligation: the
@@ -259,9 +248,9 @@ pub(crate) fn overflow_obligation_class(
     arguments: &[CheckedExpression],
 ) -> Option<OverflowOperandClass<'_>> {
     let operation = match operation {
-        CheckedIntegerOperation::AddTrap => OverflowClassOperation::Add,
-        CheckedIntegerOperation::SubtractTrap => OverflowClassOperation::Subtract,
-        CheckedIntegerOperation::MultiplyTrap => OverflowClassOperation::Multiply,
+        CheckedIntegerOperation::AddExact => OverflowClassOperation::Add,
+        CheckedIntegerOperation::SubtractExact => OverflowClassOperation::Subtract,
+        CheckedIntegerOperation::MultiplyExact => OverflowClassOperation::Multiply,
         _ => return None,
     };
     let [left, right] = arguments else {
@@ -330,11 +319,12 @@ impl GroundResult {
         low <= value && value <= high
     }
 
+    #[cfg(test)]
     pub(crate) fn render(self) -> String {
         if self.negative && self.magnitude != 0 {
             format!("-{}", self.magnitude)
         } else {
-            format!("{}", self.magnitude)
+            self.magnitude.to_string()
         }
     }
 }
@@ -440,96 +430,6 @@ pub(crate) fn overflow_conjuncts(
             }
         }
     }
-}
-
-/// The [OP-2] signed-overflow conjunct of one divisor-class call: the safe
-/// condition `dividend != min(T) or divisor != -1` is a disjunction, which
-/// the [ENT-4] conjunctive fragment cannot express. It is attached only
-/// where one disjunct is statically true, leaving one expressible
-/// disequality or nothing at all.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum DivisionOverflowConjunct<'expression> {
-    /// `iK::MIN / -1` cannot occur at this site: T is unsigned, or the
-    /// constant operand already decides the pair. The conjunct is the
-    /// ground true relation.
-    Vacuous,
-    /// The other operand must differ from the checker-computed constant
-    /// that would complete the trapping pair.
-    Distinct {
-        operand: &'expression CheckedExpression,
-        constant: i128,
-    },
-}
-
-/// [OP-2] divisor-class decomposition of one bare trapping `/` or `%` call.
-/// The zero-divisor goal `d != 0` is one [ENT-2] disequality against Z and
-/// is therefore expressible for every divisor the fragment reads as a term
-/// or a constant. The signed-overflow goal is a disjunction, so the class
-/// admits a signed selected type only when one operand atom reads as an
-/// [ENT-2] constant and decides that pair statically. One shared classifier
-/// serves the checker's trap/effect classification and the flow's
-/// obligation judgment, so the two views cannot drift.
-///
-/// Divide and remainder share one class and one pair of conjuncts: both
-/// rows fail on exactly the same two inputs, so the operation identity adds
-/// nothing to the judgment and is not retained.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct DivisionOperandClass<'expression> {
-    /// The divisor operand, whose disequality to zero is conjunct zero.
-    pub(crate) divisor: &'expression CheckedExpression,
-    /// Conjunct one.
-    pub(crate) overflow: DivisionOverflowConjunct<'expression>,
-}
-
-/// Classifies one integer operation for the [ENT-6] division obligation
-/// family. Returns `None` for every operation outside the bare trapping
-/// divide/remainder family and for every such call over a signed selected
-/// type with two non-constant operands — the retained trapping class, whose
-/// safe condition stays inexpressible.
-pub(crate) fn division_obligation_class<'expression>(
-    operation: CheckedIntegerOperation,
-    operand_type: CheckedType,
-    arguments: &'expression [CheckedExpression],
-) -> Option<DivisionOperandClass<'expression>> {
-    if !matches!(
-        operation,
-        CheckedIntegerOperation::DivideTrap | CheckedIntegerOperation::RemainderTrap
-    ) {
-        return None;
-    }
-    let [dividend, divisor] = arguments else {
-        return None;
-    };
-    let ty = fragment_type(operand_type)?;
-    let (minimum, _) = term::type_range(ty);
-    let overflow = if !ty.signed() {
-        DivisionOverflowConjunct::Vacuous
-    } else if let Some(constant) = constant_operand(divisor) {
-        // A constant divisor decides the `-1` half of the trapping pair.
-        if constant == -1 {
-            DivisionOverflowConjunct::Distinct {
-                operand: dividend,
-                constant: minimum,
-            }
-        } else {
-            DivisionOverflowConjunct::Vacuous
-        }
-    } else {
-        // A constant dividend decides the `min(T)` half. With neither
-        // operand constant the safe condition is the disjunction the
-        // fragment cannot state, so the signed site stays outside the class
-        // and keeps its trap.
-        let constant = constant_operand(dividend)?;
-        if constant == minimum {
-            DivisionOverflowConjunct::Distinct {
-                operand: divisor,
-                constant: -1,
-            }
-        } else {
-            DivisionOverflowConjunct::Vacuous
-        }
-    };
-    Some(DivisionOperandClass { divisor, overflow })
 }
 
 /// The exact mathematical value of one operand atom that reads as an
@@ -917,6 +817,9 @@ pub(crate) struct ViewObligationOutcome {
     pub(crate) family: ObligationFamily,
     /// Whether the selected counterfactual fact sources discharge it.
     pub(crate) discharged: bool,
+    /// Whether this noncontradictory counterfactual proves the obligation
+    /// false rather than merely failing to prove it.
+    pub(crate) refuted: bool,
     /// The ordinary canonical residual when it remains undischarged.
     pub(crate) residual: Option<String>,
     /// Exact same-view proof, retained only through a required caller-local
@@ -1048,13 +951,8 @@ impl FunctionEntailment {
         Ok(())
     }
 
-    /// Retains one already-successful protected-obligation U proof.
-    ///
-    /// An overflow obligation [OP-2] holds two conjunct outcomes at one
-    /// `infix` node path; registration runs only after the strict closure
-    /// reported no failure, so every same-path conjunct is discharged, and
-    /// the retained root carries the least conjunct's proof. The other
-    /// conjunct's U proof stays on its `ViewObligationOutcome`.
+    /// Retains one already-successful obligation U proof. Each source
+    /// occurrence has exactly one view outcome and one aggregate derivation.
     pub(crate) fn register_strict_obligation(
         &mut self,
         node_path: &NodePath,
@@ -1071,11 +969,7 @@ impl FunctionEntailment {
         let derivation = outcome
             .derivation
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        self.register_strict_root(
-            node_path,
-            StrictDerivationRootKind::BoundsObligation,
-            derivation,
-        )
+        self.register_strict_root(node_path, StrictDerivationRootKind::Obligation, derivation)
     }
 
     /// Retains one already-successful ordinary-call requirement U proof.
@@ -1240,21 +1134,10 @@ pub(crate) fn build_claim_ledger(
                     continue;
                 }
                 let use_provenance = match root.kind {
-                    state::DerivationRootKind::BoundsObligation(ordinal)
-                        if matches!(
-                            function
-                                .entailment
-                                .obligations
-                                .get(ordinal as usize)
-                                .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                                .family,
-                            ObligationFamily::Overflow | ObligationFamily::Division
-                        ) =>
-                    {
-                        // The overflow and division families attach base
-                        // discharge only: no provenance judgment exists for
-                        // their occurrences [OP-2, ENT-6], so a supporting
-                        // claim records the use with no leaf disposition.
+                    state::DerivationRootKind::IntegerDomainObligation(_) => {
+                        // Integer-domain obligations are not protected memory
+                        // leaves. A supporting claim records the use without
+                        // a provenance disposition [OP-2, ENT-6].
                         ClaimUseProvenance::NotApplicable
                     }
                     state::DerivationRootKind::BoundsObligation(ordinal) => {
@@ -1266,7 +1149,7 @@ pub(crate) fn build_claim_ledger(
                         let leaf = super::provenance::ProtectedLeaf {
                             function: function.id,
                             obligation: outcome.node_path.clone(),
-                            conjunct: u32::from(outcome.conjunct),
+                            conjunct: 0,
                         };
                         let mut matches = provenance
                             .local_leaf_dispositions

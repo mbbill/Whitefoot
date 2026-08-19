@@ -213,6 +213,7 @@ fn discharge_flags(source: &[u8], function: &str) -> Vec<bool> {
 enum DerivationConclusion {
     Relation(Relation),
     Goal { goal: GoalId, sign: GoalSign },
+    IntegerDomain(Option<GoalId>),
     Contradiction,
     PostconditionAggregate,
 }
@@ -1017,6 +1018,13 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 );
                 DerivationConclusion::Contradiction
             }
+            DerivationNode::IntegerDomain { goal, parents } => {
+                if let Some(goal) = goal {
+                    assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
+                }
+                assert!(!parents.is_empty());
+                DerivationConclusion::IntegerDomain(*goal)
+            }
             DerivationNode::JoinBound {
                 left,
                 right,
@@ -1377,6 +1385,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                             }
                         }
                         DerivationConclusion::Goal { .. }
+                        | DerivationConclusion::IntegerDomain(_)
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("delivery join parent must be a relation or contradiction")
                         }
@@ -1488,50 +1497,54 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert!(!seen_obligations[ordinal], "one exact root per obligation");
                 seen_obligations[ordinal] = true;
                 assert!(outcome.discharged);
-                // [ENT-6] conjunct ordinals per family: the bounds relation
-                // has one conjunct at ordinal zero; the overflow relation an
-                // upper conjunct at zero and a lower conjunct at one; the
-                // division relation a zero-divisor conjunct at zero and a
-                // signed-overflow conjunct at one.
-                match outcome.family {
-                    ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
-                    ObligationFamily::Overflow | ObligationFamily::Division => {
-                        assert!(outcome.conjunct <= 1);
-                    }
-                }
+                assert_eq!(outcome.family, ObligationFamily::Bounds);
                 assert_eq!(outcome.derivation, Some(root.node));
                 assert!(!outcome.node_path.components().is_empty());
-                retained_term(summary, outcome.requested.right);
+                let [requested] = outcome.components.as_slice() else {
+                    panic!("a bounds obligation has one normalized relation");
+                };
+                retained_term(summary, requested.right);
                 match conclusion {
                     DerivationConclusion::Relation(relation) => {
-                        let left = outcome
-                            .requested
+                        let left = requested
                             .left
                             .expect("noncontradictory accepted bound has a tracked offset");
                         retained_term(summary, left);
-                        // The division family requests a disequality; every
-                        // other family requests a difference bound.
-                        let requested = if outcome.requested.distinct {
+                        let expected = if requested.distinct {
                             Relation::Distinct {
                                 left,
-                                right: outcome.requested.right,
+                                right: requested.right,
                             }
                         } else {
                             Relation::Bound {
                                 left,
-                                right: outcome.requested.right,
-                                bound: outcome.requested.bound,
+                                right: requested.right,
+                                bound: requested.bound,
                             }
                         };
-                        assert_eq!(relation, &requested);
+                        assert_eq!(relation, &expected);
                         assert!(!outcome.contradictory);
                     }
                     DerivationConclusion::Contradiction => assert!(outcome.contradictory),
                     DerivationConclusion::Goal { .. }
+                    | DerivationConclusion::IntegerDomain(_)
                     | DerivationConclusion::PostconditionAggregate => {
                         panic!("a bounds root cannot conclude a goal")
                     }
                 }
+            }
+            DerivationRootKind::IntegerDomainObligation(ordinal) => {
+                let ordinal = ordinal as usize;
+                let outcome = summary
+                    .obligations
+                    .get(ordinal)
+                    .expect("integer-domain root ordinal must resolve");
+                assert!(!seen_obligations[ordinal], "one exact root per obligation");
+                seen_obligations[ordinal] = true;
+                assert_eq!(outcome.family, ObligationFamily::IntegerDomain);
+                assert!(outcome.discharged);
+                assert_eq!(outcome.derivation, Some(root.node));
+                assert!(matches!(conclusion, DerivationConclusion::IntegerDomain(_)));
             }
             DerivationRootKind::CallGoal(ordinal) => {
                 let ordinal = ordinal as usize;
@@ -1565,7 +1578,8 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     | DerivationConclusion::Relation(_) => {
                         panic!("a discharged call root must be positive or contradictory")
                     }
-                    DerivationConclusion::PostconditionAggregate => {
+                    DerivationConclusion::IntegerDomain(_)
+                    | DerivationConclusion::PostconditionAggregate => {
                         panic!("a discharged call root cannot be a postcondition aggregate")
                     }
                 }
@@ -2043,7 +2057,7 @@ fn validate_claim_ledger(program: &CheckedProgramData) {
                         let leaf = &disposition.leaf;
                         assert_eq!(leaf.function, function.id);
                         assert_eq!(leaf.obligation, obligation.node_path);
-                        assert_eq!(leaf.conjunct, u32::from(obligation.conjunct));
+                        assert_eq!(leaf.conjunct, 0);
                         assert_eq!(
                             program
                                 .provenance
@@ -5694,7 +5708,7 @@ fn wrong_bit_operation(left: own u32, right: own u32) -> own u32 pure {
 }
 
 fn wrong_shift_mode(count: own u32) -> own u32 traps {
-  let shifted = ishl.trap(1_u32, count);
+  let shifted = ishl(1_u32, count);
   return shifted;
 }
 

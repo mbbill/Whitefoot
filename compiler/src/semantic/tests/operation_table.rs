@@ -147,21 +147,28 @@ const fn integer_spelling(operation: CheckedIntegerOperation) -> &'static str {
         Op::AddWrap => "+wrap",
         Op::SubtractWrap => "-wrap",
         Op::MultiplyWrap => "*wrap",
-        Op::AddTrap => "+",
-        Op::SubtractTrap => "-",
-        Op::MultiplyTrap => "*",
+        Op::AddExact => "+",
+        Op::SubtractExact => "-",
+        Op::MultiplyExact => "*",
+        Op::AddDefined => "+defined",
+        Op::SubtractDefined => "-defined",
+        Op::MultiplyDefined => "*defined",
         Op::AddChecked => "+checked",
         Op::SubtractChecked => "-checked",
         Op::MultiplyChecked => "*checked",
-        Op::DivideTrap => "/",
-        Op::RemainderTrap => "%",
+        Op::DivideExact => "/",
+        Op::RemainderExact => "%",
+        Op::DivideDefined => "/defined",
+        Op::RemainderDefined => "%defined",
         Op::DivideChecked => "/checked",
         Op::RemainderChecked => "%checked",
         Op::AbsoluteWrap => "iabs.wrap",
-        Op::AbsoluteTrap => "iabs.trap",
+        Op::AbsoluteExact => "iabs",
+        Op::AbsoluteDefined => "iabs.defined",
         Op::AbsoluteChecked => "iabs.checked",
         Op::NegateWrap => "ineg.wrap",
-        Op::NegateTrap => "ineg.trap",
+        Op::NegateExact => "ineg",
+        Op::NegateDefined => "ineg.defined",
         Op::NegateChecked => "ineg.checked",
         Op::BitAnd => "iand",
         Op::BitOr => "ior",
@@ -169,8 +176,10 @@ const fn integer_spelling(operation: CheckedIntegerOperation) -> &'static str {
         Op::BitNot => "inot",
         Op::ShiftLeftWrap => "ishl.wrap",
         Op::ShiftRightWrap => "ishr.wrap",
-        Op::ShiftLeftTrap => "ishl.trap",
-        Op::ShiftRightTrap => "ishr.trap",
+        Op::ShiftLeftExact => "ishl",
+        Op::ShiftRightExact => "ishr",
+        Op::ShiftLeftDefined => "ishl.defined",
+        Op::ShiftRightDefined => "ishr.defined",
         Op::RotateLeft => "irotl",
         Op::RotateRight => "irotr",
         Op::PopulationCount => "ipopcount",
@@ -192,27 +201,34 @@ const fn integer_spelling(operation: CheckedIntegerOperation) -> &'static str {
     }
 }
 
-const INTEGER_OPERATIONS: [CheckedIntegerOperation; 45] = {
+const INTEGER_OPERATIONS: [CheckedIntegerOperation; 54] = {
     use CheckedIntegerOperation as Op;
     [
         Op::AddWrap,
         Op::SubtractWrap,
         Op::MultiplyWrap,
-        Op::AddTrap,
-        Op::SubtractTrap,
-        Op::MultiplyTrap,
+        Op::AddExact,
+        Op::SubtractExact,
+        Op::MultiplyExact,
+        Op::AddDefined,
+        Op::SubtractDefined,
+        Op::MultiplyDefined,
         Op::AddChecked,
         Op::SubtractChecked,
         Op::MultiplyChecked,
-        Op::DivideTrap,
-        Op::RemainderTrap,
+        Op::DivideExact,
+        Op::RemainderExact,
+        Op::DivideDefined,
+        Op::RemainderDefined,
         Op::DivideChecked,
         Op::RemainderChecked,
         Op::AbsoluteWrap,
-        Op::AbsoluteTrap,
+        Op::AbsoluteExact,
+        Op::AbsoluteDefined,
         Op::AbsoluteChecked,
         Op::NegateWrap,
-        Op::NegateTrap,
+        Op::NegateExact,
+        Op::NegateDefined,
         Op::NegateChecked,
         Op::BitAnd,
         Op::BitOr,
@@ -220,8 +236,10 @@ const INTEGER_OPERATIONS: [CheckedIntegerOperation; 45] = {
         Op::BitNot,
         Op::ShiftLeftWrap,
         Op::ShiftRightWrap,
-        Op::ShiftLeftTrap,
-        Op::ShiftRightTrap,
+        Op::ShiftLeftExact,
+        Op::ShiftRightExact,
+        Op::ShiftLeftDefined,
+        Op::ShiftRightDefined,
         Op::RotateLeft,
         Op::RotateRight,
         Op::PopulationCount,
@@ -384,37 +402,15 @@ fn the_wf_ops_table_and_the_compilers_operations_name_the_same_spellings() {
     );
 }
 
-/// Column 4 of every modelled row decides `traps()`.
+/// Every integer row is statically total or proof-required and therefore pure.
 #[test]
 fn the_effects_column_decides_the_trap_classification() {
     let rows = ops_rows();
-    let mut trapping = 0;
     for operation in INTEGER_OPERATIONS {
         let spelling = integer_spelling(operation);
         let row = row_of(&rows, spelling);
-        // v0.31 qualifies the bare add/sub/mul cell with OP-2's
-        // constant-operand carve-out. The row's effect class is still
-        // `traps`: whether a given site keeps its runtime overflow test is a
-        // per-site [ENT-6] discharge judgment, not a property of the row.
-        let traps = row.effects == "traps" || row.effects.starts_with("traps (");
-        assert!(
-            traps || row.effects == "pure",
-            "{spelling}'s effects cell is {}",
-            row.effects
-        );
-        assert_eq!(
-            operation.traps(),
-            traps,
-            "{spelling} is written `{}` but the compiler says traps() == {}",
-            row.effects,
-            operation.traps()
-        );
-        trapping += usize::from(traps);
+        assert_eq!(row.effects, "pure", "{spelling}");
     }
-    // Nine trapping integer rows: the three bare arithmetic operators, `/`,
-    // `%`, the two trapping shifts, `ineg.trap`, and `iabs.trap`. A count keeps
-    // the loop above from passing vacuously if extraction ever yields nothing.
-    assert_eq!(trapping, 9);
     // [OP-3]: every float row rounds or is exact, and none traps.
     for operation in FLOAT_OPERATIONS {
         let spelling = float_spelling(operation);

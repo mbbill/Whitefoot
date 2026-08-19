@@ -21,7 +21,7 @@ use crate::syntax::NodeId;
 use crate::{
     DeclarationId, DeclarationRole, Production, ResolvedSyntaxUnit, SemanticCompilerFailure,
     SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule,
-    UnsupportedSemanticFeature,
+    StaticObligationDisposition, UnsupportedSemanticFeature,
 };
 
 use super::entailment::{
@@ -500,20 +500,9 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// CLM-2]. Always true outside `check_semantics_dark`, the test-only
     /// observability hook.
     reject_entailment: bool,
-    /// The arithmetic-mode dissolution integration switch: whether a bare
-    /// `+`/`-`/`*` with a constant operand carries an [ENT-6] overflow
-    /// obligation instead of its runtime trap [OP-2]. Follows
-    /// [`ARITHMETIC_OVERFLOW_OBLIGATIONS`] outside the v0.31 candidate
-    /// tests.
-    arithmetic_obligations: bool,
     /// Whether the v0.31-candidate reborrow extension is admitted; see
     /// [`REBORROW_EXTENSION_ACTIVE`].
     reborrow_extension: bool,
-    /// The division dissolution integration switch: whether a bare `/` or
-    /// `%` in [OP-2]'s divisor class carries an [ENT-6] division obligation
-    /// instead of its runtime trap [OP-2]. Follows [`DIVISION_OBLIGATIONS`]
-    /// outside the v0.32-candidate tests.
-    division_obligations: bool,
     tree: TreeView<'unit, 'classified, 'lexed, 'source>,
     nominals: Vec<CheckedNominal>,
     nominal_nodes: Vec<Option<NodeId>>,
@@ -561,24 +550,6 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     contracts_by_declaration: HashMap<DeclarationId, usize>,
 }
 
-/// The arithmetic-mode dissolution integration switch [OP-2, ENT-6]: `true`
-/// under the v0.31 candidate at `spec/kernel-spec.md`, which attaches the
-/// overflow obligation family to the constant-operand class, drops those
-/// sites' trap records and `traps` effect contribution, and rejects
-/// undischarged class sites citing OP-2. A bare `+`/`-`/`*` with two
-/// non-constant operands keeps its runtime overflow trap.
-pub(crate) const ARITHMETIC_OVERFLOW_OBLIGATIONS: bool = true;
-
-/// The division dissolution integration switch [OP-2, ENT-6]: `true` under
-/// the v0.32 candidate at `spec/kernel-spec.md`, which attaches the division
-/// obligation family to [OP-2]'s divisor class, drops those sites' trap
-/// records and `traps` effect contribution, and rejects undischarged class
-/// sites citing OP-2. A bare `/` or `%` over a signed selected type
-/// with two non-constant operands stays outside the class and keeps its
-/// runtime trap, because its safe condition is the disjunction
-/// `dividend != iK::MIN or divisor != -1`, which the [ENT-4] conjunctive
-/// fragment cannot state.
-pub(crate) const DIVISION_OBLIGATIONS: bool = true;
 /// Checks the currently implemented active-specification semantic family.
 ///
 /// Unsupported language families remain explicit compiler capability results;
@@ -587,13 +558,7 @@ pub(crate) const DIVISION_OBLIGATIONS: bool = true;
 pub fn check_semantics<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(
-        resolved,
-        true,
-        ARITHMETIC_OVERFLOW_OBLIGATIONS,
-        REBORROW_EXTENSION_ACTIVE,
-        DIVISION_OBLIGATIONS,
-    )
+    check_semantics_with(resolved, true, REBORROW_EXTENSION_ACTIVE)
 }
 
 /// [`check_semantics`] with the [OP-4]/[CLM-2] entailment rejection disabled,
@@ -606,32 +571,17 @@ pub fn check_semantics<'classified, 'lexed, 'source>(
 pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(
-        resolved,
-        false,
-        ARITHMETIC_OVERFLOW_OBLIGATIONS,
-        REBORROW_EXTENSION_ACTIVE,
-        DIVISION_OBLIGATIONS,
-    )
+    check_semantics_with(resolved, false, REBORROW_EXTENSION_ACTIVE)
 }
 
-/// [`check_semantics`] with the arithmetic-mode dissolution switch forced
-/// on. [`ARITHMETIC_OVERFLOW_OBLIGATIONS`] is now `true` under the v0.31
-/// candidate, so this entry selects the same judgment as the shipped path
-/// and the callers naming it record which judgment they mean. Test-only; the
-/// one shipped acceptance path reads that constant.
+/// Legacy test helper selecting the one shipped semantic judgment. It remains
+/// only while the arithmetic obligation tests are renamed around IntegerDomain.
 #[cfg(test)]
 #[must_use]
 pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(
-        resolved,
-        true,
-        true,
-        REBORROW_EXTENSION_ACTIVE,
-        DIVISION_OBLIGATIONS,
-    )
+    check_semantics_with(resolved, true, REBORROW_EXTENSION_ACTIVE)
 }
 
 /// [`check_semantics`] with the v0.31-candidate reborrow extension admitted.
@@ -644,65 +594,35 @@ pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'sourc
 pub(crate) fn check_semantics_reborrow_extension<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(
-        resolved,
-        true,
-        ARITHMETIC_OVERFLOW_OBLIGATIONS,
-        true,
-        DIVISION_OBLIGATIONS,
-    )
+    check_semantics_with(resolved, true, true)
 }
 
-/// [`check_semantics`] with the division dissolution switch forced on.
-/// [`DIVISION_OBLIGATIONS`] is now `true` under the v0.32 candidate, so this
-/// entry selects the same judgment as the shipped path and the callers naming
-/// it record which judgment they mean. Test-only; the one shipped acceptance
-/// path reads that constant.
+/// Legacy test helper selecting the one shipped semantic judgment. It remains
+/// only while the division obligation tests are renamed around IntegerDomain.
 #[cfg(test)]
 #[must_use]
 pub(crate) fn check_semantics_division_obligations<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(
-        resolved,
-        true,
-        ARITHMETIC_OVERFLOW_OBLIGATIONS,
-        REBORROW_EXTENSION_ACTIVE,
-        true,
-    )
+    check_semantics_with(resolved, true, REBORROW_EXTENSION_ACTIVE)
 }
 
 fn check_semantics_with<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     reject_entailment: bool,
-    arithmetic_obligations: bool,
     reborrow_extension: bool,
-    division_obligations: bool,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
     let preflight = if resolved.postconditions().is_empty() {
         Ok(())
     } else {
-        Checker::new(
-            &resolved,
-            reject_entailment,
-            arithmetic_obligations,
-            reborrow_extension,
-            division_obligations,
-        )
-        .and_then(|mut checker| {
+        Checker::new(&resolved, reject_entailment, reborrow_extension).and_then(|mut checker| {
             let items = checker.item_declarations()?;
             checker.preflight_postcondition_selectors(&items)
         })
     };
     let result = preflight.and_then(|()| {
-        Checker::new(
-            &resolved,
-            reject_entailment,
-            arithmetic_obligations,
-            reborrow_extension,
-            division_obligations,
-        )
-        .and_then(|mut checker| checker.check_program())
+        Checker::new(&resolved, reject_entailment, reborrow_extension)
+            .and_then(|mut checker| checker.check_program())
     });
     match result {
         Ok(data) => SemanticOutcome::Complete(Box::new(CheckedProgram {
@@ -821,16 +741,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn new(
         resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
         reject_entailment: bool,
-        arithmetic_obligations: bool,
         reborrow_extension: bool,
-        division_obligations: bool,
     ) -> Result<Self, CheckStop> {
         Ok(Self {
             resolved,
             reject_entailment,
-            arithmetic_obligations,
             reborrow_extension,
-            division_obligations,
             tree: TreeView::new(resolved)?,
             nominals: Vec::new(),
             nominal_nodes: Vec::new(),
@@ -2737,8 +2653,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 match self {
                     Self::Obligation(outcome) => match outcome.family {
                         super::entailment::ObligationFamily::Bounds => SemanticRule::Op4,
-                        super::entailment::ObligationFamily::Overflow
-                        | super::entailment::ObligationFamily::Division => SemanticRule::Op2,
+                        super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
                     },
                     Self::Call(_) => SemanticRule::Fn8,
                     Self::Claim { .. } => SemanticRule::Clm2,
@@ -2808,20 +2723,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it",
                             },
                         },
-                        super::entailment::ObligationFamily::Overflow => SemanticIssue {
+                        super::entailment::ObligationFamily::IntegerDomain => SemanticIssue {
                             rule: SemanticRule::Op2,
                             location,
-                            kind: SemanticIssueKind::UndischargedOverflowObligation {
+                            kind: SemanticIssueKind::UndischargedIntegerDomainObligation {
                                 residual,
-                                mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it, or respell the operation `wrap`, `checked`, or `sat`",
-                            },
-                        },
-                        super::entailment::ObligationFamily::Division => SemanticIssue {
-                            rule: SemanticRule::Op2,
-                            location,
-                            kind: SemanticIssueKind::UndischargedDivisionObligation {
-                                residual,
-                                mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it, or respell the operation `checked`",
+                                disposition: if outcome.refuted {
+                                    StaticObligationDisposition::Refuted
+                                } else {
+                                    StaticObligationDisposition::Unproved
+                                },
+                                mechanical_fix: "add a dominating `claim` of the `.defined` predicate or a dominating branch establishing its fixed normalization, or use an available total non-exact row",
                             },
                         },
                     }))

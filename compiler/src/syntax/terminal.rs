@@ -201,10 +201,20 @@ pub enum FixedTerminal {
     DenyClaims,
     /// `replace`.
     Replace,
+    /// `+defined`.
+    PlusDefined,
+    /// `-defined`.
+    MinusDefined,
+    /// `*defined`.
+    StarDefined,
+    /// `/defined`.
+    SlashDefined,
+    /// `%defined`.
+    PercentDefined,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 91] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 96] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -271,20 +281,25 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 91] = [
     FixedTerminal::Match,
     FixedTerminal::FatArrow,
     FixedTerminal::Plus,
+    FixedTerminal::PlusDefined,
     FixedTerminal::PlusWrap,
     FixedTerminal::PlusChecked,
     FixedTerminal::PlusSat,
     FixedTerminal::Minus,
+    FixedTerminal::MinusDefined,
     FixedTerminal::MinusWrap,
     FixedTerminal::MinusChecked,
     FixedTerminal::MinusSat,
     FixedTerminal::Star,
+    FixedTerminal::StarDefined,
     FixedTerminal::StarWrap,
     FixedTerminal::StarChecked,
     FixedTerminal::StarSat,
     FixedTerminal::Slash,
+    FixedTerminal::SlashDefined,
     FixedTerminal::SlashChecked,
     FixedTerminal::Percent,
+    FixedTerminal::PercentDefined,
     FixedTerminal::PercentChecked,
     FixedTerminal::Move,
     FixedTerminal::Deref,
@@ -394,6 +409,11 @@ impl FixedTerminal {
             Self::Ensures => b"ensures",
             Self::DenyClaims => b"deny_claims",
             Self::Replace => b"replace",
+            Self::PlusDefined => b"+defined",
+            Self::MinusDefined => b"-defined",
+            Self::StarDefined => b"*defined",
+            Self::SlashDefined => b"/defined",
+            Self::PercentDefined => b"%defined",
         }
     }
 
@@ -415,20 +435,25 @@ impl FixedTerminal {
         matches!(
             self,
             Self::Plus
+                | Self::PlusDefined
                 | Self::PlusWrap
                 | Self::PlusChecked
                 | Self::PlusSat
                 | Self::Minus
+                | Self::MinusDefined
                 | Self::MinusWrap
                 | Self::MinusChecked
                 | Self::MinusSat
                 | Self::Star
+                | Self::StarDefined
                 | Self::StarWrap
                 | Self::StarChecked
                 | Self::StarSat
                 | Self::Slash
+                | Self::SlashDefined
                 | Self::SlashChecked
                 | Self::Percent
+                | Self::PercentDefined
                 | Self::PercentChecked
         )
     }
@@ -468,21 +493,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 99] = {
-    let mut predicates = [TerminalPredicate::Identifier; 99];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 104] = {
+    let mut predicates = [TerminalPredicate::Identifier; 104];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[91] = TerminalPredicate::Identifier;
-    predicates[92] = TerminalPredicate::TypeIdentifier;
-    predicates[93] = TerminalPredicate::RegionIdentifier;
-    predicates[94] = TerminalPredicate::Label;
-    predicates[95] = TerminalPredicate::OperationName;
-    predicates[96] = TerminalPredicate::Literal;
-    predicates[97] = TerminalPredicate::String;
-    predicates[98] = TerminalPredicate::Digits;
+    predicates[96] = TerminalPredicate::Identifier;
+    predicates[97] = TerminalPredicate::TypeIdentifier;
+    predicates[98] = TerminalPredicate::RegionIdentifier;
+    predicates[99] = TerminalPredicate::Label;
+    predicates[100] = TerminalPredicate::OperationName;
+    predicates[101] = TerminalPredicate::Literal;
+    predicates[102] = TerminalPredicate::String;
+    predicates[103] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -490,14 +515,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 91,
-            Self::TypeIdentifier => 92,
-            Self::RegionIdentifier => 93,
-            Self::Label => 94,
-            Self::OperationName => 95,
-            Self::Literal => 96,
-            Self::String => 97,
-            Self::Digits => 98,
+            Self::Identifier => 96,
+            Self::TypeIdentifier => 97,
+            Self::RegionIdentifier => 98,
+            Self::Label => 99,
+            Self::OperationName => 100,
+            Self::Literal => 101,
+            Self::String => 102,
+            Self::Digits => 103,
         }
     }
 }
@@ -591,7 +616,7 @@ pub fn is_label(spelling: &[u8]) -> bool {
 pub fn is_operation_name(spelling: &[u8]) -> bool {
     [
         b".wrap".as_slice(),
-        b".trap",
+        b".defined",
         b".checked",
         b".sat",
         b".strict",
@@ -752,14 +777,20 @@ mod tests {
     fn operation_suffix_language_is_closed() {
         for spelling in [
             b"iadd.wrap".as_slice(),
-            b"iadd.trap",
+            b"iadd.defined",
             b"iadd.checked",
             b"iadd.sat",
             b"iadd.strict",
         ] {
             assert!(is_operation_name(spelling));
         }
-        for spelling in [b".wrap".as_slice(), b"x.other", b"x.wrap_more", b"X.wrap"] {
+        for spelling in [
+            b"iadd.trap".as_slice(),
+            b".wrap",
+            b"x.other",
+            b"x.wrap_more",
+            b"X.wrap",
+        ] {
             assert!(!is_operation_name(spelling));
         }
     }

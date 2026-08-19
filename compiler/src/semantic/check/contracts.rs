@@ -724,7 +724,6 @@ fn discharge_domain(
         operand_type,
         arguments,
         result,
-        trap: None,
         ..
     } = value
     else {

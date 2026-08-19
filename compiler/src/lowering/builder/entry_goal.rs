@@ -116,7 +116,7 @@ impl<'program> EntryGoalBuilder<'program> {
                 operation,
                 operand_type,
             } => {
-                if operation.traps()
+                if operation.is_exact()
                     || !operation.accepts_operand_type(operand_type)
                     || !type_arguments.is_empty()
                     || !const_arguments.is_empty()
@@ -138,7 +138,6 @@ impl<'program> EntryGoalBuilder<'program> {
                         operation: IrIntegerOperation::from(operation),
                         operand_type: lower_type(operand_type)?,
                         arguments: lowered,
-                        trap: None,
                     },
                 )
             }

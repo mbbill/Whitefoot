@@ -59,10 +59,10 @@ fn executes_the_remaining_integer_family_and_defined_edges() {
   claim ishl_wrap: ieq(shifted_wrap, 2_u8) because "ishl.wrap";
   let right_signed = ishr.wrap(-4_i8, 1_u32);
   claim ishr_wrap: ieq(right_signed, -2_i8) because "ishr.wrap";
-  let shifted_trap = ishl.trap(1_u8, 7_u32);
-  claim ishl_trap: ieq(shifted_trap, 128_u8) because "ishl.trap";
-  let right_trap = ishr.trap(128_u8, 7_u32);
-  claim ishr_trap: ieq(right_trap, 1_u8) because "ishr.trap";
+  let shifted_exact = ishl(1_u8, 7_u32);
+  claim ishl_exact: ieq(shifted_exact, 128_u8) because "ishl";
+  let right_exact = ishr(128_u8, 7_u32);
+  claim ishr_exact: ieq(right_exact, 1_u8) because "ishr";
   let rotated_left = irotl(1_u8, 1_u32);
   claim irotl: ieq(rotated_left, 2_u8) because "irotl";
   let rotated_right = irotr(1_u8, 1_u32);
@@ -98,9 +98,9 @@ fn executes_the_remaining_integer_family_and_defined_edges() {
   let maximum = imax(254_u8, 1_u8);
   claim imax_unsigned: ieq(maximum, 254_u8) because "imax unsigned";
   let quotient = 9_i32 / 2_i32;
-  claim idiv_trap: ieq(quotient, 4_i32) because "idiv.trap";
+  claim idiv_exact: ieq(quotient, 4_i32) because "idiv exact";
   let remainder = 9_i32 % 2_i32;
-  claim irem_trap: ieq(remainder, 1_i32) because "irem.trap";
+  claim irem_exact: ieq(remainder, 1_i32) because "irem exact";
   return unit;
 }
 "#;
@@ -134,52 +134,47 @@ fn executes_the_remaining_integer_family_and_defined_edges() {
 }
 
 #[test]
-fn trapping_shift_reports_op8_before_executing_an_invalid_shift() {
+fn defined_shift_reports_false_without_executing_an_invalid_shift() {
     let source = br#"fn main() -> own unit traps {
-  let shifted = ishl.trap(1_u8, 8_u32);
+  let is_defined = ishl.defined(1_u8, 8_u32);
+  claim out_of_range_shift_is_undefined: bnot(is_defined) because "out-of-range shift must be undefined";
   return unit;
 }
 "#;
-    let output = compile_and_run(&compile(source));
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(
-        stderr.starts_with(
-            "{\"rule_id\":\"OP-8\",\"message\":\"\",\"function\":\"main\",\"node_path\":["
-        ),
-        "unexpected stderr: {stderr}"
-    );
+    let llvm = compile(source);
+    assert!(llvm.contains("icmp ult i32"));
+    assert!(!llvm.contains("shl i8 1, 8"));
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
 }
 
 #[test]
-fn trapping_division_checks_zero_before_the_partial_instruction() {
-    // Two non-constant signed operands keep the site outside [OP-2]'s divisor
-    // class, so it retains the trapping judgment and emits the runtime test.
-    // A constant-operand spelling would instead be a compile-time [ENT-6]
-    // division-obligation rejection and reach no record at all.
-    let source = br#"fn divide(n: own i32, d: own i32) -> own i32 traps {
-  let quotient = n / d;
-  return quotient;
+fn defined_division_checks_zero_and_signed_overflow_without_dividing() {
+    let source = br#"fn division_is_defined(n: own i32, d: own i32) -> own Bool pure {
+  return n /defined d;
 }
 
 fn main() -> own unit traps {
   let zero = 0_i32;
   let one = 1_i32;
-  let quotient = divide(n: one, d: zero);
+  let zero_defined = division_is_defined(n: one, d: zero);
+  claim division_by_zero_is_undefined: bnot(zero_defined) because "division by zero must be undefined";
+  let minimum = -2147483648_i32;
+  let minus_one = -1_i32;
+  let overflow_defined = division_is_defined(n: minimum, d: minus_one);
+  claim signed_division_overflow_is_undefined: bnot(overflow_defined) because "signed division overflow must be undefined";
+  let ordinary_defined = division_is_defined(n: one, d: one);
+  claim ordinary_division_is_defined: ordinary_defined because "ordinary division must be defined";
   return unit;
 }
 "#;
     let llvm = compile(source);
-    let trap = llvm.find("call void @wf_trap").expect("trap branch");
-    let divide = llvm.find(" = sdiv i32").expect("safe divide");
-    assert!(trap < divide);
+    assert!(llvm.contains("icmp ne i32"));
+    assert!(llvm.contains("icmp ne i32 %v0, -2147483648"));
+    assert!(llvm.contains("icmp ne i32 %v1, -1"));
+    assert!(!llvm.contains(" = sdiv i32"));
     let output = compile_and_run(&llvm);
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.starts_with(
-            "{\"rule_id\":\"OP-2\",\"message\":\"\",\"function\":\"divide\",\"node_path\":["
-        ),
-        "unexpected stderr: {stderr}"
-    );
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
 }

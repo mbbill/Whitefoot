@@ -5,9 +5,10 @@ use super::{assert_rule, with_semantics};
 
 #[test]
 fn retains_each_mode_and_rejects_unsigned_types() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"fn main() -> own unit pure {
   let wrapped = ineg.wrap(-128_i8);
-  let trapped = ineg.trap(-42_i16);
+  let exact = ineg(-42_i16);
+  let negation_is_defined = ineg.defined(-42_i64);
   let negation_result = ineg.checked(-42_i32);
   return unit;
 }
@@ -31,7 +32,8 @@ fn retains_each_mode_and_rejects_unsigned_types() {
             operations,
             [
                 CheckedIntegerOperation::NegateWrap,
-                CheckedIntegerOperation::NegateTrap,
+                CheckedIntegerOperation::NegateExact,
+                CheckedIntegerOperation::NegateDefined,
                 CheckedIntegerOperation::NegateChecked,
             ]
         );

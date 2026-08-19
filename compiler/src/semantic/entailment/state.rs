@@ -219,6 +219,13 @@ pub(crate) enum DerivationNode {
         positive: DerivationId,
         negative: DerivationId,
     },
+    /// One successful [ENT-6] integer-domain judgment. `parents` is either
+    /// the contradiction/direct-goal proof or the fixed normalization's
+    /// component proofs in ordinal order.
+    IntegerDomain {
+        goal: Option<GoalId>,
+        parents: Vec<DerivationId>,
+    },
     JoinBound {
         left: TermId,
         right: TermId,
@@ -388,6 +395,7 @@ impl DerivationNode {
                 }
             }
             Self::PostconditionAggregate { parents, .. }
+            | Self::IntegerDomain { parents, .. }
             | Self::PostconditionCall {
                 view_parents: parents,
                 ..
@@ -447,6 +455,7 @@ impl DerivationNode {
             | Self::JoinContradiction { parents, .. }
             | Self::PostconditionDeliveryJoin { parents, .. } => parents.len(),
             Self::PostconditionAggregate { parents, .. } => parents.len(),
+            Self::IntegerDomain { parents, .. } => parents.len(),
             Self::PostconditionCall {
                 a0_parents,
                 view_parents,
@@ -499,6 +508,7 @@ impl DerivationNode {
             Self::PostconditionSelectedReceiver { .. } => 26,
             Self::PostconditionGive { .. } => 27,
             Self::PostconditionDeliveryJoin { .. } => 28,
+            Self::IntegerDomain { .. } => 29,
         }
     }
 }
@@ -528,7 +538,7 @@ pub(crate) enum ClaimLifecycleKind {
 /// Which successful CLM-3 U query retains one existing derivation root.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StrictDerivationRootKind {
-    BoundsObligation,
+    Obligation,
     CallGoal,
     ProgramStart,
 }
@@ -537,6 +547,7 @@ pub(crate) enum StrictDerivationRootKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum DerivationRootKind {
     BoundsObligation(u32),
+    IntegerDomainObligation(u32),
     CallGoal(u32),
     BitAndBound(u32),
     ShiftOneNonzero(u32),
@@ -960,6 +971,9 @@ impl DerivationLedger {
                     DerivationNode::PostconditionAggregate { parents, .. } => {
                         parents.capacity() * size_of::<DerivationId>()
                     }
+                    DerivationNode::IntegerDomain { parents, .. } => {
+                        parents.capacity() * size_of::<DerivationId>()
+                    }
                     DerivationNode::PostconditionDeliveryJoin { parents, .. } => {
                         parents.capacity() * size_of::<JoinParent>()
                     }
@@ -1060,6 +1074,13 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         DerivationNode::GoalContradiction {
             positive, negative, ..
         } => [positive.0, negative.0].get(index).copied(),
+        DerivationNode::IntegerDomain { goal, parents } => {
+            goal.map(|goal| goal.0).filter(|_| index == 0).or_else(|| {
+                parents
+                    .get(index - usize::from(goal.is_some()))
+                    .map(|parent| parent.0)
+            })
+        }
         DerivationNode::SubsumedBound { parent, .. }
         | DerivationNode::DisequalityFromStrictBound { parent, .. }
         | DerivationNode::GoalProjection { parent, .. }
@@ -1283,6 +1304,11 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         } => {
             remap_id(positive, remap);
             remap_id(negative, remap);
+        }
+        DerivationNode::IntegerDomain { parents, .. } => {
+            for parent in parents {
+                remap_id(parent, remap);
+            }
         }
         DerivationNode::JoinBound { parents, .. }
         | DerivationNode::JoinDistinct { parents, .. }

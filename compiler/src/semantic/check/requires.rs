@@ -824,10 +824,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// the named spelling faces.
     ///
     /// The operator token selects the row under [OP-1] (ii), so admission
-    /// asks the same `traps` predicate the ordinary checker asks rather than
-    /// re-reading the spelling: the bare `+ - * / %` forms carry the trapping
-    /// mode and no `.trap` suffix, so the named-spelling filter in
-    /// `validate_requires_operation` cannot see them. Both operands are
+    /// asks whether the selected row is proof-required exact rather than
+    /// re-reading its spelling. Both operands are
     /// clause atoms and both are validated; [GRAM-9] admits exactly one
     /// operation per expression, so there is no deeper operand to reach.
     fn validate_clause_infix(
@@ -841,7 +839,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(tail, Production::InfixOp)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if self.infix_operation(operator)?.traps() {
+        if self.infix_operation(operator)?.is_exact() {
             return self.invalid_clause(clause, entry);
         }
         let left = self
@@ -893,8 +891,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         let spelling = crate::operation_family_spelling(operation)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        if spelling.ends_with(".trap") || matches!(spelling, "buffer_new" | "box_new" | "arena_new")
-        {
+        if matches!(
+            spelling,
+            "ineg" | "iabs" | "ishl" | "ishr" | "buffer_new" | "box_new" | "arena_new"
+        ) {
             return self.invalid_clause(clause, entry);
         }
         if let Some(arguments) = self.tree.first_child_with(call, Production::AtomList)? {

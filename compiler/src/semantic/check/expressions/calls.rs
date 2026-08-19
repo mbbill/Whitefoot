@@ -13,11 +13,10 @@ use crate::{
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
 };
 
-use super::super::super::entailment::{division_obligation_class, overflow_obligation_class};
 use super::super::super::model::{
     CheckedBooleanOperation, CheckedExpression, CheckedIntegerArgument,
     CheckedIntegerArgumentSource, CheckedIntegerErrorClass, CheckedIntegerOperation, CheckedMode,
-    CheckedNominalKind, CheckedNumericType, CheckedType, TrapSite,
+    CheckedNominalKind, CheckedNumericType, CheckedType,
 };
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PendingNominal, PreludeType,
@@ -113,24 +112,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.check_reinterpret(node, function, bindings, loop_depth);
         }
         let operation = match spelling {
-            "iadd.wrap" => CheckedIntegerOperation::AddWrap,
-            "isub.wrap" => CheckedIntegerOperation::SubtractWrap,
-            "imul.wrap" => CheckedIntegerOperation::MultiplyWrap,
-            "iadd.trap" => CheckedIntegerOperation::AddTrap,
-            "isub.trap" => CheckedIntegerOperation::SubtractTrap,
-            "imul.trap" => CheckedIntegerOperation::MultiplyTrap,
-            "iadd.checked" => CheckedIntegerOperation::AddChecked,
-            "isub.checked" => CheckedIntegerOperation::SubtractChecked,
-            "imul.checked" => CheckedIntegerOperation::MultiplyChecked,
-            "idiv.checked" => CheckedIntegerOperation::DivideChecked,
-            "irem.checked" => CheckedIntegerOperation::RemainderChecked,
-            "idiv.trap" => CheckedIntegerOperation::DivideTrap,
-            "irem.trap" => CheckedIntegerOperation::RemainderTrap,
             "iabs.wrap" => CheckedIntegerOperation::AbsoluteWrap,
-            "iabs.trap" => CheckedIntegerOperation::AbsoluteTrap,
+            "iabs" => CheckedIntegerOperation::AbsoluteExact,
+            "iabs.defined" => CheckedIntegerOperation::AbsoluteDefined,
             "iabs.checked" => CheckedIntegerOperation::AbsoluteChecked,
             "ineg.wrap" => CheckedIntegerOperation::NegateWrap,
-            "ineg.trap" => CheckedIntegerOperation::NegateTrap,
+            "ineg" => CheckedIntegerOperation::NegateExact,
+            "ineg.defined" => CheckedIntegerOperation::NegateDefined,
             "ineg.checked" => CheckedIntegerOperation::NegateChecked,
             "iand" => CheckedIntegerOperation::BitAnd,
             "ior" => CheckedIntegerOperation::BitOr,
@@ -138,8 +126,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             "inot" => CheckedIntegerOperation::BitNot,
             "ishl.wrap" => CheckedIntegerOperation::ShiftLeftWrap,
             "ishr.wrap" => CheckedIntegerOperation::ShiftRightWrap,
-            "ishl.trap" => CheckedIntegerOperation::ShiftLeftTrap,
-            "ishr.trap" => CheckedIntegerOperation::ShiftRightTrap,
+            "ishl" => CheckedIntegerOperation::ShiftLeftExact,
+            "ishr" => CheckedIntegerOperation::ShiftRightExact,
+            "ishl.defined" => CheckedIntegerOperation::ShiftLeftDefined,
+            "ishr.defined" => CheckedIntegerOperation::ShiftRightDefined,
             "irotl" => CheckedIntegerOperation::RotateLeft,
             "irotr" => CheckedIntegerOperation::RotateRight,
             "ipopcount" => CheckedIntegerOperation::PopulationCount,
@@ -186,8 +176,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ///
     /// The named call and the infix form share this judgment exactly, so the
     /// two spellings of one operation cannot drift apart: [OP-2]'s
-    /// operand-derived selection, the trap site, and the checked-error result
-    /// are decided here once.
+    /// operand-derived selection, proof obligation identity, and checked-error
+    /// result are decided here once.
     pub(in crate::semantic::check) fn check_integer_operation_row(
         &self,
         node: NodeId,
@@ -262,53 +252,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // `operation_atoms` already rejected a wrong operand count, and no
         // integer row is nullary, so the selection is always made by here.
         let operand_type = operand_type.ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        // Under the arithmetic-mode dissolution switch, a bare trapping
-        // add/subtract/multiply with a constant operand carries an [ENT-6]
-        // overflow obligation instead of a runtime trap: it contributes no
-        // `traps` effect [EFF-2] and retains no trap record, and the
-        // entailment flow judges the obligation at this site [OP-2]. With
-        // the switch off, v0.30 behavior is byte-identical.
-        let overflow_obligation_site = self.arithmetic_obligations
-            && overflow_obligation_class(operation, &arguments).is_some();
-        // Under the division dissolution switch, a bare `/` or `%` in the
-        // divisor class carries an [ENT-6] division obligation instead of a
-        // runtime trap, on exactly the same terms. A signed selected type
-        // with two non-constant operands stays outside the class, because
-        // its `iK::MIN / -1` safe condition is a disjunction the fragment
-        // cannot state, and keeps its complete trap [OP-2].
-        let division_obligation_site = self.division_obligations
-            && division_obligation_class(operation, operand_type, &arguments).is_some();
-        let obligation_site = overflow_obligation_site || division_obligation_site;
-        if operation.traps() && !obligation_site {
-            effects = effects.union(EffectSet::TRAPS);
-        }
-        let trap = if operation.traps() && !obligation_site {
-            Some(TrapSite {
-                rule_id: if matches!(
-                    operation,
-                    CheckedIntegerOperation::ShiftLeftTrap
-                        | CheckedIntegerOperation::ShiftRightTrap
-                ) {
-                    "OP-8"
-                } else {
-                    "OP-2"
-                },
-                message: if matches!(
-                    operation,
-                    CheckedIntegerOperation::AddTrap
-                        | CheckedIntegerOperation::SubtractTrap
-                        | CheckedIntegerOperation::MultiplyTrap
-                ) {
-                    "integer overflow".to_owned()
-                } else {
-                    String::new()
-                },
-                function: function.name.clone(),
-                node_path: self.tree.path(node)?.clone(),
-            })
-        } else {
-            None
-        };
         // The row's own `signature` cell decides this, so the mapping lives
         // once on the operation and an extraction lock compares it against the
         // specification's cell.
@@ -334,7 +277,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 argument_metadata,
                 arguments,
                 result,
-                trap,
             },
             effects,
         ))

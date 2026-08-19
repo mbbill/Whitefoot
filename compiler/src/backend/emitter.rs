@@ -537,17 +537,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
     fn emit_entry_goal(mut self) -> Result<EntryGoalEmission, BackendFailure> {
         let goal = self.entry_goal.ok_or(BackendFailure::InvalidIr)?;
-        for (index, definition) in goal.definitions().iter().enumerate() {
+        for definition in goal.definitions() {
             if !entry_goal_operation(definition.operation()) {
                 return Err(BackendFailure::InvalidIr);
             }
-            self.emit_definition(
-                IrBlockId::from_index(0).map_err(|_| BackendFailure::CounterOverflow)?,
-                index,
-                definition.result(),
-                definition.ty(),
-                definition.operation(),
-            )?;
+            self.emit_definition(definition.result(), definition.ty(), definition.operation())?;
         }
         if !self.entry_prelude.is_empty() || self.value_type(goal.condition()) != Some(IrType::Bool)
         {
@@ -646,7 +640,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 result,
                 ty,
                 operation,
-            } => self.emit_definition(block, index, *result, *ty, operation),
+            } => self.emit_definition(*result, *ty, operation),
             IrInstruction::Check { condition, trap } => {
                 if self.value_type(*condition) != Some(IrType::Bool) {
                     return Err(BackendFailure::InvalidIr);
@@ -680,8 +674,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
     fn emit_definition(
         &mut self,
-        block: IrBlockId,
-        index: usize,
         result: IrValueId,
         ty: IrType,
         operation: &IrOperation,
@@ -704,17 +696,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 operation,
                 operand_type,
                 arguments,
-                trap,
-            } => self.emit_integer(
-                block,
-                index,
-                result,
-                ty,
-                *operation,
-                *operand_type,
-                arguments,
-                trap.as_ref(),
-            ),
+            } => self.emit_integer(result, ty, *operation, *operand_type, arguments),
             IrOperation::Float {
                 operation,
                 operand_type,
@@ -1105,7 +1087,7 @@ pub(super) fn entry_goal_operation(operation: &IrOperation) -> bool {
     matches!(
         operation,
         IrOperation::Constant(_)
-            | IrOperation::Integer { trap: None, .. }
+            | IrOperation::Integer { .. }
             | IrOperation::Float { .. }
             | IrOperation::NumericConversion { .. }
             | IrOperation::Reinterpret { .. }
@@ -1263,11 +1245,6 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock) -> String {
             } => label = integer_continue_label(*result),
             IrInstruction::Define {
                 result,
-                operation: IrOperation::Integer { trap: Some(_), .. },
-                ..
-            } => label = overflow_continue_label(*result),
-            IrInstruction::Define {
-                result,
                 operation: IrOperation::ArrayFill { .. },
                 ..
             } => label = array_fill_done_label(*result),
@@ -1328,14 +1305,6 @@ fn check_continue_label(block: IrBlockId, index: usize) -> String {
 
 fn check_trap_label(block: IrBlockId, index: usize) -> String {
     format!("check.trap.b{}.i{index}", block.ordinal())
-}
-
-fn overflow_continue_label(value: IrValueId) -> String {
-    format!("overflow.cont.v{}", value.ordinal())
-}
-
-fn overflow_trap_label(value: IrValueId) -> String {
-    format!("overflow.trap.v{}", value.ordinal())
 }
 
 fn integer_safe_label(value: IrValueId) -> String {

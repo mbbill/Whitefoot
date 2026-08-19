@@ -5,7 +5,7 @@ use super::{assert_rule, with_semantics};
 
 #[test]
 fn retains_the_complete_nonfloating_integer_family() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"fn main() -> own unit pure {
   let a = 8_i32 / 2_i32;
   let b = 9_i32 % 2_i32;
   let c = iand(a, b);
@@ -14,8 +14,10 @@ fn retains_the_complete_nonfloating_integer_family() {
   let f = inot(a);
   let g = ishl.wrap(a, 1_u32);
   let h = ishr.wrap(a, 1_u32);
-  let i = ishl.trap(a, 1_u32);
-  let j = ishr.trap(a, 1_u32);
+  let i = ishl(a, 1_u32);
+  let j = ishr(a, 1_u32);
+  let left_is_defined = ishl.defined(a, 1_u32);
+  let right_is_defined = ishr.defined(a, 1_u32);
   let k = irotl(a, 1_u32);
   let l = irotr(a, 1_u32);
   let m = ipopcount(a);
@@ -46,12 +48,14 @@ fn retains_the_complete_nonfloating_integer_family() {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_eq!(operations.len(), 22);
-        assert_eq!(operations[0], CheckedIntegerOperation::DivideTrap);
+        assert_eq!(operations.len(), 24);
+        assert_eq!(operations[0], CheckedIntegerOperation::DivideExact);
         assert_eq!(operations[6], CheckedIntegerOperation::ShiftLeftWrap);
-        assert_eq!(operations[12], CheckedIntegerOperation::PopulationCount);
-        assert_eq!(operations[19], CheckedIntegerOperation::MultiplySaturating);
-        assert_eq!(operations[21], CheckedIntegerOperation::Maximum);
+        assert_eq!(operations[10], CheckedIntegerOperation::ShiftLeftDefined);
+        assert_eq!(operations[11], CheckedIntegerOperation::ShiftRightDefined);
+        assert_eq!(operations[14], CheckedIntegerOperation::PopulationCount);
+        assert_eq!(operations[21], CheckedIntegerOperation::MultiplySaturating);
+        assert_eq!(operations[23], CheckedIntegerOperation::Maximum);
     });
 
     assert_rule(

@@ -5,9 +5,10 @@ use super::{assert_rule, with_semantics};
 
 #[test]
 fn retains_each_mode_and_rejects_unsigned_types() {
-    let source = br#"fn main() -> own unit traps {
+    let source = br#"fn main() -> own unit pure {
   let wrapped = iabs.wrap(-128_i8);
-  let trapped = iabs.trap(-42_i16);
+  let exact = iabs(-42_i16);
+  let absolute_value_is_defined = iabs.defined(-42_i64);
   let absolute_result = iabs.checked(-42_i32);
   return unit;
 }
@@ -31,7 +32,8 @@ fn retains_each_mode_and_rejects_unsigned_types() {
             operations,
             [
                 CheckedIntegerOperation::AbsoluteWrap,
-                CheckedIntegerOperation::AbsoluteTrap,
+                CheckedIntegerOperation::AbsoluteExact,
+                CheckedIntegerOperation::AbsoluteDefined,
                 CheckedIntegerOperation::AbsoluteChecked,
             ]
         );

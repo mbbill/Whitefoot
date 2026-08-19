@@ -587,9 +587,9 @@ fn operation_name_end(bytes: &[u8], base_end: usize) -> Option<usize> {
     let suffix_start = base_end.checked_add(1)?;
     for suffix in [
         b"checked".as_slice(),
+        b"defined".as_slice(),
         b"strict".as_slice(),
         b"wrap".as_slice(),
-        b"trap".as_slice(),
         b"sat".as_slice(),
     ] {
         let end = suffix_start.checked_add(suffix.len())?;

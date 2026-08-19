@@ -7,16 +7,17 @@
 //! disjunction the [ENT-4] fragment cannot state. The default-switch
 //! controls at the end pin the v0.31 behavior the shipped compiler retains.
 
-use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
+use crate::{
+    SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, StaticObligationDisposition,
+};
 
 use super::super::entailment::ObligationFamily;
 use super::super::model::{
-    CheckedExpression, CheckedFunction, CheckedIntegerOperation, CheckedStatement, CheckedType,
-    IntegerType,
+    CheckedExpression, CheckedFunction, CheckedIntegerOperation, CheckedStatement,
 };
 use super::{with_semantics, with_semantics_division};
 
-const DIVISION_FIX: &str = "add a dominating `claim` of the residual or a dominating branch establishing it, or respell the operation `checked`";
+const DIVISION_FIX: &str = "add a dominating `claim` of the `.defined` predicate or a dominating branch establishing its fixed normalization, or use an available total non-exact row";
 
 /// The trap disposition of every bare divide/remainder site in one checked
 /// function, in source order.
@@ -27,12 +28,12 @@ fn division_trap_records(function: &CheckedFunction) -> Vec<bool> {
             continue;
         };
         if let CheckedExpression::IntegerOperation {
-            operation: CheckedIntegerOperation::DivideTrap | CheckedIntegerOperation::RemainderTrap,
-            trap,
+            operation:
+                CheckedIntegerOperation::DivideExact | CheckedIntegerOperation::RemainderExact,
             ..
         } = value
         {
-            records.push(trap.is_some());
+            records.push(false);
         }
     }
     records
@@ -48,25 +49,6 @@ fn named<'functions>(
         .expect("named function is checked")
 }
 
-/// The concrete instance of a generic function, selected by the substituted
-/// type of its first parameter.
-fn instance<'functions>(
-    functions: &'functions [CheckedFunction],
-    name: &str,
-    ty: IntegerType,
-) -> &'functions CheckedFunction {
-    functions
-        .iter()
-        .find(|function| {
-            function.name == name
-                && function
-                    .parameters
-                    .first()
-                    .is_some_and(|parameter| parameter.ty == CheckedType::Integer(ty))
-        })
-        .expect("named instance is checked")
-}
-
 fn division_outcomes(
     function: &CheckedFunction,
 ) -> Vec<&super::super::entailment::ObligationOutcome> {
@@ -74,7 +56,7 @@ fn division_outcomes(
         .entailment
         .obligations
         .iter()
-        .filter(|outcome| outcome.family == ObligationFamily::Division)
+        .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
         .collect()
 }
 
@@ -105,12 +87,8 @@ fn main() -> own unit pure {
             "the discharged class site must drop its trap record",
         );
         let division = division_outcomes(ratio);
-        assert_eq!(division.len(), 2, "one obligation, two conjuncts");
-        assert_eq!(
-            (division[0].conjunct, division[1].conjunct),
-            (0, 1),
-            "zero-divisor conjunct at ordinal zero, signed overflow at one",
-        );
+        assert_eq!(division.len(), 1, "one source occurrence, one obligation");
+        assert_eq!(division[0].components.len(), 2);
         assert!(
             division.iter().all(|outcome| outcome.discharged),
             "the check derives `d != 0` and the unsigned overflow conjunct is ground true",
@@ -174,8 +152,9 @@ fn main() -> own unit pure {
         assert_eq!(issue.rule(), SemanticRule::Op2);
         assert_eq!(
             issue.kind(),
-            &SemanticIssueKind::UndischargedDivisionObligation {
-                residual: "d != 0".to_owned(),
+            &SemanticIssueKind::UndischargedIntegerDomainObligation {
+                residual: "n /defined d".to_owned(),
+                disposition: StaticObligationDisposition::Unproved,
                 mechanical_fix: DIVISION_FIX,
             },
         );
@@ -213,8 +192,9 @@ fn main() -> own unit pure {
         assert_eq!(issue.rule(), SemanticRule::Op2);
         assert_eq!(
             issue.kind(),
-            &SemanticIssueKind::UndischargedDivisionObligation {
-                residual: "d != 0".to_owned(),
+            &SemanticIssueKind::UndischargedIntegerDomainObligation {
+                residual: "n %defined d".to_owned(),
+                disposition: StaticObligationDisposition::Unproved,
                 mechanical_fix: DIVISION_FIX,
             },
         );
@@ -272,8 +252,9 @@ fn a_constant_zero_divisor_is_rejected_everywhere() {
         assert_eq!(issue.rule(), SemanticRule::Op2);
         assert_eq!(
             issue.kind(),
-            &SemanticIssueKind::UndischargedDivisionObligation {
-                residual: "0_i32 != 0".to_owned(),
+            &SemanticIssueKind::UndischargedIntegerDomainObligation {
+                residual: "x /defined 0_i32".to_owned(),
+                disposition: StaticObligationDisposition::Refuted,
                 mechanical_fix: DIVISION_FIX,
             },
         );
@@ -302,8 +283,9 @@ fn main() -> own unit pure {
         assert_eq!(issue.rule(), SemanticRule::Op2);
         assert_eq!(
             issue.kind(),
-            &SemanticIssueKind::UndischargedDivisionObligation {
-                residual: "n != -2147483648".to_owned(),
+            &SemanticIssueKind::UndischargedIntegerDomainObligation {
+                residual: "n /defined -1_i32".to_owned(),
+                disposition: StaticObligationDisposition::Unproved,
                 mechanical_fix: DIVISION_FIX,
             },
         );
@@ -357,7 +339,7 @@ fn main() -> own unit pure {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("a signed two-variable site still exhibits traps: {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Eff2);
+        assert_eq!(issue.rule(), SemanticRule::Op2);
     });
     let traps_row = br#"fn ratio(n: own i32, d: own i32) -> own i32 traps {
   let q = n / d;
@@ -369,19 +351,10 @@ fn main() -> own unit pure {
 }
 "#;
     with_semantics_division(traps_row, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the retained trapping class must stay accepted: {outcome:?}");
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a traps row cannot restore a runtime fallback: {outcome:?}");
         };
-        let ratio = named(&checked.data.functions, "ratio");
-        assert_eq!(
-            division_trap_records(ratio),
-            vec![true],
-            "the retained class keeps its runtime trap",
-        );
-        assert!(
-            division_outcomes(ratio).is_empty(),
-            "no obligation attaches outside the class",
-        );
+        assert_eq!(issue.rule(), SemanticRule::Eff2);
     });
 }
 
@@ -460,8 +433,9 @@ fn the_shipped_checker_rejects_a_constant_zero_divisor() {
         assert_eq!(issue.rule(), SemanticRule::Op2);
         assert_eq!(
             issue.kind(),
-            &SemanticIssueKind::UndischargedDivisionObligation {
-                residual: "0_i32 != 0".to_owned(),
+            &SemanticIssueKind::UndischargedIntegerDomainObligation {
+                residual: "x /defined 0_i32".to_owned(),
+                disposition: StaticObligationDisposition::Refuted,
                 mechanical_fix: DIVISION_FIX,
             },
         );
@@ -524,31 +498,10 @@ fn main() -> own unit traps {
 }
 "#;
     with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("one written row must serve both instances: {outcome:?}");
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("proof-required exact division contributes no traps: {outcome:?}");
         };
-        let unsigned = instance(&checked.data.functions, "ratio", IntegerType::U32);
-        assert_eq!(
-            division_trap_records(unsigned),
-            vec![false],
-            "the unsigned instance is in the class and its discharged site executes no test",
-        );
-        let discharged = division_outcomes(unsigned);
-        assert_eq!(discharged.len(), 2, "one obligation, two conjuncts");
-        assert!(
-            discharged.iter().all(|outcome| outcome.discharged),
-            "the requirement establishes the divisor disequality at the instance",
-        );
-        let signed = instance(&checked.data.functions, "ratio", IntegerType::I32);
-        assert_eq!(
-            division_trap_records(signed),
-            vec![true],
-            "the signed two-variable instance stays outside the class and keeps its trap",
-        );
-        assert!(
-            division_outcomes(signed).is_empty(),
-            "no obligation attaches outside the class",
-        );
+        assert_eq!(issue.rule(), SemanticRule::Eff2);
     });
     let pure_row = br#"fn ratio<T: Int>(n: own T, d: own T) -> own T pure requires {
   check ine(d, 0_T) else trap "nonzero divisor";
@@ -628,7 +581,7 @@ fn main() -> own unit pure {
         // not the top-level statement walk, carry the verdict here.
         let ratio = named(&checked.data.functions, "ratio");
         let discharged = division_outcomes(ratio);
-        assert_eq!(discharged.len(), 2, "one obligation, two conjuncts");
+        assert_eq!(discharged.len(), 1, "one source occurrence, one obligation");
         assert!(discharged.iter().all(|outcome| outcome.discharged));
     });
     let unclaimed = br#"fn ratio(d: own i32) -> own i32 pure {
@@ -647,8 +600,9 @@ fn main() -> own unit pure {
         assert_eq!(issue.rule(), SemanticRule::Op2);
         assert_eq!(
             issue.kind(),
-            &SemanticIssueKind::UndischargedDivisionObligation {
-                residual: "d != 0".to_owned(),
+            &SemanticIssueKind::UndischargedIntegerDomainObligation {
+                residual: "100_i32 /defined d".to_owned(),
+                disposition: StaticObligationDisposition::Unproved,
                 mechanical_fix: DIVISION_FIX,
             },
         );

@@ -6,7 +6,9 @@
 //! mode keep their v0.30 semantics. The default-switch controls at the end
 //! pin the v0.30 behavior the shipped compiler retains.
 
-use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
+use crate::{
+    SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, StaticObligationDisposition,
+};
 
 use super::super::entailment::{
     ObligationFamily, OverflowClassOperation, OverflowConjuncts, OverflowOperandClass,
@@ -18,7 +20,7 @@ use super::super::model::{
 };
 use super::{with_semantics, with_semantics_arithmetic};
 
-const OVERFLOW_FIX: &str = "add a dominating `claim` of the residual or a dominating branch establishing it, or respell the operation `wrap`, `checked`, or `sat`";
+const OVERFLOW_FIX: &str = "add a dominating `claim` of the `.defined` predicate or a dominating branch establishing its fixed normalization, or use an available total non-exact row";
 
 /// The trap disposition of every bare-add site in one checked function.
 fn add_trap_records(function: &CheckedFunction) -> Vec<bool> {
@@ -28,12 +30,11 @@ fn add_trap_records(function: &CheckedFunction) -> Vec<bool> {
             continue;
         };
         if let CheckedExpression::IntegerOperation {
-            operation: CheckedIntegerOperation::AddTrap,
-            trap,
+            operation: CheckedIntegerOperation::AddExact,
             ..
         } = value
         {
-            records.push(trap.is_some());
+            records.push(false);
         }
     }
     records
@@ -79,14 +80,10 @@ fn main() -> own unit pure {
             .entailment
             .obligations
             .iter()
-            .filter(|outcome| outcome.family == ObligationFamily::Overflow)
+            .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
             .collect();
-        assert_eq!(overflow.len(), 2, "one obligation, two conjuncts");
-        assert_eq!(
-            (overflow[0].conjunct, overflow[1].conjunct),
-            (0, 1),
-            "upper conjunct at ordinal zero, lower at ordinal one",
-        );
+        assert_eq!(overflow.len(), 1, "one source occurrence, one obligation");
+        assert_eq!(overflow[0].components.len(), 2);
         assert!(
             overflow.iter().all(|outcome| outcome.discharged),
             "both conjuncts discharge: the check bounds the operand and the \
@@ -118,7 +115,7 @@ fn the_counted_binder_increment_discharges_by_transitive_closure() {
             main.entailment
                 .obligations
                 .iter()
-                .filter(|outcome| outcome.family == ObligationFamily::Overflow)
+                .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
                 .all(|outcome| outcome.discharged),
             "the binder increment discharges inside the counted body",
         );
@@ -147,8 +144,9 @@ fn main() -> own unit pure {
         assert_eq!(issue.rule(), SemanticRule::Op2);
         assert_eq!(
             issue.kind(),
-            &SemanticIssueKind::UndischargedOverflowObligation {
-                residual: "x <= 18446744073709551614".to_owned(),
+            &SemanticIssueKind::UndischargedIntegerDomainObligation {
+                residual: "x +defined 1_u64".to_owned(),
+                disposition: StaticObligationDisposition::Unproved,
                 mechanical_fix: OVERFLOW_FIX,
             },
         );
@@ -194,7 +192,7 @@ fn main() -> own unit pure {
             bump.entailment
                 .obligations
                 .iter()
-                .filter(|outcome| outcome.family == ObligationFamily::Overflow)
+                .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
                 .all(|outcome| outcome.discharged),
             "the claim's established fact discharges the obligation",
         );
@@ -226,11 +224,10 @@ fn a_wrap_site_attaches_no_obligation() {
     });
 }
 
-/// A bare site with two non-constant operands is the retained trapping
-/// class: it keeps its trap record and still exhibits `traps`, so a `pure`
-/// row rejects under EFF-2 exactly as v0.30 fixes.
+/// A bare site with two non-constant operands has no L0 normalization. Its
+/// canonical `.defined` goal is still required, independent of effects.
 #[test]
-fn a_two_variable_site_retains_the_trap_and_its_effect() {
+fn a_two_variable_site_requires_its_canonical_goal() {
     let pure_row = br#"fn main() -> own unit pure {
   let a = 6_u64;
   let b = 7_u64;
@@ -240,9 +237,9 @@ fn a_two_variable_site_retains_the_trap_and_its_effect() {
 "#;
     with_semantics_arithmetic(pure_row, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("a two-variable bare site still exhibits traps: {outcome:?}");
+            panic!("a two-variable exact site must require proof: {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Eff2);
+        assert_eq!(issue.rule(), SemanticRule::Op2);
     });
     let traps_row = br#"fn main() -> own unit traps {
   let a = 6_u64;
@@ -252,22 +249,10 @@ fn a_two_variable_site_retains_the_trap_and_its_effect() {
 }
 "#;
     with_semantics_arithmetic(traps_row, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the retained trapping class must stay accepted: {outcome:?}");
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("declaring traps cannot bypass the proof obligation: {outcome:?}");
         };
-        let main = named(&checked.data.functions, "main");
-        assert_eq!(
-            add_trap_records(main),
-            vec![true],
-            "the inexpressible class keeps its runtime check",
-        );
-        assert!(
-            main.entailment
-                .obligations
-                .iter()
-                .all(|outcome| outcome.family == ObligationFamily::Bounds),
-            "no obligation attaches to a two-variable site",
-        );
+        assert_eq!(issue.rule(), SemanticRule::Eff2);
     });
 }
 
@@ -301,8 +286,9 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
         assert_eq!(issue.rule(), SemanticRule::Op2);
         assert_eq!(
             issue.kind(),
-            &SemanticIssueKind::UndischargedOverflowObligation {
-                residual: "256 outside u8".to_owned(),
+            &SemanticIssueKind::UndischargedIntegerDomainObligation {
+                residual: "255_u8 +defined 1_u8".to_owned(),
+                disposition: StaticObligationDisposition::Refuted,
                 mechanical_fix: OVERFLOW_FIX,
             },
         );
@@ -328,8 +314,9 @@ fn a_subscripted_class_operand_is_underivable_and_rejects() {
         assert_eq!(issue.rule(), SemanticRule::Op2);
         assert_eq!(
             issue.kind(),
-            &SemanticIssueKind::UndischargedOverflowObligation {
-                residual: "a[0_u64] <= 254".to_owned(),
+            &SemanticIssueKind::UndischargedIntegerDomainObligation {
+                residual: "a[0_u64] +defined 1_u8".to_owned(),
+                disposition: StaticObligationDisposition::Unproved,
                 mechanical_fix: OVERFLOW_FIX,
             },
         );
@@ -376,8 +363,9 @@ fn main() -> own unit pure {
         assert_eq!(issue.rule(), SemanticRule::Op2);
         assert_eq!(
             issue.kind(),
-            &SemanticIssueKind::UndischargedOverflowObligation {
-                residual: "x <= 18446744073709551614".to_owned(),
+            &SemanticIssueKind::UndischargedIntegerDomainObligation {
+                residual: "x +defined 1_u64".to_owned(),
+                disposition: StaticObligationDisposition::Unproved,
                 mechanical_fix: OVERFLOW_FIX,
             },
         );

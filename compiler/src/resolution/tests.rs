@@ -1503,7 +1503,7 @@ fn is_operator_family(spelling: &str) -> bool {
 #[test]
 fn dotless_and_dotted_operations_resolve_by_exact_op1_spelling() {
     let source = br#"fn main() -> own unit pure {
-  let negated = ineg.trap(1_i32);
+  let negated = ineg(1_i32);
   let smaller = imin(negated, 2_i32);
   return unit;
 }
@@ -1512,7 +1512,7 @@ fn dotless_and_dotted_operations_resolve_by_exact_op1_spelling() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("closed operations must resolve: {outcome:?}");
         };
-        for spelling in ["ineg.trap", "imin"] {
+        for spelling in ["ineg", "imin"] {
             let usage = resolved
                 .lexical_uses()
                 .iter()
@@ -1620,7 +1620,7 @@ fn main() -> own unit pure {
 /// (`roles.rs` keys it on `TerminalPredicate::OperationName`), and the
 /// fixture's only operation call was `iadd.wrap`, one of the twenty rows
 /// [OP-7] respelled — an operator token is never a callee, so a respelled row
-/// produces no lexical use at all. It rides `ineg.trap`, a dotted row that
+/// produces no lexical use at all. It rides `ineg`, a dotted row that
 /// keeps its name.
 #[test]
 fn complete_role_fixture_materializes_every_d_u_and_x_family() {
@@ -1669,7 +1669,7 @@ fn numeric<T: Int>() -> own T pure {
 
 fn main() -> own unit traps {
   let ordinary = 1_i32 +wrap two;
-  let smaller = ineg.trap(ordinary);
+  let smaller = ineg(ordinary);
   let made = Package<i32, one>(items: ordinary);
   set deref(made).items = ordinary;
   region 'r {

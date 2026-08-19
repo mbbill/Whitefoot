@@ -372,6 +372,15 @@ pub struct RefutedClaimDetail {
     pub negation: String,
 }
 
+/// One non-discharged static source obligation disposition [ENT-6].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaticObligationDisposition {
+    /// The closed state derives the canonical goal or normalization false.
+    Refuted,
+    /// The closed state derives neither a successful nor a refuting route.
+    Unproved,
+}
+
 /// One non-discharged [FN-8] ordinary-call goal disposition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CallRequirementDisposition {
@@ -774,21 +783,13 @@ pub enum SemanticIssueKind {
         /// The mechanical fix ENT-6 names.
         mechanical_fix: &'static str,
     },
-    /// A constant-operand-class bare `+`/`-`/`*` overflow obligation is not
-    /// derivable from the closed fact state at its node [OP-2, ENT-6].
-    UndischargedOverflowObligation {
-        /// The exact ENT-6 residual rendering of the least undischarged
-        /// conjunct: `operand <= c`, `c <= operand`, or `z outside T`.
+    /// One proof-required exact integer operation's canonical `.defined`
+    /// goal is not derivable from the closed fact state [OP-2, ENT-6].
+    UndischargedIntegerDomainObligation {
+        /// The exact canonical `.defined` predicate for this occurrence.
         residual: String,
-        /// The mechanical fix OP-2 names.
-        mechanical_fix: &'static str,
-    },
-    /// A divisor-class bare `/`/`%` division obligation is not derivable
-    /// from the closed fact state at its node [OP-2, ENT-6].
-    UndischargedDivisionObligation {
-        /// The exact ENT-6 residual rendering of the least undischarged
-        /// conjunct: `divisor != 0` or `operand != c`.
-        residual: String,
+        /// The exact non-discharged complete-view disposition.
+        disposition: StaticObligationDisposition,
         /// The mechanical fix OP-2 names.
         mechanical_fix: &'static str,
     },

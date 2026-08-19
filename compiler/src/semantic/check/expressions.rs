@@ -496,10 +496,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// [OP-1] the exact operator token, and the row it spells.
     ///
-    /// Bare `+ - * / %` carry the trapping mode, the suffixed forms carry
-    /// wrap, checked and saturating, and the four nonstrict comparisons
-    /// respell here. `ilt` and `igt` keep their named spelling and have no
-    /// operator token, so nothing maps to them.
+    /// Bare `+ - * / %` are proof-required exact rows; `defined` names their
+    /// total Bool domain queries. The remaining suffixes keep their existing
+    /// value-result policies.
     pub(super) fn infix_operation(
         &self,
         operator: NodeId,
@@ -508,21 +507,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         };
         Ok(match self.tree.token_bytes(*terminal)? {
-            b"+" => CheckedIntegerOperation::AddTrap,
+            b"+" => CheckedIntegerOperation::AddExact,
+            b"+defined" => CheckedIntegerOperation::AddDefined,
             b"+wrap" => CheckedIntegerOperation::AddWrap,
             b"+checked" => CheckedIntegerOperation::AddChecked,
             b"+sat" => CheckedIntegerOperation::AddSaturating,
-            b"-" => CheckedIntegerOperation::SubtractTrap,
+            b"-" => CheckedIntegerOperation::SubtractExact,
+            b"-defined" => CheckedIntegerOperation::SubtractDefined,
             b"-wrap" => CheckedIntegerOperation::SubtractWrap,
             b"-checked" => CheckedIntegerOperation::SubtractChecked,
             b"-sat" => CheckedIntegerOperation::SubtractSaturating,
-            b"*" => CheckedIntegerOperation::MultiplyTrap,
+            b"*" => CheckedIntegerOperation::MultiplyExact,
+            b"*defined" => CheckedIntegerOperation::MultiplyDefined,
             b"*wrap" => CheckedIntegerOperation::MultiplyWrap,
             b"*checked" => CheckedIntegerOperation::MultiplyChecked,
             b"*sat" => CheckedIntegerOperation::MultiplySaturating,
-            b"/" => CheckedIntegerOperation::DivideTrap,
+            b"/" => CheckedIntegerOperation::DivideExact,
+            b"/defined" => CheckedIntegerOperation::DivideDefined,
             b"/checked" => CheckedIntegerOperation::DivideChecked,
-            b"%" => CheckedIntegerOperation::RemainderTrap,
+            b"%" => CheckedIntegerOperation::RemainderExact,
+            b"%defined" => CheckedIntegerOperation::RemainderDefined,
             b"%checked" => CheckedIntegerOperation::RemainderChecked,
             _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         })

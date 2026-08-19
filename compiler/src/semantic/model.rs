@@ -400,21 +400,28 @@ pub(crate) enum CheckedIntegerOperation {
     AddWrap,
     SubtractWrap,
     MultiplyWrap,
-    AddTrap,
-    SubtractTrap,
-    MultiplyTrap,
+    AddExact,
+    SubtractExact,
+    MultiplyExact,
+    AddDefined,
+    SubtractDefined,
+    MultiplyDefined,
     AddChecked,
     SubtractChecked,
     MultiplyChecked,
     DivideChecked,
     RemainderChecked,
-    DivideTrap,
-    RemainderTrap,
+    DivideExact,
+    RemainderExact,
+    DivideDefined,
+    RemainderDefined,
     AbsoluteWrap,
-    AbsoluteTrap,
+    AbsoluteExact,
+    AbsoluteDefined,
     AbsoluteChecked,
     NegateWrap,
-    NegateTrap,
+    NegateExact,
+    NegateDefined,
     NegateChecked,
     BitAnd,
     BitOr,
@@ -422,8 +429,10 @@ pub(crate) enum CheckedIntegerOperation {
     BitNot,
     ShiftLeftWrap,
     ShiftRightWrap,
-    ShiftLeftTrap,
-    ShiftRightTrap,
+    ShiftLeftExact,
+    ShiftRightExact,
+    ShiftLeftDefined,
+    ShiftRightDefined,
     RotateLeft,
     RotateRight,
     PopulationCount,
@@ -536,28 +545,60 @@ impl CheckedIntegerErrorClass {
 }
 
 impl CheckedIntegerOperation {
-    pub(crate) const fn traps(self) -> bool {
+    pub(crate) const fn is_exact(self) -> bool {
         matches!(
             self,
-            Self::AddTrap
-                | Self::SubtractTrap
-                | Self::MultiplyTrap
-                | Self::AbsoluteTrap
-                | Self::NegateTrap
-                | Self::DivideTrap
-                | Self::RemainderTrap
-                | Self::ShiftLeftTrap
-                | Self::ShiftRightTrap
+            Self::AddExact
+                | Self::SubtractExact
+                | Self::MultiplyExact
+                | Self::DivideExact
+                | Self::RemainderExact
+                | Self::AbsoluteExact
+                | Self::NegateExact
+                | Self::ShiftLeftExact
+                | Self::ShiftRightExact
+        )
+    }
+
+    pub(crate) const fn defined_query(self) -> Option<Self> {
+        Some(match self {
+            Self::AddExact => Self::AddDefined,
+            Self::SubtractExact => Self::SubtractDefined,
+            Self::MultiplyExact => Self::MultiplyDefined,
+            Self::DivideExact => Self::DivideDefined,
+            Self::RemainderExact => Self::RemainderDefined,
+            Self::AbsoluteExact => Self::AbsoluteDefined,
+            Self::NegateExact => Self::NegateDefined,
+            Self::ShiftLeftExact => Self::ShiftLeftDefined,
+            Self::ShiftRightExact => Self::ShiftRightDefined,
+            _ => return None,
+        })
+    }
+
+    pub(crate) const fn is_defined_query(self) -> bool {
+        matches!(
+            self,
+            Self::AddDefined
+                | Self::SubtractDefined
+                | Self::MultiplyDefined
+                | Self::DivideDefined
+                | Self::RemainderDefined
+                | Self::AbsoluteDefined
+                | Self::NegateDefined
+                | Self::ShiftLeftDefined
+                | Self::ShiftRightDefined
         )
     }
 
     pub(crate) const fn operand_count(self) -> usize {
         match self {
             Self::AbsoluteWrap
-            | Self::AbsoluteTrap
+            | Self::AbsoluteExact
+            | Self::AbsoluteDefined
             | Self::AbsoluteChecked
             | Self::NegateWrap
-            | Self::NegateTrap
+            | Self::NegateExact
+            | Self::NegateDefined
             | Self::NegateChecked
             | Self::BitNot
             | Self::PopulationCount
@@ -572,20 +613,24 @@ impl CheckedIntegerOperation {
         match (self, operand) {
             (
                 Self::AbsoluteWrap
-                | Self::AbsoluteTrap
+                | Self::AbsoluteExact
+                | Self::AbsoluteDefined
                 | Self::AbsoluteChecked
                 | Self::NegateWrap
-                | Self::NegateTrap
+                | Self::NegateExact
+                | Self::NegateDefined
                 | Self::NegateChecked,
                 CheckedType::Integer(operand),
             ) => operand.signed(),
             (Self::ByteSwap, CheckedType::Integer(operand)) => operand.width() >= 16,
             (
                 Self::AbsoluteWrap
-                | Self::AbsoluteTrap
+                | Self::AbsoluteExact
+                | Self::AbsoluteDefined
                 | Self::AbsoluteChecked
                 | Self::NegateWrap
-                | Self::NegateTrap
+                | Self::NegateExact
+                | Self::NegateDefined
                 | Self::NegateChecked
                 | Self::ByteSwap,
                 CheckedType::GenericInt(_),
@@ -608,8 +653,10 @@ impl CheckedIntegerOperation {
                 self,
                 Self::ShiftLeftWrap
                     | Self::ShiftRightWrap
-                    | Self::ShiftLeftTrap
-                    | Self::ShiftRightTrap
+                    | Self::ShiftLeftExact
+                    | Self::ShiftRightExact
+                    | Self::ShiftLeftDefined
+                    | Self::ShiftRightDefined
                     | Self::RotateLeft
                     | Self::RotateRight
             )
@@ -654,7 +701,16 @@ impl CheckedIntegerOperation {
             | Self::Less
             | Self::LessEqual
             | Self::Greater
-            | Self::GreaterEqual => Some(CheckedType::Bool),
+            | Self::GreaterEqual
+            | Self::AddDefined
+            | Self::SubtractDefined
+            | Self::MultiplyDefined
+            | Self::DivideDefined
+            | Self::RemainderDefined
+            | Self::AbsoluteDefined
+            | Self::NegateDefined
+            | Self::ShiftLeftDefined
+            | Self::ShiftRightDefined => Some(CheckedType::Bool),
             _ => Some(operand),
         }
     }
@@ -852,7 +908,6 @@ pub(crate) enum CheckedExpression {
         argument_metadata: Vec<CheckedIntegerArgument>,
         arguments: Vec<CheckedExpression>,
         result: CheckedType,
-        trap: Option<TrapSite>,
     },
     FloatOperation {
         carrier: NodePath,

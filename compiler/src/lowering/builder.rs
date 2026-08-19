@@ -848,7 +848,6 @@ impl<'program> IrBuilder<'program> {
                 operation,
                 operand_type,
                 arguments,
-                trap,
                 ..
             } => {
                 let arguments = arguments
@@ -861,7 +860,6 @@ impl<'program> IrBuilder<'program> {
                         operation: (*operation).into(),
                         operand_type: lower_type(*operand_type)?,
                         arguments,
-                        trap: trap.clone().map(Into::into),
                     },
                 )
             }

@@ -42,21 +42,21 @@ fn sole_operation(source: &[u8]) -> (CheckedIntegerOperation, CheckedType) {
 #[test]
 fn every_operator_token_selects_its_row() {
     for (operator, expected, traps) in [
-        ("+", CheckedIntegerOperation::AddTrap, true),
+        ("+", CheckedIntegerOperation::AddExact, true),
         ("+wrap", CheckedIntegerOperation::AddWrap, false),
         ("+checked", CheckedIntegerOperation::AddChecked, false),
         ("+sat", CheckedIntegerOperation::AddSaturating, false),
-        ("-", CheckedIntegerOperation::SubtractTrap, true),
+        ("-", CheckedIntegerOperation::SubtractExact, true),
         ("-wrap", CheckedIntegerOperation::SubtractWrap, false),
         ("-checked", CheckedIntegerOperation::SubtractChecked, false),
         ("-sat", CheckedIntegerOperation::SubtractSaturating, false),
-        ("*", CheckedIntegerOperation::MultiplyTrap, true),
+        ("*", CheckedIntegerOperation::MultiplyExact, true),
         ("*wrap", CheckedIntegerOperation::MultiplyWrap, false),
         ("*checked", CheckedIntegerOperation::MultiplyChecked, false),
         ("*sat", CheckedIntegerOperation::MultiplySaturating, false),
-        ("/", CheckedIntegerOperation::DivideTrap, true),
+        ("/", CheckedIntegerOperation::DivideExact, true),
         ("/checked", CheckedIntegerOperation::DivideChecked, false),
-        ("%", CheckedIntegerOperation::RemainderTrap, true),
+        ("%", CheckedIntegerOperation::RemainderExact, true),
         ("%checked", CheckedIntegerOperation::RemainderChecked, false),
     ] {
         // [EFF-2] the row is exact, so only the trapping operators may

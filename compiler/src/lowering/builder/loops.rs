@@ -179,7 +179,6 @@ impl IrBuilder<'_> {
                 operation: IrIntegerOperation::Less,
                 operand_type: U64,
                 arguments: vec![binder_value, header_upper],
-                trap: None,
             },
         )?;
         self.terminate(IrTerminator::Match {
@@ -279,7 +278,6 @@ impl IrBuilder<'_> {
                     operation: IrIntegerOperation::AddWrap,
                     operand_type: U64,
                     arguments: vec![old, one],
-                    trap: None,
                 },
             )?;
             let next_storage = match binder_storage_type {

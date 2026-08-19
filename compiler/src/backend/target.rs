@@ -312,10 +312,7 @@ fn instruction_trap(instruction: &IrInstruction) -> Option<&IrTrapSite> {
     match instruction {
         IrInstruction::Check { trap, .. } => Some(trap),
         IrInstruction::Define { operation, .. } => match operation {
-            IrOperation::Integer {
-                trap: Some(trap), ..
-            }
-            | IrOperation::BufferFill { trap, .. }
+            IrOperation::BufferFill { trap, .. }
             | IrOperation::BufferVacant { trap, .. }
             | IrOperation::SystemCall {
                 trap: Some(trap), ..

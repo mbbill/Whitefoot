@@ -90,7 +90,6 @@ fn recognize_guard(
         operation,
         operand_type,
         arguments,
-        trap: None,
         ..
     } = value
     else {
@@ -181,7 +180,6 @@ fn recognize_increment(increment: &CheckedStatement, induction: BindingId) -> bo
         operation: CheckedIntegerOperation::AddWrap,
         operand_type,
         arguments,
-        trap: None,
         ..
     } = value
     else {
@@ -260,11 +258,7 @@ fn expression_is_pure(expression: &CheckedExpression) -> bool {
         CheckedExpression::Constant(_)
         | CheckedExpression::NamedConstant { .. }
         | CheckedExpression::Binding { .. } => true,
-        CheckedExpression::IntegerOperation {
-            trap: None,
-            arguments,
-            ..
-        }
+        CheckedExpression::IntegerOperation { arguments, .. }
         | CheckedExpression::BooleanOperation { arguments, .. }
         | CheckedExpression::EnumEquality { arguments, .. } => {
             arguments.iter().all(expression_is_pure)
@@ -286,7 +280,6 @@ fn needle_test(
         operation: CheckedIntegerOperation::Equal,
         operand_type,
         arguments,
-        trap: None,
         ..
     } = expression
     else {
@@ -435,7 +428,6 @@ impl IrBuilder<'_> {
                 operation: IrIntegerOperation::Greater,
                 operand_type: U64,
                 arguments: vec![skip, zero],
-                trap: None,
             },
         )?;
         let (advance, _) = self.new_block(&[])?;
@@ -461,7 +453,6 @@ impl IrBuilder<'_> {
                 operation: IrIntegerOperation::AddWrap,
                 operand_type: U64,
                 arguments: vec![index, skip],
-                trap: None,
             },
         )?;
         if self.bindings.insert(walk.induction, next) != Some(index) {

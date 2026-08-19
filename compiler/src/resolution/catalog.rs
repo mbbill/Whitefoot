@@ -44,22 +44,28 @@ const fn prelude(
 
 /// Distinct OP-1 spellings in normative table order, with repeated `cvt`
 /// collapsed at its first occurrence as required by OP-1.
-pub(crate) const OPERATION_FAMILIES: [&str; 84] = [
+pub(crate) const OPERATION_FAMILIES: [&str; 93] = [
     "+wrap",
     "-wrap",
     "*wrap",
     "+",
     "-",
     "*",
+    "+defined",
+    "-defined",
+    "*defined",
     "+checked",
     "-checked",
     "*checked",
     "/",
     "%",
+    "/defined",
+    "%defined",
     "/checked",
     "%checked",
     "ineg.wrap",
-    "ineg.trap",
+    "ineg",
+    "ineg.defined",
     "ineg.checked",
     "ieq",
     "ine",
@@ -97,8 +103,10 @@ pub(crate) const OPERATION_FAMILIES: [&str; 84] = [
     "inot",
     "ishl.wrap",
     "ishr.wrap",
-    "ishl.trap",
-    "ishr.trap",
+    "ishl",
+    "ishr",
+    "ishl.defined",
+    "ishr.defined",
     "irotl",
     "irotr",
     "ipopcount",
@@ -112,7 +120,8 @@ pub(crate) const OPERATION_FAMILIES: [&str; 84] = [
     "imin",
     "imax",
     "iabs.wrap",
-    "iabs.trap",
+    "iabs",
+    "iabs.defined",
     "iabs.checked",
     "reinterpret",
     "fneg",
@@ -131,7 +140,7 @@ pub(crate) const OPERATION_FAMILIES: [&str; 84] = [
     "fnan",
 ];
 
-pub(crate) const MODE_WORDS: [&str; 5] = ["wrap", "trap", "checked", "sat", "strict"];
+pub(crate) const MODE_WORDS: [&str; 5] = ["wrap", "defined", "checked", "sat", "strict"];
 
 pub(crate) fn operation_id(spelling: &str) -> Option<OperationFamilyId> {
     OPERATION_FAMILIES

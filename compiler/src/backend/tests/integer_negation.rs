@@ -5,8 +5,12 @@ fn executes_every_negation_mode_for_every_signed_width() {
     let template = r#"fn main() -> own unit traps {
   let wrapped = ineg.wrap($MIN_$TYPE);
   claim wrapped_negation_drift: ieq(wrapped, $MIN_$TYPE) because "wrapped negation drift";
-  let trapped = ineg.trap(-42_$TYPE);
-  claim trapping_negation_drift: ieq(trapped, 42_$TYPE) because "trapping negation drift";
+  let exact = ineg(-42_$TYPE);
+  claim exact_negation_drift: ieq(exact, 42_$TYPE) because "exact negation drift";
+  let ordinary_defined = ineg.defined(-42_$TYPE);
+  claim ordinary_negation_is_defined: ordinary_defined because "ordinary negation must be defined";
+  let minimum_defined = ineg.defined($MIN_$TYPE);
+  claim minimum_negation_is_undefined: bnot(minimum_defined) because "minimum negation must be undefined";
   let safe_result = ineg.checked(-42_$TYPE);
   match move safe_result {
     Ok(value: safe_value) => {
@@ -38,12 +42,13 @@ fn executes_every_negation_mode_for_every_signed_width() {
         let intrinsic = format!("@llvm.ssub.with.overflow.i{width}");
         assert!(
             llvm.contains(&format!("sub i{width} 0,")),
-            "wrapping negation must be a defined modular subtraction for {ty}"
+            "wrapping and proved-exact negation must be plain subtraction for {ty}"
         );
         assert!(
-            llvm.matches(&format!("{intrinsic}(i{width}")).count() >= 3,
-            "trapping and checked {ty} negation must share overflow detection"
+            llvm.matches(&format!("{intrinsic}(i{width}")).count() == 3,
+            "only the declaration and two checked {ty} negations need the overflow intrinsic"
         );
+        assert!(llvm.contains(&format!("icmp ne i{width}")));
         assert!(!llvm.contains(" nsw "));
         assert!(!llvm.contains(" nuw "));
         let output = compile_and_run(&llvm);
@@ -58,18 +63,17 @@ fn executes_every_negation_mode_for_every_signed_width() {
 }
 
 #[test]
-fn trapping_minimum_reports_the_mandatory_op2_record() {
+fn defined_minimum_reports_false_without_executing_negation() {
     let source = br#"fn main() -> own unit traps {
-  let negated = ineg.trap(-128_i8);
+  let is_defined = ineg.defined(-128_i8);
+  claim minimum_is_not_defined: bnot(is_defined) because "minimum negation must be undefined";
   return unit;
 }
 "#;
-    let output = compile_and_run(&compile(source));
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(stderr.starts_with(
-        "{\"rule_id\":\"OP-2\",\"message\":\"\",\"function\":\"main\",\"node_path\":["
-    ));
-    assert!(stderr.ends_with("]}\n"));
-    assert_eq!(stderr.lines().count(), 1);
+    let llvm = compile(source);
+    assert!(llvm.contains("icmp ne i8"));
+    assert!(!llvm.contains("sub i8 0, -128"));
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
 }

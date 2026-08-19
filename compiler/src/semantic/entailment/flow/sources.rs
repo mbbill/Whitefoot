@@ -541,9 +541,9 @@ impl Analyzer<'_, '_> {
     /// `iadd.wrap<T>(p, k)` and `isub.wrap<T>(p, k)` with a constant k
     /// establish s = p ± k only where the closed state already proves the
     /// unwrapped result stays in T's range, so the established equality is
-    /// over the mathematical value the wrap did not reach. `iadd.trap` and
-    /// `isub.trap` establish it unconditionally on the normal continuation:
-    /// the executed contract check is the proof [OP-2].
+    /// over the mathematical value the wrap did not reach. Exact `+` and `-`
+    /// establish it unconditionally on their normal continuation because
+    /// their IntegerDomain obligation was proved before acceptance [OP-2].
     fn establish_offset_fact(
         &mut self,
         node_path: &crate::NodePath,
@@ -732,9 +732,9 @@ impl Analyzer<'_, '_> {
         };
         let (adding, trapping) = match operation {
             CheckedIntegerOperation::AddWrap => (true, false),
-            CheckedIntegerOperation::AddTrap => (true, true),
+            CheckedIntegerOperation::AddExact => (true, true),
             CheckedIntegerOperation::SubtractWrap => (false, false),
-            CheckedIntegerOperation::SubtractTrap => (false, true),
+            CheckedIntegerOperation::SubtractExact => (false, true),
             _ => return None,
         };
         let left = self.read_operand(left)?;

@@ -20,9 +20,10 @@ use std::collections::{HashMap, HashSet};
 use super::super::goal::{ConcreteGoal, GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
     BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedConst, CheckedConstructor,
-    CheckedEnumType, CheckedExpression, CheckedFloatOperation, CheckedFunction, CheckedLoopId,
-    CheckedMatchArm, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedSetTarget,
-    CheckedStatement, CheckedType, CheckedValue, IntegerType, ValueInitializerKind,
+    CheckedEnumType, CheckedExpression, CheckedFloatOperation, CheckedFunction,
+    CheckedIntegerOperation, CheckedLoopId, CheckedMatchArm, CheckedMode, CheckedNominal,
+    CheckedNominalKind, CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, IntegerType,
+    ValueInitializerKind,
 };
 use super::super::postcondition::{
     NormalizedRelation, PostconditionPlaceRoot, PostconditionReturnDatum, PostconditionReturnPlace,
@@ -37,17 +38,17 @@ use super::state::{
 };
 use super::term::{
     CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm,
-    TermId, TermKind, TermTable, ZERO, integer_value,
+    TermId, TermKind, TermTable, ZERO, integer_value, type_range,
 };
 use super::{
     BoundsRequest, CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome,
-    ClaimDisposition, ClaimOutcome, CountedDerivationSet, DivisionOperandClass,
-    DivisionOverflowConjunct, EntailmentContext, FunctionEntailment, FunctionEntailmentView,
-    FunctionPostconditionProof, ObligationFamily, ObligationOutcome, OverflowOperandClass,
-    PostconditionAggregate, PostconditionDisposition, PostconditionEntryImage,
-    PostconditionEntryImageOutcome, PostconditionExit, PostconditionViewExit, S7Derivation,
-    VerifiedPostconditionSummary, VerifiedPostconditionSummaryRef, ViewObligationOutcome,
-    division_obligation_class, fragment_type, overflow_conjuncts, overflow_obligation_class,
+    ClaimDisposition, ClaimOutcome, CountedDerivationSet, EntailmentContext, FunctionEntailment,
+    FunctionEntailmentView, FunctionPostconditionProof, ObligationFamily, ObligationOutcome,
+    OverflowOperandClass, PostconditionAggregate, PostconditionDisposition,
+    PostconditionEntryImage, PostconditionEntryImageOutcome, PostconditionExit,
+    PostconditionViewExit, S7Derivation, VerifiedPostconditionSummary,
+    VerifiedPostconditionSummaryRef, ViewObligationOutcome, fragment_type, overflow_conjuncts,
+    overflow_obligation_class,
 };
 use crate::{SYSTEM_OPERATIONS, SystemParameterMode};
 
@@ -219,6 +220,13 @@ struct ViewStates {
     /// state is shared by the three proof views and branches with the same
     /// structural flow; `None` means the image is still live.
     entry_images: Vec<Option<FlowEventId>>,
+}
+
+struct IntegerDomainView {
+    discharged: bool,
+    refuted: bool,
+    contradictory: bool,
+    derivation: Option<DerivationId>,
 }
 
 /// Same-view caller premises captured at the pre-transfer call point. The
@@ -3284,9 +3292,8 @@ impl Analyzer<'_, '_> {
                 operand_type,
                 arguments,
                 result,
-                trap,
                 ..
-            } if trap.is_none() => build_operation(
+            } if !operation.is_exact() => build_operation(
                 GoalOperation::Integer {
                     operation: *operation,
                     operand_type: *operand_type,
@@ -3299,6 +3306,7 @@ impl Analyzer<'_, '_> {
                     .map(|argument| self.direct_goal_expression(argument))
                     .collect::<Option<Vec<_>>>()?,
             ),
+            CheckedExpression::IntegerOperation { .. } => None,
             CheckedExpression::FloatOperation {
                 operation: row,
                 operand_type,
@@ -3455,7 +3463,6 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::DerefAddressed { .. }
             | CheckedExpression::BoxDeref { .. }
             | CheckedExpression::ProjectValue { .. }
-            | CheckedExpression::IntegerOperation { .. }
             | CheckedExpression::UserCall { .. }
             | CheckedExpression::SystemCall { .. }
             | CheckedExpression::ArrayIndex { .. }
@@ -4346,31 +4353,19 @@ impl Analyzer<'_, '_> {
                 operation,
                 operand_type,
                 arguments,
-                trap,
                 ..
             } => {
                 for argument in arguments {
                     let _ = self.judge_expression(argument, states);
                 }
-                // A trap-free bare add/subtract/multiply is exactly a
-                // constant-operand-class site the checker classified under
-                // the arithmetic-obligation switch; with the switch off,
-                // every such operation retains its trap record and no
-                // obligation exists [OP-2, ENT-6].
-                if trap.is_none()
-                    && let Some(class) = overflow_obligation_class(*operation, arguments)
-                {
-                    self.judge_overflow_obligation(&class, *operand_type, carrier, states);
-                }
-                // A trap-free bare divide/remainder is exactly a divisor-class
-                // site the checker classified under the division-obligation
-                // switch; with the switch off, every such operation retains
-                // its trap record and no obligation exists [OP-2, ENT-6].
-                if trap.is_none()
-                    && let Some(class) =
-                        division_obligation_class(*operation, *operand_type, arguments)
-                {
-                    self.judge_division_obligation(&class, carrier, states);
+                if operation.is_exact() {
+                    self.judge_integer_domain_obligation(
+                        *operation,
+                        *operand_type,
+                        arguments,
+                        carrier,
+                        states,
+                    );
                 }
                 None
             }
@@ -4590,14 +4585,15 @@ impl Analyzer<'_, '_> {
         self.obligations.push(ObligationOutcome {
             node_path: node_path.clone(),
             family: ObligationFamily::Bounds,
-            conjunct: 0,
-            requested: BoundsRequest {
+            canonical_goal: None,
+            components: vec![BoundsRequest {
                 left: offset_term,
                 right: length_term,
                 bound: -1,
                 distinct: false,
-            },
+            }],
             discharged,
+            refuted: false,
             contradictory: closed.contradictory(),
             residual,
             derivation,
@@ -4626,6 +4622,7 @@ impl Analyzer<'_, '_> {
             node_path: node_path.clone(),
             family: ObligationFamily::Bounds,
             discharged: unasserted_discharged,
+            refuted: false,
             residual: (!unasserted_discharged).then(|| rendered_residual.clone()),
             derivation: unasserted_derivation,
         });
@@ -4651,320 +4648,363 @@ impl Analyzer<'_, '_> {
             node_path,
             family: ObligationFamily::Bounds,
             discharged: blinded_discharged,
+            refuted: false,
             residual: (!blinded_discharged).then_some(rendered_residual),
             derivation: blinded_derivation,
         });
     }
 
-    /// [ENT-6] the overflow obligation of one [OP-2] constant-operand-class
-    /// call: two conjuncts, judged in the complete, unasserted, and
-    /// S4-blinded views exactly as a bounds obligation is. The site reaches
-    /// this judgment only when the checker classified it into the class and
-    /// dropped its trap record, so the discharge verdict is the sole
-    /// remaining authority over the site's acceptance.
-    fn judge_overflow_obligation(
+    /// [ENT-6] judges one proof-required exact integer operation. The source
+    /// occurrence owns one canonical `.defined` goal and one obligation
+    /// identity. Fixed L0 components are alternate derivations of that goal;
+    /// they are never independent source obligations.
+    fn judge_integer_domain_obligation(
         &mut self,
-        class: &OverflowOperandClass<'_>,
+        operation: CheckedIntegerOperation,
         operand_type: CheckedType,
+        arguments: &[CheckedExpression],
         node_path: &crate::NodePath,
         states: &ViewStates,
     ) {
-        let Some(fragment) = fragment_type(operand_type) else {
-            // A class site always carries one concrete fragment type by
-            // [OP-2]'s operand agreement; fail closed rather than trust an
-            // inconsistent checked expression.
-            debug_assert!(false, "overflow class site without a fragment type");
-            return;
-        };
-        let conjuncts = overflow_conjuncts(class, fragment);
-        let operand_term = if conjuncts.ground {
-            Some(ZERO)
-        } else {
-            match class {
-                OverflowOperandClass::Folded { operand, .. } => self.read_operand(operand),
-                OverflowOperandClass::Ground { .. } => Some(ZERO),
-            }
-        };
-        let rendered_operand = match class {
-            OverflowOperandClass::Folded { operand, .. } if !conjuncts.ground => {
-                Some(self.render_expression(operand))
-            }
-            _ => None,
-        };
-        let ground_residual = || {
-            let result = conjuncts
-                .ground_result
-                .expect("a ground overflow obligation retains its exact result");
-            format!(
-                "{} outside {}",
-                result.render(),
-                integer_type_name(fragment)
-            )
-        };
-        // Conjunct ordinal zero: `operand - Z <= upper` (`Z - Z <= upper`
-        // when ground). Conjunct ordinal one: `Z - operand <= lower`.
-        let requests = [
-            (
-                0_u8,
-                operand_term,
-                conjuncts.ground.then_some(ZERO).or(operand_term),
-                ZERO,
-                conjuncts.upper,
-            ),
-            (
-                1_u8,
-                operand_term,
-                Some(ZERO),
-                if conjuncts.ground {
-                    ZERO
-                } else {
-                    operand_term.unwrap_or(ZERO)
-                },
-                conjuncts.lower,
-            ),
-        ];
-        for (conjunct, operand_term, left, right, bound) in requests {
-            let residual_text = |rendered: &Option<String>| match rendered {
-                Some(operand) => {
-                    if conjunct == 0 {
-                        format!("{operand} <= {bound}")
+        let canonical_goal = self.integer_domain_goal(operation, operand_type, arguments);
+        let goal = canonical_goal
+            .as_ref()
+            .cloned()
+            .map(|goal| self.intern_goal_expression(goal));
+        let components = self.integer_domain_components(operation, operand_type, arguments);
+        let view_components = components.clone();
+        let residual = self.render_integer_domain_goal(operation, arguments);
+
+        let complete = self.judge_integer_domain_view(
+            &states.complete,
+            goal,
+            operation,
+            operand_type,
+            &components,
+        );
+        let ordinal = u32::try_from(self.obligations.len())
+            .expect("ENT obligation-root ordinal exceeds the u32 identity space");
+        if let Some(root) = complete.derivation {
+            self.derivations
+                .add_root(DerivationRootKind::IntegerDomainObligation(ordinal), root);
+        }
+        self.obligations.push(ObligationOutcome {
+            node_path: node_path.clone(),
+            family: ObligationFamily::IntegerDomain,
+            canonical_goal,
+            components,
+            discharged: complete.discharged,
+            refuted: complete.refuted,
+            contradictory: complete.contradictory,
+            residual: (!complete.discharged).then(|| residual.clone()),
+            derivation: complete.derivation,
+        });
+
+        let unasserted = self.judge_integer_domain_view(
+            &states.unasserted,
+            goal,
+            operation,
+            operand_type,
+            &view_components,
+        );
+        self.unasserted_obligations.push(ViewObligationOutcome {
+            node_path: node_path.clone(),
+            family: ObligationFamily::IntegerDomain,
+            discharged: unasserted.discharged,
+            refuted: unasserted.refuted,
+            residual: (!unasserted.discharged).then(|| residual.clone()),
+            derivation: unasserted.derivation,
+        });
+        let blinded = self.judge_integer_domain_view(
+            &states.s4_blinded,
+            goal,
+            operation,
+            operand_type,
+            &view_components,
+        );
+        self.s4_blinded_obligations.push(ViewObligationOutcome {
+            node_path: node_path.clone(),
+            family: ObligationFamily::IntegerDomain,
+            discharged: blinded.discharged,
+            refuted: blinded.refuted,
+            residual: (!blinded.discharged).then_some(residual),
+            derivation: blinded.derivation,
+        });
+    }
+
+    fn integer_domain_goal(
+        &self,
+        operation: CheckedIntegerOperation,
+        operand_type: CheckedType,
+        arguments: &[CheckedExpression],
+    ) -> Option<GoalExpression> {
+        Some(GoalExpression::Operation {
+            row: GoalOperation::Integer {
+                operation: operation.defined_query()?,
+                operand_type,
+            },
+            type_arguments: Vec::new(),
+            const_arguments: Vec::new(),
+            result: CheckedType::Bool,
+            arguments: arguments
+                .iter()
+                .map(|argument| self.direct_goal_expression(argument))
+                .collect::<Option<Vec<_>>>()?,
+        })
+    }
+
+    fn integer_domain_components(
+        &mut self,
+        operation: CheckedIntegerOperation,
+        operand_type: CheckedType,
+        arguments: &[CheckedExpression],
+    ) -> Vec<BoundsRequest> {
+        if matches!(
+            operation,
+            CheckedIntegerOperation::AddExact
+                | CheckedIntegerOperation::SubtractExact
+                | CheckedIntegerOperation::MultiplyExact
+        ) {
+            let Some(class) = overflow_obligation_class(operation, arguments) else {
+                return Vec::new();
+            };
+            let Some(fragment) = fragment_type(operand_type) else {
+                return Vec::new();
+            };
+            let conjuncts = overflow_conjuncts(&class, fragment);
+            let operand = if conjuncts.ground {
+                Some(ZERO)
+            } else {
+                match class {
+                    OverflowOperandClass::Folded { operand, .. } => self.read_operand(operand),
+                    OverflowOperandClass::Ground { .. } => Some(ZERO),
+                }
+            };
+            return vec![
+                BoundsRequest {
+                    left: if conjuncts.ground {
+                        Some(ZERO)
                     } else {
-                        format!("{} <= {operand}", -bound)
-                    }
-                }
-                None => ground_residual(),
-            };
-            let judge = |closed: &ClosedState, derivations: &mut DerivationLedger| {
-                match (operand_term, left) {
-                    (Some(_), Some(left)) => (
-                        closed.derives_bound(left, right, bound),
-                        closed.bound_proof(left, right, bound, derivations),
-                    ),
-                    // A non-term operand leaves the conjunct underivable,
-                    // never ill-formed [ENT-6], except in a contradictory
-                    // state, where every obligation discharges [ENT-4].
-                    _ => (closed.contradictory(), closed.contradiction_proof()),
-                }
-            };
-            let closed = close(
-                &states.complete,
-                &self.terms,
-                &self.goals,
-                &mut self.derivations,
-            );
-            let contradictory = closed.contradictory();
-            let (discharged, proof) = judge(&closed, &mut self.derivations);
-            let derivation = discharged.then_some(proof).flatten();
-            let ordinal = u32::try_from(self.obligations.len())
-                .expect("ENT obligation-root ordinal exceeds the u32 identity space");
-            if let Some(root) = derivation {
-                self.derivations
-                    .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
-            }
-            self.obligations.push(ObligationOutcome {
-                node_path: node_path.clone(),
-                family: ObligationFamily::Overflow,
-                conjunct,
-                requested: BoundsRequest {
-                    // A non-term operand records no left term, signalling
-                    // the underivable relation exactly as a non-term
-                    // subscript offset does [ENT-6].
-                    left: match (conjuncts.ground, operand_term) {
-                        (true, _) => Some(ZERO),
-                        (false, Some(_)) => left,
-                        (false, None) => None,
+                        operand
                     },
-                    right,
-                    bound,
+                    right: ZERO,
+                    bound: conjuncts.upper,
                     distinct: false,
                 },
-                discharged,
-                contradictory,
-                residual: (!discharged).then(|| residual_text(&rendered_operand)),
-                derivation,
-            });
-            let unasserted = close(
-                &states.unasserted,
-                &self.terms,
-                &self.goals,
-                &mut self.derivations,
-            );
-            let (unasserted_discharged, unasserted_proof) =
-                judge(&unasserted, &mut self.derivations);
-            self.unasserted_obligations.push(ViewObligationOutcome {
-                node_path: node_path.clone(),
-                family: ObligationFamily::Overflow,
-                discharged: unasserted_discharged,
-                residual: (!unasserted_discharged).then(|| residual_text(&rendered_operand)),
-                derivation: unasserted_discharged.then_some(unasserted_proof).flatten(),
-            });
-            let blinded = close(
-                &states.s4_blinded,
-                &self.terms,
-                &self.goals,
-                &mut self.derivations,
-            );
-            let (blinded_discharged, blinded_proof) = judge(&blinded, &mut self.derivations);
-            self.s4_blinded_obligations.push(ViewObligationOutcome {
-                node_path: node_path.clone(),
-                family: ObligationFamily::Overflow,
-                discharged: blinded_discharged,
-                residual: (!blinded_discharged).then(|| residual_text(&rendered_operand)),
-                derivation: blinded_discharged.then_some(blinded_proof).flatten(),
-            });
+                BoundsRequest {
+                    left: (conjuncts.ground || operand.is_some()).then_some(ZERO),
+                    right: if conjuncts.ground {
+                        ZERO
+                    } else {
+                        operand.unwrap_or(ZERO)
+                    },
+                    bound: conjuncts.lower,
+                    distinct: false,
+                },
+            ];
+        }
+
+        if matches!(
+            operation,
+            CheckedIntegerOperation::DivideExact | CheckedIntegerOperation::RemainderExact
+        ) {
+            let (Some(fragment), [dividend, divisor]) = (fragment_type(operand_type), arguments)
+            else {
+                return Vec::new();
+            };
+            let mut requests = vec![BoundsRequest {
+                left: self.read_operand(divisor),
+                right: ZERO,
+                bound: 0,
+                distinct: true,
+            }];
+            if fragment.signed() {
+                requests.push(BoundsRequest {
+                    left: self.read_operand(dividend),
+                    right: self
+                        .terms
+                        .intern(TermKind::Constant(type_range(fragment).0)),
+                    bound: 0,
+                    distinct: true,
+                });
+                requests.push(BoundsRequest {
+                    left: self.read_operand(divisor),
+                    right: self.terms.intern(TermKind::Constant(-1)),
+                    bound: 0,
+                    distinct: true,
+                });
+            } else {
+                requests.push(BoundsRequest {
+                    left: Some(ZERO),
+                    right: ZERO,
+                    bound: 0,
+                    distinct: false,
+                });
+            }
+            normalize_distinct_requests(&mut requests);
+            return requests;
+        }
+
+        if matches!(
+            operation,
+            CheckedIntegerOperation::AbsoluteExact | CheckedIntegerOperation::NegateExact
+        ) {
+            let (Some(fragment), [operand]) = (fragment_type(operand_type), arguments) else {
+                return Vec::new();
+            };
+            let minimum = type_range(fragment).0;
+            let mut requests = vec![BoundsRequest {
+                left: self.read_operand(operand),
+                right: self.terms.intern(TermKind::Constant(minimum)),
+                bound: 0,
+                distinct: true,
+            }];
+            normalize_distinct_requests(&mut requests);
+            return requests;
+        }
+
+        if matches!(
+            operation,
+            CheckedIntegerOperation::ShiftLeftExact | CheckedIntegerOperation::ShiftRightExact
+        ) {
+            let (Some(fragment), [_, amount]) = (fragment_type(operand_type), arguments) else {
+                return Vec::new();
+            };
+            return vec![BoundsRequest {
+                left: self.read_operand(amount),
+                right: ZERO,
+                bound: i128::from(fragment.width()) - 1,
+                distinct: false,
+            }];
+        }
+
+        Vec::new()
+    }
+
+    fn judge_integer_domain_view(
+        &mut self,
+        state: &FactState,
+        goal: Option<GoalId>,
+        operation: CheckedIntegerOperation,
+        operand_type: CheckedType,
+        components: &[BoundsRequest],
+    ) -> IntegerDomainView {
+        let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
+        let contradictory = closed.contradictory();
+        let signed_division = matches!(
+            operation,
+            CheckedIntegerOperation::DivideExact | CheckedIntegerOperation::RemainderExact
+        ) && fragment_type(operand_type).is_some_and(IntegerType::signed);
+        let component_proof =
+            |index: usize, derivations: &mut DerivationLedger| -> Option<DerivationId> {
+                request_relation(components.get(index)?)
+                    .and_then(|relation| closed.relation_proof(&relation, derivations))
+            };
+        let parents = if contradictory {
+            closed.contradiction_proof().map(|proof| vec![proof])
+        } else if let Some(goal) =
+            goal.filter(|goal| closed.derives_goal(*goal, GoalSign::Positive, &self.goals))
+        {
+            closed
+                .opaque_proof(goal, GoalSign::Positive)
+                .or_else(|| {
+                    closed.goal_projection_proof(
+                        goal,
+                        GoalSign::Positive,
+                        &self.goals,
+                        &mut self.derivations,
+                    )
+                })
+                .map(|proof| vec![proof])
+        } else if signed_division && components.len() == 3 {
+            component_proof(0, &mut self.derivations).and_then(|nonzero| {
+                component_proof(1, &mut self.derivations)
+                    .or_else(|| component_proof(2, &mut self.derivations))
+                    .map(|witness| vec![nonzero, witness])
+            })
+        } else if !components.is_empty() {
+            components
+                .iter()
+                .map(|request| {
+                    request_relation(request).and_then(|relation| {
+                        closed.relation_proof(&relation, &mut self.derivations)
+                    })
+                })
+                .collect::<Option<Vec<_>>>()
+        } else {
+            None
+        };
+        let discharged = parents.is_some();
+        let component_false = |index: usize| {
+            components
+                .get(index)
+                .and_then(request_relation)
+                .is_some_and(|relation| closed.derives(&relation.negated()))
+        };
+        let normalization_refuted = if signed_division && components.len() == 3 {
+            component_false(0) || (component_false(1) && component_false(2))
+        } else {
+            components
+                .iter()
+                .filter_map(request_relation)
+                .any(|relation| closed.derives(&relation.negated()))
+        };
+        let refuted = !discharged
+            && (goal
+                .is_some_and(|goal| closed.derives_goal(goal, GoalSign::Negative, &self.goals))
+                || normalization_refuted);
+        let derivation = parents.map(|parents| {
+            self.derivations.intern_for(
+                state.proof_view(),
+                DerivationNode::IntegerDomain { goal, parents },
+            )
+        });
+        IntegerDomainView {
+            discharged,
+            refuted,
+            contradictory,
+            derivation,
         }
     }
 
-    /// [ENT-6] the division obligation of one [OP-2] divisor-class call: two
-    /// conjuncts, judged in the complete, unasserted, and S4-blinded views
-    /// exactly as a bounds obligation is. Ordinal zero is the zero-divisor
-    /// disequality `d != 0`, expressible for every divisor the fragment
-    /// reads. Ordinal one is the signed-overflow conjunct, which the
-    /// classifier reduces to one expressible disequality or to the ground
-    /// true relation; the inexpressible disjunctive case never reaches the
-    /// class. The site reaches this judgment only when the checker
-    /// classified it and dropped its trap record, so the discharge verdict
-    /// is the sole remaining authority over the site's acceptance.
-    fn judge_division_obligation(
-        &mut self,
-        class: &DivisionOperandClass<'_>,
-        node_path: &crate::NodePath,
-        states: &ViewStates,
-    ) {
-        struct Conjunct {
-            ordinal: u8,
-            left: Option<TermId>,
-            right: TermId,
-            distinct: bool,
-            residual: String,
-        }
-
-        let divisor_text = self.render_expression(class.divisor);
-        let zero_divisor = Conjunct {
-            ordinal: 0,
-            left: self.read_operand(class.divisor),
-            right: ZERO,
-            distinct: true,
-            residual: format!("{divisor_text} != 0"),
-        };
-        let signed_overflow = match class.overflow {
-            DivisionOverflowConjunct::Vacuous => Conjunct {
-                ordinal: 1,
-                // The ground true relation `Z - Z <= 0`, derivable at every
-                // point, exactly as a ground overflow conjunct is.
-                left: Some(ZERO),
-                right: ZERO,
-                distinct: false,
-                residual: String::new(),
-            },
-            DivisionOverflowConjunct::Distinct { operand, constant } => {
-                let operand_text = self.render_expression(operand);
-                Conjunct {
-                    ordinal: 1,
-                    left: self.read_operand(operand),
-                    right: self.terms.intern(TermKind::Constant(constant)),
-                    distinct: true,
-                    residual: format!("{operand_text} != {constant}"),
-                }
+    fn render_integer_domain_goal(
+        &self,
+        operation: CheckedIntegerOperation,
+        arguments: &[CheckedExpression],
+    ) -> String {
+        let rendered = arguments
+            .iter()
+            .map(|argument| self.render_expression(argument))
+            .collect::<Vec<_>>();
+        match (operation, rendered.as_slice()) {
+            (CheckedIntegerOperation::AddExact, [left, right]) => {
+                format!("{left} +defined {right}")
             }
-        };
-
-        for conjunct in [zero_divisor, signed_overflow] {
-            let judge = |closed: &ClosedState, derivations: &mut DerivationLedger| {
-                match conjunct.left {
-                    Some(left) => {
-                        let relation = if conjunct.distinct {
-                            Relation::Distinct {
-                                left,
-                                right: conjunct.right,
-                            }
-                        } else {
-                            Relation::Bound {
-                                left,
-                                right: conjunct.right,
-                                bound: 0,
-                            }
-                        };
-                        (
-                            closed.derives(&relation),
-                            closed.relation_proof(&relation, derivations),
-                        )
-                    }
-                    // A non-term divisor or dividend leaves the conjunct
-                    // underivable, never ill-formed [ENT-6], except in a
-                    // contradictory state, where every obligation
-                    // discharges [ENT-4].
-                    None => (closed.contradictory(), closed.contradiction_proof()),
-                }
-            };
-            let closed = close(
-                &states.complete,
-                &self.terms,
-                &self.goals,
-                &mut self.derivations,
-            );
-            let contradictory = closed.contradictory();
-            let (discharged, proof) = judge(&closed, &mut self.derivations);
-            let derivation = discharged.then_some(proof).flatten();
-            let ordinal = u32::try_from(self.obligations.len())
-                .expect("ENT obligation-root ordinal exceeds the u32 identity space");
-            if let Some(root) = derivation {
-                self.derivations
-                    .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
+            (CheckedIntegerOperation::SubtractExact, [left, right]) => {
+                format!("{left} -defined {right}")
             }
-            // A disequality's retained derivation normalizes its term pair
-            // by identity order, so the recorded request is the exact
-            // relation proven [ENT-4].
-            let (recorded_left, recorded_right) = match conjunct.left {
-                Some(left) if conjunct.distinct && conjunct.right < left => {
-                    (Some(conjunct.right), left)
-                }
-                _ => (conjunct.left, conjunct.right),
-            };
-            self.obligations.push(ObligationOutcome {
-                node_path: node_path.clone(),
-                family: ObligationFamily::Division,
-                conjunct: conjunct.ordinal,
-                requested: BoundsRequest {
-                    left: recorded_left,
-                    right: recorded_right,
-                    bound: 0,
-                    distinct: conjunct.distinct,
-                },
-                discharged,
-                contradictory,
-                residual: (!discharged).then(|| conjunct.residual.clone()),
-                derivation,
-            });
-            let unasserted = close(
-                &states.unasserted,
-                &self.terms,
-                &self.goals,
-                &mut self.derivations,
-            );
-            let (unasserted_discharged, unasserted_proof) =
-                judge(&unasserted, &mut self.derivations);
-            self.unasserted_obligations.push(ViewObligationOutcome {
-                node_path: node_path.clone(),
-                family: ObligationFamily::Division,
-                discharged: unasserted_discharged,
-                residual: (!unasserted_discharged).then(|| conjunct.residual.clone()),
-                derivation: unasserted_discharged.then_some(unasserted_proof).flatten(),
-            });
-            let blinded = close(
-                &states.s4_blinded,
-                &self.terms,
-                &self.goals,
-                &mut self.derivations,
-            );
-            let (blinded_discharged, blinded_proof) = judge(&blinded, &mut self.derivations);
-            self.s4_blinded_obligations.push(ViewObligationOutcome {
-                node_path: node_path.clone(),
-                family: ObligationFamily::Division,
-                discharged: blinded_discharged,
-                residual: (!blinded_discharged).then(|| conjunct.residual.clone()),
-                derivation: blinded_discharged.then_some(blinded_proof).flatten(),
-            });
+            (CheckedIntegerOperation::MultiplyExact, [left, right]) => {
+                format!("{left} *defined {right}")
+            }
+            (CheckedIntegerOperation::DivideExact, [left, right]) => {
+                format!("{left} /defined {right}")
+            }
+            (CheckedIntegerOperation::RemainderExact, [left, right]) => {
+                format!("{left} %defined {right}")
+            }
+            (CheckedIntegerOperation::AbsoluteExact, [value]) => {
+                format!("iabs.defined({value})")
+            }
+            (CheckedIntegerOperation::NegateExact, [value]) => {
+                format!("ineg.defined({value})")
+            }
+            (CheckedIntegerOperation::ShiftLeftExact, [value, amount]) => {
+                format!("ishl.defined({value}, {amount})")
+            }
+            (CheckedIntegerOperation::ShiftRightExact, [value, amount]) => {
+                format!("ishr.defined({value}, {amount})")
+            }
+            _ => "<invalid integer-domain goal>".to_owned(),
         }
     }
 
@@ -5718,6 +5758,19 @@ impl Analyzer<'_, '_> {
                 // everything and never refutes), refutation when the
                 // non-contradictory state derives the exact negation.
                 let relation = self.scrutinee_relation(condition, &state.complete);
+                let domain_goal = self
+                    .goal_origin_set(condition, &state.complete)
+                    .into_iter()
+                    .rev()
+                    .find(|goal| {
+                        matches!(
+                            self.goals.expression(*goal),
+                            GoalExpression::Operation {
+                                row: GoalOperation::Integer { operation, .. },
+                                ..
+                            } if operation.is_defined_query()
+                        )
+                    });
                 let closed = close(
                     &state.complete,
                     &self.terms,
@@ -5751,6 +5804,46 @@ impl Analyzer<'_, '_> {
                         } else {
                             (ClaimDisposition::Retained, None)
                         }
+                    }
+                } else if let Some(goal) = domain_goal {
+                    if closed.derives_goal(goal, GoalSign::Positive, &self.goals) {
+                        let proof = closed
+                            .contradiction_proof()
+                            .or_else(|| closed.opaque_proof(goal, GoalSign::Positive))
+                            .or_else(|| {
+                                closed.goal_projection_proof(
+                                    goal,
+                                    GoalSign::Positive,
+                                    &self.goals,
+                                    &mut self.derivations,
+                                )
+                            })
+                            .expect("a derivable domain claim must retain its canonical proof");
+                        (
+                            ClaimDisposition::Redundant,
+                            Some((ClaimLifecycleKind::Redundant, proof)),
+                        )
+                    } else if closed.derives_goal(goal, GoalSign::Negative, &self.goals) {
+                        let proof = closed
+                            .opaque_proof(goal, GoalSign::Negative)
+                            .or_else(|| {
+                                closed.goal_projection_proof(
+                                    goal,
+                                    GoalSign::Negative,
+                                    &self.goals,
+                                    &mut self.derivations,
+                                )
+                            })
+                            .expect("a refuted domain claim must retain its canonical proof");
+                        (
+                            ClaimDisposition::Refuted {
+                                predicate: predicate.clone(),
+                                negation: format!("bnot({predicate})"),
+                            },
+                            Some((ClaimLifecycleKind::Refuted, proof)),
+                        )
+                    } else {
+                        (ClaimDisposition::Retained, None)
                     }
                 } else {
                     (ClaimDisposition::Retained, None)
@@ -6838,6 +6931,34 @@ impl Analyzer<'_, '_> {
             _ => "?".to_owned(),
         }
     }
+}
+
+fn normalize_distinct_requests(requests: &mut [BoundsRequest]) {
+    for request in requests {
+        if request.distinct
+            && let Some(left) = request.left
+            && request.right < left
+        {
+            request.left = Some(request.right);
+            request.right = left;
+        }
+    }
+}
+
+fn request_relation(request: &BoundsRequest) -> Option<Relation> {
+    let left = request.left?;
+    Some(if request.distinct {
+        Relation::Distinct {
+            left,
+            right: request.right,
+        }
+    } else {
+        Relation::Bound {
+            left,
+            right: request.right,
+            bound: request.bound,
+        }
+    })
 }
 
 /// A let-origin expansion is valid only while the bound value has no `set`

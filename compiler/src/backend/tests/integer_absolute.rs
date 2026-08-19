@@ -5,8 +5,12 @@ fn executes_every_absolute_mode_for_every_signed_width() {
     let template = r#"fn main() -> own unit traps {
   let wrapped = iabs.wrap($MIN_$TYPE);
   claim wrapped_absolute_value_drift: ieq(wrapped, $MIN_$TYPE) because "wrapped absolute value drift";
-  let trapped = iabs.trap(-42_$TYPE);
-  claim trapping_absolute_value_drift: ieq(trapped, 42_$TYPE) because "trapping absolute value drift";
+  let exact = iabs(-42_$TYPE);
+  claim exact_absolute_value_drift: ieq(exact, 42_$TYPE) because "exact absolute value drift";
+  let ordinary_defined = iabs.defined(-42_$TYPE);
+  claim ordinary_absolute_value_is_defined: ordinary_defined because "ordinary absolute value must be defined";
+  let minimum_defined = iabs.defined($MIN_$TYPE);
+  claim minimum_absolute_value_is_undefined: bnot(minimum_defined) because "minimum absolute value must be undefined";
   let safe_result = iabs.checked(-42_$TYPE);
   match move safe_result {
     Ok(value: safe_value) => {
@@ -57,18 +61,17 @@ fn executes_every_absolute_mode_for_every_signed_width() {
 }
 
 #[test]
-fn trapping_minimum_reports_the_mandatory_op2_record() {
+fn defined_minimum_reports_false_without_executing_absolute_value() {
     let source = br#"fn main() -> own unit traps {
-  let magnitude = iabs.trap(-128_i8);
+  let is_defined = iabs.defined(-128_i8);
+  claim minimum_is_not_defined: bnot(is_defined) because "minimum absolute value must be undefined";
   return unit;
 }
 "#;
-    let output = compile_and_run(&compile(source));
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(stderr.starts_with(
-        "{\"rule_id\":\"OP-2\",\"message\":\"\",\"function\":\"main\",\"node_path\":["
-    ));
-    assert!(stderr.ends_with("]}\n"));
-    assert_eq!(stderr.lines().count(), 1);
+    let llvm = compile(source);
+    assert!(llvm.contains("icmp ne i8"));
+    assert!(!llvm.contains("call i8 @llvm.abs.i8(i8 -128"));
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
 }

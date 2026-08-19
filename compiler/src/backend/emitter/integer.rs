@@ -1,17 +1,13 @@
 use super::*;
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn emit_integer(
         &mut self,
-        block: IrBlockId,
-        _index: usize,
         result: IrValueId,
         result_type: IrType,
         operation: IrIntegerOperation,
         operand_type: IrType,
         arguments: &[IrValueId],
-        trap: Option<&IrTrapSite>,
     ) -> Result<(), BackendFailure> {
         let IrType::Integer { width, signed } = operand_type else {
             return Err(BackendFailure::InvalidIr);
@@ -20,8 +16,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             operation,
             IrIntegerOperation::ShiftLeftWrap
                 | IrIntegerOperation::ShiftRightWrap
-                | IrIntegerOperation::ShiftLeftTrap
-                | IrIntegerOperation::ShiftRightTrap
+                | IrIntegerOperation::ShiftLeftExact
+                | IrIntegerOperation::ShiftRightExact
+                | IrIntegerOperation::ShiftLeftDefined
+                | IrIntegerOperation::ShiftRightDefined
                 | IrIntegerOperation::RotateLeft
                 | IrIntegerOperation::RotateRight
         );
@@ -51,24 +49,28 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrIntegerOperation::AddWrap
             | IrIntegerOperation::SubtractWrap
             | IrIntegerOperation::MultiplyWrap
-            | IrIntegerOperation::NegateWrap => {
-                if result_type != operand_type || trap.is_some() {
+            | IrIntegerOperation::NegateWrap
+            | IrIntegerOperation::AddExact
+            | IrIntegerOperation::SubtractExact
+            | IrIntegerOperation::MultiplyExact
+            | IrIntegerOperation::NegateExact => {
+                if result_type != operand_type {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let (opcode, left, right) = match operation {
-                    IrIntegerOperation::AddWrap => {
+                    IrIntegerOperation::AddWrap | IrIntegerOperation::AddExact => {
                         let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
                         ("add", left.as_str(), right.as_str())
                     }
-                    IrIntegerOperation::SubtractWrap => {
+                    IrIntegerOperation::SubtractWrap | IrIntegerOperation::SubtractExact => {
                         let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
                         ("sub", left.as_str(), right.as_str())
                     }
-                    IrIntegerOperation::MultiplyWrap => {
+                    IrIntegerOperation::MultiplyWrap | IrIntegerOperation::MultiplyExact => {
                         let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
                         ("mul", left.as_str(), right.as_str())
                     }
-                    IrIntegerOperation::NegateWrap if signed => (
+                    IrIntegerOperation::NegateWrap | IrIntegerOperation::NegateExact if signed => (
                         "sub",
                         "0",
                         unary.as_deref().ok_or(BackendFailure::InvalidIr)?,
@@ -82,60 +84,25 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
-            IrIntegerOperation::AddTrap
-            | IrIntegerOperation::SubtractTrap
-            | IrIntegerOperation::MultiplyTrap
-            | IrIntegerOperation::NegateTrap => {
-                if result_type != operand_type {
+            IrIntegerOperation::AddDefined
+            | IrIntegerOperation::SubtractDefined
+            | IrIntegerOperation::MultiplyDefined => {
+                if result_type != IrType::Bool {
                     return Err(BackendFailure::InvalidIr);
                 }
-                let Some(trap) = trap else {
-                    // A trap-free add/subtract/multiply is a discharged
-                    // [OP-2] constant-operand-class site: the checker proved
-                    // overflow unreachable, so the exact result needs no
-                    // branch in any build mode [ENT-6, DIAG-2]. Negation is
-                    // outside the class and always retains its record.
-                    let (opcode, left, right) = match operation {
-                        IrIntegerOperation::AddTrap => {
-                            let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
-                            ("add", left.as_str(), right.as_str())
-                        }
-                        IrIntegerOperation::SubtractTrap => {
-                            let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
-                            ("sub", left.as_str(), right.as_str())
-                        }
-                        IrIntegerOperation::MultiplyTrap => {
-                            let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
-                            ("mul", left.as_str(), right.as_str())
-                        }
-                        _ => return Err(BackendFailure::InvalidIr),
-                    };
-                    writeln!(
-                        self.output,
-                        "  {} = {opcode} {ty} {left}, {right}",
-                        self.value_name(result)
-                    )
-                    .map_err(|_| BackendFailure::TextEmission)?;
-                    return Ok(());
-                };
                 let (stem, left, right) = match operation {
-                    IrIntegerOperation::AddTrap => {
+                    IrIntegerOperation::AddDefined => {
                         let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
                         ("add", left.as_str(), right.as_str())
                     }
-                    IrIntegerOperation::SubtractTrap => {
+                    IrIntegerOperation::SubtractDefined => {
                         let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
                         ("sub", left.as_str(), right.as_str())
                     }
-                    IrIntegerOperation::MultiplyTrap => {
+                    IrIntegerOperation::MultiplyDefined => {
                         let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
                         ("mul", left.as_str(), right.as_str())
                     }
-                    IrIntegerOperation::NegateTrap if signed => (
-                        "sub",
-                        "0",
-                        unary.as_deref().ok_or(BackendFailure::InvalidIr)?,
-                    ),
                     _ => return Err(BackendFailure::InvalidIr),
                 };
                 let sign = if signed { 's' } else { 'u' };
@@ -146,16 +113,23 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 });
                 let pair = self.next_temporary()?;
                 let overflow = self.next_temporary()?;
-                let trap_id = self.register_trap(trap)?;
                 writeln!(
                     self.output,
-                    "  %{pair} = call {{ {ty}, i1 }} @{intrinsic}({ty} {left}, {ty} {right})\n  {} = extractvalue {{ {ty}, i1 }} %{pair}, 0\n  %{overflow} = extractvalue {{ {ty}, i1 }} %{pair}, 1\n  br i1 %{overflow}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:",
-                    self.value_name(result),
-                    overflow_trap_label(result),
-                    overflow_continue_label(result),
-                    overflow_trap_label(result),
-                    self.traps[trap_id].len(),
-                    overflow_continue_label(result)
+                    "  %{pair} = call {{ {ty}, i1 }} @{intrinsic}({ty} {left}, {ty} {right})\n  %{overflow} = extractvalue {{ {ty}, i1 }} %{pair}, 1\n  {} = xor i1 %{overflow}, true",
+                    self.value_name(result)
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            IrIntegerOperation::NegateDefined => {
+                let argument = unary.as_deref().ok_or(BackendFailure::InvalidIr)?;
+                if !signed || result_type != IrType::Bool {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let minimum = -(1_i128 << (width - 1));
+                writeln!(
+                    self.output,
+                    "  {} = icmp ne {ty} {argument}, {minimum}",
+                    self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -163,9 +137,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             | IrIntegerOperation::SubtractChecked
             | IrIntegerOperation::MultiplyChecked
             | IrIntegerOperation::NegateChecked => {
-                if trap.is_some() {
-                    return Err(BackendFailure::InvalidIr);
-                }
                 let error_type = self.checked_result_error_type(result_type, operand_type, &[0])?;
 
                 let (stem, left, right) = match operation {
@@ -214,9 +185,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let Some((left, right)) = &binary else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if trap.is_some() {
-                    return Err(BackendFailure::InvalidIr);
-                }
                 let error_type =
                     self.checked_result_error_type(result_type, operand_type, &[0, 1])?;
                 let result_ty = llvm_type(self.program, result_type)?;
@@ -285,7 +253,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
-            IrIntegerOperation::DivideTrap | IrIntegerOperation::RemainderTrap => {
+            IrIntegerOperation::DivideExact | IrIntegerOperation::RemainderExact => {
                 let Some((left, right)) = &binary else {
                     return Err(BackendFailure::InvalidIr);
                 };
@@ -293,60 +261,52 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let opcode = match (operation, signed) {
-                    (IrIntegerOperation::DivideTrap, true) => "sdiv",
-                    (IrIntegerOperation::DivideTrap, false) => "udiv",
-                    (IrIntegerOperation::RemainderTrap, true) => "srem",
-                    (IrIntegerOperation::RemainderTrap, false) => "urem",
+                    (IrIntegerOperation::DivideExact, true) => "sdiv",
+                    (IrIntegerOperation::DivideExact, false) => "udiv",
+                    (IrIntegerOperation::RemainderExact, true) => "srem",
+                    (IrIntegerOperation::RemainderExact, false) => "urem",
                     _ => return Err(BackendFailure::InvalidIr),
                 };
-                let Some(trap) = trap else {
-                    // A divisor-class site whose division obligation is
-                    // discharged retains no trap record: both the
-                    // zero-divisor test and, where the class admits it, the
-                    // signed-overflow test are proven unreachable, so the
-                    // exact quotient or remainder needs no branch in any
-                    // build mode [ENT-6, DIAG-2].
-                    writeln!(
-                        self.output,
-                        "  {} = {opcode} {ty} {left}, {right}",
-                        self.value_name(result)
-                    )
-                    .map_err(|_| BackendFailure::TextEmission)?;
-                    return Ok(());
-                };
-                let is_zero = self.next_temporary()?;
-                writeln!(self.output, "  %{is_zero} = icmp eq {ty} {right}, 0")
-                    .map_err(|_| BackendFailure::TextEmission)?;
-                let failure = if signed {
-                    let is_minimum = self.next_temporary()?;
-                    let is_minus_one = self.next_temporary()?;
-                    let is_overflow = self.next_temporary()?;
-                    let is_failure = self.next_temporary()?;
-                    let minimum = -(1_i128 << (width - 1));
-                    writeln!(
-                        self.output,
-                        "  %{is_minimum} = icmp eq {ty} {left}, {minimum}\n  %{is_minus_one} = icmp eq {ty} {right}, -1\n  %{is_overflow} = and i1 %{is_minimum}, %{is_minus_one}\n  %{is_failure} = or i1 %{is_zero}, %{is_overflow}"
-                    )
-                    .map_err(|_| BackendFailure::TextEmission)?;
-                    is_failure
-                } else {
-                    is_zero
-                };
-                let trap_id = self.register_trap(trap)?;
                 writeln!(
                     self.output,
-                    "  br i1 %{failure}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:\n  {} = {opcode} {ty} {left}, {right}",
-                    overflow_trap_label(result),
-                    overflow_continue_label(result),
-                    overflow_trap_label(result),
-                    self.traps[trap_id].len(),
-                    overflow_continue_label(result),
-                    self.value_name(result),
+                    "  {} = {opcode} {ty} {left}, {right}",
+                    self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
+            IrIntegerOperation::DivideDefined | IrIntegerOperation::RemainderDefined => {
+                let Some((left, right)) = &binary else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                if result_type != IrType::Bool {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let nonzero = self.next_temporary()?;
+                writeln!(self.output, "  %{nonzero} = icmp ne {ty} {right}, 0")
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                if signed {
+                    let not_minimum = self.next_temporary()?;
+                    let not_minus_one = self.next_temporary()?;
+                    let not_overflow = self.next_temporary()?;
+                    let minimum = -(1_i128 << (width - 1));
+                    writeln!(
+                        self.output,
+                        "  %{not_minimum} = icmp ne {ty} {left}, {minimum}\n  %{not_minus_one} = icmp ne {ty} {right}, -1\n  %{not_overflow} = or i1 %{not_minimum}, %{not_minus_one}\n  {} = and i1 %{nonzero}, %{not_overflow}",
+                        self.value_name(result)
+                    )
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                } else {
+                    writeln!(
+                        self.output,
+                        "  {} = or i1 %{nonzero}, false",
+                        self.value_name(result)
+                    )
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                }
+            }
             IrIntegerOperation::AbsoluteWrap
-            | IrIntegerOperation::AbsoluteTrap
+            | IrIntegerOperation::AbsoluteExact
+            | IrIntegerOperation::AbsoluteDefined
             | IrIntegerOperation::AbsoluteChecked => {
                 let [argument] = arguments else {
                     return Err(BackendFailure::InvalidIr);
@@ -362,7 +322,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 });
                 match operation {
                     IrIntegerOperation::AbsoluteWrap => {
-                        if result_type != operand_type || trap.is_some() {
+                        if result_type != operand_type {
                             return Err(BackendFailure::InvalidIr);
                         }
                         writeln!(
@@ -372,30 +332,30 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         )
                         .map_err(|_| BackendFailure::TextEmission)?;
                     }
-                    IrIntegerOperation::AbsoluteTrap => {
+                    IrIntegerOperation::AbsoluteExact => {
                         if result_type != operand_type {
                             return Err(BackendFailure::InvalidIr);
                         }
-                        let trap = trap.ok_or(BackendFailure::InvalidIr)?;
-                        let overflow = self.next_temporary()?;
-                        let trap_id = self.register_trap(trap)?;
+                        writeln!(
+                            self.output,
+                            "  {} = call {ty} @{intrinsic}({ty} {argument}, i1 false)",
+                            self.value_name(result)
+                        )
+                        .map_err(|_| BackendFailure::TextEmission)?;
+                    }
+                    IrIntegerOperation::AbsoluteDefined => {
+                        if result_type != IrType::Bool {
+                            return Err(BackendFailure::InvalidIr);
+                        }
                         let minimum = -(1_i128 << (width - 1));
                         writeln!(
                             self.output,
-                            "  {} = call {ty} @{intrinsic}({ty} {argument}, i1 false)\n  %{overflow} = icmp eq {ty} {argument}, {minimum}\n  br i1 %{overflow}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:",
-                            self.value_name(result),
-                            overflow_trap_label(result),
-                            overflow_continue_label(result),
-                            overflow_trap_label(result),
-                            self.traps[trap_id].len(),
-                            overflow_continue_label(result),
+                            "  {} = icmp ne {ty} {argument}, {minimum}",
+                            self.value_name(result)
                         )
                         .map_err(|_| BackendFailure::TextEmission)?;
                     }
                     IrIntegerOperation::AbsoluteChecked => {
-                        if trap.is_some() {
-                            return Err(BackendFailure::InvalidIr);
-                        }
                         let error_type =
                             self.checked_result_error_type(result_type, operand_type, &[0])?;
                         let absolute = self.next_temporary()?;
@@ -421,7 +381,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let Some((left, right)) = &binary else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if result_type != operand_type || trap.is_some() {
+                if result_type != operand_type {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let opcode = match operation {
@@ -439,7 +399,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             }
             IrIntegerOperation::BitNot => {
                 let argument = unary.as_deref().ok_or(BackendFailure::InvalidIr)?;
-                if result_type != operand_type || trap.is_some() {
+                if result_type != operand_type {
                     return Err(BackendFailure::InvalidIr);
                 }
                 writeln!(
@@ -456,7 +416,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let Some((value, amount)) = &binary else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if result_type != operand_type || trap.is_some() {
+                if result_type != operand_type {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let amount = self.emit_integer_amount(amount, width, true)?;
@@ -496,36 +456,37 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     _ => return Err(BackendFailure::InvalidIr),
                 }
             }
-            IrIntegerOperation::ShiftLeftTrap | IrIntegerOperation::ShiftRightTrap => {
+            IrIntegerOperation::ShiftLeftExact | IrIntegerOperation::ShiftRightExact => {
                 let Some((value, amount)) = &binary else {
                     return Err(BackendFailure::InvalidIr);
                 };
                 if result_type != operand_type {
                     return Err(BackendFailure::InvalidIr);
                 }
-                let trap = trap.ok_or(BackendFailure::InvalidIr)?;
-                let out_of_range = self.next_temporary()?;
-                let trap_id = self.register_trap(trap)?;
-                writeln!(
-                    self.output,
-                    "  %{out_of_range} = icmp uge i32 {amount}, {width}\n  br i1 %{out_of_range}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:",
-                    overflow_trap_label(result),
-                    overflow_continue_label(result),
-                    overflow_trap_label(result),
-                    self.traps[trap_id].len(),
-                    overflow_continue_label(result),
-                )
-                .map_err(|_| BackendFailure::TextEmission)?;
                 let amount = self.emit_integer_amount(amount, width, false)?;
                 let opcode = match operation {
-                    IrIntegerOperation::ShiftLeftTrap => "shl",
-                    IrIntegerOperation::ShiftRightTrap if signed => "ashr",
-                    IrIntegerOperation::ShiftRightTrap => "lshr",
+                    IrIntegerOperation::ShiftLeftExact => "shl",
+                    IrIntegerOperation::ShiftRightExact if signed => "ashr",
+                    IrIntegerOperation::ShiftRightExact => "lshr",
                     _ => return Err(BackendFailure::InvalidIr),
                 };
                 writeln!(
                     self.output,
                     "  {} = {opcode} {ty} {value}, {amount}",
+                    self.value_name(result)
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            IrIntegerOperation::ShiftLeftDefined | IrIntegerOperation::ShiftRightDefined => {
+                let Some((_, amount)) = &binary else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                if result_type != IrType::Bool {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                writeln!(
+                    self.output,
+                    "  {} = icmp ult i32 {amount}, {width}",
                     self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
@@ -539,7 +500,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         width: 32,
                         signed: false,
                     })
-                    || trap.is_some()
                 {
                     return Err(BackendFailure::InvalidIr);
                 }
@@ -594,7 +554,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             }
             IrIntegerOperation::ByteSwap => {
                 let argument = unary.as_deref().ok_or(BackendFailure::InvalidIr)?;
-                if result_type != operand_type || width < 16 || trap.is_some() {
+                if result_type != operand_type || width < 16 {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let intrinsic = format!("llvm.bswap.i{width}");
@@ -613,7 +573,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let Some((left, right)) = &binary else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if result_type != operand_type || trap.is_some() {
+                if result_type != operand_type {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let wide = u16::from(width) * 2;
@@ -637,7 +597,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let Some((left, right)) = &binary else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if result_type != operand_type || trap.is_some() {
+                if result_type != operand_type {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let stem = match operation {
@@ -664,7 +624,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let Some((left, right)) = &binary else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if result_type != operand_type || trap.is_some() {
+                if result_type != operand_type {
                     return Err(BackendFailure::InvalidIr);
                 }
                 self.emit_saturating_multiply(result, &ty, width, signed, left, right)?;
@@ -678,7 +638,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let Some((left, right)) = &binary else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if result_type != IrType::Bool || trap.is_some() {
+                if result_type != IrType::Bool {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let predicate = match operation {
@@ -702,7 +662,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
         }
-        let _ = block;
         Ok(())
     }
 
