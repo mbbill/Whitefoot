@@ -37,6 +37,25 @@ tip (verified by exit code, not by reading the log tail).
 
 ### W1 — the searching wfgrep
 
+**READ THIS FIRST — the search is bounded, and the bounds truncate
+silently.** `walk` retains at most 64 entries per directory, in the
+host's enumeration order, before it sorts them; and it leaves any
+subtree deeper than 16 levels unsearched. Both bounds return normally:
+exit status 0, empty stderr, output that looks like a clean sorted
+prefix and is not one. The exit audit found this; it was in no doc
+clause, no delta, and no test, while the batch's own headline claimed
+agreement with `grep -rn`. The doc clauses now state both bounds.
+
+Two consequences the owner must weigh before W2 runs:
+- The frozen flagship corpus is 4,096 files in ONE directory
+  (`research/experiments/wfgrep-baseline/PROTOCOL.md`). **The
+  re-attribution against ripgrep cannot run honestly until the bound is
+  gone.**
+- Raising 64 to a larger constant would move the lie, not remove it.
+  The real repair is to collect entries through the growable layer this
+  project already has, so the only bound is memory. That is the first
+  item of the next batch, not a patch here.
+
 `tests/programs/wfgrep.wf` was an argv-fed searcher: an outside caller
 passed the file list. It is now a real recursive search. The entry takes
 the working-directory capability, `open_list`/`list_once` enumerate,

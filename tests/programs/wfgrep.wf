@@ -603,7 +603,7 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
 }
 
 fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, pattern: &'a buffer<u8>, pattern_length: own u64, out: &uniq 'o Output, err: &uniq 'e Output, depth: own u64) -> own u8 reads('c 'p 'a 'o 'e), writes('o 'e), allocates(heap), external, blocks, traps {
-  doc "Enumerates one directory in sorted order, searches every regular file it names, and descends into every subdirectory it names.";
+  doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. Two fixed bounds truncate silently and are recorded as defects: at most 64 entries per directory are retained, in the host's enumeration order, before sorting; and a subtree deeper than 16 levels is left unsearched. Both return normally, so a truncated search is indistinguishable from a complete one.";
   let matched = 0_u8;
   let failed = 0_u8;
   let too_deep = ige(depth, 16_u64);
@@ -988,7 +988,7 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
 }
 
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
-  doc "Searches one directory tree recursively and publishes `PATH:LINE:TEXT` for every line holding the literal pattern bytes; 0 matched, 1 none, 2 error.";
+  doc "Searches one directory tree recursively and publishes `PATH:LINE:TEXT` for the lines holding the literal pattern bytes; 0 matched, 1 none, 2 error. The search is complete only within `walk`'s two fixed bounds — 64 entries per directory and 16 levels of depth — beyond which it truncates and still returns normally.";
   let pattern = buffer_new(4096_u64, 0_u8);
   let root_name = buffer_new(256_u64, 0_u8);
   let root_path = buffer_new(1024_u64, 0_u8);
