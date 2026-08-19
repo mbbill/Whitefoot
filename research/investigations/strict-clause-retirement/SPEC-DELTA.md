@@ -90,6 +90,19 @@ closure edge. Either way the closure holds a claim, and by (c) CLM-3 rejects
 before the U obligation query. The strict obligation arms are therefore
 unreachable. ∎
 
+**The implementation agrees, at the same three points.** `S3` is established
+at exactly one site, into the complete state alone
+(`compiler/src/semantic/entailment/flow.rs:5776`), under a comment that says
+so: "`claim` [CLM-1] is the sole writer-stated source, at S3"
+(`flow.rs:5701`) — a `Check` statement, which after check dissolution is only
+a contract final, establishes nothing. S4 is established into the complete
+state *and* U (`flow.rs:517–518`). Every other source, kill, join, arm-fact,
+counted-preheader, and goal-origin operation is applied to all three views,
+either through `ViewStates::for_each_mut` or through three explicit sibling
+calls. And `check_strict_partition` raises the direct-claim and
+imported-claim events before it ever calls `strict_closure_failures`
+(`compiler/src/semantic/check/strict.rs`), matching §(c)'s order.
+
 ## 3. Refutation attempts
 
 Nine programs were written against the v0.32 compiler at
