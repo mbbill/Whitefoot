@@ -1,13 +1,12 @@
-- Every D1-critical checkable fact is established by a deterministic derivation, by a writer-stated check that runs in every build mode, or the program is rejected; there is no debug/release semantic divergence. Index bounds obligations follow [[obligation-discharge]], function requirements follow [[requires-entry-contract]], and trapping arithmetic still carries its check implicitly.
-- A check is removed only by a deterministic machine-verified proof; a solver may promote performance facts but never licenses elision; nothing writer-stated is trusted unchecked.
-- No writer-accessible syntax removes, weakens, or silences a check; explicit `check` statements are never elided, even when tautological.
+- Every proof-required hazardous fact is established by a deterministic derivation, by executed control flow, or by the normal continuation of a named retained claim; otherwise the program is rejected. Index, integer-domain, allocation-fit, and system-range obligations follow [[obligation-discharge]], and function contracts follow [[requires-entry-contract]].
+- A partial operation lowers only after its exact domain is machine-discharged; a solver may promote performance facts but never licenses acceptance or elision, and no implicit operation check remains as a fallback.
+- No writer-accessible syntax removes, weakens, or silences a required proof. The sole writer-reachable runtime trap is a named claim, which remains executable even when the checker advises that it is redundant.
 - The active safe-Rust compiler reaches semantic and ownership checking, exact
   memory-effect checking, normative index and ordinary-call requirement
   discharge, verified normal-return postconditions, constrained-subject
   provenance gating, a private checked program,
   target-independent typed control-flow IR, target qualification, conservative
-  LLVM, and host execution. Explicit
-  checks, claims, and real-entry requirement checks remain runtime checks; no
+  LLVM, and host execution. Retained claims remain runtime checks; no
   optimizer assumption or effect-derived LLVM attribute is emitted.
 - The archived democ PROOF-1 implementation and accounting reports are historical evidence for a later optimizer experiment, not live compiler capability or acceptance authority.
 

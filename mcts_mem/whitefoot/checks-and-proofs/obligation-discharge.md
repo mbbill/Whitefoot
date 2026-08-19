@@ -1,14 +1,14 @@
 - Every partial operation carries a proof obligation; an index obligation first passes complete-state discharge at its use site and then the constrained-subject provenance gate, or the program is rejected.
 - The entailment fragment is normative specification text rather than an optimizer pass: its fact sources, closure, kill rules, and joins fix source acceptance and are versioned with the language (ENT-1).
 - An undischarged obligation is a compile-time rejection whose diagnostic prints the exact residual obligation and the mechanical repair.
-- For obligation families migrated to discharge, a claim is the named, justification-bearing runtime backstop and the sole writer-stated trap construct ([[writer-trap-surface]]); bare trapping arithmetic outside a dissolved class remains a separate compiler-derived trap source.
+- A claim is the named, justification-bearing runtime backstop and the sole writer-reachable trap construct ([[writer-trap-surface]]); every partial operation family is inside static discharge and no compiler-derived language trap source remains.
 - A claim the fragment already proves is a non-rejecting advisory; a claim the fragment refutes is a hard error.
 - A discharged index compiles with no runtime bounds branch in any build mode and contributes no `traps` to its effect row.
-- A bare add, subtract, or multiply with a constant operand carries a compile-time overflow obligation in the same fragment — the goal folds to a difference bound on the other operand against a checker-computed constant; a discharged site loses its runtime check in every build mode, while bare forms with two non-constant operands keep their trapping semantics.
-- A bare divide or remainder whose selected type is unsigned or whose operands include a constant carries a two-conjunct division obligation in the same fragment: a zero-divisor disequality and a signed-overflow conjunct. A signed site with two non-constant operands keeps its trap.
+- Every exact integer occurrence carries one canonical IntegerDomain goal equal to its matching total `.defined` query. Exact evidence or fixed normalization discharges it; refutation or absence rejects, irrespective of whether operands are constants.
+- `buffer_new` and `buffer_vacant` carry one AllocationFit goal derived from the language stride ceiling, and every range-bearing system call carries the independent `start <= end` and `end <= len(buffer)` SystemRange goals.
 - Loop-derived admission authority is a construct-owned structural recurrence, not general ordinary-loop induction.
 - The fact state combines the scalar relation fragment with finite signed atomic goal evidence; only an exact comparison root may project into the scalar fragment.
-- An ordinary call requirement has exactly three outcomes: discharged, refuted, or unproved; refuted and unproved calls reject before transfer, while a discharged call supplies its complete positive goal to the body.
+- Each ordinary call requirement independently has exactly three outcomes in the same pre-transfer state: discharged, refuted, or unproved; refuted and unproved calls reject before transfer, while every discharged goal enters the body through S4.
 - A normal-return postcondition is proved at every selected exit in complete, unasserted, and S4-blinded views; only a wholly successful concrete callee component publishes a closed summary to later components.
 - Caller-side postcondition facts use only the closed direct-result, selected-payload, narrow receiver, and value-if delivery routes, with ordinary substitution, support kills, joins, and view-local derivations.
 - Optimistic postcondition and value-if facts finalize atomically with the provenance verdict and checked program.
