@@ -1482,18 +1482,13 @@ pub(crate) struct CheckedFunction {
     pub(crate) entailment: super::entailment::FunctionEntailment,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum CheckedBodyDisposition {
+    #[default]
     Inhabited,
     Uninhabited {
         contradiction: super::entailment::DerivationId,
     },
-}
-
-impl Default for CheckedBodyDisposition {
-    fn default() -> Self {
-        Self::Inhabited
-    }
 }
 
 /// The one source-canonical symbolic requirement retained for a generic

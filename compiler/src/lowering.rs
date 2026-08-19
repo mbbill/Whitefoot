@@ -278,15 +278,37 @@ pub enum IrNominalKind {
     SystemResource(SystemResourceContract),
 }
 
+/// The declaration family that gave one nominal its identity before lowering.
+///
+/// LLVM shape is deliberately not type identity: a source enum, a prelude
+/// `Result`, and a system outcome can have identical fields while remaining
+/// non-interchangeable. The backend retains this compact origin so its
+/// target-facing signature checks fail closed on malformed IR.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrNominalIdentity {
+    /// A source nominal or a prelude nominal other than `Result`.
+    Ordinary,
+    /// One concrete prelude `Result<T, E>` instance.
+    PreludeResult,
+    /// One exact [SYS-2] nominal-table row.
+    System(u8),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrNominal {
     id: IrNominalId,
+    identity: IrNominalIdentity,
     kind: IrNominalKind,
 }
 
 impl IrNominal {
     pub const fn id(&self) -> IrNominalId {
         self.id
+    }
+
+    /// The declaration family retained independently of representation.
+    pub const fn identity(&self) -> IrNominalIdentity {
+        self.identity
     }
 
     pub const fn kind(&self) -> &IrNominalKind {
@@ -1105,6 +1127,103 @@ impl IrProgram<'_, '_, '_> {
 
     pub const fn main_ordinal(&self) -> u32 {
         self.main
+    }
+
+    /// Test-only malformed-IR probe: retypes one command parameter while
+    /// keeping the function's local value table internally consistent.
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub(crate) fn retype_main_parameter_for_test(&mut self, parameter: usize, ty: IrType) -> bool {
+        let Some(main) = self.functions.get_mut(self.main as usize) else {
+            return false;
+        };
+        let Some((value, declared)) = main.parameters.get_mut(parameter) else {
+            return false;
+        };
+        *declared = ty;
+        let Some(stored) = main.values.get_mut(value.index()) else {
+            return false;
+        };
+        *stored = ty;
+        true
+    }
+
+    /// Test-only malformed-IR probe: retypes one argument of the first
+    /// system call without changing its semantic operation identity.
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub(crate) fn retype_first_system_argument_for_test(
+        &mut self,
+        argument: usize,
+        ty: IrType,
+    ) -> bool {
+        for function in &mut self.functions {
+            let selected = function.blocks.iter().find_map(|block| {
+                block.instructions.iter().find_map(|instruction| {
+                    let IrInstruction::Define {
+                        operation: IrOperation::SystemCall { arguments, .. },
+                        ..
+                    } = instruction
+                    else {
+                        return None;
+                    };
+                    arguments.get(argument).copied()
+                })
+            });
+            let Some(value) = selected else {
+                continue;
+            };
+            let Some(stored) = function.values.get_mut(value.index()) else {
+                return false;
+            };
+            *stored = ty;
+            return true;
+        }
+        false
+    }
+
+    /// Test-only malformed-IR probe: retypes the first system call's result
+    /// while preserving the operation identity and local SSA agreement.
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub(crate) fn retype_first_system_result_for_test(&mut self, ty: IrType) -> bool {
+        for function in &mut self.functions {
+            let selected = function
+                .blocks
+                .iter()
+                .enumerate()
+                .find_map(|(block, data)| {
+                    data.instructions
+                        .iter()
+                        .enumerate()
+                        .find_map(|(instruction, value)| {
+                            let IrInstruction::Define {
+                                result,
+                                operation: IrOperation::SystemCall { .. },
+                                ..
+                            } = value
+                            else {
+                                return None;
+                            };
+                            Some((block, instruction, *result))
+                        })
+                });
+            let Some((block, instruction, result)) = selected else {
+                continue;
+            };
+            let IrInstruction::Define { ty: declared, .. } =
+                &mut function.blocks[block].instructions[instruction]
+            else {
+                return false;
+            };
+            *declared = ty;
+            let Some(stored) = function.values.get_mut(result.index()) else {
+                return false;
+            };
+            *stored = ty;
+            return true;
+        }
+        false
     }
 }
 

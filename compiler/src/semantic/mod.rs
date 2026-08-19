@@ -28,8 +28,8 @@ pub(crate) use check::check_semantics_reborrow_extension;
 
 pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBodyDisposition, CheckedBooleanOperation,
-    CheckedBufferRoot, CheckedBufferSetTarget, CheckedDrop, CheckedEntryForm, CheckedEnumType,
-    CheckedExpression, CheckedFlatElement, CheckedFloatOperation, CheckedFunction,
+    CheckedBufferRoot, CheckedBufferSetTarget, CheckedConstructor, CheckedDrop, CheckedEntryForm,
+    CheckedEnumType, CheckedExpression, CheckedFlatElement, CheckedFloatOperation, CheckedFunction,
     CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
     CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter,
     CheckedProgramData, CheckedProjectedDrop, CheckedRuntimeTargetObligations, CheckedSetTarget,

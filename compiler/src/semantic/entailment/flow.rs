@@ -971,6 +971,7 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn judge_postcondition_view(
         &mut self,
         view: ProofView,

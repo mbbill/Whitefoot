@@ -10,9 +10,9 @@ mod storage;
 use crate::CheckedProgram;
 use crate::semantic::CheckedSetTarget;
 use crate::semantic::{
-    BindingId, CheckedArrayRoot, CheckedDrop, CheckedEntryForm, CheckedExpression, CheckedMatchArm,
-    CheckedMode, CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
-    CheckedStatement, CheckedValue,
+    BindingId, CheckedArrayRoot, CheckedConstructor, CheckedDrop, CheckedEntryForm,
+    CheckedExpression, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedParameter,
+    CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedValue,
 };
 
 use super::*;
@@ -142,6 +142,55 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
             if nominal.id.0 as usize != index {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
+            let identity = match &nominal.kind {
+                CheckedNominalKind::SystemResource { nominal } => {
+                    IrNominalIdentity::System(*nominal)
+                }
+                CheckedNominalKind::Enum { variants }
+                    if matches!(
+                        variants.as_slice(),
+                        [ok, err]
+                            if ok.constructor
+                                == CheckedConstructor::Prelude(
+                                    crate::PreludeDeclarationId::new(11)
+                                )
+                                && err.constructor
+                                    == CheckedConstructor::Prelude(
+                                        crate::PreludeDeclarationId::new(13)
+                                    )
+                    ) =>
+                {
+                    IrNominalIdentity::PreludeResult
+                }
+                CheckedNominalKind::Enum { variants } if !variants.is_empty() => {
+                    let mut owner = None;
+                    for variant in variants {
+                        let CheckedConstructor::System(declaration) = variant.constructor else {
+                            owner = None;
+                            break;
+                        };
+                        let constructor =
+                            crate::system_constructor_index(declaration, crate::Inventory::ACTIVE)
+                                .and_then(|index| {
+                                    crate::SYSTEM_CONSTRUCTORS.get(usize::from(index))
+                                })
+                                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                        match owner {
+                            Some(existing) if existing != constructor.owner => {
+                                return Err(LoweringFailure::InvalidCheckedProgram);
+                            }
+                            Some(_) => {}
+                            None => owner = Some(constructor.owner),
+                        }
+                    }
+                    owner.map_or(IrNominalIdentity::Ordinary, IrNominalIdentity::System)
+                }
+                CheckedNominalKind::Struct { .. }
+                | CheckedNominalKind::Enum { .. }
+                | CheckedNominalKind::Box { .. }
+                | CheckedNominalKind::Arena { .. }
+                | CheckedNominalKind::ArenaStorage => IrNominalIdentity::Ordinary,
+            };
             let kind = match &nominal.kind {
                 CheckedNominalKind::Struct { fields } => IrNominalKind::Struct {
                     fields: fields
@@ -192,6 +241,7 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
                 id: IrNominalId(
                     u32::try_from(index).map_err(|_| LoweringFailure::CounterOverflow)?,
                 ),
+                identity,
                 kind,
             })
         })

@@ -396,6 +396,12 @@ fn system_call_results(
                 else {
                     continue;
                 };
+                let row = crate::SYSTEM_OPERATIONS
+                    .get(usize::from(operation.ordinal()))
+                    .ok_or(BackendFailure::InvalidIr)?;
+                if *ty != catalog_ir_type(program, row.result)? {
+                    return Err(BackendFailure::InvalidIr);
+                }
                 let slot = results
                     .get_mut(usize::from(operation.ordinal()))
                     .ok_or(BackendFailure::InvalidIr)?;
@@ -408,6 +414,129 @@ fn system_call_results(
         }
     }
     Ok(results)
+}
+
+/// Resolves one exact [SYS-2] table type against retained IR identities.
+///
+/// ABI-equivalent types are intentionally rejected: signed integers, buffer
+/// elements, opaque resources, system outcomes, and prelude `Result`
+/// instances keep distinct identities even when LLVM renders them alike.
+fn catalog_ir_type(
+    program: &IrProgram<'_, '_, '_>,
+    ty: crate::SystemTypeRef,
+) -> Result<IrType, BackendFailure> {
+    Ok(match ty {
+        crate::SystemTypeRef::U8 => IrType::Integer {
+            width: 8,
+            signed: false,
+        },
+        crate::SystemTypeRef::U32 => IrType::Integer {
+            width: 32,
+            signed: false,
+        },
+        crate::SystemTypeRef::U64 => IrType::Integer {
+            width: 64,
+            signed: false,
+        },
+        crate::SystemTypeRef::BufferU8 => IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+        crate::SystemTypeRef::Nominal(index) => system_nominal_ir_type(program, index)?,
+        crate::SystemTypeRef::Result { ok, err } => {
+            let ok = match ok {
+                crate::SystemResultPayload::U64 => IrType::Integer {
+                    width: 64,
+                    signed: false,
+                },
+                crate::SystemResultPayload::Nominal(index) => {
+                    system_nominal_ir_type(program, index)?
+                }
+            };
+            let error = system_nominal_ir_type(program, err)?;
+            unique_nominal_type(program, |nominal| {
+                if nominal.identity() != crate::IrNominalIdentity::PreludeResult {
+                    return Ok(false);
+                }
+                let IrNominalKind::Enum { variants } = nominal.kind() else {
+                    return Ok(false);
+                };
+                let [ok_variant, err_variant] = variants.as_slice() else {
+                    return Ok(false);
+                };
+                Ok(ok_variant.tag() == 0
+                    && err_variant.tag() == 1
+                    && matches!(ok_variant.fields(), [field] if field.ty() == ok)
+                    && matches!(err_variant.fields(), [field] if field.ty() == error))
+            })?
+        }
+    })
+}
+
+fn system_nominal_ir_type(
+    program: &IrProgram<'_, '_, '_>,
+    index: u8,
+) -> Result<IrType, BackendFailure> {
+    let declared = crate::SYSTEM_NOMINALS
+        .get(usize::from(index))
+        .ok_or(BackendFailure::InvalidIr)?;
+    unique_nominal_type(program, |nominal| {
+        if nominal.identity() != crate::IrNominalIdentity::System(index) {
+            return Ok(false);
+        }
+        if declared.opaque {
+            let expected =
+                crate::system_resource_contract(index).ok_or(BackendFailure::InvalidIr)?;
+            return Ok(matches!(
+                nominal.kind(),
+                IrNominalKind::SystemResource(actual) if *actual == expected
+            ));
+        }
+        let IrNominalKind::Enum { variants } = nominal.kind() else {
+            return Ok(false);
+        };
+        let constructors = crate::system_constructors(crate::Inventory::ACTIVE)
+            .iter()
+            .filter(|constructor| constructor.owner == index)
+            .collect::<Vec<_>>();
+        if variants.len() != constructors.len() {
+            return Ok(false);
+        }
+        for (ordinal, (variant, constructor)) in variants.iter().zip(constructors).enumerate() {
+            if variant.tag()
+                != u32::try_from(ordinal).map_err(|_| BackendFailure::CounterOverflow)?
+                || variant.fields().len() != constructor.fields.len()
+            {
+                return Ok(false);
+            }
+            for (field, expected) in variant.fields().iter().zip(constructor.fields) {
+                if field.ty() != catalog_ir_type(program, expected.ty)? {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    })
+}
+
+fn unique_nominal_type(
+    program: &IrProgram<'_, '_, '_>,
+    mut matches: impl FnMut(&crate::IrNominal) -> Result<bool, BackendFailure>,
+) -> Result<IrType, BackendFailure> {
+    let mut selected = None;
+    for nominal in program.nominals() {
+        if !matches(nominal)? {
+            continue;
+        }
+        if selected.replace(nominal.id()).is_some() {
+            return Err(BackendFailure::InvalidIr);
+        }
+    }
+    selected
+        .map(IrType::Nominal)
+        .ok_or(BackendFailure::InvalidIr)
 }
 
 /// The emitted representation of one opaque [SYS-2] resource type.
@@ -1990,7 +2119,7 @@ pub(super) fn emit_entry(
         return Err(BackendFailure::InvalidIr);
     }
     let status = representation(SystemResourceType::ExitStatus);
-    if llvm_type(program, main.result())? != status {
+    if main.result() != system_resource_ir_type(program, SystemResourceType::ExitStatus)? {
         return Err(BackendFailure::InvalidIr);
     }
     let target = qualification.target();
@@ -2026,7 +2155,7 @@ pub(super) fn emit_entry(
     let mut opens_directory = false;
     for (ordinal, (_, ty)) in inputs.iter().zip(main.parameters()) {
         let expected = expected_input(*ordinal)?;
-        if llvm_type(program, *ty)? != representation(expected) {
+        if *ty != system_resource_ir_type(program, expected)? {
             return Err(BackendFailure::InvalidIr);
         }
         match ordinal {
@@ -2105,6 +2234,27 @@ fn expected_input(ordinal: u8) -> Result<SystemResourceType, BackendFailure> {
     }
 }
 
+fn system_resource_ir_type(
+    program: &IrProgram<'_, '_, '_>,
+    resource: SystemResourceType,
+) -> Result<IrType, BackendFailure> {
+    let mut selected = None;
+    for nominal in program.nominals() {
+        let IrNominalKind::SystemResource(contract) = nominal.kind() else {
+            continue;
+        };
+        if contract.resource != resource {
+            continue;
+        }
+        if selected.replace(nominal.id()).is_some() {
+            return Err(BackendFailure::InvalidIr);
+        }
+    }
+    selected
+        .map(IrType::Nominal)
+        .ok_or(BackendFailure::InvalidIr)
+}
+
 impl FunctionEmitter<'_, '_> {
     /// Emits one call to the approved implementation of a semantic identity.
     ///
@@ -2130,10 +2280,10 @@ impl FunctionEmitter<'_, '_> {
                 .function
                 .value_type(*argument)
                 .ok_or(BackendFailure::InvalidIr)?;
-            let rendered_type = llvm_type(self.program, argument_type)?;
-            if rendered_type != catalog_llvm_type(parameter.ty)? {
+            if argument_type != catalog_ir_type(self.program, parameter.ty)? {
                 return Err(BackendFailure::InvalidIr);
             }
+            let rendered_type = llvm_type(self.program, argument_type)?;
             rendered.push(format!("{rendered_type} {}", value_name(*argument)));
         }
         writeln!(
@@ -2146,23 +2296,6 @@ impl FunctionEmitter<'_, '_> {
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
-}
-
-/// The emitted type of one [SYS-2] table type.
-fn catalog_llvm_type(ty: crate::SystemTypeRef) -> Result<String, BackendFailure> {
-    Ok(match ty {
-        crate::SystemTypeRef::U8 => "i8".to_owned(),
-        crate::SystemTypeRef::U32 => "i32".to_owned(),
-        crate::SystemTypeRef::U64 => "i64".to_owned(),
-        crate::SystemTypeRef::BufferU8 => "{ ptr, i64 }".to_owned(),
-        crate::SystemTypeRef::Nominal(nominal) => {
-            let contract =
-                crate::system_resource_contract(nominal).ok_or(BackendFailure::InvalidIr)?;
-            representation(contract.resource).to_owned()
-        }
-        // No [SYS-2] parameter is an outcome type.
-        crate::SystemTypeRef::Result { .. } => return Err(BackendFailure::InvalidIr),
-    })
 }
 
 /// Emits one type's compiler-derived [SYS-5] release action.
