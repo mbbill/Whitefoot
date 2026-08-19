@@ -1,0 +1,49 @@
+deny_claims fn strict_delivery(values: own array<u8, 4>, index: own u64) -> own u8 pure {
+  doc "A claim-free strict closure whose bounds obligation is discharged by an S1 branch fact.";
+  let room = len(values);
+  let fits = ilt(index, room);
+  if fits {
+    return values[index];
+  }
+  return 0_u8;
+}
+
+deny_claims fn strict_counted(values: own array<u8, 4>) -> own u8 pure {
+  doc "A claim-free strict closure whose bounds obligation is discharged by S11 counted-range facts.";
+  let room = len(values);
+  let total = 0_u8;
+  for @scan i in 0_u64..room {
+    let element = values[i];
+    set total = total +wrap element;
+  }
+  return total;
+}
+
+deny_claims fn strict_branch_division(n: own u64, d: own u64) -> own u64 pure {
+  doc "A claim-free strict closure whose divisor-class obligation is discharged by a dominating branch [ENT-3.S1].";
+  if igt(d, 0_u64) {
+    let q = n / d;
+    return q;
+  }
+  return 0_u64;
+}
+
+deny_claims fn strict_branch_overflow(n: own i32) -> own i32 pure {
+  doc "A claim-free strict closure whose constant-operand overflow obligation is discharged by a dominating branch [OP-2, ENT-3.S1].";
+  if ilt(n, 100_i32) {
+    let m = n + 1_i32;
+    return m;
+  }
+  return 0_i32;
+}
+
+fn main() -> own unit pure {
+  doc "Driver.";
+  let first = array_new<u8, 4>(7_u8);
+  let a = strict_delivery(values: move first, index: 1_u64);
+  let second = array_new<u8, 4>(7_u8);
+  let b = strict_counted(values: move second);
+  let c = strict_branch_division(n: 8_u64, d: 2_u64);
+  let e = strict_branch_overflow(n: 1_i32);
+  return unit;
+}

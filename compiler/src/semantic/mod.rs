@@ -445,16 +445,6 @@ pub struct StrictImportedClaimDetail {
     pub least_downstream_claim: StrictClaimIdentityDetail,
 }
 
-/// One demanded U-view protected-obligation failure, still owned by [OP-4].
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StrictUndischargedBoundsDetail {
-    pub residual: String,
-    pub strict_root: String,
-    pub concrete_function: String,
-    pub view: StrictProofView,
-    pub mechanical_fix: &'static str,
-}
-
 /// One demanded or marked-boundary U-view call-goal failure [FN-8].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StrictUndischargedCallRequirementDetail {
@@ -802,15 +792,6 @@ pub enum SemanticIssueKind {
         /// The mechanical fix OP-2 names.
         mechanical_fix: &'static str,
     },
-    /// A demanded strict component's protected obligation is not discharged
-    /// in the existing unasserted U view [OP-4, CLM-3].
-    StrictUndischargedBounds(Box<StrictUndischargedBoundsDetail>),
-    /// A demanded strict component's overflow obligation is not discharged
-    /// in the existing unasserted U view [OP-2, CLM-3].
-    StrictUndischargedOverflow(Box<StrictUndischargedBoundsDetail>),
-    /// A demanded strict component's division obligation is not discharged
-    /// in the existing unasserted U view [OP-2, CLM-3].
-    StrictUndischargedDivision(Box<StrictUndischargedBoundsDetail>),
     /// The complete instantiated requirement at an ordinary call is refuted
     /// or unproved in the caller's pre-transfer state [FN-8].
     UndischargedCallRequirement(Box<UndischargedCallRequirementDetail>),

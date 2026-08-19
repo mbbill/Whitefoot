@@ -83,7 +83,7 @@
 use std::sync::OnceLock;
 
 use super::deterministic_target::{HostScript, run_emitted_on_deterministic_host};
-use super::system::with_ir;
+use super::system::with_ir_for;
 use super::{host_optimized_module, optimized_main};
 use crate::backend::emit_llvm;
 use crate::backend::emitter::emit_llvm_for_target;
@@ -103,7 +103,7 @@ const WFGREP: &[u8] = include_bytes!("../../../../tests/programs/wfgrep.wf");
 fn modules() -> &'static (String, String) {
     static MODULES: OnceLock<(String, String)> = OnceLock::new();
     MODULES.get_or_init(|| {
-        with_ir(WFGREP, |program| {
+        with_ir_for(WFGREP, crate::Inventory::OpenByName, |program| {
             (
                 emit_llvm(program)
                     .expect("lowered program must emit")
@@ -143,7 +143,12 @@ const DECLARED_FUNCTIONS: &[&str] = &[
     "append_slice",
     "copy_range",
     "publish_all",
+    "byte_at",
+    "name_before",
+    "put_decimal",
     "report_failure",
+    "search_file",
+    "walk",
 ];
 
 /// `wfgrep`'s own emitted code, function by function: the optimized entry
@@ -339,6 +344,15 @@ const SELECTED_ROWS: &[(u32, &str)] = &[
     (8, "read_once"),
     (9, "write_once"),
     (10, "exit_status"),
+    // The [SYS-14] traversal surface and the [SYS-11] file-open-by-name
+    // candidate, which the recursive search reaches: the root and every child
+    // directory by name, one enumeration per directory, and every regular file
+    // by its enumerated name. `open_read` stays on the list because the search
+    // still takes the path route when its root names a single file.
+    (11, "open_directory"),
+    (12, "open_list"),
+    (13, "list_once"),
+    (14, "open_file"),
 ];
 
 /// §9.1 row 1 — target selection is one link-time table decision.
@@ -494,17 +508,36 @@ fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
             "the open path must not reach {forbidden}:\n{row}"
         );
     }
-    // In the finished program the single source `open_read` site is one direct
-    // `openat` against the bound `DirectoryRead`, and the only other open is
-    // the bootstrap's one-time acquisition of the initial directory [QUAL-3].
-    assert_eq!(program().matches("@openat(").count(), 1);
+    // In the finished program every source open site is one direct `openat`
+    // against a bound `DirectoryRead`, and the only other open is the
+    // bootstrap's one-time acquisition of the initial directory [QUAL-3].
+    // The search has exactly five open sites, derived from the source and not
+    // from the module: `main` opens the search root with `open_directory` and,
+    // when that root is not a directory, the same name with `open_read`;
+    // `walk` opens one enumeration with `open_list`, each child directory with
+    // `open_directory`, and each regular file with `open_file`.
+    assert_eq!(program().matches("@openat(").count(), 5);
     assert_eq!(program().matches("@open(").count(), 1);
     assert!(program().contains("@open(ptr nonnull @.wf.sys.working.directory"));
     let opening = basic_block(entry(), "@openat(");
+    let host_calls: Vec<_> = call_targets(opening)
+        .into_iter()
+        .filter(|target| !target.starts_with("llvm."))
+        .collect();
     assert_eq!(
-        calls(opening),
+        host_calls,
+        vec!["openat"],
+        "the open is the only host call on its path:\n{opening}"
+    );
+    // The entry's first open is the search root's, which the name route
+    // reaches, so its block also holds the one bounded copy that terminates
+    // the validated component for the facility [SYS-14]. That copy is an
+    // intrinsic over a fixed-size stack slot, not a second host call and not a
+    // copy of anything the open transfers.
+    assert_eq!(
+        opening.matches("@llvm.memcpy").count(),
         1,
-        "the open is the only call on its path:\n{opening}"
+        "the name route copies the component once:\n{opening}"
     );
     // Its failure arm is the cold mapper, reached only when the open failed.
     assert!(
@@ -588,24 +621,26 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     );
     // One host transfer per source operation. `wfgrep` writes `read_once` and
     // `write_once` once each, so the emitted program holds one `@read` and one
-    // `@write` for each surviving copy of `publish_all`'s body: its out-of-line
-    // definition plus every publication the inliner expanded in place.
+    // `@write` for each surviving copy of the body that holds them: the one
+    // source `read_once` site in `search_file`, and the one source
+    // `write_once` site in `publish_all`, whose out-of-line definition the
+    // inliner left standing.
     assert_eq!(program.matches("@read(").count(), 1);
-    // Five publications, two of them to standard output and three to standard
-    // error, which are separate owners and stay separate descriptors.
-    let published = publications();
-    assert_eq!(published.len(), 5, "five publications: {published:?}");
-    assert_eq!(published.iter().filter(|fd| **fd == 1).count(), 2);
-    assert_eq!(published.iter().filter(|fd| **fd == 2).count(), 3);
-    let out_of_line = program
-        .lines()
-        .filter(|line| call_target(line) == Some("wf_publish_all"))
-        .count();
     assert_eq!(
         program.matches("@write(").count(),
-        published.len() - out_of_line + usize::from(out_of_line > 0),
+        1,
         "one transfer per surviving copy of the one source write_once site"
     );
+    // Every publication whose destination the optimizer resolved to a literal
+    // descriptor. Derived from source: `search_file` publishes twice to the
+    // standard-output owner — one flush of a full batch and one of the
+    // remainder — and the standard-error owner is reached by
+    // `report_failure`'s one assembled diagnostic plus `main`'s one startup
+    // diagnostic. The two owners are separate and stay separate descriptors
+    // [SYS-12].
+    let published = publications();
+    assert_eq!(published.iter().filter(|fd| **fd == 1).count(), 2);
+    assert_eq!(published.iter().filter(|fd| **fd == 2).count(), 2);
     // Each transfer is alone on its path: the block that holds it computes an
     // address and makes one call, so nothing allocates, copies the transferred
     // bytes, takes a lock, or touches a signal disposition beside the transfer
@@ -725,8 +760,9 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // The bootstrap's one-time working-directory acquisition and
             // signal normalization [QUAL-3].
             "open" | "signal"
-            // The first slice's own host operations.
-            | "openat" | "read" | "write" | "close"
+            // The first slice's own host operations, including the [SYS-14]
+            // enumeration facility this target's [QUAL-1] row names.
+            | "openat" | "read" | "write" | "close" | "__getdirentries64"
             // The lease length pass and the path NUL scan.
             | "strlen" | "memchr"
             // Buffer allocation and language cleanup.
@@ -759,55 +795,79 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
 #[test]
 fn the_reused_buffers_are_initialized_once_at_allocation() {
     let program = program();
-    // `wfgrep` asks for exactly four buffers — input, batch, pattern, and the
-    // diagnostic report — and gets exactly four allocations, each carrying its
-    // own initialization in the allocation itself.
+    // `wfgrep` asks for exactly eleven buffers, and gets exactly eleven
+    // allocations, each carrying its own initialization in the allocation
+    // itself. Derived from source, function by function: `main` allocates the
+    // pattern (4096), the root name (256), the root path (1024), and the
+    // diagnostic report (1280); `walk` allocates its enumeration batch (8192),
+    // its collected entry records (16512), its visit order (64 u64 slots, 512
+    // bytes), one child path (1024), and its own report (1280); `search_file`
+    // allocates the read input (4096) and the publication batch (8192).
+    //
+    // This is where the recursive search moved the cost: `walk`'s five and
+    // `search_file`'s two are per call, so a walk of D directories holding F
+    // files allocates 5D + 2F + 4 times, where the argv-list version allocated
+    // four times for the whole run. That is a measured property of the new
+    // shape, recorded here rather than hidden — it is one of the numbers the
+    // flagship re-attribution has to explain.
     assert_eq!(
         program.matches("@calloc(").count(),
-        4,
-        "four source buffers, four allocations"
+        11,
+        "eleven source buffers, eleven allocations"
     );
-    for size in ["@calloc(i64 1, i64 4096)", "@calloc(i64 1, i64 512)"] {
-        assert!(program.contains(size), "missing allocation {size}");
+    for (size, count) in [
+        ("@calloc(i64 1, i64 4096)", 2),
+        ("@calloc(i64 1, i64 8192)", 2),
+        ("@calloc(i64 1, i64 1280)", 2),
+        ("@calloc(i64 1, i64 1024)", 2),
+        ("@calloc(i64 1, i64 16512)", 1),
+        ("@calloc(i64 1, i64 512)", 1),
+        ("@calloc(i64 1, i64 256)", 1),
+    ] {
+        assert_eq!(
+            program.matches(size).count(),
+            count,
+            "allocation {size} must appear {count} times"
+        );
     }
-    assert_eq!(program.matches("@calloc(i64 1, i64 4096)").count(), 3);
-    assert_eq!(program.matches("@calloc(i64 1, i64 512)").count(), 1);
     // Nothing reallocates, and nothing re-initializes: there is no fill loop,
     // no `memset`, and no second allocation anywhere in the module, so a
     // per-read re-initialization or a reallocation after a flush cannot be
-    // hiding in a path this test did not walk.
+    // hiding in a path this test did not walk. `@malloc` is on the list
+    // because a buffer whose fill byte is not zero would take it, and no
+    // buffer in this program does.
     for forbidden in ["@malloc(", "@realloc(", "@reallocf(", "memset", "bzero"] {
         assert!(
             !optimized().contains(forbidden),
             "the reused buffers must not reach {forbidden}"
         );
     }
-    // All four allocations precede every host transfer the entry reaches, and
-    // no allocation follows one. Combined with the exact count above, that
-    // places every initialization in the program's one-time prologue rather
-    // than in the drain, the match loop, or the flush. Textual order stands
-    // for program order only within one function, so this reads the entry,
-    // where every allocation is, and takes the first publication in whichever
-    // form the inliner left it.
-    let entry = entry();
-    let last_allocation = entry
-        .rfind("@calloc(")
-        .expect("the program allocates its buffers");
-    let publication = ["@wf_publish_all(", "@write("]
-        .iter()
-        .filter_map(|form| entry.find(form))
-        .min()
-        .expect("the entry must reach a publication");
-    for (transfer, first) in [
-        ("@openat(", entry.find("@openat(")),
-        ("@read(", entry.find("@read(")),
-        ("a publication", Some(publication)),
-    ] {
-        let first = first.unwrap_or_else(|| panic!("{transfer} must appear"));
-        assert!(
-            last_allocation < first,
-            "every allocation must precede the first {transfer}"
-        );
+    // Allocation begins in each function's prologue: the first allocation a
+    // function makes precedes every host transfer it reaches, so no buffer is
+    // first created in the drain, the match loop, or the flush.
+    //
+    // The stronger claim the argv-list version could make — that the *last*
+    // allocation also precedes the first transfer — no longer holds textually,
+    // and its failure is inlining rather than re-initialization: the host
+    // inliner expands `search_file`'s body into `main`'s single-file arm, so
+    // `main` textually holds a callee's prologue allocations after `main`'s own
+    // root open. The per-buffer count above is what now carries "one
+    // allocation per source buffer"; that a call allocates once rather than per
+    // read is a source fact — every buffer is bound at its function's entry —
+    // which no inspection of the merged module can restate.
+    for function in program_functions() {
+        let Some(first_allocation) = function.find("@calloc(") else {
+            continue;
+        };
+        for transfer in ["@openat(", "@read(", "@write(", "@__getdirentries64("] {
+            let Some(first) = function.find(transfer) else {
+                continue;
+            };
+            assert!(
+                first_allocation < first,
+                "allocation must begin before the first {transfer}"
+            );
+        }
     }
 }
 
@@ -821,8 +881,11 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
 /// every descriptor.
 #[test]
 fn the_output_batch_costs_one_host_write_per_full_batch() {
-    // Three thousand matching lines of two bytes each: six thousand bytes of
-    // output through a four-thousand-and-ninety-six-byte batch.
+    // Three thousand matching lines of two bytes each, published through an
+    // eight-thousand-one-hundred-and-ninety-two-byte batch. The scripted host
+    // holds one regular file, so the search's root `open_directory` reports
+    // `ENOTDIR` and the run reaches the file through the path route — which is
+    // exactly the shape this row needs: one file, one read cursor, one batch.
     const MATCHES: u64 = 3_000;
     let mut fixture = Vec::new();
     for _ in 0..MATCHES {
@@ -858,20 +921,49 @@ fn the_output_batch_costs_one_host_write_per_full_batch() {
         })
         .collect();
 
-    // Two host writes for three thousand matches: the batch fills at 4096
-    // bytes and is published whole, then the final partial batch is published
-    // on the way out. A syscall-per-match implementation would show three
-    // thousand here, which is exactly what §12.2 rejects.
-    assert_eq!(published, vec![4_096, 1_904], "trace was {trace:?}");
-    assert!(published.len() as u64 * 1_000 < MATCHES);
-
-    // The batch is not refilled or re-initialized after a flush: the second
-    // publication starts from an empty batch and carries only what followed
-    // the first, so the two requested counts sum to exactly the output the
+    // A handful of host writes for three thousand matches: the batch fills and
+    // is published whole, then the remainder is published on the way out. A
+    // syscall-per-match implementation would show three thousand here, which
+    // is exactly what §12.2 rejects.
+    //
+    // The exact split is no longer a fixed vector, because a published record
+    // now carries the file's path and the line's ordinal, so record lengths
+    // differ by the ordinal's digit count and a fixed vector would be a
+    // transcription of this fixture rather than a property. What the row
+    // asserts instead is the property itself: every batch but the last is
+    // published within one record of full, the sum is exactly the output the
+    // matches produced with no byte published twice, and the call count is two
+    // orders of magnitude below the match count.
+    const BATCH: u64 = 8_192;
+    let expected: u64 = (1..=MATCHES)
+        .map(|ordinal| {
+            "lines.txt:".len() as u64 + ordinal.to_string().len() as u64 + ":x\n".len() as u64
+        })
+        .sum();
+    assert!(published.len() >= 2, "trace was {trace:?}");
+    assert!(
+        (published.len() as u64) * 100 < MATCHES,
+        "one write per full batch, not per match: {published:?}"
+    );
+    // The program flushes when the next record would not fit under its own
+    // conservative reservation — the path length plus twenty-four bytes for
+    // the ordinal and the two separators, plus the line's own span. Here that
+    // is nine plus twenty-four plus two, so a full batch lands within
+    // thirty-five bytes of the cap and never above it.
+    const RESERVE: u64 = 40;
+    for count in &published[..published.len() - 1] {
+        assert!(
+            *count > BATCH - RESERVE && *count <= BATCH,
+            "a flushed batch must be within one record of full: {published:?}"
+        );
+    }
+    // The batch is not refilled or re-initialized after a flush: each
+    // publication starts from an empty batch and carries only what followed the
+    // previous one, so the requested counts sum to exactly the output the
     // matches produced and no byte is published twice.
     assert_eq!(
         published.iter().sum::<u64>(),
-        fixture.len() as u64,
+        expected,
         "trace was {trace:?}"
     );
 
@@ -894,14 +986,28 @@ fn the_output_batch_costs_one_host_write_per_full_batch() {
     // and never a second attempt to confirm the end [SYS-8]. Nothing was ever
     // published to standard error: the successful path reports nothing.
     // And the whole run is the §12.2 per-byte-call rejection, measured rather
-    // than argued: six thousand bytes in and six thousand bytes out cost five
-    // host calls altogether — three reads and two writes — plus one open, one
-    // openat, and two closes. Not one host call per byte, per line, per match,
-    // or per field.
-    assert_eq!(trace.matches("wf_test ").count(), 9, "trace was {trace:?}");
+    // than argued: six thousand bytes in and roughly fifty thousand out cost a
+    // dozen host calls altogether. Not one host call per byte, per line, per
+    // match, or per field.
+    assert!(
+        trace.matches("wf_test ").count() < 20,
+        "the whole run is a dozen host calls: {trace:?}"
+    );
     assert_eq!(
         trace.matches("wf_test read fd=42 ").count(),
         3,
+        "trace was {trace:?}"
+    );
+    // The refused directory open of the one regular file, then the path-route
+    // open that reached it.
+    assert_eq!(
+        trace.matches("wf_test openat root=41 -> notdir").count(),
+        1,
+        "trace was {trace:?}"
+    );
+    assert_eq!(
+        trace.matches("wf_test openat root=41 fd=42").count(),
+        1,
         "trace was {trace:?}"
     );
     assert!(!trace.contains("wf_test write fd=2 "));

@@ -55,6 +55,14 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // reviewed for `open_read`, and the two enumeration operations additionally
 // require `DirectoryEnumeration`. No path value is ever formed, so no new
 // argument-backing guarantee arises. Entry contracts are unchanged.
+//
+// The v0.33 candidate row (`open_file`, ordinal 14) is reviewed here in
+// advance of its activation because the constant above gates the whole table:
+// it opens a file by one caller-owned path component, so it requires exactly
+// `open_directory`'s two guarantees and no enumeration guarantee, produces the
+// `ReadFile` resource whose rows are already reviewed, and adds no entry
+// contract. It is reachable only when a compilation names the candidate
+// inventory.
 const REVIEWED_FOR: &str = "v0.32";
 
 /// The number of [SYS-2] opaque resource types, including the
@@ -904,8 +912,9 @@ fn operation_guarantees(operation: u8) -> &'static [TargetGuarantee] {
         // directory-relative facility [PATH-2].
         7 => DIRECTORY,
         // `open_directory` resolves one component name through the same
-        // facility [SYS-14].
-        11 => DIRECTORY,
+        // facility [SYS-14], and the candidate `open_file` resolves one
+        // component name for a file through it [SYS-11].
+        11 | 14 => DIRECTORY,
         // `open_list` and `list_once` additionally require the target's own
         // enumeration facility [SYS-14].
         12 | 13 => ENUMERATION,
@@ -979,6 +988,7 @@ fn operation_row(
         11 => "wf.sys.open_directory.v1",
         12 => "wf.sys.open_list.v1",
         13 => "wf.sys.list_once.v1",
+        14 => "wf.sys.open_file.v1",
         // The ordinal bound above admits no other value.
         _ => return Err(QualificationFailure::MissingMapping(facility)),
     };

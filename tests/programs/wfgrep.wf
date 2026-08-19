@@ -1,4 +1,6 @@
-const usage_text: array<u8, 30> =[117_u8, 115_u8, 97_u8, 103_u8, 101_u8, 58_u8, 32_u8, 119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 32_u8, 80_u8, 65_u8, 84_u8, 84_u8, 69_u8, 82_u8, 78_u8, 32_u8, 70_u8, 73_u8, 76_u8, 69_u8, 46_u8, 46_u8, 46_u8, 10_u8];
+const digit_glyphs: array<u8, 10> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8];
+
+const usage_text: array<u8, 27> =[117_u8, 115_u8, 97_u8, 103_u8, 101_u8, 58_u8, 32_u8, 119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 32_u8, 80_u8, 65_u8, 84_u8, 84_u8, 69_u8, 82_u8, 78_u8, 32_u8, 82_u8, 79_u8, 79_u8, 84_u8, 10_u8];
 
 const error_prefix: array<u8, 8> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8];
 
@@ -16,11 +18,9 @@ const reason_long_line: array<u8, 14> =[108_u8, 105_u8, 110_u8, 101_u8, 32_u8, 1
 
 const reason_unreadable: array<u8, 12> =[99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 114_u8, 101_u8, 97_u8, 100_u8, 10_u8];
 
-const reason_broken_pipe: array<u8, 20> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 98_u8, 114_u8, 111_u8, 107_u8, 101_u8, 110_u8, 32_u8, 112_u8, 105_u8, 112_u8, 101_u8, 10_u8];
-
-const reason_write_error: array<u8, 20> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 119_u8, 114_u8, 105_u8, 116_u8, 101_u8, 32_u8, 101_u8, 114_u8, 114_u8, 111_u8, 114_u8, 10_u8];
-
 const reason_pattern_too_long: array<u8, 25> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 112_u8, 97_u8, 116_u8, 116_u8, 101_u8, 114_u8, 110_u8, 32_u8, 116_u8, 111_u8, 111_u8, 32_u8, 108_u8, 111_u8, 110_u8, 103_u8, 10_u8];
+
+const reason_root_too_long: array<u8, 29> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 115_u8, 101_u8, 97_u8, 114_u8, 99_u8, 104_u8, 32_u8, 114_u8, 111_u8, 111_u8, 116_u8, 32_u8, 116_u8, 111_u8, 111_u8, 32_u8, 108_u8, 111_u8, 110_u8, 103_u8, 10_u8];
 
 fn io_class(error: own IoError) -> own u8 pure {
   doc "Reduces one portable IoError class to the distinctions wfgrep reports.";
@@ -193,8 +193,94 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
   return Ok<unit, IoError>(value: unit);
 }
 
-deny_claims fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uniq 'r buffer<u8>, status: own u8, position: own u64) -> own unit reads('a 'e 'r), writes('e 'r), external, blocks, traps {
-  doc "Assembles one `wfgrep: NAME: reason` diagnostic in the reusable report buffer and publishes it to standard error.";
+deny_claims fn byte_at['n](store: &'n buffer<u8>, index: own u64) -> own u8 reads('n) {
+  doc "Reads one stored byte, delivering zero for a position the buffer does not hold.";
+  let room = len(deref(store));
+  let inside = ilt(index, room);
+  if inside {
+    let value = deref(store)[index];
+    return value;
+  }
+  return 0_u8;
+}
+
+deny_claims fn name_before['n](names: &'n buffer<u8>, left: own u64, right: own u64) -> own Bool reads('n) {
+  doc "Orders two collected entry records by their stored name bytes, a shorter prefix first.";
+  let left_base = left *wrap 258_u64;
+  let right_base = right *wrap 258_u64;
+  let left_length_at = left_base +wrap 1_u64;
+  let right_length_at = right_base +wrap 1_u64;
+  let left_length = byte_at<'n>(store: names, index: left_length_at);
+  let right_length = byte_at<'n>(store: names, index: right_length_at);
+  let left_count = cvt<u8, u64>(left_length);
+  let right_count = cvt<u8, u64>(right_length);
+  let shared = if ilt(left_count, right_count) {
+    give left_count;
+  } else {
+    give right_count;
+  }
+  let left_start = left_base +wrap 2_u64;
+  let right_start = right_base +wrap 2_u64;
+  let at = 0_u64;
+  loop @compare {
+    let done = ige(at, shared);
+    if done {
+      break @compare;
+    }
+    let left_at = left_start +wrap at;
+    let right_at = right_start +wrap at;
+    let left_byte = byte_at<'n>(store: names, index: left_at);
+    let right_byte = byte_at<'n>(store: names, index: right_at);
+    if ilt(left_byte, right_byte) {
+      return True();
+    }
+    if igt(left_byte, right_byte) {
+      return False();
+    }
+    set at = at +wrap 1_u64;
+  }
+  return ilt(left_count, right_count);
+}
+
+fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> own u64 reads('d), writes('d) {
+  doc "Writes the decimal spelling of one unsigned value at one offset and reports the offset just past it, counting its digits first so it needs no scratch storage.";
+  let digits = 1_u64;
+  let probe = value;
+  loop @measure {
+    let single = ilt(probe, 10_u64);
+    if single {
+      break @measure;
+    }
+    set probe = probe / 10_u64;
+    set digits = digits +wrap 1_u64;
+  }
+  let room = len(deref(destination));
+  let glyphs = len(digit_glyphs);
+  let end = at +wrap digits;
+  let cursor = end;
+  let rest = value;
+  loop @emit {
+    let started = ile(cursor, at);
+    if started {
+      break @emit;
+    }
+    set cursor = cursor -wrap 1_u64;
+    let digit = rest % 10_u64;
+    let known = ilt(digit, glyphs);
+    if known {
+      let writable = ilt(cursor, room);
+      if writable {
+        let glyph = digit_glyphs[digit];
+        set deref(destination)[cursor] = glyph;
+      }
+    }
+    set rest = rest / 10_u64;
+  }
+  return end;
+}
+
+fn report_failure['e, 'r, 'n](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, path: &'n buffer<u8>, path_length: own u64, status: own u8) -> own unit reads('e 'r 'n), writes('e 'r), external, blocks, traps {
+  doc "Assembles one `wfgrep: PATH: reason` diagnostic in the report buffer and publishes it with a single write, copying the caller's path bytes and clamping the assembled length against the report's capacity.";
   let length = 0_u64;
   region 'report_prefix {
     let view = slice_of(&'report_prefix error_prefix);
@@ -203,26 +289,32 @@ deny_claims fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, 
     }
   }
   let prior_length = length;
+  let report_capacity = len(deref(report));
+  let path_room = len(deref(path));
   let copied_count = 0_u64;
-  match arg_get<'a>(args: args, position: position) {
-    Ok(value: text) => {
-      region 'report_name {
-        match host_copy_bytes<'report_name, 'report_name>(value: &'report_name text, destination: &uniq 'report_name deref(report), offset: prior_length, capacity: 256_u64) {
-          Ok(value: copied) => {
-            set copied_count = copied;
-          }
-          Err(error: too_small) => {
-          }
-        }
-      }
+  loop @name {
+    let done = ige(copied_count, path_length);
+    if done {
+      break @name;
     }
-    Err(error: absent) => {
+    let readable = ilt(copied_count, path_room);
+    if readable {
+    } else {
+      break @name;
     }
+    let target_at = prior_length +wrap copied_count;
+    let writable = ilt(target_at, report_capacity);
+    if writable {
+    } else {
+      break @name;
+    }
+    let byte = deref(path)[copied_count];
+    set deref(report)[target_at] = byte;
+    set copied_count = copied_count +wrap 1_u64;
   }
   let candidate_length = prior_length +wrap copied_count;
-  let report_capacity = len(deref(report));
   let candidate_fits = ile(candidate_length, report_capacity);
-  let bounded_length = if candidate_fits {
+  let tail = if candidate_fits {
     give candidate_length;
   } else {
     give prior_length;
@@ -230,7 +322,7 @@ deny_claims fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, 
   region 'report_separator {
     let view = slice_of(&'report_separator error_separator);
     region 'separator_append {
-      set bounded_length = append_slice<'separator_append, 'report_separator>(destination: &uniq 'separator_append deref(report), filled: bounded_length, text: move view);
+      set tail = append_slice<'separator_append, 'report_separator>(destination: &uniq 'separator_append deref(report), filled: tail, text: move view);
     }
   }
   let named = 0_u8;
@@ -239,7 +331,7 @@ deny_claims fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, 
     region 'reason_missing_view {
       let view = slice_of(&'reason_missing_view reason_missing);
       region 'reason_missing_append {
-        set bounded_length = append_slice<'reason_missing_append, 'reason_missing_view>(destination: &uniq 'reason_missing_append deref(report), filled: bounded_length, text: move view);
+        set tail = append_slice<'reason_missing_append, 'reason_missing_view>(destination: &uniq 'reason_missing_append deref(report), filled: tail, text: move view);
       }
     }
   }
@@ -248,7 +340,7 @@ deny_claims fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, 
     region 'reason_denied_view {
       let view = slice_of(&'reason_denied_view reason_denied);
       region 'reason_denied_append {
-        set bounded_length = append_slice<'reason_denied_append, 'reason_denied_view>(destination: &uniq 'reason_denied_append deref(report), filled: bounded_length, text: move view);
+        set tail = append_slice<'reason_denied_append, 'reason_denied_view>(destination: &uniq 'reason_denied_append deref(report), filled: tail, text: move view);
       }
     }
   }
@@ -257,7 +349,7 @@ deny_claims fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, 
     region 'reason_directory_view {
       let view = slice_of(&'reason_directory_view reason_directory);
       region 'reason_directory_append {
-        set bounded_length = append_slice<'reason_directory_append, 'reason_directory_view>(destination: &uniq 'reason_directory_append deref(report), filled: bounded_length, text: move view);
+        set tail = append_slice<'reason_directory_append, 'reason_directory_view>(destination: &uniq 'reason_directory_append deref(report), filled: tail, text: move view);
       }
     }
   }
@@ -266,7 +358,7 @@ deny_claims fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, 
     region 'reason_path_view {
       let view = slice_of(&'reason_path_view reason_invalid_path);
       region 'reason_path_append {
-        set bounded_length = append_slice<'reason_path_append, 'reason_path_view>(destination: &uniq 'reason_path_append deref(report), filled: bounded_length, text: move view);
+        set tail = append_slice<'reason_path_append, 'reason_path_view>(destination: &uniq 'reason_path_append deref(report), filled: tail, text: move view);
       }
     }
   }
@@ -275,7 +367,7 @@ deny_claims fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, 
     region 'reason_long_view {
       let view = slice_of(&'reason_long_view reason_long_line);
       region 'reason_long_append {
-        set bounded_length = append_slice<'reason_long_append, 'reason_long_view>(destination: &uniq 'reason_long_append deref(report), filled: bounded_length, text: move view);
+        set tail = append_slice<'reason_long_append, 'reason_long_view>(destination: &uniq 'reason_long_append deref(report), filled: tail, text: move view);
       }
     }
   }
@@ -283,12 +375,12 @@ deny_claims fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, 
     region 'reason_other_view {
       let view = slice_of(&'reason_other_view reason_unreadable);
       region 'reason_other_append {
-        set bounded_length = append_slice<'reason_other_append, 'reason_other_view>(destination: &uniq 'reason_other_append deref(report), filled: bounded_length, text: move view);
+        set tail = append_slice<'reason_other_append, 'reason_other_view>(destination: &uniq 'reason_other_append deref(report), filled: tail, text: move view);
       }
     }
   }
-  region 'report_write {
-    match publish_all<'report_write, 'report_write>(output: &uniq 'report_write deref(err), source: &'report_write deref(report), length: bounded_length) {
+  region 'reason_write {
+    match publish_all<'reason_write, 'reason_write>(output: &uniq 'reason_write deref(err), source: &'reason_write deref(report), length: tail) {
       Ok(value: published) => {
       }
       Err(error: problem) => {
@@ -298,18 +390,616 @@ deny_claims fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, 
   return unit;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
-  doc "Publishes every line of every named file that contains the literal pattern bytes; 0 matched, 1 none, 2 error.";
+fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>, pattern_length: own u64, path: &'n buffer<u8>, path_length: own u64, out: &uniq 'o Output) -> own u8 reads('f 'a 'n 'o), writes('f 'o), allocates(heap), external, blocks, traps {
+  doc "Reads one open file and publishes `PATH:LINE:TEXT` for every line that holds the literal pattern bytes.";
   let input = buffer_new(4096_u64, 0_u8);
-  let batch = buffer_new(4096_u64, 0_u8);
+  let batch = buffer_new(8192_u64, 0_u8);
+  let batch_room = len(batch);
+  let pattern_room = len(deref(pattern));
+  let first_pattern_byte = 0_u8;
+  let has_pattern = igt(pattern_room, 0_u64);
+  if has_pattern {
+    set first_pattern_byte = deref(pattern)[0_u64];
+  }
+  let empty_pattern = ieq(pattern_length, 0_u64);
+  let matched = 0_u8;
+  let status = 0_u8;
+  let filled = 0_u64;
+  let line_number = 0_u64;
+  let carry = 0_u64;
+  loop @chunks {
+    let room = 4096_u64 -wrap carry;
+    let overlong = ieq(room, 0_u64);
+    if overlong {
+      set status = 6_u8;
+      break @chunks;
+    }
+    let available = 0_u64;
+    let ended = 0_u8;
+    region 'read_call {
+      match read_once<'read_call, 'read_call>(file: &uniq 'read_call deref(file), destination: &uniq 'read_call input, offset: carry, capacity: room) {
+        ReadBytes(count: taken) => {
+          set available = carry +wrap taken;
+        }
+        ReadEnd() => {
+          set ended = 1_u8;
+        }
+        ReadFailed(error: problem) => {
+          set status = io_class(error: move problem);
+          set ended = 2_u8;
+        }
+      }
+    }
+    if ieq(ended, 2_u8) {
+      break @chunks;
+    }
+    if ieq(ended, 1_u8) {
+      let trailing = igt(carry, 0_u64);
+      if trailing {
+        let carry_ok = ilt(carry, 4096_u64);
+        claim carry_in_input: carry_ok because "the overlong guard keeps the carry below the buffer length";
+        set input[carry] = 10_u8;
+        set available = carry +wrap 1_u64;
+      }
+    }
+    let scan = 0_u64;
+    loop @lines {
+      let terminator = available;
+      let hit = empty_pattern;
+      let probe = scan;
+      loop @walk {
+        let done = ige(probe, available);
+        if done {
+          break @walk;
+        }
+        let probe_ok = ilt(probe, 4096_u64);
+        claim probe_in_input: probe_ok because "the walk stops at the available prefix of the fixed buffer";
+        let byte = input[probe];
+        let newline = ieq(byte, 10_u8);
+        if newline {
+          set terminator = probe;
+          break @walk;
+        }
+        if hit {
+        } else {
+          let lead = ieq(byte, first_pattern_byte);
+          if lead {
+            let same = True();
+            let ahead = 1_u64;
+            loop @verify {
+              let proven = ige(ahead, pattern_length);
+              if proven {
+                break @verify;
+              }
+              let spot = probe +wrap ahead;
+              let inside = ilt(spot, available);
+              if inside {
+              } else {
+                set same = False();
+                break @verify;
+              }
+              let spot_ok = ilt(spot, 4096_u64);
+              claim spot_in_input: spot_ok because "the verify walk stays inside the available prefix";
+              let candidate = input[spot];
+              let stopper = ieq(candidate, 10_u8);
+              if stopper {
+                set same = False();
+                break @verify;
+              }
+              let ahead_ok = ilt(ahead, pattern_room);
+              claim ahead_in_pattern: ahead_ok because "the verify walk stays inside the copied pattern";
+              let expected = deref(pattern)[ahead];
+              let equal = ieq(candidate, expected);
+              if equal {
+              } else {
+                set same = False();
+                break @verify;
+              }
+              set ahead = ahead +wrap 1_u64;
+            }
+            if same {
+              set hit = True();
+            }
+          }
+        }
+        set probe = probe +wrap 1_u64;
+      }
+      let complete = ilt(terminator, available);
+      if complete {
+      } else {
+        break @lines;
+      }
+      set line_number = line_number +wrap 1_u64;
+      if hit {
+        set matched = 1_u8;
+        let stop = terminator +wrap 1_u64;
+        let span = stop -wrap scan;
+        let head = path_length +wrap 24_u64;
+        let record = head +wrap span;
+        let need = filled +wrap record;
+        let overfull = igt(need, 8192_u64);
+        if overfull {
+          region 'batch_write {
+            match publish_all<'batch_write, 'batch_write>(output: &uniq 'batch_write deref(out), source: &'batch_write batch, length: filled) {
+              Ok(value: published) => {
+              }
+              Err(error: problem) => {
+                set status = io_class(error: move problem);
+              }
+            }
+          }
+          set filled = 0_u64;
+        }
+        if ieq(status, 0_u8) {
+          region 'emit_path {
+            set filled = copy_range<'emit_path, 'emit_path>(destination: &uniq 'emit_path batch, at: filled, source: &'emit_path deref(path), from: 0_u64, to: path_length);
+          }
+          let colon_room = ilt(filled, batch_room);
+          if colon_room {
+            set batch[filled] = 58_u8;
+            set filled = filled +wrap 1_u64;
+          }
+          region 'emit_number {
+            set filled = put_decimal<'emit_number>(destination: &uniq 'emit_number batch, at: filled, value: line_number);
+          }
+          let second_room = ilt(filled, batch_room);
+          if second_room {
+            set batch[filled] = 58_u8;
+            set filled = filled +wrap 1_u64;
+          }
+          region 'emit_line {
+            set filled = copy_range<'emit_line, 'emit_line>(destination: &uniq 'emit_line batch, at: filled, source: &'emit_line input, from: scan, to: stop);
+          }
+        } else {
+          break @lines;
+        }
+      }
+      set scan = terminator +wrap 1_u64;
+    }
+    if ieq(status, 0_u8) {
+    } else {
+      break @chunks;
+    }
+    if ieq(ended, 1_u8) {
+      break @chunks;
+    }
+    let tail = available -wrap scan;
+    let moved = 0_u64;
+    loop @shift {
+      let done = ige(moved, tail);
+      if done {
+        break @shift;
+      }
+      let source_index = scan +wrap moved;
+      let shift_read_ok = ilt(source_index, 4096_u64);
+      claim shift_read_in_input: shift_read_ok because "the tail starts inside the fixed buffer";
+      let byte = input[source_index];
+      let shift_write_ok = ilt(moved, 4096_u64);
+      claim shift_write_in_input: shift_write_ok because "the tail is shorter than the fixed buffer";
+      set input[moved] = byte;
+      set moved = moved +wrap 1_u64;
+    }
+    set carry = tail;
+  }
+  let pending = igt(filled, 0_u64);
+  if pending {
+    region 'final_write {
+      match publish_all<'final_write, 'final_write>(output: &uniq 'final_write deref(out), source: &'final_write batch, length: filled) {
+        Ok(value: published) => {
+        }
+        Err(error: problem) => {
+          set status = io_class(error: move problem);
+        }
+      }
+    }
+  }
+  let flag = if ieq(matched, 1_u8) {
+    give 16_u8;
+  } else {
+    give 0_u8;
+  }
+  let packed = ior(status, flag);
+  return packed;
+}
+
+fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, pattern: &'a buffer<u8>, pattern_length: own u64, out: &uniq 'o Output, err: &uniq 'e Output, depth: own u64) -> own u8 reads('c 'p 'a 'o 'e), writes('o 'e), allocates(heap), external, blocks, traps {
+  doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. Two fixed bounds truncate silently and are recorded as defects: at most 64 entries per directory are retained, in the host's enumeration order, before sorting; and a subtree deeper than 16 levels is left unsearched. Both return normally, so a truncated search is indistinguishable from a complete one.";
+  let matched = 0_u8;
+  let failed = 0_u8;
+  let too_deep = ige(depth, 16_u64);
+  if too_deep {
+    let empty = 0_u8;
+    return empty;
+  }
+  let entries = buffer_new(8192_u64, 0_u8);
+  let names = buffer_new(16512_u64, 0_u8);
+  let order = buffer_new(64_u64, 0_u64);
+  let child = buffer_new(1024_u64, 0_u8);
+  let report = buffer_new(1280_u64, 0_u8);
+  let entries_room = len(entries);
+  let names_room = len(names);
+  let order_room = len(order);
+  let child_room = len(child);
+  let prefix_room = len(deref(prefix));
+  let stored = 0_u64;
+  match open_list<'c>(directory: dir) {
+    Ok(value: list) => {
+      loop @batches {
+        let produced = 0_u64;
+        let ended = 0_u8;
+        region 'batch {
+          match list_once<'batch, 'batch>(list: &uniq 'batch list, destination: &uniq 'batch entries, offset: 0_u64, capacity: 8192_u64) {
+            ListBytes(count: bytes, entries: reported) => {
+              set produced = bytes;
+            }
+            ListEnd() => {
+              set ended = 1_u8;
+            }
+            ListFailed(error: problem) => {
+              set ended = 2_u8;
+              set failed = 1_u8;
+            }
+          }
+        }
+        if ieq(ended, 0_u8) {
+        } else {
+          break @batches;
+        }
+        let empty_batch = ieq(produced, 0_u64);
+        if empty_batch {
+          break @batches;
+        }
+        let at = 0_u64;
+        loop @entry {
+          let header_end = at +wrap 2_u64;
+          let complete = ile(header_end, produced);
+          if complete {
+          } else {
+            break @entry;
+          }
+          let kind_readable = ilt(at, entries_room);
+          if kind_readable {
+          } else {
+            break @entry;
+          }
+          let kind = entries[at];
+          let length_at = at +wrap 1_u64;
+          let length_readable = ilt(length_at, entries_room);
+          if length_readable {
+          } else {
+            break @entry;
+          }
+          let name_length = entries[length_at];
+          let name_count = cvt<u8, u64>(name_length);
+          let name_at = at +wrap 2_u64;
+          let name_end = name_at +wrap name_count;
+          let bounded = ile(name_end, produced);
+          if bounded {
+          } else {
+            break @entry;
+          }
+          set at = name_end;
+          let dotted = 0_u8;
+          let single = ieq(name_count, 1_u64);
+          if single {
+            let first_readable = ilt(name_at, entries_room);
+            if first_readable {
+              let first = entries[name_at];
+              if ieq(first, 46_u8) {
+                set dotted = 1_u8;
+              }
+            }
+          }
+          let paired = ieq(name_count, 2_u64);
+          if paired {
+            let second_at = name_at +wrap 1_u64;
+            let first_readable = ilt(name_at, entries_room);
+            let second_readable = ilt(second_at, entries_room);
+            if first_readable {
+              if second_readable {
+                let first = entries[name_at];
+                let second = entries[second_at];
+                if ieq(first, 46_u8) {
+                  if ieq(second, 46_u8) {
+                    set dotted = 1_u8;
+                  }
+                }
+              }
+            }
+          }
+          let usable = ieq(dotted, 0_u8);
+          let room_left = ilt(stored, 64_u64);
+          if usable {
+            if room_left {
+              let base = stored *wrap 258_u64;
+              let kind_writable = ilt(base, names_room);
+              if kind_writable {
+                set names[base] = kind;
+              }
+              let stored_length_at = base +wrap 1_u64;
+              let length_writable = ilt(stored_length_at, names_room);
+              if length_writable {
+                set names[stored_length_at] = name_length;
+              }
+              let target_start = base +wrap 2_u64;
+              let taken = 0_u64;
+              loop @store_name {
+                let done = ige(taken, name_count);
+                if done {
+                  break @store_name;
+                }
+                let source_at = name_at +wrap taken;
+                let readable = ilt(source_at, entries_room);
+                if readable {
+                } else {
+                  break @store_name;
+                }
+                let target_at = target_start +wrap taken;
+                let writable = ilt(target_at, names_room);
+                if writable {
+                } else {
+                  break @store_name;
+                }
+                let byte = entries[source_at];
+                set names[target_at] = byte;
+                set taken = taken +wrap 1_u64;
+              }
+              set stored = stored +wrap 1_u64;
+            }
+          }
+        }
+      }
+    }
+    Err(error: problem) => {
+      set failed = 1_u8;
+    }
+  }
+  let seed = 0_u64;
+  loop @seed_order {
+    let done = ige(seed, stored);
+    if done {
+      break @seed_order;
+    }
+    let writable = ilt(seed, order_room);
+    if writable {
+    } else {
+      break @seed_order;
+    }
+    set order[seed] = seed;
+    set seed = seed +wrap 1_u64;
+  }
+  let selected = 0_u64;
+  loop @sort {
+    let done = ige(selected, stored);
+    if done {
+      break @sort;
+    }
+    let selected_readable = ilt(selected, order_room);
+    if selected_readable {
+    } else {
+      break @sort;
+    }
+    let best = selected;
+    let probe = selected +wrap 1_u64;
+    loop @scan {
+      let scanned = ige(probe, stored);
+      if scanned {
+        break @scan;
+      }
+      let probe_readable = ilt(probe, order_room);
+      if probe_readable {
+      } else {
+        break @scan;
+      }
+      let best_readable = ilt(best, order_room);
+      if best_readable {
+      } else {
+        break @scan;
+      }
+      let candidate = order[probe];
+      let incumbent = order[best];
+      let earlier = 0_u8;
+      region 'compare {
+        let closer = name_before<'compare>(names: &'compare names, left: candidate, right: incumbent);
+        if closer {
+          set earlier = 1_u8;
+        }
+      }
+      if ieq(earlier, 1_u8) {
+        set best = probe;
+      }
+      set probe = probe +wrap 1_u64;
+    }
+    let best_readable = ilt(best, order_room);
+    if best_readable {
+      let held = order[selected];
+      let winner = order[best];
+      set order[best] = held;
+      set order[selected] = winner;
+    }
+    set selected = selected +wrap 1_u64;
+  }
+  let visited = 0_u64;
+  loop @process {
+    let done = ige(visited, stored);
+    if done {
+      break @process;
+    }
+    let readable = ilt(visited, order_room);
+    if readable {
+    } else {
+      break @process;
+    }
+    let index = order[visited];
+    set visited = visited +wrap 1_u64;
+    let base = index *wrap 258_u64;
+    let kind_readable = ilt(base, names_room);
+    if kind_readable {
+    } else {
+      break @process;
+    }
+    let kind = names[base];
+    let stored_length_at = base +wrap 1_u64;
+    let length_readable = ilt(stored_length_at, names_room);
+    if length_readable {
+    } else {
+      break @process;
+    }
+    let stored_length = names[stored_length_at];
+    let name_count = cvt<u8, u64>(stored_length);
+    let name_at = base +wrap 2_u64;
+    let separated = igt(prefix_length, 0_u64);
+    let separated_length = prefix_length +wrap 1_u64;
+    let child_length = if separated {
+      give separated_length +wrap name_count;
+    } else {
+      give name_count;
+    }
+    let fits = ile(child_length, 1000_u64);
+    if fits {
+    } else {
+      set failed = 1_u8;
+      break @process;
+    }
+    let cursor = 0_u64;
+    loop @prefix_copy {
+      let copied = ige(cursor, prefix_length);
+      if copied {
+        break @prefix_copy;
+      }
+      let prefix_readable = ilt(cursor, prefix_room);
+      if prefix_readable {
+      } else {
+        break @prefix_copy;
+      }
+      let writable = ilt(cursor, child_room);
+      if writable {
+      } else {
+        break @prefix_copy;
+      }
+      let byte = deref(prefix)[cursor];
+      set child[cursor] = byte;
+      set cursor = cursor +wrap 1_u64;
+    }
+    if separated {
+      let separator_fits = ilt(cursor, child_room);
+      if separator_fits {
+        set child[cursor] = 47_u8;
+        set cursor = cursor +wrap 1_u64;
+      }
+    }
+    let taken = 0_u64;
+    loop @name_copy {
+      let copied = ige(taken, name_count);
+      if copied {
+        break @name_copy;
+      }
+      let source_at = name_at +wrap taken;
+      let source_readable = ilt(source_at, names_room);
+      if source_readable {
+      } else {
+        break @name_copy;
+      }
+      let writable = ilt(cursor, child_room);
+      if writable {
+      } else {
+        break @name_copy;
+      }
+      let byte = names[source_at];
+      set child[cursor] = byte;
+      set cursor = cursor +wrap 1_u64;
+      set taken = taken +wrap 1_u64;
+    }
+    let regular = ieq(kind, 1_u8);
+    if regular {
+      let status = 0_u8;
+      region 'open_call {
+        match open_file<'c, 'open_call>(root: dir, name: &'open_call names, offset: name_at, count: name_count) {
+          Ok(value: file) => {
+            let outcome = 0_u8;
+            region 'search_call {
+              set outcome = search_file<'search_call, 'a, 'search_call, 'search_call>(file: &uniq 'search_call file, pattern: pattern, pattern_length: pattern_length, path: &'search_call child, path_length: cursor, out: &uniq 'search_call deref(out));
+            }
+            set status = iand(outcome, 15_u8);
+            let found = iand(outcome, 16_u8);
+            if ieq(found, 16_u8) {
+              set matched = 1_u8;
+            }
+          }
+          Err(error: problem) => {
+            set status = io_class(error: move problem);
+          }
+        }
+      }
+      let reportable = ine(status, 0_u8);
+      if reportable {
+        set failed = 1_u8;
+        region 'report_call {
+          report_failure<'report_call, 'report_call, 'report_call>(err: &uniq 'report_call deref(err), report: &uniq 'report_call report, path: &'report_call child, path_length: cursor, status: status);
+        }
+      }
+    }
+    let descending = ieq(kind, 2_u8);
+    if descending {
+      let status = 0_u8;
+      region 'descend {
+        match open_directory<'c, 'descend>(root: dir, name: &'descend names, offset: name_at, count: name_count) {
+          Ok(value: opened) => {
+            let deeper = depth +wrap 1_u64;
+            let outcome = 0_u8;
+            region 'child_walk {
+              set outcome = walk<'child_walk, 'child_walk, 'a, 'child_walk, 'child_walk>(dir: &'child_walk opened, prefix: &'child_walk child, prefix_length: cursor, pattern: pattern, pattern_length: pattern_length, out: &uniq 'child_walk deref(out), err: &uniq 'child_walk deref(err), depth: deeper);
+            }
+            let found = iand(outcome, 1_u8);
+            let broke = iand(outcome, 2_u8);
+            if ieq(found, 1_u8) {
+              set matched = 1_u8;
+            }
+            if ieq(broke, 2_u8) {
+              set failed = 1_u8;
+            }
+          }
+          Err(error: problem) => {
+            set status = io_class(error: move problem);
+          }
+        }
+      }
+      let reportable = ine(status, 0_u8);
+      if reportable {
+        set failed = 1_u8;
+        region 'descend_report {
+          report_failure<'descend_report, 'descend_report, 'descend_report>(err: &uniq 'descend_report deref(err), report: &uniq 'descend_report report, path: &'descend_report child, path_length: cursor, status: status);
+        }
+      }
+    }
+  }
+  let matched_bit = if ieq(matched, 1_u8) {
+    give 1_u8;
+  } else {
+    give 0_u8;
+  }
+  let failed_bit = if ieq(failed, 1_u8) {
+    give 2_u8;
+  } else {
+    give 0_u8;
+  }
+  let packed = ior(matched_bit, failed_bit);
+  return packed;
+}
+
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+  doc "Searches one directory tree recursively and publishes `PATH:LINE:TEXT` for the lines holding the literal pattern bytes; 0 matched, 1 none, 2 error. The search is complete only within `walk`'s two fixed bounds (64 entries per directory and 16 levels of depth), beyond which it truncates and still returns normally.";
   let pattern = buffer_new(4096_u64, 0_u8);
-  let report = buffer_new(512_u64, 0_u8);
+  let root_name = buffer_new(256_u64, 0_u8);
+  let root_path = buffer_new(1024_u64, 0_u8);
+  let report = buffer_new(1280_u64, 0_u8);
   let arguments = 0_u64;
   region 'invocation {
     set arguments = args_count<'invocation>(args: &'invocation args);
   }
   let startup = 0_u8;
   let pattern_length = 0_u64;
+  let root_length = 0_u64;
   let usable = ige(arguments, 3_u64);
   if usable {
     region 'pattern_lease {
@@ -331,6 +1021,25 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         }
       }
     }
+    region 'root_lease {
+      match arg_get<'root_lease>(args: &'root_lease args, position: 2_u64) {
+        Ok(value: text) => {
+          region 'root_copy {
+            match host_copy_bytes<'root_copy, 'root_copy>(value: &'root_copy text, destination: &uniq 'root_copy root_name, offset: 0_u64, capacity: 256_u64) {
+              Ok(value: copied) => {
+                set root_length = copied;
+              }
+              Err(error: too_small) => {
+                set startup = 3_u8;
+              }
+            }
+          }
+        }
+        Err(error: absent) => {
+          set startup = 1_u8;
+        }
+      }
+    }
   } else {
     set startup = 1_u8;
   }
@@ -342,10 +1051,17 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         let view = slice_of(&'startup_usage usage_text);
         set length = append_slice<'startup_usage, 'startup_usage>(destination: &uniq 'startup_usage report, filled: length, text: move view);
       }
-    } else {
+    }
+    if ieq(startup, 2_u8) {
       region 'startup_pattern {
         let view = slice_of(&'startup_pattern reason_pattern_too_long);
         set length = append_slice<'startup_pattern, 'startup_pattern>(destination: &uniq 'startup_pattern report, filled: length, text: move view);
+      }
+    }
+    if ieq(startup, 3_u8) {
+      region 'startup_root {
+        let view = slice_of(&'startup_root reason_root_too_long);
+        set length = append_slice<'startup_root, 'startup_root>(destination: &uniq 'startup_root report, filled: length, text: move view);
       }
     }
     region 'startup_write {
@@ -358,242 +1074,93 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     }
     return exit_status(code: 2_u8);
   }
-  let first_pattern_byte = pattern[0_u64];
-  let empty_pattern = ieq(pattern_length, 0_u64);
-  let failed = 0_u8;
-  let matched = 0_u8;
-  let filled = 0_u64;
-  let write_failed = 0_u8;
-  let write_class = 0_u8;
-  let position = 2_u64;
-  loop @files {
-    let more = ilt(position, arguments);
-    if more {
-    } else {
-      break @files;
+  let root_room = len(root_path);
+  let copied = 0_u64;
+  loop @root_copy_out {
+    let done = ige(copied, root_length);
+    if done {
+      break @root_copy_out;
     }
-    let status = 0_u8;
+    let readable = ilt(copied, 256_u64);
+    if readable {
+    } else {
+      break @root_copy_out;
+    }
+    let writable = ilt(copied, root_room);
+    if writable {
+    } else {
+      break @root_copy_out;
+    }
+    let byte = root_name[copied];
+    set root_path[copied] = byte;
+    set copied = copied +wrap 1_u64;
+  }
+  let matched = 0_u8;
+  let failed = 0_u8;
+  let root_status = 0_u8;
+  region 'root_open {
+    match open_directory<'root_open, 'root_open>(root: &'root_open cwd, name: &'root_open root_name, offset: 0_u64, count: root_length) {
+      Ok(value: root) => {
+        let outcome = 0_u8;
+        region 'root_walk {
+          set outcome = walk<'root_walk, 'root_walk, 'root_walk, 'root_walk, 'root_walk>(dir: &'root_walk root, prefix: &'root_walk root_path, prefix_length: copied, pattern: &'root_walk pattern, pattern_length: pattern_length, out: &uniq 'root_walk out, err: &uniq 'root_walk err, depth: 0_u64);
+        }
+        let found = iand(outcome, 1_u8);
+        let broke = iand(outcome, 2_u8);
+        if ieq(found, 1_u8) {
+          set matched = 1_u8;
+        }
+        if ieq(broke, 2_u8) {
+          set failed = 1_u8;
+        }
+      }
+      Err(error: problem) => {
+        set root_status = io_class(error: move problem);
+      }
+    }
+  }
+  let directory_refused = ine(root_status, 0_u8);
+  if directory_refused {
+    let single = 0_u8;
     region 'file_lease {
-      match arg_get<'file_lease>(args: &'file_lease args, position: position) {
+      match arg_get<'file_lease>(args: &'file_lease args, position: 2_u64) {
         Ok(value: text) => {
           match relative_path(value: move text) {
             Ok(value: path) => {
               region 'open_call {
                 match open_read<'open_call, 'open_call>(root: &'open_call cwd, path: &'open_call path) {
                   Ok(value: file) => {
-                    let carry = 0_u64;
-                    loop @chunks {
-                      let room = 4096_u64 -wrap carry;
-                      let overlong = ieq(room, 0_u64);
-                      if overlong {
-                        set status = 6_u8;
-                        break @chunks;
-                      }
-                      let available = 0_u64;
-                      let ended = 0_u8;
-                      region 'read_call {
-                        match read_once<'read_call, 'read_call>(file: &uniq 'read_call file, destination: &uniq 'read_call input, offset: carry, capacity: room) {
-                          ReadBytes(count: taken) => {
-                            set available = carry +wrap taken;
-                          }
-                          ReadEnd() => {
-                            set ended = 1_u8;
-                          }
-                          ReadFailed(error: problem) => {
-                            set status = io_class(error: move problem);
-                            set ended = 2_u8;
-                          }
-                        }
-                      }
-                      if ieq(ended, 2_u8) {
-                        break @chunks;
-                      }
-                      if ieq(ended, 1_u8) {
-                        let trailing = igt(carry, 0_u64);
-                        if trailing {
-                          let carry_ok = ilt(carry, 4096_u64);
-                          claim carry_in_input: carry_ok because "the overlong guard keeps the carry below the buffer length";
-                          set input[carry] = 10_u8;
-                          set available = carry +wrap 1_u64;
-                        }
-                      }
-                      let scan = 0_u64;
-                      loop @lines {
-                        let terminator = available;
-                        let hit = empty_pattern;
-                        let probe = scan;
-                        loop @walk {
-                          let done = ige(probe, available);
-                          if done {
-                            break @walk;
-                          }
-                          let probe_ok = ilt(probe, 4096_u64);
-                          claim probe_in_input: probe_ok because "the walk stops at the available prefix of the fixed buffer";
-                          let byte = input[probe];
-                          let newline = ieq(byte, 10_u8);
-                          if newline {
-                            set terminator = probe;
-                            break @walk;
-                          }
-                          if hit {
-                          } else {
-                            let lead = ieq(byte, first_pattern_byte);
-                            if lead {
-                              let same = True();
-                              let ahead = 1_u64;
-                              loop @verify {
-                                let proven = ige(ahead, pattern_length);
-                                if proven {
-                                  break @verify;
-                                }
-                                let spot = probe +wrap ahead;
-                                let inside = ilt(spot, available);
-                                if inside {
-                                } else {
-                                  set same = False();
-                                  break @verify;
-                                }
-                                let spot_ok = ilt(spot, 4096_u64);
-                                claim spot_in_input: spot_ok because "the verify walk stays inside the available prefix";
-                                let candidate = input[spot];
-                                let stopper = ieq(candidate, 10_u8);
-                                if stopper {
-                                  set same = False();
-                                  break @verify;
-                                }
-                                let ahead_ok = ilt(ahead, 4096_u64);
-                                claim ahead_in_pattern: ahead_ok because "the verify walk stays inside the copied pattern";
-                                let expected = pattern[ahead];
-                                let equal = ieq(candidate, expected);
-                                if equal {
-                                } else {
-                                  set same = False();
-                                  break @verify;
-                                }
-                                set ahead = ahead +wrap 1_u64;
-                              }
-                              if same {
-                                set hit = True();
-                              }
-                            }
-                          }
-                          set probe = probe +wrap 1_u64;
-                        }
-                        let complete = ilt(terminator, available);
-                        if complete {
-                        } else {
-                          break @lines;
-                        }
-                        if hit {
-                          set matched = 1_u8;
-                          let stop = terminator +wrap 1_u64;
-                          let span = stop -wrap scan;
-                          let need = filled +wrap span;
-                          let overfull = igt(need, 4096_u64);
-                          if overfull {
-                            region 'batch_write {
-                              match publish_all<'batch_write, 'batch_write>(output: &uniq 'batch_write out, source: &'batch_write batch, length: filled) {
-                                Ok(value: published) => {
-                                }
-                                Err(error: problem) => {
-                                  set write_failed = 1_u8;
-                                  set write_class = io_class(error: move problem);
-                                }
-                              }
-                            }
-                            set filled = 0_u64;
-                          }
-                          if ieq(write_failed, 0_u8) {
-                            region 'emit_line {
-                              set filled = copy_range<'emit_line, 'emit_line>(destination: &uniq 'emit_line batch, at: filled, source: &'emit_line input, from: scan, to: stop);
-                            }
-                          } else {
-                            break @files;
-                          }
-                        }
-                        set scan = terminator +wrap 1_u64;
-                      }
-                      if ieq(ended, 1_u8) {
-                        break @chunks;
-                      }
-                      let tail = available -wrap scan;
-                      let moved = 0_u64;
-                      loop @shift {
-                        let done = ige(moved, tail);
-                        if done {
-                          break @shift;
-                        }
-                        let source_index = scan +wrap moved;
-                        let shift_read_ok = ilt(source_index, 4096_u64);
-                        claim shift_read_in_input: shift_read_ok because "the tail starts inside the fixed buffer";
-                        let byte = input[source_index];
-                        let shift_write_ok = ilt(moved, 4096_u64);
-                        claim shift_write_in_input: shift_write_ok because "the tail is shorter than the fixed buffer";
-                        set input[moved] = byte;
-                        set moved = moved +wrap 1_u64;
-                      }
-                      set carry = tail;
+                    set single = 1_u8;
+                    let outcome = 0_u8;
+                    region 'search_call {
+                      set outcome = search_file<'search_call, 'search_call, 'search_call, 'search_call>(file: &uniq 'search_call file, pattern: &'search_call pattern, pattern_length: pattern_length, path: &'search_call root_path, path_length: copied, out: &uniq 'search_call out);
+                    }
+                    set root_status = iand(outcome, 15_u8);
+                    let found = iand(outcome, 16_u8);
+                    if ieq(found, 16_u8) {
+                      set matched = 1_u8;
                     }
                   }
-                  Err(error: problem) => {
-                    set status = io_class(error: move problem);
+                  Err(error: refused) => {
                   }
                 }
               }
             }
             Err(error: rejected) => {
-              set status = 5_u8;
+              set root_status = 5_u8;
             }
           }
         }
         Err(error: absent) => {
-          set status = 9_u8;
-        }
-      }
-    }
-    let reportable = ine(status, 0_u8);
-    if reportable {
-      set failed = 1_u8;
-      region 'report_call {
-        report_failure<'report_call, 'report_call, 'report_call>(args: &'report_call args, err: &uniq 'report_call err, report: &uniq 'report_call report, status: status, position: position);
-      }
-    }
-    set position = position +wrap 1_u64;
-  }
-  if ieq(write_failed, 0_u8) {
-    region 'final_write {
-      match publish_all<'final_write, 'final_write>(output: &uniq 'final_write out, source: &'final_write batch, length: filled) {
-        Ok(value: published) => {
-        }
-        Err(error: problem) => {
-          set write_failed = 1_u8;
-          set write_class = io_class(error: move problem);
         }
       }
     }
   }
-  if ieq(write_failed, 0_u8) {
-  } else {
+  let reportable = ine(root_status, 0_u8);
+  if reportable {
     set failed = 1_u8;
-    let length = 0_u64;
-    if ieq(write_class, 4_u8) {
-      region 'fail_pipe_view {
-        let view = slice_of(&'fail_pipe_view reason_broken_pipe);
-        set length = append_slice<'fail_pipe_view, 'fail_pipe_view>(destination: &uniq 'fail_pipe_view report, filled: length, text: move view);
-      }
-    } else {
-      region 'fail_write_view {
-        let view = slice_of(&'fail_write_view reason_write_error);
-        set length = append_slice<'fail_write_view, 'fail_write_view>(destination: &uniq 'fail_write_view report, filled: length, text: move view);
-      }
-    }
-    region 'fail_write {
-      match publish_all<'fail_write, 'fail_write>(output: &uniq 'fail_write err, source: &'fail_write report, length: length) {
-        Ok(value: published) => {
-        }
-        Err(error: problem) => {
-        }
-      }
+    region 'root_report {
+      report_failure<'root_report, 'root_report, 'root_report>(err: &uniq 'root_report err, report: &uniq 'root_report report, path: &'root_report root_path, path_length: copied, status: root_status);
     }
   }
   if ieq(failed, 0_u8) {

@@ -1,0 +1,12 @@
+deny_claims command fn main() -> own ExitStatus traps requires {
+  let valid_entry = ieq(0_u64, 0_u64);
+  check valid_entry else trap "entry relation";
+} {
+  doc "A marked program entry whose body carries a bounds obligation discharged only by a claim [PROG-3, CLM-3].";
+  let values = array_new<u8, 4>(7_u8);
+  let index = 0_u64;
+  let room = len(values);
+  claim inside: ilt(index, room) because "the entry index is inside the array";
+  let selected = values[index];
+  return exit_status(code: 0_u8);
+}

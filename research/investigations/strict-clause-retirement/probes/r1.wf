@@ -1,0 +1,27 @@
+fn clamped(value: own u64, limit: own u64) -> own u64 pure requires {
+  let admitted = ilt(value, limit);
+  check admitted else trap "clamped requires";
+} ensures result {
+  check ilt(result, limit) else trap "clamped result";
+} {
+  doc "A postcondition provable only under this function's own S4 requirement, so it is available in the complete and unasserted views but not the S4-blinded one.";
+  return value;
+}
+
+deny_claims fn strict_read(values: own array<u8, 4>, index: own u64) -> own u8 pure requires {
+  let room = len(values);
+  let inside = ilt(index, room);
+  check inside else trap "strict read";
+} {
+  doc "A demanded strict component whose bounds obligation is discharged only by the callee's S12 summary. No claim anywhere in the closure.";
+  let room = len(values);
+  let safe = clamped(value: index, limit: room);
+  return values[safe];
+}
+
+fn main() -> own unit pure {
+  doc "Driver.";
+  let values = array_new<u8, 4>(7_u8);
+  let selected = strict_read(values: move values, index: 0_u64);
+  return unit;
+}

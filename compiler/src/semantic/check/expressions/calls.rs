@@ -52,7 +52,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.check_operation(node, operation, function, bindings, loop_depth)
             }
             ResolvedTarget::System(id) => {
-                let operation = crate::system_operation_index(id, self.traversal_surface())
+                let operation = crate::system_operation_index(id, self.inventory())
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 self.check_system_call(node, operation, function, bindings, loop_depth)
             }
@@ -773,7 +773,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 continue;
             };
             let Some(crate::SystemEntity::Operation(operation)) =
-                crate::system_entity(id, self.traversal_surface())
+                crate::system_entity(id, self.inventory())
             else {
                 continue;
             };

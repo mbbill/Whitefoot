@@ -282,7 +282,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return Ok(ty);
                 }
                 ResolvedTarget::System(id) => {
-                    let index = crate::system_nominal_index(id, self.traversal_surface())
+                    let index = crate::system_nominal_index(id, self.inventory())
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     if targs.is_some() {
                         return self.issue_node(

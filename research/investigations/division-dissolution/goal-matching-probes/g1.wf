@@ -1,0 +1,26 @@
+fn divide_safely(n: own i32, d: own i32) -> own i32 traps requires {
+  let dividend_ok = ine(n, -2147483648_i32);
+  let divisor_ok = ine(d, -1_i32);
+  let safe = bor(dividend_ok, divisor_ok);
+  check safe else trap "division is defined on these operands";
+} {
+  doc "The whole retained safe condition of a signed two-variable division, written as one requirement whose GoalTemplate root is a `bor` call.";
+  let q = n / d;
+  return q;
+}
+
+fn caller(n: own i32, d: own i32) -> own i32 traps {
+  doc "The claim spells the same expression the callee's GoalTemplate expands to, so [ENT-3.S3] establishes exactly that goal and [FN-8] exact goal identity discharges it.";
+  let dividend_ok = ine(n, -2147483648_i32);
+  let divisor_ok = ine(d, -1_i32);
+  let safe = bor(dividend_ok, divisor_ok);
+  claim division_safe: safe because "the caller knows this pair is not the trapping one";
+  let q = divide_safely(n: n, d: d);
+  return q;
+}
+
+fn main() -> own unit traps {
+  doc "Driver.";
+  let observed = caller(n: 8_i32, d: 2_i32);
+  return unit;
+}

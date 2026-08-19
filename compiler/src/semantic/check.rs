@@ -731,8 +731,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Every ordinal-to-index lookup must use the state the resolver built
     /// the records from; reading it from the resolved unit keeps the two
     /// stages from disagreeing about the inventory.
-    const fn traversal_surface(&self) -> bool {
-        self.resolved.traversal_surface()
+    const fn inventory(&self) -> crate::Inventory {
+        self.resolved.inventory()
     }
 
     fn mark_postcondition_unavailable(&mut self, declaration: DeclarationId) {

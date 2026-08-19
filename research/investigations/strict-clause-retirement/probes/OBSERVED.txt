@@ -1,0 +1,27 @@
+########## r1.wf ##########
+ACCEPTED (LLVM emitted)
+
+########## r2.wf ##########
+whitefootc: Semantics/Source [CLM-3]: SemanticIssue { rule: Clm3, location: SourceNode(NodePath { components: [1, 0, 5, 0, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(632), end: ByteOffset(666) }), kind: StrictImportedClaim(StrictImportedClaimDetail { strict_root: "strict_read", concrete_caller: "strict_read", call: NodePath { components: [1, 0, 5, 0, 0, 0, 0] }, concrete_callee: "clamped", least_downstream_claim: StrictClaimIdentityDetail { concrete_function: "clamped", claim: NodePath { components: [0, 0, 5, 0] }, name: "inside" } }) }
+
+########## r3.wf ##########
+whitefootc: Semantics/Source [OP-4]: SemanticIssue { rule: Op4, location: SourceNode(NodePath { components: [0, 0, 5, 0, 1, 0, 0, 0, 0, 1] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(292), end: ByteOffset(299) }), kind: UndischargedBoundsObligation { residual: "index < len(values)", mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it" } }
+
+########## r4.wf ##########
+whitefootc: Semantics/Source [CLM-3]: SemanticIssue { rule: Clm3, location: SourceNode(NodePath { components: [2, 0, 5, 0, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(826), end: ByteOffset(859) }), kind: StrictImportedClaim(StrictImportedClaimDetail { strict_root: "strict_read", concrete_caller: "strict_read", call: NodePath { components: [2, 0, 5, 0, 0, 0, 0] }, concrete_callee: "middle", least_downstream_claim: StrictClaimIdentityDetail { concrete_function: "leaf", claim: NodePath { components: [0, 0, 5, 0] }, name: "inside" } }) }
+
+########## r5.wf ##########
+whitefootc: Semantics/Source [CLM-3]: SemanticIssue { rule: Clm3, location: SourceNode(NodePath { components: [1, 0, 5, 0, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(563), end: ByteOffset(602) }), kind: StrictImportedClaim(StrictImportedClaimDetail { strict_root: "strict_read", concrete_caller: "strict_read", call: NodePath { components: [1, 0, 5, 0, 0, 0, 0] }, concrete_callee: "bounded$instance$3", least_downstream_claim: StrictClaimIdentityDetail { concrete_function: "bounded$instance$3", claim: NodePath { components: [0, 0, 6, 0] }, name: "inside" } }) }
+
+########## r6.wf ##########
+whitefootc: Semantics/Source [CLM-3]: SemanticIssue { rule: Clm3, location: SourceNode(NodePath { components: [0, 0, 8, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(359), end: ByteOffset(436) }), kind: StrictDirectClaim(StrictDirectClaimDetail { strict_root: "main", concrete_claim_owner: "main", claim: NodePath { components: [0, 0, 8, 0] }, name: "inside", predicate: "ilt(index, room)", justification: "the entry index is inside the array", lifecycle: Redundant }) }
+
+########## r7.wf ##########
+whitefootc: Semantics/Source [CLM-3]: SemanticIssue { rule: Clm3, location: SourceNode(NodePath { components: [0, 0, 4, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(191), end: ByteOffset(264) }), kind: StrictDirectClaim(StrictDirectClaimDetail { strict_root: "strict_overflow", concrete_claim_owner: "strict_overflow", claim: NodePath { components: [0, 0, 4, 0] }, name: "bounded", predicate: "ilt(n, 100_i32)", justification: "the caller passes a small value", lifecycle: Retained }) }
+
+########## r8.wf ##########
+whitefootc: Semantics/Source [CLM-3]: SemanticIssue { rule: Clm3, location: SourceNode(NodePath { components: [0, 0, 4, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(200), end: ByteOffset(275) }), kind: StrictDirectClaim(StrictDirectClaimDetail { strict_root: "strict_division", concrete_claim_owner: "strict_division", claim: NodePath { components: [0, 0, 4, 0] }, name: "nonzero", predicate: "ine(d, 0_u64)", justification: "the caller passes a nonzero divisor", lifecycle: Retained }) }
+
+########## r9.wf ##########
+ACCEPTED (LLVM emitted)
+

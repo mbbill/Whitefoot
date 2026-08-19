@@ -1,0 +1,24 @@
+########## g1.wf ##########
+ACCEPTED (LLVM emitted)
+
+########## g2.wf ##########
+ACCEPTED (LLVM emitted)
+
+########## g3.wf ##########
+whitefootc: Semantics/Source [FN-8]: SemanticIssue { rule: Fn8, location: SourceNode(NodePath { components: [1, 0, 6, 0, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(642), end: ByteOffset(667) }), kind: UndischargedCallRequirement(UndischargedCallRequirementDetail { concrete_callee: "divide_safely", final_check: NodePath { components: [0, 0, 3, 3, 0] }, instantiated_goal: "Boolean(Or)<types=[], consts=[]>(Integer { operation: NotEqual, operand_type: Integer(I32) }<types=[], consts=[]>(Place { root: BindingId(0), projections: [], ty: Integer(I32) }, Literal(Integer { ty: I32, bits: 2147483648 })):Bool, Integer { operation: NotEqual, operand_type: Integer(I32) }<types=[], consts=[]>(Place { root: BindingId(1), projections: [], ty: Integer(I32) }, Literal(Integer { ty: I32, bits: 4294967295 })):Bool):Bool", disposition: Unproved, mechanical_fix: "establish the complete callee requirement with one dominating branch, check, or claim before the call" }) }
+
+########## g4.wf ##########
+whitefootc: Semantics/Source [FN-8]: SemanticIssue { rule: Fn8, location: SourceNode(NodePath { components: [1, 0, 8, 0, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(722), end: ByteOffset(747) }), kind: UndischargedCallRequirement(UndischargedCallRequirementDetail { concrete_callee: "divide_safely", final_check: NodePath { components: [0, 0, 3, 3, 0] }, instantiated_goal: "Boolean(Or)<types=[], consts=[]>(Integer { operation: NotEqual, operand_type: Integer(I32) }<types=[], consts=[]>(Place { root: BindingId(0), projections: [], ty: Integer(I32) }, Literal(Integer { ty: I32, bits: 2147483648 })):Bool, Integer { operation: NotEqual, operand_type: Integer(I32) }<types=[], consts=[]>(Place { root: BindingId(1), projections: [], ty: Integer(I32) }, Literal(Integer { ty: I32, bits: 4294967295 })):Bool):Bool", disposition: Unproved, mechanical_fix: "establish the complete callee requirement with one dominating branch, check, or claim before the call" }) }
+
+########## g5.wf ##########
+whitefootc: Semantics/Source [FN-8]: SemanticIssue { rule: Fn8, location: SourceNode(NodePath { components: [2, 0, 8, 0, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(783), end: ByteOffset(808) }), kind: UndischargedCallRequirement(UndischargedCallRequirementDetail { concrete_callee: "divide_safely", final_check: NodePath { components: [1, 0, 3, 3, 0] }, instantiated_goal: "Boolean(Or)<types=[], consts=[]>(Integer { operation: NotEqual, operand_type: Integer(I32) }<types=[], consts=[]>(Place { root: BindingId(0), projections: [], ty: Integer(I32) }, Literal(Integer { ty: I32, bits: 2147483648 })):Bool, Integer { operation: NotEqual, operand_type: Integer(I32) }<types=[], consts=[]>(Place { root: BindingId(1), projections: [], ty: Integer(I32) }, Literal(Integer { ty: I32, bits: 4294967295 })):Bool):Bool", disposition: Unproved, mechanical_fix: "establish the complete callee requirement with one dominating branch, check, or claim before the call" }) }
+
+########## g6.wf ##########
+whitefootc: TerminalClassification/Source [FORM-5]: TerminalIssue { token: TokenId { source: SourceId(0), start: ByteOffset(98), end: ByteOffset(111) }, owner: Form5 }
+
+########## g7.wf ##########
+whitefootc: Semantics/Source [FN-8]: SemanticIssue { rule: Fn8, location: SourceNode(NodePath { components: [1, 0, 11, 0, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(938), end: ByteOffset(975) }), kind: UndischargedCallRequirement(UndischargedCallRequirementDetail { concrete_callee: "divide_safely", final_check: NodePath { components: [0, 0, 3, 3, 0] }, instantiated_goal: "Boolean(Or)<types=[], consts=[]>(Integer { operation: NotEqual, operand_type: Integer(I32) }<types=[], consts=[]>(argument #0 pre-transfer value (caller=FunctionId(1), call=NodePath { components: [1, 0, 11, 0, 0, 0, 0] }, captured=Integer(I32), projections=[], type=Integer(I32)), Literal(Integer { ty: I32, bits: 2147483648 })):Bool, Integer { operation: NotEqual, operand_type: Integer(I32) }<types=[], consts=[]>(Place { root: BindingId(1), projections: [], ty: Integer(I32) }, Literal(Integer { ty: I32, bits: 4294967295 })):Bool):Bool", disposition: Unproved, mechanical_fix: "bind that argument or referent value with one preceding ordinary let, establish the complete requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow" }) }
+
+########## g8.wf ##########
+ACCEPTED (LLVM emitted)
+

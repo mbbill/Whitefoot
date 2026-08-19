@@ -94,7 +94,7 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
     let rows = prov_rows();
     assert_eq!(
         rows.len(),
-        crate::system_operations(crate::TRAVERSAL_SURFACE).len(),
+        crate::system_operations(crate::Inventory::ACTIVE).len(),
         "the wf-prov table has one row per SYS-2 operation"
     );
 
@@ -104,7 +104,7 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
         let index = u8::try_from(ordinal).expect("the operation inventory fits a u8");
         assert_eq!(
             row.operation,
-            crate::system_operations(crate::TRAVERSAL_SURFACE)[ordinal].spelling,
+            crate::system_operations(crate::Inventory::ACTIVE)[ordinal].spelling,
             "wf-prov row {ordinal} and SYSTEM_OPERATIONS[{ordinal}] name different operations"
         );
 
@@ -138,7 +138,7 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
         // The writable-parameter cell names the parameters by their declared
         // name, so the expected ordinals come from the operation's own
         // parameter list rather than from a second hand-written list.
-        let declared = crate::system_operations(crate::TRAVERSAL_SURFACE)[ordinal].parameters;
+        let declared = crate::system_operations(crate::Inventory::ACTIVE)[ordinal].parameters;
         let expected_writes: Vec<usize> = if row.parameter_class == "—" {
             Vec::new()
         } else {
@@ -175,6 +175,24 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
     // `list_once` writes both its destination buffer and its list handle.
     assert_eq!(result_classes.len(), 4);
     assert_eq!(writing_rows, 5);
+    // The candidate `open_file` row has no cell in the active specification's
+    // `wf-prov` table, so the loop above cannot lock it. Its proposed row is
+    // `Ok(value:)` external; `Err(error:)` external, with no writable
+    // parameter — `open_read`'s and `open_directory`'s cell — and this pins
+    // the compiler to exactly that until the row lands in the specification.
+    let candidate = crate::system_operations(crate::Inventory::OpenByName);
+    let open_file = candidate.len() - 1;
+    assert_eq!(candidate[open_file].spelling, "open_file");
+    let open_file = u8::try_from(open_file).expect("the operation inventory fits a u8");
+    assert_eq!(
+        system_result_provenance(open_file),
+        Some(SystemResultProvenance::AllExternal)
+    );
+    assert_eq!(
+        system_external_writes(open_file).expect("a declared operation ordinal"),
+        &[] as &[usize]
+    );
+
     // An ordinal past every inventory fails closed rather than defaulting to
     // a class, in both directions the dispatch can be wrong.
     let past = u8::try_from(crate::SYSTEM_OPERATIONS.len()).expect("the inventory fits a u8");

@@ -253,8 +253,8 @@ fn outcome(case: &Case, reached: &Verdict) -> Outcome {
 }
 
 #[test]
-#[ignore = "Cost, not a blocker: the corpus is green (Pass=460 Skip=1 Fail=0 at the \
-            v0.31 candidate), and this drives every case through compilation, linking, \
+#[ignore = "Cost, not a blocker: the corpus is green (Pass=489 Skip=1 Fail=0 at the \
+            v0.32 activation), and this drives every case through compilation, linking, \
             and execution, so it costs roughly 200s and is kept out of the default \
             `cargo test` run. `make conformance-run` invokes it with `--ignored`; that \
             wiring and this attribute are one unit, so removing the attribute without \

@@ -1,22 +1,21 @@
-//! The two conditional forms the v0.23 migration must leave nowhere, asserted
-//! over the corpus's own derivation trees.
+//! The two conditional forms no corpus file may carry, asserted over the
+//! corpus's own derivation trees.
 //!
 //! [GRAM-6] rejects a Bool-scrutinee `match` (spell `if`) and an `else` whose
 //! block is exactly one `if_stmt` and nothing else (spell `else if`). Both
 //! forms still *parse*, so neither the grammar nor the corpus round-trip gate
 //! in `compiler/tests/canonical_corpus.rs` can see them, and a file carrying
-//! one would sit in the corpus looking migrated.
+//! one would sit in the corpus looking canonical.
 //!
-//! This is not redundant with the checker's own rejection. A migrated file that
-//! stops earlier for an unrelated reason never reaches the checker, so the
+//! This is not redundant with the checker's own rejection. A file that stops
+//! earlier for an unrelated reason never reaches the checker, so the
 //! rejection never fires and the surviving form goes unnoticed. Asserting on
 //! the tree instead of on the diagnostic removes that dependency.
 //!
-//! It lives in the library rather than in the migration tool because
-//! `FinalizedTopology` is `pub(crate)`: a bin and an integration test are each
-//! a separate crate and cannot reach the tree at all. Being a library test also
-//! makes it a standing gate rather than a one-shot check inside a tool that is
-//! run once.
+//! It lives in the library because `FinalizedTopology` is `pub(crate)`: a bin
+//! and an integration test are each a separate crate and cannot reach the tree
+//! at all. Being a library test also makes it a standing gate rather than a
+//! one-shot check run once and discarded.
 
 use std::path::{Path, PathBuf};
 
@@ -165,7 +164,7 @@ fn terminal_bytes<'source>(
 ///
 /// A `value_if` whose else block is exactly one *else-free* `if_stmt` is
 /// [GIVE-1]'s rejection rather than [GRAM-6]'s, but it is reported here too:
-/// the assertion's job is that no migrated file carries a form some rule
+/// the assertion's job is that no corpus file carries a form some rule
 /// rejects, and which rule owns it does not change that.
 fn holds_one_bare_if_in_its_else(topology: &FinalizedTopology, node: NodeId) -> bool {
     let Some(record) = topology.node(node) else {
@@ -231,7 +230,7 @@ fn the_detector_sees_both_forbidden_forms_and_neither_legal_neighbour() {
     // A Bool `match`, and the enum `match` that keeps its spelling.
     assert_eq!(
         forbidden_forms(
-            // migrate: keep — this control *is* the form under detection.
+            // This control *is* the form under detection.
             b"fn main() -> own unit pure {\n  let b = True();\n  match b {\n    True() => {\n    }\n    False() => {\n    }\n  }\n  return unit;\n}\n"
         ),
         Some(Forbidden {

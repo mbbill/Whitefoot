@@ -1,0 +1,26 @@
+deny_claims fn ping(values: own array<u8, 4>, index: own u64, fuel: own u64) -> own u8 traps {
+  doc "Marked root in a mutual-recursion SCC. Its bounds obligation is discharged only by the sibling's claim, which shares the SCC.";
+  let spent = ieq(fuel, 0_u64);
+  if spent {
+    return values[index];
+  } else {
+    let next = fuel -wrap 1_u64;
+    let result = pong(values: move values, index: index, fuel: next);
+    return result;
+  }
+}
+
+fn pong(values: own array<u8, 4>, index: own u64, fuel: own u64) -> own u8 traps {
+  doc "The SCC sibling holding the claim.";
+  let room = len(values);
+  claim inside: ilt(index, room) because "the caller passes a bounded index";
+  let result = ping(values: move values, index: index, fuel: fuel);
+  return result;
+}
+
+fn main() -> own unit traps {
+  doc "Driver.";
+  let values = array_new<u8, 4>(7_u8);
+  let selected = ping(values: move values, index: 0_u64, fuel: 2_u64);
+  return unit;
+}

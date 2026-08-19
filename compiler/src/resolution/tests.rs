@@ -2245,10 +2245,14 @@ fn system_index_helpers_agree_with_the_preorder_entity_map() {
         system_operation_index, system_operations, system_release_row,
     };
 
-    // Both inventory states: the traversal-surface candidate's two extra
-    // nominal types shift every constructor and operation ordinal, so the
-    // helpers must agree with the entity map under each state separately.
-    for surface in [false, true] {
+    // Every inventory state: a candidate's extra nominal types shift every
+    // constructor and operation ordinal, so the helpers must agree with the
+    // entity map under each state separately.
+    for surface in [
+        crate::Inventory::Base,
+        crate::Inventory::Traversal,
+        crate::Inventory::OpenByName,
+    ] {
         let mut nominals = 0_usize;
         let mut constructors = 0_usize;
         let mut operations = 0_usize;
