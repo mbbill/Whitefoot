@@ -153,7 +153,7 @@ Problem: an encoder/decoder writes caller-owned output, but the amount may be
 fixed-ratio, cheaply preflightable, or genuinely data-dependent.  A
 worst-case entry contract can make the inner loop look perfect by forcing
 ordinary callers to overallocate or trap.
-Pattern: use `requires` only when a false predicate means the caller has
+Pattern: use a `requires` clause only when a false predicate means the caller has
 violated the actual API contract.  For a fixed-ratio transform, state the
 weakest overflow-safe capacity relation that covers the body.  If insufficient
 capacity is an expected runtime outcome, test the next token/burst before any
@@ -161,13 +161,13 @@ of its effects and return a value such as `NeedMoreOutput`; do not turn that
 outcome into a contract trap.  A preflight/exact-allocation API is appropriate
 only when its validated size remains bound to the input it describes.  Never
 put a merely common-case size or a rare worst-case allocation in `requires`.
-Current value: `requires` states one complete API proof goal. Every ordinary
-caller must establish that exact typed predicate before transfer; the callee
-body receives it as an axiom and executes no requirement prologue. A real
-process entry still checks its own goal dynamically. Recoverable boundary
-control preserves the useful small-buffer domain. The current compiler can use
-the body axiom to discharge existing L0 bounds obligations but produces no
-general proof-obligation report or Boolean theorem prover. Any future guarded
+Current value: one `contract` block may state several independent `requires`
+goals. Every ordinary caller establishes every goal in the same pre-transfer
+state; the callee body receives them as static facts and executes no prologue.
+The sole `command fn main` has no contract, so there is no entry exception or
+wrapper check. Recoverable boundary control preserves the useful small-buffer
+domain. The current compiler can use these facts to discharge existing finite
+obligations but provides no general Boolean theorem prover. Any future guarded
 fast region must re-establish its authority without weakening OP-4 safety.
 Replaces: per-store bounds checks in fixed-ratio kernels, unconditional
 maximum-size caller allocation, retry-after-partial-token mutation, and using
@@ -216,11 +216,11 @@ increment boilerplate for an exact half-open u64 walk.
 ## P12. External constrained subject takes a value path
 
 Problem: a protected storage access uses an offset derived from process or
-system input, so valid hostile input may falsify its bound. Pattern status:
-active v0.32 guidance. Test the relation with a real branch and return the
-domain's normal error value on the false edge. A `claim`, an ordinary callee
-requirement/prologue, or a process-entry wrapper check is not a repair: each
-turns expected external failure into a trap.
+system input, so valid hostile input may falsify its bound. Test the relation
+with a real branch and return the domain's normal error value on the false
+edge. A `claim` or an ordinary callee requirement is not a repair: each turns
+expected external failure into a trap or an uncallable path. Main has no
+contract and no process-entry wrapper check.
 
 Place the branch where the protected relation belongs. For a local protected
 access, branch in the function that owns that access. For a call rejection,
@@ -234,15 +234,14 @@ subject and need no repair merely for being external. This does not exempt a
 write address's own protected offset obligation when that offset is itself the
 constrained subject.
 
-Replaces: assertion-backed bounds on malformed input, moving the same trap
-behind a helper, and relying on a checked entry wrapper to authorize a body
-access.
+Replaces: assertion-backed bounds on malformed input and moving the same
+failure behind a helper contract.
 
 ## P13. Return the decision, not the access
 
 Problem: a helper must choose between two borrowed sources and hand the chosen
 one back, but the callable boundary cannot say which one it chose.
-`fn pick['r](a: &uniq 'r Node, b: &uniq 'r Node) -> &uniq 'r Node` is rejected
+`fn pick['r](a: &uniq 'r Node, b: &uniq 'r Node) -> selected: &uniq 'r Node` is rejected
 at its own `rtype` [FN-1]: two parameters share the result's region and kind,
 so no caller can root the returned claim, and a result no caller can bind is
 the declaration's error rather than the caller's. Pattern status: active v0.32
@@ -251,7 +250,7 @@ guidance.
 Decide which fix applies by asking why there are two sources. If the sources
 are structurally distinct — a node and its scratch buffer, a subject and its
 dictionary — give the non-source its own formal region:
-`fn pick['r, 's](a: &uniq 'r Node, b: &uniq 's Node) -> &uniq 'r Node` is
+`fn pick['r, 's](a: &uniq 'r Node, b: &uniq 's Node) -> selected: &uniq 'r Node` is
 accepted, and its result is an ordinary holder over `a`'s storage that the
 caller binds, writes through, and reborrows from. If instead the choice is
 data-dependent, no signature can name the source, and the access belongs to
@@ -260,7 +259,7 @@ index into a pool (P2) — and let the caller re-borrow from the place the
 decision names.
 
 The worked shape for the data-dependent case is three parts. The callee
-`fn heavier(a: &'r Node, b: &'r Node) -> own Side reads('r)` reads both weights
+`fn heavier(a: &'r Node, b: &'r Node) -> side: own Side reads('r)` reads both weights
 through its shared borrows and returns `Left()` or `Right()`; it takes shared
 borrows, so both sources may name one region and nothing is ambiguous — a
 returned owned value has no provenance. The caller binds

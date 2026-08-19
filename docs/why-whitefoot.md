@@ -42,7 +42,7 @@ For the first time, one design becomes rational: a systems language that demands
 
 An optimizer runs only as fast as the facts it is handed. Human-first languages spend their ergonomics budget throwing those facts away, and the optimization stack labors to get them back. Change the writer and you can stop discarding them. That premise runs through the rest of this document.
 
-The goal, in one statement. Whitefoot aims past the C baseline, not at it. It expresses what C expresses where performance lives, and it hands the backend machine-checked facts C and Rust structurally cannot: guaranteed aliasing from ownership, effect declarations the optimizer trusts across opaque boundaries, checked algebraic laws, and runtime checks discharged by proof instead of by trust. The AI writes under a checker it cannot cheat, the human states requirements and verifies results, and entire bug classes stay unrepresentable.
+The goal, in one statement. Whitefoot aims past the C baseline, not at it. It expresses what C expresses where performance lives, and it hands the backend machine-checked facts C and Rust structurally cannot: guaranteed aliasing from ownership, effect declarations the optimizer trusts across opaque boundaries, checked algebraic laws, and hazardous-operation obligations discharged by proof instead of by trust. The AI writes under a checker it cannot cheat, the human states requirements and verifies results, and entire bug classes stay unrepresentable.
 
 The project holds itself to one honesty bar: a design decision that leaves Whitefoot equivalent to Rust has failed, because "just use Rust" was cheaper. Every difference below names what it buys over Rust.
 
@@ -86,55 +86,61 @@ Safety in Whitefoot is load-bearing infrastructure, not the mission statement, a
 - An exclusive borrow (`&uniq`) means no other access path exists, which is exactly `noalias`, held universally, with no interior-mutability holes and no `unsafe` to falsify it.
 - Race-freedom keeps those facts sound. A data race would let another thread observe or mutate memory in ways that falsify the compiler's reasoning after the fact. A language that guarantees race-freedom carries its aliasing facts through concurrency.
 
-So the usual intuition inverts. "Safety costs speed, and I buy speed back with `unsafe`" stops holding, because the thing that makes the program safe is a thing that makes it fast. Sections 3 and 5 show it: the checked capacity contract that protects the output buffer deletes the bounds checks, and the exclusive borrow that prevents the aliasing bug unlocks guard-free vectorization.
+So the usual intuition inverts. "Safety costs speed, and I buy speed back with `unsafe`" stops holding, because the thing that makes the program safe is a thing that makes it fast. Sections 3 and 5 show it: the statically proved capacity contract that protects the output buffer deletes the bounds checks, and the exclusive borrow that prevents the aliasing bug unlocks guard-free vectorization.
 
-One honest boundary. This argument claims safety and speed share machinery. It does not claim every check is free. Every check is either proven away or paid for, and Part II shows the ledger.
+One honest boundary. This argument claims safety and speed share machinery. It does not claim every dynamic uncertainty is free. A hazardous condition is proved, represented as a typed ordinary outcome, or backed by a visible `claim`; there is no writer-accessible hidden trap mode.
 
 ---
 
 # Part II: Where the speed comes from
 
 **Claim boundary:** sections 3–6 explain historical fact-channel experiments.
-The current compiler checks `requires`, effect rows, borrows, and FN-4 laws, but
-does not use them to remove downstream checks, emit effect/alias attributes, or
-reassociate reductions. The measurements remain evidence for future
-project-selected consumers, not current production claims.
+The current compiler uses statically proved requirements and structural facts
+to discharge its finite safety obligations. It checks effect rows, borrows,
+and FN-4 laws but does not yet emit effect/alias attributes or reassociate
+reductions from them. The measurements remain evidence for separately selected
+optimizer consumers, not a claim that every historical consumer ships today.
 
 Each section below covers one mechanism: what the writer states, what the checker verifies, what the backend receives, and what the machine code looks like on both sides of the comparison. Every listing is an excerpt from a committed file, trimmed where marked, with full paths in the appendix. Times are medians on an Apple M4, under the exact protocol in each experiment's RESULTS file.
 
 ## 3. Everything is checked, so where does the speed come from?
 
-Take the objection the last sentence invites. In Whitefoot every risky operation is checked at runtime: every index is bounds-checked, every `.trap` arithmetic op traps on overflow, and no syntax says "trust me" (no `unsafe`, no `get_unchecked`, no assume-intrinsic). A writer cannot assert a fact into existence.
+Take the objection the last sentence invites. Whitefoot does not answer it by
+sprinkling implicit runtime checks through the program. An index, exact integer
+operation, allocation-size multiplication, or system buffer range carries a
+deterministic proof obligation. If the checker cannot discharge it, the source
+is rejected. Total and checked operations return ordinary values, and expected
+external failures return typed outcomes. The only writer-visible runtime
+safety backstop is a named `claim`, which always remains executable. There is
+no `unsafe`, unchecked assumption, or freely callable `trap`.
 
-That sounds like a tax. The deal that removes it: a check comes out only by machine proof, and then it costs nothing, because it is gone rather than promised away.
-
-The mechanism is a checked entry contract. A function may carry one `requires`
-block, a predicate on its parameters that runs on every call and traps before
-the first body effect if it fails. It is not an assumption, optimizer hint, or
-caller obligation. In the retired experiment, only its success edge became a
-fact and a deterministic prover used that fact to discharge dominated checks.
-The current compiler executes the prologue but performs no such check elision.
+The interprocedural mechanism is a static contract. A non-entry function may
+carry one `contract` block with erased `define` abbreviations and independent
+`requires` clauses. Every ordinary caller proves every clause in the same
+pre-transfer state. The callee receives those facts at body entry without a
+runtime prologue, storage slot, `llvm.assume`, or fallback edge. The sole
+`command fn main` has no contract and cannot be called from source.
 
 Worked example: a base64 encoder, the two-buffer shape every codec has, one shared input, one exclusive output, and a capacity relation between them. The committed source:
 
 ```
-fn encode ['r] (out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64
-    reads('r), writes('r), traps requires {
-  let required_out_len: own u64 = len<u8>(deref(out));
-  let required_src_len: own u64 = len<u8>(src);
-  let required_out_groups: own u64 = ishr.wrap<u64>(required_out_len, 2_u32);
-  let required_covered_src: own u64 = imul.wrap<u64>(required_out_groups, 3_u64);
-  check ile<u64>(required_src_len, required_covered_src) else trap "base64 output capacity";
+fn encode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> written: own u64
+    reads('r), writes('r) contract {
+  define out_len = len<u8>(deref(out));
+  define src_len = len<u8>(src);
+  define out_groups = ishr.wrap<u64>(out_len, 2_u32);
+  define covered_src = out_groups *wrap 3_u64;
+  requires ile<u64>(src_len, covered_src);
 } {
   ...
   loop @full {
     ...
-    let b0: own u8 = index<u8>(src, i);          // bounds-checked read
+    let b0 = src[i];
     ...
-    set index<u8>(deref(out), o) = c0;           // bounds-checked write
+    set deref(out)[o] = c0;
     ...
-    set i = iadd.wrap<u64>(i, 3_u64);
-    set o = iadd.wrap<u64>(o, 4_u64);
+    set i = i +wrap 3_u64;
+    set o = o +wrap 4_u64;
   }
   ...
 }
@@ -161,8 +167,9 @@ LBB0_9:                          ; hot loop, pre-proof build
 
 In the historical proof build (compiled from the committed `b64.ll`), the
 prover connected the passed capacity fact to the loop induction `i = 3k, o =
-4k` and discharged all 27 bounds sites. The entry check compiled to one
-comparison, and the hot loop carried zero check branches:
+4k` and discharged all 27 bounds sites. Under that retired experiment's
+semantics the entry check compiled to one comparison, and the hot loop carried
+zero check branches:
 
 ```
 _encode:                         ; proof build, from committed b64.ll
@@ -188,13 +195,13 @@ LBB0_6:                          ; hot loop: loads, lookups, stores. No checks.
 	b.hi	LBB0_6
 ```
 
-Measured on the same 384 MB harness, same source, byte-identical output: 2.48 GB/s with the checks retained, 4.23 GB/s with the proof, a 1.71x gain, within noise of a perfect-prover ceiling measurement, and the entry trap stays live. An undersized buffer traps at the boundary before the first byte is written, and a separate C-ABI probe confirms it.
+Measured on the same 384 MB harness, same source, byte-identical output: 2.48 GB/s with the checks retained and 4.23 GB/s with the proof, a 1.71x gain within noise of a perfect-prover ceiling measurement. The retained entry trap and C-ABI probe were properties of that retired experiment, not the current language: today an undersized call is statically uncallable, while an expected small-buffer case must return a typed shortage outcome.
 
 Now the comparison that makes this a language argument instead of a compiler trick. A controlled adversary run, all variants at full RFC semantics, all enforcing the same entry relation, same machine, isolated processes:
 
 | variant | throughput | vs Whitefoot |
 |---|---:|---:|
-| Whitefoot, obvious loop + checked `requires` | 4.285 GB/s | 1.000 |
+| Historical Whitefoot, obvious loop + checked entry predicate | 4.285 GB/s | 1.000 |
 | Rust, obvious indexed loop | 2.673 GB/s | 1.60x slower |
 | Rust, obvious loop + `assert!` up front | 2.677 GB/s | 1.60x slower |
 | Rust, expert `chunks_exact/zip` restructure | 4.297 GB/s | tie (0.997) |
@@ -202,7 +209,7 @@ Now the comparison that makes this a language argument instead of a compiler tri
 
 Three things fall out of that table.
 
-- The folk remedy measures dead: `assert!` recovers nothing. LLVM cannot connect a top-of-function assert to the coupled `i += 3, o += 4` induction, so every interior check stays. The construct that looks like a contract optimizes like a comment. Whitefoot's `requires` differs in that the checker makes the connection and reports which fact discharged which site.
+- The folk remedy measures dead: `assert!` recovers nothing. LLVM cannot connect a top-of-function assert to the coupled `i += 3, o += 4` induction, so every interior check stays. The construct that looks like a contract optimizes like a comment. Whitefoot's static `requires` differs in that the checker proves it at each call and records which fact discharged which site.
 - Expert safe Rust ties. A `chunks_exact/zip` restructure reaches the same check-free class. That takes real skill: the writer must know the idiom, the shape does not generalize to variable-size output tokens, and nothing verifies the reasoning. The obvious shape stays 1.6x behind.
 - Even `unsafe` buys nothing here, landing a little behind both.
 
@@ -222,7 +229,7 @@ Rust has no channel for this. An optimizer facing a Rust call inlines it or prov
 The committed experiment isolates that boundary. A pure mixing function compiles into its own object file, so the caller's compiler never sees the body:
 
 ```
-fn mix (x: own i64) -> own i64 pure {
+fn mix(x: own i64) -> mixed: own i64 pure {
   let a: own i64 = imul.wrap<i64>(x, 2862933555777941757_i64);
   let b: own i64 = iadd.wrap<i64>(a, 3037000493_i64);
   ...
@@ -304,7 +311,7 @@ struct Cols {
   e: buffer<u64>;  f: buffer<u64>;  g: buffer<u64>;  h: buffer<u64>;
 }
 
-fn kernel ['r] (s: &uniq 'r Cols) -> own unit reads('r), writes('r), traps {
+fn kernel['r](s: &uniq 'r Cols) -> completed: own unit reads('r), writes('r), traps {
   ...
   loop @l {
     ...
@@ -370,13 +377,13 @@ The committed historical kernel:
 
 ```
 contract SatMonoid {
-  fn combine (x: own u64, y: own u64) -> own u64 pure;
+  fn combine(x: own u64, y: own u64) -> combined: own u64 pure;
   law associative(combine);
   law commutative(combine);
   law identity(combine, 0_u64);
 }
 
-fn satadd (x: own u64, y: own u64) -> own u64 pure {
+fn satadd(x: own u64, y: own u64) -> sum: own u64 pure {
   return iadd.sat<u64>(x, y);
 }
 
@@ -384,7 +391,7 @@ conform u64 : SatMonoid {
   combine = satadd;
 }
 
-fn reduce (b: own buffer<u64>) -> own u64 traps {
+fn reduce(b: own buffer<u64>) -> total: own u64 traps {
   doc "The obvious reduction shape: sequential fold with the user op.";
   ...
   loop @l {
@@ -458,23 +465,29 @@ line under a deadline, and in a million-line codebase the average line is where
 the time goes. Whitefoot aims to make recurring slow shapes unrepresentable or
 unreachable; the current seeded catalog has not yet established that claim.
 
-## 8. One spelling, to the byte; overflow chosen in the name
+## 8. One spelling, to the byte; integer domains made explicit
 
-There is one legal spelling per construct and one legal byte-level formatting, covering indentation, spacing, and blank lines. The toolchain rejects non-canonical input; it never reformats. There are no infix operators and no precedence table. There are no comments; documentation lives in a structured `doc` field. `match` is the only conditional, and `loop` plus `break` the only iteration. Arithmetic overflow behavior is part of the operation's name:
+There is one legal spelling per construct and one legal byte-level formatting, covering indentation, spacing, and blank lines. The toolchain rejects non-canonical input; it never reformats. Flat integer infix has no precedence or nesting; composition uses `let`. There are no comments; documentation lives in a structured `doc` field. `if` handles `Bool`, `match` handles enums, and the iteration forms are `loop` and one ascending half-open `for`. Arithmetic semantics are explicit at each site:
 
 ```
-let s1: own u64 = iadd.wrap<u64>(a, b);     // wraps mod 2^64, by declaration
-let s2: own u64 = iadd.trap<u64>(a, b);     // traps on overflow, always
-let s3: own Result<u64, Overflow> = iadd.checked<u64>(a, b);
+let wrapped = a +wrap b;
+claim sum_defined: a +defined b because "the protocol bounds both operands";
+let exact = a + b;
+let checked = a +checked b;
+let saturated = a +sat b;
 ```
 
-Three different operations, chosen per call site, with no default to forget.
+The wrapping, checked, and saturating forms are total value operations. The
+bare exact addition has one matching static domain obligation. Here the named
+claim is the explicit runtime backstop and establishes precisely that goal on
+its normal edge; a branch or `requires` clause can establish the same goal
+without a runtime abort. There is no arithmetic-specific trap mode.
 
 Why an expert should care rather than wince:
 
 - **Irregularity is the weak-writer failure surface.** What breaks smaller models is choice, not verbosity: alternate spellings, precedence, context-dependent elision, special cases. One spelling costs tokens, which the writer pays gladly, and buys zero ambiguity. The rule survives model scaling, since it targets error surface, not context size.
 - **Canonical bytes leave nowhere to hide.** Two programs differ if and only if their bytes differ. A formatting-only diff cannot exist, and a sneaky edit cannot hide in one. Review, diff, and caching all sharpen (§ 11).
-- **The overflow-mode split kills a real semantic divergence.** C and Rust ship two different programs from one source. Rust panics on overflow in debug and wraps in release; C invokes undefined behavior on signed overflow, and the optimizer uses that. In Whitefoot, debug and release optimize the same program, because every mode is spelled at the site, so the build type has nothing to reinterpret. `iadd.trap` also traps in release; `iadd.wrap` also wraps in debug. What you test is what ships.
+- **The semantic split kills a real divergence.** C and Rust ship two different programs from one source. Rust panics on overflow in debug and wraps in release; C invokes undefined behavior on signed overflow, and the optimizer uses that. In Whitefoot, debug and release compile the same program: `+wrap` always wraps, `+checked` always returns a value-level outcome, and bare `+` exists only after its exact domain is proved. What you test is what ships.
 
 The verbosity price is real, and Part VI states it. The purchase is zero irregularity, and every mechanism in Part II leans on it.
 
@@ -512,7 +525,7 @@ Node links in a tree or graph are handles into the pool, not pointers or referen
 
 - **Performance:** contiguous storage, no per-node allocation, no headers, no refcount traffic, and indices that survive relocation. High-performance C adopts this layout by hand in entity systems and arena-indexed ASTs; in Whitefoot it is the default, and it composes with § 5's disjoint-column facts.
 - **The writer's burden:** most code holds no loans at all, so the borrow rules bite only at the few sites that point into something. The self-referential-struct wall that pushes real Rust projects through `Pin`, `unsafe`, or index-arena workarounds does not exist, because structs store values, not borrows. The problematic program is not painful to write; it is impossible to state.
-- **Safety of stale handles:** pool slots recycle with generation counters, so a stale ticket presented after its slot was reused becomes a deterministic trap, never a silent read of the new occupant. The per-access generation check costs something; check-free schemes (loans that freeze reuse for a scope, affine owned handles, proof-discharged repeat checks) are an active research track under the standing rule that a check comes out by proof or not at all.
+- **Safety of stale handles:** a future recyclable pool would pair each slot with a generation and expose mismatch as a typed lookup outcome. If a caller promotes a stronger invariant, it may write an explicit `claim`; there is no dedicated hidden handle trap. Check-free schemes (loans that freeze reuse for a scope, affine owned handles, proof-discharged repeat checks) remain an active research track.
 
 A Rust engineer will recognize this as "just use indices into a `Vec`," the arena
 idiom Rust folklore already recommends for escaping its own borrow checker at
@@ -603,8 +616,9 @@ privileges only through deterministic machine verification of its exact
 obligations, never through human review or a writer assertion. The active
 specification defines no such proof or privilege today.
 
-One doctrine runs at every scale. A bounds check comes out by a proof (§ 3) or
-it stays. A reassociation happens under separately authorized checked evidence
+One doctrine runs at every scale. A bounds or exact-operation obligation is
+proved (§ 3), backed by an explicit retained claim, or rejected; it never turns
+into an implicit operation-specific trap. A reassociation happens under separately authorized checked evidence
 (§ 6) or it does not. Under the long-term D17 lane, a privileged representation
 enters checked code only through verified invariants; an unproved project
 kernel, if a future specification admits one, remains an explicit trusted
@@ -644,7 +658,7 @@ Every number above, with its committed record. Protocols, machines, and caveats 
 
 | claim | record |
 |---|---|
-| Proof tier: 27/27 bounds sites discharged, 2.48 → 4.23 GB/s (1.71x), entry trap retained | `research/experiments/port-study/base64/RESULTS.md` |
+| Historical proof tier: 27/27 bounds sites discharged, 2.48 → 4.23 GB/s (1.71x), retired entry trap retained | `research/experiments/port-study/base64/RESULTS.md` |
 | Pre-proof checked loop (asm) | `research/experiments/port-study/base64/b64.s` |
 | Proof-build IR (asm regenerable with `clang -O2 -S b64.ll`) | `research/experiments/port-study/base64/b64.ll` |
 | Adversary table: Whitefoot 4.285 GB/s; Rust obvious 1.60x; assert 1.604x; chunks tie 0.997; unsafe 1.040 | `research/experiments/port-study/base64/RESULTS.md`, `adversary_benchmark.py`, pinned CSV + metadata |
@@ -657,6 +671,6 @@ Every number above, with its committed record. Protocols, machines, and caveats 
 | Kernel-shape dry runs (C mockups vs `Vec`/hashbrown; bands) | `archive/research/systems-performance-coverage/m3a-kernel-dryrun/RESULTS.md` |
 | Queue: exhaustive model check, all 4 weakened-ordering mutants caught; zero-RMW hot path; latency vs throughput vs `rtrb` | `archive/research/systems-performance-coverage/m6a-spsc-dryrun/RESULTS.md` |
 | Reproducibility direction and the absence of a complete object claim | `docs/roadmap.md`, item `VERIFY-4` |
-| Language rules cited (one spelling; reject-not-reformat; two-way effect checking; `requires` semantics; overflow op names; trap = abort) | `spec/kernel-spec-v0.9.md`: FORM-1/2/3, EFF-1/2/4, FN-8, OP-1 |
+| Current language rules cited (one spelling; reject-not-reformat; two-way effect checking; static contracts; exact integer domains; claim = sole runtime trap) | `spec/kernel-spec.md`: FORM-1/2/3, EFF-1/2/4, FN-8, OP-1/2, CLM-1 |
 | Pattern doctrine (command buffer, SoA pool, boolean classifier, traps-to-boundary) | `docs/patterns.md` |
 | Founding evidence for the premise (escape analysis conditionality, JIT recovery machinery, non-interference as the central enabler, IR semantics preservation) | `archive/research/phase2-notes/verified-findings.md`, `archive/research/phase2-notes/phase2-jit-findings.jsonl`, `archive/research/debates/round1-static-vs-profile.md` |

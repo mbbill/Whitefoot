@@ -56,16 +56,19 @@ spends or saves.
   silently miscompiles the hand-written idiom. No surveyed language machine-
   checks the law. *Status:* MEASURED (democ era); optimizer consumption needs a
   separately approved fact family; zero opportunity in the current corpus.
-- **`requires` entry contracts → proof-based check elision.** A checked entry
-  predicate's success edge discharges dominated body checks. *Delta:* 27/27
-  bounds sites discharged, 1.71x, entry trap retained even for C callers;
-  Rust's `assert!` recovers nothing. Honest adversary: Flux/RefinedRust-style
-  refinement typing, not vanilla rustc. *Status:* MEASURED (democ era);
-  Phase 10 slice 2 rebuilds it on the current compiler.
-- **Per-operation numeric modes.** `iadd.wrap/.trap/.checked/.sat` chosen per
-  site; debug and release are the same program; proven-unnecessary checks fold
-  to nothing. *Delta:* Rust ties overflow behavior to build mode; C makes it
-  UB. *Status:* ADOPTED + MEASURED (checked-but-free foldings).
+- **Static call contracts → proof-based check elimination.** Every ordinary
+  caller proves every `requires` clause before transfer; the callee receives
+  those facts without an executable prologue, and the sole command entry has
+  no contract. *Historical delta:* the democ-era base64 experiment discharged
+  27/27 bounds sites and measured 1.71x, while Rust's `assert!` recovered
+  nothing. Honest adversary: Flux/RefinedRust-style refinement typing, not
+  vanilla rustc. *Status:* ADOPTED; current compiler path is proof-only.
+- **Per-operation numeric semantics.** Wrapping, checked, and saturating forms
+  are explicit values. Exact arithmetic is admitted only after its matching
+  total `.defined` goal is proved; an explicit `claim` over that goal is the
+  sole runtime backstop. Debug and release are therefore the same program,
+  with neither signed-overflow UB nor a hidden arithmetic trap. *Status:*
+  ADOPTED + MEASURED (checked and proof-discharged foldings).
 - **Signature-complete provenance.** v0.17 slice origin sets and resolved-place
   effects give interprocedural alias/effect answers without opening bodies.
   *Status:* ADOPTED (checker-side); backend consumption not started.
