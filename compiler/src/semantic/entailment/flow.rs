@@ -32,7 +32,7 @@ use super::super::postcondition::{
 use super::state::{
     ClaimLifecycleKind, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
-    GoalId, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
+    GoalId, GoalSign, GoalSupport, GoalTable, IntegerDomainNormalization, JoinParent, OutcomeFact,
     PostconditionCallSubstitution, ProofView, Relation, close, close_excluding_term, join_at,
     materialize_closure_at,
 };
@@ -44,11 +44,10 @@ use super::{
     BoundsRequest, CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome,
     ClaimDisposition, ClaimOutcome, CountedDerivationSet, EntailmentContext, FunctionEntailment,
     FunctionEntailmentView, FunctionPostconditionProof, ObligationFamily, ObligationOutcome,
-    OverflowOperandClass, PostconditionAggregate, PostconditionDisposition,
-    PostconditionEntryImage, PostconditionEntryImageOutcome, PostconditionExit,
-    PostconditionViewExit, S7Derivation, VerifiedPostconditionSummary,
-    VerifiedPostconditionSummaryRef, ViewObligationOutcome, fragment_type, overflow_conjuncts,
-    overflow_obligation_class,
+    PostconditionAggregate, PostconditionDisposition, PostconditionEntryImage,
+    PostconditionEntryImageOutcome, PostconditionExit, PostconditionViewExit, S7Derivation,
+    VerifiedPostconditionSummary, VerifiedPostconditionSummaryRef, ViewObligationOutcome,
+    fragment_type, overflow_conjuncts_for_values,
 };
 use crate::{SYSTEM_OPERATIONS, SystemParameterMode};
 
@@ -227,6 +226,37 @@ struct IntegerDomainView {
     refuted: bool,
     contradictory: bool,
     derivation: Option<DerivationId>,
+}
+
+#[derive(Clone, Copy)]
+enum IntegerDomainPlanKind {
+    Conjunction,
+    SignedDivision,
+}
+
+struct IntegerDomainPlan {
+    components: Vec<BoundsRequest>,
+    kind: IntegerDomainPlanKind,
+}
+
+impl IntegerDomainPlan {
+    fn normalization(&self) -> IntegerDomainNormalization {
+        let components = self.components.iter().map(request_relation).collect();
+        match self.kind {
+            IntegerDomainPlanKind::Conjunction => {
+                IntegerDomainNormalization::conjunction(components)
+            }
+            IntegerDomainPlanKind::SignedDivision => {
+                IntegerDomainNormalization::signed_division(components)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct IntegerDomainOperand {
+    term: Option<TermId>,
+    constant: Option<i128>,
 }
 
 /// Same-view caller premises captured at the pre-transfer call point. The
@@ -3688,9 +3718,13 @@ impl Analyzer<'_, '_> {
 
     fn intern_goal_expression(&mut self, expression: GoalExpression) -> GoalId {
         let projection = self.goal_projection(&expression);
+        let integer_domain = self
+            .goal_integer_domain_plan(&expression)
+            .map(|plan| plan.normalization());
         let mut support = Vec::new();
         self.collect_goal_support(&expression, false, &mut support);
-        self.goals.intern(expression, projection, support)
+        self.goals
+            .intern(expression, projection, integer_domain, support)
     }
 
     /// [O11 candidate] The signed Boolean decomposition set of one
@@ -4517,35 +4551,39 @@ impl Analyzer<'_, '_> {
                 .goals
                 .projection(id)
                 .is_some_and(|relation| closed.derives(relation));
+            let positive_domain =
+                closed.derives_integer_domain_goal(id, GoalSign::Positive, &self.goals);
             let negative_opaque = closed.holds_opaque(id, GoalSign::Negative);
             let negative_projection = self
                 .goals
                 .projection(id)
                 .is_some_and(|relation| closed.derives(&relation.negated()));
-            if positive_opaque || positive_projection {
-                let mut evidence = Vec::with_capacity(2);
+            let negative_domain =
+                closed.derives_integer_domain_goal(id, GoalSign::Negative, &self.goals);
+            if positive_opaque || positive_projection || positive_domain {
+                let mut evidence = Vec::with_capacity(3);
                 if positive_opaque {
                     evidence.push(CallGoalEvidence::OpaquePositive);
                 }
                 if positive_projection {
                     evidence.push(CallGoalEvidence::ExactL0Projection);
                 }
-                let derivation = closed.opaque_proof(id, GoalSign::Positive).or_else(|| {
-                    closed.goal_projection_proof(
-                        id,
-                        GoalSign::Positive,
-                        &self.goals,
-                        &mut self.derivations,
-                    )
-                });
+                if positive_domain {
+                    evidence.push(CallGoalEvidence::IntegerDomainPositive);
+                }
+                let derivation =
+                    closed.goal_proof(id, GoalSign::Positive, &self.goals, &mut self.derivations);
                 (CallGoalDisposition::Discharged, evidence, derivation)
-            } else if negative_opaque || negative_projection {
-                let mut evidence = Vec::with_capacity(2);
+            } else if negative_opaque || negative_projection || negative_domain {
+                let mut evidence = Vec::with_capacity(3);
                 if negative_opaque {
                     evidence.push(CallGoalEvidence::OpaqueNegative);
                 }
                 if negative_projection {
                     evidence.push(CallGoalEvidence::NegatedL0Projection);
+                }
+                if negative_domain {
+                    evidence.push(CallGoalEvidence::IntegerDomainNegative);
                 }
                 (CallGoalDisposition::Refuted, evidence, None)
             } else {
@@ -5235,126 +5273,214 @@ impl Analyzer<'_, '_> {
         operand_type: CheckedType,
         arguments: &[CheckedExpression],
     ) -> Vec<BoundsRequest> {
+        let operands = arguments
+            .iter()
+            .map(|argument| IntegerDomainOperand {
+                term: self.read_operand(argument),
+                constant: checked_integer_constant(argument),
+            })
+            .collect::<Vec<_>>();
+        self.integer_domain_plan(operation, operand_type, &operands)
+            .map_or_else(Vec::new, |plan| plan.components)
+    }
+
+    fn goal_integer_domain_plan(
+        &mut self,
+        expression: &GoalExpression,
+    ) -> Option<IntegerDomainPlan> {
+        let GoalExpression::Operation {
+            row:
+                GoalOperation::Integer {
+                    operation,
+                    operand_type,
+                },
+            arguments,
+            result: CheckedType::Bool,
+            ..
+        } = expression
+        else {
+            return None;
+        };
+        if !operation.is_defined_query() {
+            return None;
+        }
+        let mut operands = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            operands.push(IntegerDomainOperand {
+                term: self.goal_operand(argument),
+                constant: self.goal_integer_constant(argument),
+            });
+        }
+        self.integer_domain_plan(*operation, *operand_type, &operands)
+    }
+
+    fn goal_integer_constant(&self, expression: &GoalExpression) -> Option<i128> {
+        match expression {
+            GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Integer { ty, bits })) => {
+                Some(integer_value(*ty, *bits))
+            }
+            GoalExpression::Datum(GoalDatum::NamedConst {
+                declaration,
+                projections,
+                ty,
+            }) if projections.is_empty() => {
+                let CheckedValue::Integer {
+                    ty: value_type,
+                    bits,
+                } = &self.context.constant(*declaration)?.value
+                else {
+                    return None;
+                };
+                (*ty == CheckedType::Integer(*value_type))
+                    .then(|| integer_value(*value_type, *bits))
+            }
+            _ => None,
+        }
+    }
+
+    fn integer_domain_plan(
+        &mut self,
+        operation: CheckedIntegerOperation,
+        operand_type: CheckedType,
+        operands: &[IntegerDomainOperand],
+    ) -> Option<IntegerDomainPlan> {
+        let fragment = fragment_type(operand_type)?;
         if matches!(
             operation,
             CheckedIntegerOperation::AddExact
+                | CheckedIntegerOperation::AddDefined
                 | CheckedIntegerOperation::SubtractExact
+                | CheckedIntegerOperation::SubtractDefined
                 | CheckedIntegerOperation::MultiplyExact
+                | CheckedIntegerOperation::MultiplyDefined
         ) {
-            let Some(class) = overflow_obligation_class(operation, arguments) else {
-                return Vec::new();
+            let [left, right] = operands else {
+                return None;
             };
-            let Some(fragment) = fragment_type(operand_type) else {
-                return Vec::new();
-            };
-            let conjuncts = overflow_conjuncts(&class, fragment);
+            let conjuncts =
+                overflow_conjuncts_for_values(operation, left.constant, right.constant, fragment)?;
             let operand = if conjuncts.ground {
                 Some(ZERO)
+            } else if left.constant.is_some() {
+                right.term
             } else {
-                match class {
-                    OverflowOperandClass::Folded { operand, .. } => self.read_operand(operand),
-                    OverflowOperandClass::Ground { .. } => Some(ZERO),
-                }
+                left.term
             };
-            return vec![
-                BoundsRequest {
-                    left: if conjuncts.ground {
-                        Some(ZERO)
-                    } else {
-                        operand
+            return Some(IntegerDomainPlan {
+                components: vec![
+                    BoundsRequest {
+                        left: conjuncts.ground.then_some(ZERO).or(operand),
+                        right: ZERO,
+                        bound: conjuncts.upper,
+                        distinct: false,
                     },
-                    right: ZERO,
-                    bound: conjuncts.upper,
-                    distinct: false,
-                },
-                BoundsRequest {
-                    left: (conjuncts.ground || operand.is_some()).then_some(ZERO),
-                    right: if conjuncts.ground {
-                        ZERO
-                    } else {
-                        operand.unwrap_or(ZERO)
+                    BoundsRequest {
+                        left: (conjuncts.ground || operand.is_some()).then_some(ZERO),
+                        right: if conjuncts.ground {
+                            ZERO
+                        } else {
+                            operand.unwrap_or(ZERO)
+                        },
+                        bound: conjuncts.lower,
+                        distinct: false,
                     },
-                    bound: conjuncts.lower,
-                    distinct: false,
-                },
-            ];
+                ],
+                kind: IntegerDomainPlanKind::Conjunction,
+            });
         }
 
         if matches!(
             operation,
-            CheckedIntegerOperation::DivideExact | CheckedIntegerOperation::RemainderExact
+            CheckedIntegerOperation::DivideExact
+                | CheckedIntegerOperation::DivideDefined
+                | CheckedIntegerOperation::RemainderExact
+                | CheckedIntegerOperation::RemainderDefined
         ) {
-            let (Some(fragment), [dividend, divisor]) = (fragment_type(operand_type), arguments)
-            else {
-                return Vec::new();
+            let [dividend, divisor] = operands else {
+                return None;
             };
-            let mut requests = vec![BoundsRequest {
-                left: self.read_operand(divisor),
+            let mut components = vec![BoundsRequest {
+                left: divisor.term,
                 right: ZERO,
                 bound: 0,
                 distinct: true,
             }];
-            if fragment.signed() {
-                requests.push(BoundsRequest {
-                    left: self.read_operand(dividend),
+            let kind = if fragment.signed() {
+                components.push(BoundsRequest {
+                    left: dividend.term,
                     right: self
                         .terms
                         .intern(TermKind::Constant(type_range(fragment).0)),
                     bound: 0,
                     distinct: true,
                 });
-                requests.push(BoundsRequest {
-                    left: self.read_operand(divisor),
+                components.push(BoundsRequest {
+                    left: divisor.term,
                     right: self.terms.intern(TermKind::Constant(-1)),
                     bound: 0,
                     distinct: true,
                 });
+                IntegerDomainPlanKind::SignedDivision
             } else {
-                requests.push(BoundsRequest {
+                components.push(BoundsRequest {
                     left: Some(ZERO),
                     right: ZERO,
                     bound: 0,
                     distinct: false,
                 });
-            }
-            normalize_distinct_requests(&mut requests);
-            return requests;
+                IntegerDomainPlanKind::Conjunction
+            };
+            normalize_distinct_requests(&mut components);
+            return Some(IntegerDomainPlan { components, kind });
         }
 
         if matches!(
             operation,
-            CheckedIntegerOperation::AbsoluteExact | CheckedIntegerOperation::NegateExact
+            CheckedIntegerOperation::AbsoluteExact
+                | CheckedIntegerOperation::AbsoluteDefined
+                | CheckedIntegerOperation::NegateExact
+                | CheckedIntegerOperation::NegateDefined
         ) {
-            let (Some(fragment), [operand]) = (fragment_type(operand_type), arguments) else {
-                return Vec::new();
+            let [operand] = operands else {
+                return None;
             };
-            let minimum = type_range(fragment).0;
-            let mut requests = vec![BoundsRequest {
-                left: self.read_operand(operand),
-                right: self.terms.intern(TermKind::Constant(minimum)),
+            let mut components = vec![BoundsRequest {
+                left: operand.term,
+                right: self
+                    .terms
+                    .intern(TermKind::Constant(type_range(fragment).0)),
                 bound: 0,
                 distinct: true,
             }];
-            normalize_distinct_requests(&mut requests);
-            return requests;
+            normalize_distinct_requests(&mut components);
+            return Some(IntegerDomainPlan {
+                components,
+                kind: IntegerDomainPlanKind::Conjunction,
+            });
         }
 
         if matches!(
             operation,
-            CheckedIntegerOperation::ShiftLeftExact | CheckedIntegerOperation::ShiftRightExact
+            CheckedIntegerOperation::ShiftLeftExact
+                | CheckedIntegerOperation::ShiftLeftDefined
+                | CheckedIntegerOperation::ShiftRightExact
+                | CheckedIntegerOperation::ShiftRightDefined
         ) {
-            let (Some(fragment), [_, amount]) = (fragment_type(operand_type), arguments) else {
-                return Vec::new();
+            let [_, amount] = operands else {
+                return None;
             };
-            return vec![BoundsRequest {
-                left: self.read_operand(amount),
-                right: ZERO,
-                bound: i128::from(fragment.width()) - 1,
-                distinct: false,
-            }];
+            return Some(IntegerDomainPlan {
+                components: vec![BoundsRequest {
+                    left: amount.term,
+                    right: ZERO,
+                    bound: i128::from(fragment.width()) - 1,
+                    distinct: false,
+                }],
+                kind: IntegerDomainPlanKind::Conjunction,
+            });
         }
 
-        Vec::new()
+        None
     }
 
     fn judge_integer_domain_view(
@@ -5382,23 +5508,15 @@ impl Analyzer<'_, '_> {
             goal.filter(|goal| closed.derives_goal(*goal, GoalSign::Positive, &self.goals))
         {
             closed
-                .opaque_proof(goal, GoalSign::Positive)
-                .or_else(|| {
-                    closed.goal_projection_proof(
-                        goal,
-                        GoalSign::Positive,
-                        &self.goals,
-                        &mut self.derivations,
-                    )
-                })
+                .goal_proof(goal, GoalSign::Positive, &self.goals, &mut self.derivations)
                 .map(|proof| vec![proof])
-        } else if signed_division && components.len() == 3 {
+        } else if goal.is_none() && signed_division && components.len() == 3 {
             component_proof(0, &mut self.derivations).and_then(|nonzero| {
                 component_proof(1, &mut self.derivations)
                     .or_else(|| component_proof(2, &mut self.derivations))
                     .map(|witness| vec![nonzero, witness])
             })
-        } else if !components.is_empty() {
+        } else if goal.is_none() && !components.is_empty() {
             components
                 .iter()
                 .map(|request| {
@@ -5417,7 +5535,9 @@ impl Analyzer<'_, '_> {
                 .and_then(request_relation)
                 .is_some_and(|relation| closed.derives(&relation.negated()))
         };
-        let normalization_refuted = if signed_division && components.len() == 3 {
+        let normalization_refuted = if goal.is_some() {
+            false
+        } else if signed_division && components.len() == 3 {
             component_false(0) || (component_false(1) && component_false(2))
         } else {
             components
@@ -6284,16 +6404,12 @@ impl Analyzer<'_, '_> {
                 } else if let Some(goal) = domain_goal {
                     if closed.derives_goal(goal, GoalSign::Positive, &self.goals) {
                         let proof = closed
-                            .contradiction_proof()
-                            .or_else(|| closed.opaque_proof(goal, GoalSign::Positive))
-                            .or_else(|| {
-                                closed.goal_projection_proof(
-                                    goal,
-                                    GoalSign::Positive,
-                                    &self.goals,
-                                    &mut self.derivations,
-                                )
-                            })
+                            .goal_proof(
+                                goal,
+                                GoalSign::Positive,
+                                &self.goals,
+                                &mut self.derivations,
+                            )
                             .expect("a derivable domain claim must retain its canonical proof");
                         (
                             ClaimDisposition::Redundant,
@@ -6301,15 +6417,12 @@ impl Analyzer<'_, '_> {
                         )
                     } else if closed.derives_goal(goal, GoalSign::Negative, &self.goals) {
                         let proof = closed
-                            .opaque_proof(goal, GoalSign::Negative)
-                            .or_else(|| {
-                                closed.goal_projection_proof(
-                                    goal,
-                                    GoalSign::Negative,
-                                    &self.goals,
-                                    &mut self.derivations,
-                                )
-                            })
+                            .goal_proof(
+                                goal,
+                                GoalSign::Negative,
+                                &self.goals,
+                                &mut self.derivations,
+                            )
                             .expect("a refuted domain claim must retain its canonical proof");
                         (
                             ClaimDisposition::Refuted {
@@ -7435,6 +7548,17 @@ fn request_relation(request: &BoundsRequest) -> Option<Relation> {
             bound: request.bound,
         }
     })
+}
+
+fn checked_integer_constant(expression: &CheckedExpression) -> Option<i128> {
+    match expression {
+        CheckedExpression::Constant(CheckedValue::Integer { ty, bits })
+        | CheckedExpression::NamedConstant {
+            value: CheckedValue::Integer { ty, bits },
+            ..
+        } => Some(integer_value(*ty, *bits)),
+        _ => None,
+    }
 }
 
 /// A let-origin expansion is valid only while the bound value has no `set`

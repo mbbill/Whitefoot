@@ -11,12 +11,10 @@ use crate::{
 };
 
 use super::super::entailment::{
-    ObligationFamily, OverflowClassOperation, OverflowConjuncts, OverflowOperandClass,
-    overflow_conjuncts,
+    ObligationFamily, OverflowConjuncts, overflow_conjuncts_for_values,
 };
 use super::super::model::{
-    CheckedExpression, CheckedFunction, CheckedIntegerOperation, CheckedStatement, CheckedValue,
-    IntegerType,
+    CheckedExpression, CheckedFunction, CheckedIntegerOperation, CheckedStatement, IntegerType,
 };
 use super::{with_semantics, with_semantics_arithmetic};
 
@@ -393,89 +391,103 @@ fn main() -> own unit pure {
 /// can silently go wrong.
 #[test]
 fn the_conjunct_fold_matches_the_ent6_table() {
-    let operand = CheckedExpression::Constant(CheckedValue::Integer {
-        ty: IntegerType::U8,
-        bits: 0,
-    });
-    let folded = |operation, constant, constant_is_left| OverflowOperandClass::Folded {
-        operation,
-        constant,
-        constant_is_left,
-        operand: &operand,
-    };
-    let conjuncts = |class: &OverflowOperandClass<'_>, ty| {
+    let conjuncts = |operation: CheckedIntegerOperation,
+                     constant: i128,
+                     constant_is_left: bool,
+                     ty: IntegerType| {
         let OverflowConjuncts {
             upper,
             lower,
             ground,
             ..
-        } = overflow_conjuncts(class, ty);
+        } = overflow_conjuncts_for_values(
+            operation,
+            constant_is_left.then_some(constant),
+            (!constant_is_left).then_some(constant),
+            ty,
+        )
+        .expect("one constant operand has a fixed normalization");
         (upper, lower, ground)
     };
     // t + 200 over u8: t <= 55; the lower side is the implicit type bound.
     assert_eq!(
         conjuncts(
-            &folded(OverflowClassOperation::Add, 200, false),
-            IntegerType::U8
+            CheckedIntegerOperation::AddExact,
+            200,
+            false,
+            IntegerType::U8,
         ),
         (55, 200, false),
     );
     // t + (-3) over i8: t >= -125 binds; the upper side is relaxed.
     assert_eq!(
         conjuncts(
-            &folded(OverflowClassOperation::Add, -3, false),
-            IntegerType::I8
+            CheckedIntegerOperation::AddExact,
+            -3,
+            false,
+            IntegerType::I8,
         ),
         (130, 125, false),
     );
     // t - 3 over u8: 3 <= t binds.
     assert_eq!(
         conjuncts(
-            &folded(OverflowClassOperation::Subtract, 3, false),
-            IntegerType::U8
+            CheckedIntegerOperation::SubtractExact,
+            3,
+            false,
+            IntegerType::U8,
         ),
         (258, -3, false),
     );
     // (-100) - t over i8: t <= 28 binds.
     assert_eq!(
         conjuncts(
-            &folded(OverflowClassOperation::Subtract, -100, true),
-            IntegerType::I8
+            CheckedIntegerOperation::SubtractExact,
+            -100,
+            true,
+            IntegerType::I8,
         ),
         (28, 227, false),
     );
     // t * 2 over i8: -64 <= t <= 63.
     assert_eq!(
         conjuncts(
-            &folded(OverflowClassOperation::Multiply, 2, false),
-            IntegerType::I8
+            CheckedIntegerOperation::MultiplyExact,
+            2,
+            false,
+            IntegerType::I8,
         ),
         (63, 64, false),
     );
     // t * (-2) over i8: the bounds swap ends: -63 <= t <= 64.
     assert_eq!(
         conjuncts(
-            &folded(OverflowClassOperation::Multiply, -2, false),
-            IntegerType::I8
+            CheckedIntegerOperation::MultiplyExact,
+            -2,
+            false,
+            IntegerType::I8,
         ),
         (64, 63, false),
     );
     // t * 0 is zero for every operand: ground and in range.
     assert_eq!(
         conjuncts(
-            &folded(OverflowClassOperation::Multiply, 0, false),
-            IntegerType::I8
+            CheckedIntegerOperation::MultiplyExact,
+            0,
+            false,
+            IntegerType::I8,
         ),
         (0, 0, true),
     );
     // Ground u64 * u64 at the magnitude ceiling: exact, and out of range.
     let max = i128::from(u64::MAX);
-    let ground = OverflowOperandClass::Ground {
-        operation: OverflowClassOperation::Multiply,
-        left: max,
-        right: max,
-    };
-    let result = overflow_conjuncts(&ground, IntegerType::U64);
+    let result = overflow_conjuncts_for_values(
+        CheckedIntegerOperation::MultiplyExact,
+        Some(max),
+        Some(max),
+        IntegerType::U64,
+    )
+    .expect("two constants have a ground normalization");
     assert_eq!((result.upper, result.lower, result.ground), (-1, -1, true));
     assert_eq!(
         result

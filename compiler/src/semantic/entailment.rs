@@ -47,7 +47,7 @@ use super::goal::{ConcreteGoal, GoalExpression};
 use super::model::{
     BindingId, CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFunction,
     CheckedIntegerOperation, CheckedMode, CheckedNominal, CheckedSetTarget, CheckedStatement,
-    CheckedType, CheckedValue, FunctionId, IntegerType,
+    CheckedType, FunctionId, IntegerType,
 };
 use super::postcondition::CheckedPostcondition;
 use crate::{DeclarationId, NodePath, SemanticCompilerFailure, SyntaxCoordinate};
@@ -212,77 +212,12 @@ pub(crate) struct BoundsRequest {
     pub(crate) distinct: bool,
 }
 
-/// The bare trapping operation of one [OP-2] constant-operand-class call.
+/// The arithmetic family selected by one fixed overflow normalization.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum OverflowClassOperation {
+enum OverflowClassOperation {
     Add,
     Subtract,
     Multiply,
-}
-
-/// [OP-2] constant-operand-class decomposition of one bare trapping `+`,
-/// `-`, or `*` call: the overflow obligation is expressible exactly when at
-/// least one operand atom reads as an [ENT-2] constant. One shared
-/// classifier serves the checker's trap/effect classification and the
-/// flow's obligation judgment, so the two views cannot drift.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum OverflowOperandClass<'expression> {
-    /// One constant operand; the obligation folds onto the other operand.
-    Folded {
-        operation: OverflowClassOperation,
-        /// The constant operand's exact mathematical value.
-        constant: i128,
-        /// The constant occupies the left operand position (`c - t`); the
-        /// distinction matters only for subtraction.
-        constant_is_left: bool,
-        /// The non-constant operand the folded conjuncts bound.
-        operand: &'expression CheckedExpression,
-    },
-    /// Two constant operands; the obligation is ground.
-    Ground {
-        operation: OverflowClassOperation,
-        left: i128,
-        right: i128,
-    },
-}
-
-/// Classifies one integer operation for the [ENT-6] overflow obligation
-/// family. Returns `None` for every operation outside the bare trapping
-/// add/subtract/multiply family and for every such call with two
-/// non-constant operands — the retained trapping class.
-pub(crate) fn overflow_obligation_class(
-    operation: CheckedIntegerOperation,
-    arguments: &[CheckedExpression],
-) -> Option<OverflowOperandClass<'_>> {
-    let operation = match operation {
-        CheckedIntegerOperation::AddExact => OverflowClassOperation::Add,
-        CheckedIntegerOperation::SubtractExact => OverflowClassOperation::Subtract,
-        CheckedIntegerOperation::MultiplyExact => OverflowClassOperation::Multiply,
-        _ => return None,
-    };
-    let [left, right] = arguments else {
-        return None;
-    };
-    match (constant_operand(left), constant_operand(right)) {
-        (Some(left), Some(right)) => Some(OverflowOperandClass::Ground {
-            operation,
-            left,
-            right,
-        }),
-        (Some(constant), None) => Some(OverflowOperandClass::Folded {
-            operation,
-            constant,
-            constant_is_left: true,
-            operand: right,
-        }),
-        (None, Some(constant)) => Some(OverflowOperandClass::Folded {
-            operation,
-            constant,
-            constant_is_left: false,
-            operand: left,
-        }),
-        (None, None) => None,
-    }
 }
 
 /// The two normalized [ENT-6] overflow conjuncts of one class call over one
@@ -362,8 +297,64 @@ const fn ceil_div(dividend: i128, divisor: i128) -> i128 {
 /// an approximation. Every intermediate fits `i128` because type extrema
 /// and operand constants are below `2^64` in magnitude, except a ground
 /// multiply, whose exact result keeps magnitude and sign separately.
-pub(crate) fn overflow_conjuncts(
-    class: &OverflowOperandClass<'_>,
+#[derive(Clone, Copy)]
+enum OverflowConjunctClass {
+    Folded {
+        operation: OverflowClassOperation,
+        constant: i128,
+        constant_is_left: bool,
+    },
+    Ground {
+        operation: OverflowClassOperation,
+        left: i128,
+        right: i128,
+    },
+}
+
+/// The shared arithmetic fold used by exact occurrences and globally
+/// interned `.defined` goals. `None` means two nonconstant operands and
+/// therefore no L0 normalization route.
+pub(crate) fn overflow_conjuncts_for_values(
+    operation: CheckedIntegerOperation,
+    left: Option<i128>,
+    right: Option<i128>,
+    ty: IntegerType,
+) -> Option<OverflowConjuncts> {
+    let operation = match operation {
+        CheckedIntegerOperation::AddExact | CheckedIntegerOperation::AddDefined => {
+            OverflowClassOperation::Add
+        }
+        CheckedIntegerOperation::SubtractExact | CheckedIntegerOperation::SubtractDefined => {
+            OverflowClassOperation::Subtract
+        }
+        CheckedIntegerOperation::MultiplyExact | CheckedIntegerOperation::MultiplyDefined => {
+            OverflowClassOperation::Multiply
+        }
+        _ => return None,
+    };
+    let class = match (left, right) {
+        (Some(left), Some(right)) => OverflowConjunctClass::Ground {
+            operation,
+            left,
+            right,
+        },
+        (Some(constant), None) => OverflowConjunctClass::Folded {
+            operation,
+            constant,
+            constant_is_left: true,
+        },
+        (None, Some(constant)) => OverflowConjunctClass::Folded {
+            operation,
+            constant,
+            constant_is_left: false,
+        },
+        (None, None) => return None,
+    };
+    Some(overflow_conjuncts_for_class(class, ty))
+}
+
+fn overflow_conjuncts_for_class(
+    class: OverflowConjunctClass,
     ty: IntegerType,
 ) -> OverflowConjuncts {
     let (low, high) = term::type_range(ty);
@@ -373,25 +364,23 @@ pub(crate) fn overflow_conjuncts(
         ground: false,
         ground_result: None,
     };
-    match *class {
-        OverflowOperandClass::Folded {
+    match class {
+        OverflowConjunctClass::Folded {
             operation: OverflowClassOperation::Add,
             constant,
             ..
         } => folded(high - constant, constant - low),
-        OverflowOperandClass::Folded {
+        OverflowConjunctClass::Folded {
             operation: OverflowClassOperation::Subtract,
             constant,
             constant_is_left: false,
-            ..
         } => folded(high + constant, -low - constant),
-        OverflowOperandClass::Folded {
+        OverflowConjunctClass::Folded {
             operation: OverflowClassOperation::Subtract,
             constant,
             constant_is_left: true,
-            ..
         } => folded(constant - low, high - constant),
-        OverflowOperandClass::Folded {
+        OverflowConjunctClass::Folded {
             operation: OverflowClassOperation::Multiply,
             constant,
             ..
@@ -410,7 +399,7 @@ pub(crate) fn overflow_conjuncts(
                 folded(floor_div(low, constant), -ceil_div(high, constant))
             }
         }
-        OverflowOperandClass::Ground {
+        OverflowConjunctClass::Ground {
             operation,
             left,
             right,
@@ -436,19 +425,6 @@ pub(crate) fn overflow_conjuncts(
                 ground_result: Some(result),
             }
         }
-    }
-}
-
-/// The exact mathematical value of one operand atom that reads as an
-/// [ENT-2] constant — an integer literal or an integer-typed named const.
-fn constant_operand(expression: &CheckedExpression) -> Option<i128> {
-    match expression {
-        CheckedExpression::Constant(CheckedValue::Integer { ty, bits })
-        | CheckedExpression::NamedConstant {
-            value: CheckedValue::Integer { ty, bits },
-            ..
-        } => Some(term::integer_value(*ty, *bits)),
-        _ => None,
     }
 }
 
@@ -767,8 +743,10 @@ pub(crate) enum CallGoalEvidence {
     AllDerivable,
     OpaquePositive,
     ExactL0Projection,
+    IntegerDomainPositive,
     OpaqueNegative,
     NegatedL0Projection,
+    IntegerDomainNegative,
 }
 
 /// Retained checked metadata for one ordinary call carrying a requirement.
@@ -786,7 +764,9 @@ pub(crate) struct CallGoalOutcome {
     pub(crate) disposition: CallGoalDisposition,
     /// Deterministic complete evidence. Contradictory states retain only
     /// `AllDerivable`; positive opaque and projection grounds follow in that
-    /// order, as do negative opaque and negated-projection grounds.
+    /// order, followed by positive integer-domain normalization; negative
+    /// opaque, negated projection, and negative normalization follow in the
+    /// same order.
     pub(crate) evidence: Vec<CallGoalEvidence>,
     /// One exact positive or contradiction root for a discharged call.
     /// Refuted and unproved calls carry none.

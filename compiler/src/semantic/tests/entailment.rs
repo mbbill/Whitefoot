@@ -1025,6 +1025,35 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert!(!parents.is_empty());
                 DerivationConclusion::IntegerDomain(*goal)
             }
+            DerivationNode::IntegerDomainNormalization {
+                goal,
+                sign,
+                clause,
+                parents,
+            } => {
+                let retained = summary
+                    .inventory
+                    .goals
+                    .get(goal.0 as usize)
+                    .expect("normalization proof goal is retained");
+                let relations = retained
+                    .integer_domain
+                    .as_ref()
+                    .expect("normalization proof goal has fixed components")
+                    .clause_relations(*sign, *clause)
+                    .expect("normalization proof selects a complete fixed clause");
+                assert_eq!(parents.len(), relations.len());
+                for (parent, relation) in parents.iter().zip(relations) {
+                    assert_eq!(
+                        retained_conclusion(&conclusions, *parent),
+                        &DerivationConclusion::Relation(relation),
+                    );
+                }
+                DerivationConclusion::Goal {
+                    goal: *goal,
+                    sign: *sign,
+                }
+            }
             DerivationNode::JoinBound {
                 left,
                 right,
@@ -1841,12 +1870,21 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     (
                         ClaimDisposition::Redundant,
                         ClaimLifecycleKind::Redundant,
-                        DerivationConclusion::Relation(_) | DerivationConclusion::Contradiction,
+                        DerivationConclusion::Relation(_)
+                        | DerivationConclusion::Goal {
+                            sign: GoalSign::Positive,
+                            ..
+                        }
+                        | DerivationConclusion::Contradiction,
                     ) => {}
                     (
                         ClaimDisposition::Refuted { .. },
                         ClaimLifecycleKind::Refuted,
-                        DerivationConclusion::Relation(_),
+                        DerivationConclusion::Relation(_)
+                        | DerivationConclusion::Goal {
+                            sign: GoalSign::Negative,
+                            ..
+                        },
                     ) => {}
                     _ => panic!("claim lifecycle root, disposition, and proof must agree"),
                 }
@@ -7311,6 +7349,82 @@ fn main() -> own unit pure {
 }
 
 #[test]
+fn integer_domain_normalization_drives_positive_and_negative_claim_lifecycle() {
+    let positive = br#"fn probe() -> own unit traps {
+  claim obvious: ishl.defined(1_u8, 1_u32) because "one is below eight";
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(positive, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("a normalization-proved claim must remain accepted: {outcome:?}");
+        };
+        assert_eq!(program.data.claim_advisories.len(), 1);
+        let summary = &program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "probe")
+            .expect("probe function")
+            .entailment;
+        validate_derivations(summary);
+        assert_eq!(summary.claims[0].disposition, ClaimDisposition::Redundant);
+        assert!(root_contains(
+            summary,
+            claim_lifecycle_root(summary, 0),
+            |node| matches!(
+                node,
+                DerivationNode::IntegerDomainNormalization {
+                    sign: GoalSign::Positive,
+                    ..
+                }
+            ),
+        ));
+    });
+
+    let negative = br#"fn probe() -> own unit traps {
+  claim impossible: ishl.defined(1_u8, 8_u32) because "eight is outside the u8 shift domain";
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(negative, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("a normalization-refuted claim must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Clm2);
+        let SemanticIssueKind::RefutedClaim(detail) = issue.kind() else {
+            panic!("expected CLM-2 refutation detail: {:?}", issue.kind());
+        };
+        assert_eq!(detail.name, "impossible");
+    });
+    let summary = entailment(negative, "probe");
+    validate_derivations(&summary);
+    assert!(matches!(
+        summary.claims[0].disposition,
+        ClaimDisposition::Refuted { .. }
+    ));
+    assert!(root_contains(
+        &summary,
+        claim_lifecycle_root(&summary, 0),
+        |node| matches!(
+            node,
+            DerivationNode::IntegerDomainNormalization {
+                sign: GoalSign::Negative,
+                ..
+            }
+        ),
+    ));
+}
+
+#[test]
 fn a_contradictory_state_never_refutes_a_claim() {
     // [ENT-4]: after a loop with no break the continuation state is
     // contradictory; every relation is derivable there, so the claim is
@@ -8357,6 +8471,157 @@ fn main() -> own unit pure {
 // ---------------------------------------------------------------------
 // [ENT-2..ENT-5, FN-8] exact signed goals and ordinary calls
 // ---------------------------------------------------------------------
+
+#[test]
+fn integer_domain_normalization_discharges_requires_and_ordinary_calls() {
+    let source = br#"fn shift_once(value: own u8) -> own u8 pure requires {
+  check ishl.defined(value, 1_u32) else trap "one-bit shift domain";
+} {
+  let shifted = ishl(value, 1_u32);
+  return shifted;
+}
+
+fn caller(value: own u8) -> own u8 pure {
+  return shift_once(value: value);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("the fixed count must discharge requires and exact shift: {outcome:?}");
+        };
+        let shift = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "shift_once")
+            .expect("shift_once function");
+        assert!(
+            shift
+                .entailment
+                .obligations
+                .iter()
+                .filter(|obligation| obligation.family == ObligationFamily::IntegerDomain)
+                .all(|obligation| obligation.discharged),
+        );
+    });
+    let summary = entailment(source, "caller");
+    validate_derivations(&summary);
+    assert_eq!(summary.call_goals.len(), 1);
+    assert_eq!(
+        summary.call_goals[0].disposition,
+        CallGoalDisposition::Discharged,
+    );
+    assert_eq!(
+        summary.call_goals[0].evidence,
+        vec![CallGoalEvidence::IntegerDomainPositive],
+    );
+    let root = summary.call_goals[0]
+        .derivation
+        .expect("a discharged domain call retains its proof");
+    assert!(root_contains(&summary, root, |node| matches!(
+        node,
+        DerivationNode::IntegerDomainNormalization {
+            sign: GoalSign::Positive,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn impossible_integer_domain_true_edge_closes_to_contradiction() {
+    let source = br#"fn impossible_branch(value: own u8) -> own u8 pure {
+  if ishl.defined(value, 8_u32) {
+    let shifted = ishl(value, 8_u32);
+    return shifted;
+  } else {
+    return value;
+  }
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("the impossible true edge must be contradictory: {outcome:?}");
+        };
+        let function = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "impossible_branch")
+            .expect("impossible_branch function");
+        let obligations = function
+            .entailment
+            .obligations
+            .iter()
+            .filter(|obligation| obligation.family == ObligationFamily::IntegerDomain)
+            .collect::<Vec<_>>();
+        assert_eq!(obligations.len(), 1);
+        assert!(obligations[0].discharged);
+        assert!(obligations[0].contradictory);
+        validate_derivations(&function.entailment);
+        assert!(
+            function
+                .entailment
+                .derivations
+                .nodes
+                .iter()
+                .any(|node| { matches!(node, DerivationNode::GoalContradiction { .. }) })
+        );
+    });
+}
+
+#[test]
+fn impossible_integer_domain_false_edge_closes_to_contradiction() {
+    let source = br#"fn impossible_branch(value: own u8) -> own u8 pure {
+  if ishl.defined(value, 1_u32) {
+    return value;
+  } else {
+    let shifted = ishl(value, 1_u32);
+    return shifted;
+  }
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("the impossible false edge must be contradictory: {outcome:?}");
+        };
+        let function = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "impossible_branch")
+            .expect("impossible_branch function");
+        let obligations = function
+            .entailment
+            .obligations
+            .iter()
+            .filter(|obligation| obligation.family == ObligationFamily::IntegerDomain)
+            .collect::<Vec<_>>();
+        assert_eq!(obligations.len(), 1);
+        assert!(obligations[0].discharged);
+        assert!(obligations[0].contradictory);
+        validate_derivations(&function.entailment);
+        assert!(
+            function
+                .entailment
+                .derivations
+                .nodes
+                .iter()
+                .any(|node| { matches!(node, DerivationNode::GoalContradiction { .. }) })
+        );
+    });
+}
 
 #[test]
 fn whole_goal_sources_discharge_atomically_while_children_do_not() {
