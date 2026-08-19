@@ -342,9 +342,10 @@ Use `/Users/bytedance/do_not_scan` for scratch files and test artifacts.
 
 Run `make -C compiler check` before and after compiler work, and `make
 check` before committing a completed slice. Read exit codes directly, never
-through a pipe. A green gate states only what it exercises. Keep required
-runtime checks unless machine proof discharges them; optional facts may not
-change acceptance, cleanup, output, or required trap behavior.
+through a pipe. A green gate states only what it exercises. Keep every written
+claim executable, and lower a partial operation only after machine proof of its
+domain; optional facts may not change acceptance, cleanup, output, or claim
+behavior.
 
 At closure, put semantics in the spec, implementation facts in code/tests
 and the compiler README, measurements in the canonical results record,

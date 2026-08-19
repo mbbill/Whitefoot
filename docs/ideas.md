@@ -29,19 +29,22 @@ recorded disposition for each fact:
 1. consume the fact while generating C;
 2. encode it in portable C;
 3. encode it in a reviewed compiler profile such as Clang, GCC, or MSVC; or
-4. retain the runtime check and accept the missed optimization.
+4. reject that target backend when it cannot preserve the already-checked
+   operation without undefined behavior.
 
-The backend must generate defined C. It must avoid signed overflow before a
-check, out-of-bounds pointer formation, invalid shifts, unjustified `restrict`,
-padding reads, alignment violations, and assumptions that can become undefined
-behavior. The portable profile would promise correct compilation. Named
-compiler profiles could make separate, measured performance claims.
+The backend must generate defined C. It must avoid signed overflow on every
+admitted execution, out-of-bounds pointer formation, invalid shifts,
+unjustified `restrict`, padding reads, alignment violations, and assumptions
+that can become undefined behavior. The portable profile would promise correct
+compilation. Named compiler profiles could make separate, measured performance
+claims.
 
 First experiment: lower a small corpus that covers bounds discharge, exclusive
-borrows, checked arithmetic, and effect attributes. Compile it with two C
-compilers, compare results and traps with the LLVM backend, run C sanitizers,
-and inspect both assembly and throughput. Stop if the backend needs an
-unreviewable undefined-behavior assumption or cannot provide a checked fallback.
+borrows, checked arithmetic, claims, and effect attributes. Compile it with two
+C compilers, compare results and claim failures with the LLVM backend, run C
+sanitizers, and inspect both assembly and throughput. Stop if the backend needs
+an unreviewable undefined-behavior assumption or cannot preserve a checked
+operation.
 
 ## Proof-guided autotuning
 
@@ -187,10 +190,11 @@ compiler-checked refined integers for domains such as “nonzero `u64`” or
 would be a separate language decision; these examples describe semantics only.
 
 The compiler would make the refinement invariant unforgeable. Construction and
-conversion would require either a runtime check or a proof, and arithmetic
-would preserve the refined type only when its result remains in the declared
-domain. The layout pass could then derive invalid bit patterns automatically
-and use them as enum niches:
+conversion would require a static proof, a typed fallible constructor for an
+expected invalid input, or an explicit named claim for an asserted invariant.
+Arithmetic would preserve the refined type only when its result remains in the
+declared domain. The layout pass could then derive invalid bit patterns
+automatically and use them as enum niches:
 
 - `Option<nonzero u64>` could encode `None` as zero and every nonzero bit
   pattern as `Some`.
