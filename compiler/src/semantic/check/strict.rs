@@ -2,8 +2,7 @@
 //! unasserted entailment view.
 
 use super::super::entailment::{
-    CallGoalCounterfactual, CallGoalDisposition, ClaimDisposition, ObligationFamily,
-    PostconditionSchedule,
+    CallGoalCounterfactual, CallGoalDisposition, ClaimDisposition, PostconditionSchedule,
 };
 use super::super::goal::{first_ephemeral_argument, render_goal};
 use super::super::model::{
@@ -19,14 +18,15 @@ const STRICT_REPAIR: &str =
     "add a dominating real branch or another non-assertion fact source admitted by ENT-3";
 const STRICT_EPHEMERAL_REPAIR: &str = "bind that argument or referent value non-consumingly with one preceding ordinary let, establish the complete requirement over that binding with a dominating real branch or another non-assertion fact source admitted by ENT-3, and pass the binding, borrowing it when the parameter mode requires a borrow";
 
+/// A [CLM-3] strict failure. Both variants cite [FN-8]: the strict
+/// obligation arms of [OP-4] and [OP-2] were retired because no source
+/// program reaches them — U differs from the complete state only by S3, a
+/// complete-only callee summary is exactly a claim-dependent one, and a
+/// claim anywhere in a demanded closure is a CLM-3 event raised before any
+/// U obligation query. `strict_closure_failures` keeps that invariant as an
+/// internal-consistency guard.
 #[derive(Clone)]
 enum StrictFailure {
-    Bounds {
-        function: FunctionId,
-        node_path: NodePath,
-        residual: String,
-        family: ObligationFamily,
-    },
     Call {
         function: FunctionId,
         node_path: NodePath,
@@ -40,31 +40,13 @@ enum StrictFailure {
 impl StrictFailure {
     fn function(&self) -> FunctionId {
         match self {
-            Self::Bounds { function, .. }
-            | Self::Call { function, .. }
-            | Self::ProgramStart { function, .. } => *function,
+            Self::Call { function, .. } | Self::ProgramStart { function, .. } => *function,
         }
     }
 
     fn node_path(&self) -> &NodePath {
         match self {
-            Self::Bounds { node_path, .. }
-            | Self::Call { node_path, .. }
-            | Self::ProgramStart { node_path, .. } => node_path,
-        }
-    }
-
-    fn rule(&self) -> SemanticRule {
-        match self {
-            Self::Bounds {
-                family: ObligationFamily::Bounds,
-                ..
-            } => SemanticRule::Op4,
-            Self::Bounds {
-                family: ObligationFamily::Overflow | ObligationFamily::Division,
-                ..
-            } => SemanticRule::Op2,
-            Self::Call { .. } | Self::ProgramStart { .. } => SemanticRule::Fn8,
+            Self::Call { node_path, .. } | Self::ProgramStart { node_path, .. } => node_path,
         }
     }
 }
@@ -236,19 +218,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 &mut registrations,
             )?;
             failures.sort_by(|left, right| {
-                left.function()
-                    .0
-                    .cmp(&right.function().0)
-                    .then_with(|| {
-                        left.node_path()
-                            .components()
-                            .cmp(right.node_path().components())
-                    })
-                    .then_with(|| {
-                        left.rule()
-                            .definition_rank()
-                            .cmp(&right.rule().definition_rank())
-                    })
+                left.function().0.cmp(&right.function().0).then_with(|| {
+                    left.node_path()
+                        .components()
+                        .cmp(right.node_path().components())
+                })
             });
             if let Some(failure) = failures.first() {
                 return self.reject_strict_failure(functions, root, failure);
@@ -414,19 +388,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .get(function.0 as usize)
                     .filter(|checked| checked.id == *function)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                for outcome in &checked.entailment.unasserted.obligations {
-                    if outcome.discharged {
-                        continue;
-                    }
-                    failures.push(StrictFailure::Bounds {
-                        function: *function,
-                        node_path: outcome.node_path.clone(),
-                        residual: outcome
-                            .residual
-                            .clone()
-                            .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-                        family: outcome.family,
-                    });
+                // Every obligation this component owns discharged in the
+                // complete state, or the ordinary OP-4/OP-2 rejection fired
+                // long before CLM-3 ran. U is that same flow with S3
+                // disabled, and the closure reaching here holds no claim,
+                // so the two states are identical here. An undischarged U
+                // obligation is therefore a checker defect, never invalid
+                // source: it is reported as a compiler failure rather than
+                // as a source-language rejection [DIAG-1].
+                if checked
+                    .entailment
+                    .unasserted
+                    .obligations
+                    .iter()
+                    .any(|outcome| !outcome.discharged)
+                {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
                 failures.extend(
                     checked
@@ -561,34 +538,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let function = &functions[failure.function().0 as usize];
         let location = self.strict_location(failure.node_path())?;
         match failure {
-            StrictFailure::Bounds {
-                residual, family, ..
-            } => {
-                let detail = Box::new(crate::StrictUndischargedBoundsDetail {
-                    residual: residual.clone(),
-                    strict_root,
-                    concrete_function: function.symbol.clone(),
-                    view: crate::StrictProofView::Unasserted,
-                    mechanical_fix: STRICT_REPAIR,
-                });
-                Err(CheckStop::source_issue(match family {
-                    ObligationFamily::Bounds => SemanticIssue {
-                        rule: SemanticRule::Op4,
-                        location,
-                        kind: SemanticIssueKind::StrictUndischargedBounds(detail),
-                    },
-                    ObligationFamily::Overflow => SemanticIssue {
-                        rule: SemanticRule::Op2,
-                        location,
-                        kind: SemanticIssueKind::StrictUndischargedOverflow(detail),
-                    },
-                    ObligationFamily::Division => SemanticIssue {
-                        rule: SemanticRule::Op2,
-                        location,
-                        kind: SemanticIssueKind::StrictUndischargedDivision(detail),
-                    },
-                }))
-            }
             StrictFailure::Call { node_path, .. } => {
                 let outcome = Self::strict_call_outcome(function, node_path)?;
                 let callee = &functions[outcome.callee.0 as usize];
