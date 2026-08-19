@@ -81,6 +81,18 @@ impl HostOutcome {
     }
 }
 
+/// The one descriptor-status answer the deterministic file reports.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum HostFileStatus {
+    /// The ordinary control: the provisional descriptor names a regular file.
+    #[default]
+    Regular,
+    /// The open succeeded, but descriptor inspection identifies a directory.
+    Directory,
+    /// The descriptor-status facility itself fails with this target error.
+    Fail(HostError),
+}
+
 /// The scripted state one deterministic-host run answers from.
 ///
 /// A script lists the outcome of each call to one facility in call order; a
@@ -90,6 +102,7 @@ impl HostOutcome {
 #[derive(Clone, Debug, Default)]
 pub(super) struct HostScript {
     file: Option<Vec<u8>>,
+    file_status: HostFileStatus,
     reads: Vec<HostOutcome>,
     writes: Vec<HostOutcome>,
     closes: Vec<HostOutcome>,
@@ -107,6 +120,12 @@ impl HostScript {
     /// not a general filesystem.
     pub(super) fn file(mut self, bytes: &[u8]) -> Self {
         self.file = Some(bytes.to_vec());
+        self
+    }
+
+    /// Selects the descriptor-status answer for the one fixture file.
+    fn file_status(mut self, status: HostFileStatus) -> Self {
+        self.file_status = status;
         self
     }
 
@@ -132,12 +151,26 @@ impl HostScript {
     fn unit(&self) -> String {
         let mut source = String::from(HOST_PRELUDE);
         source.push_str(&fixture_table(self.file.as_deref()));
+        source.push_str(&file_status_table(self.file_status));
         source.push_str(&outcome_table("read", &self.reads));
         source.push_str(&outcome_table("write", &self.writes));
         source.push_str(&outcome_table("close", &self.closes));
         source.push_str(HOST_FACILITIES);
         source
     }
+}
+
+/// Renders the one descriptor-status answer used by `wf_test_fstat`.
+fn file_status_table(status: HostFileStatus) -> String {
+    let (error, mode) = match status {
+        HostFileStatus::Regular => ("0", "S_IFREG | S_IRUSR"),
+        HostFileStatus::Directory => ("0", "S_IFDIR | S_IRUSR"),
+        HostFileStatus::Fail(error) => (error.macro_name(), "0"),
+    };
+    format!(
+        "static const int wf_test_file_status_error = {error};\n\
+         static const unsigned int wf_test_file_status_mode = {mode};\n"
+    )
 }
 
 /// Renders the one fixture file a directory-relative open produces.
@@ -273,12 +306,22 @@ int wf_test_openat(int directory, const char *path, int flags, ...) {\n\
 }\n\
 \n\
 int wf_test_fstat(int descriptor, struct stat *status) {\n\
+    char line[128];\n\
     if (descriptor != WF_TEST_FILE) {\n\
         errno = EBADF;\n\
         return -1;\n\
     }\n\
+    if (wf_test_file_status_error != 0) {\n\
+        snprintf(line, sizeof line, \"wf_test fstat fd=%d outcome=error\\n\",\n\
+                 descriptor);\n\
+        wf_test_trace(line);\n\
+        errno = wf_test_file_status_error;\n\
+        return -1;\n\
+    }\n\
     memset(status, 0, sizeof *status);\n\
-    status->st_mode = S_IFREG | S_IRUSR;\n\
+    status->st_mode = wf_test_file_status_mode;\n\
+    snprintf(line, sizeof line, \"wf_test fstat fd=%d outcome=ok\\n\", descriptor);\n\
+    wf_test_trace(line);\n\
     return 0;\n\
 }\n\
 \n\
@@ -452,6 +495,27 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
 }
 "#;
 
+/// Opens the deterministic fixture through `open_file` and makes its typed
+/// success or error visible as the command status. Descriptor inspection and
+/// provisional cleanup are therefore on the same emitted path under test.
+const OPENS_ONE_FILE: &[u8] =
+    br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+  let name = buffer_new(1_u64, 65_u8);
+  region 'c {
+    region 'n {
+      match open_file<'c, 'n>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
+        Ok(value: file) => {
+          return exit_status(code: 24_u8);
+        }
+        Err(error: problem) => {
+          return exit_status(code: 23_u8);
+        }
+      }
+    }
+  }
+}
+"#;
+
 #[test]
 fn a_program_reaching_no_host_object_emits_identically_on_both_targets() {
     // The target column changes only the facilities that reach a real
@@ -575,6 +639,67 @@ fn a_release_close_that_succeeds_is_also_exactly_one_attempt() {
     assert_eq!(run.attempts("close"), 1);
     assert!(run.trace().contains("wf_test close fd=41 outcome=ok"));
     assert_eq!(run.output.status.code(), Some(0));
+}
+
+#[test]
+fn an_inspection_error_survives_a_failed_provisional_close() {
+    // `fstat` supplies the source-visible error. [SYS-5] makes the following
+    // close exactly one best-effort cleanup attempt whose own diagnostic is
+    // discarded, so even an interrupted close cannot replace the typed error
+    // with a process abort.
+    let run = run_on_deterministic_host(
+        OPENS_ONE_FILE,
+        &HostScript::new()
+            .file(b"x")
+            .file_status(HostFileStatus::Fail(HostError::DeviceFailure))
+            .closes(&[
+                HostOutcome::Fail(HostError::Interrupted),
+                HostOutcome::Succeed,
+            ]),
+        &[],
+    );
+
+    assert_eq!(
+        run.output.status.code(),
+        Some(23),
+        "trace was {:?}",
+        run.trace()
+    );
+    assert_eq!(run.attempts("fstat"), 1);
+    assert_eq!(run.attempts("close"), 2);
+    assert!(run.trace().contains("wf_test fstat fd=42 outcome=error"));
+    assert!(run.trace().contains("wf_test close fd=42 outcome=error"));
+    assert!(run.trace().contains("wf_test close fd=41 outcome=ok"));
+}
+
+#[test]
+fn a_nonregular_result_survives_a_failed_provisional_close() {
+    // The classification error is compiler-owned, but provisional cleanup has
+    // the same SYS-5 rule: one close attempt, no retry, and no replacement of
+    // the already selected source-visible outcome.
+    let run = run_on_deterministic_host(
+        OPENS_ONE_FILE,
+        &HostScript::new()
+            .file(b"x")
+            .file_status(HostFileStatus::Directory)
+            .closes(&[
+                HostOutcome::Fail(HostError::Interrupted),
+                HostOutcome::Succeed,
+            ]),
+        &[],
+    );
+
+    assert_eq!(
+        run.output.status.code(),
+        Some(23),
+        "trace was {:?}",
+        run.trace()
+    );
+    assert_eq!(run.attempts("fstat"), 1);
+    assert_eq!(run.attempts("close"), 2);
+    assert!(run.trace().contains("wf_test fstat fd=42 outcome=ok"));
+    assert!(run.trace().contains("wf_test close fd=42 outcome=error"));
+    assert!(run.trace().contains("wf_test close fd=41 outcome=ok"));
 }
 
 #[test]

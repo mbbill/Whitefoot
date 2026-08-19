@@ -955,8 +955,22 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
             assert!(llvm.contains("%file.kind = and i32 %mode, 61440"));
             assert!(llvm.contains("%regular = icmp eq i32 %file.kind, 32768"));
             assert!(llvm.contains("br i1 %regular, label %live, label %kind.failure"));
-            assert!(llvm.contains("call i32 @close(i32 %descriptor)"));
-            assert!(llvm.contains("tcb.defect:\n  call void @abort()\n  unreachable"));
+            assert_eq!(
+                llvm.matches("call i32 @close(i32 %descriptor)").count(),
+                2,
+                "each provisional-error path must make one close attempt"
+            );
+            assert!(llvm.contains(
+                "%inspection.close = call i32 @close(i32 %descriptor)\n  \
+                 br label %inspection.error"
+            ));
+            assert!(llvm.contains(
+                "%kind.close = call i32 @close(i32 %descriptor)\n  \
+                 br label %kind.select"
+            ));
+            assert!(!llvm.contains("%inspection.released"));
+            assert!(!llvm.contains("%kind.released"));
+            assert!(!llvm.contains("tcb.defect:"));
             let _optimized = host_optimized_module(&llvm);
         }
     });

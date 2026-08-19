@@ -1602,8 +1602,7 @@ fn emit_open_by_name(
              inspection.failure:\n\
              {inspection_read_error}  \
              %inspection.close = call i32 @{close}(i32 %descriptor)\n  \
-             %inspection.released = icmp eq i32 %inspection.close, 0\n  \
-             br i1 %inspection.released, label %inspection.error, label %tcb.defect\n\
+             br label %inspection.error\n\
              inspection.error:\n  \
              %inspection.mapped = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {inspection_error}, \
              i8 {ORIGIN_DESCRIPTOR_STATUS})\n  \
@@ -1614,8 +1613,7 @@ fn emit_open_by_name(
              kind.failure:\n  \
              %kind.directory = icmp eq i32 %file.kind, 16384\n  \
              %kind.close = call i32 @{close}(i32 %descriptor)\n  \
-             %kind.released = icmp eq i32 %kind.close, 0\n  \
-             br i1 %kind.released, label %kind.select, label %tcb.defect\n\
+             br label %kind.select\n\
              kind.select:\n  \
              br i1 %kind.directory, label %kind.directory.return, label %kind.other.return\n\
              kind.directory.return:\n\
@@ -1630,10 +1628,7 @@ fn emit_open_by_name(
              %kind.other.outcome = insertvalue {llvm} %kind.other.outcome.tag, {err_llvm} \
              {other_error}, \
              {err_index}\n  \
-             ret {llvm} %kind.other.outcome\n\
-             tcb.defect:\n  \
-             call void @abort()\n  \
-             unreachable\n",
+             ret {llvm} %kind.other.outcome\n",
             status = target.file_status_symbol(),
             mode_offset = target.file_status_mode_offset(),
             close = target.close_symbol(),
