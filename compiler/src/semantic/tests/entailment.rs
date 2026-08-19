@@ -28,7 +28,7 @@ use super::super::model::{
     CheckedExpression, CheckedProgramData, CheckedStatement, CheckedValue, FunctionId, IntegerType,
 };
 use super::super::provenance::LocalLeafProvenanceDisposition;
-use super::{assert_rule, with_semantics, with_semantics_dark, with_semantics_inputs};
+use super::{assert_rule, with_semantics, with_semantics_dark};
 
 fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
     with_semantics_dark(source, |outcome| {
@@ -7537,10 +7537,8 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
         crate::Inventory::ACTIVE,
         crate::Inventory::OpenByName,
     ];
-    for ((inputs, expected_claims), inventory) in bundles
-        .into_iter()
-        .zip([10, 12, 8])
-        .zip(inventories.into_iter())
+    for ((inputs, expected_claims), inventory) in
+        bundles.into_iter().zip([10, 12, 8]).zip(inventories)
     {
         super::with_semantics_inputs_for(inputs, inventory, |outcome| {
             let SemanticOutcome::Complete(program) = outcome else {

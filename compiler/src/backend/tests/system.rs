@@ -13,7 +13,7 @@ use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalOutcome, FinalizeOutcome, IrProgram, LexOutcome,
     ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, TerminalLimits,
     TerminalOutcome, audit_canonical, check_semantics, classify_terminals, finalize, lex,
-    lower_checked, parse, resolve,
+    lower_checked, parse,
 };
 
 use super::{
