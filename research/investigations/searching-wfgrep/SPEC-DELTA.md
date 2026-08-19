@@ -476,6 +476,45 @@ Three observations the run produced that the specification should hear:
    version it replaces. The entailment work over the nested walk and matcher
    dominates. That is a compiler measurement, not a language one, and it is
    the reason the test module compiles the program once and shares the module.
+4. **A symbolic link is the program's decision, and the specification is
+   right to leave it there.** [SYS-14] reports a link as kind `3` and filters
+   nothing, so wfgrep decides: it opens kind `1` and descends kind `2`, and
+   leaves everything else alone. On a tree holding a link to a file outside it
+   and a link to a directory outside it, wfgrep publishes only the real file
+   and exits 0 — and `/usr/bin/grep -rn` on this host publishes exactly the
+   same one record. That agreement is a property of this host's grep, not a
+   portable one, which is why the corresponding test pins wfgrep's own
+   behavior and does not compare. Following links would need no new operation:
+   the program would simply also descend kind `3`, and [SYS-14] already warns
+   that nothing in the specification detects the cycle that would create.
+
+## 6.1 Coverage the rewrite moved
+
+Stated exactly, because the rewrite changed what some existing evidence
+watches:
+
+- The [QUAL-3] cost-shape rows keep every subject. `relative_path` and
+  `open_read` stay reachable because the search still takes the path route
+  when its root names a single file rather than a directory — which is what
+  `grep` does with a file argument, so it is behavior the program wants and
+  not a shape kept alive for a test.
+- The buffer row's exact claim moved from "four allocations, all before the
+  first transfer" to "eleven allocations, one per source buffer, allocation
+  beginning before each function's first transfer". The weaker half is
+  inlining, not re-initialization: the host inliner expands `search_file` into
+  `main`, so a callee's prologue now sits after the caller's own open.
+- The batch row's exact count vector became a bounded property, because a
+  published record now carries a path and a line ordinal and a fixed vector
+  would be a transcription of one fixture.
+- The A10-A16 postcondition-delivery route keeps its real-program witness:
+  `report_failure` still assembles one diagnostic and clamps its length with
+  a `value_if`, which is the shape that route is about. No other corpus
+  program carries one, so losing it would have left the mechanism with only
+  its synthetic test.
+- Two diagnostics are gone with the loop that published them: the argv-list
+  version's `wfgrep: broken pipe` and `wfgrep: write error`. A failed
+  publication now reports through the same `wfgrep: PATH: reason` channel, so
+  a broken pipe reads as `cannot read` against the file being searched.
 
 ## 7. PROPOSED conformance cases (no `tests/conformance/` edit here)
 
