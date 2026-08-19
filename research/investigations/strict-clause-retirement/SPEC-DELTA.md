@@ -256,7 +256,7 @@ Each of these reads "CLM-3, strict OP-4, or strict FN-8"; each becomes
 **Keep this unchanged.** Retirement removes the *rejection*, not the retained
 metadata: [ENT-6]'s U obligation dispositions are still computed for every
 view, still consumed by the [PRV-2]/[PRV-3] demand partition at
-`spec/kernel-spec.md:3061`, and their successful U derivation roots are still
+`spec/kernel-spec.md:3062`, and their successful U derivation roots are still
 the honest record of what the strict closure proved. Deleting this phrase
 would silently narrow the checked program.
 
@@ -298,7 +298,7 @@ calls, which keep their U judgment.
 - The strict program-start requirement query and its FN-8 rejection at the
   requirement final `check_stmt`.
 - The three proof views and their whole [PRV-1]/[PRV-2]/[PRV-3] role: U's
-  demand partition at `spec/kernel-spec.md:3061` is unaffected, and B's
+  demand partition at `spec/kernel-spec.md:3062` is unaffected, and B's
   bridge partition with it.
 - Every ordinary complete-state OP-4 and OP-2 judgment, residual rendering,
   and mechanical fix.
