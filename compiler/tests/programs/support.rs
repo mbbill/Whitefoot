@@ -6,8 +6,8 @@ use std::process::{Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
-    CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, SourceInput, compile,
-    compile_with_traversal_surface,
+    CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, Inventory, SourceInput, compile,
+    compile_with_inventory,
 };
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
@@ -29,18 +29,25 @@ pub fn compile_programs(names: &[&str]) -> String {
     compile(&inputs, CompilerLimits::default()).expect("program corpus source must compile")
 }
 
-/// Compiles one corpus program against the traversal [SYS-2] inventory,
-/// named explicitly rather than read from `TRAVERSAL_SURFACE`.
+/// Compiles one corpus program against one named [SYS-2] inventory state.
 ///
-/// The shipped inventory is the traversal one, so this selects the same
-/// inventory [`compile_program`] does; naming it keeps the traversal cases
-/// stating which inventory their declarations belong to, and keeps the
-/// inventory a parameter of the compilation rather than a global.
-pub fn compile_program_with_traversal_surface(name: &str) -> String {
+/// Naming the inventory keeps each case stating which inventory its
+/// declarations belong to, and keeps the inventory a parameter of the
+/// compilation rather than a global.
+pub fn compile_program_with(name: &str, inventory: Inventory) -> String {
     let source = read_program(name);
     let inputs = [SourceInput::new(name, &source)];
-    compile_with_traversal_surface(&inputs, CompilerLimits::default(), true)
-        .expect("traversal program source must compile under the candidate inventory")
+    compile_with_inventory(&inputs, CompilerLimits::default(), inventory)
+        .unwrap_or_else(|failure| panic!("program corpus source must compile: {failure}"))
+}
+
+/// Compiles one corpus program against the traversal [SYS-2] inventory,
+/// named explicitly rather than read from `Inventory::ACTIVE`.
+///
+/// The shipped inventory is the traversal one, so this selects the same
+/// inventory [`compile_program`] does.
+pub fn compile_program_with_traversal_surface(name: &str) -> String {
+    compile_program_with(name, Inventory::Traversal)
 }
 
 /// Compiles one corpus program against the base [SYS-2] inventory: the
@@ -50,20 +57,28 @@ pub fn compile_program_with_traversal_surface(name: &str) -> String {
 /// spellings are undeclared names here, and every earlier program must keep
 /// its exact emitted module.
 pub fn compile_program_without_traversal_surface(name: &str) -> String {
+    compile_program_with(name, Inventory::Base)
+}
+
+/// Compiles one corpus program against the file-open-by-name candidate
+/// inventory: the traversal tables with `open_file` appended.
+pub fn compile_program_with_open_by_name(name: &str) -> String {
+    compile_program_with(name, Inventory::OpenByName)
+}
+
+/// [`compile_program_with`]'s rejection direction.
+pub fn compile_program_rejection_with(name: &str, inventory: Inventory) -> String {
     let source = read_program(name);
     let inputs = [SourceInput::new(name, &source)];
-    compile_with_traversal_surface(&inputs, CompilerLimits::default(), false)
-        .expect("program corpus source must compile under the base inventory")
+    match compile_with_inventory(&inputs, CompilerLimits::default(), inventory) {
+        Ok(_) => panic!("source that must be rejected compiled"),
+        Err(failure) => failure.to_string(),
+    }
 }
 
 /// [`compile_program_without_traversal_surface`]'s rejection direction.
 pub fn compile_program_rejection_without_traversal_surface(name: &str) -> String {
-    let source = read_program(name);
-    let inputs = [SourceInput::new(name, &source)];
-    match compile_with_traversal_surface(&inputs, CompilerLimits::default(), false) {
-        Ok(_) => panic!("source that must be rejected compiled"),
-        Err(failure) => failure.to_string(),
-    }
+    compile_program_rejection_with(name, Inventory::Base)
 }
 
 /// [`compile_program_with_traversal_surface`]'s rejection direction.
@@ -72,7 +87,7 @@ pub fn compile_rejection_with_traversal_surface(sources: &[(&str, &[u8])]) -> St
         .iter()
         .map(|(name, source)| SourceInput::new(name, source))
         .collect::<Vec<_>>();
-    match compile_with_traversal_surface(&inputs, CompilerLimits::default(), true) {
+    match compile_with_inventory(&inputs, CompilerLimits::default(), Inventory::Traversal) {
         Ok(_) => panic!("source that must be rejected compiled"),
         Err(failure) => failure.to_string(),
     }
