@@ -488,16 +488,25 @@ pub(super) enum SystemResultProvenance {
     /// Every component of the result carries an external class: a plain
     /// external result, or both `Ok` and `Err` payloads.
     AllExternal,
-    /// Exactly the second variant's first payload — `Err(error:)` — is
-    /// external; the `Ok` success count is program-bounded and internal.
-    ErrorPayloadOnly,
-    /// Exactly the third variant's first payload — `ReadFailed(error:)`, and
-    /// the candidate `ListFailed(error:)` — is external. The transferred
-    /// counts of the first variant are program-bounded and internal, and the
-    /// end variant carries no component at all.
-    ReadFailedPayloadOnly,
+    /// `Ok(value:)` depends on the concrete call's `start` actual, while
+    /// `Err(error:)` is unconditionally external.
+    OkDependent,
+    /// The first variant's endpoint payload depends on the concrete call's
+    /// `start` actual, the third variant's error payload is external, and all
+    /// other payloads (including `ListBytes(entries:)`) are internal.
+    EndpointDependent,
     /// No component is external.
     NoneExternal,
+}
+
+#[cfg(test)]
+impl SystemResultProvenance {
+    // Compatibility names for ordinary tests still being migrated on their
+    // isolated branch. They are removed when that test slice is integrated.
+    #[allow(non_upper_case_globals)]
+    pub(super) const ErrorPayloadOnly: Self = Self::OkDependent;
+    #[allow(non_upper_case_globals)]
+    pub(super) const ReadFailedPayloadOnly: Self = Self::EndpointDependent;
 }
 
 /// The `wf-prov` result-component class of each [SYS-2] operation, by its
@@ -513,9 +522,9 @@ pub(super) const fn system_result_provenance(operation: u8) -> Option<SystemResu
         // outside.
         0 | 1 | 2 | 4 | 6 | 7 | 11 | 12 | 14 => SystemResultProvenance::AllExternal,
         // host_copy_bytes, host_copy_utf8, write_once.
-        3 | 5 | 9 => SystemResultProvenance::ErrorPayloadOnly,
+        3 | 5 | 9 => SystemResultProvenance::OkDependent,
         // read_once, and the candidate list_once.
-        8 | 13 => SystemResultProvenance::ReadFailedPayloadOnly,
+        8 | 13 => SystemResultProvenance::EndpointDependent,
         // exit_status.
         10 => SystemResultProvenance::NoneExternal,
         _ => return None,
@@ -542,8 +551,8 @@ fn system_result_dependencies(
                 component.dependency.unconditional_external = true;
             }
         }
-        SystemResultProvenance::ErrorPayloadOnly => mark(1, 0)?,
-        SystemResultProvenance::ReadFailedPayloadOnly => mark(2, 0)?,
+        SystemResultProvenance::OkDependent => mark(1, 0)?,
+        SystemResultProvenance::EndpointDependent => mark(2, 0)?,
         SystemResultProvenance::NoneExternal => {}
     }
     Ok(value)
@@ -554,8 +563,8 @@ fn system_endpoint_start(operation: u8) -> ProvenanceResult<Option<usize>> {
         .get(usize::from(operation))
         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
     if !matches!(
-        row.spelling,
-        "host_copy_bytes" | "host_copy_utf8" | "read_once" | "write_once" | "list_once"
+        system_result_provenance(operation),
+        Some(SystemResultProvenance::OkDependent | SystemResultProvenance::EndpointDependent)
     ) {
         return Ok(None);
     }
