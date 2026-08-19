@@ -343,26 +343,32 @@ fn wfgrep_reports_its_usage_when_the_invocation_names_no_root() {
     assert_eq!(output.status.code(), Some(2));
 }
 
-/// A name that is not valid text still reaches the search unchanged: the
-/// enumerated bytes are what `open_file` resolves, and nothing on the route
-/// from the host's directory entry to the open call passes through text.
+/// A pattern that is not valid text travels the lossless route unchanged and
+/// matches the same bytes in the file: nothing on the route from the
+/// invocation argument to the comparison passes through text.
+///
+/// The host is not asked to hold a file *name* that is not text — the
+/// supported hosts' filesystems refuse one — so the non-text bytes travel
+/// through the argument and the file content, which is where [HOST-2]'s
+/// lossless route actually runs. This case has no `grep` side: the two grep
+/// families disagree about a pattern that is not text.
 #[test]
-fn a_name_that_is_not_text_is_searched_and_published_unchanged() {
+fn a_pattern_that_is_not_text_travels_the_lossless_route_unchanged() {
     let fixture = fixture_directory();
     fixture.directory("tree");
-    let path = fixture.path().join("tree");
-    std::fs::write(
-        path.join(std::ffi::OsStr::from_bytes(b"not\xffutf8.txt")),
-        b"needle in raw bytes\n",
-    )
-    .expect("write a fixture file whose name is not text");
+    fixture.write_nested(
+        "tree/raw.txt",
+        b"prefix \xff\xfe marker suffix\nplain line\n",
+    );
 
-    let output = wfgrep().run(fixture.path(), &[b"needle", b"tree"]);
-    assert_eq!(output.status.code(), Some(0));
+    let output = wfgrep().run(fixture.path(), &[b"\xff\xfe marker", b"tree"]);
     assert_eq!(
         output.stdout,
-        b"tree/not\xffutf8.txt:1:needle in raw bytes\n".to_vec()
+        b"tree/raw.txt:1:prefix \xff\xfe marker suffix\n".to_vec(),
+        "diagnostics: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
+    assert_eq!(output.status.code(), Some(0));
 }
 
 /// Admission is decided by the inventory the specification declares, never by
