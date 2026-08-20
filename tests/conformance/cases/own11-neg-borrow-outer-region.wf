@@ -1,4 +1,4 @@
-fn main() -> own unit pure {
+command fn main() -> return_value: own ExitStatus pure {
   doc "OWN-11: inside a loop, a borrow may only name regions introduced in the loop body.";
   let a = 0_i32;
   region 'r {
@@ -7,5 +7,5 @@ fn main() -> own unit pure {
       break @l;
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

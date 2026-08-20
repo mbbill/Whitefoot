@@ -1,7 +1,7 @@
-fn compare(left: own Bool, right: own Bool) -> own Bool pure {
+fn compare(left: own Bool, right: own Bool) -> return_value: own Bool pure {
   return ine(left, right);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

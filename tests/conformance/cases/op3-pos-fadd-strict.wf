@@ -1,8 +1,8 @@
-fn fsum(a: own f32, b: own f32) -> own f32 pure {
+fn fsum(a: own f32, b: own f32) -> return_value: own f32 pure {
   doc "A float op that ROUNDS carries .strict [OP-3]: fadd.strict is IEEE-754 with no reassociation and no contraction.";
   return fadd.strict(a, b);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

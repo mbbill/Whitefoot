@@ -1,8 +1,8 @@
-fn mask(a: own u32, b: own u32) -> own u32 pure {
+fn mask(a: own u32, b: own u32) -> return_value: own u32 pure {
   doc "iand lowers to LLVM and and is total [OP-8]; the bitwise ops carry no mode suffix.";
   return iand(a, b);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

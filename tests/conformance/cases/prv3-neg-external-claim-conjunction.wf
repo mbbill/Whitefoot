@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
   doc "Assertion evidence laundered through signed Boolean decomposition is still assertion evidence. One claim over a `band` of two bounds establishes both members in the complete state [ENT-3], but the S3-blinded state removes the establishment and its decomposition together, so PRV-3 still rejects the first protected subscript whose constrained subject is the external args_count result.";
   region 'a {
     let index = args_count<'a>(args: &'a args);

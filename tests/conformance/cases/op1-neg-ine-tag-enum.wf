@@ -3,10 +3,10 @@ enum TagEq {
   TagSecond();
 }
 
-fn compare(left: own TagEq, right: own TagEq) -> own Bool pure {
+fn compare(left: own TagEq, right: own TagEq) -> return_value: own Bool pure {
   return ine(left, right);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

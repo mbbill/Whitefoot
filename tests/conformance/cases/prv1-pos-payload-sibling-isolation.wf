@@ -3,7 +3,7 @@ enum PrvChoice {
   PrvInternal(value: u64);
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
   doc "An external enum payload seeds only its direct projection; the unseeded sibling binder stays internal and may use a claim to protect its subscript.";
   region 'a {
     let external_value = args_count<'a>(args: &'a args);

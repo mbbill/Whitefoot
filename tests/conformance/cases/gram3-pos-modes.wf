@@ -1,9 +1,9 @@
-fn use3['r](a: own i32, b: &'r i32, c: &uniq 'r i32) -> own i32 reads('r) {
+fn use3['r](a: own i32, b: &'r i32, c: &uniq 'r i32) -> return_value: own i32 reads('r) {
   doc "GRAM-3: the three modes own / &'r / &uniq 'r written on i32 params.";
   let x = a +wrap deref(b);
   return x;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

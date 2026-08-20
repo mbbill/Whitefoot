@@ -1,4 +1,4 @@
-fn mutual_left(bytes: own buffer<u8>, index: own u64, remaining: own u64) -> own u8 traps {
+fn mutual_left(bytes: own buffer<u8>, index: own u64, remaining: own u64) -> return_value: own u8 traps {
   let finished = ieq(remaining, 0_u64);
   if finished {
     let room = len(bytes);
@@ -12,12 +12,12 @@ fn mutual_left(bytes: own buffer<u8>, index: own u64, remaining: own u64) -> own
   }
 }
 
-fn mutual_right(bytes: own buffer<u8>, index: own u64, remaining: own u64) -> own u8 traps {
+fn mutual_right(bytes: own buffer<u8>, index: own u64, remaining: own u64) -> return_value: own u8 traps {
   let value = mutual_left(bytes: move bytes, index: index, remaining: remaining);
   return value;
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
   doc "A protected-leaf seed in one member of a mutually recursive component reaches the other member and rejects its external entry actual under PRV-2.";
   region 'a {
     let index = args_count<'a>(args: &'a args);

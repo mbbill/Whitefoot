@@ -1,12 +1,12 @@
-fn required_read(bytes: own buffer<u8>, index: own u64) -> own u8 pure requires {
-  let room = len(bytes);
-  let inside = ilt(index, room);
-  check inside else trap "index must be in range";
+fn required_read(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
+  define room = len(bytes);
+  define inside = ilt(index, room);
+  requires inside;
 } {
   return bytes[index];
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
   doc "A command-entry body check proves the full call goal but disappears from the S2/S3-blinded caller state, so an external system-result actual cannot launder the callee's protected leaf through S4.";
   region 'a {
     let index = args_count<'a>(args: &'a args);

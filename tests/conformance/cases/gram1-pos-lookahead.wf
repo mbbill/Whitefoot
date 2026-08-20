@@ -4,11 +4,11 @@ enum Sign {
   Pos();
 }
 
-fn id(x: own i32) -> own i32 pure {
+fn id(x: own i32) -> return_value: own i32 pure {
   return x;
 }
 
-fn main() -> own unit traps {
+command fn main() -> return_value: own ExitStatus traps {
   doc "GRAM-1: IDENT-headed place versus user call uses two-token lookahead; construction, table-op, statement-match, and value-match positions stay distinct; one parse each.";
   let a = id(x: 20_i32);
   let b = a +wrap 22_i32;
@@ -23,11 +23,11 @@ fn main() -> own unit traps {
       claim drift: ieq(c, 42_i32) because "drift";
     }
     Zero() => {
-      return unit;
+      return exit_status(code: 0_u8);
     }
     Pos() => {
-      return unit;
+      return exit_status(code: 0_u8);
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

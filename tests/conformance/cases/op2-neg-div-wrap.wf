@@ -1,4 +1,8 @@
-fn bad(x: own i32, y: own i32) -> own i32 pure {
+fn bad(x: own i32, y: own i32) -> return_value: own i32 pure {
   doc "Division and remainder carry no wrap mode [OP-2]; idiv.wrap names no table op and must be rejected.";
   return idiv.wrap<i32>(x, y);
+}
+
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

@@ -1,18 +1,18 @@
-fn bounded(value: own u64) -> own u64 traps ensures result {
-  check ilt(result, 4_u64) else trap "bounded postcondition";
+fn bounded(value: own u64) -> return_value: own u64 traps contract {
+  ensures ilt(return_value, 4_u64);
 } {
   claim body_assertion: ilt(value, 4_u64) because "body assertion";
   return value;
 }
 
-fn protected_read(values: own array<u8, 4>, index: own u64) -> own u8 pure requires {
-  let room = len(values);
-  check ilt(index, room) else trap "index bound";
+fn protected_read(values: own array<u8, 4>, index: own u64) -> return_value: own u8 pure contract {
+  define room = len(values);
+  requires ilt(index, room);
 } {
   return values[index];
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let source_count = args_count<'a>(args: &'a args);

@@ -11,11 +11,11 @@ enum TrioEq {
   TrioThird();
 }
 
-fn empty_compile_only(left: own EmptyEq, right: own EmptyEq) -> own Bool pure {
+fn empty_compile_only(left: own EmptyEq, right: own EmptyEq) -> return_value: own Bool pure {
   return eeq(left, right);
 }
 
-fn main() -> own unit traps {
+command fn main() -> return_value: own ExitStatus traps {
   let one = OneOnly();
   let one_eq = eeq(one, one);
   let one_ne = ene(one, one);
@@ -70,5 +70,5 @@ fn main() -> own unit traps {
   claim trio_eeq_diagonal_drift_3: eq22 because "trio eeq diagonal drift";
   let not_ne22 = bnot(ne22);
   claim trio_ene_diagonal_drift_3: not_ne22 because "trio ene diagonal drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

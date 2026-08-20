@@ -1,9 +1,9 @@
-fn consume(buf: own buffer<u8>) -> own unit pure {
+fn consume(buf: own buffer<u8>) -> return_value: own unit pure {
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> return_value: own ExitStatus allocates(heap) {
   let b = buffer_new(1_u64, 0_u8);
   consume(buf: b);
-  return unit;
+  return exit_status(code: 0_u8);
 }

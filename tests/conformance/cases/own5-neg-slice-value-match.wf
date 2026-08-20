@@ -1,4 +1,4 @@
-fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
+fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> return_value: own slice<'r, u8> pure {
   let selected = if take_left {
     give move left;
   } else {
@@ -7,6 +7,6 @@ fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r,
   return move selected;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

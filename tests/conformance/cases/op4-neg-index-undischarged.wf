@@ -1,8 +1,8 @@
-fn get(b: own buffer<i32>, i: own u64) -> own i32 pure {
+fn get(b: own buffer<i32>, i: own u64) -> return_value: own i32 pure {
   doc "An unproven parameter offset is a compile-time rejection under discharge-or-reject [OP-4]: the diagnostic prints the ENT-6 residual `i < len(b)` and the mechanical fix, a dominating `claim` of the residual or a dominating branch establishing it.";
   return b[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

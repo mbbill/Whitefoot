@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
   doc "A selected place read joins every explicit subscript offset, so an externally selected internal stored value remains external when reused as a protected offset.";
   region 'a {
     let external_offset = args_count<'a>(args: &'a args);

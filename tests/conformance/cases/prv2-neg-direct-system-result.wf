@@ -1,11 +1,11 @@
-fn claimed_read(bytes: own buffer<u8>, index: own u64) -> own u8 traps {
+fn claimed_read(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 traps {
   let room = len(bytes);
   let inside = ilt(index, room);
   claim index_in_bytes: inside because "this downstream assertion cannot protect an external caller actual";
   return bytes[index];
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
   doc "A direct protected-leaf demand composes to the external system-result actual and rejects once at that call argument under PRV-2.";
   region 'a {
     let index = args_count<'a>(args: &'a args);

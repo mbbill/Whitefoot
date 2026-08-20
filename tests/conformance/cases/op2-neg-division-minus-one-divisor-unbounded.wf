@@ -1,9 +1,9 @@
-fn negate(n: own i32) -> own i32 pure {
+fn negate(n: own i32) -> return_value: own i32 pure {
   doc "The one expressible signed-overflow shape [OP-2, ENT-6]: a constant `-1` divisor puts the site in the divisor class and leaves the signed-overflow conjunct as the residual, so an unbounded dividend rejects at the `infix` node.";
   let m = n / -1_i32;
   return m;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

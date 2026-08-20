@@ -1,10 +1,10 @@
-fn add_one(x: own u64) -> own u64 pure {
+fn add_one(x: own u64) -> return_value: own u64 pure {
   doc "OP-2 constant-operand class: `x + 1_u64` carries the overflow obligation that the exact mathematical result belongs to u64. Nothing bounds x, so the complete fact state does not discharge the upper conjunct and the call is a compile-time rejection citing OP-2 at its infix node, carrying the residual `x <= 18446744073709551614`. The mechanical fixes are a dominating claim, a dominating branch, or the explicit wrap, checked, or sat respelling.";
   let y = x + 1_u64;
   return y;
 }
 
-fn main() -> own unit pure {
+command fn main() -> return_value: own ExitStatus pure {
   let raised = add_one(x: 7_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }

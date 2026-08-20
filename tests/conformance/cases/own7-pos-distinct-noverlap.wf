@@ -1,4 +1,4 @@
-fn main() -> own unit traps {
+command fn main() -> return_value: own ExitStatus traps {
   doc "OWN-7: borrows of distinct roots do not overlap; two uniq borrows coexist.";
   let a = 1_i32;
   let b = 2_i32;
@@ -10,5 +10,5 @@ fn main() -> own unit traps {
   }
   claim a: ieq(a, 5_i32) because "a";
   claim b: ieq(b, 6_i32) because "b";
-  return unit;
+  return exit_status(code: 0_u8);
 }

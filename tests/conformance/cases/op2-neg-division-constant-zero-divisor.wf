@@ -1,8 +1,8 @@
 const zero: u64 = 0_u64;
 
-fn main() -> own unit pure {
+command fn main() -> return_value: own ExitStatus pure {
   doc "An integer-typed named const reads as an [ENT-2] constant, so this site is in the divisor class [OP-2]. Its constant divisor is zero, which instantiates a ground false conjunct [ENT-6] and is therefore rejected at every non-contradictory point: there is no accepted always-trapping bare spelling.";
   let n = 10_u64;
   let q = n / zero;
-  return unit;
+  return exit_status(code: 0_u8);
 }

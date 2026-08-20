@@ -1,12 +1,12 @@
-fn consume['r](x: &uniq 'r i32) -> own unit pure {
+fn consume['r](x: &uniq 'r i32) -> return_value: own unit pure {
   return unit;
 }
 
-fn forward['r](x: &uniq 'r i32) -> own unit pure {
+fn forward['r](x: &uniq 'r i32) -> return_value: own unit pure {
   consume<'r>(x: x);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

@@ -1,8 +1,8 @@
-fn internal_zero() -> own u64 pure {
+fn internal_zero() -> return_value: own u64 pure {
   return 0_u64;
 }
 
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
   doc "External provenance in a buffer length and bound does not gate a subscript whose constrained offset subject is internal.";
   region 'a {
     let external_length = args_count<'a>(args: &'a args);

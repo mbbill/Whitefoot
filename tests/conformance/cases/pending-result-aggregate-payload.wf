@@ -2,11 +2,11 @@ struct Pair {
   value: u64;
 }
 
-fn make() -> own Result<Pair, u64> pure {
+fn make() -> return_value: own Result<Pair, u64> pure {
   let pair = Pair(value: 1_u64);
   return Ok<Pair, u64>(value: move pair);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-fn main() -> own unit traps {
+command fn main() -> return_value: own ExitStatus traps {
   doc "GRAM-4: let, region, loop, match(stmt), break, set, give(let-match), claim, return statements.";
   let i = 0_i32;
   region 'r {
@@ -15,5 +15,5 @@ fn main() -> own unit traps {
     give 0_i32;
   }
   claim bad: ieq(d, 7_i32) because "bad";
-  return unit;
+  return exit_status(code: 0_u8);
 }

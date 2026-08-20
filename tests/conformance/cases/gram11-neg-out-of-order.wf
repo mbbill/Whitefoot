@@ -1,9 +1,9 @@
-fn sub2(x: own i32, y: own i32) -> own i32 pure {
+fn sub2(x: own i32, y: own i32) -> return_value: own i32 pure {
   return x -wrap y;
 }
 
-fn main() -> own unit pure {
+command fn main() -> return_value: own ExitStatus pure {
   doc "GRAM-11: arguments out of declared order are rejected; declared order is the one legal byte sequence.";
   let r = sub2(y: 2_i32, x: 40_i32);
-  return unit;
+  return exit_status(code: 0_u8);
 }

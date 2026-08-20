@@ -1,8 +1,8 @@
-fn widen(x: own i8) -> own i32 pure {
+fn widen(x: own i8) -> return_value: own i32 pure {
   doc "cvt on a value-preserving (total) pair has signature (Src)->own Dst with no Result [OP-6]: i8->i32 is one of the 29 total pairs.";
   return cvt<i8, i32>(x);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

@@ -1,9 +1,9 @@
-fn main() -> own unit traps {
+command fn main() -> return_value: own ExitStatus traps {
   doc "OWN-10: an own binding may be borrowed into a region within its scope.";
   let a = 4_i32;
   region 'r {
     let p = &'r a;
     claim p: ieq(deref(p), 4_i32) because "p";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

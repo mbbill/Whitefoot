@@ -6,11 +6,11 @@ struct OuterProjection {
   inner: InnerProjection;
 }
 
-fn read_projection['r](outer: &'r OuterProjection) -> own i32 reads('r) {
+fn read_projection['r](outer: &'r OuterProjection) -> return_value: own i32 reads('r) {
   return deref(outer).inner.value;
 }
 
-fn main() -> own unit traps {
+command fn main() -> return_value: own ExitStatus traps {
   doc "GRAM-5: a structural place base can be followed by multiple field suffixes, each denoting one field projection.";
   let inner = InnerProjection(value: 42_i32);
   let outer = OuterProjection(inner: move inner);
@@ -18,5 +18,5 @@ fn main() -> own unit traps {
     let result = read_projection<'projection>(outer: &'projection outer);
     claim recursive_projection_drift: ieq(result, 42_i32) because "recursive projection drift";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
   doc "A named claim remains an executable assertion, not proof that an externally controlled constrained subject is safe.";
   region 'a {
     let index = args_count<'a>(args: &'a args);

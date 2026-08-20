@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-fn main() -> own unit pure {
+command fn main() -> return_value: own ExitStatus pure {
   doc "OWN-11: a binding declared outside a loop may not be moved inside it.";
   let s = Pos();
   loop @l {
@@ -18,5 +18,5 @@ fn main() -> own unit pure {
     }
     break @l;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

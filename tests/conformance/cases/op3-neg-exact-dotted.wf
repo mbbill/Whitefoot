@@ -1,4 +1,8 @@
-fn bad(a: own f32) -> own f32 pure {
+fn bad(a: own f32) -> return_value: own f32 pure {
   doc "fneg is EXACT and dotless [OP-3]; fneg.strict names no table op and must be rejected.";
   return fneg.strict<f32>(a);
+}
+
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

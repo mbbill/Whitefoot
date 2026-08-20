@@ -1,8 +1,10 @@
-fn make(n: own u64) -> own buffer<i32> allocates(heap), traps {
-  doc "buffer_new(n, v) allocates a flat runtime-length buffer and fills every element [OP-9]; its byte-size n*sizeof(T) is computed in u64.";
+fn make(n: own u64) -> return_value: own buffer<i32> allocates(heap) contract {
+  requires buffer_fits<i32>(n);
+} {
+  doc "buffer_new(n, v) allocates and fills a flat runtime-length buffer only after its buffer_fits<T>(n) obligation is proved [OP-9].";
   return buffer_new(n, 0_i32);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

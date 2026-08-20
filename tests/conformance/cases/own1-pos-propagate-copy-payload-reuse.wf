@@ -6,7 +6,7 @@ enum StepError {
   Failed();
 }
 
-fn forward(incoming: own Result<State, StepError>) -> own Result<i32, StepError> pure {
+fn forward(incoming: own Result<State, StepError>) -> return_value: own Result<i32, StepError> pure {
   doc "OWN-1: propagate records the concrete tag-only Ok payload type, so the bound state remains Copy across repeated matches.";
   let state = propagate incoming;
   match state {
@@ -20,6 +20,6 @@ fn forward(incoming: own Result<State, StepError>) -> own Result<i32, StepError>
   return Ok<i32, StepError>(value: 0_i32);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

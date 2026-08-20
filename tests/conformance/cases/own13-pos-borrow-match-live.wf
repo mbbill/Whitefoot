@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-fn twice['r](s: &'r Sign) -> own i32 reads('r) {
+fn twice['r](s: &'r Sign) -> return_value: own i32 reads('r) {
   doc "OWN-13: matching through &'r leaves the scrutinee live; s is matched again after.";
   match deref(s) {
     Neg() => {
@@ -25,6 +25,6 @@ fn twice['r](s: &'r Sign) -> own i32 reads('r) {
   return 0_i32;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

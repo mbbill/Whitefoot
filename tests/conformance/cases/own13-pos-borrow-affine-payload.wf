@@ -8,7 +8,7 @@ enum Packet {
   Empty();
 }
 
-fn inspect['r](packet: &'r Packet) -> own i32 reads('r) {
+fn inspect['r](packet: &'r Packet) -> return_value: own i32 reads('r) {
   doc "OWN-13: matching deref(packet) derives a shared Pair binder; deref(payload).left reads through that provenance.";
   match deref(packet) {
     Data(item: payload) => {
@@ -20,6 +20,6 @@ fn inspect['r](packet: &'r Packet) -> own i32 reads('r) {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

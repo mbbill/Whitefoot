@@ -1,4 +1,4 @@
-fn main() -> own unit traps {
+command fn main() -> return_value: own ExitStatus traps {
   doc "OWN-3: an enclosing region outlives an inner one; a 'r borrow satisfies an 's destination.";
   let a = 7_i32;
   region 'r {
@@ -7,5 +7,5 @@ fn main() -> own unit traps {
       claim q: ieq(deref(q), 7_i32) because "q";
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

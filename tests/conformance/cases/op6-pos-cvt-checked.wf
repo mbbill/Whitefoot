@@ -1,4 +1,4 @@
-fn narrow(x: own i32) -> own i32 pure {
+fn narrow(x: own i32) -> return_value: own i32 pure {
   doc "cvt on a non-total pair returns Result<Dst, NarrowError> and is EXACT [OP-6]: i32->i8 yields Err(NarrowError()) when not exactly representable.";
   match cvt<i32, i8>(x) {
     Ok(value: v) => {
@@ -10,6 +10,6 @@ fn narrow(x: own i32) -> own i32 pure {
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> return_value: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }
