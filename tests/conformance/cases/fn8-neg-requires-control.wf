@@ -3,7 +3,7 @@ fn control(x: own i32) -> result: own i32 pure contract {
   return x;
   requires permitted;
 } {
-  doc "Control transfer is forbidden in a requirement clause [FN-8].";
+  doc "A contract block admits no control-transfer statement; grammar traversal rejects return under GRAM-2 before FN-8 forms a contract.";
   return x;
 }
 
