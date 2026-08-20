@@ -95,9 +95,9 @@ pub(crate) const OPERATION_FAMILIES: [&str; 94] = [
     "box_new",
     "arena_new",
     "array_new",
+    "buffer_fits",
     "buffer_new",
     "buffer_vacant",
-    "buffer_fits",
     "iand",
     "ior",
     "ixor",
@@ -1751,7 +1751,7 @@ mod tests {
             })
             .collect();
         rendered.push_str(&parameters.join(", "));
-        rendered.push_str(") -> own ");
+        rendered.push_str(") -> result: own ");
         rendered.push_str(&render_type(operation.result));
         let (reads, writes) = operation_region_effects(operation);
         let mut effects = Vec::new();
@@ -1787,7 +1787,7 @@ mod tests {
     #[test]
     fn exact_catalogs_are_closed_and_unique_where_required() {
         assert_eq!(PRELUDE_DECLARATIONS.len(), 24);
-        assert_eq!(OPERATION_FAMILIES.len(), 84);
+        assert_eq!(OPERATION_FAMILIES.len(), 94);
         assert_eq!(
             OPERATION_FAMILIES
                 .iter()
@@ -1807,12 +1807,12 @@ mod tests {
         // DotlessOperationNames has exactly its v0.22 membership. The ordinals
         // are consecutive because the six occupy one contiguous op-column run.
         for (spelling, ordinal) in [
-            ("ieq", 16),
-            ("ine", 17),
-            ("ilt", 18),
-            ("ile", 19),
-            ("igt", 20),
-            ("ige", 21),
+            ("ieq", 22),
+            ("ine", 23),
+            ("ilt", 24),
+            ("ile", 25),
+            ("igt", 26),
+            ("ige", 27),
         ] {
             assert_eq!(
                 reserved_name(spelling),
@@ -1822,7 +1822,7 @@ mod tests {
         }
         assert_eq!(
             reserved_name("cvt"),
-            Some((ReservedNameClass::DotlessOperation, 38))
+            Some((ReservedNameClass::DotlessOperation, 44))
         );
         assert_eq!(
             reserved_name("wrap"),
