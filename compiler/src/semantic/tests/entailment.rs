@@ -8249,9 +8249,9 @@ fn assert_real_raw_append_routes(program: &CheckedProgramData) {
 /// One route per source `append_slice` call site, and the count is derived
 /// from source, never from the module: `report_failure` appends the prefix
 /// and then, after the A10 clamp, the separator and six reasons — eight
-/// sites — and `main` appends one of three startup messages — three sites.
-/// The argv-list version had the same eight in `report_failure` and four in
-/// `main`, which is where the twelve this asserted before came from.
+/// sites. `main` has the three startup-message sites plus the defensive
+/// root-length route introduced when `append_slice` gained its static input
+/// contract — four more sites.
 fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
     for view in [
         ProofView::Complete,
@@ -8271,8 +8271,8 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
                     } if root_view == view
                 ))
                 .count(),
-            11,
-            "wfgrep has exactly eleven append_slice receiver routes",
+            12,
+            "wfgrep has exactly twelve append_slice receiver routes",
         );
     }
 

@@ -776,32 +776,6 @@ mod tests {
                 .as_slice(),
                 "GIVE-1",
             ),
-            // Retired program-kind spellings remain unknown leading
-            // constructs under the command-only v0.33 grammar.
-            (
-                "reject-form1-service-leading-construct.wf",
-                include_bytes!(
-                    "../../tests/conformance/cases/reject-form1-service-leading-construct.wf"
-                )
-                .as_slice(),
-                "FORM-1",
-            ),
-            (
-                "reject-form1-embedded-leading-construct.wf",
-                include_bytes!(
-                    "../../tests/conformance/cases/reject-form1-embedded-leading-construct.wf"
-                )
-                .as_slice(),
-                "FORM-1",
-            ),
-            (
-                "reject-form1-daemon-leading-construct.wf",
-                include_bytes!(
-                    "../../tests/conformance/cases/reject-form1-daemon-leading-construct.wf"
-                )
-                .as_slice(),
-                "FORM-1",
-            ),
             (
                 "reject-sysentry-label-unknown.wf",
                 include_bytes!("../../tests/conformance/cases/reject-sysentry-label-unknown.wf")
@@ -863,6 +837,51 @@ mod tests {
             assert!(
                 failure.to_string().contains(rule),
                 "{name}: published diagnostic omitted {rule}: {failure}"
+            );
+        }
+    }
+
+    #[test]
+    fn retired_program_kind_spellings_reject_in_parsing_with_form1() {
+        for (name, source) in [
+            (
+                "reject-form1-service-leading-construct.wf",
+                include_bytes!(
+                    "../../tests/conformance/cases/reject-form1-service-leading-construct.wf"
+                )
+                .as_slice(),
+            ),
+            (
+                "reject-form1-embedded-leading-construct.wf",
+                include_bytes!(
+                    "../../tests/conformance/cases/reject-form1-embedded-leading-construct.wf"
+                )
+                .as_slice(),
+            ),
+            (
+                "reject-form1-daemon-leading-construct.wf",
+                include_bytes!(
+                    "../../tests/conformance/cases/reject-form1-daemon-leading-construct.wf"
+                )
+                .as_slice(),
+            ),
+        ] {
+            let failure = compile(&[SourceInput::new(name, source)], CompilerLimits::default())
+                .expect_err("a retired program-kind spelling must reject");
+            assert_eq!(
+                failure.stage(),
+                CompilationStage::Parsing,
+                "{name}: {failure}"
+            );
+            assert_eq!(
+                failure.kind(),
+                CompilationFailureKind::Source,
+                "{name}: {failure}"
+            );
+            assert_eq!(failure.rule_id(), Some("FORM-1"), "{name}: {failure}");
+            assert!(
+                failure.to_string().contains("FORM-1"),
+                "{name}: published diagnostic omitted FORM-1: {failure}"
             );
         }
     }

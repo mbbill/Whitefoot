@@ -499,7 +499,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(1_u64, 0_u8);
   loop @once {
     region 'inside {
@@ -522,7 +522,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(1_u64, 0_u8);
   region 'outside {
     loop @once {
