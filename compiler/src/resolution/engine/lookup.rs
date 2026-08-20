@@ -91,10 +91,9 @@ pub(super) fn resolve_uses_deferred(
                 }
             }
         }
-        // The third admitted declaration source [SYS-1]: every admitted
-        // system entry is a compilation-root entry of its domain in every
-        // lexical use's candidate universe. In a system-unadmitted unit the
-        // slice is empty [SYS-3]. TYPE-6 and [SYS-2] admit a system entry
+        // The third admitted declaration source [SYS-1]: every system entry
+        // is a compilation-root entry of its domain in every lexical use's
+        // candidate universe [SYS-3]. TYPE-6 and [SYS-2] admit a system entry
         // only at a `type` TYPEID, a `construct` or `arm` TYPEID, and a
         // `callee` IDENT — never at a `fn_bind` right IDENT, which admits
         // only a top-level source function; there the visible system entry

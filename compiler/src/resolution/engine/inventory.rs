@@ -316,8 +316,8 @@ fn collision_issue(
     // [SYS-1]. It is selected for a colliding declaration event at the
     // compilation root and in a nested scope alike, ahead of ranks 6 and 7 at
     // that event; no source declaration displaces, overrides, or shadows an
-    // inventory entry, and neither declaration resolves. In a
-    // system-unadmitted unit the slice is empty and no candidate exists.
+    // inventory entry, and neither declaration resolves. [SYS-3] makes the
+    // complete system inventory a collision candidate in every unit.
     let mut system_conflicts = Vec::new();
     for class in &meta.entries {
         let domain =

@@ -1088,9 +1088,9 @@ fn operation_row(
     if usize::from(operation) >= OPERATION_COUNT {
         return Err(QualificationFailure::MissingMapping(facility));
     }
-    // Every [SYS-2] operation exists only in a system-admitted unit, which is
-    // exactly a kind-declaring one [SYS-3], and the only kind this version
-    // defines a form for is `command` [FN-7].
+    // [SYS-3] makes every operation name available in every unit, while
+    // executable qualification follows the one entry kind this version
+    // defines: `command` [FN-7].
     if kind != ProgramKind::Command {
         return Err(QualificationFailure::IncompatibleProgramKind(facility));
     }

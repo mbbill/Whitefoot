@@ -378,7 +378,7 @@ pub enum DeclarationOrigin {
     Source(SourceOrigin),
     /// One normative PRE-1 record.
     Prelude(PreludeDeclarationId),
-    /// One admitted [SYS-2] record; appears only in a system-admitted unit.
+    /// One [SYS-2] record from the system domain present in every unit [SYS-3].
     System(SystemDeclarationId),
 }
 
@@ -938,11 +938,10 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
         self.prelude.get(usize::from(id.ordinal()))
     }
 
-    /// Returns the admitted [SYS-2] records in normative preorder.
+    /// Returns the complete [SYS-2] inventory in normative preorder.
     ///
-    /// The slice carries all one hundred sixty-seven records exactly when the
-    /// unit is kind-declaring ([SYS-3]) and is empty otherwise: a
-    /// system-unadmitted unit has no system entry at all.
+    /// [SYS-3] admits this fixed declaration source into every compilation
+    /// unit, independently of entry-form validity or source uses.
     #[must_use]
     pub fn system_declarations(&self) -> &[SystemDeclarationRecord] {
         &self.system

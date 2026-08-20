@@ -6,9 +6,9 @@
 //! before declaration inventory, and it consults no resolved name, type, or
 //! effect row -- not even whether the kind IDENT names an admitted [FN-7]
 //! table row, whether the declaring function is the entry, or what standard
-//! inputs it declares. Every later stage reads the judgment from here instead
-//! of rederiving it, so the one syntactic definition cannot drift between the
-//! [SYS-3] admission decision, name lookup, and entry-form checking.
+//! inputs it declares. Entry-form checking reads the judgment from here
+//! instead of rederiving it. System inventory is independent of this judgment:
+//! [SYS-3] admits that domain to every compilation unit.
 
 use crate::syntax::grammar::Production;
 use crate::syntax::parser::{FinalizedTopology, NodeId};

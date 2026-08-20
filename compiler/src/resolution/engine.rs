@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId, unit_program_kind};
+use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId};
 use crate::{ByteOffset, CanonicalSyntaxUnit, Production, SourceId};
 
 use super::catalog::{PRELUDE_DECLARATIONS, system_declarations};
@@ -224,23 +224,16 @@ fn build_tables(
 ) -> Result<Tables, BuildStop> {
     let topology = &syntax.finalized.topology;
     let scopes = ScopeBuild::build(topology)?;
-    // [DIAG-1] fixes this order: only complete unit-wide FN-8 admission
-    // permits the [SYS-3] system-admission decision, only that decision
-    // permits declaration inventory, and only complete inventory permits
-    // lexical resolution.
+    // [DIAG-1] fixes this order: complete unit-wide FN-8 admission precedes
+    // declaration inventory, and only complete inventory permits lexical
+    // resolution.
     if let Some(issue) = check_clause_blocks(topology, &scopes)? {
         return Err(BuildStop::Issue(Box::new(issue)));
     }
-    // The [SYS-3] system-admission decision reads the one syntactic [FN-7]
-    // judgment published by `syntax::entry_form`, never a rederived local
-    // scan. A kind-declaring unit admits the complete [SYS-2] inventory as a
-    // third declaration source ([SYS-1]); every other unit admits none of it,
-    // so a system spelling there is an ordinary undeclared or source name.
-    let system = if unit_program_kind(topology).is_some() {
-        system_declarations(inventory)
-    } else {
-        Vec::new()
-    };
+    // [SYS-3] admits the complete [SYS-2] inventory into every compilation
+    // unit as the third declaration source [SYS-1]. Entry-form validation is
+    // deliberately later and cannot change which system names exist.
+    let system = system_declarations(inventory);
     let roles = classify_roles(syntax, &scopes)?;
     let mut declarations = Vec::new();
     let mut dependent_declarations = Vec::new();

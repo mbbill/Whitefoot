@@ -614,9 +614,9 @@ mod tests {
         .expect("a qualified command program must emit");
         assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv)"));
 
-        // A system-admitted unit whose entry declares no standard input emits
-        // the same bootstrap shape: the qualification is over the IR's own
-        // system facts, not over the entry's parameter list.
+        // A valid command unit whose entry declares no standard input emits
+        // the same bootstrap shape: qualification is over the IR's own system
+        // facts, not over the entry's parameter list.
         let no_inputs =
             b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
         let llvm = compile(
@@ -652,9 +652,9 @@ mod tests {
         assert_eq!(failure.kind(), CompilationFailureKind::Source);
         assert_eq!(failure.rule_id(), Some("FN-7"));
 
-        // The `external` and `blocks` categories are checked, not stopped:
-        // a non-kind-declaring unit can never exhibit them, so declaring
-        // either is an ordinary EFF-2 declared-but-unexhibited rejection.
+        // The `external` and `blocks` categories are checked, not stopped.
+        // These two internal bodies exhibit neither, so declaring either is
+        // an ordinary EFF-2 declared-but-unexhibited rejection.
         for source in [
             b"fn probe() -> result: own unit external {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n".as_slice(),
             b"fn probe() -> result: own unit blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",

@@ -63,7 +63,7 @@ const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
     max_path_components: 8_192,
 };
 
-/// The `command` entry every system-admitted test unit needs [SYS-3, FN-7].
+/// The valid `command` entry these whole-program lowering fixtures need [FN-7].
 const COMMAND_ENTRY: &str =
     "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 

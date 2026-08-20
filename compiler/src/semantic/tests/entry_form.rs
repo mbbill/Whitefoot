@@ -46,12 +46,14 @@ fn invalid_label(label: &str) -> SemanticIssueKind {
 
 #[test]
 fn an_unmarked_main_is_not_an_alternate_entry_form() {
-    let source = b"fn main() -> result: own unit pure {\n  return unit;\n}\n";
+    // SYS-3 makes these system names resolvable even without the marker, but
+    // it does not weaken FN-7: this declaration is still not an entry.
+    let source = b"fn main(command.args as args: own Args) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     assert_rule_at(
         source,
         SemanticRule::Fn7,
         SemanticIssueKind::InvalidMain,
-        b"fn main() -> result: own unit pure {\n  return unit;\n}",
+        b"fn main(command.args as args: own Args) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}",
     );
 }
 

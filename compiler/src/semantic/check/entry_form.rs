@@ -87,12 +87,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let entry = self.entry_declaration(items)?;
         let entry_kind = self.tree.first_child_with(entry, Production::ProgramKind)?;
         self.reject_non_entry_program_kind(entry_kind)?;
-        // [SYS-3] admission already decided the unit-level kind-declaring
-        // judgment from `syntax::unit_program_kind`. FN-7 needs the finer fact
-        // -- whether the *entry* carries a `program_kind` -- plus the scan
-        // above, which admits no other declaration carrying one. Once that
-        // scan succeeds the two judgments are the same node, so name lookup
-        // and entry-form checking cannot disagree about a unit.
+        // FN-7's unit-level kind-declaring judgment comes from
+        // `syntax::unit_program_kind`. The scan above admits no other
+        // declaration carrying a `program_kind`, so after it succeeds the
+        // unit judgment and the entry's child must be the same node. [SYS-3]
+        // is independent: resolution installs system declarations in every
+        // unit before this entry-form check.
         if crate::syntax::unit_program_kind(self.tree.topology()) != entry_kind {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }

@@ -589,35 +589,28 @@ fn probe() -> result: own unit pure {
 }
 
 #[test]
-fn the_command_kind_gates_only_the_system_admission_decision_in_resolution() {
-    // A unit with no `program_kind` child is not kind-declaring, so nothing
-    // about the entry-form grammar changes its ordinary resolution, and the
-    // system domain contributes no entry to it [SYS-3].
-    let ordinary = b"fn probe() -> result: own unit pure {\n  return unit;\n}\n";
-    with_one_resolution(ordinary, |outcome| {
+fn every_unit_receives_the_system_domain_before_entry_validation() {
+    // This unit deliberately lacks the `command` marker and is therefore not
+    // an admitted entry [FN-7]. Resolution nevertheless installs the complete
+    // SYS-2 inventory [SYS-3], so its system signature and constructor resolve
+    // normally. Entry validation remains a later semantic judgment.
+    let source =
+        b"fn main(command.args as args: own Args) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    with_one_resolution(source, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("an ordinary internal function must resolve unchanged: {outcome:?}");
-        };
-        assert!(resolved.system_declarations().is_empty());
-    });
-
-    // One `program_kind` child makes the unit kind-declaring, which admits
-    // the complete SYS-2 inventory as a third declaration source [SYS-1]:
-    // the entry's system input and result types resolve to system targets.
-    let kind_declaring =
-        b"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-    with_one_resolution(kind_declaring, |outcome| {
-        let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("a kind-declaring unit must resolve system names: {outcome:?}");
+            panic!("entry-invalid syntax must still resolve system names: {outcome:?}");
         };
         assert_eq!(resolved.system_declarations().len(), 199);
-        for (spelling, ordinal) in [("Args", 0), ("ExitStatus", 6)] {
+        for (role, spelling, ordinal) in [
+            (LexicalUseRole::Type, "Args", 0),
+            (LexicalUseRole::Type, "ExitStatus", 6),
+            (LexicalUseRole::IdentifierCallee, "exit_status", 173),
+        ] {
             let usage = resolved
                 .lexical_uses()
                 .iter()
-                .find(|usage| usage.spelling() == spelling)
-                .unwrap_or_else(|| panic!("missing system type use {spelling}"));
-            assert_eq!(usage.role(), LexicalUseRole::Type);
+                .find(|usage| usage.role() == role && usage.spelling() == spelling)
+                .unwrap_or_else(|| panic!("missing system use {spelling}"));
             assert!(matches!(
                 usage.target(),
                 ResolvedTarget::System(id) if id.ordinal() == ordinal
@@ -627,11 +620,10 @@ fn the_command_kind_gates_only_the_system_admission_decision_in_resolution() {
 }
 
 #[test]
-fn fn8_admission_precedes_the_system_admission_decision() {
-    // DIAG-1 fixes the stage order: only complete unit-wide FN-8 admission
-    // permits the SYS-3 system-admission decision. The FN-8 rejection must
-    // therefore win in a kind-declaring unit before any system name enters
-    // inventory or lookup.
+fn fn8_admission_precedes_declaration_inventory() {
+    // DIAG-1 fixes the stage order: complete unit-wide FN-8 admission precedes
+    // declaration inventory. The FN-8 rejection therefore wins before the
+    // always-present SYS-3 domain is installed for lookup.
     let source = br#"fn guarded(value: own i32) -> result: own i32 pure contract {
   define unresolved = missing;
 } {
@@ -644,7 +636,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
 "#;
     with_one_resolution(source, |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the FN-8 defect must outrank system admission: {outcome:?}");
+            panic!("the FN-8 defect must outrank declaration inventory: {outcome:?}");
         };
         assert_eq!(issue.rule(), ResolutionRule::Fn8);
         assert!(matches!(
@@ -653,9 +645,9 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
         ));
     });
 
-    // The same kind-declaring unit with an admitted internal requirement
-    // reaches the system-admission decision and resolves with the domain
-    // admitted. The command entry itself carries no contract [FN-7].
+    // The same unit with an admitted internal requirement reaches declaration
+    // inventory and resolves with the complete system domain. The command
+    // entry itself carries no contract [FN-7].
     let admitted = br#"fn guarded(value: own i32) -> result: own i32 pure contract {
   requires ieq(value, value);
 } {
@@ -668,7 +660,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
 "#;
     with_one_resolution(admitted, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("an admitted requires block must reach the SYS-3 decision: {outcome:?}");
+            panic!("an admitted requires block must reach system inventory: {outcome:?}");
         };
         assert_eq!(resolved.system_declarations().len(), 199);
     });
@@ -808,107 +800,36 @@ fn list_outcomes(m: own ListOutcome) -> result: own unit pure {
 }
 
 #[test]
-fn a_system_unadmitted_unit_sees_system_spellings_as_ordinary_undeclared_names() {
-    // [SYS-3]: in a unit that is not kind-declaring the system domain
-    // contributes no entry, so a system operation spelling is an ordinary
-    // undeclared callee decided by the ordinary lexical-use ranks.
-    let callee = br#"fn probe() -> result: own unit pure {
-  let x = 0_u64;
-  args_count(args: x);
-  return unit;
-}
-"#;
-    with_one_resolution(callee, |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("an unadmitted system callee must be undeclared: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), ResolutionRule::Op1);
-        assert!(matches!(
-            issue.kind(),
-            ResolutionIssueKind::UnresolvedUse { spelling, available, .. }
-                if spelling == "args_count" && available.is_empty()
-        ));
-    });
-
-    // The same holds in the nominal-type domain.
-    let nominal = br#"fn consume(value: own HostString) -> result: own unit pure {
-  return unit;
-}
-
-fn probe() -> result: own unit pure {
-  return unit;
-}
-"#;
-    with_one_resolution(nominal, |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("an unadmitted system type must be undeclared: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), ResolutionRule::Type5);
-        assert!(matches!(
-            issue.kind(),
-            ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "HostString"
-        ));
-    });
-}
-
-#[test]
-fn system_lookalike_declarations_in_an_unadmitted_unit_are_ordinary() {
-    // [SYS-3]: a source declaration in a system-unadmitted unit may use any
-    // system spelling; it collides with nothing and every use resolves to it
-    // under the ordinary domains. No source property makes it a system
-    // entity.
-    let source = br#"struct HostString {
-}
-
-enum Outcome {
-  ReadEnd();
-}
-
-fn args_count(args: own u64) -> result: own u64 pure {
-  return args;
-}
-
-fn keeper(value: own HostString) -> result: own unit pure {
-  return unit;
-}
-
-fn probe() -> result: own unit pure {
-  let x = args_count(args: 0_u64);
-  let s = HostString();
-  match ReadEnd() {
-    ReadEnd() => {
-      return unit;
-    }
-  }
-}
-"#;
+fn system_names_are_reserved_even_without_a_valid_entry() {
+    // This unit has no main, but SYS-3 still makes `args_count` a system
+    // declaration before FN-7 entry validation. The source declaration is
+    // therefore DIAG-1 rank 5, not an ordinary lookalike.
+    let source = b"fn args_count(args: own u64) -> result: own u64 pure {\n  return args;\n}\n";
     with_one_resolution(source, |outcome| {
-        let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("lookalike declarations must be ordinary: {outcome:?}");
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a system spelling must remain reserved in every unit: {outcome:?}");
         };
-        assert!(resolved.system_declarations().is_empty());
-        for (role, spelling) in [
-            (LexicalUseRole::IdentifierCallee, "args_count"),
-            (LexicalUseRole::Type, "HostString"),
-            (LexicalUseRole::Construct, "HostString"),
-            (LexicalUseRole::ArmVariant, "ReadEnd"),
-        ] {
-            let usage = resolved
-                .lexical_uses()
-                .iter()
-                .find(|usage| usage.role() == role && usage.spelling() == spelling)
-                .unwrap_or_else(|| panic!("missing lookalike use {spelling}"));
-            assert!(
-                matches!(usage.target(), ResolvedTarget::Source { .. }),
-                "lookalike use {spelling} must resolve to source: {usage:?}"
-            );
-        }
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
+        let ResolutionIssueKind::DeclarationCollision {
+            spelling,
+            conflicts,
+        } = issue.kind()
+        else {
+            panic!("expected a declaration collision: {issue:?}");
+        };
+        assert_eq!(spelling, "args_count");
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
+        assert!(matches!(
+            conflicts[0].origin(),
+            DeclarationOrigin::System(id) if id.ordinal() == 125
+        ));
     });
 }
 
 #[test]
 fn system_collisions_reject_deterministically_in_both_directions() {
-    // [DIAG-1] rank 5: inside a kind-declaring unit a source declaration
+    // [DIAG-1] rank 5: a source declaration
     // whose spelling equals a system entry's spelling in the same domain is a
     // deterministic rejection at that source declaration event — before the
     // entry declaration and after it alike — and neither name resolves.
@@ -1022,9 +943,9 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
 }
 
 #[test]
-fn a_prelude_collision_keeps_rank_four_in_a_system_admitted_unit() {
+fn a_prelude_collision_keeps_rank_four_ahead_of_the_global_system_domain() {
     // [DIAG-1] rank 4 precedes rank 5 at one event: a PRE-1 collision in a
-    // kind-declaring unit reports only its PRE-1 conflicts.
+    // unit reports only its PRE-1 conflicts.
     let source = "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n\nstruct Overflow {\n}\n";
     with_one_resolution(source.as_bytes(), |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
