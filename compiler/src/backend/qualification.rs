@@ -35,35 +35,45 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 ///
 /// A deliberate per-activation review forcer, kept as one hand-written
 /// literal on purpose: when an activation changes
-/// `spec_identity::SPEC_VERSION`, `operation_row` reports every system
-/// facility unmapped until someone re-reviews this table against the new
+/// `spec_identity::SPEC_VERSION`, `command_entry_row` reports the command
+/// entry unmapped until someone re-reviews this table against the new
 /// specification and bumps this constant inside the same reviewed change.
-/// Exactly one such tripwire exists — two sibling copies in `resource_row`
-/// and `command_entry_row` were deleted because every qualified program with
-/// system behavior reaches `operation_row`, so they forced no additional
-/// review, only additional bumps. Do not generate this constant from the
-/// specification (that would delete the review it exists to force), and do
-/// not add more copies.
-// v0.32 review (2026-08-18): three of the candidate's four deltas — check
-// dissolution, the [ENT-6] division obligation family, and [FN-1]
-// declaration-site borrow-result provenance — touch no [SYS-2] operation,
-// resource, guarantee, or entry contract, so their rows below are unchanged
-// and remain valid as reviewed. The fourth, the [SYS-14] traversal surface,
-// adds the `DirectoryList` resource and the `open_directory`, `open_list`,
-// and `list_once` operations at ordinals 11, 12, and 13; each has a symbol
-// row, `open_directory` requires the directory-relative facility already
-// reviewed for `open_read`, and the two enumeration operations additionally
-// require `DirectoryEnumeration`. No path value is ever formed, so no new
-// argument-backing guarantee arises. Entry contracts are unchanged.
+/// Exactly one such tripwire exists at the command entry because every
+/// checked program in this version has exactly one command entry and reaches
+/// that row even when it contains no system operation or resource. Copies in
+/// `operation_row` or `resource_row` would force no additional review, only
+/// additional bumps. Do not generate this constant from the specification
+/// (that would delete the review it exists to force), and do not add more
+/// copies.
+// v0.33 review (2026-08-20): unified static contracts, mandatory symbolic
+// result names, exact-integer domains, and claim-only trap ownership erase
+// before target qualification and change no system representation, target
+// guarantee, facility, or private machine ABI. AllocationFit is discharged
+// against a target-independent ceiling before lowering and the selected
+// target's actual size, alignment, and stride are checked against that ceiling
+// by target-layout validation before emission; it adds no qualification row.
+// The former unlabelled entry is gone: every unit uses the existing command
+// bootstrap, optional command capabilities, command-lifetime backing
+// guarantee, and ExitStatus mapping, with no source-callable or foreign entry.
+// System declarations are globally reserved, but that visibility adds no use,
+// target row, or runtime dispatch.
 //
-// The v0.33 candidate row (`open_file`, ordinal 14) is reviewed here in
-// advance of its activation because the constant above gates the whole table:
-// it opens a file by one caller-owned path component, so it requires exactly
-// `open_directory`'s two guarantees and no enumeration guarantee, produces the
-// `ReadFile` resource whose rows are already reviewed, and adds no entry
-// contract. It is reachable only when a compilation names the candidate
-// inventory.
-const REVIEWED_FOR: &str = "v0.32";
+// The seven SYS-8 range-bearing operations now take proved half-open start/end
+// endpoints and return absolute success endpoints. Their wrapper arity, scalar
+// widths, aggregate result layouts, host facilities, and resource rows are
+// unchanged; the statically discharged obligations leave no runtime trap.
+// `list_once` now normalizes one kind byte plus a little-endian u16 name length,
+// and the target record fixes the Darwin-family component limit at 1023 and
+// the Linux-family limit at 255 while retaining the reviewed Darwin record
+// offsets and fail-closed missing Linux enumeration mapping. The new
+// `open_file` semantic ID at ordinal 14 uses the existing directory-relative
+// and lossless-byte guarantees, opens no-follow/nonblocking through `openat`,
+// validates the provisional descriptor through the target's `fstat` ABI,
+// publishes only the existing `ReadFile` representation, and applies the
+// existing one-attempt close policy on either post-open error. All operation
+// rows remain statically selected implementation version 1 under the v0.33
+// semantic-ID key.
+const REVIEWED_FOR: &str = "v0.33";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectoryList`.
@@ -1075,9 +1085,7 @@ fn operation_row(
     kind: ProgramKind,
 ) -> Result<ApprovedImplementation, QualificationFailure> {
     let facility = Facility::Operation(operation);
-    if crate::spec_identity::SPEC_VERSION != REVIEWED_FOR
-        || usize::from(operation) >= OPERATION_COUNT
-    {
+    if usize::from(operation) >= OPERATION_COUNT {
         return Err(QualificationFailure::MissingMapping(facility));
     }
     // Every [SYS-2] operation exists only in a system-admitted unit, which is
@@ -1126,7 +1134,7 @@ fn resource_row(
     kind: ProgramKind,
 ) -> Result<ResourceImplementation, QualificationFailure> {
     let facility = Facility::Resource(contract.resource);
-    // The single per-activation review tripwire lives in `operation_row`
+    // The single per-activation review tripwire lives in `command_entry_row`
     // (`REVIEWED_FOR`); a duplicate version guard here forced no extra review.
     if kind != ProgramKind::Command {
         return Err(QualificationFailure::IncompatibleProgramKind(facility));
@@ -1184,9 +1192,13 @@ fn resource_row(
 /// [QUAL-2]: a target qualified for the command entry and for argument access
 /// supplies command-lifetime argument backing; a target that can supply
 /// neither fails qualification for both IDs.
-fn command_entry_row(target: SystemTarget) -> Result<(), QualificationFailure> {
-    // The single per-activation review tripwire lives in `operation_row`
-    // (`REVIEWED_FOR`); a duplicate version guard here forced no extra review.
+fn command_entry_row(
+    target: SystemTarget,
+    specification_version: &str,
+) -> Result<(), QualificationFailure> {
+    if specification_version != REVIEWED_FOR {
+        return Err(QualificationFailure::MissingMapping(Facility::CommandEntry));
+    }
     if !target.supplies(TargetGuarantee::CommandLifetimeArgumentBacking) {
         return Err(QualificationFailure::UnmetGuarantee {
             facility: Facility::CommandEntry,
@@ -1213,7 +1225,8 @@ pub(crate) fn qualify_program(
         operations: [None; OPERATION_COUNT],
         resources: [None; RESOURCE_COUNT],
     };
-    command_entry_row(target).map_err(BackendFailure::TargetQualification)?;
+    command_entry_row(target, crate::spec_identity::SPEC_VERSION)
+        .map_err(BackendFailure::TargetQualification)?;
     for nominal in program.nominals() {
         let IrNominalKind::SystemResource(contract) = nominal.kind() else {
             continue;
@@ -1240,4 +1253,21 @@ pub(crate) fn qualify_program(
         }
     }
     Ok(qualification)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Facility, QualificationFailure, SystemTarget, command_entry_row};
+
+    #[test]
+    fn command_entry_is_the_single_specification_review_tripwire() {
+        let target = SystemTarget::for_triple("aarch64-apple-darwin")
+            .expect("the probe target is qualified");
+        assert_eq!(
+            command_entry_row(target, "v0.32"),
+            Err(QualificationFailure::MissingMapping(Facility::CommandEntry))
+        );
+        command_entry_row(target, crate::spec_identity::SPEC_VERSION)
+            .expect("the reviewed candidate version qualifies its command entry");
+    }
 }

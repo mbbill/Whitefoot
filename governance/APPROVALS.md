@@ -1261,3 +1261,39 @@ ACTIVE-SPEC: v0.31 ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197
   digest-sync gate enumerates. Conformance changes ride the batch entry
   above, not this entry.
 ACTIVE-SPEC: v0.32 5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5 ea4b8ad4a56fbf43f3c98b91fc667da0b693c75b81807250a36454e03a197f1c
+
+## 2026-08-20 — OWNER APPROVAL: batch 0073 v0.33 exact-candidate preparation boundary
+- owner: **the owner, in conversation, 2026-08-20** — “批准准备 v0.33 exact
+  candidate，范围如下”, followed by the six exact scope clauses recorded
+  below. This is preparation authority, not final-byte, activation, or merge
+  approval.
+- SPECIFICATION CANDIDATE: approve drafting `spec/kernel-spec.md` so QUAL-2
+  states all four target guarantees, including `DirectoryRelativeResolution`;
+  synchronize `spec/derivation/derivation-ledger.md` and regenerate
+  `compiler/src/spec.rs` and `compiler/src/spec_identity.rs` for the resulting
+  candidate bytes.
+- TARGET REVIEW: approve moving the one `REVIEWED_FOR` tripwire in
+  `compiler/src/backend/qualification.rs` from `operation_row` to the
+  unconditional `command_entry_row`, reviewing and bumping it to v0.33, and
+  adding ordinary regressions without changing the selected target rows,
+  symbols, or ABIs.
+- PROTECTED CORPUS: base tree
+  `5a7bb1e2446742f749ba9794cd356b7225da17a0`; approve modifying or renaming the
+  489 existing `.wf` cases other than `type6-neg-dup-variant.wf`, whose exact
+  sorted path-set SHA-256 is
+  `2dd889d79b4470906aa43c1987ffdf1cf233af80eda5aa520d95a9ddda5ba070`, and
+  synchronizing `tests/conformance/manifest.jsonl`.
+- PROTECTED ADDITIONS: approve exactly
+  `v033-neg-missing-result-binding`, `v033-pos-shared-contract-define`,
+  `v033-pos-uninhabited-contract`, `v033-neg-exact-domain-unproved`,
+  `v033-run-exact-domain-claim`, `v033-neg-allocation-fit-unproved`,
+  `v033-run-system-nonzero-next`, `v033-run-open-file-regular`, and
+  `v033-run-open-file-directory`.
+- EQUIVALENT EVIDENCE: approve synchronizing dependent endpoint, effect, and
+  bridge baselines in `compiler/src/semantic/tests/provenance.rs`, and the
+  optimizer-tail-merged provisional-close expectation in
+  `compiler/src/backend/tests/cost_shape.rs`.
+- EXCLUDED: no conformance runner, collection, or gate wiring change; no
+  specification activation, `ACTIVE-SPEC:` record, or archive; and no merge to
+  main. The final candidate bytes, SHA-256, complete diff, and verifier results
+  return for a separate owner decision.

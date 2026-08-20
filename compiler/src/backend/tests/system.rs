@@ -8,7 +8,7 @@
 
 use crate::backend::emitter::emit_llvm_for_target;
 use crate::backend::qualification::{
-    CodeUnitFamily, QualificationFailure, SystemTarget, qualify_program,
+    CodeUnitFamily, Facility, QualificationFailure, SystemTarget, TargetGuarantee, qualify_program,
 };
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalOutcome, FinalizeOutcome, IrProgram, LexOutcome,
@@ -529,6 +529,40 @@ fn a_no_input_entry_still_uses_the_command_bootstrap() {
 }
 
 #[test]
+fn a_command_without_system_operations_still_crosses_target_qualification() {
+    let source = br#"fn spin() -> status: own ExitStatus pure {
+  return spin();
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return spin();
+}
+"#;
+    with_ir(source, |program| {
+        let system_calls = program
+            .functions()
+            .iter()
+            .flat_map(|function| function.blocks())
+            .flat_map(|block| block.instructions())
+            .filter(|instruction| {
+                matches!(
+                    instruction,
+                    crate::IrInstruction::Define {
+                        operation: crate::IrOperation::SystemCall { .. },
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert_eq!(system_calls, 0);
+        let target = SystemTarget::for_triple("aarch64-apple-darwin")
+            .expect("the probe target is qualified");
+        qualify_program(target, program)
+            .expect("the command entry is qualified even without an operation row");
+    });
+}
+
+#[test]
 fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
     let source =
         br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
@@ -587,6 +621,37 @@ fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
             failure,
             crate::BackendFailure::TargetQualification(QualificationFailure::UnmetGuarantee { .. })
         ));
+    });
+}
+
+#[test]
+fn a_target_without_directory_relative_resolution_rejects_component_opening() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+  let name = buffer_new(1_u64, 65_u8);
+  region 'c {
+    region 'n {
+      match open_file<'c, 'n>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
+        Ok(value: file) => {
+        }
+        Err(error: problem) => {
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir(source, |program| {
+        let target = SystemTarget::probe(Some(CodeUnitFamily::Unix), true, false);
+        assert_eq!(
+            qualify_program(target, program),
+            Err(crate::BackendFailure::TargetQualification(
+                QualificationFailure::UnmetGuarantee {
+                    facility: Facility::Resource(crate::SystemResourceType::DirectoryRead),
+                    guarantee: TargetGuarantee::DirectoryRelativeResolution,
+                }
+            ))
+        );
     });
 }
 
@@ -684,6 +749,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
     let cases = [
         (
             "aarch64-apple-darwin",
+            1023,
             0x0010_0000,
             0x0010_0100,
             0x0000_0104,
@@ -693,6 +759,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
         ),
         (
             "x86_64-apple-darwin",
+            1023,
             0x0010_0000,
             0x0010_0100,
             0x0000_0104,
@@ -702,6 +769,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
         ),
         (
             "aarch64-unknown-linux-gnu",
+            255,
             0x0000_4000,
             0x0000_c000,
             0x0000_8800,
@@ -711,6 +779,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
         ),
         (
             "x86_64-unknown-linux-gnu",
+            255,
             0x0001_0000,
             0x0003_0000,
             0x0002_0800,
@@ -719,8 +788,19 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             24,
         ),
     ];
-    for (triple, directory, component_directory, component_file, status, size, mode) in cases {
+    for (
+        triple,
+        component_limit,
+        directory,
+        component_directory,
+        component_file,
+        status,
+        size,
+        mode,
+    ) in cases
+    {
         let target = SystemTarget::for_triple(triple).expect("a supported target row");
+        assert_eq!(target.component_limit(), component_limit, "{triple}");
         assert_eq!(target.directory_open_flags(), directory, "{triple}");
         assert_eq!(
             target.component_directory_open_flags(),
@@ -1010,6 +1090,14 @@ fn darwin_list_once_keeps_range_and_record_extents_distinct_and_verifiable() {
     assert!(llvm.contains("%bounded = icmp ule i64 %record.extent, %remaining"));
     assert!(llvm.contains("%source.next = add i64 %source, %record.extent"));
     assert!(llvm.contains("%fits = icmp ule i64 %after, %extent"));
+    assert!(
+        llvm.contains("%target.named.low = getelementptr inbounds i8, ptr %target.record, i64 1")
+    );
+    assert!(
+        llvm.contains("%target.named.high = getelementptr inbounds i8, ptr %target.record, i64 2")
+    );
+    assert!(llvm.contains("%named.high.part = lshr i16 %named.short, 8"));
+    assert!(llvm.contains("%target.name = getelementptr inbounds i8, ptr %target.record, i64 3"));
     assert!(llvm.contains("%copy.invalid = or i1 %copy.nul, %copy.separator"));
     assert!(llvm.contains("tcb.defect:\n  call void @abort()\n  unreachable"));
     let optimized = host_optimized_module(&llvm);
