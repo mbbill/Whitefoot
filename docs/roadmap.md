@@ -1,15 +1,14 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 44 (complete unactivated v0.33 claim-only candidate and owner packet)
+Revision: 45 (v0.33 activated; claim-only direction terminal)
 
-The active language authority is v0.32 at the stable path
+The active language authority is v0.33 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
-`5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5`.
-Exact v0.8 through v0.31 are immutable flat archives. The execution plan at
-[`docs/current-plan.md`](current-plan.md) is ACTIVE (claim-only runtime trap
-surface and static contracts). It carries batch 0072's unactivated v0.33
-deltas into one successor candidate. Project law is the
+`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
+Exact v0.8 through v0.32 are immutable flat archives. The execution plan at
+[`docs/current-plan.md`](current-plan.md) is COMPLETE (claim-only runtime trap
+surface and static contracts) and authorizes no further work. Project law is the
 [`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -55,7 +54,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.32]` `[current: safe-Rust compiler]`
+`[current: spec v0.33]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -67,7 +66,7 @@ The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
-active [v0.32 specification](../spec/kernel-spec.md) remains semantic authority.
+active [v0.33 specification](../spec/kernel-spec.md) remains semantic authority.
 The first-slice system interface compiles and runs end-to-end on the native
 macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
 remain ahead of any performance claim.
@@ -83,10 +82,9 @@ Which gap matters next is selected by a project, never by checklist length.
 - outline:PROOF-9 is the owner-selected successor to terminal outline:PROOF-8.
   It takes the explicit-obligation model language-wide, makes `claim` the only
   writer-reachable runtime rejection point, and replaces the historical entry
-  contract exception with one closed-world command entry. The ACTIVE plan owns
-  this successor and composes batch 0072's completed outline:CAND-8 language
-  deltas into the same candidate; neither direction independently authorizes
-  activation.
+  contract exception with one closed-world command entry. v0.33 installs this
+  successor together with batch 0072's completed outline:CAND-8 language
+  deltas; the direction and its plan are terminal.
 - outline:PERF-1 establishes ordinary code quality before a new optimizer fact or
   strategy is blamed or credited.
 - Every production fact consumer in outline:PROOF-1 through outline:PROOF-4 and outline:PROOF-7 depends
@@ -387,8 +385,7 @@ creating writer trust or weakening the checked safety envelope.
 
 ### outline:PROOF-9 — Claim-only runtime trap surface and static contracts
 
-`[current: complete unactivated v0.33 candidate and exact-byte owner packet]`
-`[next: owner activation and merge decision]`
+`[current: active v0.33]` `[terminal]`
 
 - **Goal:** make `claim` the only writer-reachable source of a language-level
   runtime rejection. Every hazardous operation is either total, returns a
@@ -404,28 +401,24 @@ creating writer trust or weakening the checked safety envelope.
   A checker-detected contradictory requirement set denotes an uninhabited
   function and lowers to an ABI-preserving unreachable stub, never to an
   unchecked version of its source body.
-- **Current:** v0.32 remains the active language with the superseded entry,
-  contract, integer, allocation, and system-range trap forms. The branch's
-  unactivated v0.33 candidate and compiler implement named results, the unified
+- **Current:** active v0.33 and the compiler implement named results, the unified
   erased contract surface, plural static proofs, command-only entry, exact
   operation/allocation/system obligations, and claim-only DIAG-3 lowering.
-  Ordinary programs and fixtures use the candidate surface. The exact
-  specification candidate, 499-case protected corpus, equivalent evidence,
-  target review, and adversarial audits are complete; canonical conformance is
-  `Pass=498 Skip=1 Fail=0`. The active language is still v0.32, and v0.33
-  activation and merge remain behind the final exact-byte owner decision.
-- **Required closure:** the candidate grammar contains no contract-local
+  The installed 499-case protected corpus is in exact manifest bijection;
+  canonical conformance is `Pass=498 Skip=1 Fail=0`. Target review and the
+  independent final audits are complete.
+- **Required closure:** met. The installed grammar contains no contract-local
   statement or trap spelling; accepted integer, allocation, and affected
   system-operation IR carries no runtime trap site; all requirement calls are
   proved before transfer; every retained language trap record is owned by an
   executed claim; exact checked/wrapping/saturating arithmetic, typed host and
   content failures, target qualification, and resource-exhaustion boundaries
-  retain their distinct semantics. Protected evidence and specification bytes
-  remain candidates until separately approved by exact identity.
+  retain their distinct semantics.
 - **Facts:** [contract surface design space](../research/investigations/contract-surface/DESIGN-SPACE.md) ·
   [terminal obligation-discharge direction](#outlineproof-8) ·
   [system capability architecture](#outlinebound-1) ·
-  [batch 0072 closure](done/0072-searching-wfgrep.md).
+  [batch 0072 closure](done/0072-searching-wfgrep.md) ·
+  [batch 0073 closure](done/0073-claim-only-contracts.md).
 
 ## Verification and compiler trust
 
@@ -438,7 +431,7 @@ facts-off evidence rather than trust in the compiler or writer.
 
 - **Goal:** make memory corruption, data races, uninitialized reads, and silent
   overflow unrepresentable across success, failure, and cleanup paths.
-- **Current:** the active language forbids writer trust; the candidate compiler
+- **Current:** the active language forbids writer trust; the compiler
   admits partial operations only after static discharge, retains exact
   claim-owned DIAG-3 records, affine cleanup, proof-required indexing, and
   distinct target/resource guards on its implemented path.
@@ -449,22 +442,21 @@ facts-off evidence rather than trust in the compiler or writer.
 
 ### outline:VERIFY-2 — Execute the conformance corpus against the compiler
 
-`[current: native adapter wired, one protected divergence]`
+`[current: native adapter green on active v0.33]`
 `[next: preserve independent reporting]`
 
 - **Goal:** compare compiler behavior with compiler-independent active-spec
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
   `make conformance-run` compiles and runs every case through the real
-  compiler. The batch-0070 branch run is `Pass=460 Skip=1 Fail=0` — the first
-  fully green adapter: the thirteen pending rows were implemented or their
-  cases repaired (protected candidate), and `own3-pos-outlives-store` runs. This adapter is deliberately `#[ignore]` and
+  compiler. The active v0.33 corpus reports `Pass=498 Skip=1 Fail=0` with
+  499 manifest/source identities and 135/135 rule coverage. This adapter is deliberately `#[ignore]` and
   invoked separately; `make check` does not silently include it. The earlier
-  v0.28 `423/1/13`, v0.27 `409/1/13`, v0.26 `393/1/13`, and 242/123 runs are
+  v0.32 `460/1/0`, v0.28 `423/1/13`, v0.27 `409/1/13`, v0.26 `393/1/13`, and 242/123 runs are
   historical attribution evidence, not current status.
-- **Missing / next:** preserve the independent pass/fail/skip report while the
-  protected OWN-3 wording question remains open. Any expectation, source, or
-  status change remains owner-protected and must report the before/after sets.
+- **Missing / next:** preserve the independent pass/fail/skip report. Any
+  expectation, source, status, collection, or invocation change remains
+  owner-protected and must report the exact before/after sets.
 - **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
 
 ### outline:VERIFY-3 — Facts-on/facts-off differential trust

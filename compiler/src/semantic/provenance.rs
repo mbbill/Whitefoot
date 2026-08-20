@@ -507,13 +507,13 @@ pub(super) enum SystemResultProvenance {
 pub(super) const fn system_result_provenance(operation: u8) -> Option<SystemResultProvenance> {
     Some(match operation {
         // args_count, arg_get, host_bytes_len, host_utf8_len, relative_path,
-        // open_read, open_directory, open_list, and the candidate open_file:
+        // open_read, open_directory, open_list, and open_file:
         // every component of an opened capability or handle comes from
         // outside.
         0 | 1 | 2 | 4 | 6 | 7 | 11 | 12 | 14 => SystemResultProvenance::AllExternal,
         // host_copy_bytes, host_copy_utf8, write_once.
         3 | 5 | 9 => SystemResultProvenance::OkDependent,
-        // read_once, and the candidate list_once.
+        // read_once and list_once.
         8 | 13 => SystemResultProvenance::EndpointDependent,
         // exit_status.
         10 => SystemResultProvenance::NoneExternal,
@@ -571,11 +571,11 @@ fn system_endpoint_start(operation: u8) -> ProvenanceResult<Option<usize>> {
 pub(super) fn system_external_writes(operation: u8) -> ProvenanceResult<&'static [usize]> {
     Ok(match operation {
         3 | 5 => &[1],
-        // read_once, and the candidate list_once: the handle advances and the
+        // read_once and list_once: the handle advances and the
         // destination receives host bytes.
         8 | 13 => &[0, 1],
         9 => &[0],
-        // The candidate open_file, like every other open, writes no parameter.
+        // open_file, like every other open, writes no parameter.
         0..=2 | 4 | 6 | 7 | 10..=12 | 14 => &[],
         _ => return Err(SemanticCompilerFailure::InvalidResolution),
     })

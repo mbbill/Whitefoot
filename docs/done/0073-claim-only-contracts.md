@@ -1,5 +1,8 @@
 # 0073 — Claim-only runtime trap surface and static contracts
 
+Status: DONE (v0.33 activated and merged under the owner's exact-byte approval,
+2026-08-20).
+
 Owner: lead. Workspace: `codex/0073-claim-only-contracts` in the isolated
 `/Users/bytedance/do_not_scan/whitefoot-0073-claim-only` worktree. Base:
 main `e5b30704831c03a6555aa5a08d049558e468477e` after batch 0072 closure.
@@ -7,11 +10,11 @@ Registered: 2026-08-19 under the ACTIVE Current Plan (W1–W6).
 
 ## Authority
 
-The owner-approved Direction Outline revision 43 and ACTIVE
+The owner-approved Direction Outline revision 43 and then-ACTIVE
 `docs/current-plan.md` selected this undertaking on 2026-08-19. The batch may
 prepare, implement, migrate, test, document, and audit the complete candidate
 without an intermediate approval pause. Specification and protected-compliance
-bytes remain unactivated candidates until the owner approves their exact
+bytes remained unactivated candidates until the owner approved their exact
 identities in the final packet.
 
 ## Scope
@@ -36,7 +39,8 @@ identities in the final packet.
 
 ## Approval classes
 
-- `spec/kernel-spec.md` remains a marked v0.33 candidate over active v0.32.
+- `spec/kernel-spec.md` remained a marked v0.33 candidate over active v0.32
+  until the separately approved final activation recorded below.
 - Every addition, deletion, rename, source rewrite, manifest/verdict change, or
   collection/wiring change under protected conformance is recorded exactly in
   the final before/after audit and does not activate on this branch.
@@ -61,9 +65,14 @@ and batch 0072's unrelated wfgrep capacity and performance follow-up.
 
 ## Outcome
 
-The scoped candidate is complete and remains unactivated. Its specification is
-`CANDIDATE v0.33`, 3,204 lines and 395,671 bytes, with SHA-256
+The scoped candidate completed at `CANDIDATE v0.33`, 3,204 lines and 395,671
+bytes, with SHA-256
 `024a7752a88daf8799f637d95401fb73e25e257b118b3b78d4733b397c3db3c2`.
+The owner approved that exact candidate and WORKFLOW activation changed only
+its declared status line. The installed `ACTIVE v0.33` bytes are 3,204 lines
+and 395,586 bytes at SHA-256
+`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`;
+the outgoing v0.32 bytes are immutable at `spec/kernel-spec-v0.32.md`.
 The compiler has one named-result/static-contract path, lowers contradictory
 requirements to one ABI-preserving `unreachable` body, and carries no
 writer-reachable language trap site except an executed claim. Exact integer,
@@ -98,6 +107,8 @@ or invocation wiring changed. The final protected tree is
 - Main-ancestry reconciliation and exit-audit repairs: `4ddde782`,
   `4bb3236c`, `a911681a`, `1dc7e6a1`, `06a625d3`, `08548904`,
   `df057f5d`, `65bfbab6`.
+- Activation and closure: the atomic activation/integration commit carrying
+  this record move.
 
 The pre-reconciliation no-merge commit sequence is the repository range
 `dde2f6af^..f1d8a2cd`; the post-reconciliation list records the merge and every
@@ -107,10 +118,11 @@ rather than duplicating every fixture and documentation commit.
 ## Verification
 
 - Native grammar identity: 74 productions, 93 decisions, 105 terminal
-  predicates; generated tables match the candidate specification.
-- Candidate identity: the specification digest independently matches the
+  predicates; generated tables match the installed specification.
+- Specification identity: the specification digest independently matches the
   derivation ledger, `compiler/src/spec.rs`, and
-  `compiler/src/spec_identity.rs`; the active chain still ends at v0.32.
+  `compiler/src/spec_identity.rs`; after activation the installed digest and
+  chain tail independently match active v0.33.
 - Ordinary evidence: all-target compilation, formatting, Clippy, focused
   contract/integer/allocation/system/target suites, 48/48 real-program tests,
   and 10/10 cost-shape tests pass.
@@ -120,6 +132,8 @@ rather than duplicating every fixture and documentation commit.
 - Design memory: `npx mcts-mem lint mcts_mem` reports 98 clean nodes and zero
   fact-file violations.
 - Final repository gate: `make check` passes on the reconciled candidate tree.
+- Activated repository gate: `make check` passes with the v0.32 archive,
+  v0.33 chain tail, regenerated identity, and installed protected evidence.
 
 ## Adversarial audit dispositions
 
@@ -145,12 +159,20 @@ rather than duplicating every fixture and documentation commit.
 Main's later `c8d5db2f` commit prematurely assigned the generic-container work
 the same batch number and ACTIVE-plan slot. Owner direction selected
 claim-only first, retaining 0073, and generic-container afterward as 0074.
-Merge `4ddde782` records latest main as an ancestor while preserving the sole
-claim-only ACTIVE plan and sole ongoing 0073 record. It deliberately does not
-open an ongoing 0074 before a generic-container plan is ACTIVE. After v0.33 is
-approved, activated, merged, and this record moves unchanged in number to
-`docs/done/`, the generic-container direction may become the sole ACTIVE plan
-and open a fresh 0074 record against the resulting main.
+Merge `4ddde782` records that main as an ancestor while preserving the sole
+claim-only plan and batch 0073 record. The final owner act then archives v0.32,
+installs and records active v0.33, moves this record unchanged in number to
+`docs/done/`, and fast-forwards main. It deliberately does not open 0074 or
+include generic-container work. That direction may begin only under a separate
+owner-approved plan and a fresh 0074 record against this resulting main.
 
-Activation, archive creation, the `ACTIVE-SPEC` chain record, and merge remain
-the one final owner-approved act; none is present in this candidate.
+## Final disposition
+
+The atomic activation/integration commit carrying this move installs the
+owner-approved v0.33 language, its generated identities, and the already
+audited protected evidence together. `ACTIVE-SPEC: v0.33` chains
+`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`
+to the archived v0.32 digest
+`5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5`.
+Batch 0073 is closed with no unresolved correctness, evidence, or governance
+finding; generic-container and batch 0074 remain outside this integration.

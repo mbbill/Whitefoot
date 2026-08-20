@@ -289,21 +289,20 @@ const LIST_OUTCOME: u8 = 15;
 /// records they saw before. `true` admits the directory-enumeration
 /// surface — `DirectoryList`, `ListOutcome`, `open_directory`, `open_list`,
 /// and `list_once` — as the last row of each [SYS-2] table. It is now `true`,
-/// because v0.32 is the active specification; `false` stays reachable as the
-/// differential against the base tables.
+/// because v0.32 activated that surface; `false` stays reachable as the exact
+/// differential against the v0.31 base tables.
 pub const TRAVERSAL_SURFACE: bool = true;
 
-/// The v0.33-candidate file-open-by-name switch [SYS-2, SYS-11].
+/// The active v0.33 file-open-by-name switch [SYS-2, SYS-11].
 ///
-/// `false` admits exactly the active v0.32 inventory: the `open_file` row
+/// `false` admits exactly the superseded v0.32 inventory: the `open_file` row
 /// below is unreachable, every declaration ordinal keeps its v0.32 value, and
 /// the resolver, checker, and backend see the same one hundred ninety-two
-/// records they see today. `true` admits the candidate operation — the
+/// records in that archive. `true` admits the active operation — the
 /// `open_read` sibling that takes a caller-owned single path component
 /// instead of a `RelativePath` — as the last row of the [SYS-2] operation
-/// table. The candidate compiler selects `true` so the complete v0.33 surface
-/// follows the ordinary path; `false` remains the exact active-v0.32
-/// differential until the candidate is approved and activated.
+/// table. The compiler selects `true` so the complete v0.33 surface follows
+/// the ordinary path; `false` remains the exact superseded-v0.32 differential.
 pub const OPEN_BY_NAME: bool = true;
 
 /// One selected [SYS-2] inventory state.
@@ -318,10 +317,10 @@ pub const OPEN_BY_NAME: bool = true;
 pub enum Inventory {
     /// The v0.31 inventory: the tables with no candidate row at all.
     Base,
-    /// The active v0.32 inventory: [`Inventory::Base`] plus the [SYS-14]
+    /// The superseded v0.32 inventory: [`Inventory::Base`] plus the [SYS-14]
     /// traversal surface.
     Traversal,
-    /// The v0.33 candidate inventory: [`Inventory::Traversal`] plus the
+    /// The active v0.33 inventory: [`Inventory::Traversal`] plus the
     /// [SYS-11] `open_file` operation.
     OpenByName,
 }
@@ -372,14 +371,14 @@ const BASE_CONSTRUCTORS: usize = 39;
 /// The v0.31 operation count: the prefix of [`SYSTEM_OPERATIONS`] the v0.31
 /// specification declared.
 const BASE_OPERATIONS: usize = 11;
-/// The v0.32 operation count: the prefix of [`SYSTEM_OPERATIONS`] the active
-/// specification declares.
+/// The v0.32 operation count: the prefix of [`SYSTEM_OPERATIONS`] that
+/// specification declared.
 const TRAVERSAL_OPERATIONS: usize = 14;
 
 /// The [SYS-2] nominal types in normative table order.
 ///
-/// The first fourteen are the active specification's; the last two are the
-/// traversal-surface candidate's and are admitted only under
+/// The first fourteen are v0.31's; the last two are v0.32's traversal-surface
+/// additions and are admitted only under
 /// [`TRAVERSAL_SURFACE`].
 pub const SYSTEM_NOMINALS: [SystemNominal; 16] = [
     nominal("Args", true),
@@ -539,7 +538,7 @@ const fn ok_u64(err: u8) -> SystemTypeRef {
 ///
 /// The first eleven are v0.31's; the next three are the [SYS-14] traversal
 /// surface's, admitted under [`TRAVERSAL_SURFACE`]; the last is the
-/// file-open-by-name candidate's, admitted only under [`OPEN_BY_NAME`].
+/// active v0.33 file-open-by-name addition, admitted under [`OPEN_BY_NAME`].
 ///
 /// Each row registers the declared region parameters, value parameters, result
 /// type, and the fixed `external`/`blocks` classification. System operations
@@ -784,7 +783,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
         external: true,
         blocks: true,
     },
-    // The file-open-by-name candidate row [SYS-11]: `open_read`'s sibling
+    // The active file-open-by-name row [SYS-11]: `open_read`'s sibling
     // over a caller-owned single path component, taking exactly the name
     // range `open_directory` takes.
     SystemOperation {
@@ -1026,7 +1025,7 @@ pub fn system_resource_contract(nominal: u8) -> Option<SystemResourceContract> {
 
 /// Returns one system nominal's exact [SYS-5] release row.
 ///
-/// `DirectoryRead`, `ReadFile`, and the candidate `DirectoryList` release with
+/// `DirectoryRead`, `ReadFile`, and `DirectoryList` release with
 /// at most one native close attempt (`external, blocks`); every other system
 /// type — the remaining
 /// opaque types' logical consume or detach and every outcome enum, which has
@@ -1427,14 +1426,14 @@ mod tests {
         assert!(system_entity(SystemDeclarationId::new(u8::MAX), Inventory::Base).is_none());
     }
 
-    /// The candidate inventory is the v0.31 inventory plus exactly the
+    /// The v0.32 traversal inventory is the v0.31 inventory plus exactly the
     /// traversal rows, and every preorder ordinal below the first new nominal
     /// keeps its meaning only where the specification's own preorder keeps it:
     /// the two new nominal types shift every constructor and operation
     /// ordinal by two, which is why the switch selects one whole inventory
     /// rather than patching the other.
     #[test]
-    fn traversal_candidate_inventory_matches_its_counted_totals() {
+    fn traversal_inventory_matches_its_counted_totals() {
         let nominals = system_nominals(Inventory::Traversal);
         let constructors = system_constructors(Inventory::Traversal);
         let operations = system_operations(Inventory::Traversal);
@@ -1525,9 +1524,9 @@ mod tests {
         assert!(system_entity(SystemDeclarationId::new(192), Inventory::Traversal).is_none());
     }
 
-    /// The [SYS-11] file-open-by-name candidate's own counted totals.
+    /// The active [SYS-11] file-open-by-name row's own counted totals.
     ///
-    /// The candidate adds one operation and nothing else, so the delta is
+    /// v0.33 adds one operation and nothing else, so the delta is
     /// exactly one operation record, its two region-parameter records, and
     /// its four value-parameter records: 192 + 7 = 199. Because the row is
     /// appended, every ordinal the active inventory assigns is unchanged,
@@ -1576,7 +1575,7 @@ mod tests {
         let Some(SystemEntity::Operation(operation)) =
             system_entity(open_file, Inventory::OpenByName)
         else {
-            panic!("the candidate ordinal must name the candidate operation");
+            panic!("the active ordinal must name the active operation");
         };
         assert_eq!(operation.spelling, "open_file");
         assert_eq!((operation.external, operation.blocks), (true, true));

@@ -56,8 +56,8 @@ pub const ACTIVE_KERNEL_SPEC_BYTES: &[u8] = ACTIVE_KERNEL_SPEC_TEXT.as_bytes();
 /// them at runtime and the `whitefoot-spec` gate rejects any disagreement, so
 /// installing a specification cannot leave this naming the previous one.
 pub const ACTIVE_KERNEL_SPEC_HASH: SpecHash = SpecHash::from_sha256([
-    0x02, 0x4a, 0x77, 0x52, 0xa8, 0x8d, 0xaf, 0x87, 0x99, 0xf6, 0x37, 0xd9, 0x54, 0x01, 0xfb, 0x73,
-    0xe2, 0x5e, 0x25, 0x7b, 0x11, 0x8b, 0x3b, 0x78, 0xd4, 0x73, 0x3b, 0x39, 0x7c, 0x3d, 0xb3, 0xc2,
+    0xfc, 0x6b, 0x5a, 0x10, 0x9e, 0x56, 0xb4, 0xbc, 0xd9, 0x3d, 0x30, 0xef, 0x93, 0x4d, 0x3c, 0x78,
+    0xec, 0xa9, 0xbd, 0xda, 0xfd, 0x64, 0x0d, 0x30, 0xc1, 0x06, 0x49, 0xe9, 0xba, 0x62, 0xd0, 0x8f,
 ]);
 
 /// SHA-256 of the embedded active specification, computed from its bytes.
@@ -79,19 +79,19 @@ mod tests {
     };
 
     /// The literal is the independently measured `shasum -a 256` value for the
-    /// review bytes. The activation chain supplies the protected owner-approved
-    /// value once these bytes are activated, so a wrong SHA-256 implementation
-    /// cannot agree only with itself.
+    /// installed bytes. The activation chain supplies the same protected
+    /// owner-approved value, so a wrong SHA-256 implementation cannot agree
+    /// only with itself.
     ///
-    /// It is transcribed from `shasum`, never from what this code computes. At
-    /// activation the approval ledger must independently name the same digest;
-    /// changing this literal to follow a computed value would delete the
+    /// It is transcribed from `shasum`, never from what this code computes. The
+    /// approval ledger independently names the same digest; changing this
+    /// literal to follow a computed value would delete the
     /// external check of the runtime implementation.
     #[test]
     fn computed_identity_is_the_independently_measured_digest() {
         assert_eq!(
             computed_active_spec_hash().to_string(),
-            "024a7752a88daf8799f637d95401fb73e25e257b118b3b78d4733b397c3db3c2"
+            "fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f"
         );
     }
 

@@ -1313,3 +1313,32 @@ ACTIVE-SPEC: v0.32 5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6
 - STILL EXCLUDED: this supplement does not approve activation, archive or
   digest-chain installation, runner/collection/gate wiring, or merge to main.
   Those remain the final exact-candidate decision.
+
+## 2026-08-20 — OWNER EXACT-BYTE APPROVAL: v0.33 claim-only runtime trap surface and static contracts
+- owner: **the owner, in conversation, 2026-08-20** — “批准以候选 SHA-256
+  024a7752a88daf8799f637d95401fb73e25e257b118b3b78d4733b397c3db3c2
+  激活 Whitefoot v0.33，并按 WORKFLOW 原子完成：归档 v0.32、切换 ACTIVE
+  状态、写入激活链、重新生成 identity/grammar、落地 protected evidence、
+  关闭 batch 0073 并合入 main。generic-container 不在本次合入；0073
+  关闭后再以 0074 开始。”
+- APPROVED BYTES: the complete v0.33 candidate at SHA-256
+  `024a7752a88daf8799f637d95401fb73e25e257b118b3b78d4733b397c3db3c2`,
+  3,204 lines and 395,671 bytes. Its native grammar identity is 74
+  productions, 93 decisions, and 105 terminal predicates. The exact protected
+  evidence is the audited 499-source/499-manifest bijection with 135/135 rule
+  coverage, `Pass=498 Skip=1 Fail=0`, protected tree
+  `882e691cf456758c456509a057ab6328c1f58a88`, and manifest SHA-256
+  `f6b7cda7d523837c5ae1ddf3115ac82afabc1d13d9a4e7ddff4a24591b85c609`.
+- ACTIVATION DELTA: per the candidate-mode workflow, activation replaces
+  exactly the declared candidate status line with `Status: ACTIVE v0.33` and
+  changes no other approved specification content. The resulting active bytes
+  are 3,204 lines and 395,586 bytes at independently recomputed SHA-256
+  `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
+- ATOMIC BOUNDARY: archive byte-identical outgoing v0.32 as
+  `spec/kernel-spec-v0.32.md`; install the active bytes and chained record;
+  regenerate specification identity and grammar data; land the already
+  approved protected and equivalent evidence; update current authority prose;
+  move batch record 0073 from `docs/ongoing/` to `docs/done/`; and fast-forward
+  main only after the post-activation gate is green. The generic-container
+  direction, batch 0074, and any new plan are explicitly outside this act.
+ACTIVE-SPEC: v0.33 fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f 5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5

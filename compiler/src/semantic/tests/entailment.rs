@@ -7841,7 +7841,7 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
             include_bytes!("../../../../tests/programs/wfgrep.wf"),
         )],
     ];
-    // The searching `wfgrep.wf` uses the candidate `open_file` [SYS-11], so
+    // The searching `wfgrep.wf` uses active `open_file` [SYS-11], so
     // its bundle names the inventory that declares it; the other two are
     // active-inventory sources.
     let inventories = [

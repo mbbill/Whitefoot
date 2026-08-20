@@ -43,8 +43,8 @@ fn with_mutated_ir<ResultValue>(
 /// [`with_ir`] against one named [SYS-2] inventory state.
 ///
 /// The cost-shape anchor is a real corpus program, and that program now uses
-/// the candidate `open_file` [SYS-11], so it names the inventory that
-/// declares it. Every other caller takes the active one.
+/// active `open_file` [SYS-11], so it names the inventory that declares it.
+/// Every other caller takes the active one.
 pub(super) fn with_ir_for<ResultValue>(
     source: &[u8],
     inventory: crate::Inventory,

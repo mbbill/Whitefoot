@@ -3,7 +3,7 @@
 //!
 //! wfgrep takes a pattern and one search root, walks the tree with the
 //! [SYS-14] enumeration surface, opens each regular file it reaches by the
-//! enumerated name with the candidate [SYS-11] `open_file`, reads it, and
+//! enumerated name with active [SYS-11] `open_file`, reads it, and
 //! publishes `PATH:LINE:TEXT` for every matching line.
 //!
 //! Two oracles check it. The first is a trusted reference search written

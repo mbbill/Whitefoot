@@ -1043,7 +1043,7 @@ fn operation_guarantees(operation: u8) -> &'static [TargetGuarantee] {
         // directory-relative facility [PATH-2].
         7 => DIRECTORY,
         // `open_directory` resolves one component name through the same
-        // facility [SYS-14], and the candidate `open_file` resolves one
+        // facility [SYS-14], and `open_file` resolves one
         // component name for a file through it [SYS-11].
         11 | 14 => DIRECTORY,
         // `open_list` and `list_once` additionally require the target's own
@@ -1268,6 +1268,6 @@ mod tests {
             Err(QualificationFailure::MissingMapping(Facility::CommandEntry))
         );
         command_entry_row(target, crate::spec_identity::SPEC_VERSION)
-            .expect("the reviewed candidate version qualifies its command entry");
+            .expect("the reviewed active version qualifies its command entry");
     }
 }

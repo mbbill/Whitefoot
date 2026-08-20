@@ -149,8 +149,8 @@ fn with_semantics_inputs<ResultValue>(
 
 /// [`with_semantics_inputs`] against one named [SYS-2] inventory state.
 ///
-/// A frozen real source that uses a candidate operation names the inventory
-/// that declares it; every other caller takes the active one.
+/// A frozen real source may name the inventory that first declared an
+/// operation; every other caller takes the active one.
 fn with_semantics_inputs_for<ResultValue>(
     inputs: &[SourceInput<'_>],
     inventory: crate::Inventory,

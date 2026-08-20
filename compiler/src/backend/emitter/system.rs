@@ -1488,7 +1488,7 @@ fn emit_open_directory(
     )
 }
 
-/// Emits the approved implementation of the candidate `open_file` [SYS-11].
+/// Emits the approved implementation of active `open_file` [SYS-11].
 ///
 /// The provisional descriptor is opened without following the terminal link
 /// and without blocking on a non-regular object, then classified through the

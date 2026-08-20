@@ -238,11 +238,10 @@ pub fn compile(
 ///
 /// `inventory` selects which prefix of the [SYS-2] tables the compilation
 /// admits. It exists so an end-to-end test can compile and run a real program
-/// against a candidate inventory before activation, and so the differential
-/// against an earlier inventory stays reachable; the shipped compilation path
-/// reads [`crate::Inventory::ACTIVE`] and has exactly one inventory. At
-/// activation a candidate state and the switch it exists to override both go
-/// away.
+/// against an inventory before activation, and so the differential against an
+/// earlier inventory stays reachable afterward; the shipped compilation path
+/// reads [`crate::Inventory::ACTIVE`] and has exactly one inventory. Historical
+/// prefix states remain test-only differentials, never runtime switches.
 pub fn compile_with_inventory(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,

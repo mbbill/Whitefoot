@@ -1,27 +1,25 @@
 # Current Plan — claim-only runtime trap surface and static contracts
 
-Status: ACTIVE (owner approval in conversation, 2026-08-19: roadmap revision
-43 and “Claim-only runtime trap surface and static contracts” are approved as
-the ACTIVE Current Plan.) The complete unactivated v0.33 compiler,
-specification, ordinary evidence, protected candidate, and exact owner packet
-are prepared on the branch. Activation and merge remain behind the owner's
-final exact-byte approval boundary.
+Status: COMPLETE (owner exact-byte activation approval in conversation,
+2026-08-20; v0.33 installed and batch 0073 closed). This completed plan
+authorizes no further execution. The generic-container direction requires a
+separate owner-approved plan and a fresh batch 0074.
 
 Derived from Direction Outline revision 43 and main at
 `e5b30704831c03a6555aa5a08d049558e468477e`. Supersedes the completed
-searching-wfgrep plan in place. Active language authority: v0.32 at
+searching-wfgrep plan in place. Active language authority: v0.33 at
 `spec/kernel-spec.md`, SHA-256
-`5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5`.
+`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
 
 ## Objective
 
-Finish the doctrine that v0.32 applies only in selected families: `claim` is
+Install the doctrine that v0.32 applied only in selected families: `claim` is
 the sole writer-authored runtime safety backstop, while every other hazardous
 condition is a deterministic proof obligation, a total operation, or a typed
 expected outcome. Replace the statement-shaped requires/ensures surface with
 one erased static contract model, remove the program-entry exception, and
 carry every remaining non-claim language trap family through the ordinary
-compiler path to a fully tested, unactivated v0.33 candidate.
+compiler path to the tested and active v0.33 specification.
 
 ## Workstreams
 
@@ -75,11 +73,11 @@ checker can prove them. A claim on an unconditionally external constrained
 subject cannot replace the real value branch required by the installed
 provenance policy. Facts-off acceptance remains correct.
 
-Specification and protected-compliance edits are marked candidates and remain
-unactivated. The completed branch and exact owner packet are the approval
-boundary; candidate preparation, compiler implementation, ordinary tests,
-documentation, MCTS maintenance, verification, and audit do not pause for an
-intermediate approval.
+Specification and protected-compliance edits remained candidates until the
+exact owner approval recorded at closure. Candidate preparation, compiler
+implementation, ordinary tests, documentation, MCTS maintenance, verification,
+and audit proceeded under this plan; activation and merge were completed only
+by the separate final owner act.
 
 ## Acceptance
 
@@ -95,13 +93,13 @@ intermediate approval.
   writer-reachable language trap sites, while checked/wrap/saturating values,
   recoverable host failures, cleanup, and TCB/resource behavior retain their
   specified results.
-- Candidate grammar, compiler, real programs, protected conformance, repository
-  gates, MCTS lint, and adversarial audit are green, and the final packet is
-  sufficient for an exact-byte owner decision without follow-up reconstruction.
+- Installed grammar, compiler, real programs, protected conformance, repository
+  gates, MCTS lint, and adversarial audit are green; the final packet supported
+  the exact-byte owner decision without follow-up reconstruction.
 
 ## Exclusions
 
 No FFI, export adapter, function values, dynamic dispatch, general SMT or
 linear-arithmetic solver, frozen target ABI, catchable internal invariant
-failure, generalized proof certificate, activation, merge to main, or
-unrelated wfgrep capacity/performance repair is authorized by this plan.
+failure, generalized proof certificate, unrelated wfgrep capacity/performance
+repair, generic-container work, or batch 0074 is authorized by this plan.

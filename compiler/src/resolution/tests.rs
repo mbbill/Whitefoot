@@ -2192,7 +2192,7 @@ fn system_index_helpers_agree_with_the_preorder_entity_map() {
     }
 
     // The [SYS-5] release table: exactly DirectoryRead, ReadFile, and the
-    // candidate DirectoryList release with `external, blocks`; every other
+    // DirectoryList release with `external, blocks`; every other
     // system nominal's row is empty.
     for (index, nominal) in SYSTEM_NOMINALS.iter().enumerate() {
         let index = u8::try_from(index).expect("nominal table fits u8");

@@ -50,7 +50,7 @@ pub fn compile_program_with_traversal_surface(name: &str) -> String {
     compile_program_with(name, Inventory::Traversal)
 }
 
-/// Compiles one corpus program against the file-open-by-name candidate
+/// Compiles one corpus program against the active v0.33 file-open-by-name
 /// inventory: the traversal tables with `open_file` appended.
 pub fn compile_program_with_open_by_name(name: &str) -> String {
     compile_program_with(name, Inventory::OpenByName)

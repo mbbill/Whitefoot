@@ -23,10 +23,8 @@ ordered source bundle
   -> host executable
 ```
 
-This candidate branch implements and validates the reviewed, unactivated v0.33
-bytes at `../spec/kernel-spec.md`; until activation, the active language
-authority remains the exact v0.32 bytes at SHA-256
-`5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5`.
+The frontend targets the exact v0.33 bytes at `../spec/kernel-spec.md`, SHA-256
+`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same
 specification identity. The committed grammar tables are ordinary compiler

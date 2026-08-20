@@ -31,9 +31,9 @@ structure discipline future agents must apply.
 
 ## Current state
 
-[Kernel specification v0.32](spec/kernel-spec.md), SHA-256
-`5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5`,
-is the active specification at its stable path. Exact v0.8 through v0.31
+[Kernel specification v0.33](spec/kernel-spec.md), SHA-256
+`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`,
+is the active specification at its stable path. Exact v0.8 through v0.32
 remain immutable flat archives.
 
 The safe-Rust compiler currently implements one ordinary path:

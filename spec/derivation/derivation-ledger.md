@@ -2,7 +2,8 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
-the active v0.32 authority and the reviewed v0.33 candidate at
+the active v0.33 authority at SHA-256
+`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f` at
 `spec/kernel-spec.md`; released versioned files retain the superseded
 authorities. Requirement (owner + META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
@@ -12,7 +13,7 @@ exist; this form is minimality-selected and awaits its experiment),
 
 **Statistics: 84 derived · 51 existence-only · 0 underived**
 (135 rules: v0.28's 132 plus the v0.29 CLM-3, v0.31 SET-2, and v0.32 SYS-14
-additions; the v0.33 candidate adds no numbered rule and changes no status).
+additions; v0.33 adds no numbered rule and changes no status).
 
 ## Re-grounding priority queue (weakest chains)
 
@@ -1073,8 +1074,8 @@ selects the specification semantics above.
 
 ## v0.29 amendment — opt-in strict no-claim partition (activated 2026-08-15)
 
-Specification binding: active `spec/kernel-spec.md`, headed v0.32, at SHA-256
-`5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5`.
+Specification binding: active `spec/kernel-spec.md`, headed v0.33, at SHA-256
+`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
 The superseded v0.28 bytes are immutable at
 `spec/kernel-spec-v0.28.md`, SHA-256
 `08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`,
@@ -1189,7 +1190,7 @@ rules.
 
 ## v0.32 amendment — trap endpoints and traversal (activated 2026-08-18)
 
-Specification binding: outgoing active authority v0.32, SHA-256
+Specification binding: immutable `spec/kernel-spec-v0.32.md`, SHA-256
 `5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5`.
 The immutable outgoing v0.31 bytes are the binding above.
 
@@ -1206,15 +1207,16 @@ existence-only form debt recorded in its main row. No previous status changes.
 The totals become **84 derived · 51 existence-only · 0 underived** across 135
 rules.
 
-## v0.33 candidate amendment — claim-only runtime trap surface (2026-08-19)
+## v0.33 amendment — claim-only runtime trap surface (activated 2026-08-20)
 
-Candidate binding: `spec/kernel-spec.md`, headed v0.33 CANDIDATE, currently at
-SHA-256 `024a7752a88daf8799f637d95401fb73e25e257b118b3b78d4733b397c3db3c2`.
-Its outgoing authority is active v0.32 at the binding above. These candidate
-bytes do not become language authority until exact-byte owner approval and the
-separate activation step.
+Specification binding: active `spec/kernel-spec.md`, headed v0.33, at SHA-256
+`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
+The exact owner-approved candidate was SHA-256
+`024a7752a88daf8799f637d95401fb73e25e257b118b3b78d4733b397c3db3c2`;
+activation changed only its declared status line. Its outgoing v0.32 authority
+is the immutable archive at the binding above.
 
-The candidate adds and removes no numbered rule. It modifies exactly 64 rules,
+v0.33 adds and removes no numbered rule. It modifies exactly 64 rules,
 grouped below by one derivation move; the groups are disjoint and their union
 is the complete archive-to-candidate changed-rule set:
 
@@ -1242,13 +1244,15 @@ spellings remain under the same FORM-1/R3 existence-only debt carried by their
 owning rows; derived semantic safety relations remain derived. Totals therefore
 stay **84 derived · 51 existence-only · 0 underived** across 135 rules.
 
-Final candidate inventory: the native frontend verifier records 74 grammar
+Installed inventory: the native frontend verifier records 74 grammar
 productions, 93 predictive decisions, and 105 terminal predicates. Six old
 productions are replaced by six new ones; the unique fixed lowercase atom set
 removes `check` and standalone `trap`, adds `command`, `define`, and `when`, for
 net +1; writer operation spellings add thirteen and remove four, while the five
 bare exact infix spellings remain. The protected corpus contains 499 source
 cases in exact manifest bijection, covers 135/135 rules, and the canonical
-adapter reports `Pass=498 Skip=1 Fail=0`. The candidate specification SHA-256
-is `024a7752a88daf8799f637d95401fb73e25e257b118b3b78d4733b397c3db3c2`;
-the activation chain remains at v0.32 until the separate owner decision.
+adapter reports `Pass=498 Skip=1 Fail=0`. The owner-approved candidate was
+SHA-256 `024a7752a88daf8799f637d95401fb73e25e257b118b3b78d4733b397c3db3c2`;
+the installed active specification is
+`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`,
+and the activation chain ends at v0.33.
