@@ -2201,7 +2201,7 @@ pub(super) fn assert_canonical_deflate_provenance(program: &CheckedProgramData) 
                 .find(|function| function.id == bridge.requirement.function)
                 .map(|function| function.name.as_str())
                 .expect("subject bridge function");
-            (name, bridge.subject.clone())
+            (name, bridge.subject)
         })
         .collect::<Vec<_>>();
     assert_eq!(

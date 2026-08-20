@@ -1,5 +1,5 @@
 fn open_read(root: own u64, path: own u64) -> function_result: own u64 pure {
-  doc "In a system-admitted unit a source declaration spelled like an inventory entry in the same domain is a collision; neither declaration resolves and the unit is rejected [SYS-1] at declaration-inventory rank 5, citing TYPE-6.";
+  doc "Every unit receives the complete system declaration domain [SYS-3], so a source declaration spelled like an inventory entry in the same domain is a collision; neither declaration resolves and the unit is rejected [SYS-1] at declaration-inventory rank 5, citing TYPE-6.";
   return root;
 }
 
