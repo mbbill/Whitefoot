@@ -694,20 +694,22 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
 #[test]
 fn every_release_close_is_one_discarded_attempt() {
     // The three closing resource kinds close: `DirectoryRead`, `DirectoryList`,
-    // and `ReadFile`. The program holds all three, so all three appear. Two
-    // additional close sites consume provisional `open_file` descriptors that
-    // failed classification; those are distinguished below from releases.
+    // and `ReadFile`. The program holds all three, so all three appear. The
+    // emitted `open_file` helper has two mutually exclusive provisional-error
+    // cleanup paths, independently locked in `system.rs`; the host optimizer
+    // tail-merges those paths into one physical close site in this whole
+    // program. That site is distinguished below from resource releases.
     let closes = program().matches("@close(").count();
     assert!(
-        closes >= 5,
-        "three closing resource kinds and two provisional cleanups must appear:\n{}",
+        closes >= 4,
+        "three closing resource kinds and one tail-merged provisional cleanup must appear:\n{}",
         program()
     );
     // Every close result is named once and never read again. Nothing compares
     // it, branches on it, or feeds it to a retry: the diagnostic is discarded,
     // which makes "never retry an ambiguous fd close" a property of emitted
     // code rather than a convention [SYS-5]. This applies equally to normal
-    // resource releases and to `open_file`'s two provisional cleanup paths.
+    // resource releases and to `open_file`'s tail-merged provisional cleanup.
     // Value names are function-local, so each function is read on its own.
     let mut releases = 0;
     let mut provisional_cleanups = 0;
@@ -743,7 +745,7 @@ fn every_release_close_is_one_discarded_attempt() {
         releases >= 3,
         "all three closing resource kinds must release"
     );
-    assert_eq!(provisional_cleanups, 2);
+    assert_eq!(provisional_cleanups, 1);
     assert_eq!(releases + provisional_cleanups, closes);
 }
 

@@ -113,12 +113,10 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
             "plain result external" | "`Ok(value:)` external; `Err(error:)` external" => {
                 SystemResultProvenance::AllExternal
             }
-            "`Ok(value:)` internal; `Err(error:)` external" => {
-                SystemResultProvenance::ErrorPayloadOnly
-            }
-            "`ReadBytes(count:)` internal; `ReadFailed(error:)` external; `ReadEnd()` carries no result component"
-            | "`ListBytes(count:, entries:)` internal; `ListFailed(error:)` external; `ListEnd()` carries no result component" => {
-                SystemResultProvenance::ReadFailedPayloadOnly
+            "`Ok(value:)` dependent; `Err(error:)` external" => SystemResultProvenance::OkDependent,
+            "`ReadBytes(next:)` dependent; `ReadFailed(error:)` external; `ReadEnd()` carries no result component"
+            | "`ListBytes(next:)` dependent; `ListBytes(entries:)` internal; `ListFailed(error:)` external; `ListEnd()` carries no result component" => {
+                SystemResultProvenance::EndpointDependent
             }
             "plain result internal" => SystemResultProvenance::NoneExternal,
             other => panic!(
@@ -175,24 +173,6 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
     // `list_once` writes both its destination buffer and its list handle.
     assert_eq!(result_classes.len(), 4);
     assert_eq!(writing_rows, 5);
-    // The candidate `open_file` row has no cell in the active specification's
-    // `wf-prov` table, so the loop above cannot lock it. Its proposed row is
-    // `Ok(value:)` external; `Err(error:)` external, with no writable
-    // parameter — `open_read`'s and `open_directory`'s cell — and this pins
-    // the compiler to exactly that until the row lands in the specification.
-    let candidate = crate::system_operations(crate::Inventory::OpenByName);
-    let open_file = candidate.len() - 1;
-    assert_eq!(candidate[open_file].spelling, "open_file");
-    let open_file = u8::try_from(open_file).expect("the operation inventory fits a u8");
-    assert_eq!(
-        system_result_provenance(open_file),
-        Some(SystemResultProvenance::AllExternal)
-    );
-    assert_eq!(
-        system_external_writes(open_file).expect("a declared operation ordinal"),
-        &[] as &[usize]
-    );
-
     // An ordinal past every inventory fails closed rather than defaulting to
     // a class, in both directions the dispatch can be wrong.
     let past = u8::try_from(crate::SYSTEM_OPERATIONS.len()).expect("the inventory fits a u8");
@@ -778,7 +758,10 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 
 #[test]
 fn a_cross_function_system_write_keeps_write_context_before_the_true_origin() {
-    let source = br#"fn copy_host['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>) -> result: own u64 reads('v 'd), writes('d), traps {
+    let source = br#"fn copy_host['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>) -> result: own u64 reads('v 'd), writes('d) contract {
+  define capacity = len(deref(destination));
+  requires ile(4_u64, capacity);
+} {
   region 'c {
     match host_copy_bytes<'v, 'c>(value: value, destination: &uniq 'c deref(destination), start: 0_u64, end: 4_u64) {
       Ok(value: copied) => {
@@ -2101,7 +2084,10 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn system_results_and_writes_add_no_parameter_datum() {
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads('o 's), writes('o), external, blocks, traps {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads('o 's), writes('o), external, blocks contract {
+  define capacity = len(deref(source));
+  requires ile(count, capacity);
+} {
   region 'attempt {
     match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: count) {
       Ok(value: written) => {
@@ -2113,7 +2099,7 @@ fn system_results_and_writes_add_no_parameter_datum() {
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   let batch = buffer_new(1_u64, 0_u8);
   region 'publication {
     publish<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, count: 1_u64);
@@ -2166,8 +2152,9 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
     });
 }
 
-/// The canonical raw-DEFLATE provenance gate: one subject bridge and three
-/// unasserted downstream calls.
+/// The canonical raw-DEFLATE provenance gate: three structural and subject
+/// bridges, including three unasserted downstream calls into the length
+/// writer.
 ///
 /// This runs inside `entailment.rs`'s frozen real-source corpus walk so the
 /// two gates share one front-end pass over the same 56 KB four-file bundle;
@@ -2179,19 +2166,69 @@ pub(super) fn assert_canonical_deflate_provenance(program: &CheckedProgramData) 
     let decode = function(program, "decode_dynamic");
     let metadata = &program.provenance;
 
-    assert_eq!(metadata.structural_bridges.len(), 1);
-    assert_eq!(metadata.structural_bridges[0].requirement.function, store);
+    let structural_functions = metadata
+        .structural_bridges
+        .iter()
+        .map(|bridge| {
+            program
+                .functions
+                .iter()
+                .find(|function| function.id == bridge.requirement.function)
+                .map(|function| function.name.as_str())
+                .expect("structural bridge function")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        structural_functions,
+        ["build_huffman_table", "store_dynamic_length", "publish_all"]
+    );
+    let store_bridge = metadata
+        .structural_bridges
+        .iter()
+        .find(|bridge| bridge.requirement.function == store)
+        .expect("store_dynamic_length structural bridge");
     assert!(matches!(
-        metadata.structural_bridges[0].predecessor,
+        store_bridge.predecessor,
         StructuralPredecessor::Local
     ));
-    assert_eq!(metadata.subject_bridges.len(), 1);
+    let subject_functions = metadata
+        .subject_bridges
+        .iter()
+        .map(|bridge| {
+            let name = program
+                .functions
+                .iter()
+                .find(|function| function.id == bridge.requirement.function)
+                .map(|function| function.name.as_str())
+                .expect("subject bridge function");
+            (name, bridge.subject.clone())
+        })
+        .collect::<Vec<_>>();
     assert_eq!(
-        metadata.subject_bridges[0].subject,
-        ParameterDatum {
-            ordinal: 3,
-            selector: DatumSelector::Plain,
-        }
+        subject_functions,
+        [
+            (
+                "build_huffman_table",
+                ParameterDatum {
+                    ordinal: 1,
+                    selector: DatumSelector::Plain,
+                },
+            ),
+            (
+                "store_dynamic_length",
+                ParameterDatum {
+                    ordinal: 3,
+                    selector: DatumSelector::Plain,
+                },
+            ),
+            (
+                "publish_all",
+                ParameterDatum {
+                    ordinal: 2,
+                    selector: DatumSelector::Plain,
+                },
+            ),
+        ]
     );
 
     let calls = metadata

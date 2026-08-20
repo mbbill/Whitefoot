@@ -499,16 +499,6 @@ pub(super) enum SystemResultProvenance {
     NoneExternal,
 }
 
-#[cfg(test)]
-impl SystemResultProvenance {
-    // Compatibility names for ordinary tests still being migrated on their
-    // isolated branch. They are removed when that test slice is integrated.
-    #[allow(non_upper_case_globals)]
-    pub(super) const ErrorPayloadOnly: Self = Self::OkDependent;
-    #[allow(non_upper_case_globals)]
-    pub(super) const ReadFailedPayloadOnly: Self = Self::EndpointDependent;
-}
-
 /// The `wf-prov` result-component class of each [SYS-2] operation, by its
 /// index in `SYSTEM_OPERATIONS`.
 ///
