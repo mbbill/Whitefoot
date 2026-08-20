@@ -417,8 +417,8 @@ pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args:
 fn a_short_read_is_progress_and_only_the_observed_end_is_read_end() {
     let llvm = compile(CHUNKED_READ);
     // Five bytes in three-byte requests: three, then two, then end. The short
-    // second success is progress, not end of input, and the cursor advanced by
-    // exactly each reported count, so the drain totals the file exactly
+    // second success is progress, not end of input, and each returned absolute
+    // endpoint becomes the next cursor, so the drain totals the file exactly
     // [SYS-8, SYS-11].
     assert_eq!(
         run_in_directory(&llvm, &[("five.txt", b"abcde")], &[b"five.txt"])
@@ -443,7 +443,7 @@ fn a_short_read_is_progress_and_only_the_observed_end_is_read_end() {
     );
 }
 
-/// Reports a zero-length read's count, then the following request's count.
+/// Reports a zero-length read's endpoint, then the following request's endpoint.
 const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
@@ -522,8 +522,8 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
 #[test]
 fn a_zero_length_read_reports_no_bytes_without_issuing_a_host_transfer() {
     let llvm = compile(VACANT_READ);
-    // A zero-length range reports a count of zero and issues no host
-    // transfer, and is never reported as `ReadEnd` [SYS-8]. The following
+    // A zero-length range reports `next = start` and issues no host transfer,
+    // and is never reported as `ReadEnd` [SYS-8]. The following
     // request still reads from the same position, so no cursor moved.
     assert_eq!(
         run_in_directory(&llvm, &[("five.txt", b"abcde")], &[b"five.txt"])
@@ -687,9 +687,9 @@ pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out
 fn write_once_publishes_the_requested_range_and_reports_its_absolute_endpoint() {
     let llvm = compile(WRITE_PREFIX);
     let output = run_in_directory(&llvm, &[], &[]);
-    // The zero-length range issued no host transfer and reported a count of
-    // zero; the nonempty range published exactly the requested prefix of the
-    // source and reported the absolute endpoint three [SYS-8, SYS-12].
+    // The zero-length range issued no host transfer and reported its start as
+    // the endpoint; the nonempty range published exactly the requested prefix
+    // of the source and reported the absolute endpoint three [SYS-8, SYS-12].
     assert_eq!(output.stdout, b"xy");
     assert_eq!(output.status.code(), Some(3));
     // A host zero-length write is `Err(WriteZero())` and never `Ok(0)`; no

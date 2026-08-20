@@ -38,7 +38,7 @@ fn const_arrays_are_immutable_globals_and_execute_through_index_and_len() {
     ));
     let main = emitted_function(&llvm, "main");
     // The constant lookup is discharged [OP-4]: no bounds compare remains;
-    // the retained wf_trap calls belong to the explicit checks.
+    // the retained wf_trap calls belong to explicit claims.
     assert!(!main.contains("icmp ult i64"));
     assert!(main.contains("call void @wf_trap"));
     let output = compile_and_run(&llvm);

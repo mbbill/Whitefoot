@@ -556,8 +556,8 @@ fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
 }
 
 /// §9.1 row 7 — `read_once` and `write_once` consume statically authorized
-/// ranges, make at most one host transfer, sanitize one reported count, and
-/// use a cold outcome mapper.
+/// ranges, make at most one host transfer, sanitize one host count into an
+/// absolute endpoint, and use a cold outcome mapper.
 #[test]
 fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     let module = emitted();

@@ -1,5 +1,5 @@
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks, traps {
-  doc "SYS-8: a file larger than the buffer needs repeated calls, the cursor advances by exactly the reported count each time, and on the final short read exactly the first count bytes of the range may have changed while every other byte of the reused buffer is unchanged. Repetition and accumulation are ordinary source loops, not a read-exact primitive.";
+  doc "SYS-8: a file larger than the buffer needs repeated calls, each ReadBytes payload is the absolute endpoint of that call's changed prefix, and the source cursor advances by next - start. On the final short read exactly [start, next) may have changed while every other byte of the reused buffer is unchanged. Repetition and accumulation are ordinary source loops, not a read-exact primitive.";
   let page = buffer_new(8_u64, 0_u8);
   let total = 0_u64;
   let chunks = 0_u64;

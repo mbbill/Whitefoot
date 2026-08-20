@@ -776,25 +776,31 @@ mod tests {
                 .as_slice(),
                 "GIVE-1",
             ),
-            // The v0.18 FN-7 entry-form corpus, promoted from `pending` to
-            // runnable by this compiler's entry-form admission judgment.
+            // Retired program-kind spellings remain unknown leading
+            // constructs under the command-only v0.33 grammar.
             (
-                "reject-syskind-service-reserved.wf",
-                include_bytes!("../../tests/conformance/cases/reject-syskind-service-reserved.wf")
-                    .as_slice(),
-                "FN-7",
+                "reject-form1-service-leading-construct.wf",
+                include_bytes!(
+                    "../../tests/conformance/cases/reject-form1-service-leading-construct.wf"
+                )
+                .as_slice(),
+                "FORM-1",
             ),
             (
-                "reject-syskind-embedded-reserved.wf",
-                include_bytes!("../../tests/conformance/cases/reject-syskind-embedded-reserved.wf")
-                    .as_slice(),
-                "FN-7",
+                "reject-form1-embedded-leading-construct.wf",
+                include_bytes!(
+                    "../../tests/conformance/cases/reject-form1-embedded-leading-construct.wf"
+                )
+                .as_slice(),
+                "FORM-1",
             ),
             (
-                "reject-syskind-unadmitted-name.wf",
-                include_bytes!("../../tests/conformance/cases/reject-syskind-unadmitted-name.wf")
-                    .as_slice(),
-                "FN-7",
+                "reject-form1-daemon-leading-construct.wf",
+                include_bytes!(
+                    "../../tests/conformance/cases/reject-form1-daemon-leading-construct.wf"
+                )
+                .as_slice(),
+                "FORM-1",
             ),
             (
                 "reject-sysentry-label-unknown.wf",

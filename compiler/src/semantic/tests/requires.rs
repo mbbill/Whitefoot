@@ -161,14 +161,14 @@ command fn main() -> status: own ExitStatus traps {
 }
 
 #[test]
-fn requires_rejects_user_calls_and_trapping_operations() {
+fn requires_rejects_user_calls_and_partial_operations() {
     assert_rule(
         include_bytes!("../../../../tests/conformance/cases/fn8-neg-requires-user-call.wf"),
         SemanticRule::Fn8,
         SemanticIssueKind::InvalidRequires,
     );
     assert_rule(
-        include_bytes!("../../../../tests/conformance/cases/fn8-neg-requires-trapping-op.wf"),
+        include_bytes!("../../../../tests/conformance/cases/fn8-neg-requires-partial-op.wf"),
         SemanticRule::Fn8,
         SemanticIssueKind::InvalidRequires,
     );

@@ -431,8 +431,8 @@ const IO_ERROR_DETAIL: [SystemField; 2] = [
 const REQUIRED_U64: [SystemField; 1] = [field("required", SystemTypeRef::U64)];
 const NEXT_U64: [SystemField; 1] = [field("next", SystemTypeRef::U64)];
 const ERROR_IO: [SystemField; 1] = [field("error", SystemTypeRef::Nominal(IO_ERROR))];
-/// One `ListBytes` payload: the transferred byte count and the exact number of
-/// entry records that prefix holds.
+/// One `ListBytes` payload: the absolute end of the portable prefix and the
+/// exact number of entry records that prefix holds.
 const NEXT_AND_ENTRIES_U64: [SystemField; 2] = [
     field("next", SystemTypeRef::U64),
     field("entries", SystemTypeRef::U64),

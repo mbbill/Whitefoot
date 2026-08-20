@@ -960,7 +960,7 @@ command fn main() -> status: own ExitStatus traps {
             "../../../tests/conformance/cases/x-arith-iadd-checked-overflow-err-arm-runs.wf"
         )
         .as_slice(),
-        include_bytes!("../../../tests/conformance/cases/run-ex2-loop-trap-folds.wf").as_slice(),
+        include_bytes!("../../../tests/conformance/cases/run-ex2-loop-exact-claims.wf").as_slice(),
     ] {
         let output = compile_and_run(&compile(independent));
         assert!(output.status.success());

@@ -1788,8 +1788,8 @@ fn emit_list_once(
          br i1 %empty.range, label %empty, label %transfer\n\
          empty:\n  \
          %empty.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
-         %empty.count = insertvalue {llvm} %empty.tag, i64 %start, {bytes_index}\n  \
-         %empty.outcome = insertvalue {llvm} %empty.count, i64 0, {entries_index}\n  \
+         %empty.endpoint = insertvalue {llvm} %empty.tag, i64 %start, {bytes_index}\n  \
+         %empty.outcome = insertvalue {llvm} %empty.endpoint, i64 0, {entries_index}\n  \
          ret {llvm} %empty.outcome\n\
          transfer:\n  \
          %base = extractvalue {buffer} %destination, 0\n  \
@@ -1899,8 +1899,8 @@ fn emit_list_once(
          done:\n  \
          %next = add nuw i64 %start, %written\n  \
          %bytes.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
-         %bytes.count = insertvalue {llvm} %bytes.tag, i64 %next, {bytes_index}\n  \
-         %bytes.outcome = insertvalue {llvm} %bytes.count, i64 %entries, \
+         %bytes.endpoint = insertvalue {llvm} %bytes.tag, i64 %next, {bytes_index}\n  \
+         %bytes.outcome = insertvalue {llvm} %bytes.endpoint, i64 %entries, \
          {entries_index}\n  \
          ret {llvm} %bytes.outcome\n\
          tcb.defect:\n  \

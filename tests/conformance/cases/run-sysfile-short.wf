@@ -1,5 +1,5 @@
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
-  doc "SYS-8: a short success is not end of input. A file shorter than the requested range yields ReadBytes(n) with n below the capacity, and only the next call, which observes no available byte, states ReadEnd. Exactly the first n bytes of the range may have changed and the rest of the buffer is unchanged.";
+  doc "SYS-8: a short success is not end of input. A file shorter than the requested range yields ReadBytes(next) with start < next < end, and only the next call, which observes no available byte, states ReadEnd. Exactly [start, next) may have changed and the rest of the buffer is unchanged.";
   let page = buffer_new(8_u64, 90_u8);
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {

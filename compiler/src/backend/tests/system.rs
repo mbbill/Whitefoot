@@ -104,7 +104,7 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> resul
     region 'd {
       let copied = host_copy_bytes<'v, 'd>(value: &'v value, destination: &uniq 'd bytes, start: 0_u64, end: length);
       match move copied {
-        Ok(value: count) => {
+        Ok(value: next) => {
         }
         Err(error: problem) => {
           claim exact_capacity_must_fit: False() because "exact capacity must fit";
@@ -384,7 +384,7 @@ fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
         region 'v {
           region 'd {
             match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 0_u64, end: 2_u64) {
-              Ok(value: count) => {
+              Ok(value: next) => {
                 return exit_status(code: 10_u8);
               }
               Err(error: problem) => {
@@ -442,7 +442,7 @@ fn an_out_of_range_copy_is_a_static_sys8_rejection() {
         region 'v {
           region 'd {
             match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 1_u64, end: 5_u64) {
-              Ok(value: count) => {
+              Ok(value: next) => {
                 return exit_status(code: 10_u8);
               }
               Err(error: problem) => {
