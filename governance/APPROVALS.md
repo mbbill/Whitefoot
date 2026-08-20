@@ -1297,3 +1297,19 @@ ACTIVE-SPEC: v0.32 5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6
   specification activation, `ACTIVE-SPEC:` record, or archive; and no merge to
   main. The final candidate bytes, SHA-256, complete diff, and verifier results
   return for a separate owner decision.
+- SUPPLEMENTAL CANDIDATE AUTHORITY: after receiving the complete protected
+  before/after inventory, the owner restated on 2026-08-20 that work on the
+  isolated branch was authorized without intermediate approval — “分枝上你随便
+  改不要等我审批” — while retaining the final activation/merge approval. This
+  authorizes the enumerated candidate-only dispositions: four SYS-8 runtime
+  trap rows become static SYS-8 rejections; the SYS-14 portable record uses its
+  approved little-endian u16 length; retired program-kind and outside-kind
+  subjects are renamed/reclassified under FORM-1, FN-7, SYS-2, or TYPE-5 as
+  reported; old arithmetic-trap subjects become explicit retained `.defined`
+  claims; endpoint and claim identities/docs are synchronized; and the nine
+  approved v0.33 additions receive the audit repairs reported in that same
+  inventory. No path outside the approved 489-file set and nine additions is
+  admitted by this supplement.
+- STILL EXCLUDED: this supplement does not approve activation, archive or
+  digest-chain installation, runner/collection/gate wiring, or merge to main.
+  Those remain the final exact-candidate decision.
