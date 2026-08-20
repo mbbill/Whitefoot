@@ -1,4 +1,4 @@
-command fn main() -> own ExitStatus pure {
+command fn main() -> status: own ExitStatus pure {
   doc "SYS-13: a nonzero command code reaches the host status unchanged; 1 is the second of the three codes the first slice's command programs distinguish.";
   return exit_status(code: 1_u8);
 }

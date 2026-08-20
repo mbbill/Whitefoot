@@ -1,9 +1,9 @@
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   doc "A box allocated in a region is freed by a compiler-derived drop on the region-exit edge, in reverse declaration order [STOR-3]; surfaced in the elaborated artifact [DIAG-2].";
   region 'r {
     let b = box_new(9_i32);
     let v = deref(b);
     claim box_drift: ieq(v, 9_i32) because "box drift";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

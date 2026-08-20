@@ -1,4 +1,4 @@
-embedded fn main() -> own ExitStatus pure {
-  doc "`embedded` is the second reserved program-kind spelling with no form defined in v0.18; a program_kind naming it is a hard error citing FN-7.";
+embedded fn main() -> function_result: own ExitStatus pure {
+  doc "`embedded` has no v0.33 entry form. The closed grammar admits only the `command` marker, so this retired leading spelling is an unknown construct rejected by FORM-1.";
   return exit_status(code: 0_u8);
 }

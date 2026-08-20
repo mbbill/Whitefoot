@@ -4,9 +4,9 @@ enum Sign {
   Pos();
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "A bare use of an affine value must be rejected [OWN-1] (write move).";
   let a = Neg(mag: 1_i32);
   let b = a;
-  return unit;
+  return exit_status(code: 0_u8);
 }

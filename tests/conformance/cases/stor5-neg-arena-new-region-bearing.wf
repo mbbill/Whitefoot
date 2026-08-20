@@ -1,8 +1,8 @@
-fn invalid['data, 'storage](value: own slice<'data, u8>) -> own unit allocates(arena 'storage) {
+fn invalid['data, 'storage](value: own slice<'data, u8>) -> function_result: own unit allocates(arena 'storage) {
   arena_new<'storage, slice<'data, u8>>(move value);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

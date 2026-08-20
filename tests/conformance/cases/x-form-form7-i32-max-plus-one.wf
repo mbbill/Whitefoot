@@ -1,5 +1,5 @@
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "i32 max + 1 is out of range [FORM-7].";
   let a = 2147483648_i32;
-  return unit;
+  return exit_status(code: 0_u8);
 }

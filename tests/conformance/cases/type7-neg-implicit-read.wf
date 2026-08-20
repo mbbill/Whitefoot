@@ -1,13 +1,13 @@
-fn takes(value: own i32) -> own unit pure {
+fn takes(value: own i32) -> function_result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "Using a borrow where a value of its referent type is expected, without deref, is forbidden [TYPE-7].";
   let a = 1_i32;
   region 'r {
     let p = &'r a;
     takes(value: p);
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

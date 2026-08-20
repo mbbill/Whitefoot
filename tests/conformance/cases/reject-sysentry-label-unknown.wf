@@ -1,4 +1,4 @@
-command fn main(command.env as env: own Args) -> own ExitStatus pure {
+command fn main(command.env as env: own Args) -> status: own ExitStatus pure {
   doc "The standard input table for kind `command` is closed; `command.env` selects no row and is a hard error citing FN-7 at that input_label node.";
   return exit_status(code: 0_u8);
 }

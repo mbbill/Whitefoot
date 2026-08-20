@@ -1,4 +1,4 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Distinct value names and a break to a lexically enclosing loop [TYPE-6].";
   let i = 0_i32;
   let total = 0_i32;
@@ -6,9 +6,11 @@ fn main() -> own unit traps {
     if ige(i, 3_i32) {
       break @l;
     }
+    claim total_step_defined: total +defined i because "the three-iteration sum stays representable";
     set total = total + i;
+    claim index_step_defined: i +defined 1_i32 because "the loop exits before the counter can overflow";
     set i = i + 1_i32;
   }
   claim sum_drift: ieq(total, 3_i32) because "sum drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

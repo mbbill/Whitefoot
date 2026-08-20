@@ -3,7 +3,7 @@ enum Tagged {
   Nil();
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Statement-position match over an owned payload enum: the moved scrutinee's payload is copied into the arm as a fresh local and gates a claim [TYPE-2, GRAM-10, OWN-13, OP-1].";
   let t = Num(n: 21_i32);
   match t {
@@ -19,5 +19,5 @@ fn main() -> own unit traps {
       claim nil: False() because "nil";
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

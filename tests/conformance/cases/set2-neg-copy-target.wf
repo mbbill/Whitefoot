@@ -2,9 +2,9 @@ struct Counter {
   count: u64;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "SET-2 requires the target's final selected type to be affine under OWN-1. `count` is copy-typed, so `replace` is a hard error citing SET-2 at the complete target place: SET-1 `set` is the one spelling for a copy place, and the previous value is read bare.";
   let counter = Counter(count: 1_u64);
   let previous = replace counter.count = 2_u64;
-  return unit;
+  return exit_status(code: 0_u8);
 }

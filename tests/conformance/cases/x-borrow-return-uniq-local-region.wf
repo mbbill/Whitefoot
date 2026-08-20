@@ -1,9 +1,9 @@
-fn leak_uniq['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {
+fn leak_uniq['r0](x: &uniq 'r0 i32) -> function_result: &uniq 'r0 i32 pure {
   region 's {
     return &uniq 's deref(x);
   }
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

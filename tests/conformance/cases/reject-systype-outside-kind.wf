@@ -1,8 +1,9 @@
-fn take_args(args: own Args) -> own unit pure {
-  doc "A system-unadmitted unit sees no system nominal type [SYS-3], so `Args` in a `type` role is an unresolved TYPEID citing TYPE-5.";
+fn take_args(args: own Args) -> function_result: own unit pure {
+  doc "The command unit admits Args, and the helper requires that exact own type. Passing unit at the call boundary is an exact argument-type mismatch rejected by TYPE-5.";
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  take_args(args: unit);
+  return exit_status(code: 0_u8);
 }

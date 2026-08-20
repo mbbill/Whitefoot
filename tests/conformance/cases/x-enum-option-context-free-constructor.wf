@@ -3,7 +3,7 @@ enum Flag {
   Second();
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let first_atom_0001 = First();
   match Some(value: first_atom_0001) {
     None() => {
@@ -11,5 +11,5 @@ fn main() -> own unit pure {
     Some(value: payload) => {
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

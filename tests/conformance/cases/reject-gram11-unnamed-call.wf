@@ -1,9 +1,9 @@
-fn id(x: own i32) -> own i32 pure {
+fn id(x: own i32) -> function_result: own i32 pure {
   return x;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "A user-fn call must use named args [GRAM-11]; positional is rejected.";
   let a = id(40_i32);
-  return unit;
+  return exit_status(code: 0_u8);
 }

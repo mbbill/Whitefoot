@@ -3,7 +3,7 @@ enum Packet {
   Empty();
 }
 
-fn score(packet: own Packet) -> own i32 traps {
+fn score(packet: own Packet) -> function_result: own i32 traps {
   match move packet {
     Data(left: left_value, right: right_value, ready: ready_value) => {
       claim left_payload_drift: ieq(left_value, 20_i32) because "left payload drift";
@@ -17,11 +17,11 @@ fn score(packet: own Packet) -> own i32 traps {
   }
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Construct, pass, destructure, and validate every field of one mixed-width payload variant [GRAM-8, GRAM-10, OWN-13].";
   let ready = True();
   let packet = Data(left: 20_i32, right: 22_u64, ready: ready);
   let result = score(packet: move packet);
   claim multi_field_payload_drift: ieq(result, 42_i32) because "multi-field payload drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

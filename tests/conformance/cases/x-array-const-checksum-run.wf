@@ -1,6 +1,6 @@
 const input: array<u64, 8> =[3_u64, 5_u64, 8_u64, 13_u64, 21_u64, 34_u64, 55_u64, 89_u64];
 
-fn checksum() -> own u64 traps {
+fn checksum() -> function_result: own u64 traps {
   let cursor = 0_u64;
   let total = 0_u64;
   loop @scan {
@@ -16,9 +16,9 @@ fn checksum() -> own u64 traps {
   return total;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "A static fixed array feeds a loop-carried checksum; the loop claim discharges its indexing.";
   let result = checksum();
   claim array_checksum_drift: ieq(result, 228_u64) because "array checksum drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

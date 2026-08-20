@@ -1,12 +1,12 @@
-fn needs_ref['r](p: &'r i32) -> own unit pure {
+fn needs_ref['r](p: &'r i32) -> function_result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "Passing an own i32 value where a &'r i32 borrow parameter is declared [TYPE-5].";
   let a = 5_i32;
   region 'call_region {
     let r = needs_ref<'call_region>(p: a);
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

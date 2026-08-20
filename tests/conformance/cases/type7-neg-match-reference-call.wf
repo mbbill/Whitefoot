@@ -2,11 +2,11 @@ enum State {
   Ready();
 }
 
-fn view['r](state: &'r State) -> &'r State pure {
+fn view['r](state: &'r State) -> function_result: &'r State pure {
   return state;
 }
 
-fn inspect['r](state: &'r State) -> own unit pure {
+fn inspect['r](state: &'r State) -> function_result: own unit pure {
   doc "TYPE-7: a reference-returning call is still a reference value and cannot be matched without an explicit holder and dereference.";
   match view<'r>(state: state) {
     Ready() => {
@@ -15,6 +15,6 @@ fn inspect['r](state: &'r State) -> own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

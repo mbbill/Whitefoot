@@ -1,18 +1,18 @@
-fn guarded(x: own i32) -> own i32 traps {
+fn guarded(x: own i32) -> function_result: own i32 traps {
   doc "Declares traps and exhibits a claim.";
   claim range: ilt(x, 100_i32) because "range";
   return x;
 }
 
-fn f(x: own i32) -> own i32 pure {
+fn f(x: own i32) -> function_result: own i32 pure {
   doc "Declares pure but calls a traps fn [EFF-2] undeclared-but-exhibited.";
   let a = guarded(x: x);
   return a;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Driver.";
   let a = f(x: 7_i32);
   claim x: ieq(a, 7_i32) because "x";
-  return unit;
+  return exit_status(code: 0_u8);
 }

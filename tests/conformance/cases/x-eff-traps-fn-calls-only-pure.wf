@@ -1,17 +1,17 @@
-fn bump(x: own i32) -> own i32 pure {
+fn bump(x: own i32) -> function_result: own i32 pure {
   doc "A pure helper with no trapping construct.";
   return x +wrap 1_i32;
 }
 
-fn f(x: own i32) -> own i32 traps {
+fn f(x: own i32) -> function_result: own i32 traps {
   doc "Declares traps but its body only calls a pure fn [EFF-2] declared-but-unexhibited.";
   let a = bump(x: x);
   return a;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Driver.";
   let a = f(x: 7_i32);
   claim x: ieq(a, 8_i32) because "x";
-  return unit;
+  return exit_status(code: 0_u8);
 }

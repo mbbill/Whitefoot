@@ -2,7 +2,7 @@ enum State {
   Ready();
 }
 
-fn inspect(holder: own box<State>) -> own unit pure {
+fn inspect(holder: own box<State>) -> function_result: own unit pure {
   doc "TYPE-7: match requires the enum inside a box holder, written match deref(holder).";
   match holder {
     Ready() => {
@@ -11,6 +11,6 @@ fn inspect(holder: own box<State>) -> own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

@@ -1,13 +1,13 @@
-fn inc (y: own i32) -> own i32 pure {
+fn inc (y: own i32) -> function_result: own i32 pure {
   return iadd.wrap<i32>(y, 1_i32);
 }
 
-fn add2 (x: own i32, y: own i32) -> own i32 pure {
+fn add2 (x: own i32, y: own i32) -> function_result: own i32 pure {
   return iadd.wrap<i32>(x, y);
 }
 
-fn main () -> own unit pure {
+command fn main () -> status: own ExitStatus pure {
   doc "GRAM-9: a user-fn call (inc) nested in another call's argument atom position does not derive; bind it with a preceding let.";
   let r = add2(x: inc(y: 1_i32), y: 2_i32);
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
   doc "HOST-1: an argument that is not valid text retains its complete original code-unit sequence. host_bytes_len reports the exact native byte count and host_copy_bytes transfers exactly those bytes with no validation, no Unicode restriction, and no substitution [HOST-2, SYS-9].";
   let bytes = buffer_new(4_u64, 0_u8);
   region 'a {
@@ -12,7 +12,7 @@ command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap
             return exit_status(code: 10_u8);
           }
           region 'd {
-            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, offset: 0_u64, capacity: 4_u64) {
+            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 0_u64, end: 4_u64) {
               Ok(value: copied) => {
                 let counted = ieq(copied, 3_u64);
                 if counted {

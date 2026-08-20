@@ -3,10 +3,12 @@ enum Flag {
   B();
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "OWN-1 copy vs affine: i32 n is reused three times (copy on use); the enum is consumed by exactly one match (affine).";
   let n = 14_i32;
+  claim first_sum_defined: n +defined n because "fourteen doubled is representable";
   let s = n + n;
+  claim second_sum_defined: s +defined n because "the expected answer forty-two is representable";
   let t = s + n;
   claim copy_drift: ieq(t, 42_i32) because "copy drift";
   let f = A();
@@ -17,5 +19,5 @@ fn main() -> own unit traps {
       claim b: False() because "b";
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -3,10 +3,10 @@ enum Flag {
   Second();
 }
 
-fn bad() -> own Result<u64, Flag> pure {
+fn bad() -> function_result: own Result<u64, Flag> pure {
   return Err<u64, Flag>(error: 1_u64);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

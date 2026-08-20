@@ -1,4 +1,4 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "OWN-5: two shared borrows of one place coexist and are both read - shared reads never conflict.";
   let a = 7_i32;
   region 'r {
@@ -6,5 +6,5 @@ fn main() -> own unit traps {
     let s2 = &'r a;
     claim eq: ieq(deref(s1), deref(s2)) because "eq";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -1,7 +1,7 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Storage class is a function of type [STOR-1]: an i32 local is frame-resident with no per-binding storage annotation and no default clause.";
   let a = 7_i32;
   let b = a +wrap 3_i32;
   claim frame_drift: ieq(b, 10_i32) because "frame drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

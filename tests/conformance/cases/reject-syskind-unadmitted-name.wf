@@ -1,4 +1,4 @@
-daemon fn main() -> own ExitStatus pure {
-  doc "The grammar admits any IDENT as a program_kind so syntax formation encodes no semantic vocabulary; the checker requires it to equal one closed table row, and a kind naming no row is a hard error citing FN-7.";
+daemon fn main() -> function_result: own ExitStatus pure {
+  doc "The v0.33 grammar no longer admits an arbitrary IDENT as a program kind. `daemon` is therefore an unknown leading construct rejected by FORM-1 before entry semantics.";
   return exit_status(code: 0_u8);
 }

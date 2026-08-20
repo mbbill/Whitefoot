@@ -3,7 +3,7 @@ enum Signal {
   Busy();
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "An arm naming a variant outside the scrutinee enum resolves in the constructor domain but is foreign to the matched nominal [TYPE-6].";
   let s = Ready();
   match s {
@@ -12,5 +12,5 @@ fn main() -> own unit pure {
     Busy() => {
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

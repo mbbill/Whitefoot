@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
   doc "SYS-8: the third range failure. The offset is inside the buffer and the sum does not overflow, but the range extends past the buffer's runtime length, which traps before any host transfer exactly as the other two do.";
   let bytes = buffer_new(4_u64, 0_u8);
   region 'a {

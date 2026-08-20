@@ -3,7 +3,7 @@ enum Coin {
   Tails();
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Match a coin twice through shared borrows in a region and give a score each time; borrow-mode matching leaves the coin live for the second read [OWN-13, GIVE-1, OP-1, SCOPE-3].";
   let c = Heads();
   region 'r {
@@ -25,8 +25,9 @@ fn main() -> own unit traps {
         give 20_i32;
       }
     }
+    claim score_sum_defined: first +defined second because "both branch scores are small";
     let total = first + second;
     claim coin_score_drift: ieq(total, 13_i32) because "coin score drift";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

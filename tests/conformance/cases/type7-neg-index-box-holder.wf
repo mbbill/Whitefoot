@@ -1,8 +1,8 @@
-fn read(holder: own box<buffer<u8>>) -> own u8 traps {
+fn read(holder: own box<buffer<u8>>) -> function_result: own u8 traps {
   doc "TYPE-7: a subscript cannot implicitly read through a box holder; write deref(holder)[offset].";
   return holder[0_u64];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

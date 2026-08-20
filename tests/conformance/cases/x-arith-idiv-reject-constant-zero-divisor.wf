@@ -1,7 +1,7 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "A signed bare `/` with one constant operand is in the divisor class [OP-2], so it carries the division obligation instead of a runtime test [ENT-6]. The constant divisor is zero, a ground false conjunct rejected at every non-contradictory point: there is no accepted always-trapping bare spelling, and what was a runtime abort here is now a compile-time rejection.";
   let x = 10_i32;
   let q = x / 0_i32;
   claim unreachable: igt(q, 0_i32) because "unreachable";
-  return unit;
+  return exit_status(code: 0_u8);
 }

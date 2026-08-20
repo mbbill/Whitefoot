@@ -1,4 +1,4 @@
-fn first(b: own buffer<u8>, i: own u64) -> own u8 traps {
+fn first(b: own buffer<u8>, i: own u64) -> function_result: own u8 traps {
   doc "TYPE-5: a subscript states no element type; the selected type derives from the base place's buffer<u8>, so the binder's stated own u8 is the only type that matches. The dominating claim discharges the bounds obligation [OP-4, CLM-1].";
   let n = len(b);
   let ok = ilt(i, n);
@@ -7,6 +7,6 @@ fn first(b: own buffer<u8>, i: own u64) -> own u8 traps {
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

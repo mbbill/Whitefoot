@@ -3,10 +3,11 @@ struct Point {
   y: i32;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "TYPE-2/GRAM-8: construct a struct, read its fields, use them in arithmetic, check the sum.";
   let p = Point(x: 3_i32, y: 4_i32);
+  claim field_sum_defined: p.x +defined p.y because "the constructed field values are small";
   let s = p.x + p.y;
   claim field_arithmetic_drift: ieq(s, 7_i32) because "field arithmetic drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

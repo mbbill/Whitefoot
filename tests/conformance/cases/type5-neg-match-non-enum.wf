@@ -1,4 +1,4 @@
-fn inspect(value: own i32) -> own unit pure {
+fn inspect(value: own i32) -> function_result: own unit pure {
   doc "TYPE-5: a match scrutinee must have an enum type; globally known arm names cannot type a scalar match.";
   match value {
     True() => {
@@ -7,6 +7,6 @@ fn inspect(value: own i32) -> own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

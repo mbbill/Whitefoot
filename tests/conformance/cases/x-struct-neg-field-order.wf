@@ -3,8 +3,8 @@ struct Pair {
   b: i32;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "GRAM-8: constructing a struct with out-of-order field names is rejected; declared order is the one legal byte sequence.";
   let p = Pair(b: 2_i32, a: 1_i32);
-  return unit;
+  return exit_status(code: 0_u8);
 }

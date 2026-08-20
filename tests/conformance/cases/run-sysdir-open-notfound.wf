@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> own ExitStatus external, blocks {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus external, blocks {
   doc "SYS-7: a native failure maps onto exactly one portable class, and the class is the sole portable discriminator that exhaustive control flow branches on [ERR-2]. Opening a name no object in the initial directory carries is NotFound; the case reads no detail field, because code and origin are diagnostic data and no portable semantics is defined in terms of them.";
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {

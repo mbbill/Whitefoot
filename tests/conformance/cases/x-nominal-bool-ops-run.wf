@@ -1,4 +1,4 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Exercise every Boolean table operation through normal source compilation and host execution [OP-1, OP-8].";
   let yes = True();
   let no = False();
@@ -12,5 +12,5 @@ fn main() -> own unit traps {
   let same = bxor(yes, yes);
   let not_same = bnot(same);
   claim bxor_diagonal_drift: not_same because "bxor diagonal drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

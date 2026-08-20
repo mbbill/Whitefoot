@@ -2,7 +2,7 @@ struct Item {
   value: u64;
 }
 
-struct Other {
+struct Replacement {
   tag: u64;
 }
 
@@ -10,11 +10,11 @@ struct Slot {
   item: Item;
 }
 
-fn main() -> own unit pure {
-  doc "SET-2 derives a writable affine target place of type T and hands the right-hand side the same exact-`own T` judgment TYPE-5 states, located at the complete expr child of the replace_let_rhs. An `own Other` replacement for an `own Item` place has no mode coercion, conversion, or target-selected overload and is a hard error citing TYPE-5.";
+command fn main() -> status: own ExitStatus pure {
+  doc "SET-2 derives a writable affine target place of type T and hands the right-hand side the same exact-`own T` judgment TYPE-5 states, located at the complete expr child of the replace_let_rhs. An `own Replacement` value for an `own Item` place has no mode coercion, conversion, or target-selected overload and is a hard error citing TYPE-5.";
   let first = Item(value: 1_u64);
   let slot = Slot(item: move first);
-  let wrong = Other(tag: 2_u64);
+  let wrong = Replacement(tag: 2_u64);
   let previous = replace slot.item = move wrong;
-  return unit;
+  return exit_status(code: 0_u8);
 }

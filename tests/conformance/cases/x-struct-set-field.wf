@@ -2,7 +2,7 @@ struct Counter {
   n: i32;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "TYPE-5: mutate a struct field with `set place.f = atom`, read it back, check the result. The read-back feeds a class site, so a dominating claim discharges its OP-2 overflow obligation with the residual the diagnostic renders.";
   let c = Counter(n: 1_i32);
   set c.n = 41_i32;
@@ -10,5 +10,5 @@ fn main() -> own unit traps {
   claim field_below_max: field_in_range because "the field was just set to 41";
   let v = c.n + 1_i32;
   claim set_field_drift: ieq(v, 42_i32) because "set field drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -1,7 +1,7 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Primitive types i32 and unit are in-language [TYPE-1].";
   let a = 7_i32;
   let b = a + 35_i32;
   claim arith: ieq(b, 42_i32) because "arith";
-  return unit;
+  return exit_status(code: 0_u8);
 }

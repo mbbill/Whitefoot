@@ -2,7 +2,7 @@ enum Pair {
   Both(a: i32, b: i32);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "GRAM-10 declared order: a two-field variant bound out of declared order (b before a) is a hard error citing GRAM-10 and Both's declared field list.";
   let p = Both(a: 1_i32, b: 2_i32);
   let v = match p {
@@ -11,5 +11,5 @@ fn main() -> own unit traps {
     }
   }
   claim x: ieq(v, 1_i32) because "x";
-  return unit;
+  return exit_status(code: 0_u8);
 }

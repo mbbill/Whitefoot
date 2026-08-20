@@ -1,11 +1,11 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   doc "EFF-5 and SYS-12: the standard output and standard error bindings are two separate affine owners, and sequential calls across either owner preserve source order by the ordering rule that governs every external call, not by any aliasing analysis. Redirection may make the two owners one sink; the program reads that sink back through its own directory capability, so the combined bytes witness the order.";
   let first = buffer_new(2_u64, 65_u8);
   let second = buffer_new(2_u64, 66_u8);
   let page = buffer_new(8_u64, 0_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s first, offset: 0_u64, count: 2_u64) {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s first, start: 0_u64, end: 2_u64) {
         Ok(value: written) => {
         }
         Err(error: problem) => {
@@ -16,7 +16,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   }
   region 'e {
     region 't {
-      match write_once<'e, 't>(output: &uniq 'e err, source: &'t second, offset: 0_u64, count: 2_u64) {
+      match write_once<'e, 't>(output: &uniq 'e err, source: &'t second, start: 0_u64, end: 2_u64) {
         Ok(value: written) => {
         }
         Err(error: problem) => {
@@ -36,8 +36,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                   Ok(value: file) => {
                     region 'f {
                       region 'd {
-                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd page, offset: 0_u64, capacity: 8_u64) {
-                          ReadBytes(count: n) => {
+                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd page, start: 0_u64, end: 8_u64) {
+                          ReadBytes(next: n) => {
                             let combined = ieq(n, 4_u64);
                             if combined {
                             } else {

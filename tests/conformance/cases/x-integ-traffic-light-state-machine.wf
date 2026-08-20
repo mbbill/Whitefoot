@@ -4,7 +4,7 @@ enum Light {
   Yellow();
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "A traffic-light state machine advanced by value-matches: each match moves the own state and gives its own successor, so after three transitions the light returns to Red [OWN-13, GIVE-1, OP-1, SCOPE-3].";
   let s0 = Red();
   let s1 = match s0 {
@@ -52,5 +52,5 @@ fn main() -> own unit traps {
     }
   }
   claim cycle_did_not_return_to_red: ieq(code, 0_i32) because "cycle did not return to Red";
-  return unit;
+  return exit_status(code: 0_u8);
 }

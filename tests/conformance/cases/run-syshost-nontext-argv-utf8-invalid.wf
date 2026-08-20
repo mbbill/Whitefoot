@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> own ExitStatus pure {
+command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
   doc "HOST-2: the text route validates the complete code-unit sequence and reports an explicit invalid-text outcome rather than emitting a replacement code point, dropping a code unit, or producing a truncated encoding. The same argument the lossless route copies verbatim is Utf8Invalid here [SYS-6, SYS-9].";
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {

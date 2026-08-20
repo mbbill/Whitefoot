@@ -1,6 +1,6 @@
 enum sign { Neg(); Zero(); Pos(); }
 
-fn main () -> own unit pure {
+command fn main () -> status: own ExitStatus pure {
   doc "enum name must be a TYPEID [FORM-3].";
-  return unit;
+  return exit_status(code: 0_u8);
 }

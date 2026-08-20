@@ -1,12 +1,12 @@
-fn mix['r](a: &uniq 'r i32, b: &'r i32) -> own unit pure {
+fn mix['r](a: &uniq 'r i32, b: &'r i32) -> function_result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "OWN-12: a uniq argument and a shared argument over the same place alias at the call - rejected.";
   let x = 0_i32;
   region 'r {
     mix<'r>(a: &uniq 'r x, b: &'r x);
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

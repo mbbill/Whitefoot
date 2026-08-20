@@ -1,11 +1,11 @@
-fn main() -> own unit traps {
-  doc "A running product overflows i32 mid-loop; the bare * turns the overflow into a deterministic trap rather than UB, and the seed is bound from a checked op via give [OP-1, GIVE-1, SCOPE-3].";
+command fn main() -> status: own ExitStatus traps {
+  doc "A running product overflows i32 mid-loop. The executed *defined claim is the sole runtime boundary and aborts before the exact multiply would leave its domain; the seed is bound from a checked op via give [OP-1, CLM-1, GIVE-1, SCOPE-3].";
   let prod = match 1_i32 +checked 0_i32 {
     Ok(value: seed) => {
       give seed;
     }
     Err(error: e) => {
-      return unit;
+      return exit_status(code: 0_u8);
     }
   }
   let i = 2_i32;
@@ -13,9 +13,11 @@ fn main() -> own unit traps {
     if igt(i, 20_i32) {
       break @l;
     }
+    claim product_defined: prod *defined i because "the running product must remain representable";
     set prod = prod * i;
+    claim index_step_defined: i +defined 1_i32 because "the loop bound keeps the counter representable";
     set i = i + 1_i32;
   }
   claim unreachable_product_overflowed_first: igt(prod, 0_i32) because "unreachable: product overflowed first";
-  return unit;
+  return exit_status(code: 0_u8);
 }

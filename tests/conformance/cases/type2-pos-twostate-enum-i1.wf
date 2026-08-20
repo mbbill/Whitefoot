@@ -3,7 +3,7 @@ enum ScanState {
   InWord();
 }
 
-fn flip(s: own ScanState) -> own ScanState pure {
+fn flip(s: own ScanState) -> function_result: own ScanState pure {
   let out = match s {
     InSpace() => {
       give InWord();
@@ -15,7 +15,7 @@ fn flip(s: own ScanState) -> own ScanState pure {
   return out;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "A 2-variant tag-only enum is Bool-isomorphic: copy semantics, matched twice, loop-carried and set-mutated; lowers as i1. The arm no execution takes carries a constructed-Bool claim, which CLM-2 neither proves nor refutes, so the tripwire survives compilation.";
   let st = InSpace();
   let i = 0_u64;
@@ -34,5 +34,5 @@ fn main() -> own unit traps {
     InWord() => {
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -1,7 +1,12 @@
-fn main() -> own unit traps {
-  doc "The bare + overflows i32 max by one and traps [FORM-7]. Both operands are bound terms, so this is the retained two-non-constant trapping form OP-2's constant-operand class does not reach.";
-  let a = 2147483647_i32;
-  let one = 1_i32;
+fn opaque(n: own i32) -> function_result: own i32 pure {
+  return n;
+}
+
+command fn main() -> status: own ExitStatus traps {
+  doc "The +defined query for i32 max plus one is false, so its executed claim is the sole runtime trap boundary and aborts before the following bare exact addition [FORM-7, CLM-1].";
+  let a = opaque(n: 2147483647_i32);
+  let one = opaque(n: 1_i32);
+  claim addition_defined: a +defined one because "i32 max plus one must remain representable";
   let b = a + one;
-  return unit;
+  return exit_status(code: 0_u8);
 }

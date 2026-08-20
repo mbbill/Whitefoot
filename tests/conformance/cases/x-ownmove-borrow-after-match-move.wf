@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "OWN-1/OWN-13: matching an own value moves it; borrowing the now-dead binding afterward is a use-after-move.";
   let s = Pos();
   match s {
@@ -18,5 +18,5 @@ fn main() -> own unit pure {
   region 'r {
     let b = &'r s;
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

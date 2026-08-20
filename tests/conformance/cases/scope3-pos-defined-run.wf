@@ -1,7 +1,7 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "An accepted program has defined behavior and runs to normal exit [SCOPE-3].";
   let a = 20_i32;
   let b = a + 22_i32;
   claim drift: ieq(b, 42_i32) because "drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-fn classify(x: own i32) -> own Sign pure {
+fn classify(x: own i32) -> function_result: own Sign pure {
   doc "Classify an integer's sign; the closed-set result is consumed by match at each call site [FN-5].";
   if ilt(x, 0_i32) {
     return Neg();
@@ -15,7 +15,7 @@ fn classify(x: own i32) -> own Sign pure {
   }
 }
 
-fn weight(x: own i32) -> own i32 pure {
+fn weight(x: own i32) -> function_result: own i32 pure {
   doc "Map a sign to a weight; matching the own Sign moves it exactly once [OWN-13].";
   match classify(x: x) {
     Neg() => {
@@ -30,14 +30,16 @@ fn weight(x: own i32) -> own i32 pure {
   }
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Accumulate sign-weights of three inputs via cross-fn enum dispatch, then verify the sum [OP-1, OWN-13].";
   let neg = 0_i32 -wrap 5_i32;
   let wa = weight(x: neg);
   let wb = weight(x: 0_i32);
   let wc = weight(x: 7_i32);
+  claim first_weight_sum_defined: wa +defined wb because "each weight is at most two";
   let s0 = wa + wb;
+  claim second_weight_sum_defined: s0 +defined wc because "three small weights stay representable";
   let s1 = s0 + wc;
   claim weight_sum_drift: ieq(s1, 3_i32) because "weight-sum drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

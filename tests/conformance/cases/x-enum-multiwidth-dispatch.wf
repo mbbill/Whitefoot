@@ -4,7 +4,7 @@ enum Val {
   Bare();
 }
 
-fn classify(v: own Val) -> own i32 traps {
+fn classify(v: own Val) -> function_result: own i32 traps {
   doc "Match each variant of an enum whose payload slot is sized to the widest variant (u64); each payload is copied out at its own declared width [TYPE-2, TYPE-6, GRAM-10].";
   match v {
     Small(a: n) => {
@@ -25,7 +25,7 @@ fn classify(v: own Val) -> own i32 traps {
   }
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Construct all three variants and dispatch each through a by-value cross-fn match; the pinned sum proves every payload width round-trips.";
   let small_atom_0001 = Small(a: 40_i32);
   let a = classify(v: move small_atom_0001);
@@ -33,8 +33,10 @@ fn main() -> own unit traps {
   let b = classify(v: move big_atom_0002);
   let bare_atom_0003 = Bare();
   let c = classify(v: move bare_atom_0003);
+  claim first_sum_defined: a +defined b because "the classifier results are small";
   let s0 = a + b;
+  claim second_sum_defined: s0 +defined c because "the classifier results are small";
   let s1 = s0 + c;
   claim multiwidth_drift: ieq(s1, 52_i32) because "multiwidth drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

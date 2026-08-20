@@ -1,5 +1,5 @@
-fn main () -> own unit pure {
+command fn main () -> status: own ExitStatus pure {
   doc "no comments in whitefoot [FORM-4].";
   /* block comment */
-  return unit;
+  return exit_status(code: 0_u8);
 }

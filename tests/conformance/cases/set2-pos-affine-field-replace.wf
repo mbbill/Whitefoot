@@ -6,7 +6,7 @@ struct Slot {
   item: Item;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "SET-2: `let x = replace p = e;` exchanges the affine value at a writable place and binds the previous value as a fresh own binding. The target root stays live and is read again after the commit, and the moved-out value's sole owner is the new binding.";
   let first = Item(value: 1_u64);
   let slot = Slot(item: move first);
@@ -16,5 +16,5 @@ fn main() -> own unit traps {
   claim previous_value_did_not_bind: ieq(old, 1_u64) because "previous value did not bind";
   let current = slot.item.value;
   claim replacement_value_not_stored: ieq(current, 2_u64) because "replacement value not stored";
-  return unit;
+  return exit_status(code: 0_u8);
 }

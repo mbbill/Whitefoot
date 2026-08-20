@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
   doc "SYS-8: on a zero-byte file the first read_once over a nonempty range is ReadEnd, never ReadBytes(0), because ReadBytes(count) is returned only for a count greater than zero. This is the empty member of the empty, short, exact, and multichunk file-shape family.";
   let page = buffer_new(8_u64, 0_u8);
   region 'a {
@@ -12,8 +12,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                   Ok(value: file) => {
                     region 'f {
                       region 'd {
-                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd page, offset: 0_u64, capacity: 8_u64) {
-                          ReadBytes(count: n) => {
+                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd page, start: 0_u64, end: 8_u64) {
+                          ReadBytes(next: n) => {
                             return exit_status(code: 10_u8);
                           }
                           ReadEnd() => {

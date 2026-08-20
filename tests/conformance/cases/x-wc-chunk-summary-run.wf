@@ -6,7 +6,7 @@ struct Summary {
   last_space: u64;
 }
 
-fn summarize['r](out: &uniq 'r Summary, input: own buffer<u8>) -> own unit writes('r) {
+fn summarize['r](out: &uniq 'r Summary, input: own buffer<u8>) -> function_result: own unit writes('r) {
   let length = len(input);
   let index_value = 0_u64;
   let lines = 0_u64;
@@ -63,7 +63,7 @@ fn summarize['r](out: &uniq 'r Summary, input: own buffer<u8>) -> own unit write
   return unit;
 }
 
-fn combine['r](out: &uniq 'r Summary, left: &'r Summary, right: &'r Summary) -> own unit reads('r), writes('r) {
+fn combine['r](out: &uniq 'r Summary, left: &'r Summary, right: &'r Summary) -> function_result: own unit reads('r), writes('r) {
   if ieq(deref(left).bytes, 0_u64) {
     set deref(out).lines = deref(right).lines;
     set deref(out).words = deref(right).words;
@@ -98,7 +98,7 @@ fn combine['r](out: &uniq 'r Summary, left: &'r Summary, right: &'r Summary) -> 
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let left_input = buffer_new(4_u64, 0_u8);
   set left_input[0_u64] = 97_u8;
   set left_input[1_u64] = 32_u8;
@@ -130,5 +130,5 @@ fn main() -> own unit allocates(heap), traps {
   claim identity_line_drift: ieq(copied.lines, 1_u64) because "identity line drift";
   claim identity_word_drift: ieq(copied.words, 3_u64) because "identity word drift";
   claim identity_byte_drift: ieq(copied.bytes, 5_u64) because "identity byte drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

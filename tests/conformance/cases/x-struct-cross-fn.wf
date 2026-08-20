@@ -3,16 +3,16 @@ struct Vec2 {
   y: i32;
 }
 
-fn sum_xy(v: own Vec2) -> own i32 pure {
+fn sum_xy(v: own Vec2) -> function_result: own i32 pure {
   doc "TYPE-5: read the fields of an own struct parameter and return their sum.";
   let s = v.x +wrap v.y;
   return s;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "TYPE-5: pass an own struct to a fn by value and use its fields cross-fn.";
   let vec2_atom_0001 = Vec2(x: 20_i32, y: 22_i32);
   let total = sum_xy(v: move vec2_atom_0001);
   claim cross_fn_struct_drift: ieq(total, 42_i32) because "cross-fn struct drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

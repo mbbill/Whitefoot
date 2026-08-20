@@ -7,7 +7,7 @@ struct Outer {
   other: i32;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let number = 1_i32;
   let inner = Inner(value: 2_i32);
   let outer = Outer(inner: move inner, other: 7_i32);
@@ -32,5 +32,5 @@ fn main() -> own unit traps {
   }
   claim value_match_result_failed: ieq(selected, 43_i32) because "value match result failed";
   claim value_match_set_failed: ieq(number, 43_i32) because "value match set failed";
-  return unit;
+  return exit_status(code: 0_u8);
 }

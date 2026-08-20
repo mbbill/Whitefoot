@@ -2,9 +2,9 @@ struct Cell {
   value: i32;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let left = Cell(value: 1_i32);
   let right = Cell(value: 2_i32);
   set left = move right;
-  return unit;
+  return exit_status(code: 0_u8);
 }

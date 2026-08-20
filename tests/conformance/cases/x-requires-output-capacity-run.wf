@@ -1,7 +1,7 @@
-fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> own u64 writes('r), traps requires {
-  let out_length = len(deref(out));
-  let source_length = len(source);
-  check ile(source_length, out_length) else trap "output capacity";
+fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> function_result: own u64 writes('r), traps contract {
+  define out_length = len(deref(out));
+  define source_length = len(source);
+  requires ile(source_length, out_length);
 } {
   let length = len(source);
   let offset = 0_u64;
@@ -20,7 +20,7 @@ fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> own u64 w
   return length;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let length = 4_u64;
   let source = buffer_new(length, 7_u8);
   let output = buffer_new(length, 0_u8);
@@ -31,5 +31,5 @@ fn main() -> own unit allocates(heap), traps {
   }
   let last = output[3_u64];
   claim copy_content: ieq(last, 7_u8) because "copy content";
-  return unit;
+  return exit_status(code: 0_u8);
 }

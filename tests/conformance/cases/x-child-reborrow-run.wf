@@ -2,7 +2,7 @@ struct Counter {
   value: u64;
 }
 
-fn write_byte['r](out: &uniq 'r buffer<u8>) -> own unit reads('r), writes('r), traps {
+fn write_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('r), writes('r), traps {
   let room = len(deref(out));
   let first_ok = ilt(0_u64, room);
   claim first_in_range: first_ok because "callers pass a buffer of at least two bytes";
@@ -10,7 +10,7 @@ fn write_byte['r](out: &uniq 'r buffer<u8>) -> own unit reads('r), writes('r), t
   return unit;
 }
 
-fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> own unit reads('r), writes('r), traps {
+fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('r), writes('r), traps {
   region 'byte_child {
     write_byte<'byte_child>(out: &uniq 'byte_child deref(out));
   }
@@ -21,13 +21,13 @@ fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> own unit reads('r), writes('r), t
   return unit;
 }
 
-fn bump_counter['r](counter: &uniq 'r Counter) -> own unit reads('r), writes('r) {
+fn bump_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads('r), writes('r) {
   let next = deref(counter).value +wrap 1_u64;
   set deref(counter).value = next;
   return unit;
 }
 
-fn proxy_counter['r](counter: &uniq 'r Counter) -> own unit reads('r), writes('r) {
+fn proxy_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads('r), writes('r) {
   region 'counter_child {
     bump_counter<'counter_child>(counter: &uniq 'counter_child deref(counter));
   }
@@ -35,7 +35,7 @@ fn proxy_counter['r](counter: &uniq 'r Counter) -> own unit reads('r), writes('r
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let output = buffer_new(2_u64, 0_u8);
   let counter = Counter(value: 40_u64);
   region 'owners {
@@ -47,5 +47,5 @@ fn main() -> own unit allocates(heap), traps {
   claim child_buffer_write: ieq(first, 7_u8) because "child buffer write";
   claim resumed_buffer_parent: ieq(second, 9_u8) because "resumed buffer parent";
   claim resumed_struct_parent: ieq(counter.value, 42_u64) because "resumed struct parent";
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -3,7 +3,7 @@ enum Choice {
   Second();
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "A binder's mode and type are derived by agreement over the closed delivery set, so two arms delivering different types are rejected at the later give [GIVE-1].";
   let c = First();
   let v = match c {
@@ -14,5 +14,5 @@ fn main() -> own unit pure {
       give True();
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

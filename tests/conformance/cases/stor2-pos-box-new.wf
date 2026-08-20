@@ -1,7 +1,7 @@
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   doc "Creation: box_new(v) returns own box<T> [STOR-2]; content is read through deref.";
   let b = box_new(5_i32);
   let v = deref(b);
   claim box_drift: ieq(v, 5_i32) because "box drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

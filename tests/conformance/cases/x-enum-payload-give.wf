@@ -3,7 +3,7 @@ enum Box {
   Empty();
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "A payload-carrying variant is constructed, matched, and its bound payload feeds arithmetic delivered by give; the value-match round-trips the payload through codegen [TYPE-2, GRAM-8, GRAM-10, GIVE-1].";
   let b = Item(n: 7_i32);
   let r = match b {
@@ -17,5 +17,5 @@ fn main() -> own unit traps {
     }
   }
   claim payload_drift: ieq(r, 42_i32) because "payload drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

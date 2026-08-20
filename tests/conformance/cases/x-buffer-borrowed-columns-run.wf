@@ -3,7 +3,7 @@ struct Columns {
   right: buffer<u64>;
 }
 
-fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> own unit reads('r), writes('r), traps {
+fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit reads('r), writes('r), traps {
   let left_room = len(deref(left));
   let right_room = len(deref(right));
   let index_value = 0_u64;
@@ -25,7 +25,7 @@ fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own
   return unit;
 }
 
-fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> own u64 reads('r), traps {
+fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads('r), traps {
   let left_room = len(deref(left));
   let right_room = len(deref(right));
   let index_value = 0_u64;
@@ -49,7 +49,7 @@ fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> o
   return total;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let length = 4_u64;
   let left = buffer_new(length, 0_u64);
   let right = buffer_new(length, 0_u64);
@@ -65,5 +65,5 @@ fn main() -> own unit allocates(heap), traps {
     let total = fold<'fold_region>(left: left_in, right: right_in, length: length);
     claim borrowed_columns: ieq(total, 52_u64) because "borrowed columns";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

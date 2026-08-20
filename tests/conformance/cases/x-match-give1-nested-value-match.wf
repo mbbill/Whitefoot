@@ -1,4 +1,4 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Value-match giving from a nested value-match: the outer Ok arm delivers by giving `inner`, itself bound by an inner Result match [PRE-1]; both matches are exhaustive [ERR-2] and every arm delivers [GIVE-1]. Runs to exit 0.";
   let v = match 40_i32 +checked 2_i32 {
     Ok(value: w) => {
@@ -17,5 +17,5 @@ fn main() -> own unit traps {
     }
   }
   claim nested: ieq(v, 42_i32) because "nested";
-  return unit;
+  return exit_status(code: 0_u8);
 }

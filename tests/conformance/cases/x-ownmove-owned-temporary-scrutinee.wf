@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "OWN-13 owned temporary: a non-place scrutinee (a construction) is an owned temporary moved into the match. The two arms no execution takes carry a constructed-Bool claim, which CLM-2 neither proves nor refutes, so the tripwire survives compilation and would trap if its arm ran.";
   match Pos() {
     Neg() => {
@@ -16,5 +16,5 @@ fn main() -> own unit traps {
     Pos() => {
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

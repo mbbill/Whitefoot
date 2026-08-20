@@ -4,7 +4,7 @@ struct Pool {
   count: u64;
 }
 
-fn build['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes('r), traps {
+fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own u64 reads('r), writes('r), traps {
   doc "Build a complete tree bottom-up in two parallel buffers; index zero is the null sentinel.";
   let leaves = ishl.wrap(1_u64, depth);
   let start = deref(pool).count;
@@ -44,6 +44,7 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes('
           let parent_halvable = ile(parent, 9223372036854775807_u64);
           claim parent_below_half_max: parent_halvable because "main sizes the pool to hold the complete tree";
           let doubled = parent * 2_u64;
+          claim left_child_defined: start +defined doubled because "the pool capacity bounds every parent index";
           let left_child = start + doubled;
           let left_child_incrementable = ile(left_child, 18446744073709551614_u64);
           claim left_child_below_max: left_child_incrementable because "main sizes the pool to hold the complete tree";
@@ -68,7 +69,7 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes('
   return start;
 }
 
-fn checksum['r](pool: &'r Pool, root: own u64) -> own u64 reads('r), traps {
+fn checksum['r](pool: &'r Pool, root: own u64) -> function_result: own u64 reads('r), traps {
   let left_room = len(deref(pool).left);
   let left_ok = ilt(root, left_room);
   claim root_reads_left: left_ok because "build returns indices inside the pool";
@@ -83,13 +84,14 @@ fn checksum['r](pool: &'r Pool, root: own u64) -> own u64 reads('r), traps {
   let right_child = deref(pool).right[root];
   let left_count = checksum<'r>(pool: pool, root: left_child);
   let right_count = checksum<'r>(pool: pool, root: right_child);
+  claim child_sum_defined: left_count +defined right_count because "the pool holds far fewer than u64 max nodes";
   let children = left_count + right_count;
   let children_countable = ile(children, 18446744073709551614_u64);
   claim children_below_max: children_countable because "the pool holds far fewer than u64 max nodes";
   return children + 1_u64;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let capacity = 64_u64;
   let left = buffer_new(capacity, 0_u64);
   let right = buffer_new(capacity, 0_u64);
@@ -102,5 +104,5 @@ fn main() -> own unit allocates(heap), traps {
   }
   let used = pool.count;
   claim tree_allocation_drift: ieq(used, 64_u64) because "tree allocation drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

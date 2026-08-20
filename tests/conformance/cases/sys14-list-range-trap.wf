@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks, traps {
   doc "`list_once` carries [SYS-8]'s transfer semantics, so its destination range is validated as an operation-internal contract check with table-fixed trap semantics [ERR-4]. A range whose offset plus capacity passes the destination length aborts the process before any host call, so the buffer is never partly written.";
   let entries = buffer_new(16_u64, 0_u8);
   region 'c {
@@ -6,7 +6,7 @@ command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocat
       Ok(value: list) => {
         region 'b {
           match list_once<'b, 'b>(list: &uniq 'b list, destination: &uniq 'b entries, offset: 8_u64, capacity: 4096_u64) {
-            ListBytes(count: bytes, entries: reported) => {
+            ListBytes(next: bytes, entries: reported) => {
               return exit_status(code: 5_u8);
             }
             ListEnd() => {

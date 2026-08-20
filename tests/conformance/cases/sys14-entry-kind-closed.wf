@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
   doc "One entry record is one kind byte, one name-length byte, and exactly that many name bytes [SYS-14]. The kind set is closed at `0` unknown, `1` regular file, `2` directory, `3` symbolic link, and `4` other, a name is never empty, and `ListBytes` reports the exact number of records its transferred prefix holds. The program walks the batch and exits nonzero on any violation of those four statements.";
   let entries = buffer_new(4096_u64, 0_u8);
   let room = len(entries);
@@ -9,8 +9,8 @@ command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocat
         let produced = 0_u64;
         let announced = 0_u64;
         region 'b {
-          match list_once<'b, 'b>(list: &uniq 'b list, destination: &uniq 'b entries, offset: 0_u64, capacity: 4096_u64) {
-            ListBytes(count: bytes, entries: reported) => {
+          match list_once<'b, 'b>(list: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 4096_u64) {
+            ListBytes(next: bytes, entries: reported) => {
               set produced = bytes;
               set announced = reported;
             }

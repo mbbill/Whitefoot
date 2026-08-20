@@ -1,9 +1,9 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "An arena<'r,T> stays within its region 'r and is released at block exit [STOR-4].";
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     let v = deref(a);
     claim arena_drift: ieq(v, 4_i32) because "arena drift";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

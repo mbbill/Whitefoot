@@ -9,7 +9,7 @@ enum Wrap {
   N();
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "OWN-1/OWN-13: matching an own composite moves the whole binding (partial move kills it); a second match of the moved binding is a use of a dead binding.";
   let pos_atom_0001 = Pos();
   let w = W(inner: pos_atom_0001);
@@ -25,5 +25,5 @@ fn main() -> own unit pure {
     N() => {
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

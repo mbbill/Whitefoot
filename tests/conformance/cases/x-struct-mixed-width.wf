@@ -4,11 +4,11 @@ struct Mixed {
   c: u64;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "TYPE-2: mixed-width integer fields (i32/u8/u64) exercise per-field load/store widths.";
   let m = Mixed(a: 100_i32, b: 5_u8, c: 1000_u64);
   claim i32_field_drift: ieq(m.a, 100_i32) because "i32 field drift";
   claim u8_field_drift: ieq(m.b, 5_u8) because "u8 field drift";
   claim u64_field_drift: ieq(m.c, 1000_u64) because "u64 field drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

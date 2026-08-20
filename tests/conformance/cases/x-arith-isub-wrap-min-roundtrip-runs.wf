@@ -1,8 +1,8 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "-wrap underflow round-trips [OP-1]: wrapping i32::MAX + 1 yields i32::MIN, and i32::MIN -wrap 1 wraps back to i32::MAX, confirmed by an equality claim [CLM-1].";
   let hi = 2147483647_i32;
   let lo = hi +wrap 1_i32;
   let back = lo -wrap 1_i32;
   claim underflow_round_trip_drift: ieq(back, hi) because "underflow round-trip drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

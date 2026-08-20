@@ -1,16 +1,17 @@
-fn opaque(n: own i32) -> own i32 pure {
+fn opaque(n: own i32) -> function_result: own i32 pure {
   return n;
 }
 
-fn divide(p: own i32, q: own i32) -> own i32 traps {
-  doc "The retained class [OP-2]: a signed bare `/` both of whose operand atoms are non-constant is outside the divisor class, because its safe condition is the disjunction `p != i32::MIN or q != -1` that the ENT-4 closure cannot state. No obligation attaches, the runtime test stays, and the row exhibits `traps`.";
+fn divide(p: own i32, q: own i32) -> function_result: own i32 traps {
+  doc "The total /defined query states the complete exact-division domain [OP-2]. Its executed claim is the sole runtime boundary; when true it also discharges the following bare exact division, and when false it aborts before that operation [CLM-1].";
+  claim division_defined: p /defined q because "the divisor and signed quotient must be defined";
   let r = p / q;
   return r;
 }
 
-fn main() -> own unit traps {
-  doc "The divisor passes through a call so no constant reaches the site, and the executed zero divisor is a contract violation that aborts the process [SCOPE-4].";
+command fn main() -> status: own ExitStatus traps {
+  doc "The divisor passes through a call so the division claim executes at runtime, and the zero divisor makes that claim abort the process [SCOPE-4].";
   let z = opaque(n: 0_i32);
   let v = divide(p: 10_i32, q: z);
-  return unit;
+  return exit_status(code: 0_u8);
 }

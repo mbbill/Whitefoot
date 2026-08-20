@@ -3,7 +3,7 @@ enum Cell {
   Void();
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Borrow-match a payload enum through &'r: the scrutinee stays live for a second read, and each derived shared payload binder is explicitly dereferenced before its copy value is used [OWN-13, TYPE-7, GIVE-1, GRAM-10, OP-1, SCOPE-3].";
   let c = Full(v: 20_i32);
   region 'r {
@@ -31,8 +31,9 @@ fn main() -> own unit traps {
         give 0_i32;
       }
     }
+    claim payload_sum_defined: a +defined b because "both scores come from the constructed payload";
     let t = a + b;
     claim borrow_payload_drift: ieq(t, 61_i32) because "borrow payload drift";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

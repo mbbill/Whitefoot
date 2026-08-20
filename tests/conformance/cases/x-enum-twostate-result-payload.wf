@@ -3,11 +3,11 @@ enum Flag {
   Second();
 }
 
-fn make_ok(value: own u64) -> own Result<u64, Flag> pure {
+fn make_ok(value: own u64) -> function_result: own Result<u64, Flag> pure {
   return Ok<u64, Flag>(value: value);
 }
 
-fn make_err(second: own Bool) -> own Result<u64, Flag> pure {
+fn make_err(second: own Bool) -> function_result: own Result<u64, Flag> pure {
   if second {
     let second_atom_0001 = Second();
     return Err<u64, Flag>(error: second_atom_0001);
@@ -17,7 +17,7 @@ fn make_err(second: own Bool) -> own Result<u64, Flag> pure {
   }
 }
 
-fn result_code(result: own Result<u64, Flag>) -> own u64 pure {
+fn result_code(result: own Result<u64, Flag>) -> function_result: own u64 pure {
   match result {
     Ok(value: ok_value) => {
       return ok_value;
@@ -35,7 +35,7 @@ fn result_code(result: own Result<u64, Flag>) -> own u64 pure {
   }
 }
 
-fn make_some(second: own Bool) -> own Option<Flag> pure {
+fn make_some(second: own Bool) -> function_result: own Option<Flag> pure {
   if second {
     let second_atom_0003 = Second();
     return Some<Flag>(value: second_atom_0003);
@@ -45,11 +45,11 @@ fn make_some(second: own Bool) -> own Option<Flag> pure {
   }
 }
 
-fn make_none() -> own Option<Flag> pure {
+fn make_none() -> function_result: own Option<Flag> pure {
   return None<Flag>();
 }
 
-fn option_code(option: own Option<Flag>) -> own u64 pure {
+fn option_code(option: own Option<Flag>) -> function_result: own u64 pure {
   match option {
     None() => {
       return 30_u64;
@@ -67,7 +67,7 @@ fn option_code(option: own Option<Flag>) -> own u64 pure {
   }
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let ok = make_ok(value: 7_u64);
   let ok_code = result_code(result: move ok);
   claim ok_payload_drift: ieq(ok_code, 7_u64) because "Ok payload drift";
@@ -90,5 +90,5 @@ fn main() -> own unit traps {
   let none = make_none();
   let none_code = option_code(option: move none);
   claim none_drift: ieq(none_code, 30_u64) because "None drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -1,12 +1,12 @@
-fn mutate['r](x: &uniq 'r u64) -> own unit pure {
+fn mutate['r](x: &uniq 'r u64) -> function_result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let value = 0_u64;
   region 'r {
     let shared = &'r value;
     mutate<'r>(x: shared);
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

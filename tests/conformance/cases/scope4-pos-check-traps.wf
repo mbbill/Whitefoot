@@ -1,5 +1,5 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "A contract violation at runtime traps and aborts; no unwinding [SCOPE-4]. The violated obligation is a named claim whose constructed predicate has no comparison origin, so it survives CLM-2 and fails only at runtime.";
   claim contract_violated: False() because "contract violated";
-  return unit;
+  return exit_status(code: 0_u8);
 }

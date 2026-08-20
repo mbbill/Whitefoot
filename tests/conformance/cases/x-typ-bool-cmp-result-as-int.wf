@@ -2,11 +2,11 @@ struct Holder {
   value: i32;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "Committing a Bool comparison result to a place whose written type is i32 crosses the arithmetic and enum layers and is an exact-type mismatch [TYPE-5].";
   let a = 1_i32;
   let b = 2_i32;
   let h = Holder(value: 0_i32);
   set h.value = ieq(a, b);
-  return unit;
+  return exit_status(code: 0_u8);
 }

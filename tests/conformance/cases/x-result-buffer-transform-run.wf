@@ -2,7 +2,7 @@ enum DecodeError {
   ZeroByte();
 }
 
-fn transform(input: own buffer<u8>) -> own Result<buffer<u8>, DecodeError> allocates(heap), traps {
+fn transform(input: own buffer<u8>) -> function_result: own Result<buffer<u8>, DecodeError> allocates(heap), traps {
   let length = len(input);
   let output = buffer_new(length, 0_u8);
   let offset = 0_u64;
@@ -32,11 +32,11 @@ fn transform(input: own buffer<u8>) -> own Result<buffer<u8>, DecodeError> alloc
   return Ok<buffer<u8>, DecodeError>(value: move output);
 }
 
-fn abandon(result: own Result<buffer<u8>, DecodeError>) -> own unit pure {
+fn abandon(result: own Result<buffer<u8>, DecodeError>) -> function_result: own unit pure {
   return unit;
 }
 
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap), traps {
   let success_input = buffer_new(3_u64, 1_u8);
   set success_input[1_u64] = 4_u8;
   let success = transform(input: move success_input);
@@ -77,5 +77,5 @@ fn main() -> own unit allocates(heap), traps {
   let abandoned_error_input = buffer_new(1_u64, 0_u8);
   let abandoned_error = transform(input: move abandoned_error_input);
   abandon(result: move abandoned_error);
-  return unit;
+  return exit_status(code: 0_u8);
 }

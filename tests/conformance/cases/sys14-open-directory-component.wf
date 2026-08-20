@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
   doc "`open_directory` takes a caller-owned name range rather than a path value, and validates that range before any host call [SYS-14]. A range containing a target separator is not one path component, so it yields `InvalidPath` with both detail fields zero [SYS-7], no host call, and no capability. Exit 0 is reached only through that class with both details zero.";
   let name = buffer_new(3_u64, 0_u8);
   set name[0_u64] = 97_u8;
@@ -6,7 +6,7 @@ command fn main(command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocat
   set name[2_u64] = 98_u8;
   region 'c {
     region 'n {
-      match open_directory<'c, 'n>(root: &'c cwd, name: &'n name, offset: 0_u64, count: 3_u64) {
+      match open_directory<'c, 'n>(root: &'c cwd, name: &'n name, start: 0_u64, end: 3_u64) {
         Ok(value: opened) => {
           return exit_status(code: 7_u8);
         }

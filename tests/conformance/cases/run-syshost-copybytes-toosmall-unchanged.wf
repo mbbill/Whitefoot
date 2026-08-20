@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
   doc "SYS-8: on a recoverable failure of a copy operation the whole buffer is unchanged. CopyTooSmall states the exact length the destination range must have for the same call to succeed [SYS-6], and the sentinel prefill witnesses the no-write half, which stays observable because the program keeps running.";
   let bytes = buffer_new(4_u64, 90_u8);
   region 'a {
@@ -6,7 +6,7 @@ command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap
       Ok(value: text) => {
         region 'v {
           region 'd {
-            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, offset: 0_u64, capacity: 4_u64) {
+            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 0_u64, end: 4_u64) {
               Ok(value: copied) => {
                 return exit_status(code: 10_u8);
               }

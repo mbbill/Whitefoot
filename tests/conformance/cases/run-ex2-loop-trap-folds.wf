@@ -1,12 +1,14 @@
-fn main() -> own unit traps {
-  doc "Loop, break, mutable locals, and a give value-match: sum 0..4 == 10.";
+command fn main() -> status: own ExitStatus traps {
+  doc "Loop, break, mutable locals, and claim-discharged exact arithmetic: sum 0..4 == 10.";
   let i = 0_i32;
   let sum = 0_i32;
   loop @l {
     if ige(i, 5_i32) {
       break @l;
     }
+    claim sum_step_defined: sum +defined i because "the bounded loop sum stays representable";
     set sum = sum + i;
+    claim index_step_defined: i +defined 1_i32 because "the loop exits before the counter can overflow";
     set i = i + 1_i32;
   }
   claim sum_drift: ieq(sum, 10_i32) because "sum drift";
@@ -15,9 +17,9 @@ fn main() -> own unit traps {
       give d;
     }
     Err(error: e) => {
-      return unit;
+      return exit_status(code: 0_u8);
     }
   }
   claim double_drift: ieq(doubled, 20_i32) because "double drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }
