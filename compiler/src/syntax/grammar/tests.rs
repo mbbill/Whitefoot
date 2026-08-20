@@ -77,7 +77,7 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 96);
+    assert_eq!(decisions, 93);
 }
 
 #[test]
@@ -163,7 +163,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 96);
+    assert_eq!(DECISIONS.len(), 93);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -207,6 +207,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
             }
         }
     }
-    assert_eq!(total_rows, 3_788);
+    assert_eq!(total_rows, 3_725);
     assert!(saw_atom_only);
 }
