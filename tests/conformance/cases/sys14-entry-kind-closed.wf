@@ -1,5 +1,5 @@
 command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
-  doc "One entry record is one kind byte, one name-length byte, and exactly that many name bytes [SYS-14]. The kind set is closed at `0` unknown, `1` regular file, `2` directory, `3` symbolic link, and `4` other, a name is never empty, and `ListBytes` reports the exact number of records its transferred prefix holds. The program walks the batch and exits nonzero on any violation of those four statements.";
+  doc "One entry record is one kind byte, one little-endian u16 name length, and exactly that many name bytes [SYS-14]. The kind set is closed at `0` unknown, `1` regular file, `2` directory, `3` symbolic link, and `4` other, a name is never empty, and `ListBytes` reports the exact number of records its portable prefix holds. The program walks the batch and exits nonzero on any violation.";
   let entries = buffer_new(4096_u64, 0_u8);
   let room = len(entries);
   let status = 0_u8;
@@ -24,7 +24,7 @@ command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus
         let at = 0_u64;
         let seen = 0_u64;
         loop @entry {
-          let header_end = at +wrap 2_u64;
+          let header_end = at +wrap 3_u64;
           let complete = ile(header_end, produced);
           if complete {
           } else {
@@ -42,21 +42,31 @@ command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus
             set status = 9_u8;
             break @entry;
           }
-          let length_at = at +wrap 1_u64;
-          let length_readable = ilt(length_at, room);
-          if length_readable {
+          let length_low_at = at +wrap 1_u64;
+          let length_low_readable = ilt(length_low_at, room);
+          if length_low_readable {
           } else {
             break @entry;
           }
-          let name_length = entries[length_at];
-          let name_count = cvt<u8, u64>(name_length);
+          let length_high_at = at +wrap 2_u64;
+          let length_high_readable = ilt(length_high_at, room);
+          if length_high_readable {
+          } else {
+            break @entry;
+          }
+          let length_low = entries[length_low_at];
+          let length_high = entries[length_high_at];
+          let length_low_wide = cvt<u8, u64>(length_low);
+          let length_high_wide = cvt<u8, u64>(length_high);
+          let length_high_shifted = ishl.wrap(length_high_wide, 8_u32);
+          let name_count = ior(length_low_wide, length_high_shifted);
           let named = igt(name_count, 0_u64);
           if named {
           } else {
             set status = 10_u8;
             break @entry;
           }
-          let name_at = at +wrap 2_u64;
+          let name_at = at +wrap 3_u64;
           let name_end = name_at +wrap name_count;
           let bounded = ile(name_end, produced);
           if bounded {

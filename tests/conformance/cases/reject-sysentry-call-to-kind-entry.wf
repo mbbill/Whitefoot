@@ -1,4 +1,4 @@
 command fn main() -> status: own ExitStatus pure {
-  doc "A kind-declaring entry is invoked exactly once, by program start [PROG-3]; its standard inputs are neither constructible nor forgeable by source, so a call whose callee resolves to it is a hard error citing FN-7 at that call node.";
+  doc "Main is the sole command entry, is invoked exactly once by program start [PROG-3], and is never source-callable. A source call resolving to main is rejected under FN-7.";
   return main();
 }

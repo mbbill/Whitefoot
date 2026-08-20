@@ -1,12 +1,12 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
-  doc "SYS-8: the third range failure. The offset is inside the buffer and the sum does not overflow, but the range extends past the buffer's runtime length, which traps before any host transfer exactly as the other two do.";
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
+  doc "SYS-8 rejects start greater than end statically. The first range goal is refuted before lowering, so no host call, source read, destination write, or runtime trap exists.";
   let bytes = buffer_new(4_u64, 0_u8);
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
         region 'v {
           region 'd {
-            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, offset: 2_u64, capacity: 4_u64) {
+            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 18446744073709551615_u64, end: 0_u64) {
               Ok(value: copied) => {
                 return exit_status(code: 10_u8);
               }

@@ -1,5 +1,0 @@
-command fn main() -> status: own ExitStatus pure {
-  doc "Every v0.33 executable unit has the command system declaration domain. This call resolves `args_count`, then its missing region argument and wrong value argument are rejected by the system-call signature rule SYS-2.";
-  let total = args_count(args: 0_u64);
-  return exit_status(code: 0_u8);
-}

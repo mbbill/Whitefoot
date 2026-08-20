@@ -1,4 +1,0 @@
-command fn main() -> status: own ExitStatus pure {
-  doc "The sole command entry may omit every labelled standard input while retaining its mandatory named ExitStatus result [FN-7, SYS-3].";
-  return exit_status(code: 0_u8);
-}

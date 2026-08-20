@@ -1,0 +1,7 @@
+fn make(length: own u64) -> values: own buffer<i64> allocates(heap) {
+  return buffer_new(length, 0_i64);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

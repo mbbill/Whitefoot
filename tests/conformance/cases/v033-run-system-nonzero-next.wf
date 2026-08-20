@@ -1,0 +1,41 @@
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
+  let bytes = buffer_new(3_u64, 0_u8);
+  region 'a {
+    match arg_get<'a>(args: &'a args, position: 1_u64) {
+      Ok(value: text) => {
+        region 'v {
+          region 'd {
+            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 1_u64, end: 3_u64) {
+              Ok(value: next) => {
+                if ieq(next, 3_u64) {
+                } else {
+                  return exit_status(code: 2_u8);
+                }
+              }
+              Err(error: problem) => {
+                return exit_status(code: 1_u8);
+              }
+            }
+          }
+        }
+        let first = bytes[0_u64];
+        let second = bytes[1_u64];
+        let third = bytes[2_u64];
+        let untouched = ieq(first, 0_u8);
+        let copied_a = ieq(second, 65_u8);
+        let copied_b = ieq(third, 66_u8);
+        if untouched {
+          if copied_a {
+            if copied_b {
+              return exit_status(code: 0_u8);
+            }
+          }
+        }
+        return exit_status(code: 3_u8);
+      }
+      Err(error: absent) => {
+        return exit_status(code: 4_u8);
+      }
+    }
+  }
+}

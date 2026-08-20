@@ -1,0 +1,11 @@
+fn impossible(value: own u8) -> output: own u8 pure contract {
+  requires ieq(value, 0_u8);
+  requires ine(value, 0_u8);
+} {
+  let values = array_new<u8, 1>(0_u8);
+  return values[7_u64];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

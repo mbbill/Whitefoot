@@ -1,5 +1,5 @@
 fn bump(x: own i32) -> function_result: own i32 pure {
-  doc "A pure helper with no trapping construct.";
+  doc "A pure helper with no claim and no traps-effect callee.";
   return x +wrap 1_i32;
 }
 

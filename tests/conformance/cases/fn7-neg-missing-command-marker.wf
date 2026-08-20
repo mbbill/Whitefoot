@@ -1,0 +1,4 @@
+fn main() -> status: own unit pure {
+  doc "An entry with a named result but no command marker is not an alternate entry form. FN-7 rejects the missing marker.";
+  return unit;
+}

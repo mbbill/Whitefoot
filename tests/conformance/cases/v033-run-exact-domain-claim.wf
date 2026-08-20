@@ -1,0 +1,15 @@
+fn opaque(value: own u8) -> output: own u8 pure {
+  return value;
+}
+
+command fn main() -> status: own ExitStatus traps {
+  let left = opaque(value: 40_u8);
+  let right = opaque(value: 2_u8);
+  claim addition_is_defined: left +defined right because "the runtime backstop authorizes the following exact addition";
+  let sum = left + right;
+  if ieq(sum, 42_u8) {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
+}

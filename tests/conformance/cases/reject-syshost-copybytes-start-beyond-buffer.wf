@@ -1,12 +1,12 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
-  doc "SYS-8: an offset beyond the buffer's runtime length traps even when the requested capacity is zero, so the offset check is a check of its own rather than a consequence of the sum exceeding the length.";
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
+  doc "SYS-8 admits an empty range only when its endpoint lies inside the destination. Here start equals end but end exceeds the buffer length, so the second range goal is refuted statically.";
   let bytes = buffer_new(4_u64, 0_u8);
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
         region 'v {
           region 'd {
-            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, offset: 8_u64, capacity: 0_u64) {
+            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 8_u64, end: 8_u64) {
               Ok(value: copied) => {
                 return exit_status(code: 10_u8);
               }
