@@ -1,5 +1,5 @@
 fn helper(command.args as args: own Args) -> function_result: own unit pure {
-  doc "An input_label on a parameter of any fn_decl other than the kind-declaring entry is a hard error citing FN-7 at that input_label node.";
+  doc "An input_label on a parameter of any fn_decl other than the sole command entry is a hard error citing FN-7 at that input_label node.";
   return unit;
 }
 

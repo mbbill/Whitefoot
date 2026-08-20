@@ -3,7 +3,7 @@ struct Counter {
 }
 
 command fn main() -> status: own ExitStatus traps {
-  doc "TYPE-5: mutate a struct field with `set place.f = atom`, read it back, check the result. The read-back feeds a class site, so a dominating claim discharges its OP-2 overflow obligation with the residual the diagnostic renders.";
+  doc "TYPE-5: mutate a struct field with `set place.f = atom`, read it back, and claim the expected result. The read-back feeds a class site, so a dominating claim discharges its OP-2 overflow obligation with the residual the diagnostic renders.";
   let c = Counter(n: 1_i32);
   set c.n = 41_i32;
   let field_in_range = ile(c.n, 2147483646_i32);

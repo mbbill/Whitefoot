@@ -23,8 +23,9 @@ ordered source bundle
   -> host executable
 ```
 
-This branch targets the reviewed v0.33 candidate bytes at
-`../spec/kernel-spec.md`; the outgoing active authority is v0.32 at SHA-256
+This candidate branch implements and validates the reviewed, unactivated v0.33
+bytes at `../spec/kernel-spec.md`; until activation, the active language
+authority remains the exact v0.32 bytes at SHA-256
 `5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5`.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same

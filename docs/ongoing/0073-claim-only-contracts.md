@@ -95,7 +95,7 @@ or invocation wiring changed.
   `f1d8a2cd`.
 
 The complete no-merge commit sequence is the repository range
-`dde2f6af..f1d8a2cd`; the grouped list above identifies the load-bearing
+`dde2f6af^..f1d8a2cd`; the grouped list above identifies the load-bearing
 slices rather than duplicating every fixture and documentation commit.
 
 ## Verification

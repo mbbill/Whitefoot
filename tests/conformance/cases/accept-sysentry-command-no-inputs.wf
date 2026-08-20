@@ -1,4 +1,4 @@
 command fn main() -> status: own ExitStatus pure {
-  doc "A command entry may select no standard input row and is still admitted [FN-7]; the declared program kind alone makes the unit system-admitted [SYS-3], and exit_status is total and pure [SYS-13].";
+  doc "A command entry may select no standard input row and is still admitted [FN-7]; every unit has the complete system declaration domain [SYS-3], this entry selects zero standard capabilities, and exit_status is total and pure [SYS-13].";
   return exit_status(code: 0_u8);
 }
