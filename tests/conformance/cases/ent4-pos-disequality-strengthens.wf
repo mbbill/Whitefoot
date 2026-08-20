@@ -1,4 +1,4 @@
-fn get(b: own buffer<u8>, i: own u64) -> own u8 traps {
+fn get(b: own buffer<u8>, i: own u64) -> result: own u8 traps {
   doc "Closure rule (2): from `i - room <= 0` and a disequality between the two terms in either orientation, the least closure derives `i - room <= -1` [ENT-4]. The non-strict bound alone does not discharge; the disequality is what makes it strict.";
   let room = len(b);
   let within = ile(i, room);
@@ -8,6 +8,6 @@ fn get(b: own buffer<u8>, i: own u64) -> own u8 traps {
   return b[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-fn dispose_open_outcome(outcome: own Result<ReadFile, IoError>) -> own unit external, blocks {
+fn dispose_open_outcome(outcome: own Result<ReadFile, IoError>) -> result: own unit external, blocks {
   doc "Only the Ok arm ever holds a ReadFile, but the release contribution is the union over every normal edge of the conservative structural graph, so a conditionally released resource still contributes its row [EFF-2]; IoError has no release action [SYS-5].";
   match outcome {
     Ok(value: file) => {
@@ -10,6 +10,6 @@ fn dispose_open_outcome(outcome: own Result<ReadFile, IoError>) -> own unit exte
   }
 }
 
-command fn main() -> own ExitStatus pure {
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

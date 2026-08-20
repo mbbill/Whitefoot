@@ -1,10 +1,10 @@
-fn element<const n: u64>(values: own array<u8, n>) -> own u8 pure {
+fn element<const n: u64>(values: own array<u8, n>) -> result: own u8 pure {
   doc "Discharge is judged per concrete instantiation, and a const-generic constant term is judged at its instantiated value, never symbolically [ENT-1]. The same body is judged against n = 4, where the constant offset 2 is below the array's implicit length.";
   return values[2_u64];
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   let wide = array_new<u8, 4>(7_u8);
   let value = element<4>(values: move wide);
-  return unit;
+  return exit_status(code: 0_u8);
 }

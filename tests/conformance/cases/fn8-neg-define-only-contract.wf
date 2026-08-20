@@ -1,0 +1,9 @@
+fn f(a: own u64) -> result: own u64 pure contract {
+  define reflexive = ieq(a, a);
+} {
+  return a;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

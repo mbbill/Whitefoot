@@ -1,5 +1,5 @@
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "An in-range integer literal is well-formed [FORM-7].";
   let a = 2147483647_i32;
-  return unit;
+  return exit_status(code: 0_u8);
 }

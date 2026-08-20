@@ -1,4 +1,4 @@
-fn get(b: own buffer<u8>, i: own u64, j: own u64) -> own u8 traps {
+fn get(b: own buffer<u8>, i: own u64, j: own u64) -> result: own u8 traps {
   doc "Closure rule (1): from `i - j <= 0` and `j - room <= -1` the least closure derives `i - room <= -1` [ENT-4]. Neither claim states the obligation directly; the derivation is what discharges the subscript [OP-4].";
   let room = len(b);
   let ordered = ile(i, j);
@@ -8,6 +8,6 @@ fn get(b: own buffer<u8>, i: own u64, j: own u64) -> own u8 traps {
   return b[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

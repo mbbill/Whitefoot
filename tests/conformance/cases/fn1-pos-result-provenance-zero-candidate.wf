@@ -1,8 +1,8 @@
 contract ConstantSource {
-  fn base['r]() -> &'r i32 pure;
+  fn base['r]() -> result: &'r i32 pure;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "The zero-candidate arm of FN-1's borrow-result provenance judgment, on the contract-member surface where signature formation is the whole judgment. No parameter is a candidate, which is legal by elimination: OWN-10 admits no result-region borrow rooted in callee-local storage, so the only remaining source is named `const` storage.";
-  return unit;
+  return exit_status(code: 0_u8);
 }

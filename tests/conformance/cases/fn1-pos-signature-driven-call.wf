@@ -1,11 +1,11 @@
-fn add(x: own i32, y: own i32) -> own i32 traps {
+fn add(x: own i32, y: own i32) -> result: own i32 pure {
   doc "A full signature states param modes/types and return mode/type [FN-1].";
-  return x + y;
+  return x +wrap y;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Caller relies only on add's signature [FN-1].";
   let s = add(x: 40_i32, y: 2_i32);
   claim sig_drift: ieq(s, 42_i32) because "sig drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

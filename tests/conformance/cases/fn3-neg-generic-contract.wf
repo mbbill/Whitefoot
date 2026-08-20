@@ -1,6 +1,6 @@
 contract GenericMarker<T> {
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

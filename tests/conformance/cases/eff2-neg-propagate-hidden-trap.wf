@@ -1,15 +1,16 @@
-fn risky_checked(x: own i32) -> own Result<i32, Overflow> traps {
-  doc "A trapping increment behind a Result surface; the row declares traps.";
-  let bumped = x + 1_i32;
+fn risky_checked(x: own i32) -> result: own Result<i32, Overflow> traps {
+  doc "A claim behind a Result surface; the row declares traps.";
+  claim admitted: True() because "the callee retains the claim-only runtime trap capability";
+  let bumped = x +wrap 1_i32;
   return Ok<i32, Overflow>(value: bumped);
 }
 
-fn g(x: own i32) -> own Result<i32, Overflow> pure {
-  doc "EFF-2: a trapping callee as the propagate scrutinee exhibits traps; the row omits it.";
+fn g(x: own i32) -> result: own Result<i32, Overflow> pure {
+  doc "EFF-2: a claim-bearing callee as the propagate scrutinee exhibits traps; the row omits it.";
   let r = propagate risky_checked(x: x);
   return Ok<i32, Overflow>(value: r);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

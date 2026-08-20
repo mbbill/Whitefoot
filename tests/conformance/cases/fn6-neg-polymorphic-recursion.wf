@@ -1,10 +1,10 @@
-fn poly<T>(x: own T) -> own T pure {
+fn poly<T>(x: own T) -> result: own T pure {
   doc "Polymorphic recursion: the call instantiates the callee at a different type parameter [FN-6 violated].";
   let y = poly<i32>(x: 0_i32);
   return x;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let z = poly<i32>(x: 0_i32);
-  return unit;
+  return exit_status(code: 0_u8);
 }

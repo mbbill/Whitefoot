@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "IDENT, TYPEID, REGIONID, LABEL, and OPNAME lexical classes [FORM-3].";
   let a = 3_i32;
   region 'r {
@@ -17,10 +17,10 @@ fn main() -> own unit traps {
         give w;
       }
       Err(error: e) => {
-        return unit;
+        return exit_status(code: 0_u8);
       }
     }
     claim drift: ieq(v, 4_i32) because "drift";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

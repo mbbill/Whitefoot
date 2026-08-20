@@ -1,4 +1,4 @@
-fn get(b: own buffer<u8>, i: own u64, j: own u64) -> own u8 traps {
+fn get(b: own buffer<u8>, i: own u64, j: own u64) -> result: own u8 traps {
   doc "A state is contradictory when `t - t <= -1` is derivable for any t; at a contradictory point every relation is derivable and every obligation is discharged [ENT-4]. One executed claim and one executed branch condition that cannot both hold put the continuation there, and the second subscript, whose index nothing bounds, accepts on a path no execution reaches. The claim precedes the branch because CLM-2 refutation is a flow judgment: with the two sources exchanged the claim's exact negation would already be derived and the program would reject.";
   let room = len(b);
   let above = igt(i, room);
@@ -9,6 +9,6 @@ fn get(b: own buffer<u8>, i: own u64, j: own u64) -> own u8 traps {
   return 0_u8;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

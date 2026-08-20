@@ -1,18 +1,18 @@
 const earlier_one: u32 = 1_u32;
 
-fn require_bound(value: own u32, operand: own u32) -> own unit pure requires {
-  check ile(value, operand) else trap "bit-and bound";
+fn require_bound(value: own u32, operand: own u32) -> result: own unit pure contract {
+  requires ile(value, operand);
 } {
   return unit;
 }
 
-fn require_nonzero(value: own u32) -> own unit pure requires {
-  check ine(value, 0_u32) else trap "shift nonzero";
+fn require_nonzero(value: own u32) -> result: own unit pure contract {
+  requires ine(value, 0_u32);
 } {
   return unit;
 }
 
-fn sources(left: own u32, right: own u32, count: own u32) -> own unit pure {
+fn sources(left: own u32, right: own u32, count: own u32) -> result: own unit pure {
   let masked = iand(left, right);
   require_bound(value: masked, operand: left);
   require_bound(value: masked, operand: right);
@@ -23,7 +23,7 @@ fn sources(left: own u32, right: own u32, count: own u32) -> own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   sources(left: 7_u32, right: 3_u32, count: 2_u32);
-  return unit;
+  return exit_status(code: 0_u8);
 }

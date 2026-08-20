@@ -1,4 +1,4 @@
-fn get(b: own buffer<i32>, i: own u64) -> own i32 traps {
+fn get(b: own buffer<i32>, i: own u64) -> result: own i32 traps {
   doc "A claim the closed fact state already derives is redundant [CLM-2]: the program remains accepted, the check still executes, and a conforming implementation reports one non-rejecting advisory. The first claim's passed fact [ENT-3 S3] is what derives the second.";
   let room = len(b);
   let inside = ilt(i, room);
@@ -8,6 +8,6 @@ fn get(b: own buffer<i32>, i: own u64) -> own i32 traps {
   return b[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

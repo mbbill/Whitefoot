@@ -3,13 +3,13 @@ enum Choice {
   Wide();
 }
 
-fn guard(value: own i32) -> own unit pure requires {
-  check ilt(value, 128_i32) else trap "guard bound";
+fn guard(value: own i32) -> result: own unit pure contract {
+  requires ilt(value, 128_i32);
 } {
   return unit;
 }
 
-fn matched(value: own i32, choice: own Choice) -> own i32 traps {
+fn matched(value: own i32, choice: own Choice) -> result: own i32 traps {
   let picked = match choice {
     Narrow() => {
       claim narrow_bound: ilt(value, 8_i32) because "narrow bound";
@@ -24,6 +24,6 @@ fn matched(value: own i32, choice: own Choice) -> own i32 traps {
   return picked;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

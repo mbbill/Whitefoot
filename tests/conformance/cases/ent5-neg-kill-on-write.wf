@@ -1,4 +1,4 @@
-fn get(b: own buffer<u8>, start: own u64) -> own u8 traps {
+fn get(b: own buffer<u8>, start: own u64) -> result: own u8 traps {
   doc "A fact dies at a `set` commit whose resolved target overlaps the resolved place of any support member [ENT-5](a). The claim bounds `offset`, the later `set` to that same binding kills the bound, and no source re-establishes one for a `set` right-hand side, so the subscript is undischarged [OP-4].";
   let room = len(b);
   let offset = 0_u64;
@@ -8,6 +8,6 @@ fn get(b: own buffer<u8>, start: own u64) -> own u8 traps {
   return b[offset];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

@@ -1,4 +1,0 @@
-fn main() -> own unit pure {
-  doc "The unlabelled entry is unchanged by v0.18: a unit requesting no standard input declares no program kind [FN-7] and is system-unadmitted [SYS-3].";
-  return unit;
-}

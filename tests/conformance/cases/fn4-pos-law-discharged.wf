@@ -1,12 +1,12 @@
 contract SatMonoid {
   doc "FN-4 stated-and-checked: the exact direct +sat body and closed unsigned table cells discharge these laws.";
-  fn combine(x: own u64, y: own u64) -> own u64 pure;
+  fn combine(x: own u64, y: own u64) -> result: own u64 pure;
   law associative(combine);
   law commutative(combine);
   law identity(combine, 0_u64);
 }
 
-fn satadd(x: own u64, y: own u64) -> own u64 pure {
+fn satadd(x: own u64, y: own u64) -> result: own u64 pure {
   return x +sat y;
 }
 
@@ -14,6 +14,6 @@ conform u64: SatMonoid {
   combine = satadd;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

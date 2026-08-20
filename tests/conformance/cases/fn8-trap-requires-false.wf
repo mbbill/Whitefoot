@@ -1,7 +1,0 @@
-fn main() -> own unit pure requires {
-  let permitted = igt(0_i32, 0_i32);
-  check permitted else trap "x must be positive";
-} {
-  doc "A false process-entry requirement traps in the real entry wrapper before this body executes [FN-8/SCOPE-4].";
-  return unit;
-}

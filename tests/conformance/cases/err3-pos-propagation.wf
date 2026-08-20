@@ -1,11 +1,11 @@
-fn half_checked(x: own i64) -> own Result<i64, Overflow> pure {
+fn half_checked(x: own i64) -> result: own Result<i64, Overflow> pure {
   let d = x +checked x;
   let v = propagate d;
   let r = v +checked 1_i64;
   return move r;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let big = 4611686018427387904_i64;
   let a = half_checked(x: 20_i64);
   match a {
@@ -24,5 +24,5 @@ fn main() -> own unit traps {
     Err(error: e) => {
     }
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

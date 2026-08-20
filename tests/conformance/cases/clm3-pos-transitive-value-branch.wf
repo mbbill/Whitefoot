@@ -1,17 +1,17 @@
-fn relay<T: Int>(value: own T) -> own T pure ensures result {
-  check ieq(result, value) else trap "relay result";
+fn relay<T: Int>(value: own T) -> result: own T pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
 
-fn accept_bound(value: own u64, limit: own u64) -> own u64 pure requires {
-  let admitted = ile(value, limit);
-  check admitted else trap "bounded value";
+fn accept_bound(value: own u64, limit: own u64) -> result: own u64 pure contract {
+  define admitted = ile(value, limit);
+  requires admitted;
 } {
   return value;
 }
 
-fn cycle_left(remaining: own u64) -> own u64 pure {
+fn cycle_left(remaining: own u64) -> result: own u64 pure {
   let done = ieq(remaining, 0_u64);
   if done {
     return 0_u64;
@@ -22,7 +22,7 @@ fn cycle_left(remaining: own u64) -> own u64 pure {
   }
 }
 
-fn cycle_right(remaining: own u64) -> own u64 pure {
+fn cycle_right(remaining: own u64) -> result: own u64 pure {
   let done = ieq(remaining, 0_u64);
   if done {
     return 1_u64;
@@ -33,10 +33,7 @@ fn cycle_right(remaining: own u64) -> own u64 pure {
   }
 }
 
-deny_claims command fn main() -> own ExitStatus pure requires {
-  let valid_entry = ieq(0_u64, 0_u64);
-  check valid_entry else trap "entry relation";
-} {
+deny_claims command fn main() -> status: own ExitStatus pure {
   let candidate_length = 7_u64;
   let prior_length = 0_u64;
   let capacity = 8_u64;

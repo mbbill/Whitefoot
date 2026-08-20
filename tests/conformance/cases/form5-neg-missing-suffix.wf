@@ -1,5 +1,5 @@
-fn main () -> own unit traps {
+command fn main () -> status: own ExitStatus traps {
   doc "An integer literal without its mandatory type suffix is illegal [FORM-5].";
   let a = 42;
-  return unit;
+  return exit_status(code: 0_u8);
 }

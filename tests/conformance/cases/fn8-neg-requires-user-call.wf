@@ -1,16 +1,16 @@
-fn identity(x: own i32) -> own i32 pure {
+fn identity(x: own i32) -> result: own i32 pure {
   return x;
 }
 
-fn user_call(x: own i32) -> own i32 traps requires {
-  let copied = identity(x: x);
-  let permitted = ieq(copied, x);
-  check permitted else trap "identity mismatch";
+fn user_call(x: own i32) -> result: own i32 pure contract {
+  define copied = identity(x: x);
+  define permitted = ieq(copied, x);
+  requires permitted;
 } {
   doc "User-function calls are forbidden in a requirement clause even when the callee is pure [FN-8].";
   return x;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

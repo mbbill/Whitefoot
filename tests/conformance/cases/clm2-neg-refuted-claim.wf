@@ -1,4 +1,4 @@
-fn probe(room: own u64, i: own u64) -> own unit traps {
+fn probe(room: own u64, i: own u64) -> result: own unit traps {
   doc "A non-contradictory fact state that derives a claim predicate's exact negation rejects the program citing CLM-2, carrying the claim name, the predicate, and the derived negation: a claim proven to trap on every execution reaching it is a compile-time defect.";
   let beyond = ige(i, room);
   claim offset_at_or_past_room: beyond because "this fixture states the offset is not below room";
@@ -7,6 +7,6 @@ fn probe(room: own u64, i: own u64) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

@@ -1,8 +1,8 @@
-fn pass_slice['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
+fn pass_slice['r](value: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
   return move value;
 }
 
-fn choose_slice['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
+fn choose_slice['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
   if take_left {
     return move left;
   } else {
@@ -10,7 +10,7 @@ fn choose_slice['r](take_left: own Bool, left: own slice<'r, u8>, right: own sli
   }
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let left = array_new<u8, 2>(11_u8);
   let right = array_new<u8, 2>(29_u8);
   region 'view {
@@ -31,5 +31,5 @@ fn main() -> own unit traps {
     let selected_value = selected[0_u64];
     claim returned_slice_choice: ieq(selected_value, 29_u8) because "returned slice choice";
   }
-  return unit;
+  return exit_status(code: 0_u8);
 }

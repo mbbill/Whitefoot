@@ -1,6 +1,6 @@
 const limit: i32 = 100_i32;
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "A named, immutable, program-lifetime const item [CONST-2].";
-  return unit;
+  return exit_status(code: 0_u8);
 }

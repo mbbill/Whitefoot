@@ -1,16 +1,16 @@
-fn sumto(n: own i32) -> own i32 traps {
-  doc "Recursion is permitted [FN-6]. The guard is `ile` rather than `ieq` so the else arm establishes n > 0: that dominating branch discharges the OP-2 overflow obligation on the class site `n - 1_i32`. The accumulating `n + r` has two non-constant operands, so it keeps its trapping semantics and the row keeps `traps`.";
+fn sumto(n: own i32) -> result: own i32 pure {
+  doc "Recursion is permitted [FN-6]. The guard discharges the exact decrement domain, while the bounded fixture uses wrapping accumulation because arithmetic behavior is not this case's subject.";
   if ile(n, 0_i32) {
     return 0_i32;
   } else {
     let m = n - 1_i32;
     let r = sumto(n: m);
-    return n + r;
+    return n +wrap r;
   }
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let s = sumto(n: 4_i32);
   claim recursion_drift: ieq(s, 10_i32) because "recursion drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

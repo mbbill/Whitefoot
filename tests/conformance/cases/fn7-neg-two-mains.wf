@@ -1,9 +1,9 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "First main.";
-  return unit;
+  return exit_status(code: 0_u8);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "The later duplicate main is rejected by [TYPE-6].";
-  return unit;
+  return exit_status(code: 0_u8);
 }

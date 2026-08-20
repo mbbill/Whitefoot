@@ -1,6 +1,6 @@
 const bad: box<i32> = 0_i32;
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "box<T> is not const-eligible: a const is static rodata, no allocation [CONST-2].";
-  return unit;
+  return exit_status(code: 0_u8);
 }

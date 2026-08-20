@@ -1,12 +1,12 @@
-fn get(b: own buffer<u8>, i: own u64) -> own u8 pure requires {
-  let room = len(b);
-  let inside = ilt(i, room);
-  check inside else trap "offset out of range";
+fn get(b: own buffer<u8>, i: own u64) -> result: own u8 pure contract {
+  define room = len(b);
+  define inside = ilt(i, room);
+  requires inside;
 } {
-  doc "Source S4: the requires block's final check condition, with every clause local replaced by its defining right-hand side, is the one relation admitted as an axiom at body entry [ENT-3 S4] and the only fact crossing into the body from outside [ENT-2]. Every ordinary caller must prove that complete goal before the call [FN-8].";
+  doc "Source S4: the static requires expression, after every shared define is expanded, is the one relation admitted as an axiom at body entry [ENT-3 S4] and the only fact crossing into the body from outside [ENT-2]. Every ordinary caller must prove that complete goal before the call [FN-8].";
   return b[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

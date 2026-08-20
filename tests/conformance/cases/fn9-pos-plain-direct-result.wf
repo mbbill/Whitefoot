@@ -1,18 +1,18 @@
-fn identity(value: own i32) -> own i32 pure ensures result {
-  check ieq(result, value) else trap "identity postcondition";
+fn identity(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
 
-fn relay(value: own i32) -> own i32 pure ensures result {
-  check ieq(result, value) else trap "relay postcondition";
+fn relay(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let called = identity(value: value);
   return called;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let observed = relay(value: 7_i32);
   claim plain_result_drift: ieq(observed, 7_i32) because "plain result drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

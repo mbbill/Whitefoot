@@ -1,4 +1,4 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Overflow via `.checked` is classified recoverable: delivered as a value (Err), not a trap [ERR-4].";
   let v = match 2147483647_i32 +checked 1_i32 {
     Ok(value: w) => {
@@ -9,5 +9,5 @@ fn main() -> own unit traps {
     }
   }
   claim x: ieq(v, 0_i32) because "x";
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -2,7 +2,7 @@ enum MyErr {
   Bad();
 }
 
-fn step(x: own i32) -> own Result<i32, MyErr> pure {
+fn step(x: own i32) -> result: own Result<i32, MyErr> pure {
   if ilt(x, 0_i32) {
     let bad_atom_0001 = Bad();
     return Err<i32, MyErr>(error: bad_atom_0001);
@@ -11,12 +11,12 @@ fn step(x: own i32) -> own Result<i32, MyErr> pure {
   }
 }
 
-fn use(x: own i32) -> own Result<i32, MyErr> pure {
+fn use(x: own i32) -> result: own Result<i32, MyErr> pure {
   doc "`propagate` binds Ok payload; Err returns Err(err) with same E [ERR-3].";
   let y = propagate step(x: x);
   return Ok<i32, MyErr>(value: y);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-fn get(b: own buffer<u8>, i: own u64) -> own u8 traps {
+fn get(b: own buffer<u8>, i: own u64) -> result: own u8 traps {
   doc "Derivability is exact: `a - b <= c` is derivable only when the closed state contains `a - b <= c'` with c' <= c [ENT-4]. A checked `i <= room` establishes `i - room <= 0`, which does not derive the obligation's `i - room <= -1`, so the subscript is undischarged [OP-4] -- correctly, since i may equal the length.";
   let room = len(b);
   let within = ile(i, room);
@@ -6,6 +6,6 @@ fn get(b: own buffer<u8>, i: own u64) -> own u8 traps {
   return b[i];
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

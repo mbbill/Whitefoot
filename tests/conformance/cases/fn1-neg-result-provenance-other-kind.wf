@@ -1,8 +1,8 @@
-fn either['r](a: &uniq 'r i32, b: &'r i32) -> &'r i32 pure {
+fn either['r](a: &uniq 'r i32, b: &'r i32) -> result: &'r i32 pure {
   doc "Exactly one parameter is a provenance candidate for the shared-borrow result, but the other names the result's formal region in the other borrow kind. FN-1 rejects at the complete `rtype` for that reason alone: candidacy is written-mode identity, not a count.";
   return &'r deref(b);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

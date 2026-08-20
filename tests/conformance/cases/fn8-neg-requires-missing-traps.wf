@@ -1,12 +1,12 @@
-fn bounded(x: own i32) -> own i32 pure requires {
-  let permitted = ige(x, 0_i32);
-  check permitted else trap "x must be nonnegative";
+fn bounded(x: own i32) -> result: own i32 pure contract {
+  define permitted = ige(x, 0_i32);
+  requires permitted;
 } {
   return x;
 }
 
-fn missing_effect() -> own unit pure {
-  doc "A caller-executed check still exhibits traps even though the callee requirement is an effectless proof goal [EFF-2/FN-8].";
+fn missing_effect() -> result: own unit pure {
+  doc "The caller's explicit claim exhibits traps even though the callee requirement is an erased proof goal [EFF-2/FN-8].";
   let x = 7_i32;
   let permitted = ige(x, 0_i32);
   claim caller_evidence: permitted because "caller evidence";
@@ -16,6 +16,6 @@ fn missing_effect() -> own unit pure {
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

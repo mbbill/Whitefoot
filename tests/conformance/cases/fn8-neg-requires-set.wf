@@ -1,13 +1,13 @@
-fn mutable_clause(x: own i32) -> own i32 traps requires {
-  let candidate = x;
+fn mutable_clause(x: own i32) -> result: own i32 pure contract {
+  define candidate = x;
   set candidate = candidate +wrap 1_i32;
-  let permitted = igt(candidate, x);
-  check permitted else trap "candidate must increase";
+  define permitted = igt(candidate, x);
+  requires permitted;
 } {
   doc "Requirement clauses are immutable ANF fact blocks; set is rejected [FN-8].";
   return x;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

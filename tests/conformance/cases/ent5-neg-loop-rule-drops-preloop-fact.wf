@@ -1,4 +1,4 @@
-fn get(b: own buffer<u8>, start: own u64) -> own u8 traps {
+fn get(b: own buffer<u8>, start: own u64) -> result: own u8 traps {
   doc "Loops carry no induction: the fact state at each iteration head removes every fact a continuing kill event may kill [ENT-5]. The `set` later in the body kills the claimed bound and an else-free false edge can carry that kill to the next head, so the subscript is undischarged [OP-4] even on the first iteration, where the claim still dominates it.";
   let room = len(b);
   let offset = 0_u64;
@@ -15,6 +15,6 @@ fn get(b: own buffer<u8>, start: own u64) -> own u8 traps {
   return sample;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

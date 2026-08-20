@@ -1,12 +1,12 @@
-deny_claims fn guarded(value: own u64, limit: own u64) -> own unit pure requires {
-  let allowed = ilt(value, limit);
-  check allowed else trap "guarded";
+deny_claims fn guarded(value: own u64, limit: own u64) -> result: own unit pure contract {
+  define allowed = ilt(value, limit);
+  requires allowed;
 } {
   doc "A marked root's requirement must hold without any claim: every call in a demanded strict component re-proves it in the caller's already-computed unasserted view [CLM-3].";
   return unit;
 }
 
-fn ordinary(value: own u64, limit: own u64) -> own unit traps {
+fn ordinary(value: own u64, limit: own u64) -> result: own unit traps {
   doc "An outside caller is not inside the marked root's outgoing closure, so its own claim stays ordinary and CLM-3 imports nothing from it. The call is a demanded strict component all the same, and the requirement is proved here only by that claim, which the unasserted view does not carry: [FN-8] rejects the call in the unasserted view, the one strict-in-U path an ordinary caller reaches.";
   let allowed = ilt(value, limit);
   claim ordinary_authorization: allowed because "ordinary authorization";
@@ -14,8 +14,8 @@ fn ordinary(value: own u64, limit: own u64) -> own unit traps {
   return unit;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Driver.";
   ordinary(value: 0_u64, limit: 1_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }

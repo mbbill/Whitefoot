@@ -1,10 +1,10 @@
-fn f(x: own i32) -> own i32 traps {
+fn f(x: own i32) -> result: own i32 traps {
   doc "Declares `traps` but body has no trapping op [EFF-2] declared-but-unexhibited.";
   return x;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let a = f(x: 7_i32);
   claim x: ieq(a, 7_i32) because "x";
-  return unit;
+  return exit_status(code: 0_u8);
 }

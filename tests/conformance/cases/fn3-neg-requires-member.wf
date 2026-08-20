@@ -1,10 +1,10 @@
 contract CheckedMember {
-  fn apply(x: own i32) -> own i32 pure;
+  fn apply(x: own i32) -> result: own i32 pure;
 }
 
-fn checked_apply(x: own i32) -> own i32 pure requires {
-  let valid = ige(x, 0_i32);
-  check valid else trap "nonnegative input";
+fn checked_apply(x: own i32) -> result: own i32 pure contract {
+  define valid = ige(x, 0_i32);
+  requires valid;
 } {
   return x;
 }
@@ -13,6 +13,6 @@ conform i32: CheckedMember {
   apply = checked_apply;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

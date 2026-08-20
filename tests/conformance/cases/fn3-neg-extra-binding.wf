@@ -1,5 +1,5 @@
 contract Single {
-  fn value() -> own i32 pure;
+  fn value() -> result: own i32 pure;
 }
 
 conform i32: Single {
@@ -7,14 +7,14 @@ conform i32: Single {
   extra = make_extra;
 }
 
-fn make_value() -> own i32 pure {
+fn make_value() -> result: own i32 pure {
   return 1_i32;
 }
 
-fn make_extra() -> own i32 pure {
+fn make_extra() -> result: own i32 pure {
   return 2_i32;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

@@ -1,5 +1,5 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "A failing claim is a runtime check in all build modes, never elided; it traps and aborts [CLM-1]. The predicate is a constructed Bool, so it has no comparison origin, is neither redundant nor refutable [CLM-2], and its falseness is a runtime property.";
   claim impossible_order: False() because "impossible order";
-  return unit;
+  return exit_status(code: 0_u8);
 }

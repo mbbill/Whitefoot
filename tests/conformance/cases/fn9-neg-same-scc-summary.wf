@@ -1,24 +1,24 @@
-fn recursive_control(value: own i32) -> own i32 pure ensures result {
-  check ieq(result, value) else trap "control postcondition";
+fn recursive_control(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let ignored = recursive_control(value: value);
   return value;
 }
 
-fn first(value: own i32) -> own i32 pure ensures result {
-  check ieq(result, value) else trap "first postcondition";
+fn first(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let called = second(value: value);
   return called;
 }
 
-fn second(value: own i32) -> own i32 pure ensures result {
-  check ieq(result, value) else trap "second postcondition";
+fn second(value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   let called = first(value: value);
   return called;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

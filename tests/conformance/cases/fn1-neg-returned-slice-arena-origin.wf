@@ -1,8 +1,8 @@
-fn arena_view['r](storage: own arena<'r, array<u8, 2>>) -> own slice<'r, u8> pure {
+fn arena_view['r](storage: own arena<'r, array<u8, 2>>) -> result: own slice<'r, u8> pure {
   let view = slice_of(&'r deref(storage));
   return move view;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

@@ -6,16 +6,16 @@ enum ErrB {
   B();
 }
 
-fn step(x: own i32) -> own Result<i32, ErrA> pure {
+fn step(x: own i32) -> result: own Result<i32, ErrA> pure {
   return Ok<i32, ErrA>(value: x);
 }
 
-fn use(x: own i32) -> own Result<i32, ErrB> pure {
+fn use(x: own i32) -> result: own Result<i32, ErrB> pure {
   doc "`propagate` requires inner and outer E to match (no conversions) [ERR-3]; ErrA != ErrB.";
   let y = propagate step(x: x);
   return Ok<i32, ErrB>(value: y);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

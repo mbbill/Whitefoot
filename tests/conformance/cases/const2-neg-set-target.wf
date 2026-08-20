@@ -1,6 +1,6 @@
 const answer: i32 = 1_i32;
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   set answer = 2_i32;
-  return unit;
+  return exit_status(code: 0_u8);
 }

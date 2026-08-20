@@ -1,11 +1,11 @@
-fn hidden_local(x: own i32) -> own Bool traps requires {
-  let permitted = ige(x, 0_i32);
-  check permitted else trap "x must be nonnegative";
+fn hidden_local(x: own i32) -> result: own Bool pure contract {
+  define permitted = ige(x, 0_i32);
+  requires permitted;
 } {
   doc "Requirement locals do not enter the function-body scope [FN-8/TYPE-5].";
   return permitted;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

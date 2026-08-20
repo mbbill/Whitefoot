@@ -1,10 +1,10 @@
-fn no_check(x: own i32) -> own i32 pure requires {
-  let permitted = ige(x, 0_i32);
+fn no_check(x: own i32) -> result: own i32 pure contract {
+  define permitted = ige(x, 0_i32);
 } {
-  doc "A requirement clause without its terminal checked Bool fact is malformed [FN-8].";
+  doc "A define-only contract with no requires or ensures clause is malformed [FN-8].";
   return x;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

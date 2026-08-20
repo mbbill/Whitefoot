@@ -1,10 +1,10 @@
 contract SourceBound {
 }
 
-fn identity<T: SourceBound>(value: own T) -> own T pure {
+fn identity<T: SourceBound>(value: own T) -> result: own T pure {
   return value;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

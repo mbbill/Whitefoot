@@ -1,16 +1,17 @@
-fn risky_checked(x: own i32) -> own Result<i32, Overflow> traps {
-  doc "A trapping increment behind a Result surface; the row declares traps. Both operands are bound terms, so this is the retained two-non-constant trapping form: the site stays outside OP-2's constant-operand class and still contributes `traps` to the row this case exists to check.";
+fn risky_checked(x: own i32) -> result: own Result<i32, Overflow> traps {
+  doc "A claim behind a Result surface; the row declares the claim-only runtime trap capability.";
+  claim admitted: True() because "the callee retains the claim-only runtime trap capability";
   let step = 1_i32;
-  let bumped = x + step;
+  let bumped = x +wrap step;
   return Ok<i32, Overflow>(value: bumped);
 }
 
-fn g(x: own i32) -> own Result<i32, Overflow> traps {
-  doc "EFF-2: the propagate-scrutinee callee trap is declared; row and body agree.";
+fn g(x: own i32) -> result: own Result<i32, Overflow> traps {
+  doc "EFF-2: the propagate-scrutinee callee claim capability is declared; row and body agree.";
   let r = propagate risky_checked(x: x);
   return Ok<i32, Overflow>(value: r);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

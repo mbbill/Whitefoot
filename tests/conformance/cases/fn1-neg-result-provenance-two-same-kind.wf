@@ -1,8 +1,8 @@
-fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> &uniq 'r i32 pure {
+fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> result: &uniq 'r i32 pure {
   doc "Two parameters are written as uniq borrows in the result's formal region, so two provenance candidates leave the result's source undetermined and FN-1 rejects at the complete `rtype`. The declaration is the error: no caller appears in this program, because GRAM-9 admits a computed value only through a preceding `let` and a result no caller can bind is unusable by construction.";
   return &uniq 'r deref(a);
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

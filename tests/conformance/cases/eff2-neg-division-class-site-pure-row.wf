@@ -1,9 +1,11 @@
-fn divide(p: own i32, q: own i32) -> own i32 pure {
-  doc "A retained signed two-variable site is the body's only trap contributor, and it still syntactically exhibits `traps` [OP-2, EFF-2]. The declared `pure` row therefore rejects: the dissolution narrows the traps-free class, it does not make every division site traps-free.";
+fn divide(p: own i32, q: own i32) -> result: own i32 pure {
+  doc "The claim that establishes an exact division domain is now the sole trap contributor, so a pure row is wrong.";
+  let division_defined = p /defined q;
+  claim division_domain: division_defined because "exact division requires its explicit domain";
   let r = p / q;
   return r;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

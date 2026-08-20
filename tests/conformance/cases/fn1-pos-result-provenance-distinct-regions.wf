@@ -1,9 +1,9 @@
-fn pick['r, 's](a: &uniq 'r i32, b: &uniq 's i32) -> &uniq 'r i32 pure {
+fn pick['r, 's](a: &uniq 'r i32, b: &uniq 's i32) -> result: &uniq 'r i32 pure {
   doc "The accepted repair FN-1 names: give the source parameter its own region so exactly one parameter shares the result's region and kind. The result's debtor is `a`, the caller's holder resolves to the place `a` was borrowed from, and a write through the result reaches that place.";
   return &uniq 'r deref(a);
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let v = 1_i32;
   let w = 2_i32;
   region 'a {
@@ -13,5 +13,5 @@ fn main() -> own unit traps {
     }
   }
   claim written_through: ieq(v, 7_i32) because "the result borrow writes through to v";
-  return unit;
+  return exit_status(code: 0_u8);
 }

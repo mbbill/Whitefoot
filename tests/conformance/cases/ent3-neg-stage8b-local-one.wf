@@ -1,16 +1,16 @@
-fn require_nonzero(value: own u32) -> own unit pure requires {
-  check ine(value, 0_u32) else trap "shift nonzero";
+fn require_nonzero(value: own u32) -> result: own unit pure contract {
+  requires ine(value, 0_u32);
 } {
   return unit;
 }
 
-fn local_one(count: own u32) -> own unit pure {
+fn local_one(count: own u32) -> result: own unit pure {
   let one = 1_u32;
   let shifted = ishl.wrap(one, count);
   require_nonzero(value: shifted);
   return unit;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

@@ -1,10 +1,10 @@
 contract OpaqueMonoid {
   doc "FN-4: a stated law on a fn whose body is not a single table op has no static proof; stated-but-unchecked is a hard reject, never a trusted fact.";
-  fn combine(x: own u64, y: own u64) -> own u64 pure;
+  fn combine(x: own u64, y: own u64) -> result: own u64 pure;
   law associative(combine);
 }
 
-fn twostep(x: own u64, y: own u64) -> own u64 pure {
+fn twostep(x: own u64, y: own u64) -> result: own u64 pure {
   let t = x +wrap y;
   return t +wrap 1_u64;
 }
@@ -13,6 +13,6 @@ conform u64: OpaqueMonoid {
   combine = twostep;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

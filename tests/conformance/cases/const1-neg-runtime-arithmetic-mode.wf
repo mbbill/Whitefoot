@@ -1,9 +1,9 @@
-fn doubled<const n: u64>(fill: own u64) -> own array<u64, n *wrap 2> pure {
+fn doubled<const n: u64>(fill: own u64) -> result: own array<u64, n *wrap 2> pure {
   return array_new<u64, n *wrap 2>(fill);
 }
 
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "CONST-1: the const-expression tail reuses infix_op, but its spelling must be one of the five bare operators. Const evaluation has no runtime overflow mode, so a mode-suffixed spelling is a hard error citing CONST-1 at the infix_op node. The grammar admits and the checker restricts, on the `break` precedent.";
   let cells = doubled<3>(fill: 7_u64);
-  return unit;
+  return exit_status(code: 0_u8);
 }

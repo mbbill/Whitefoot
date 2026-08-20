@@ -1,7 +1,7 @@
 contract BorrowedSliceResult {
-  fn borrowed['descriptor, 'data](value: &uniq 'descriptor slice<'data, u8>) -> &uniq 'descriptor slice<'data, u8> pure;
+  fn borrowed['descriptor, 'data](value: &uniq 'descriptor slice<'data, u8>) -> result: &uniq 'descriptor slice<'data, u8> pure;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

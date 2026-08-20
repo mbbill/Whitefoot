@@ -1,6 +1,6 @@
 contract OrderedPair {
-  fn first() -> own i32 pure;
-  fn second() -> own i32 pure;
+  fn first() -> result: own i32 pure;
+  fn second() -> result: own i32 pure;
 }
 
 conform i32: OrderedPair {
@@ -8,14 +8,14 @@ conform i32: OrderedPair {
   first = make_first;
 }
 
-fn make_first() -> own i32 pure {
+fn make_first() -> result: own i32 pure {
   return 1_i32;
 }
 
-fn make_second() -> own i32 pure {
+fn make_second() -> result: own i32 pure {
   return 2_i32;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

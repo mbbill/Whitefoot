@@ -1,10 +1,10 @@
-fn bad(x: own i64) -> own Result<i64, DivError> pure {
+fn bad(x: own i64) -> result: own Result<i64, DivError> pure {
   let d = x +checked x;
   let v = propagate d;
   let r = v /checked 2_i64;
   return move r;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

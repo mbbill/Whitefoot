@@ -1,10 +1,10 @@
 contract BadMonoid {
   doc "FN-4: signed saturating add is NOT associative ((MAX sat+ 1) sat+ -1 != MAX sat+ (1 sat+ -1)); the stated law must be refuted, not trusted.";
-  fn combine(x: own i64, y: own i64) -> own i64 pure;
+  fn combine(x: own i64, y: own i64) -> result: own i64 pure;
   law associative(combine);
 }
 
-fn satadd_signed(x: own i64, y: own i64) -> own i64 pure {
+fn satadd_signed(x: own i64, y: own i64) -> result: own i64 pure {
   return x +sat y;
 }
 
@@ -12,6 +12,6 @@ conform i64: BadMonoid {
   combine = satadd_signed;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

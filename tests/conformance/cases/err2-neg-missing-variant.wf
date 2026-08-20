@@ -4,7 +4,7 @@ enum Color {
   Blue();
 }
 
-fn pick(c: own Color) -> own i32 pure {
+fn pick(c: own Color) -> result: own i32 pure {
   match c {
     Red() => {
       return 1_i32;
@@ -15,10 +15,10 @@ fn pick(c: own Color) -> own i32 pure {
   }
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "A match missing the Blue() arm is non-exhaustive [ERR-2]; rejected.";
   let red_atom_0001 = Red();
   let n = pick(c: red_atom_0001);
   claim x: ieq(n, 1_i32) because "x";
-  return unit;
+  return exit_status(code: 0_u8);
 }

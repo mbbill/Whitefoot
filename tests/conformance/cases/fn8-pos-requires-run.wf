@@ -1,13 +1,13 @@
-fn bounded(x: own i32) -> own i32 pure requires {
-  let permitted = ige(x, 0_i32);
-  check permitted else trap "x must be nonnegative";
+fn bounded(x: own i32) -> result: own i32 pure contract {
+  define permitted = ige(x, 0_i32);
+  requires permitted;
 } {
-  doc "A checked, Bool-valued, pure-total requirement is one complete goal that every ordinary caller proves before the function body [FN-8].";
+  doc "A Bool-valued, pure-total static requirement is one complete goal that every ordinary caller proves before the function body [FN-8].";
   return x;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let value = bounded(x: 7_i32);
   claim requires_result_drift: ieq(value, 7_i32) because "requires result drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -1,0 +1,10 @@
+fn open_read_alias(root: own u64, path: own u64) -> result: own u64 pure {
+  doc "The universal system declaration domain reserves exact operation spellings, while an ordinary near-lookalike remains a source function [SYS-1, SYS-3].";
+  return root;
+}
+
+command fn main() -> status: own ExitStatus traps {
+  let opened = open_read_alias(root: 3_u64, path: 4_u64);
+  claim lookalike: ieq(opened, 3_u64) because "lookalike";
+  return exit_status(code: 0_u8);
+}

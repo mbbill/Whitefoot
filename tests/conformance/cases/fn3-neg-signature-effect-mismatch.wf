@@ -1,8 +1,8 @@
 contract PureMember {
-  fn apply(x: own i32) -> own i32 pure;
+  fn apply(x: own i32) -> result: own i32 pure;
 }
 
-fn trapping_apply(x: own i32) -> own i32 traps {
+fn trapping_apply(x: own i32) -> result: own i32 traps {
   claim retained_explicit_check: ieq(x, x) because "retained explicit check";
   return x;
 }
@@ -11,6 +11,6 @@ conform i32: PureMember {
   apply = trapping_apply;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

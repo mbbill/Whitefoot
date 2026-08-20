@@ -1,11 +1,11 @@
-fn inc(x: own i32) -> own i32 pure {
+fn inc(x: own i32) -> result: own i32 pure {
   doc "Empty-row `pure` spelling [EFF-1].";
   return x +wrap 1_i32;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Canonical effect rows: `pure` (empty row) and `traps` [EFF-1].";
   let a = inc(x: 41_i32);
   claim drift: ieq(a, 42_i32) because "drift";
-  return unit;
+  return exit_status(code: 0_u8);
 }

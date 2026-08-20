@@ -1,8 +1,8 @@
-deny_claims fn strict_identity<T: Int>(value: own T) -> own T pure {
+deny_claims fn strict_identity<T: Int>(value: own T) -> result: own T pure {
   return value;
 }
 
-fn ordinary_claiming_caller() -> own u64 traps {
+fn ordinary_claiming_caller() -> result: own u64 traps {
   let asserted = True();
   claim caller_only: asserted because "this ordinary caller is outside the strict root's outgoing closure";
   let small = strict_identity<u8>(value: 3_u8);
@@ -10,7 +10,7 @@ fn ordinary_claiming_caller() -> own u64 traps {
   return accepted;
 }
 
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   let value = ordinary_claiming_caller();
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -1,5 +1,5 @@
 contract Zeroed {
-  fn zero() -> own i32 pure;
+  fn zero() -> result: own i32 pure;
 }
 
 conform i32: Zeroed {
@@ -10,14 +10,14 @@ conform i32: Zeroed {
   zero = i32_zero_b;
 }
 
-fn i32_zero_a() -> own i32 pure {
+fn i32_zero_a() -> result: own i32 pure {
   return 0_i32;
 }
 
-fn i32_zero_b() -> own i32 pure {
+fn i32_zero_b() -> result: own i32 pure {
   return 0_i32;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

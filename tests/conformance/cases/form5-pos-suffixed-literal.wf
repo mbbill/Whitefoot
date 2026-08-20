@@ -1,5 +1,5 @@
-fn main() -> own unit pure {
+command fn main() -> status: own ExitStatus pure {
   doc "An integer literal carries its mandatory type suffix [FORM-5].";
   let a = 42_i32;
-  return unit;
+  return exit_status(code: 0_u8);
 }

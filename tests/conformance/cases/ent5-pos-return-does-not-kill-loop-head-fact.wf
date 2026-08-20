@@ -1,4 +1,4 @@
-fn get(b: own buffer<u8>, stop: own Bool, done: own Bool) -> own u8 traps {
+fn get(b: own buffer<u8>, stop: own Bool, done: own Bool) -> result: own u8 traps {
   doc "A return edge inside a loop cannot reach a later iteration head, so its scope-exit kills do not remove a pre-loop bound at the head [ENT-5]. The two else-free false edges can continue, but neither kills the bound; therefore the first subscript discharges [OP-4].";
   let room = len(b);
   let offset = 0_u64;
@@ -17,6 +17,6 @@ fn get(b: own buffer<u8>, stop: own Bool, done: own Bool) -> own u8 traps {
   return sample;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

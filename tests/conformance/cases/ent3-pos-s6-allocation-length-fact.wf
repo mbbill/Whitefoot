@@ -1,7 +1,7 @@
-fn main() -> own unit allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   doc "Source S6: `buffer_new(n, v)` establishes len(b) = n on the normal continuation [ENT-3, OP-9], and the copy equality of source S5 carries the literal into n, so a constant offset below that length discharges [OP-4]. The length is a declared allocation property, not a writer statement.";
   let size = 4_u64;
   let b = buffer_new(size, 0_u8);
   let value = b[2_u64];
-  return unit;
+  return exit_status(code: 0_u8);
 }

@@ -1,16 +1,16 @@
-fn choose(ignored: own i32, value: own i32) -> own i32 pure ensures result {
-  check ieq(result, value) else trap "choose postcondition";
+fn choose(ignored: own i32, value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
 } {
   return value;
 }
 
-fn relay(slot: own i32, replacement: own i32) -> own i32 pure ensures result {
-  check ieq(result, replacement) else trap "relay postcondition";
+fn relay(slot: own i32, replacement: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, replacement);
 } {
   set slot = choose(ignored: slot, value: replacement);
   return slot;
 }
 
-fn main() -> own unit pure {
-  return unit;
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
 }

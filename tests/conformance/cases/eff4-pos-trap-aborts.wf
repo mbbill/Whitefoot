@@ -1,5 +1,5 @@
-fn main() -> own unit traps {
+command fn main() -> status: own ExitStatus traps {
   doc "Trap is abort: a failing `claim` kills the process, no unwinding/cleanup [EFF-4]. The predicate is a constructed Bool with no comparison origin, so CLM-2 accepts it and the failure is a runtime event.";
   claim boom: False() because "boom";
-  return unit;
+  return exit_status(code: 0_u8);
 }
