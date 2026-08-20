@@ -75,7 +75,9 @@ The protected corpus moved from 490 to 499 sources: 468 existing paths were
 modified, 21 were replaced by renamed subjects, and the nine approved v0.33
 cases were added. The one excluded source,
 `type6-neg-dup-variant.wf`, remains byte-identical. No runner, collection, gate,
-or invocation wiring changed.
+or invocation wiring changed. The final protected tree is
+`882e691cf456758c456509a057ab6328c1f58a88`; the manifest SHA-256 is
+`f6b7cda7d523837c5ae1ddf3115ac82afabc1d13d9a4e7ddff4a24591b85c609`.
 
 ## Landed slices
 
@@ -93,10 +95,14 @@ or invocation wiring changed.
 - Exact evidence and protected candidate: `99401e3c`, `2757f1a2`,
   `d476a320`, `c9a20baa`, `ed133d08`, `6b8d9760`, `4a160bcf`,
   `f1d8a2cd`.
+- Main-ancestry reconciliation and exit-audit repairs: `4ddde782`,
+  `4bb3236c`, `a911681a`, `1dc7e6a1`, `06a625d3`, `08548904`,
+  `df057f5d`, `65bfbab6`.
 
-The complete no-merge commit sequence is the repository range
-`dde2f6af^..f1d8a2cd`; the grouped list above identifies the load-bearing
-slices rather than duplicating every fixture and documentation commit.
+The pre-reconciliation no-merge commit sequence is the repository range
+`dde2f6af^..f1d8a2cd`; the post-reconciliation list records the merge and every
+later repair explicitly. The grouped list identifies the load-bearing slices
+rather than duplicating every fixture and documentation commit.
 
 ## Verification
 
@@ -120,6 +126,9 @@ slices rather than duplicating every fixture and documentation commit.
 - Integer-domain normalization was moved into the shared goal authority so
   exact sites, requirements, calls, claims, and contradiction closure cannot
   disagree.
+- SYS-3 declaration inventory is installed in every unit before entry-form
+  validation; focused resolution tests pin both universal name visibility and
+  the unchanged FN-7 rejection of an invalid entry.
 - Allocation and system audits repaired generic layout ceilings, zero-length
   arrays, endpoint provenance, host-count and record sanitization, target
   component limits, exact system IR identities, no-follow regular-file
