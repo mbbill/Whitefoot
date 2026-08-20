@@ -632,7 +632,7 @@ command fn main() -> status: own ExitStatus traps {
 
 /// [GRAM-6] the Bool conditional lowers through the Bool `match` path it
 /// checks into, so no lowering, cleanup, or drop change is owed. Every branch
-/// here is observable: a wrong one leaves a flag false and the check traps.
+/// here is observable: a wrong one leaves a flag false and the claim traps.
 #[test]
 fn bool_conditionals_execute_through_the_existing_match_lowering() {
     let source = br#"command fn main() -> status: own ExitStatus traps {
@@ -1102,9 +1102,9 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(failure.rule_id(), Some("FN-8"));
 }
 
-/// The [CLM-1] record a migrated body check now emits: same mandatory
-/// [DIAG-3] field order and framing, `rule_id` `CLM-1`, and `message` the
-/// claim's IDENT spelling rather than its `because` justification.
+/// The [CLM-1] record a failing claim emits: mandatory [DIAG-3] field order
+/// and framing, `rule_id` `CLM-1`, and `message` from the claim's IDENT rather
+/// than its `because` justification.
 #[test]
 fn a_failing_claim_emits_the_exact_mandatory_record_shape() {
     let source =

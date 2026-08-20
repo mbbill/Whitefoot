@@ -47,8 +47,8 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let llvm = compile(source);
     let sum = emitted_function(&llvm, "sum");
     let main = emitted_function(&llvm, "main");
-    // The discharged slice read emits no bounds branch; the claim is the
-    // one retained check and the element address forms directly.
+    // The discharged slice read emits no bounds branch; the explicit claim is
+    // the one retained runtime backstop and the element address forms directly.
     assert!(sum.contains("getelementptr inbounds i8"));
     assert!(!sum.contains("call void @free"));
     assert_eq!(main.matches("call void @free").count(), 1);

@@ -201,7 +201,7 @@ pub enum DecisionKind {
 pub enum DecisionContext {
     /// No construct-entry or program-leftover override.
     Ordinary,
-    /// An `item`, `stmt`, `requires_entry`, or `ensures_entry` frontier.
+    /// An `item`, `stmt`, or contract-clause frontier.
     ConstructEntry,
     /// The per-source `program` item repetition.
     ProgramItems,

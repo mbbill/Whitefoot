@@ -1242,10 +1242,13 @@ spellings remain under the same FORM-1/R3 existence-only debt carried by their
 owning rows; derived semantic safety relations remain derived. Totals therefore
 stay **84 derived · 51 existence-only · 0 underived** across 135 rules.
 
-Static inventory before frontend integration: 74 grammar productions remain;
-six old productions are replaced by six new ones; the unique fixed lowercase
-atom set removes `check` and standalone `trap`, adds `command`, `define`, and
-`when`, for net +1; writer operation spellings add thirteen and remove four,
-while the five bare exact infix spellings remain. These are candidate arithmetic
-checks, not verifier claims; the activation packet must replace this paragraph
-with the native grammar identity and complete protected-corpus results.
+Final candidate inventory: the native frontend verifier records 74 grammar
+productions, 93 predictive decisions, and 105 terminal predicates. Six old
+productions are replaced by six new ones; the unique fixed lowercase atom set
+removes `check` and standalone `trap`, adds `command`, `define`, and `when`, for
+net +1; writer operation spellings add thirteen and remove four, while the five
+bare exact infix spellings remain. The protected corpus contains 499 source
+cases in exact manifest bijection, covers 135/135 rules, and the canonical
+adapter reports `Pass=498 Skip=1 Fail=0`. The candidate specification SHA-256
+is `024a7752a88daf8799f637d95401fb73e25e257b118b3b78d4733b397c3db3c2`;
+the activation chain remains at v0.32 until the separate owner decision.

@@ -211,7 +211,7 @@ best-supported differentiator to date.
   first-shot); the loop is load-bearing, not decorative. *Status:* ADOPTED;
   the "compiler as teacher" content ablation is an unrun experiment.
 - **Canonical elaborated artifact as the re-read target.** Acceptance decidable
-  from the artifact alone; drops, instantiations, and retained checks explicit.
+  from the artifact alone; drops, instantiations, and retained claims explicit.
   *Status:* LAW.
 - **Reproducible builds; semantic diff and merge.** By construction of
   canonical form. *Status:* ADOPTED (by construction; whole-toolchain

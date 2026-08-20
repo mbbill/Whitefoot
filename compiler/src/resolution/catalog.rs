@@ -301,9 +301,9 @@ pub const TRAVERSAL_SURFACE: bool = true;
 /// records they see today. `true` admits the candidate operation — the
 /// `open_read` sibling that takes a caller-owned single path component
 /// instead of a `RelativePath` — as the last row of the [SYS-2] operation
-/// table. It is `false` until the owner approves the candidate bytes; the
-/// candidate inventory is reachable only by naming it at a compilation, which
-/// is what the end-to-end evidence does.
+/// table. The candidate compiler selects `true` so the complete v0.33 surface
+/// follows the ordinary path; `false` remains the exact active-v0.32
+/// differential until the candidate is approved and activated.
 pub const OPEN_BY_NAME: bool = true;
 
 /// One selected [SYS-2] inventory state.

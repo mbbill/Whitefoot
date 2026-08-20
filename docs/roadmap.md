@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 43 (owner-selected claim-only runtime trap surface and static contracts)
+Revision: 44 (complete unactivated v0.33 claim-only candidate and owner packet)
 
 The active language authority is v0.32 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -387,8 +387,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### outline:PROOF-9 — Claim-only runtime trap surface and static contracts
 
-`[current: owner-selected 2026-08-19; ACTIVE implementation plan]`
-`[next: complete one unactivated v0.33 candidate and exact-byte owner packet]`
+`[current: complete unactivated v0.33 candidate and exact-byte owner packet]`
+`[next: owner activation and merge decision]`
 
 - **Goal:** make `claim` the only writer-reachable source of a language-level
   runtime rejection. Every hazardous operation is either total, returns a
@@ -409,9 +409,11 @@ creating writer trust or weakening the checked safety envelope.
   unactivated v0.33 candidate and compiler implement named results, the unified
   erased contract surface, plural static proofs, command-only entry, exact
   operation/allocation/system obligations, and claim-only DIAG-3 lowering.
-  Ordinary programs and fixtures use the candidate surface. Exact candidate
-  specification corrections, protected-compliance migration, and activation
-  remain behind the owner approval boundary.
+  Ordinary programs and fixtures use the candidate surface. The exact
+  specification candidate, 499-case protected corpus, equivalent evidence,
+  target review, and adversarial audits are complete; canonical conformance is
+  `Pass=498 Skip=1 Fail=0`. The active language is still v0.32, and v0.33
+  activation and merge remain behind the final exact-byte owner decision.
 - **Required closure:** the candidate grammar contains no contract-local
   statement or trap spelling; accepted integer, allocation, and affected
   system-operation IR carries no runtime trap site; all requirement calls are

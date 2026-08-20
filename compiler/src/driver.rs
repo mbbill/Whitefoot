@@ -19,10 +19,10 @@ use crate::{
 /// One definition serves the driver executable and every test that links an
 /// emitted module, so no path can silently link an unoptimized binary while
 /// another links an optimized one. There is no writer-facing switch: the
-/// optimization level cannot change which programs are accepted and cannot
-/// discharge a required runtime check, so no writer decision exists and the
-/// default shape is the only shape. The level is provisional and may move once
-/// a measurement asks for it.
+/// optimization level cannot change which programs are accepted, discharge a
+/// static source obligation, or make a potentially failing claim disappear,
+/// so no writer decision exists and the default shape is the only shape. The
+/// level is provisional and may move once a measurement asks for it.
 pub const HOST_OPTIMIZATION_ARGUMENTS: &[&str] = &["-O2"];
 
 /// Explicit implementation ceilings for one compiler invocation.

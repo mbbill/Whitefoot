@@ -2,7 +2,7 @@ use super::{compile, compile_and_run, emitted_function};
 
 /// The dedicated counted CFG executes empty, reversed, singleton, MAX-edge,
 /// captured-endpoint, shared-binder-borrow, nested-break, and enclosing-break
-/// paths through the normal native backend. The explicit check is confined to
+/// paths through the normal native backend. The explicit claim is confined to
 /// `main`; the counted worker itself remains pure and has no trap fallback.
 #[test]
 fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
