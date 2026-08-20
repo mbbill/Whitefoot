@@ -881,7 +881,7 @@ The offset atom has exact value mode and type `own u64`; after the [TYPE-7] impl
 A subscript in a [SET-1] target forms the selected place without reading its stored value; its base and offset are evaluated during target evaluation, and its discharge judgment is identical in target position.
 A successful bounds judgment neither narrows nor authorizes narrowing the offset or its scaled byte offset; target address formation additionally obeys [STOR-6].
 System range calls carry their own static [SYS-8] obligations through the same [ENT-6] framework; no operation-internal range check is retained.
-[CLM-3] reads successful U-view obligation metadata for consistency and postcondition premises but adds no separate strict subscript judgment or repair after the ordinary and provenance judgments have succeeded.
+The [CLM-3] judgment reads successful U-view obligation metadata for consistency and postcondition premises but adds no separate strict subscript judgment or repair after the ordinary and provenance judgments have succeeded.
 
 [OP-5] Every source condition and contract predicate requires its selected expression to have exact value mode and type `own Bool`, where `Bool` is the PRE-1 nominal type.
 No integer, other enum, borrowed `Bool`, or implicit truthiness conversion is admitted [TYPE-4].
@@ -955,7 +955,7 @@ Region-bearing slice and arena types are outside `buffer_fits`'s domain; existin
 Before emitting a stored type S, target qualification verifies that its actual size, alignment, and stride do not exceed the three language ceilings.
 Only with both that qualification and the source obligation disposition may lowering emit `n * actual_stride(S)` as non-overflowing arithmetic.
 Qualification failure is a target failure and may not become a runtime guard.
-[STOR-6] separately governs allocator and address-index representability; allocation failure remains a TCB/resource failure [SCOPE-3], never a language trap.
+The [STOR-6] rule separately governs allocator and address-index representability; allocation failure remains a TCB/resource failure [SCOPE-3], never a language trap.
 `array<T, N>` performs no runtime size computation: N is fixed at monomorphization and concrete target representability is checked under [STOR-6].
 The language defines no numeric frame limit, and `array_new` remains pure because target-layout and resource failure are not program execution.
 
@@ -1205,7 +1205,7 @@ No label tail is a member of [OP-1]'s `ModeWords`, because [GRAM-1] would form `
 The system declaration domain is admitted to every compilation unit under [SYS-3]; entry validation therefore never changes which system names exist or lets an invalid entry steal an earlier undeclared-name diagnostic.
 
 The one canonical byte sequence for a complete four-input entry header is `command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {`.
-[FORM-2] renders it without amendment; `program_kind`, `input_label`, and `result_binding` introduce no formatting boundary.
+The [FORM-2] rule renders it without amendment; `program_kind`, `input_label`, and `result_binding` introduce no formatting boundary.
 
 The entry states a program's complete standard-input access in its own signature, so no system value reaches another function except as a written parameter [FN-1]: there is no ambient authority, and no entry-supplied aggregate that source can own, name, or pass.
 There is no global state and no `'static` region in v0: ambient mutable globals would (a) erode the noalias fact base every function otherwise gets from parameter-only reachability (P0; carding backlog: GlobalsAA-class evidence), (b) create hidden inter-function channels invisible in signatures (W3, FN-1 signatures-as-trust-unit), and (c) pre-seed shared state for the future concurrency layer (T1).
@@ -2463,9 +2463,9 @@ Every successful transfer payload is an absolute endpoint `next`, not a count, a
 On `ReadBytes(next)` exactly `[start, next)` may have changed, every other byte of the buffer is unchanged, and the file cursor advances by exactly `next - start`.
 On `ReadEnd` and on `ReadFailed` no byte of the buffer changes, because an attempt that made progress reports `ReadBytes` instead.
 On every recoverable failure of `write_once` and of both copy operations the whole buffer is unchanged.
-On `ListBytes(next, entries)` exactly `[start, next)` may have changed, every other byte of the buffer is unchanged, and the enumeration cursor advances past exactly the entries those records name.
+On `ListBytes(next, entries)` any byte in `[start, end)` may have changed, every byte of the buffer outside that range is unchanged, `[start, next)` is the portable entry-record prefix holding exactly `entries` complete records, and the enumeration cursor advances past exactly the entries those records name.
 On `ListEnd` and on `ListFailed` no byte of the buffer changes and the cursor does not advance.
-A qualified target binding guarantees that its internal host count is no greater than `end - start`; only that compiler-owned sanitized count may form `next = start + count`.
+A qualified target binding guarantees that its internal host count is no greater than `end - start`. For `read_once` and `write_once`, only that compiler-owned sanitized count may form `next = start + count`; for `list_once`, that count bounds the native batch and only the compiler-derived length of the completely validated portable prefix may form `next = start + length`.
 A violation is a target/runtime TCB defect [SCOPE-3, QUAL-1], never a source-visible outcome, language trap, or permission to continue with an out-of-range endpoint.
 
 The two copy operations differ only after their two call obligations succeed.
@@ -2568,16 +2568,19 @@ The reported entries are exactly what the target's directory holds, including th
 They are not filtered, because filtering them would cost a second host call in the batch that held only them [QUAL-3], and a program that descends must exclude them anyway to terminate.
 
 The target shim may rewrite the transferred records in place within the caller's validated range into the portable form; that rewrite is part of the one transfer, not a copy of the transferred data [QUAL-3].
-One entry record is one kind byte, one name-length byte, and exactly that many name bytes.
+One entry record is one `kind: u8`, one `name_length: u16` encoded in little-endian byte order, and exactly `name_length` name bytes.
 The closed kind set is `0` unknown, `1` regular file, `2` directory, `3` symbolic link, and `4` other; `0` states that the target classified the entry at enumeration time as nothing more specific, not that the entry is absent or unreadable.
 A name is one path component: it is never empty, never longer than the target's component limit, and contains no NUL and no target separator, so no record a program reads can name more than one component.
+The component limit used by this version's Darwin-family approved implementations is 1023 bytes, and the limit used by its Linux-family approved implementations is 255 bytes [QUAL-1].
 
 An entry name reaches source only as those bytes.
 This specification declares no operation turning an enumerated name into a `HostString` or a `RelativePath`, because a name's backing is not the command-lifetime argument snapshot [HOST-3] and a path value is an inline lease over that snapshot [PATH-1].
 `open_directory` and `open_file` therefore take a caller-owned name range rather than a path value, and path composition remains the DEFERRED addition [PATH-1] states.
 Each call first discharges [SYS-8]'s two static range obligations; neither operation has a runtime range check or `traps` effect.
 Each then validates `[start, end)` as one component before any host call: a component that is empty, longer than the target's component limit, or containing a NUL or a target separator yields `Err(InvalidPath(code: 0_u32, origin: 0_u8))`, no host call, and no capability.
-A valid range that names no object yields the target's own failure class — `NotFound`, `NotDirectory`, `IsDirectory`, `PermissionDenied`, and the rest of the closed set — exactly as `open_read` does.
+A valid range for which the directory-relative open itself fails yields the target-mapped [SYS-7] error, as `open_read` does.
+After `open_file` obtains a provisional descriptor, descriptor-status inspection is required before publication: inspection failure returns its target-mapped [SYS-7] error, a successfully inspected directory returns `Err(IsDirectory(code: 0_u32, origin: 0_u8))`, and every other successfully inspected non-regular object returns `Err(Other(code: 0_u32, origin: 0_u8))`.
+Before returning any of those post-open errors, `open_file` makes exactly one native close attempt, discards its close diagnostic without retry as [SYS-5] requires, and returns the inspection or synthetic classification error unchanged.
 On success `open_directory` returns an independent `DirectoryRead` for the named directory and `open_file` returns an independent `ReadFile` for the named regular file; a symbolic link is not followed by either operation.
 
 `DirectoryList` is release-complete [SYS-5].
