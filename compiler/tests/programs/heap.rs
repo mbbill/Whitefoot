@@ -5,7 +5,7 @@ use super::support::{compile_and_run, compile_program, compile_rejection, emitte
 /// release of the superseded buffer, and a byte-string append built on it.
 /// The program self-checks length, capacity, and content after three grow
 /// cycles (capacity 0 -> 8 -> 16 -> 24) and after appending five bytes; a
-/// wrong value at any probe traps and fails the run.
+/// wrong value at any probe returns a nonzero status and fails the run.
 #[test]
 fn growable_vector_grows_by_affine_replace_and_runs_its_checks() {
     let llvm = compile_program("growable_vec.wf");
@@ -25,7 +25,7 @@ fn growable_vector_grows_by_affine_replace_and_runs_its_checks() {
 /// `buffer<Option<box<u64>>>` section whose scope-exit drop is the
 /// per-element loop (one remaining `Some` box is freed by the loop). The
 /// program self-checks pop order, fill accounting, and the taken payload;
-/// a wrong value at any probe traps and fails the run.
+/// a wrong value at any probe returns a nonzero status and fails the run.
 #[test]
 fn affine_slot_buffers_fill_replace_vacate_and_drop_per_element() {
     let llvm = compile_program("option_slots.wf");
@@ -79,9 +79,9 @@ fn recursively_boxed_tree_executes_with_derived_cleanup() {
 /// byte access, a naive substring search, and decimal formatting, ending in
 /// one real publication to standard output.
 ///
-/// The oracle is the published line itself. Every intermediate result is also
-/// self-checked in source, so a wrong length, byte, or match position traps
-/// and fails the run before anything is published.
+/// The oracle is the published line itself. Intermediate result mismatches
+/// return a nonzero status before publication; the one retained claim is the
+/// report-capacity representation theorem consumed by `publish_all`.
 #[test]
 fn byte_string_builds_searches_and_publishes_its_report() {
     let llvm = compile_program("byte_string.wf");
@@ -161,19 +161,28 @@ fn the_byte_accessor_without_its_capacity_branch_is_an_op4_rejection() {
 
 /// `deny_claims` on the search path is enforced, not annotation.
 ///
-/// Injecting one claim into `bs_find` — a claim the checker can itself
-/// prove, so its lifecycle is `Redundant` — is still a [CLM-3] rejection at
-/// the claim node. The search layer is claim-free because it must be.
+/// Injecting one genuine residual claim into `bs_find` is still a [CLM-3]
+/// rejection at the claim node. The claim derives an exact array bound from
+/// an uncontracted helper body and is immediately consumed by that subscript,
+/// so neither redundancy nor a later [OP-4] error can masquerade as the
+/// `deny_claims` result. The search layer is claim-free because it must be.
 #[test]
 fn a_claim_injected_into_the_strict_search_is_a_clm3_rejection() {
     let declaration = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads('h 'n) {";
-    let trapping = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads('h 'n), traps {";
+    let trapping = "fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
+deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads('h 'n), traps {";
     let entry = "command fn main() -> status: own ExitStatus allocates(heap) {";
     let trapping_entry = "command fn main() -> status: own ExitStatus allocates(heap), traps {";
     let anchor = "  let last = hay_length -wrap needle_length;\n";
     let asserted = "  let last = hay_length -wrap needle_length;
-  let ordered = ile(needle_length, hay_length);
-  claim needle_fits: ordered because \"the earlier branch left the needle no longer than the haystack\";
+  let proof_values = array_new<u8, 4>(0_u8);
+  let bounded_probe = clamp_three(value: last);
+  let probe_inside = ilt(bounded_probe, 4_u64);
+  claim search_probe_in_bounds: probe_inside because \"premises: bounded_probe is returned by clamp_three called with last, and probe_inside is ilt(bounded_probe, 4_u64)\\nderivation: clamp_three returns imin(last, 3_u64), which is at most 3_u64 and therefore below 4_u64\\nconclusion: probe_inside is True\\nchecker gap: ENT does not publish the result bound of an uncontracted user-function call\\nconsumers: the immediately following proof_values[bounded_probe] subscript requires this exact bound\";
+  let consumed_probe = proof_values[bounded_probe];
 ";
     let source = search_layer_with_entry();
     let retyped_function = source.replace(declaration, trapping);
@@ -190,5 +199,5 @@ fn a_claim_injected_into_the_strict_search_is_a_clm3_rejection() {
     assert_ne!(claiming, retyped, "the claim anchor must have been found");
     let failure = compile_rejection(&[("byte_string_claiming.wf", claiming.as_bytes())]);
     assert!(failure.contains("[CLM-3]"), "{failure}");
-    assert!(failure.contains("needle_fits"), "{failure}");
+    assert!(failure.contains("search_probe_in_bounds"), "{failure}");
 }

@@ -12,13 +12,19 @@ const GENERIC_CONSUMER: &[u8] = br#"fn forward<T: Int>(value: own T) -> pair: ow
   return bundle_pair<T>(value: value);
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let small = forward<u8>(value: 13_u8);
   let wide = forward<i64>(value: -17_i64);
   let small_value = small.value;
   let wide_value = wide.value;
-  claim cross_record_small: ieq(small_value, 13_u8) because "cross-record small";
-  claim cross_record_wide: ieq(wide_value, -17_i64) because "cross-record wide";
+  if ieq(small_value, 13_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(wide_value, -17_i64) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
