@@ -5,17 +5,26 @@
 
 use super::{emit, emit_arithmetic_obligations};
 
-/// The claim bounds `x`, so the exact `x + 1_u64` domain is proved before
-/// lowering. The claim remains the only runtime rejection point.
-const PROVED_EXACT: &[u8] = br#"fn increment(x: own u64) -> result: own u64 traps {
-  claim bounded_input: ilt(x, 1000_u64) because "bounded input";
-  let stepped = x + 1_u64;
+/// An uncontracted normalizer really bounds its result, but ENT does not
+/// publish that result relation across the call. The residual theorem is
+/// therefore load-bearing for the exact addition that immediately consumes
+/// it; the final value check is an ordinary test oracle.
+const PROVED_EXACT: &[u8] = br#"fn clamp_below_thousand(value: own u64) -> result: own u64 pure {
+  return imin(value, 999_u64);
+}
+
+fn increment(x: own u64) -> result: own u64 traps {
+  let bounded = clamp_below_thousand(value: x);
+  claim bounded_input: ilt(bounded, 1000_u64) because "premises: bounded is returned by clamp_below_thousand, whose body computes imin(x, 999_u64)\nderivation: imin(x, 999_u64) is at most 999_u64, and 999_u64 is strictly less than 1000_u64\nconclusion: ilt(bounded, 1000_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
+  let stepped = bounded + 1_u64;
   return stepped;
 }
 
 command fn main() -> status: own ExitStatus traps {
   let total = increment(x: 6_u64);
-  claim incremented_total: ieq(total, 7_u64) because "incremented total";
+  if ine(total, 7_u64) {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;

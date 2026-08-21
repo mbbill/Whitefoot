@@ -47,13 +47,11 @@
 
 use super::compile;
 
-/// Representative accepted programs from the corpus. Every one contains at
-/// least one written claim and therefore carries a `traps` effect row, so each
-/// emitted module contains a claim trap path — the shape the measured
-/// miscompile deletes. `recursive_tree`
-/// additionally contains a self-recursive call, and `generic_instances`
-/// exercises monomorphized instances, so the check covers the call shapes an
-/// effect-attribute pass would annotate.
+/// Representative accepted programs from the corpus. Their claims are not
+/// part of this test's contract: corpus migrations may legitimately remove
+/// test-oracle claims. `recursive_tree` exercises a self-recursive call and
+/// `generic_instances` exercises monomorphized instances, so the check still
+/// covers the call shapes an effect-attribute pass would annotate.
 const REPRESENTATIVE_PROGRAMS: &[(&str, &[u8])] = &[
     (
         "tests/programs/sha256_abc.wf",
@@ -81,26 +79,49 @@ const REPRESENTATIVE_PROGRAMS: &[(&str, &[u8])] = &[
     ),
 ];
 
+/// A self-contained, genuinely residual theorem supplies the claim trap path
+/// used by the measured-hazard tripwire. The theorem follows from the helper's
+/// body, ENT cannot publish that uncontracted result bound, and the exact
+/// addition consumes precisely the written predicate.
+const RESIDUAL_CLAIM_PROGRAM: &[u8] = br#"fn clamp_zero(value: own u64) -> result: own u64 pure {
+  return imin(value, 0_u64);
+}
+
+command fn main() -> status: own ExitStatus traps {
+  let bounded = clamp_zero(value: 1_u64);
+  claim bounded_below_one: ilt(bounded, 1_u64) because "premises: bounded is returned by clamp_zero, whose body computes imin(1_u64, 0_u64)\nderivation: imin(1_u64, 0_u64) is 0_u64, which is strictly less than 1_u64\nconclusion: ilt(bounded, 1_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
+  let successor = bounded + 1_u64;
+  return exit_status(code: 0_u8);
+}
+"#;
+
 #[test]
 fn no_emitted_module_promises_termination_with_the_willreturn_attribute() {
     for (path, source) in REPRESENTATIVE_PROGRAMS {
         let module = compile(source);
-        // Guards against the tripwire going vacuous on a degenerate module:
-        // each program must really have emitted code and a written claim path.
+        // Guards against the corpus coverage going vacuous on a degenerate
+        // module without coupling that coverage to its current claim count.
         assert!(
             module.contains("define "),
             "{path} must emit at least one function definition"
         );
         assert!(
-            module.contains("@wf_trap"),
-            "{path} must emit at least one written claim trap path"
-        );
-        assert!(
             !module.contains("willreturn"),
             "{path} emitted the willreturn attribute; v0 has no termination \
              checker, so no effect row licenses that promise [EFF-3], and \
-             `nounwind willreturn memory(argmem: read)` was measured to delete \
+            `nounwind willreturn memory(argmem: read)` was measured to delete \
              a written claim trap"
         );
     }
+
+    let residual = compile(RESIDUAL_CLAIM_PROGRAM);
+    assert!(residual.contains("define "));
+    assert!(
+        residual.contains("@wf_trap"),
+        "the self-contained residual fixture must emit its written claim trap path"
+    );
+    assert!(
+        !residual.contains("willreturn"),
+        "the residual fixture emitted the unlicensed willreturn attribute"
+    );
 }

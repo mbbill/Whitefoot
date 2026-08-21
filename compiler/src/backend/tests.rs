@@ -596,7 +596,7 @@ struct Outer {
   other: i32;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let number = 1_i32;
   let inner = Inner(value: 2_i32);
   let outer = Outer(inner: move inner, other: 7_i32);
@@ -609,9 +609,13 @@ command fn main() -> status: own ExitStatus traps {
     set outer.inner.value = number;
   }
   let observed = outer.inner.value;
-  claim nested_set_failed: ieq(observed, 42_i32) because "nested set failed";
+  if ine(observed, 42_i32) {
+    return exit_status(code: 1_u8);
+  }
   let preserved = outer.other;
-  claim sibling_changed: ieq(preserved, 7_i32) because "sibling changed";
+  if ine(preserved, 7_i32) {
+    return exit_status(code: 2_u8);
+  }
   let selected = if flag {
     set number = 43_i32;
     give number;
@@ -619,8 +623,12 @@ command fn main() -> status: own ExitStatus traps {
     set number = 10_i32;
     give number;
   }
-  claim value_match_result_failed: ieq(selected, 43_i32) because "value match result failed";
-  claim value_match_set_failed: ieq(number, 43_i32) because "value match set failed";
+  if ine(selected, 43_i32) {
+    return exit_status(code: 3_u8);
+  }
+  if ine(number, 43_i32) {
+    return exit_status(code: 4_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -638,28 +646,37 @@ command fn main() -> status: own ExitStatus traps {
 
 /// [GRAM-6] the Bool conditional lowers through the Bool `match` path it
 /// checks into, so no lowering, cleanup, or drop change is owed. Every branch
-/// here is observable: a wrong one leaves a flag false and the claim traps.
+/// here is observable: a wrong one returns a distinct nonzero status.
 #[test]
 fn bool_conditionals_execute_through_the_existing_match_lowering() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let flag = True();
   let other = False();
   let seen = False();
   if flag {
     set seen = True();
   }
-  claim the_else_free_if_did_not_run: seen because "the else-free if did not run";
+  if seen {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let untouched = True();
   if other {
     set untouched = False();
   }
-  claim the_else_free_if_ran_when_it_should_not: untouched because "the else-free if ran when it should not";
+  if untouched {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   let taken = if flag {
     give True();
   } else {
     give False();
   }
-  claim the_value_if_took_the_wrong_branch: taken because "the value_if took the wrong branch";
+  if taken {
+  } else {
+    return exit_status(code: 3_u8);
+  }
   let chained = if other {
     give False();
   } else if flag {
@@ -667,7 +684,10 @@ fn bool_conditionals_execute_through_the_existing_match_lowering() {
   } else {
     give False();
   }
-  claim the_else_if_chain_took_the_wrong_branch: chained because "the else-if chain took the wrong branch";
+  if chained {
+  } else {
+    return exit_status(code: 4_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -682,11 +702,14 @@ fn bool_conditionals_execute_through_the_existing_match_lowering() {
 /// content reads back, and it is released. `box<u64>` is spelled nowhere.
 #[test]
 fn a_derived_box_nominal_allocates_reads_back_and_releases() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let flag = True();
   let owner = box_new(flag);
   let loaded = deref(owner);
-  claim the_derived_box_did_not_read_back: loaded because "the derived box did not read back";
+  if loaded {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -699,35 +722,44 @@ fn a_derived_box_nominal_allocates_reads_back_and_releases() {
 
 /// [OP-1] (ii) the infix spelling executes the row its operator names, and
 /// the modes stay distinguishable: bare `+` traps, `+wrap` wraps, `+sat`
-/// saturates. Every result is checked, so a mis-selected row traps here.
+/// saturates. Every result is checked, so a mis-selected row returns a
+/// distinct nonzero status here.
 #[test]
 fn infix_operators_execute_the_rows_they_name() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let a = 20_i32;
   let b = a + 22_i32;
   let want = 42_i32;
-  let sum_ok = ieq(b, want);
-  claim bare_plus_is_the_trapping_add: sum_ok because "bare plus is the trapping add";
+  if ine(b, want) {
+    return exit_status(code: 1_u8);
+  }
   let hi = 2147483647_i32;
   let wrapped = hi +wrap 1_i32;
   let low = -2147483648_i32;
-  let wrap_ok = ieq(wrapped, low);
-  claim wrap_wraps: wrap_ok because "+wrap wraps";
+  if ine(wrapped, low) {
+    return exit_status(code: 2_u8);
+  }
   let saturated = hi +sat 1_i32;
-  let sat_ok = ieq(saturated, hi);
-  claim sat_saturates: sat_ok because "+sat saturates";
+  if ine(saturated, hi) {
+    return exit_status(code: 3_u8);
+  }
   let quotient = 43_i32 / 2_i32;
-  let q_ok = ieq(quotient, 21_i32);
-  claim bare_slash_divides: q_ok because "bare slash divides";
+  if ine(quotient, 21_i32) {
+    return exit_status(code: 4_u8);
+  }
   let rest = 43_i32 % 2_i32;
-  let r_ok = ieq(rest, 1_i32);
-  claim bare_percent_remainders: r_ok because "bare percent remainders";
-  let differ = ine(a, b);
-  claim not_equal: differ because "not equal";
-  let ordered = ile(a, b);
-  claim less_equal: ordered because "less equal";
-  let reversed = ige(b, a);
-  claim greater_equal: reversed because "greater equal";
+  if ine(rest, 1_i32) {
+    return exit_status(code: 5_u8);
+  }
+  if ieq(a, b) {
+    return exit_status(code: 6_u8);
+  }
+  if igt(a, b) {
+    return exit_status(code: 7_u8);
+  }
+  if ilt(b, a) {
+    return exit_status(code: 8_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -742,8 +774,8 @@ fn infix_operators_execute_the_rows_they_name() {
 ///
 /// `return a + b;` failed semantic checking outright, so no lowering evidence
 /// existed for the shape. Both an arithmetic and a comparison result are
-/// returned and consumed at the call site, and the false comparison gates a
-/// trap, so a lost or inverted result fails here rather than passing quietly.
+/// returned and consumed at the call site, and each wrong result returns a
+/// distinct nonzero status rather than passing quietly.
 #[test]
 fn an_infix_returned_from_a_function_executes() {
     let source = br#"fn add(a: own i32, b: own i32) -> result: own i32 pure contract {
@@ -756,16 +788,19 @@ fn eq(a: own i32, b: own i32) -> result: own Bool pure {
   return ieq(a, b);
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let sum = add(a: 20_i32, b: 22_i32);
-  let sum_ok = ieq(sum, 42_i32);
-  claim the_returned_sum_is_wrong: sum_ok because "the returned sum is wrong";
+  if ine(sum, 42_i32) {
+    return exit_status(code: 1_u8);
+  }
   let same = eq(a: 7_i32, b: 7_i32);
-  claim the_returned_comparison_is_wrong: same because "the returned comparison is wrong";
+  if same {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   let differ = eq(a: 7_i32, b: 8_i32);
-  let impossible = eq(a: 0_i32, b: 1_i32);
   if differ {
-    claim a_false_returned_comparison_must_not_be_true: impossible because "a false returned comparison must not be true";
+    return exit_status(code: 3_u8);
   }
   return exit_status(code: 0_u8);
 }
@@ -876,11 +911,11 @@ fn make_pair() -> result: own Result<Pair, StepError> pure {
   return Ok<Pair, StepError>(value: move pair);
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let arithmetic_result = 2147483647_i32 +checked 1_i32;
   match move arithmetic_result {
     Ok(value: sum) => {
-      claim checked_overflow_took_ok: False() because "checked overflow took Ok";
+      return exit_status(code: 1_u8);
     }
     Err(error: overflow) => {
     }
@@ -888,7 +923,7 @@ command fn main() -> status: own ExitStatus traps {
   let subtract_result = 0_u8 -checked 1_u8;
   match move subtract_result {
     Ok(value: difference) => {
-      claim checked_underflow_took_ok: False() because "checked underflow took Ok";
+      return exit_status(code: 2_u8);
     }
     Err(error: underflow) => {
     }
@@ -896,25 +931,29 @@ command fn main() -> status: own ExitStatus traps {
   let multiply_result = 6_i16 *checked 7_i16;
   match move multiply_result {
     Ok(value: product) => {
-      claim checked_product_drift: ieq(product, 42_i16) because "checked product drift";
+      if ine(product, 42_i16) {
+        return exit_status(code: 3_u8);
+      }
     }
     Err(error: product_error) => {
-      claim checked_product_took_err: False() because "checked product took Err";
+      return exit_status(code: 4_u8);
     }
   }
   let success = forward(value: 7_i32);
   match move success {
     Ok(value: answer) => {
-      claim propagated_ok_payload_drift: ieq(answer, 42_i64) because "propagated Ok payload drift";
+      if ine(answer, 42_i64) {
+        return exit_status(code: 5_u8);
+      }
     }
     Err(error: failure_error) => {
-      claim unexpected_propagated_err: False() because "unexpected propagated Err";
+      return exit_status(code: 6_u8);
     }
   }
   let failure = forward(value: -1_i32);
   match move failure {
     Ok(value: unexpected) => {
-      claim propagated_err_became_ok: False() because "propagated Err became Ok";
+      return exit_status(code: 7_u8);
     }
     Err(error: forwarded_error) => {
     }
@@ -922,16 +961,18 @@ command fn main() -> status: own ExitStatus traps {
   let field_success = forward_field(value: 7_i32);
   match move field_success {
     Ok(value: field_answer) => {
-      claim field_propagation_drift: ieq(field_answer, 42_i64) because "field propagation drift";
+      if ine(field_answer, 42_i64) {
+        return exit_status(code: 8_u8);
+      }
     }
     Err(error: field_failure) => {
-      claim unexpected_field_propagation_error: False() because "unexpected field propagation error";
+      return exit_status(code: 9_u8);
     }
   }
   let field_failure = forward_field(value: -1_i32);
   match move field_failure {
     Ok(value: field_unexpected) => {
-      claim field_propagation_lost_err: False() because "field propagation lost Err";
+      return exit_status(code: 10_u8);
     }
     Err(error: field_forwarded_error) => {
     }
@@ -940,10 +981,12 @@ command fn main() -> status: own ExitStatus traps {
   match move pair_result {
     Ok(value: pair) => {
       let total = pair.left +wrap pair.right;
-      claim aggregate_result_payload_drift: ieq(total, 42_i32) because "aggregate Result payload drift";
+      if ine(total, 42_i32) {
+        return exit_status(code: 11_u8);
+      }
     }
     Err(error: pair_error) => {
-      claim unexpected_aggregate_result_error: False() because "unexpected aggregate Result error";
+      return exit_status(code: 12_u8);
     }
   }
   return exit_status(code: 0_u8);
@@ -977,7 +1020,7 @@ command fn main() -> status: own ExitStatus traps {
 
 #[test]
 fn nested_loop_labels_route_breaks_to_the_resolved_exit() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let outer = 0_i32;
   loop @outer_loop {
     set outer = outer +wrap 1_i32;
@@ -992,7 +1035,9 @@ fn nested_loop_labels_route_breaks_to_the_resolved_exit() {
       set inner = inner +wrap 1_i32;
     }
   }
-  claim wrong_outer_exit: ieq(outer, 3_i32) because "wrong outer exit";
+  if ine(outer, 3_i32) {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1039,7 +1084,7 @@ fn compiler_independent_nominal_data_cases_execute_through_host_llvm() {
 
 #[test]
 fn every_lowered_integer_mode_and_comparison_executes_with_exact_width_and_sign() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let aw = 127_i8 +wrap 1_i8;
   let sw = 0_u8 -wrap 1_u8;
   let mw = 65535_u16 *wrap 2_u16;
@@ -1049,20 +1094,48 @@ fn every_lowered_integer_mode_and_comparison_executes_with_exact_width_and_sign(
   let sut = 10_u32 - 3_u32;
   let mst = 6_i64 * 7_i64;
   let mut = 6_u64 * 7_u64;
-  claim signed_add_wrap_drift: ieq(aw, -128_i8) because "signed add wrap drift";
-  claim unsigned_subtract_wrap_drift: ieq(sw, 255_u8) because "unsigned subtract wrap drift";
-  claim unsigned_multiply_wrap_drift: ieq(mw, 65534_u16) because "unsigned multiply wrap drift";
-  claim signed_add_trap_drift: ieq(ast, -7_i16) because "signed add trap drift";
-  claim unsigned_add_trap_drift: ieq(aut, 13_u16) because "unsigned add trap drift";
-  claim signed_subtract_trap_drift: ieq(sst, 7_i32) because "signed subtract trap drift";
-  claim unsigned_subtract_trap_drift: ieq(sut, 7_u32) because "unsigned subtract trap drift";
-  claim signed_multiply_trap_drift: ieq(mst, 42_i64) because "signed multiply trap drift";
-  claim unsigned_multiply_trap_drift: ieq(mut, 42_u64) because "unsigned multiply trap drift";
-  claim ine_drift: ine(1_i32, 2_i32) because "ine drift";
-  claim signed_ilt_drift: ilt(-1_i32, 0_i32) because "signed ilt drift";
-  claim unsigned_ile_drift: ile(1_u32, 1_u32) because "unsigned ile drift";
-  claim signed_igt_drift: igt(1_i32, -1_i32) because "signed igt drift";
-  claim unsigned_ige_drift: ige(1_u32, 1_u32) because "unsigned ige drift";
+  if ine(aw, -128_i8) {
+    return exit_status(code: 1_u8);
+  }
+  if ine(sw, 255_u8) {
+    return exit_status(code: 2_u8);
+  }
+  if ine(mw, 65534_u16) {
+    return exit_status(code: 3_u8);
+  }
+  if ine(ast, -7_i16) {
+    return exit_status(code: 4_u8);
+  }
+  if ine(aut, 13_u16) {
+    return exit_status(code: 5_u8);
+  }
+  if ine(sst, 7_i32) {
+    return exit_status(code: 6_u8);
+  }
+  if ine(sut, 7_u32) {
+    return exit_status(code: 7_u8);
+  }
+  if ine(mst, 42_i64) {
+    return exit_status(code: 8_u8);
+  }
+  if ine(mut, 42_u64) {
+    return exit_status(code: 9_u8);
+  }
+  if ieq(1_i32, 2_i32) {
+    return exit_status(code: 10_u8);
+  }
+  if ige(-1_i32, 0_i32) {
+    return exit_status(code: 11_u8);
+  }
+  if igt(1_u32, 1_u32) {
+    return exit_status(code: 12_u8);
+  }
+  if ile(1_i32, -1_i32) {
+    return exit_status(code: 13_u8);
+  }
+  if ilt(1_u32, 1_u32) {
+    return exit_status(code: 14_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1200,25 +1273,37 @@ fn integer_overflow_has_no_op2_runtime_record_path() {
 }
 
 #[test]
-fn required_check_survives_host_optimization_of_an_unfoldable_loop() {
-    // The loop multiplies by an odd constant and mixes in the counter, so no
-    // closed form exists for the host optimizer to fold, and the iteration
-    // count is far past any full-unroll budget. The failing condition
-    // therefore cannot be decided before execution: whatever the optimizer
-    // does, the check has to run.
-    let source = br#"command fn main() -> status: own ExitStatus traps {
-  doc "A mixing chain the host optimizer cannot fold feeds one required check.";
+fn residual_check_survives_host_optimization_of_an_unfoldable_loop() {
+    // Each iteration adds one arbitrary wrapping delta to `left` and subtracts
+    // the same delta from `right`, so their wrapping sum remains 42. The
+    // nonlinear delta and long loop prevent the host optimizer from folding
+    // the calculation, while the proof is a simple human induction. ENT does
+    // not synthesize that loop invariant, and the exact FN-8 consumer makes
+    // the residual claim load-bearing.
+    let source = br#"fn need_total(value: own u64) -> result: own unit pure contract {
+  requires ieq(value, 42_u64);
+} {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus traps {
+  doc "A conserved wrapping sum through an unfoldable mixing loop feeds one residual check.";
   let step = 0_u64;
-  let state = 14695981039346656037_u64;
+  let left = 1_u64;
+  let right = 41_u64;
   loop @mix {
     if ige(step, 4096_u64) {
       break @mix;
     }
-    let mixed = ixor(state, step);
-    set state = mixed *wrap 1099511628211_u64;
+    let mixed = ixor(left, step);
+    let delta = mixed *wrap 1099511628211_u64;
+    set left = left +wrap delta;
+    set right = right -wrap delta;
     set step = step +wrap 1_u64;
   }
-  claim mixing_chain_drift: ieq(state, 1_u64) because "mixing chain drift";
+  let total = left +wrap right;
+  claim conserved_total: ieq(total, 42_u64) because "premises: left starts at 1_u64, right starts at 41_u64, and each completed iteration adds delta to left and subtracts the same delta from right with wrapping u64 arithmetic\nderivation: the wrapping sum starts at 42_u64 and one iteration transforms (left +wrap right) into (left +wrap delta) +wrap (right -wrap delta), whose delta terms cancel modulo 2^64; induction preserves the sum through all completed iterations\nconclusion: ieq(total, 42_u64) is true\nchecker gap: ENT does not synthesize the conserved two-variable invariant across an ordinary-loop backedge\nconsumers: need_total requires this exact equality at its FN-8 call boundary";
+  need_total(value: total);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1242,15 +1327,7 @@ fn required_check_survives_host_optimization_of_an_unfoldable_loop() {
     );
 
     let output = compile_and_run(&llvm);
-    assert!(!output.status.success());
-    assert_eq!(
-        output.status.code(),
-        None,
-        "a trap aborts instead of exiting normally"
-    );
-    assert_eq!(
-        output.stderr,
-        b"{\"rule_id\":\"CLM-1\",\"message\":\"mixing_chain_drift\",\"function\":\"main\",\"node_path\":[0,0,7,0]}\n"
-    );
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
     assert!(output.stdout.is_empty());
 }

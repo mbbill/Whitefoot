@@ -871,9 +871,15 @@ fn the_trap_record_writer_stays_native_on_the_deterministic_target() {
     // facility, but only the operation row has a target column: the record
     // writer is the compiler's own and must never be scriptable, or a forced
     // short write could truncate a trap record. One module declares both.
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+    let source = br#"fn clamp_zero(value: own u64) -> result: own u64 pure {
+  return imin(value, 0_u64);
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
   let bytes = buffer_new(1_u64, 65_u8);
-  claim record_writer_probe: True() because "retain the claim record writer";
+  let bounded = clamp_zero(value: 1_u64);
+  claim record_writer_probe: ilt(bounded, 1_u64) because "premises: bounded is returned by clamp_zero, whose body computes imin(1_u64, 0_u64)\nderivation: imin(1_u64, 0_u64) is 0_u64, which is strictly less than 1_u64\nconclusion: ilt(bounded, 1_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
+  let successor = bounded + 1_u64;
   region 'o {
     region 's {
       match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
