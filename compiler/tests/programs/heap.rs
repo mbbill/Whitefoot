@@ -177,7 +177,7 @@ deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString)
     let entry = "command fn main() -> status: own ExitStatus allocates(heap) {";
     let trapping_entry = "command fn main() -> status: own ExitStatus allocates(heap), traps {";
     let anchor = "  let last = hay_length -wrap needle_length;\n";
-    let asserted = "  let last = hay_length -wrap needle_length;
+    let claim_source = "  let last = hay_length -wrap needle_length;
   let proof_values = array_new<u8, 4>(0_u8);
   let bounded_probe = clamp_three(value: last);
   let probe_inside = ilt(bounded_probe, 4_u64);
@@ -195,7 +195,7 @@ deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString)
         retyped, retyped_function,
         "the command effect row must track the injected trap"
     );
-    let claiming = retyped.replace(anchor, asserted);
+    let claiming = retyped.replace(anchor, claim_source);
     assert_ne!(claiming, retyped, "the claim anchor must have been found");
     let failure = compile_rejection(&[("byte_string_claiming.wf", claiming.as_bytes())]);
     assert!(failure.contains("[CLM-3]"), "{failure}");

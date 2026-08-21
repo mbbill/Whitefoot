@@ -47,11 +47,12 @@
 
 use super::compile;
 
-/// Representative accepted programs from the corpus. Their claims are not
-/// part of this test's contract: corpus migrations may legitimately remove
-/// test-oracle claims. `recursive_tree` exercises a self-recursive call and
-/// `generic_instances` exercises monomorphized instances, so the check still
-/// covers the call shapes an effect-attribute pass would annotate.
+/// Representative accepted programs from the corpus. Their proof-residual
+/// claims are not part of this test's contract: the attribute tripwire depends
+/// only on each program continuing to emit a function definition.
+/// `recursive_tree` exercises a self-recursive call and `generic_instances`
+/// exercises monomorphized instances, so the check still covers the call
+/// shapes an effect-attribute pass would annotate.
 const REPRESENTATIVE_PROGRAMS: &[(&str, &[u8])] = &[
     (
         "tests/programs/sha256_abc.wf",
