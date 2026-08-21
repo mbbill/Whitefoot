@@ -294,6 +294,46 @@ reproduction, never worked around.)
   link changes no item's goal, current state, next gate, or disposition, and the
   PROPOSED plan's derivation from revision 46 stays true.
 
+- Audit finder A (plan-vs-actual and governance): re-derived every load-bearing
+  figure rather than reading it. Verified clean: zero `tests/conformance/`
+  touches, no Makefile, hook, script, or conformance-adapter change anywhere in
+  the branch diff, zero machine-local absolute paths in the diff, no new root
+  entry, `CLAUDE.md`/`AGENTS.md`/`docs/WORKFLOW.md`/`governance/APPROVALS.md`
+  byte-identical to main with the chain still ending at v0.33, and no released
+  archive added, edited, renamed, or removed. Recomputed the candidate digest
+  (`f3e26631...c0f9`, 3,225 lines, 399,265 bytes) and the v0.33 tail
+  (`fc6b5a10...d08f`) from main's own bytes; re-ran the grammar verifier
+  (74/93/105, exit 0) and `--index` (136 rules, PAR-1 at 1976-1995, 3,269
+  bytes, nine refs, referenced by none) — every record figure exact. Re-ran
+  `--par-ledger` over all ten probes and the demo (stdout only, stderr empty),
+  re-ran the demo at WF_WORKERS unset/2/4/8 (identical published bytes), and
+  confirmed in the emitted module that `@wf_layout` carries the thunk, offer,
+  and join while `@wf_layout_banded` names no runtime symbol.
+  `make -C compiler check` exits 0 at 1005 lib and 51 integration tests;
+  `make check` exits 2, at the recorded conformance coverage stop and nowhere
+  else. Fourteen findings, the two high ones being: (1) a new symbol collision
+  — a program with a function named `par_try_fork`, `par_join`, or
+  `par_thunk_N` is accepted by the checker and then rejected by clang with
+  `invalid redefinition of function 'wf_par_try_fork'`, and `--emit-llvm`
+  writes that invalid module at exit 0; and (2) the red gate, whose BLOCKER
+  attributes the conformance freeze to project law when the governance in
+  force (CLAUDE.md "Merge-approval boundary", WORKFLOW.md "The merge boundary"
+  item 3) places conformance evidence under branch autonomy with a
+  before/after audit in the merge packet — the freeze was the lead's scope
+  decision, which the record should say instead. Also: DESIGN section 9's
+  band-vs-derived-index residual gap was neither fixed nor recorded anywhere;
+  the candidate rule folds claim-freedom into permission while the ledger and
+  RESULTS call such pairs permitted; DESIGN section 7's join-skipping negative
+  control was replaced by a control of a different mode; `collect_claim_sites`
+  is the judgment's one fail-open wildcard; worker stacks are a fixed 8 MB
+  rather than DESIGN section 5's "at least the main thread's"; the E5 log's
+  claim that `g3_dep.wf` emits no ledger line is false (it emits two);
+  `probes/d1_two_traps.wf` and its README present claims failing on the
+  program's own inputs as normal usage, against the batch's own claim
+  doctrine; and `probes/g3_base.wf` is a byte-identical copy of
+  `probes/a2_bubble.wf`. Full findings with reproductions were handed to the
+  orchestrator outside the repository.
+
 ## Outcome
 
 (Filled at closure: landed commits, verification results, measurements,
