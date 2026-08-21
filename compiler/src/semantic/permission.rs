@@ -233,6 +233,13 @@ pub(crate) struct PermissionMetadata {
 }
 
 impl PermissionMetadata {
+    /// The table of one concrete function by its dense identity. A function
+    /// the judgment never reached has no analyzed pair and therefore no
+    /// entry, which reads the same as an empty one.
+    pub(crate) fn of(&self, function: FunctionId) -> Option<&FunctionPermissions> {
+        self.functions.get(function.0 as usize)
+    }
+
     /// The table of one concrete function by its source name. Ledger and test
     /// convenience; the dense index is the identity.
     #[allow(dead_code)]

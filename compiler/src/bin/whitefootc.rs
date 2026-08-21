@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use whitefoot::{
-    CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, SourceInput, compile,
-    compile_with_permission_ledger,
+    CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_RUNTIME_SOURCE, SourceInput, compile,
+    compile_with_permission_ledger, module_requires_parallel_runtime,
 };
 
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par-ledger] [-o OUTPUT] SOURCE...";
@@ -64,7 +64,31 @@ fn run() -> Result<(), String> {
 }
 
 fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
-    let mut child = Command::new("/usr/bin/clang")
+    // The parallel runtime joins the link only when the module hands work to
+    // it. Its bytes travel inside this executable, so no installed path, no
+    // build directory, and no environment decides which runtime a program
+    // gets.
+    let runtime = if module_requires_parallel_runtime(llvm) {
+        let path = std::env::temp_dir().join(format!("whitefootc-par-{}.c", std::process::id()));
+        std::fs::write(&path, PARALLEL_RUNTIME_SOURCE)
+            .map_err(|error| format!("cannot write the parallel runtime: {error}"))?;
+        Some(path)
+    } else {
+        None
+    };
+    let mut command = Command::new("/usr/bin/clang");
+    if let Some(path) = runtime.as_ref() {
+        command.arg("-pthread").arg("-x").arg("c").arg(path);
+    }
+    let outcome = link(&mut command, llvm, output);
+    if let Some(path) = runtime {
+        let _ = std::fs::remove_file(path);
+    }
+    outcome
+}
+
+fn link(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> {
+    let mut child = command
         .arg("-x")
         .arg("ir")
         .arg("-")

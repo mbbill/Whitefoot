@@ -12,7 +12,7 @@ use crate::semantic::CheckedSetTarget;
 use crate::semantic::{
     BindingId, CheckedArrayRoot, CheckedConstructor, CheckedDrop, CheckedEntryForm,
     CheckedExpression, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedParameter,
-    CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedValue,
+    CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedValue, FunctionPermissions,
 };
 
 use super::*;
@@ -41,11 +41,23 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
+    // The [PAR-1 candidate] permission table, read exactly as the checker
+    // produced it. Lowering selects which permitted groups it can actualize
+    // and never widens one.
+    let permission = &checked.data.permission;
     let functions = checked
         .data
         .functions
         .iter()
-        .map(|function| lower_function(function, &nominals, &constants, &function_results))
+        .map(|function| {
+            lower_function(
+                function,
+                &nominals,
+                &constants,
+                &function_results,
+                permission.of(function.id),
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(IrProgram {
         main: checked.data.main.0,
@@ -253,6 +265,7 @@ fn lower_function(
     nominals: &[IrNominal],
     constants: &[IrGlobalConstant],
     function_results: &[IrType],
+    permissions: Option<&FunctionPermissions>,
 ) -> Result<IrFunction, LoweringFailure> {
     let uninhabited = matches!(
         function.body_disposition,
@@ -296,6 +309,7 @@ fn lower_function(
     {
         return Err(LoweringFailure::InvalidCheckedProgram);
     }
+    let overlaps = builder.overlaps(permissions);
     Ok(IrFunction {
         name: function.symbol.clone(),
         parameters: builder.parameters,
@@ -314,6 +328,7 @@ fn lower_function(
                 })
             })
             .collect::<Result<Vec<_>, LoweringFailure>>()?,
+        overlaps,
     })
 }
 
@@ -375,6 +390,11 @@ struct IrBuilder<'program> {
     /// call defines exactly the callee's declared result type — an address
     /// for a borrow of addressed content [OWN-2, TYPE-7].
     function_results: &'program [IrType],
+    /// For each `let` whose right-hand side is exactly one named-function
+    /// call, the block the call's definition landed in and the value it
+    /// defined. The permission table names its sites by the binding each
+    /// defines, so this is how a permitted group is found in the IR.
+    call_results: HashMap<BindingId, (IrBlockId, IrValueId)>,
 }
 
 #[derive(Clone)]
@@ -404,6 +424,7 @@ impl<'program> IrBuilder<'program> {
             result,
             addressed_bindings,
             function_results,
+            call_results: HashMap::new(),
         };
         let (entry, parameters) = builder.new_block(&[])?;
         if !parameters.is_empty() {
@@ -471,6 +492,53 @@ impl<'program> IrBuilder<'program> {
         Ok(result)
     }
 
+    /// The overlap groups this body can actualize, from the permitted and
+    /// eligible chains the checker recorded.
+    ///
+    /// The judgment is the checker's; this only narrows it to what the emitted
+    /// shape can carry, and every narrowing drops members rather than adding
+    /// any. A group is a prefix of a permitted chain, kept only while
+    ///
+    /// - each site's `let` lowered to exactly one call definition, so a chain
+    ///   member whose statement lowered to something else (a `propagate`, for
+    ///   instance) ends the group;
+    /// - every member's definition is in one block, so the handed-out call
+    ///   and its join sit on one straight-line edge; and
+    /// - no member but the last is an addressed binding, because promoting one
+    ///   reads the call's value at the definition site — between the hand-out
+    ///   and the join, where the value does not exist yet.
+    ///
+    /// A prefix of a permitted chain is itself permitted: the chain's every
+    /// ordered pair was judged, so every ordered pair of the prefix was too.
+    fn overlaps(&self, permissions: Option<&FunctionPermissions>) -> Vec<IrOverlap> {
+        let Some(permissions) = permissions else {
+            return Vec::new();
+        };
+        let mut overlaps = Vec::new();
+        for run in &permissions.runs {
+            let mut members = Vec::new();
+            let mut home = None;
+            for site in &run.sites {
+                let Some((block, value)) = self.call_results.get(&site.binding).copied() else {
+                    break;
+                };
+                if *home.get_or_insert(block) != block {
+                    break;
+                }
+                let addressed = self.addressed_bindings.contains(&site.binding);
+                members.push(value);
+                if addressed {
+                    // This member must be the group's last, so it ends it.
+                    break;
+                }
+            }
+            if members.len() >= 2 {
+                overlaps.push(IrOverlap { members });
+            }
+        }
+        overlaps
+    }
+
     fn lower_statements(
         &mut self,
         statements: &[CheckedStatement],
@@ -481,10 +549,20 @@ impl<'program> IrBuilder<'program> {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
             match statement {
-                CheckedStatement::Let { binding, value, .. } => {
-                    let value = self.expression(value)?;
+                CheckedStatement::Let {
+                    binding,
+                    value: expression,
+                    ..
+                } => {
+                    let value = self.expression(expression)?;
+                    // The block the call's own definition landed in, which is
+                    // the block current after the arguments are lowered.
+                    let block = self.current.ok_or(LoweringFailure::InvalidCheckedProgram)?;
                     if self.bindings.insert(*binding, value).is_some() {
                         return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                    if matches!(expression, CheckedExpression::UserCall { .. }) {
+                        self.call_results.insert(*binding, (block, value));
                     }
                     self.promote_binding_if_needed(*binding)?;
                 }

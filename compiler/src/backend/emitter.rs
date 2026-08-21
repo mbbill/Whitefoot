@@ -13,11 +13,12 @@ mod conversion;
 mod floating;
 mod integer;
 mod operations;
+mod parallel;
 mod reinterpret;
 mod slice;
 mod system;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::Write;
 
 use super::qualification::{
@@ -33,6 +34,8 @@ use crate::{
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
+use parallel::{HandedOut, PARALLEL_RUNTIME_FALLBACK, ParallelThunks, par_done_label};
+pub use parallel::{PARALLEL_RUNTIME_SOURCE, module_requires_parallel_runtime};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackendFailure {
@@ -100,6 +103,7 @@ fn emit_llvm_for(
 
     let mut claim_records = Vec::new();
     let mut intrinsics = BTreeSet::new();
+    let mut thunks = ParallelThunks::default();
     let mut functions = String::new();
     for function in program.functions() {
         functions.push_str(
@@ -110,6 +114,7 @@ fn emit_llvm_for(
                 target,
                 &mut claim_records,
                 &mut intrinsics,
+                &mut thunks,
             )
             .emit()?,
         );
@@ -214,6 +219,13 @@ fn emit_llvm_for(
             } => writeln!(text, "declare {result_ty} @{name}({argument_ty})")
                 .map_err(|_| BackendFailure::TextEmission)?,
         }
+    }
+    // Emitted only where a permitted overlap group is actually handed out, so
+    // a module that overlaps nothing names no runtime symbol at all.
+    if thunks.is_used() {
+        text.push('\n');
+        text.push_str(PARALLEL_RUNTIME_FALLBACK);
+        text.push_str(thunks.definitions());
     }
     if !functions.is_empty() {
         text.push('\n');
@@ -423,6 +435,16 @@ struct FunctionEmitter<'program, 'state> {
     /// rather than of the iteration count. Stores stay at the use site.
     entry_prelude: String,
     temporary: u32,
+    /// The module's outlined thunks, shared by every function that hands a
+    /// call out.
+    parallel: &'state mut ParallelThunks,
+    /// Values whose defining call is handed to a worker lane [PAR-1
+    /// candidate], and the values whose definitions are the join sites that
+    /// complete them.
+    overlap_handed_out: HashSet<IrValueId>,
+    overlap_join_sites: HashSet<IrValueId>,
+    /// Hand-outs emitted in the current block and not yet joined.
+    handed_out: Vec<HandedOut>,
 }
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
@@ -433,6 +455,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         target: TargetLayout,
         claim_records: &'state mut Vec<Vec<u8>>,
         intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
+        parallel: &'state mut ParallelThunks,
     ) -> Self {
         Self {
             program,
@@ -445,7 +468,23 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             output: String::new(),
             entry_prelude: String::new(),
             temporary: 0,
+            parallel,
+            overlap_handed_out: function
+                .overlaps()
+                .iter()
+                .flat_map(|overlap| overlap.handed_out().iter().copied())
+                .collect(),
+            overlap_join_sites: function
+                .overlaps()
+                .iter()
+                .filter_map(crate::IrOverlap::join_site)
+                .collect(),
+            handed_out: Vec::new(),
         }
+    }
+
+    fn is_overlap_join_site(&self, value: IrValueId) -> bool {
+        self.overlap_join_sites.contains(&value)
     }
 
     fn emit(mut self) -> Result<String, BackendFailure> {
@@ -556,7 +595,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     self.output,
                     "[ {}, %{} ]",
                     self.value_name(argument),
-                    block_exit_label(edge.predecessor, self.block(edge.predecessor)?)
+                    block_exit_label(
+                        edge.predecessor,
+                        self.block(edge.predecessor)?,
+                        self.function
+                    )
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -571,6 +614,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         index: usize,
         instruction: &IrInstruction,
     ) -> Result<(), BackendFailure> {
+        // A group's join rides the definition of its last member: the members
+        // before it were handed out and their values do not exist until here.
+        if let IrInstruction::Define { result, .. } = instruction
+            && self.is_overlap_join_site(*result)
+        {
+            self.emit_definition_then_join(instruction, *result)?;
+            return Ok(());
+        }
         match instruction {
             IrInstruction::Define {
                 result,
@@ -608,6 +659,19 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
     }
 
+    /// Emits the last member of an overlap group and then its joins.
+    fn emit_definition_then_join(
+        &mut self,
+        instruction: &IrInstruction,
+        result: IrValueId,
+    ) -> Result<(), BackendFailure> {
+        let IrInstruction::Define { ty, operation, .. } = instruction else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        self.emit_definition(result, *ty, operation)?;
+        self.emit_overlap_joins(result)
+    }
+
     fn emit_definition(
         &mut self,
         result: IrValueId,
@@ -622,7 +686,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::Call {
                 function,
                 arguments,
-            } => self.emit_call(result, ty, *function, arguments),
+            } => {
+                if self.overlap_handed_out.contains(&result) {
+                    self.emit_handed_out_call(result, ty, *function, arguments)
+                } else {
+                    self.emit_call(result, ty, *function, arguments)
+                }
+            }
             IrOperation::SystemCall {
                 operation,
                 arguments,
@@ -1138,7 +1208,17 @@ fn variant_field_base(
     Err(BackendFailure::InvalidIr)
 }
 
-fn block_exit_label(block_id: IrBlockId, block: &IrBlock) -> String {
+/// The last handed-out member of the overlap group `result` joins, if it is a
+/// join site at all. Its `par.done` block is where the block continues.
+fn overlap_join_tail(function: &IrFunction, result: IrValueId) -> Option<IrValueId> {
+    function
+        .overlaps()
+        .iter()
+        .find(|overlap| overlap.join_site() == Some(result))
+        .and_then(|overlap| overlap.handed_out().last().copied())
+}
+
+fn block_exit_label(block_id: IrBlockId, block: &IrBlock, function: &IrFunction) -> String {
     let mut label = block_label(block_id);
     for (index, instruction) in block.instructions().iter().enumerate() {
         match instruction {
@@ -1184,6 +1264,13 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock) -> String {
                 ..
             } => label = buffer_probe_join_label(*result),
             _ => {}
+        }
+        // The overlap join rides its last member's own emission, so it settles
+        // the label after whatever that emission left.
+        if let IrInstruction::Define { result, .. } = instruction
+            && let Some(last) = overlap_join_tail(function, *result)
+        {
+            label = par_done_label(last);
         }
     }
     label

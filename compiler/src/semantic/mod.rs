@@ -33,6 +33,10 @@ pub(crate) use check::check_semantics_division_obligations;
 #[cfg(test)]
 pub(crate) use check::check_semantics_reborrow_extension;
 
+/// The permission table the overlap lowering reads. It is the same table the
+/// ledger renders; nothing derives a second judgment from it.
+pub(crate) use permission::FunctionPermissions;
+
 pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBodyDisposition, CheckedBooleanOperation,
     CheckedBufferRoot, CheckedBufferSetTarget, CheckedConstructor, CheckedDrop, CheckedEntryForm,

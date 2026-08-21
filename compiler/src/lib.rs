@@ -20,6 +20,9 @@ mod spec;
 pub mod spec_identity;
 mod syntax;
 
+/// The parallel runtime a module that hands work out must be linked against,
+/// and the predicate that decides whether one must.
+pub use backend::{PARALLEL_RUNTIME_SOURCE, module_requires_parallel_runtime};
 pub use driver::*;
 pub use lexer::*;
 pub use resolution::*;

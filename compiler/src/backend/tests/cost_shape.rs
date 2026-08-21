@@ -795,7 +795,16 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             | "calloc" | "free"
             // Written claims and their mandatory diagnostic record.
             | "wf_trap" | "abort"
-        ) || target.starts_with("llvm.")
+            // The lane offer and its join at a permitted overlap group
+            // [PAR-1 candidate]. Neither reaches a host facility: with no
+            // runtime linked both are the module's own weak definitions,
+            // which refuse every lane and return, and the handed-out call
+            // runs at its own fallback edge on this thread. This row is a
+            // permission the target may take, not an operation of the first
+            // slice, so no §9.1 count moves with it.
+            | "wf_par_try_fork" | "wf_par_join"
+        ) || target.starts_with("wf_par_thunk_")
+            || target.starts_with("llvm.")
             // The program's own declared functions, and the optimizer's cold
             // outlining of their failure arms, which is where the [SYS-7]
             // class mapper ended up.

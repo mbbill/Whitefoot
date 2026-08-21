@@ -36,11 +36,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
-    HOST_OPTIMIZATION_ARGUMENTS, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome,
-    SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical,
-    check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
-    classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked, parse,
-    resolve,
+    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_RUNTIME_SOURCE, ParseLimits, ParseOutcome,
+    ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
+    TerminalOutcome, audit_canonical, check_semantics, check_semantics_arithmetic_obligations,
+    check_semantics_division_obligations, classify_terminals, compile as compile_program,
+    emit_llvm, finalize, lower_checked, module_requires_parallel_runtime, parse, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -308,6 +308,16 @@ fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> 
     if let Some(path) = host_unit.as_ref() {
         command.arg("-x").arg("c").arg(path);
     }
+    // The parallel runtime joins the link on exactly the condition the driver
+    // uses: the emitted module names its entry point. A test therefore cannot
+    // link a runtime a shipped build would not, and a module that overlaps
+    // nothing is linked here with nothing extra at all.
+    let parallel_unit = module_requires_parallel_runtime(llvm).then(|| {
+        let path = directory.join("par_runtime.c");
+        std::fs::write(&path, PARALLEL_RUNTIME_SOURCE).expect("write the parallel runtime");
+        command.arg("-pthread").arg("-x").arg("c").arg(&path);
+        path
+    });
     let compile = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
@@ -324,6 +334,9 @@ fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> 
     std::fs::remove_file(&module).expect("remove backend test module");
     if let Some(path) = host_unit {
         std::fs::remove_file(path).expect("remove deterministic host unit");
+    }
+    if let Some(path) = parallel_unit {
+        std::fs::remove_file(path).expect("remove the parallel runtime unit");
     }
     executable
 }

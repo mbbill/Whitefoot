@@ -1754,7 +1754,6 @@ pub(crate) struct CheckedProgramData {
     /// may be overlapped, and which of those are actualizable. Acceptance
     /// never reads it, and it is identical facts-on and facts-off. The
     /// permission ledger and the overlap lowering are its consumers.
-    #[allow(dead_code)]
     pub(crate) permission: super::permission::PermissionMetadata,
     /// The rendered non-normative permission ledger, one line per analyzed
     /// source site in source order. This is developer output only: the driver

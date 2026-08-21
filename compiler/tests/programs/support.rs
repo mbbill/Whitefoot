@@ -6,11 +6,43 @@ use std::process::{Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
-    CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, Inventory, SourceInput, compile,
-    compile_with_inventory,
+    CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, Inventory, PARALLEL_RUNTIME_SOURCE, SourceInput,
+    compile, compile_with_inventory, module_requires_parallel_runtime,
 };
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
+
+/// Links one emitted module into `executable`, adding the parallel runtime on
+/// exactly the condition the driver uses.
+///
+/// One definition serves both program-corpus link paths, so a program that
+/// overlaps nothing links nothing extra and no path can forget the runtime a
+/// module actually calls.
+fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
+    let mut command = Command::new("/usr/bin/clang");
+    command.arg("-x").arg("ir").arg(module);
+    let parallel_unit = module_requires_parallel_runtime(llvm).then(|| {
+        let path = directory.join("par_runtime.c");
+        std::fs::write(&path, PARALLEL_RUNTIME_SOURCE).expect("write the parallel runtime");
+        command.arg("-pthread").arg("-x").arg("c").arg(&path);
+        path
+    });
+    let compilation = command
+        .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .arg("-o")
+        .arg(executable)
+        .output()
+        .expect("invoke host clang");
+    assert!(
+        compilation.status.success(),
+        "clang rejected emitted LLVM:\n{}\n{}",
+        String::from_utf8_lossy(&compilation.stderr),
+        llvm
+    );
+    if let Some(path) = parallel_unit {
+        std::fs::remove_file(path).expect("remove the parallel runtime unit");
+    }
+}
 
 pub fn compile_program(name: &str) -> String {
     compile_programs(&[name])
@@ -116,21 +148,7 @@ pub fn compile_and_run(llvm: &str) -> Output {
     let module = directory.join("program.ll");
     let executable = directory.join("program");
     std::fs::write(&module, llvm).expect("write integration-test module");
-    let compilation = Command::new("/usr/bin/clang")
-        .arg("-x")
-        .arg("ir")
-        .arg(&module)
-        .args(HOST_OPTIMIZATION_ARGUMENTS)
-        .arg("-o")
-        .arg(&executable)
-        .output()
-        .expect("invoke host clang");
-    assert!(
-        compilation.status.success(),
-        "clang rejected emitted LLVM:\n{}\n{}",
-        String::from_utf8_lossy(&compilation.stderr),
-        llvm
-    );
+    link_module(&module, &executable, llvm, &directory);
     let output = Command::new(&executable)
         .output()
         .expect("run integration-test executable");
@@ -161,21 +179,7 @@ pub fn build_program(llvm: &str) -> CompiledProgram {
     let module = directory.join("program.ll");
     let executable = directory.join("program");
     std::fs::write(&module, llvm).expect("write program module");
-    let compilation = Command::new("/usr/bin/clang")
-        .arg("-x")
-        .arg("ir")
-        .arg(&module)
-        .args(HOST_OPTIMIZATION_ARGUMENTS)
-        .arg("-o")
-        .arg(&executable)
-        .output()
-        .expect("invoke host clang");
-    assert!(
-        compilation.status.success(),
-        "clang rejected emitted LLVM:\n{}\n{}",
-        String::from_utf8_lossy(&compilation.stderr),
-        llvm
-    );
+    link_module(&module, &executable, llvm, &directory);
     CompiledProgram {
         directory,
         executable,

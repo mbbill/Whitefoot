@@ -1004,6 +1004,39 @@ impl IrBlock {
     }
 }
 
+/// One group of sibling calls whose evaluations may be overlapped [PAR-1
+/// candidate].
+///
+/// The members are the values those calls define, in source order, all in one
+/// block of one function. Every member but the last may be handed to a worker
+/// lane; the last always runs on the calling thread, and every handed-out
+/// member is joined immediately after the last member's call — before any use
+/// of a member's value and before any exit edge of the block.
+///
+/// The group is a permission the target stage may take, never an obligation:
+/// a target that hands nothing out emits exactly the sequential code, because
+/// the handed-out call and the inline fallback call the same monomorphized
+/// function on the same arguments.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrOverlap {
+    members: Vec<IrValueId>,
+}
+
+impl IrOverlap {
+    /// The value whose definition is the group's join site: the last member,
+    /// which runs on the calling thread.
+    pub fn join_site(&self) -> Option<IrValueId> {
+        self.members.last().copied()
+    }
+
+    /// The members that may be handed to a worker lane, in source order.
+    pub fn handed_out(&self) -> &[IrValueId] {
+        self.members
+            .split_last()
+            .map_or(&[][..], |(_, earlier)| earlier)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrFunction {
     name: String,
@@ -1011,6 +1044,7 @@ pub struct IrFunction {
     result: IrType,
     values: Vec<IrType>,
     blocks: Vec<IrBlock>,
+    overlaps: Vec<IrOverlap>,
 }
 
 impl IrFunction {
@@ -1028,6 +1062,12 @@ impl IrFunction {
 
     pub fn blocks(&self) -> &[IrBlock] {
         &self.blocks
+    }
+
+    /// The permission-derived overlap groups of this function's body, in
+    /// source order and pairwise disjoint in their members.
+    pub fn overlaps(&self) -> &[IrOverlap] {
+        &self.overlaps
     }
 
     pub(crate) fn contains_buffer(&self) -> bool {
