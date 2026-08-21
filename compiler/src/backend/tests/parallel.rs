@@ -7,13 +7,19 @@
 //! just as well against a runtime that never granted a lane, so the runs below
 //! read the runtime's own grant count and refuse to accept a repeat that never
 //! actually overlapped.
+//!
+//! Actualization is compile-time opt-in, so every case that expects a hand-out
+//! emits through [`emit_with_overlap`], which is what `whitefootc --par`
+//! compiles. Plain [`emit`] is the default compilation, and
+//! `the_default_compilation_hands_nothing_out` is the case that pins what it
+//! leaves out.
 
 use std::path::Path;
 use std::process::Command;
 
 use super::{
     HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_RUNTIME_SOURCE, build_executable, compile_and_run, emit,
-    emit_without_overlap, module_requires_parallel_runtime, test_directory,
+    emit_with_overlap, module_requires_parallel_runtime, test_directory,
 };
 
 /// A claim-free recursive fold over a heap tree, the smallest shape that has
@@ -190,7 +196,7 @@ command fn main() -> status: own ExitStatus pure {
 /// which no source-level diagnostic explains.
 #[test]
 fn a_program_named_like_the_runtime_still_compiles_and_links() {
-    let module = emit(RUNTIME_SHAPED_NAMES);
+    let module = emit_with_overlap(RUNTIME_SHAPED_NAMES);
     assert!(
         module_requires_parallel_runtime(&module),
         "the fixture must actually hand work out:\n{module}"
@@ -211,7 +217,7 @@ fn a_program_named_like_the_runtime_still_compiles_and_links() {
 /// and a join whose refusal edge calls the same thunk on the same frame.
 #[test]
 fn a_permitted_pair_is_outlined_offered_and_joined() {
-    let module = emit(OVERLAPPING_FOLD);
+    let module = emit_with_overlap(OVERLAPPING_FOLD);
 
     // The thunk is the outlined call: it loads the arguments out of the frame,
     // calls the same monomorphized function the inline edge calls, and stores
@@ -285,7 +291,7 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
 /// frame, no thunk, no offer, and no join anywhere in the module.
 #[test]
 fn a_denied_pair_emits_exactly_the_sequential_calls() {
-    let module = emit(DEPENDENT_SIBLINGS);
+    let module = emit_with_overlap(DEPENDENT_SIBLINGS);
     assert!(
         !module.contains("wf_par"),
         "a denied pair must name no part of the runtime:\n{module}"
@@ -322,7 +328,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let module = emit(borrowed);
+    let module = emit_with_overlap(borrowed);
     assert!(
         !module.contains("wf_par"),
         "a borrowed first member must not be handed out:\n{module}"
@@ -349,7 +355,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     assert!(
-        emit(trailing).contains("call ptr @wf__par_try_fork(ptr @wf__par_thunk_"),
+        emit_with_overlap(trailing).contains("call ptr @wf__par_try_fork(ptr @wf__par_thunk_"),
         "a borrowed last member does not stop the group"
     );
 }
@@ -359,14 +365,16 @@ command fn main() -> status: own ExitStatus pure {
 /// the runtime to it.
 #[test]
 fn a_module_that_hands_nothing_out_needs_no_runtime() {
-    let module = emit(DEPENDENT_SIBLINGS);
+    let module = emit_with_overlap(DEPENDENT_SIBLINGS);
     assert!(!module_requires_parallel_runtime(&module));
     let output = compile_and_run(&module);
     assert_eq!(output.status.code(), Some(0));
 
     // The overlapping module is the other half of the same statement: it does
     // hand work out, so linking the runtime is what gives it lanes.
-    assert!(module_requires_parallel_runtime(&emit(OVERLAPPING_FOLD)));
+    assert!(module_requires_parallel_runtime(&emit_with_overlap(
+        OVERLAPPING_FOLD
+    )));
 }
 
 /// The module carries a weak sequential answer to both runtime entry points,
@@ -377,7 +385,7 @@ fn a_module_that_hands_nothing_out_needs_no_runtime() {
 /// refusing every lane is a correct execution.
 #[test]
 fn the_runtime_replaces_the_modules_weak_refusal() {
-    let module = emit(OVERLAPPING_FOLD);
+    let module = emit_with_overlap(OVERLAPPING_FOLD);
     let directory = test_directory();
 
     // Linked with nothing: the module's own weak definitions answer, every
@@ -421,7 +429,7 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
 /// real overlapped execution rather than the refusal path run again.
 #[test]
 fn an_overlapped_program_reports_one_byte_sequence_at_every_worker_count() {
-    let module = emit(OVERLAPPING_FOLD);
+    let module = emit_with_overlap(OVERLAPPING_FOLD);
     let directory = test_directory();
     let executable = build_executable(&module, &directory);
     let mut runs = Vec::new();
@@ -449,6 +457,43 @@ fn an_overlapped_program_reports_one_byte_sequence_at_every_worker_count() {
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
+/// Overlap lowering is compile-time opt-in: the default compilation of a
+/// program full of eligible sites names no part of the runtime.
+///
+/// This is what makes the feature free when it is not asked for. The judgment
+/// still ran — the same source with the lowering switched on hands work out,
+/// which is the second half of this test — so what the default drops is the
+/// outlining and nothing else. The outlining is not free: it passes arguments
+/// through a memory frame and is reached through a function pointer, so the
+/// call cannot be inlined, and the batch audit measured that alone at about
+/// 1.2x on the layout demo and 2.1x on `fib(38)` with no runtime linked and
+/// `WF_WORKERS` unset.
+#[test]
+fn the_default_compilation_hands_nothing_out() {
+    let default = emit(OVERLAPPING_FOLD);
+    assert!(
+        !default.contains("wf__par_"),
+        "the default compilation must name no runtime symbol:\n{default}"
+    );
+    assert!(
+        !default.contains("(ptr %frame) {"),
+        "the default compilation must outline no thunk:\n{default}"
+    );
+    assert!(
+        !module_requires_parallel_runtime(&default),
+        "no link path may add the runtime to a default build"
+    );
+
+    // The same source asked for lanes: the sites were there all along, so the
+    // assertions above are about the option and not about the program.
+    let requested = emit_with_overlap(OVERLAPPING_FOLD);
+    assert!(
+        requested.contains("call ptr @wf__par_try_fork(ptr @wf__par_thunk_"),
+        "the fixture must hand work out when asked, or this test is vacuous"
+    );
+    assert!(module_requires_parallel_runtime(&requested));
+}
+
 /// The differential: the same source lowered *without* any overlap group
 /// produces the same bytes as the overlapped lowering, at every worker count.
 ///
@@ -456,18 +501,18 @@ fn an_overlapped_program_reports_one_byte_sequence_at_every_worker_count() {
 /// test here links one emitted module two ways, so a defect introduced by the
 /// outlining itself — a moved read, a hoisted operand, a join in the wrong
 /// place — is present in the reference too and compares equal. The reference
-/// here is a second compilation whose calls were never handed out, which is
-/// the only way an overlap's "changes nothing observable" claim can be
-/// checked against something other than itself.
+/// here is the default compilation of the same source, whose calls were never
+/// handed out, which is the only way an overlap's "changes nothing observable"
+/// claim can be checked against something other than itself.
 #[test]
 fn the_overlapped_lowering_agrees_with_the_lowering_that_hands_nothing_out() {
-    let sequential_module = emit_without_overlap(OVERLAPPING_FOLD);
+    let sequential_module = emit(OVERLAPPING_FOLD);
     assert!(
         !module_requires_parallel_runtime(&sequential_module),
         "the reference module must contain no hand-out at all"
     );
     assert!(
-        module_requires_parallel_runtime(&emit(OVERLAPPING_FOLD)),
+        module_requires_parallel_runtime(&emit_with_overlap(OVERLAPPING_FOLD)),
         "the overlapped module must hand work out, or the comparison is vacuous"
     );
 
@@ -482,7 +527,7 @@ fn the_overlapped_lowering_agrees_with_the_lowering_that_hands_nothing_out() {
         "the fold must report eight bytes"
     );
 
-    let overlapped = build_executable(&emit(OVERLAPPING_FOLD), &directory);
+    let overlapped = build_executable(&emit_with_overlap(OVERLAPPING_FOLD), &directory);
     let mut runs = vec![("no overlap lowering".to_owned(), reference.stdout)];
     for workers in ["1", "2", "4", "8"] {
         let output = Command::new(&overlapped)
@@ -534,7 +579,7 @@ fn the_repeat_comparison_reports_an_injected_difference() {
 /// green here below one in a hundred million.
 #[test]
 fn the_repeat_reports_a_lowering_whose_joins_were_removed() {
-    let module = emit(OVERLAPPING_FOLD);
+    let module = emit_with_overlap(OVERLAPPING_FOLD);
     let directory = test_directory();
 
     let reference = Command::new(build_executable(&module, &directory))

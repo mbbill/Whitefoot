@@ -5,11 +5,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use whitefoot::{
-    CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_RUNTIME_SOURCE, SourceInput, compile,
-    compile_with_permission_ledger, module_requires_parallel_runtime,
+    CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_RUNTIME_SOURCE,
+    SourceInput, compile_with_overlap, compile_with_permission_ledger,
+    module_requires_parallel_runtime,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par-ledger] [-o OUTPUT] SOURCE...";
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-ledger] [-o OUTPUT] SOURCE...";
 
 fn main() {
     if let Err(message) = run() {
@@ -35,18 +36,26 @@ fn run() -> Result<(), String> {
         .zip(&bytes)
         .map(|(path, bytes)| SourceInput::new(path, bytes))
         .collect();
+    let overlap = if options.par {
+        OverlapLowering::On
+    } else {
+        OverlapLowering::Off
+    };
     let module = if options.par_ledger {
         // The permission ledger is developer output. It goes to stdout, which
         // `Options::parse` has already kept clear of the emitted module, and
-        // never to the mandatory record channel.
-        let (module, ledger) = compile_with_permission_ledger(&inputs, CompilerLimits::default())
-            .map_err(|failure| failure.to_string())?;
+        // never to the mandatory record channel. It reports the same judgment
+        // with or without `--par`; only the emitted lowering differs.
+        let (module, ledger) =
+            compile_with_permission_ledger(&inputs, CompilerLimits::default(), overlap)
+                .map_err(|failure| failure.to_string())?;
         for line in &ledger {
             println!("{line}");
         }
         module
     } else {
-        compile(&inputs, CompilerLimits::default()).map_err(|failure| failure.to_string())?
+        compile_with_overlap(&inputs, CompilerLimits::default(), overlap)
+            .map_err(|failure| failure.to_string())?
     };
     if options.emit_llvm {
         if let Some(output) = options.output {
@@ -137,6 +146,17 @@ fn portable_logical_path(path: &str) -> bool {
 
 struct Options {
     emit_llvm: bool,
+    /// Actualize the permission judgment's eligible groups on worker lanes.
+    ///
+    /// Off by default. Outlining a call is not free — it passes its arguments
+    /// through a memory frame and is reached through a function pointer, so it
+    /// cannot be inlined — and the measured cost with no runtime linked is
+    /// about 1.2x on a heavy recursive fold and 2.1x on `fib(38)`. The
+    /// permission is never an obligation, so the default compilation takes
+    /// none of it and emits exactly the module it emitted before this path
+    /// existed. `WF_WORKERS` remains the runtime knob for a program built
+    /// this way.
+    par: bool,
     /// Print the non-normative permission ledger on stdout.
     par_ledger: bool,
     output: Option<PathBuf>,
@@ -146,6 +166,7 @@ struct Options {
 impl Options {
     fn parse(arguments: &[String]) -> Result<Self, String> {
         let mut emit_llvm = false;
+        let mut par = false;
         let mut par_ledger = false;
         let mut output = None;
         let mut sources = Vec::new();
@@ -153,6 +174,7 @@ impl Options {
         while cursor < arguments.len() {
             match arguments[cursor].as_str() {
                 "--emit-llvm" => emit_llvm = true,
+                "--par" => par = true,
                 "--par-ledger" => par_ledger = true,
                 "-o" => {
                     cursor += 1;
@@ -187,6 +209,7 @@ impl Options {
         }
         Ok(Self {
             emit_llvm,
+            par,
             par_ledger,
             output,
             sources,
@@ -235,11 +258,31 @@ mod tests {
         assert!(message.contains("-o"), "{message}");
     }
 
+    /// Overlap lowering is off unless the invocation asks for it, and asking
+    /// for the ledger is not asking for it.
+    ///
+    /// The two options are independent on purpose: the judgment is pure, so a
+    /// developer can read what the compiler decided about a program without
+    /// changing one byte of the program that gets built.
+    #[test]
+    fn overlap_lowering_is_off_unless_the_invocation_asks_for_it() {
+        let options = parse(&["value.wf"]).expect("one source is a complete invocation");
+        assert!(!options.par);
+
+        let options = parse(&["--par-ledger", "value.wf"]).expect("the ledger option is accepted");
+        assert!(!options.par, "reading the ledger must not enable lowering");
+
+        let options = parse(&["--par", "value.wf"]).expect("the option is accepted");
+        assert!(options.par);
+        assert!(!options.par_ledger, "lanes are not a ledger request");
+        assert_eq!(options.sources.len(), 1);
+    }
+
     /// The usage text is one definition, so the option list a reader is shown
     /// cannot drift from the option list the parser accepts.
     #[test]
     fn the_usage_text_lists_every_accepted_option() {
-        for option in ["--emit-llvm", "--par-ledger", "-o"] {
+        for option in ["--emit-llvm", "--par", "--par-ledger", "-o"] {
             assert!(
                 super::USAGE.contains(option),
                 "usage text omits {option}: {}",

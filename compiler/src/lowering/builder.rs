@@ -21,6 +21,7 @@ use storage::collect_addressed_bindings;
 
 pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
+    overlap: OverlapLowering,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
     let entry = lower_entry(&checked.data.entry);
     let nominals = lower_nominals(&checked.data)?;
@@ -43,8 +44,13 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         .collect::<Result<Vec<_>, _>>()?;
     // The [PAR-1 candidate] permission table, read exactly as the checker
     // produced it. Lowering selects which permitted groups it can actualize
-    // and never widens one.
-    let permission = &checked.data.permission;
+    // and never widens one — and reads the table at all only when this
+    // compilation asked for overlap lowering, so the default emits the same
+    // module a compiler with no such lowering emits.
+    let permission = match overlap {
+        OverlapLowering::On => Some(&checked.data.permission),
+        OverlapLowering::Off => None,
+    };
     let functions = checked
         .data
         .functions
@@ -55,7 +61,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
                 &nominals,
                 &constants,
                 &function_results,
-                permission.of(function.id),
+                permission.and_then(|table| table.of(function.id)),
             )
         })
         .collect::<Result<Vec<_>, _>>()?;

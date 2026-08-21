@@ -10,10 +10,10 @@
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
-    ParseLimits, ParseOutcome, ResolutionOutcome, SYSTEM_OPERATIONS, SemanticOutcome, SourceBundle,
-    SourceInput, SourceLimits, SystemReleaseAction, SystemReleaseRow, SystemResourceBacking,
-    SystemResourceType, TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
-    classify_terminals, finalize, parse, resolve,
+    OverlapLowering, ParseLimits, ParseOutcome, ResolutionOutcome, SYSTEM_OPERATIONS,
+    SemanticOutcome, SourceBundle, SourceInput, SourceLimits, SystemReleaseAction,
+    SystemReleaseRow, SystemResourceBacking, SystemResourceType, TerminalLimits, TerminalOutcome,
+    audit_canonical, check_semantics, classify_terminals, finalize, parse, resolve,
 };
 
 use super::{
@@ -105,7 +105,8 @@ fn with_ir<ResultValue>(
     let SemanticOutcome::Complete(checked) = outcome else {
         panic!("lowering test source must check: {outcome:?}");
     };
-    let ir = lower_checked(*checked).expect("checked system program must lower");
+    let ir =
+        lower_checked(*checked, OverlapLowering::Off).expect("checked system program must lower");
     run(&ir)
 }
 

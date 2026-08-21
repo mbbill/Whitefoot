@@ -6,9 +6,9 @@ use std::process::{Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
-    CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, Inventory, PARALLEL_RUNTIME_SOURCE, SourceInput,
-    compile, compile_with_inventory, compile_with_permission_ledger,
-    module_requires_parallel_runtime,
+    CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, Inventory, OverlapLowering,
+    PARALLEL_RUNTIME_SOURCE, SourceInput, compile, compile_with_inventory, compile_with_overlap,
+    compile_with_permission_ledger, module_requires_parallel_runtime,
 };
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
@@ -62,16 +62,33 @@ pub fn compile_programs(names: &[&str]) -> String {
     compile(&inputs, CompilerLimits::default()).expect("program corpus source must compile")
 }
 
+/// Compiles one corpus program with the [PAR-1 candidate] overlap lowering
+/// switched on, which is what `whitefootc --par` compiles.
+///
+/// [`compile_program`] is the shipped default and hands nothing out, so a case
+/// about actualization has to name this entry. The two differ in the emitted
+/// lowering only: the judgment, the accepted program, and the ledger are the
+/// same either way.
+pub fn compile_program_with_overlap(name: &str) -> String {
+    let source = read_program(name);
+    let inputs = [SourceInput::new(name, &source)];
+    compile_with_overlap(&inputs, CompilerLimits::default(), OverlapLowering::On)
+        .expect("program corpus source must compile")
+}
+
 /// Compiles one corpus program and returns its permission ledger lines.
 ///
 /// The ledger is the developer-channel rendering of the permission judgment,
 /// so a case that asks what the compiler decided about a corpus program reads
-/// exactly the lines a developer would see rather than re-deriving them.
+/// exactly the lines a developer would see rather than re-deriving them. The
+/// judgment is pure, so these are the default compilation's lines and the
+/// `--par` compilation's alike.
 pub fn program_permission_ledger(name: &str) -> Vec<String> {
     let source = read_program(name);
     let inputs = [SourceInput::new(name, &source)];
-    let (_, ledger) = compile_with_permission_ledger(&inputs, CompilerLimits::default())
-        .expect("program corpus source must compile");
+    let (_, ledger) =
+        compile_with_permission_ledger(&inputs, CompilerLimits::default(), OverlapLowering::Off)
+            .expect("program corpus source must compile");
     ledger
 }
 

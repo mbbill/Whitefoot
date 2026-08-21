@@ -1004,6 +1004,29 @@ impl IrBlock {
     }
 }
 
+/// Whether lowering actualizes the permission judgment's overlap groups.
+///
+/// The judgment itself is pure and always runs: `--par-ledger` reports the same
+/// verdicts either way, and no accepted program changes. This selects only
+/// whether a permitted group reaches the IR as an overlap group, and therefore
+/// whether the backend outlines a call, offers a lane, and joins it.
+///
+/// `Off` is the default because outlining is not free. The batch audit measured
+/// the lowering alone — no runtime linked, `WF_WORKERS` unset — at about 1.2x on
+/// the layout demo and 2.1x on `fib(38)`: an outlined call passes its arguments
+/// through a memory frame, is reached through a function pointer, and so cannot
+/// be inlined. A permission is never an obligation, and a compiler that has not
+/// been asked for lanes emits exactly the code it emitted before this path
+/// existed.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum OverlapLowering {
+    /// Consult no permission group: emit the sequential lowering.
+    #[default]
+    Off,
+    /// Hand out every eligible group the lowering can carry.
+    On,
+}
+
 /// One group of sibling calls whose evaluations may be overlapped [PAR-1
 /// candidate].
 ///

@@ -37,11 +37,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
-    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_RUNTIME_SOURCE, ParseLimits, ParseOutcome,
-    ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
-    TerminalOutcome, audit_canonical, check_semantics, check_semantics_arithmetic_obligations,
-    check_semantics_division_obligations, classify_terminals, compile as compile_program,
-    emit_llvm, finalize, lower_checked, module_requires_parallel_runtime, parse, resolve,
+    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_RUNTIME_SOURCE, ParseLimits,
+    ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits,
+    TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
+    check_semantics_arithmetic_obligations, check_semantics_division_obligations,
+    classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked,
+    module_requires_parallel_runtime, parse, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -88,31 +89,28 @@ const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
 
 static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
 
-fn emit(source: &[u8]) -> String {
-    emit_lowered(source, |_| ())
-}
-
-/// [`emit`] with the permission table emptied before lowering: the same
-/// checked program, lowered with no overlap group at all.
+/// The shipped default compilation: no overlap group is actualized, so this is
+/// the module a compiler without that lowering emits.
 ///
-/// This is the only *non-outlined* reference on this path. Every other
-/// comparison the parallel tests make links one emitted module two ways, so a
-/// defect in the lowering itself sits on both sides of the comparison and
-/// cannot be seen. Compiling one source both ways and byte-comparing the two
-/// programs is what makes an overlap's "changes nothing observable" claim a
-/// statement about the lowering rather than about the linker.
-fn emit_without_overlap(source: &[u8]) -> String {
-    emit_lowered(source, |checked| {
-        checked.data.permission = crate::semantic::permission::PermissionMetadata::default();
-    })
+/// It is also the only *non-outlined* reference on the parallel path. Every
+/// comparison that links one emitted module two ways has a defect in the
+/// lowering itself on both sides and cannot see it; emitting one source both
+/// ways and byte-comparing the two programs is what makes an overlap's
+/// "changes nothing observable" claim a statement about the lowering rather
+/// than about the linker.
+fn emit(source: &[u8]) -> String {
+    emit_lowered(source, OverlapLowering::Off)
 }
 
-/// The shared front half: check `source`, let `adjust` edit the checked
-/// program, then lower and emit it.
-fn emit_lowered(
-    source: &[u8],
-    adjust: impl FnOnce(&mut crate::semantic::CheckedProgram<'_, '_, '_>),
-) -> String {
+/// [`emit`] with the [PAR-1 candidate] overlap lowering switched on, which is
+/// what `whitefootc --par` compiles.
+fn emit_with_overlap(source: &[u8]) -> String {
+    emit_lowered(source, OverlapLowering::On)
+}
+
+/// The shared front half: check `source`, then lower and emit it under one
+/// named overlap-lowering choice.
+fn emit_lowered(source: &[u8], overlap: OverlapLowering) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
     let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -139,11 +137,10 @@ fn emit_lowered(
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("backend test source must resolve");
     };
-    let SemanticOutcome::Complete(mut checked) = check_semantics(resolved) else {
+    let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
         panic!("backend test source must check");
     };
-    adjust(&mut checked);
-    let ir = lower_checked(*checked).expect("checked program must lower");
+    let ir = lower_checked(*checked, overlap).expect("checked program must lower");
     emit_llvm(&ir)
         .expect("lowered program must emit")
         .into_string()
@@ -184,7 +181,7 @@ fn emit_arithmetic_obligations(source: &[u8]) -> String {
     else {
         panic!("backend test source must check under the arithmetic switch");
     };
-    let ir = lower_checked(*checked).expect("checked program must lower");
+    let ir = lower_checked(*checked, OverlapLowering::Off).expect("checked program must lower");
     emit_llvm(&ir)
         .expect("lowered program must emit")
         .into_string()
@@ -224,7 +221,7 @@ fn emit_division_obligations(source: &[u8]) -> String {
     let SemanticOutcome::Complete(checked) = check_semantics_division_obligations(resolved) else {
         panic!("backend test source must check under the division switch");
     };
-    let ir = lower_checked(*checked).expect("checked program must lower");
+    let ir = lower_checked(*checked, OverlapLowering::Off).expect("checked program must lower");
     emit_llvm(&ir)
         .expect("lowered program must emit")
         .into_string()
@@ -271,7 +268,7 @@ fn emit_reborrow_extension(source: &[u8]) -> String {
             panic!("backend test source must check under the reborrow extension: {outcome:?}")
         }
     };
-    let ir = lower_checked(*checked).expect("checked program must lower");
+    let ir = lower_checked(*checked, OverlapLowering::Off).expect("checked program must lower");
     emit_llvm(&ir)
         .expect("lowered program must emit")
         .into_string()

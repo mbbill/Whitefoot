@@ -13,8 +13,15 @@
 //! runtime grants lanes at all is pinned by the in-crate runtime test, which
 //! reads the pool's own grant counter; the cases here pin what this program's
 //! two folds compile to and that granting lanes moves none of its bytes.
+//!
+//! Actualization is compile-time opt-in, so the cases that ask about hand-outs
+//! compile through [`compile_program_with_overlap`] — `whitefootc --par`. The
+//! default compilation of the same program is the subject of its own case
+//! below and hands nothing out at all.
 
-use super::support::{build_program, compile_program, program_permission_ledger};
+use super::support::{
+    build_program, compile_program, compile_program_with_overlap, program_permission_ledger,
+};
 use whitefoot::module_requires_parallel_runtime;
 
 /// The claim-free fold is handed out and the claim-bearing one is not, in the
@@ -26,7 +33,7 @@ use whitefoot::module_requires_parallel_runtime;
 /// function and absent from the other.
 #[test]
 fn only_the_claim_free_fold_is_handed_out() {
-    let llvm = compile_program("par_layout.wf");
+    let llvm = compile_program_with_overlap("par_layout.wf");
     assert!(
         module_requires_parallel_runtime(&llvm),
         "a module with an eligible site must ask for the runtime"
@@ -67,13 +74,42 @@ fn the_ledger_separates_the_two_folds_by_their_claim_closures() {
     );
 }
 
+/// The default compilation of this same program hands nothing out and needs no
+/// runtime, so the shipped build of a program full of eligible sites is the
+/// build it was before this path existed.
+///
+/// The eligibility is real — the case above compiles the same file with `--par`
+/// and finds the thunk, the offer, and the join — so what this pins is the
+/// option, not the program.
+#[test]
+fn the_default_compilation_of_the_demo_names_no_runtime() {
+    let llvm = compile_program("par_layout.wf");
+    assert!(
+        !llvm.contains("wf__par_"),
+        "the default compilation must name no runtime symbol"
+    );
+    assert!(
+        !module_requires_parallel_runtime(&llvm),
+        "no link path may add the runtime to a default build"
+    );
+
+    let program = build_program(&llvm);
+    let published = program.run_with_workers(None);
+    assert!(published.status.success());
+    assert_eq!(
+        published.stdout,
+        program.run_with_workers(Some("4")).stdout,
+        "a program with no lane offer cannot answer to WF_WORKERS"
+    );
+}
+
 /// Offering lanes moves no byte of the program's published result.
 ///
 /// The reference is the same executable with the worker setting absent, which
 /// is the shipped default and the execution every other corpus program gets.
 #[test]
 fn the_layout_program_publishes_one_byte_sequence_at_every_worker_count() {
-    let llvm = compile_program("par_layout.wf");
+    let llvm = compile_program_with_overlap("par_layout.wf");
     let program = build_program(&llvm);
 
     let reference = program.run_with_workers(None);

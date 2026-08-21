@@ -227,6 +227,9 @@ impl fmt::Display for CompilationFailure {
 impl std::error::Error for CompilationFailure {}
 
 /// Compiles one ordered closed source bundle to conservative textual LLVM.
+///
+/// This is the shipped default, and it performs no overlap lowering: see
+/// [`compile_with_overlap`] for the compilation `whitefootc --par` performs.
 pub fn compile(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
@@ -234,20 +237,37 @@ pub fn compile(
     compile_with_inventory(inputs, limits, crate::Inventory::ACTIVE)
 }
 
-/// [`compile`] plus the non-normative permission ledger for the same
-/// compilation.
+/// [`compile`] with the [PAR-1 candidate] overlap lowering named explicitly.
+///
+/// [`crate::OverlapLowering::Off`] emits the module a compiler without this
+/// path emits; [`crate::OverlapLowering::On`] hands every eligible group the
+/// lowering can carry to a worker lane. The judgment runs either way — it is
+/// pure, it changes no accepted program, and its ledger is identical — so this
+/// selects an emitted lowering and nothing else.
+pub fn compile_with_overlap(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    overlap: crate::OverlapLowering,
+) -> Result<String, CompilationFailure> {
+    compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap).map(|(module, _)| module)
+}
+
+/// [`compile_with_overlap`] plus the non-normative permission ledger for the
+/// same compilation.
 ///
 /// The ledger reports, one line per analyzed sibling-call site, whether the
 /// permission judgment allows overlapping the two statements and whether a
 /// permitted overlap is actualizable. It is developer output on the caller's
 /// own channel: it participates in no mandatory record, changes no accepted
-/// program, and selects no lowering. `whitefootc --par-ledger` is its one
-/// caller outside tests.
+/// program, and selects no lowering — the same lines are reported whether or
+/// not this compilation actualizes any of them. `whitefootc --par-ledger` is
+/// its one caller outside tests.
 pub fn compile_with_permission_ledger(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
+    overlap: crate::OverlapLowering,
 ) -> Result<(String, Vec<String>), CompilationFailure> {
-    compile_reporting(inputs, limits, crate::Inventory::ACTIVE)
+    compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
 }
 
 /// [`compile`] against one named [SYS-2] inventory state.
@@ -263,7 +283,8 @@ pub fn compile_with_inventory(
     limits: CompilerLimits,
     inventory: crate::Inventory,
 ) -> Result<String, CompilationFailure> {
-    compile_reporting(inputs, limits, inventory).map(|(module, _)| module)
+    compile_reporting(inputs, limits, inventory, crate::OverlapLowering::Off)
+        .map(|(module, _)| module)
 }
 
 /// The one compilation path, returning the module and the developer-channel
@@ -273,6 +294,7 @@ fn compile_reporting(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
     inventory: crate::Inventory,
+    overlap: crate::OverlapLowering,
 ) -> Result<(String, Vec<String>), CompilationFailure> {
     let bundle = SourceBundle::with_limits(inputs, limits.source).map_err(|failure| {
         CompilationFailure::new(
@@ -457,7 +479,7 @@ fn compile_reporting(
         }
     };
     let permission_ledger = checked.data.permission_ledger.clone();
-    let ir = lower_checked(checked).map_err(|failure: LoweringFailure| {
+    let ir = lower_checked(checked, overlap).map_err(|failure: LoweringFailure| {
         CompilationFailure::new(
             CompilationStage::Lowering,
             CompilationFailureKind::Lowering,
@@ -491,14 +513,19 @@ mod tests {
         CompilationFailureKind, CompilationStage, CompilerLimits, compile,
         compile_with_permission_ledger,
     };
-    use crate::SourceInput;
+    use crate::{OverlapLowering, SourceInput};
 
     /// The permission ledger of one compiled source, in the order the driver
     /// hands it to `whitefootc --par-ledger`.
+    ///
+    /// The judgment is pure, so the ledger belongs to the source and not to
+    /// the lowering: this reads it from the default compilation, the one that
+    /// actualizes nothing.
     fn ledger_of(name: &str, source: &[u8]) -> Vec<String> {
         let (_, ledger) = compile_with_permission_ledger(
             &[SourceInput::new(name, source)],
             CompilerLimits::default(),
+            OverlapLowering::Off,
         )
         .expect("a permission-ledger fixture must compile");
         ledger
@@ -710,6 +737,7 @@ command fn main() -> status: own ExitStatus pure {
         let (module, ledger) = compile_with_permission_ledger(
             &[SourceInput::new("quiet.wf", source)],
             CompilerLimits::default(),
+            OverlapLowering::Off,
         )
         .expect("the fixture must compile");
         assert!(ledger.is_empty(), "no analyzed pair: {ledger:?}");
@@ -719,6 +747,68 @@ command fn main() -> status: own ExitStatus pure {
         )
         .expect("the fixture must compile");
         assert_eq!(module, plain);
+    }
+
+    /// Actualization is compile-time opt-in, and the judgment is not: the
+    /// ledger of a program full of eligible pairs is the same with the option
+    /// on and off, while only the `--par` module names the runtime.
+    ///
+    /// This is what makes the ledger usable on a shipped build. A developer
+    /// reading what the compiler decided about a program is reading a property
+    /// of the source, not of the compilation they happened to ask for.
+    #[test]
+    fn the_permission_ledger_does_not_depend_on_whether_the_lowering_is_taken() {
+        let source = format!(
+            "{TREE_PRELUDE}fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b) {{
+  match deref(deref(node)) {{
+    Leaf(w: leaf_w) => {{
+      return deref(leaf_w);
+    }}
+    Branch(left: l, right: r, w: slot) => {{
+      let a = fold<'b>(node: move l);
+      let b = fold<'b>(node: move r);
+      let total = imax(a, b);
+      set deref(slot) = total;
+      return total;
+    }}
+  }}
+}}
+
+command fn main() -> status: own ExitStatus allocates(heap) {{
+  let leaf0 = boxed_leaf(w: 3_u64);
+  let leaf1 = boxed_leaf(w: 4_u64);
+  let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
+  region 'tree {{
+    let total = fold<'tree>(node: &uniq 'tree branch0);
+  }}
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        let inputs = [SourceInput::new("fold.wf", source.as_bytes())];
+        let (default, quiet_ledger) = compile_with_permission_ledger(
+            &inputs,
+            CompilerLimits::default(),
+            OverlapLowering::Off,
+        )
+        .expect("the fixture must compile");
+        let (requested, loud_ledger) =
+            compile_with_permission_ledger(&inputs, CompilerLimits::default(), OverlapLowering::On)
+                .expect("the fixture must compile");
+
+        assert_eq!(quiet_ledger, loud_ledger);
+        assert!(
+            quiet_ledger.iter().any(|line| line.contains("eligible")),
+            "the fixture must report an eligible pair: {quiet_ledger:?}"
+        );
+        assert!(
+            !default.contains("wf__par_"),
+            "the default module must name no runtime symbol"
+        );
+        assert!(
+            requested.contains("wf__par_try_fork"),
+            "the requested module must offer a lane"
+        );
     }
 
     #[test]

@@ -12,9 +12,9 @@ use crate::backend::qualification::{
 };
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalOutcome, FinalizeOutcome, IrProgram, LexOutcome,
-    ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, TerminalLimits,
-    TerminalOutcome, audit_canonical, check_semantics, classify_terminals, finalize, lex,
-    lower_checked, parse,
+    OverlapLowering, ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput,
+    TerminalLimits, TerminalOutcome, audit_canonical, check_semantics, classify_terminals,
+    finalize, lex, lower_checked, parse,
 };
 
 use super::{
@@ -92,7 +92,8 @@ fn with_mutated_ir_for<ResultValue>(
     let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
         panic!("system test source must check");
     };
-    let mut ir = lower_checked(*checked).expect("checked system program must lower");
+    let mut ir =
+        lower_checked(*checked, OverlapLowering::Off).expect("checked system program must lower");
     run(&mut ir)
 }
 

@@ -25,6 +25,9 @@ mod syntax;
 pub use backend::{PARALLEL_RUNTIME_SOURCE, module_requires_parallel_runtime};
 pub use driver::*;
 pub use lexer::*;
+/// The compile-time choice of whether the backend actualizes the permission
+/// judgment's overlap groups.
+pub use lowering::OverlapLowering;
 pub use resolution::*;
 pub use source::*;
 pub use spec::*;

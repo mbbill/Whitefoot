@@ -1,4 +1,7 @@
-use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, lower_checked};
+use crate::{
+    OverlapLowering, SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule,
+    lower_checked,
+};
 
 use super::super::model::{CheckedContractLawKind, CheckedIntegerOperation, CheckedSliceOrigin};
 use super::{assert_rule, with_semantics};
@@ -38,7 +41,7 @@ fn static_contract_metadata_is_complete_and_non_executable() {
         // The bound function is still present exactly once in the ordinary
         // function table. Contract metadata contributes no executable function.
         assert_eq!(checked.data.functions.len(), 2);
-        let lowered = lower_checked(*checked)
+        let lowered = lower_checked(*checked, OverlapLowering::Off)
             .expect("static contract metadata must not alter ordinary lowering");
         assert_eq!(lowered.functions().len(), 2);
     });
@@ -94,7 +97,7 @@ command fn main() -> status: own ExitStatus pure {
                 .any(|nominal| nominal.name.starts_with("Wrapper<"))
         );
         let semantic_nominal_count = checked.data.nominals.len();
-        let lowered = lower_checked(*checked)
+        let lowered = lower_checked(*checked, OverlapLowering::Off)
             .expect("conformance-only nominal metadata must not affect ordinary lowering");
         assert_eq!(lowered.nominals().len() + 1, semantic_nominal_count);
     });
@@ -127,7 +130,7 @@ command fn main() -> status: own ExitStatus pure {
                 .any(|nominal| nominal.name.starts_with("Wrapper<"))
         );
         let semantic_nominal_count = checked.data.nominals.len();
-        let lowered = lower_checked(*checked)
+        let lowered = lower_checked(*checked, OverlapLowering::Off)
             .expect("contract-only nominal metadata must not affect ordinary lowering");
         assert_eq!(lowered.nominals().len() + 1, semantic_nominal_count);
     });
