@@ -12,9 +12,11 @@ PY := python3 -B
 check: repository-invariants spec-append-only spec-archive-integrity spec-digest-sync conformance compiler
 	@echo "== WHITEFOOT GATE GREEN (active compiler + independent evidence) =="
 
-# repository invariants: identical agent instructions and the canonical outline marker
+# repository invariants: both agent instruction files present and the canonical outline marker
+# (CLAUDE.md/AGENTS.md synchrony is audit-enforced; AGENTS.md is the Codex
+# variant and is deliberately not byte-identical)
 repository-invariants:
-	@cmp -s AGENTS.md CLAUDE.md || { echo "AGENTS.md and CLAUDE.md differ" >&2; exit 1; }
+	@test -s AGENTS.md -a -s CLAUDE.md || { echo "AGENTS.md or CLAUDE.md missing" >&2; exit 1; }
 	@grep -q '^Status: CANONICAL DIRECTION OUTLINE' docs/roadmap.md || { echo "docs/roadmap.md is not marked canonical" >&2; exit 1; }
 
 # Released version archives are never edited; the stable active file is checked

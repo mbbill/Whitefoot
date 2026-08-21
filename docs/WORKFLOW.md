@@ -1,9 +1,10 @@
 # Whitefoot workflow
 
 This is the sole operational guide for advancing Whitefoot. Ordinary delivery
-runs as lead-orchestrated batches with an adversarial audit at each batch
-boundary. Specification and protected-compliance changes use the guarded
-workflows below with explicit owner approval.
+runs as lead-orchestrated batches on work branches, with an adversarial audit
+at each batch boundary and one owner approval at the merge to `main`.
+Specification and protected-compliance changes use the guarded workflows
+below; their approval point is that merge.
 
 ## Authorities
 
@@ -34,43 +35,58 @@ states how it is enforced. A rule that names no enforcement is guidance.
 
 1. **Machine-enforced.** The activation digest chain, archive immutability,
    candidate lineage, the repository gate (`make check`), generated-identity
-   freshness, prose digest sync, and `AGENTS.md`/`CLAUDE.md` identity. These
-   run on every gate invocation and hold without anyone's attention.
-2. **Owner boundary.** Exactly four decisions stop work and wait for the
-   owner, at any point in any batch: a new or materially revised high-level
-   plan; any batch landing different `spec/kernel-spec.md` bytes; any
-   protected-compliance evidence change as defined below; a new repository
-   root entry.
+   freshness, and prose digest sync. These run on every gate invocation and
+   hold without anyone's attention. (`CLAUDE.md`/`AGENTS.md` synchrony is
+   audit-enforced guidance: the two carry the same rules but are not
+   byte-identical, because `AGENTS.md` is written for Codex.)
+2. **Owner boundary.** One decision waits for the owner: merging a branch
+   into `main`. The merge packet carries every reviewable class — plan
+   creation or material revision, changed `spec/kernel-spec.md` bytes,
+   protected-compliance evidence changes, new repository root entries — so
+   approval happens once, at the boundary where branch work becomes project
+   history. Nothing lands on `main` without it; on a branch, nothing waits
+   for it.
 3. **Guidance.** Everything else in this document and in project law. It is
    not pretended to bind an executor in flight; it is enforced by the batch
    audit, which hunts violations after the fact and reports them for repair.
 
-## Approval boundaries
+## The merge boundary
 
-Owner approval is required in exactly these situations:
+`main` is the owner's; agents work on branches. A branch is chartered by an
+owner direction (a plan item, or a recorded conversational direction quoted
+in its batch record) and iterates autonomously: implementation, tests, docs,
+plan and roadmap updates, specification candidates, protected-compliance
+changes, root entries — nothing on a branch waits for approval. The single
+approval is the merge, integrated by rebase onto `main` plus fast-forward
+(linear history; no merge commits).
 
-1. **High-level direction plan.** A new `docs/current-plan.md`, or a material
-   revision to its objective, strategy, semantic direction, principal
-   consumer boundary, acceptance criteria, risk posture, or stop conditions,
-   starts as `PROPOSED` and becomes `ACTIVE` only after an owner-facing
-   explanation and explicit owner approval. While a plan is `ACTIVE`, batch
-   decomposition, ordering, implementation, ordinary tests, documentation,
-   bounded probes, integration, and closure proceed autonomously.
-2. **Specification.** Any batch that will land different bytes at
-   `spec/kernel-spec.md` requires the exact specification workflow below.
-3. **Protected compliance evidence.** Any addition, modification, deletion,
-   or rename involving conformance case source, manifest row or annotation,
-   declared verdict, status, rule assignment, or coverage requires the
-   protected evidence workflow below. So does any change to a canonical
-   compliance runner, adapter, oracle, baseline, gate, collection or
-   invocation wiring, or gate-integrity test that can alter collection,
-   interpretation, verdict, coverage, baseline identity, or whether the gate
-   runs. Ordinary compiler tests are not protected.
-4. **Repository root.** A new top-level entry needs owner approval.
+The merge packet presents, in one place, every reviewable class the branch
+touched:
 
-Before asking, present the explanation and exact candidate boundary, then
-stop and wait. Approval covers only the named bytes and changes; any changed
-byte or scope returns to review.
+1. **Plan.** A new or materially revised `docs/current-plan.md` (objective,
+   strategy, semantic direction, principal consumer boundary, acceptance
+   criteria, risk posture, stop conditions) rides the branch as `PROPOSED`;
+   the approved merge is what makes it `ACTIVE`.
+2. **Specification.** Different bytes at `spec/kernel-spec.md` follow the
+   specification workflow below: candidate status on the branch; the packet
+   carries the complete candidate SHA-256, exact diff, impact inventory,
+   verifier results, and accepted-set risk; activation is the merge's
+   activation commit.
+3. **Protected compliance evidence.** Changes involving conformance case
+   source, manifest rows or annotations, declared verdicts, status, rule
+   assignment, or coverage — and any change to a canonical compliance
+   runner, adapter, oracle, baseline, gate, collection or invocation
+   wiring, or gate-integrity test that can alter collection,
+   interpretation, verdict, coverage, baseline identity, or whether the
+   gate runs — carry the exact before/after audit from the protected
+   evidence workflow below. Ordinary compiler tests are not protected.
+4. **Repository root.** Any new top-level entry, called out explicitly.
+
+Plus, always: the batch record(s), the branch-tip `make check` result, and
+the audit dispositions. Approval covers exactly the presented bytes; a
+changed byte or scope re-enters review; the approval is recorded in
+`governance/APPROVALS.md` as part of the merge. A rejected or redirected
+merge continues on the branch and re-requests.
 
 ## The batch loop
 
@@ -78,29 +94,28 @@ Work advances in batches — typically one working session. One lead session
 owns each batch end to end:
 
 ```text
-owner sets direction (a sentence or two)
+owner sets direction (a sentence or two; conversation suffices)
         |
         v
-lead decomposes the batch
+lead opens or continues a work branch and decomposes the batch
   - parallel executors in isolated worktrees when scopes are file-disjoint
   - sequential work in the lead's tree when coupled
   - the lead assigns boundaries; no claim files, no reservation protocol
         |
         v
 executors return diffs; the diff is the report
-lead reviews every diff, integrates, keeps the gate green
+lead reviews every diff, integrates on the branch, keeps the gate green
         |
         v
-batch end: make check green
+batch end: make check green on the branch
         -> adversarial audit (independent finders + refuters)
-        -> one batch record finalized
+        -> batch record finalized
+        |
+        +--> more to do: next batch on the same branch (no approval wait)
         |
         v
-owner reads the batch review: approve / reject / redirect
-(protected boundaries above stop mid-flight regardless)
-        |
-        v
-merge to main -> next batch
+ready to land: merge packet -> owner approves -> rebase + ff to main
+rejected or redirected: continue on the branch and re-request
 ```
 
 Rules of the loop:
@@ -128,12 +143,13 @@ One numbered record per batch: registered in `docs/ongoing/` as
 sequence, `max(existing) + 1`, and are never reused. `docs/planned/` is
 retired; decomposition lives inside the batch record or the plan.
 
-A batch record opens only under an `ACTIVE` `docs/current-plan.md` item —
-never directly from a conversation. An owner direction in conversation is
-direction for the plan: it becomes a new `PROPOSED` plan or an
-owner-approved plan amendment first, and the batch opens under that.
-Planning work itself — refreshing the roadmap, drafting or revising the
-plan — is not a batch and gets no record; its output is those documents.
+A batch record opens under an `ACTIVE` `docs/current-plan.md` item, or —
+for branch work — under a recorded owner direction that charters the
+branch; the record then quotes that direction verbatim as its authority,
+and the plan is brought up to date on the branch so the merge packet
+presents it. Planning work itself — refreshing the roadmap, drafting or
+revising the plan — is not a batch and gets no record; its output is those
+documents.
 
 A batch record is a boundary document, never a journal. It states the
 authority (the exact `ACTIVE` plan item), scope and exclusions, the
@@ -167,7 +183,7 @@ Before changing code, answer:
 
 1. What concrete compiler capability, real program, or experiment does this
    unlock?
-2. Which `ACTIVE` plan item authorizes it?
+2. Which `ACTIVE` plan item or chartering owner direction authorizes it?
 3. What is the smallest general implementation?
 4. Does it exercise the normal compiler path rather than a project, function,
    source-shape, corpus, or test special case?
@@ -179,9 +195,11 @@ semantics; make compiler changes general and project-independent. For
 performance work, attribute the loss before optimizing, with a same-source
 causal comparison and a falsifier.
 
-Record durable design choices and rejected alternatives through the
-`mcts-mem-use` skill. A re-decision must be recorded within its batch; the
-audit checks for silent divergence between the tree and the landed code.
+Record durable design choices and rejected alternatives in `mcts_mem/`,
+following the tree's recorded conventions (Claude Code sessions load them
+via the `mcts-mem-use` skill). A re-decision must be recorded within its
+batch; the audit checks for silent divergence between the tree and the
+landed code.
 
 ## Blocker routing
 
@@ -194,9 +212,10 @@ audit checks for silent divergence between the tree and the landed code.
   authoritative, and enter the protected evidence workflow before landing.
 - **Research or performance question:** run the cheapest bounded probe with
   a hypothesis, observable, and stop condition.
-- **Language gap:** record the minimal witness; if the active plan does not
-  contain the direction, return to plan approval. Exact spec bytes always
-  require their own approval.
+- **Language gap:** record the minimal witness; if neither the active plan
+  nor the branch's chartering direction contains it, update the plan on the
+  branch and present it at merge. Exact spec bytes always ride the
+  specification workflow into the merge packet.
 - **Project-local issue:** adapt the project when the frozen contract is
   preserved, rather than generalizing the language or compiler.
 
@@ -268,9 +287,10 @@ directions at once.
 
 ## Specification-change workflow
 
-Use this workflow for a real language gap named by the `ACTIVE` plan.
-Candidate preparation is non-authoritative; owner approval is required
-before activation.
+Use this workflow for a real language gap named by the `ACTIVE` plan or by
+the branch's chartering direction. Candidate preparation on the branch is
+non-authoritative and needs no approval; owner approval happens at merge,
+and the merge's activation commit is what activates.
 
 1. **Bound the delta.** Consult the relevant live MCTS node and rejected
    alternatives with the `mcts-mem-use` skill. Inventory grammar, names,
@@ -291,17 +311,22 @@ before activation.
    diff, impact inventory (the `whitefoot-spec --index` reference graph is
    its mechanical source), protected changes, verifier output, accepted-set
    risk, and the complete candidate SHA-256.
-4. **Explain and wait.** Present the owner-facing explanation and the exact
-   digest, then stop and wait for the owner's explicit approval. Record it
-   in `governance/APPROVALS.md`. Any byte or scope change, including a
-   rebase, requires renewed approval.
-5. **Activate atomically.** In one commit: archive the outgoing bytes as
+4. **Present at merge.** The candidate rides the branch in CANDIDATE status
+   through as many revisions as the work needs, each keeping the branch
+   gate green. When the branch requests merge, the packet carries the
+   owner-facing explanation and the exact digest of the final candidate.
+   Any byte or scope change after presentation, including a rebase onto a
+   moved chain tail, re-enters review. The owner's merge approval is
+   recorded in `governance/APPROVALS.md` as part of the merge.
+5. **Activate atomically at merge.** After approval, one activation commit
+   concludes the rebased branch: archive `main`'s outgoing bytes as
    `spec/kernel-spec-vN.md`, failing if that path exists; flip the status
    line to `Status: ACTIVE vN+1`; append the chained record
    `ACTIVE-SPEC: vN+1 <new-sha256> <previous-sha256>`; regenerate the
    identity module (`whitefoot-spec --emit-identity`) and grammar tables;
-   land approved conformance changes and derived material together. Valid
-   but unsupported behavior remains unsupported, never rejection.
+   land conformance changes and derived material together; then
+   fast-forward `main`. Valid but unsupported behavior remains unsupported,
+   never rejection.
 6. **Verify and close.** The gate must be green on both sides of the
    activation commit. Recompute the installed digest independently, inspect
    the impact rows, rerun the frozen real consumer, and record any durable
@@ -320,13 +345,15 @@ the approval boundary, even when the active specification does not change.
 2. Prepare the smallest exact candidate and a before/after audit listing every
    path or case id, source or manifest change, verdict, status, rule, coverage,
    actual behavior, collection count, and active-spec basis.
-3. Explain the change, its compliance and accepted-set implications, and the
-   exact candidate boundary to the owner; then stop and wait for explicit
-   approval. Record the approval in `governance/APPROVALS.md`. A changed byte or
-   scope requires renewed approval.
-4. After approval, land the named changes, run the per-case differential,
-   adapter or canonical runner, coverage checks, and the complete repository
-   gate. Report all before/after totals.
+3. Land the change on the branch without waiting, flag it in the batch
+   record the moment it lands, and carry the explanation — its compliance
+   and accepted-set implications and the exact boundary — into the merge
+   packet. Owner approval happens at merge and is recorded in
+   `governance/APPROVALS.md` as part of the merge; a changed byte or scope
+   re-enters review.
+4. On the branch, run the per-case differential, adapter or canonical
+   runner, coverage checks, and the complete repository gate; the packet
+   reports all before/after totals.
 
 When a protected evidence change follows a spec change, combine it with that
 specification approval packet so the owner sees the language and corpus impact
