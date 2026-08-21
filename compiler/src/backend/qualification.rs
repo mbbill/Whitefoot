@@ -73,7 +73,43 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // existing one-attempt close policy on either post-open error. All operation
 // rows remain statically selected implementation version 1 under the v0.33
 // semantic-ID key.
-const REVIEWED_FOR: &str = "v0.34";
+//
+// v0.34 review (2026-08-21): claim locality and residual claim canonicality
+// tightened which claims source may express. They add no system operation,
+// resource type, semantic ID, target guarantee, host facility, representation,
+// release action, private machine ABI record, or entry contract, and a claim
+// erases before target qualification either way, so every row above stands
+// exactly as reviewed for v0.33 under the v0.34 semantic-ID key.
+//
+// v0.35 review (2026-08-23): the candidate's whole delta is the added [PAR-1]
+// execution-overlap rule. It likewise adds no system operation, resource type,
+// semantic ID, target guarantee, host facility, representation, release action,
+// private machine ABI record, or entry contract, so every row above stands as
+// reviewed and each remains statically selected implementation version 1, now
+// under the v0.35 semantic-ID key.
+//
+// The one question [PAR-1] raises here is which qualified operations a
+// permitted overlap can reach. Its row gate refuses any callee whose row
+// carries `external` or `blocks`, and [EFF-2] propagates both categories out of
+// every body that calls them, so `open_read`, `read_once`, `write_once`,
+// `open_directory`, `open_list`, `list_once`, and `open_file` are unreachable
+// from an overlapped statement at any call depth, and [EFF-5]'s external order
+// is never consulted concurrently. The eight remaining operations —
+// `args_count`, `arg_get`, `host_bytes_len`, `host_copy_bytes`,
+// `host_utf8_len`, `host_copy_utf8`, `relative_path`, and `exit_status` — may
+// appear inside one, and each is admitted for that use with no row change: it
+// reaches no host facility, holds no process-global state, reads only its own
+// scalar operands or the argument backing [QUAL-2] guarantees stable for the
+// whole run, and writes only into places [PAR-1]'s disjointness condition
+// proves the sibling statement neither reads nor writes. [QUAL-3]'s
+// bootstrap-owned one-time normalization runs before entry and therefore
+// before any overlap exists.
+//
+// The overlap runtime is outside this table by construction: its worker pool
+// and the outlined thunks carry no semantic ID, occupy no target row, and are
+// reached through no [SYS-2] declaration, so qualification neither admits nor
+// narrows them.
+const REVIEWED_FOR: &str = "v0.35";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectoryList`.
@@ -1264,7 +1300,7 @@ mod tests {
         let target = SystemTarget::for_triple("aarch64-apple-darwin")
             .expect("the probe target is qualified");
         assert_eq!(
-            command_entry_row(target, "v0.33"),
+            command_entry_row(target, "v0.34"),
             Err(QualificationFailure::MissingMapping(Facility::CommandEntry))
         );
         command_entry_row(target, crate::spec_identity::SPEC_VERSION)

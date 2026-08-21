@@ -11,9 +11,10 @@ derived, directly or indirectly, from the constitution — or flagged. Statuses:
 exist; this form is minimality-selected and awaits its experiment),
 **underived** (no chain; may not ratify).
 
-**Statistics: 84 derived · 51 existence-only · 0 underived**
-(135 rules: v0.28's 132 plus the v0.29 CLM-3, v0.31 SET-2, and v0.32 SYS-14
-additions; v0.33 and v0.34 add no numbered rule and change no status).
+**Statistics: 84 derived · 52 existence-only · 0 underived**
+(136 rules: v0.28's 132 plus the v0.29 CLM-3, v0.31 SET-2, and v0.32 SYS-14
+additions; v0.33 and v0.34 add no numbered rule and change no status; the
+v0.35 candidate adds PAR-1 and changes no status).
 
 ## Re-grounding priority queue (weakest chains)
 
@@ -111,6 +112,7 @@ additions; v0.33 and v0.34 add no numbered rule and change no status).
 | DIAG-2 | Private checked-program lowering authority with explicit operations and checks | ✅ derived | W3 requires semantic authority to be unambiguous, T1 requires derived cleanup and retained checks to survive into execution, and SCOPE-2 permits check removal only after proof. v0.17 retains one private in-memory checked program as the sole lowering input; it records explicit operations, checks, target-domain obligations, dispositions, every direct slice's finite origin set, and each direct own-slice result ceiling and call substitution. It also retains source-ordered static contract evidence without granting that metadata dispatch, lowering, check-elision, reassociation, or serialized replay authority. | Finite origins are compile-time semantic metadata over the unchanged slice descriptor, not a runtime tag or ABI field. The private representation may evolve; acceptance remains determined by the source checker. A future law-fact family must independently rederive its proposition under FN-4. |
 | DIAG-3 | One exact runtime trap record | ✅ derived | W3 requires failures to report rather than disappear; R4 requires a rule-citing runtime trap; SCOPE-4 fixes abort without unwinding. The exact v0.17 record contains the rule ID, fixed message, function name, and source node path in a fixed JSON field order, the minimum deterministic information needed to locate and classify a failing checked site. | v0.17 retains the reduced trap record selected in v0.11 unchanged. Returned-slice provenance adds no runtime report, trap, or required check. Target-domain TCB/resource failure remains outside this record. |
 | CAP-1 | Reserve Shareable/Sendable capability predicates; no thread construct | 🟡 existence-only | T1 (standing theorem: data races unrepresentable) via C004 (verified 2026-07-02 with amended scope — Send/Sync-class predicates plus exclusive borrowing yield data-race freedom in safe code, letting the optimizer treat non-atomic memory as unshared -> P0); round-4 decided law prices capabilities inside the kernel FIRST, demanding the stub exist and be counted now. The rule's scope line (data races prevented, general races out of scope) transcribes C004's amended scope exactly. | Round-1 concurrency-model gate is research_needed: the Send/Sync-class route is the evidenced leading candidate, not a promoted design. Binding semantics (auto-derived vs declared, negative impls), and an LEX-1 divergence census for the Shareable/Sendable renames, all await the concurrency layer. Existence + scope are solid; the two-predicate form is unratified. |
+| PAR-1 | Permitted execution overlap of two sibling calls; overlap is unobservable | 🟡 existence-only | Existence: the facts-off law directly — an implementation choice may improve an accepted program but may never change its meaning — so any overlap a compiler performs must be an equivalence-preserving lowering choice and needs a stated law rather than a silent liberty; T1 via C004 supplies the safety half (a permitted overlap must not create a data race, which the disjointness condition secures from OWN-5 exclusivity and OWN-7 place overlap rather than from any new analysis); R1/P0 select reuse — the permission is read off the [EFF-2] call-boundary projection, the [OWN-7] overlap relation, the [FN-1] structural graph, and the ordinary call graph the checker already computes for acceptance, so no fact family, solver, or writer construct is added; W3 forces the non-observability clauses, because a program whose result depended on worker count would be trusting an unproven runtime condition. Form NOT derived: the exact four-condition boundary (call-shaped `let` pairs, no dataflow, disjoint footprints, no row `external`/`blocks`, no skipping exit) plus claim-free closures is the sufficient condition the v0.33 checker can prove today, elevated to a necessary condition of the rule; it is minimality-selected from batch 0074's measured compute lane and has had no comparative experiment against the wider permissions its own investigation defers (indexed-loop and buffer-view splitting, claim-bearing regions under arbitration, the I/O-concurrency lane). | Adds no grammar, token, spelling, operation, or declaration; acceptance and facts-off lowering are byte-identical with the rule present or absent, which is why the corpus delta is zero cases. Claim-free eligibility is the doctrine consequence, not a separate policy: claims are v0.33's only writer-reachable trap sites, so a claim-free closure has no trap-selection question and needs no arbitration. The permission's necessity direction is the row's live debt — each later widening is a specification amendment [META-5] rather than a checker improvement, and the alternative shape (state only the equivalence law and leave the judgment wholly to the implementation) is recorded as the rejected alternative at candidate stage. Deferred with it: the `pal` marker surface (PAL.md §6, non-authoritative structural obligation), which would be a writer construct and is not this rule. |
 | GATE-1 | Contract/signature/law/storage edits are one gated, audited operation | ✅ derived | W3 literal text ('contracts cannot be weakened to make a failing body pass') made unrepresentable rather than detected, per R4 -> round-3 decided law (no free-form writer-emittable unsafe anywhere; exactly one gated construct family; foreign-shared pre-declared at allocation site grounds the storage-contract clause) -> D0a owner ruling (gated content AI-authored, human-approved) with R5 auditability of the trusted base as the recorded deliberate exception. | D0a's own revisit condition (gate-efficacy experiments) has no owning gate entry yet — a registered audit obligation. The single-operation/single-audit-trail packaging follows round-3's 'exactly one' discipline rather than a tested alternative, but W3 fully determines the rule's substance, so this stays derived. |
 | LEDGER-1 | One boundary-construct family with per-fact obligation ledger | ✅ derived | W3 (no writer-emittable unsafe or trust) + R4 (manifest-free members unrepresentable, not audited after the fact) -> round-3 synthesis decided law verbatim (exactly one gated fact-boundary construct family sharing a per-fact soundness-obligation ledger; formal spine amendment: toolchain-gated ledger entries are the sole trusted-assertion class) + D0a (AI-authored, human-approved); T2's conditionality on a declared TCB (SCOPE-3) requires exactly this explicit boundary. | The family/ledger form is the decided part. Member-level detail is still open: round-3 ffi-attenuation remains research_needed, and D4 (2026-07-06, rewrite-first FFI-narrow) rescoped FFI members to C-ABI out-calls, foreign_shared buffers, unwind-abort, single-threaded-entry. Per D4's gate entry the wall composite is unaffected, so the rule's derivation stands. |
 | PRE-1 | Prelude fixed: Bool, Option, Result, three error enums | 🟡 existence-only | Result/Option half derived: round-2 error-handling verdict replace_with_alternative -> decided law 'no exceptions/unwinding (Result + trap=abort)' under R4; error enums (Overflow, DivideByZero, NarrowError) follow the OP-1 table whose grounding cards are N001 (verified) and N002 (partially verified). Bool-as-prelude-enum exists only to serve the no-if/match-only conditional, which the audit found has no debate, card, or gate entry behind it — R3-provisional register (GRAM-6/PRE-1). Normative-counted status from the v0.1 blocking fix + round-4 no-shadow-spec rule. | The conditional-form A/B (match-on-Bool True()/False() arms vs a dedicated two-arm branch) is a registered blocking experiment; if it flips, Bool's prelude role and FORM-5's no-boolean-literals rule change together — breaking under FORM-1, hence audit-marked time-urgent. The counted-prelude framing was W2-motivated; post-D2a its retained ground is W3/one-spelling, which holds. |
@@ -1344,3 +1346,34 @@ No existing derivation status changes. CLM-1 retains its independent historical
 writer-form debt; locality adds no spelling, fact source, operation, effect,
 runtime check, trap family, grammar production, or unsafe authority. Totals
 remain **84 derived · 51 existence-only · 0 underived** across 135 rules.
+
+## v0.35 candidate amendment — permitted execution overlap (2026-08-23)
+
+Candidate binding: `spec/kernel-spec.md`, headed v0.35 CANDIDATE, currently at
+SHA-256 `PENDING_V035_SHA256`.
+Its outgoing authority is active v0.34 at the binding above, and the activation
+chain still ends at v0.34. These candidate bytes are not language authority
+until exact-byte owner approval and the separate activation step. Candidate
+stage: the PAR-1 row above exists ahead of activation so the native
+`whitefoot-spec` gate covers all 136 rule IDs.
+
+v0.35 adds exactly one rule, existence-only PAR-1 (row above), and modifies no
+existing rule. The section-13 heading widens from `Capabilities` to
+`Capabilities and execution overlap` so the new law is not filed under the
+capability stub; CAP-1's own bytes are unchanged, and PAR-1 binds neither of its
+predicates. Grammar productions +0 (74 remain), tokens +0, spellings +0,
+operations +0, exception clauses +0. No existing rule changes derivation
+status. The totals become **84 derived · 52 existence-only · 0 underived**
+across 136 rules.
+
+Evidence ground: `research/investigations/proof-derived-parallelism/DESIGN.md`
+(the batch-0074 design contract and its two owner rulings of 2026-08-21 — claims
+are always-true lemmas, so a trap under overlap is an audit failure rather than
+a semantics question; permission comes from proofs on ordinary code while
+actualization and every resource stay outside the language), PAL.md beside it,
+and the batch's measured compute lane. The corpus delta is zero cases because
+the rule changes no accepted program and no verdict; PAR-1 nevertheless needs
+its own coverage annotation in the protected manifest before the repository
+gate's coverage denominator is satisfied, which is an owner-approved protected
+addition recorded in `docs/ongoing/0074-proof-derived-parallelism.md` and
+deliberately not landed on this branch.

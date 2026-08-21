@@ -1,10 +1,10 @@
-# Kernel Specification v0.34
+# Kernel Specification v0.35
 
-Status: ACTIVE v0.34
+Status: CANDIDATE v0.35 supersedes v0.34 cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +0/-0 (135 remain); grammar productions +0/-0 (74 remain); unique fixed lowercase grammar atoms +0/-0; writer operation spellings +0/-0; runtime-trap families +0/-0; accepted source is tightened so a claim is legal only as a current-function-local, total observational, checker-unknown, component- and occurrence-necessary proof residual with one structured five-field derivation record; any claim whose component reads a user-call or system-call result, directly or through value, control, holder, or storage flow, becomes a hard source error, as does every redundant, refuted, vacuous, inconsistent, overlapping, malformed, or non-residual claim; every accepted claim remains an executed runtime check and the claim grammar, effect, lowering, trap identity, and failure behavior are unchanged.
-Selection ground: the 2026-08-21 owner-selected residual-only claim doctrine, the 2026-08-22 owner claim-locality correction, the complete initial 651-occurrence real/protected corpus census, the existing v0.33 entailment and ClaimLedger evidence, and the bounded residual-canonicality investigation recorded by Direction Outline revision 48 and batch 0075.
+META-5 delta declaration: numbered rules +1/-0 ([PAR-1]; 136 remain); grammar productions +0/-0 (74 remain); unique fixed lowercase grammar atoms net +0; writer operation spellings +0/-0; runtime-trap families +0/-0; entry forms +0/-0; contract block forms +0/-0; system operations +0 and declaration records +0; exception clauses +0/-0. The one added rule states when an implementation may overlap the execution of two statements and requires every observable of a permitted overlap to be the source-order execution's; it adds no construct, changes no accepted program, changes no verdict, and removes no required check.
+Selection ground: evidence-selected — the proof-derived parallelism investigation of batch 0074, whose measured lane-budget results and claim-free eligibility argument are recorded in `research/investigations/proof-derived-parallelism/`, under the owner's chartering direction of 2026-08-21 and the PROPOSED Current Plan derived from it. The permission is read off proofs the checker already computes for acceptance, so no writer construct, declaration, or marker is selected here.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
 
@@ -1992,10 +1992,31 @@ Identical bound source bytes reaching the same failing claim site produce byte-i
 Dynamic call-stack attribution, artifact identity, successful-check reports, lifetime reports, check-density reports, and optimizer-development reports are not normative outputs.
 An implementation may provide additional developer output only on a separately selected channel that cannot alter, prefix, suffix, or replace the mandatory trap record.
 
-## 13. Capabilities (stub; concurrency layer pending)
+## 13. Capabilities and execution overlap (capability stub; concurrency layer pending)
 
 [CAP-1] Type-level capability predicates of the Send/Sync class exist in the kernel vocabulary: `Shareable` (safe to share across threads) and `Sendable` (safe to transfer). v0 defines no thread construct, so no kernel type is required to declare them; the predicates reserve the vocabulary the concurrency layer will bind.
 Data-race impossibility is D1 law; general race conditions are out of scope (C004 amended scope).
+
+[PAR-1] An implementation may execute two statements of one block with overlapping execution only when the permission this rule defines holds for that ordered pair.
+Permission holds for the ordered pair (s1, s2), where s1 precedes s2 in one block, exactly when all of the following hold.
+Each of s1 and s2 is a `let_stmt` whose selected `ordinary_let_rhs` is one call of a declared function [FN-1]; a recursive or mutually recursive callee is admitted on the same terms as any other.
+No argument of s2 reads a binding s1 defines.
+The two calls have disjoint footprints under [OWN-7]: one call's written footprint is the places its callee row's `writes` entries reach through its actual arguments under the [EFF-2] call-boundary projection, together with the places its consumed `own` arguments name and the caller region each `allocates(arena 'r)` entry names after region substitution, and its read footprint is the places that row's `reads` entries reach under the same projection; the written footprint of s1 overlaps neither footprint of s2, and the written footprint of s2 overlaps neither footprint of s1.
+A footprint element whose caller place the implementation does not resolve overlaps every place, so an unresolved element denies permission rather than granting it.
+Neither callee's effect row contains `external` or `blocks` [EFF-1].
+Every normal continuation of s1 reaches s2, so no edge out of s1 leaves the enclosing block or function without first reaching s2.
+No function reachable from either callee through the ordinary call graph contains a `claim_stmt` [CLM-1].
+Permission for a chain of three or more statements is exactly permission for every ordered pair the chain contains.
+
+Under a permitted overlap every observable is the observable the same program produces by executing s1 and s2 in source order: the value of every binding and place, the trap-or-normal outcome, the exact [DIAG-3] record bytes, and the external-effect order [EFF-5] requires.
+That identity holds in every execution, not in a typical execution or in some execution.
+The number of workers, the identity of the host thread that executes a statement, the schedule, and whether an overlap was performed at all are not observable, and no rule of this specification is stated in terms of them.
+An implementation that overlaps nothing therefore conforms: this permission is never an obligation, and no program depends on it being taken.
+When an execution of s1 or s2 does not reach its continuation, the overlapped execution produces exactly the observables the source-order execution produces before that point and produces none after it.
+Exhaustion of the execution resources an implementation spends on overlapping is a resource condition under [SCOPE-3] and is not an observable of this rule.
+This rule depends on [DIAG-3]'s record shape: that record names no worker, host thread, or dynamic call stack, so a permitted overlap cannot change its bytes.
+Every construct of this specification defines one total sequential order over its operand evaluations, and this rule is a consumer of that order rather than a relaxation of it.
+This rule binds neither [CAP-1] predicate, because its disjointness condition admits concurrent access only to places no permitted overlap writes.
 
 ## 14. Gated family (writer-visible stub)
 
