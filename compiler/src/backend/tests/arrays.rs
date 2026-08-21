@@ -1,4 +1,4 @@
-use super::{compile, compile_and_run, compile_rejection, emitted_function};
+use super::{compile, compile_and_run, compile_rejection, emitted_function, system};
 
 /// Counts the stack slots one emitted function declares, and how many of those
 /// declarations sit outside its entry block.
@@ -121,15 +121,31 @@ fn an_out_of_bounds_array_read_is_an_op4_compile_rejection() {
 
 #[test]
 fn a_failing_claim_reports_its_clm1_record_before_abort() {
-    // The named claim is the retained runtime check: its trap record cites
-    // CLM-1 and carries the claim name as the message [DIAG-3].
-    let source = br#"command fn main() -> status: own ExitStatus traps {
-  let flag = False();
-  claim expected_true: flag because "this test wants the trap record";
+    // The source claim first passes the complete residual judgment as a true,
+    // load-bearing theorem. The test-only IR mutation then redirects exactly
+    // that named claim to an existing false value so DIAG-3 can exercise the
+    // runtime record without granting source writers a false-claim escape.
+    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
+command fn main() -> status: own ExitStatus traps {
+  let values = array_new<u8, 4>(0_u8);
+  let bounded = clamp_three(value: 99_u64);
+  let in_range = ilt(bounded, 4_u64);
+  let injected_false = False();
+  claim expected_true: in_range because "premises: bounded is returned by clamp_three\nderivation: clamp_three returns the minimum of its input and 3_u64, which is below 4_u64\nconclusion: in_range is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: values[bounded] requires this exact bound";
+  let ignored = values[bounded];
   return exit_status(code: 0_u8);
 }
 "#;
-    let output = compile_and_run(&compile(source));
+    let llvm = system::with_mutated_ir(source, |program| {
+        assert!(program.force_claim_false_for_test("main", "expected_true"));
+        crate::emit_llvm(program)
+            .expect("fault-injected checked IR must emit")
+            .into_string()
+    });
+    let output = compile_and_run(&llvm);
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
     assert!(stderr.starts_with(
