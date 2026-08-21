@@ -11,6 +11,7 @@ mod entailment;
 mod goal;
 mod model;
 mod permission;
+mod permission_ledger;
 mod places;
 mod postcondition;
 mod provenance;

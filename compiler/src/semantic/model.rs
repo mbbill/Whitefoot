@@ -1756,6 +1756,11 @@ pub(crate) struct CheckedProgramData {
     /// permission ledger and the overlap lowering are its consumers.
     #[allow(dead_code)]
     pub(crate) permission: super::permission::PermissionMetadata,
+    /// The rendered non-normative permission ledger, one line per analyzed
+    /// source site in source order. This is developer output only: the driver
+    /// hands it to `whitefootc --par-ledger`, and no mandatory record, no
+    /// normative output, and no lowering decision reads it.
+    pub(crate) permission_ledger: Vec<String>,
 }
 
 /// Every direct subexpression, for uniform recursion.

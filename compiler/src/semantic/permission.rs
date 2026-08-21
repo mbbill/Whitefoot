@@ -134,7 +134,6 @@ pub(crate) enum Denial {
 impl Denial {
     /// The judgment condition this denial cites. The permission ledger prints
     /// it and the judgment tests assert it; acceptance never reads it.
-    #[allow(dead_code)]
     pub(crate) const fn condition(&self) -> u8 {
         match self {
             Self::Dataflow { .. } => 1,

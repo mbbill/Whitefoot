@@ -19,9 +19,9 @@ use std::collections::HashMap;
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationId, DeclarationRole, Production, ResolvedSyntaxUnit, SemanticCompilerFailure,
-    SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule,
-    StaticObligationDisposition, UnsupportedSemanticFeature,
+    DeclarationId, DeclarationRole, NodePath, Production, ResolvedSyntaxUnit,
+    SemanticCompilerFailure, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome,
+    SemanticRule, StaticObligationDisposition, UnsupportedSemanticFeature,
 };
 
 use super::claim_locality::{BoundaryResultKind, ClaimAuthorityAnalysis};
@@ -46,6 +46,7 @@ use super::model::{
     NominalId, ValueInitializerKind, evaluate_const_operation,
 };
 use super::permission::{PermissionSignature, analyze_permission};
+use super::permission_ledger::{LedgerSource, render_ledger};
 use super::postcondition::CheckedPostconditionSelector;
 use super::provenance::{
     DatumSelector, FrozenProvenanceDependencies, ProvenanceContext,
@@ -58,6 +59,23 @@ use borrows::{AccessKind, ResolvedPlace};
 use borrows::{BorrowInfo, BorrowKind, SliceInfo, SliceLoan};
 use control::{ControlCounters, ControlScope};
 use generics::{GenericArgument, GenericParameter, GenericSubstitution, PendingGenericRequirement};
+
+/// The syntax tree, as the permission ledger's citations reach it.
+struct PermissionLedgerSource<'view, 'unit, 'classified, 'lexed, 'source> {
+    tree: &'view TreeView<'unit, 'classified, 'lexed, 'source>,
+}
+
+impl LedgerSource for PermissionLedgerSource<'_, '_, '_, '_, '_> {
+    type Error = SemanticCompilerFailure;
+
+    fn location(&self, path: &NodePath) -> Result<(String, u64), Self::Error> {
+        self.tree.source_line(path)
+    }
+
+    fn spelling(&self, path: &NodePath) -> Result<String, Self::Error> {
+        self.tree.path_spelling(path)
+    }
+}
 
 #[derive(Clone)]
 struct ParameterSignature {
@@ -1144,6 +1162,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             })
             .collect::<Vec<_>>();
         let permission = analyze_permission(&functions, &permission_signatures);
+        // The ledger is rendered here because only the checker still holds the
+        // syntax tree the citations name. It is pure presentation over the
+        // table above and reaches no decision.
+        let permission_ledger = if permission
+            .functions
+            .iter()
+            .any(|permissions| !permissions.pairs.is_empty())
+        {
+            render_ledger(&permission, &PermissionLedgerSource { tree: &self.tree })?
+        } else {
+            Vec::new()
+        };
 
         Ok(CheckedProgramData {
             nominals: self.nominals.clone(),
@@ -1167,6 +1197,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             entry,
             claim_ledger,
             permission,
+            permission_ledger,
         })
     }
 

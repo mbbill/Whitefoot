@@ -1,6 +1,8 @@
 use crate::syntax::terminal::TerminalPredicate;
 use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId};
-use crate::{NodePath, Production, ResolvedSyntaxUnit, SemanticCompilerFailure, SyntaxCoordinate};
+use crate::{
+    ByteOffset, NodePath, Production, ResolvedSyntaxUnit, SemanticCompilerFailure, SyntaxCoordinate,
+};
 
 /// [GRAM-4] one conditional node's then-block and its alternative.
 pub(super) struct ConditionalBlocks {
@@ -311,6 +313,39 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
             .as_str()
             .to_owned();
         Ok((logical_path, coordinate))
+    }
+
+    /// Resolves one checked node path to its bundle-local logical source and
+    /// one-based line number.
+    ///
+    /// The line is developer-channel presentation only: the non-normative
+    /// permission ledger prints it. No mandatory record and no normative
+    /// output reads it.
+    pub(super) fn source_line(
+        &self,
+        path: &NodePath,
+    ) -> Result<(String, u64), SemanticCompilerFailure> {
+        let (logical_path, coordinate) = self.source_identity(path)?;
+        let prefix = self
+            .resolved
+            .syntax()
+            .classified_bundle()
+            .source_bundle()
+            .span(coordinate.source(), ByteOffset::new(0), coordinate.start())
+            .map_err(|_| SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let newlines = prefix.bytes().iter().filter(|byte| **byte == b'\n').count();
+        let line = u64::try_from(newlines)
+            .map_err(|_| SemanticCompilerFailure::InvalidCanonicalTree)?
+            .saturating_add(1);
+        Ok((logical_path, line))
+    }
+
+    /// [`Self::source_spelling`] reached by node path rather than by node.
+    pub(super) fn path_spelling(&self, path: &NodePath) -> Result<String, SemanticCompilerFailure> {
+        let node = self
+            .node_with_path(path)
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        self.source_spelling(node)
     }
 
     pub(super) fn closing_brace_coordinate(

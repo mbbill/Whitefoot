@@ -234,6 +234,22 @@ pub fn compile(
     compile_with_inventory(inputs, limits, crate::Inventory::ACTIVE)
 }
 
+/// [`compile`] plus the non-normative permission ledger for the same
+/// compilation.
+///
+/// The ledger reports, one line per analyzed sibling-call site, whether the
+/// permission judgment allows overlapping the two statements and whether a
+/// permitted overlap is actualizable. It is developer output on the caller's
+/// own channel: it participates in no mandatory record, changes no accepted
+/// program, and selects no lowering. `whitefootc --par-ledger` is its one
+/// caller outside tests.
+pub fn compile_with_permission_ledger(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+) -> Result<(String, Vec<String>), CompilationFailure> {
+    compile_reporting(inputs, limits, crate::Inventory::ACTIVE)
+}
+
 /// [`compile`] against one named [SYS-2] inventory state.
 ///
 /// `inventory` selects which prefix of the [SYS-2] tables the compilation
@@ -247,6 +263,17 @@ pub fn compile_with_inventory(
     limits: CompilerLimits,
     inventory: crate::Inventory,
 ) -> Result<String, CompilationFailure> {
+    compile_reporting(inputs, limits, inventory).map(|(module, _)| module)
+}
+
+/// The one compilation path, returning the module and the developer-channel
+/// permission ledger it produced. Every public entry point above is a
+/// projection of this function; there is no second pipeline.
+fn compile_reporting(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    inventory: crate::Inventory,
+) -> Result<(String, Vec<String>), CompilationFailure> {
     let bundle = SourceBundle::with_limits(inputs, limits.source).map_err(|failure| {
         CompilationFailure::new(
             CompilationStage::SourceEnvelope,
@@ -429,6 +456,7 @@ pub fn compile_with_inventory(
             ));
         }
     };
+    let permission_ledger = checked.data.permission_ledger.clone();
     let ir = lower_checked(checked).map_err(|failure: LoweringFailure| {
         CompilationFailure::new(
             CompilationStage::Lowering,
@@ -437,7 +465,7 @@ pub fn compile_with_inventory(
         )
     })?;
     emit_llvm(&ir)
-        .map(|module| module.into_string())
+        .map(|module| (module.into_string(), permission_ledger))
         .map_err(|failure: BackendFailure| {
             let (stage, kind) = match failure {
                 BackendFailure::TargetLayout(_) => (
@@ -459,8 +487,239 @@ pub fn compile_with_inventory(
 
 #[cfg(test)]
 mod tests {
-    use super::{CompilationFailureKind, CompilationStage, CompilerLimits, compile};
+    use super::{
+        CompilationFailureKind, CompilationStage, CompilerLimits, compile,
+        compile_with_permission_ledger,
+    };
     use crate::SourceInput;
+
+    /// The permission ledger of one compiled source, in the order the driver
+    /// hands it to `whitefootc --par-ledger`.
+    fn ledger_of(name: &str, source: &[u8]) -> Vec<String> {
+        let (_, ledger) = compile_with_permission_ledger(
+            &[SourceInput::new(name, source)],
+            CompilerLimits::default(),
+        )
+        .expect("a permission-ledger fixture must compile");
+        ledger
+    }
+
+    const TREE_PRELUDE: &str = "enum BoxNode {
+  Leaf(w: u64);
+  Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
+}
+
+fn boxed_leaf(w: own u64) -> result: own box<BoxNode> allocates(heap) {
+  let leaf = Leaf(w: w);
+  return box_new(move leaf);
+}
+
+fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> allocates(heap) {
+  let branch = Branch(left: move left, right: move right, w: 0_u64);
+  return box_new(move branch);
+}
+
+";
+
+    /// The ledger states a permitted and eligible pair, and a permitted pair
+    /// that a reachable claim keeps out of reach of actualization, with the
+    /// claim count and the function the claim sits in. Both lines are exactly
+    /// the developer-channel form of DESIGN section 4.
+    #[test]
+    fn the_permission_ledger_reports_eligible_and_not_actualizable_pairs() {
+        let eligible = format!(
+            "{TREE_PRELUDE}fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b) {{
+  match deref(deref(node)) {{
+    Leaf(w: leaf_w) => {{
+      return deref(leaf_w);
+    }}
+    Branch(left: l, right: r, w: slot) => {{
+      let a = fold<'b>(node: move l);
+      let b = fold<'b>(node: move r);
+      let total = imax(a, b);
+      set deref(slot) = total;
+      return total;
+    }}
+  }}
+}}
+
+command fn main() -> status: own ExitStatus allocates(heap) {{
+  let leaf0 = boxed_leaf(w: 3_u64);
+  let leaf1 = boxed_leaf(w: 4_u64);
+  let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
+  region 'tree {{
+    let total = fold<'tree>(node: &uniq 'tree branch0);
+  }}
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        let ledger = ledger_of("fold.wf", eligible.as_bytes());
+        assert_eq!(
+            ledger[0],
+            "PAR permitted   fold.wf:22  pair(fold, fold)  eligible"
+        );
+
+        // The same tree fold with one claim in the recursive closure. P still
+        // holds; the line reports why the overlap is not actualized.
+        let claiming = format!(
+            "{TREE_PRELUDE}fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b), traps {{
+  match deref(deref(node)) {{
+    Leaf(w: leaf_w) => {{
+      return deref(leaf_w);
+    }}
+    Branch(left: l, right: r, w: slot) => {{
+      let a = bubble<'b>(node: move l);
+      let b = bubble<'b>(node: move r);
+      let sum_defined = a +defined b;
+      claim bubble_sum_fits: sum_defined because \"an in-memory tree has representable widths\";
+      let total = a + b;
+      set deref(slot) = total;
+      return total;
+    }}
+  }}
+}}
+
+command fn main() -> status: own ExitStatus allocates(heap), traps {{
+  let leaf0 = boxed_leaf(w: 3_u64);
+  let leaf1 = boxed_leaf(w: 4_u64);
+  let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
+  region 'tree {{
+    let total = bubble<'tree>(node: &uniq 'tree branch0);
+    claim bubble_total: ieq(total, 7_u64) because \"bubble total\";
+  }}
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        let ledger = ledger_of("bubble.wf", claiming.as_bytes());
+        assert_eq!(
+            ledger[0],
+            "PAR permitted   bubble.wf:22  pair(bubble, bubble)  not-actualizable: 1 claim site via bubble"
+        );
+
+        // Both programs end with main's own two leaf allocations, which are
+        // eligible, and then the branch call that consumes them, which is
+        // denied by condition 1. The ledger is in source order, so those two
+        // lines follow the recursive one and the file is fully reported.
+        assert_eq!(
+            ledger[1],
+            "PAR permitted   bubble.wf:34  pair(boxed_leaf, boxed_leaf)  eligible"
+        );
+        assert_eq!(
+            ledger[2],
+            "PAR denied      bubble.wf:35  pair(boxed_leaf, boxed_branch)  condition 1: an argument of s2 uses the result of s1"
+        );
+        assert_eq!(ledger.len(), 3);
+    }
+
+    /// One denial line per numbered condition, each citing that condition and
+    /// the source text that refused the overlap. A denial arriving under the
+    /// wrong condition, or with an empty citation, fails here.
+    #[test]
+    fn the_permission_ledger_names_the_condition_that_refused_each_pair() {
+        // Condition 2: two `&uniq` actuals resolve to one place, so the line
+        // has to name both actuals as the writer wrote them.
+        let overlapping =
+            b"fn bump['r](slot: &uniq 'r u64) -> result: own u64 reads('r), writes('r) {
+  let seen = deref(slot);
+  set deref(slot) = 7_u64;
+  return seen;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 1_u64;
+  region 'r {
+    let lo = bump<'r>(slot: &uniq 'r cell);
+    let hi = bump<'r>(slot: &uniq 'r cell);
+    let total = imax(lo, hi);
+  }
+  return exit_status(code: 0_u8);
+}
+";
+        assert_eq!(
+            ledger_of("bump.wf", overlapping),
+            vec![
+                "PAR denied      bump.wf:10  pair(bump, bump)  condition 2: writes overlap at &uniq 'r cell vs &uniq 'r cell"
+                    .to_owned()
+            ]
+        );
+
+        // Condition 3: the row gate, reported with the exact categories the
+        // refused row carries.
+        let external =
+            b"fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {
+  return unit;
+}
+
+fn release_pair(first: own ReadFile, second: own ReadFile) -> result: own unit external, blocks {
+  let done_first = release_read_file(file: move first);
+  let done_second = release_read_file(file: move second);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+";
+        assert_eq!(
+            ledger_of("row.wf", external),
+            vec![
+                "PAR denied      row.wf:6  pair(release_read_file, release_read_file)  condition 3: the row of s1 carries external, blocks"
+                    .to_owned()
+            ]
+        );
+
+        // Condition 4: the first statement's `propagate` Err edge leaves the
+        // function, so the second statement's write must not run under an
+        // overlap the sequential execution skips.
+        let propagating = b"fn narrow(v: own u32) -> result: own Result<u8, NarrowError> pure {
+  return cvt<u32, u8>(v);
+}
+
+fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes('o) {
+  set deref(slot) = 9_u8;
+  return 1_u64;
+}
+
+fn probe['o](v: own u32, slot: &uniq 'o u8) -> result: own Result<unit, NarrowError> writes('o) {
+  let narrowed = propagate narrow(v: v);
+  let stamped = stamp<'o>(slot: move slot);
+  return Ok<unit, NarrowError>(value: unit);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+";
+        assert_eq!(
+            ledger_of("propagate.wf", propagating),
+            vec![
+                "PAR denied      propagate.wf:11  pair(narrow, stamp)  condition 4: Err edge of s1 skips s2"
+                    .to_owned()
+            ]
+        );
+    }
+
+    /// A program with no analyzed pair reports nothing, and the ledger never
+    /// reaches the module: the same compilation with and without it emits the
+    /// same bytes.
+    #[test]
+    fn the_permission_ledger_is_output_beside_an_unchanged_module() {
+        let source = b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+        let (module, ledger) = compile_with_permission_ledger(
+            &[SourceInput::new("quiet.wf", source)],
+            CompilerLimits::default(),
+        )
+        .expect("the fixture must compile");
+        assert!(ledger.is_empty(), "no analyzed pair: {ledger:?}");
+        let plain = compile(
+            &[SourceInput::new("quiet.wf", source)],
+            CompilerLimits::default(),
+        )
+        .expect("the fixture must compile");
+        assert_eq!(module, plain);
+    }
 
     #[test]
     fn driver_lowers_static_contract_metadata_without_executable_artifacts() {

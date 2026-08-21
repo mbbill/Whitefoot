@@ -60,6 +60,24 @@ reproduction, never worked around.)
   the pair under condition 2; (c) P resolves a direct slice value's source
   place on its own side only, leaving [ENT-5] kill behavior byte-identical.
 
+- E2 (permission ledger): landed `semantic/permission_ledger.rs`, which renders
+  the permission table as the DESIGN section 4 developer lines, plus the
+  `TreeView::source_line`/`path_spelling` citations it needs, a
+  `permission_ledger` field on `CheckedProgramData`, the public
+  `compile_with_permission_ledger` entry point (one pipeline: every other entry
+  point is a projection of it), and `whitefootc --par-ledger`, which prints the
+  lines on stdout and never on the mandatory record channel. The condition
+  number in each denial line comes from `Denial::condition`, so the reported
+  condition cannot drift from the judging one. Two decisions worth the audit's
+  attention: byte-identical lines are collapsed, because the table is dense by
+  `FunctionId` and one generic monomorphized twice would otherwise report one
+  source site twice; and `--par-ledger` with `--emit-llvm` and no `-o` is
+  refused rather than interleaving two streams into one stdout. Six tests:
+  three driver-level ledger tests covering an eligible line, a
+  not-actualizable line with its claim count, a denial line for each of
+  conditions 1 to 4, and the empty-ledger/unchanged-module control; three
+  `whitefootc` option tests. `make -C compiler check` green.
+
 ## Outcome
 
 (Filled at closure: landed commits, verification results, measurements,
