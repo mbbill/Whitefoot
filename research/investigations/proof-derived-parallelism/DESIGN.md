@@ -124,9 +124,18 @@ salvage), the AI writer's gradient, and the measurement instrument.
 
 ## 5. Runtime and lowering
 
-- **Default off.** Actualization happens only when `WF_WORKERS` is set to
-  an integer ≥ 2. Unset or `1` ⇒ every program byte-identical in behavior
-  and timing character to today. All existing tests unaffected.
+- **Default off, at compile time.** Actualization happens only when the
+  compilation asked for it (`whitefootc --par`) *and* `WF_WORKERS` is set to
+  an integer ≥ 2. Without `--par` the backend reads no permission group at
+  all: no thunk is outlined, no module names a runtime symbol, and the
+  emitted module is byte-identical to a compiler that has no overlap
+  lowering. **Amended after the batch audit** (2026-08-21), which made
+  `WF_WORKERS` the only switch and was falsified by measurement: the outlining
+  alone, with no runtime linked and no worker requested, cost about 1.2x on the
+  layout demo and 2.1x on `fib(38)`, so a byte-identical default has to be a
+  compile-time choice rather than a runtime one. `WF_WORKERS` is unchanged and
+  remains the runtime knob for a build that asked. All existing tests
+  unaffected.
 - **Runtime:** one small C file (pthreads), linked only when the module
   contains at least one eligible site: lazy pool init on first fork
   (`WF_WORKERS` capped at a sane max), `wf_par_try_fork(fn, arg) ->

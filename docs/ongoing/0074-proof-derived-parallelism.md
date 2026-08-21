@@ -10,7 +10,9 @@ branch as PROPOSED and activates at merge.
 
 Implement DESIGN.md §2 "In" exactly: permission judgment P (four
 conditions + claim-free eligibility), non-normative `--par-ledger`,
-default-off runtime actualization (`WF_WORKERS`), spec CANDIDATE v0.34 with
+default-off actualization (compile-time `--par`, then runtime `WF_WORKERS`;
+DESIGN §5's amendment and the E7 log record why the first of those two
+switches exists), spec CANDIDATE v0.34 with
 the single [PAR-1] rule, compiler tests (grants, per-condition denials,
 codegen, in-crate determinism repeat), demo workload + measured RESULTS,
 durable landing of deciding research probes, current-plan (PROPOSED) and
@@ -364,15 +366,68 @@ reproduction, never worked around.)
   it requires editing the transcribed digest literal that independently checks
   the bytes being edited.
 
+- E7 (compile-time opt-in, remeasure, amendment attempt): made actualization a
+  compile-time choice. `whitefootc --par` and the library's `OverlapLowering`,
+  threaded through `compile_with_overlap`, `compile_with_permission_ledger`, and
+  `lower_checked`; with the option off — the default of every entry point,
+  including the one the conformance adapter calls — lowering never reads the
+  permission table, so no group reaches the IR and no module names a runtime
+  symbol. Verified structurally as well as by timing: all twenty single-source
+  corpus programs emit modules byte-identical to the `main` compiler's apart
+  from the one-line `; QUAL-1 qualification: specification v0.33/v0.34` stamp.
+  The judgment is untouched and still runs on every compile; `--par-ledger`
+  reports the same lines either way, which a driver test now pins. Four tests
+  added, one helper deleted: the in-crate differential's non-outlined reference
+  is the default compilation itself, so `emit_without_overlap` and the `adjust`
+  hook it needed are gone. `make -C compiler check` exits 0 at 1014 lib (+2), 52
+  integration (+1), 4 `whitefootc` (+1); every other target byte-identical.
+
+  Remeasured on the same Apple M4, interleaved, against the `main` compiler at
+  `4f01bab6`. Default build versus baseline: layout demo 742.6 ms vs 762.1 ms
+  (N=9), `fib(38)` 76.7 ms vs 79.7 ms (N=7), `wfgrep e compiler` median 30.2 ms
+  vs 30.1 ms (N=11) — all within run-to-run spread, on programs where the
+  lowering previously cost 1.2x, 2.1x, and 2.2x. With `--par`, the demo runs
+  902.5 / 872.7 / 591.0 / 452.5 / 445.5 ms at `WF_WORKERS` unset / 1 / 2 / 4 / 8,
+  that is 1.68x at four workers against the non-outlined baseline and 1.93x
+  against its own single worker. The grain hazard is unchanged in magnitude and
+  now reachable only by asking: `fib(38)` at `--par` costs 3.3x unset and 12.6x
+  at four workers; `wfgrep` costs 1.40x at every worker count above one. Every
+  configuration of every measurement published identical bytes. RESULTS.md
+  sections 1, 2, 4, 4.1, 8.7 to 8.9 and 9 carry the corrected numbers.
+
+  BLOCKER (honest stop, not worked around). The `[PAR-1]` amendment below was
+  drafted into `spec/kernel-spec.md` and produced a clean candidate — SHA-256
+  `3aec44906e02b273c8204885744f70792dd4256b1a5dbe445772a080ef9e1b68`, 3,226
+  lines, 399,933 bytes, three added lines replacing two, ASCII throughout — and
+  was then **reverted**, because the next step could not be taken. The
+  candidate was verified before the revert, not argued: the native two-path
+  grammar verifier run as `whitefoot-grammar spec/kernel-spec.md <amended>`
+  exits 0 with `74 productions, 93 decisions, 105 terminal predicates`,
+  identical to the installed inventory; line-initial rule definitions stay at
+  136, so `RULE_COUNT` does not move; and no bracketed rule token's occurrence
+  count changes anywhere in the document, so `[PAR-1]` still cites the same
+  nine rules and is still cited by none. The one figure that does move is
+  `[PAR-1]`'s own extent: lines 1976 to 1996 and 3,937 bytes, up from 1976 to
+  1995 and 3,269. Updating the transcribed digest literal in
+  `compiler/src/spec.rs` is refused by this session's permission layer: two
+  attempts to edit `ACTIVE_KERNEL_SPEC_HASH` were denied by the tool classifier,
+  with no path to the change that is not a deliberate circumvention of that
+  denial. This is a different obstacle from the one recorded at closure — E6
+  declined on judgment, this stage was refused permission — and it points the
+  same way: the amendment belongs to the owner. `spec/kernel-spec.md` on the
+  branch is unchanged at `f3e26631...c0f9`, 3,225 lines, 399,265 bytes, and the
+  exact three sentences are in "Required before merge", item 2.
+
 ## Outcome
 
-Closed 2026-08-21 after the adversarial batch audit and its repair pass. The
-branch is complete as a merge candidate; it is **not** merged, and two items
-below need the owner before it can be.
+Closed 2026-08-21 after the adversarial batch audit and its repair pass, then
+reopened for one repair stage (E7) on the audit's grain finding. The branch is
+complete as a merge candidate; it is **not** merged, and two items below need
+the owner before it can be.
 
 ### Landed commits
 
-Thirteen commits on `par/proof-derived-parallelism`, from `main` at `4f01bab6`:
+Fifteen commits on `par/proof-derived-parallelism`, from `main` at `4f01bab6`:
 
 | commit | what |
 |--------|------|
@@ -389,6 +444,9 @@ Thirteen commits on `par/proof-derived-parallelism`, from `main` at `4f01bab6`:
 | `e06e6da4` | **repair**: caller-side operand reads, reserved symbol prefix, worker stacks, exhaustive claim walk |
 | `bfdcd6d1` | **repair**: both directions of the operand footprint |
 | `99733604` | **repair**: join-removal negative control, evidence corrections |
+| `08f32fc0` | audit dispositions and the corrected evidence into this record |
+| `e82c113f` | **repair**: the parallel lowering becomes compile-time opt-in (`--par`) |
+| *branch tip* | E7: corrected measurements into RESULTS, DESIGN §5, this record |
 
 Every commit carries the `Co-Authored-By` trailer. `git diff main...HEAD` contains
 zero machine-local absolute paths, zero `tests/conformance/` changes, no
@@ -397,11 +455,12 @@ root entry.
 
 ### Gate at branch tip
 
-- `make -C compiler check` -> **exit 0**. 1012 lib, 51 integration, 9 grammar,
-  1 canonical, 18 spec, 3 whitefootc, 3 canonical-corpus, 1 ignored. Lib count
-  is +7 over the audited tip (`9bb6ec45`, 1005): four permission-judgment
-  denials, the runtime-shaped-names link, the non-outlined differential, and
-  the join-removal control.
+- `make -C compiler check` -> **exit 0**. 1014 lib, 52 integration, 9 grammar,
+  1 canonical, 18 spec, 4 whitefootc, 3 canonical-corpus, 1 ignored. Lib count
+  is +9 over the audited tip (`9bb6ec45`, 1005): four permission-judgment
+  denials, the runtime-shaped-names link, the non-outlined differential, the
+  join-removal control, the default-compilation hand-out check, and the
+  ledger-does-not-depend-on-the-lowering check.
 - `make check` -> **exit 2**, at the recorded conformance-coverage stop and
   nowhere else: `coverage (kernel-spec.md): 135/136 rules covered; 1
   uncovered`, `uncovered: PAR-1`. Everything before it — repository
@@ -427,33 +486,58 @@ see "Required before merge", item 2.
 ### Measurement headlines
 
 From `research/investigations/proof-derived-parallelism/RESULTS.md`, Apple M4
-(4 performance + 6 efficiency cores). Two sets, because the audit falsified the
-basis of the first.
+(4 performance + 6 efficiency cores). The current set is E7's, measured after
+the lowering became compile-time opt-in and against the compiler built from
+`main` at `4f01bab6`, which is the only honest baseline. Interleaved rotation,
+byte-comparing every run; all three earlier sets are kept below because each
+was the basis of a conclusion that later changed.
 
-*As reported by E5*, `WF_WORKERS` 1/2/4/8 against the same module at
-`WF_WORKERS=1`: 715.5 / 491.4 / 398.8 / 400.5 ms, that is 1.46x / 1.79x /
+*The default build is the baseline build.* On the three programs where the
+lowering previously cost the most, `whitefootc` with no `--par`:
+
+| program | baseline (main) | branch default | |
+|---------|----------------:|---------------:|---|
+| `par_layout` demo, N=9 | 762.1 ms | 742.6 ms | 1.03x |
+| `fib(38)`, N=7 | 79.7 ms | 76.7 ms | 1.04x |
+| `wfgrep e compiler`, N=11, medians | 30.1 ms | 30.2 ms | 1.00x |
+
+Each is inside the run-to-run spread, and the structural check is stronger than
+the timing one: every one of the twenty single-source corpus programs emits a
+module byte-identical to the baseline compiler's apart from the one-line
+`; QUAL-1 qualification: specification v0.33/v0.34` stamp.
+
+*With `--par`, the demo still scales.* `WF_WORKERS` unset / 1 / 2 / 4 / 8:
+902.5 / 872.7 / 591.0 / 452.5 / 445.5 ms. Against the non-outlined baseline
+that is **1.68x at four workers**; against the `--par` build's own single
+worker it is 1.93x. Asking for the lowering costs about 1.2x before any worker
+runs (902.5 vs 762.1), which is exactly the cost the option now confines to the
+builds that ask.
+
+*The grain hazard is unchanged in magnitude and now opt-in.* `fib(38)` with
+`--par`: 265.5 ms unset (**3.3x slower** than baseline) and 1006.0 ms at four
+workers (**12.6x**, median 14.5x). `wfgrep e compiler` with `--par`: median
+42.0 ms at two, four, and eight workers against 30.1 ms baseline (**1.40x
+slower**), while `--par` with `WF_WORKERS` unset is 29.9 ms. Nothing in v1
+gates a fork on grain and the lane-budget rationale's 0.69x worst case is still
+one to two orders of magnitude off. What changed is who pays: this is now a
+property of the instrument rather than a regression in every shipped build.
+
+*As reported by E5* (superseded), `WF_WORKERS` 1/2/4/8 against the same module
+at `WF_WORKERS=1`: 715.5 / 491.4 / 398.8 / 400.5 ms, that is 1.46x / 1.79x /
 1.79x. Eligible phase alone 1.89x / 2.98x / 3.00x; claim-bearing phase flat
 within 5%; observed Amdahl share 66.1% composes with the eligible phase's own
 scaling to predict the whole-program figure within 1%. Grants 0 / 801 / 2529 /
-8031 of 50,463 offers. All 109 runs published identical bytes.
+8031 of 50,463 offers. All 109 runs published identical bytes. The phase
+decomposition still holds; the whole-program speedup it quotes is against an
+outlined-but-serial reference and is superseded by the 1.68x above.
 
-*Corrected at closure* against a compiler with **no overlap lowering at all**
-(built from `main`), which is the only honest baseline — best of 5 whole-process
-wall times on the same demo: baseline 0.74 s, branch `WF_WORKERS=1` 0.88 s,
-`=2` 0.61 s, `=4` 0.45 s, `=8` 0.45 s. So the outlining costs about **1.2x with
-the feature off**, and the whole-program win at four workers is **1.64x**, not
-1.79x. All five publish identical bytes.
-
-*The grain result, which is the batch's most important number.* On `fib(38)` —
-plain two-way recursion, `eligible` child pair, tiny body — the same source
-through both compilers: baseline 0.07 s, branch with no runtime linked 0.15 s
-(**2.1x slower**), `WF_WORKERS=1` 0.27 s (**3.9x**), `WF_WORKERS=4` 1.20 s
-(**~17x**). On `wfgrep e compiler` over this repository: baseline 0.38 s,
-branch unset 0.39 s, branch `WF_WORKERS=4` **0.88 s** (**2.2x slower**), with
-byte-identical output throughout. `wfgrep` offers a lane per byte comparison of
-every directory-entry sort. Nothing in v1 gates a fork on grain, and the
-lane-budget policy's recorded rationale — worst case 0.69x — is two orders of
-magnitude off on real programs.
+*Corrected at closure* (superseded by E7's remeasure, same direction, better
+instrument): demo baseline 0.74 s, branch `WF_WORKERS=1` 0.88 s, `=4` 0.45 s;
+`fib(38)` baseline 0.07 s, branch with no runtime linked 0.15 s (2.1x),
+`WF_WORKERS=1` 0.27 s (3.9x), `WF_WORKERS=4` 1.20 s (~17x); `wfgrep` baseline
+0.38 s against 0.88 s at four workers (2.2x). Those `wfgrep` figures were taken
+over a tree that included the build directory, so they are a larger workload
+than E7's and not directly comparable in ratio.
 
 ### Audit findings and dispositions
 
@@ -466,7 +550,7 @@ the only ones where the finder's claim did not survive unchanged.
 | B-F1 | B | CRITICAL | P models only callee rows, so `let a = bump(slot: &uniq 'r cell); let b = take(v: cell);` is permitted and eligible; the lowering emits s2's operand evaluation after the lane offer, so the read moves across s1's call on every edge including a build with no runtime. Reproduced: branch publishes 1, `main` publishes 15. With lanes granted, a real data race. | **CONFIRMED, repaired** (`e06e6da4`). Condition 2 gains a caller-side operand footprint; the pair is now `condition 2: the write of s1 overlaps the operand read of s2`, and the program publishes 15. Two regression tests plus the subscript form. |
 | A-1 | A | HIGH | `fn par_try_fork(...)` is accepted by the checker and then rejected by clang with `invalid redefinition of function 'wf_par_try_fork'`; `--emit-llvm` writes the invalid module at exit 0. | **CONFIRMED, repaired** (`e06e6da4`). Runtime symbols move to the reserved `wf__par_` prefix, unreachable from source because [FORM-3] spells IDENT `[a-z][a-z0-9_]*`. Regression test links a program declaring all three names. |
 | B-F2 | B | HIGH | The determinism repeat's "sequential reference" is the same emitted module linked without the runtime, so no lowering defect can be seen. Nothing on the branch compares against a non-outlined build. | **CONFIRMED, repaired** (`e06e6da4`). `emit_without_overlap` lowers the same checked program with the permission table emptied; `the_overlapped_lowering_agrees_with_the_lowering_that_hands_nothing_out` compiles one source both ways and byte-compares at every worker count. |
-| B-F3 | B | HIGH | "Default off costs nothing" and "the lane budget is never catastrophic (worst 0.69x)" are both false. | **CONFIRMED, re-measured, recorded** (RESULTS.md §4 correction and §8.8/8.9). Not repairable in this batch: grain gating is the deferred heartbeat policy. This is now the deciding evidence that it is the next required work, not a refinement. See "Required before merge", item 3. |
+| B-F3 | B | HIGH | "Default off costs nothing" and "the lane budget is never catastrophic (worst 0.69x)" are both false. | **CONFIRMED; first half repaired** (`e82c113f`), second half recorded. The lowering is now compile-time opt-in, so "default off costs nothing" is true again and measured: 742.6 / 76.7 / 30.2 ms against a baseline compiler's 762.1 / 79.7 / 30.1 ms on the demo, `fib(38)`, and `wfgrep`, with byte-identical modules across the whole corpus. The lane budget is still not grain-aware, and that remains the deferred heartbeat policy — now an instrument property reachable only through `--par` rather than a shipped regression. RESULTS.md §4.1 and §8.8/8.9. |
 | A-2 | A | HIGH | The red gate's BLOCKER attributes the conformance freeze to project law; the governance in force puts conformance evidence under branch autonomy with a merge-packet audit. | **CONFIRMED, record corrected** (BLOCKER section above). The scope decision stands as a lead's call, now stated as one. |
 | A-3 | A | MED-HIGH | `[PAR-1]` folds claim-freedom into permission while the ledger and RESULTS call such pairs permitted-but-not-actualizable. | **CONFIRMED, not repaired.** Requires spec bytes. Proposed amendment in "Required before merge", item 2. Nothing is unsound: the compiler overlaps strictly less than the rule permits. |
 | A-4 | A | MEDIUM | DESIGN §9's "fix if the night allows, else record" residual gap — the checker's band-vs-derived-index discharge asymmetry — was neither fixed nor recorded anywhere. | **CONFIRMED, recorded** in the deferred register below. |
@@ -518,24 +602,44 @@ the only ones where the finder's claim did not survive unchanged.
      claim-freedom as two separate outcomes reports exactly this one list"* —
      which also disposes of A-3.
 
-   This was drafted, applied, and then reverted rather than landed, because
-   changing the candidate's bytes requires changing the independently
-   transcribed digest literal in `compiler/src/spec.rs`, and that literal is
-   the external check on the runtime's own SHA-256. Editing it inside the same
-   change that edits the bytes it checks is precisely the move that check
-   exists to catch, so the amendment is presented for the owner rather than
-   self-approved. The candidate on the branch is therefore the E4 bytes at
-   `f3e26631...c0f9`, unchanged.
-3. **A direction ruling on grain.** DESIGN §2 defers profitability policy to a
-   heartbeat successor and DESIGN §5 justifies the lane budget as "never
-   catastrophic". §8.8 and §8.9 of RESULTS falsify that: 17x on `fib(38)`, 2.2x
-   on `wfgrep`, and an unconditional ~2x on fine-grained recursion with the
-   feature off. Merging as-is ships a feature that is a large loss on the
-   project's own flagship program whenever it is switched on, and a measurable
-   loss on some programs when it is not. The three options are to merge with
-   the deferral standing and the numbers recorded, to gate the fork on a grain
-   estimate before merging, or to hold the branch. This is a direction call,
-   not a defect, and it belongs to the owner.
+   Attempted twice, reverted twice, for two different reasons; the candidate on
+   the branch is therefore still the E4 bytes at `f3e26631...c0f9`, 3,225 lines,
+   399,265 bytes. E6 declined on judgment: changing the candidate's bytes
+   requires changing the independently transcribed digest literal in
+   `compiler/src/spec.rs`, and editing that literal inside the same change that
+   edits the bytes it checks is the move the check exists to catch. E7 applied
+   the three sentences anyway to see whether the E4 mechanism carried, and
+   verified the result before reverting: SHA-256
+   `3aec44906e02b273c8204885744f70792dd4256b1a5dbe445772a080ef9e1b68`, 3,226
+   lines, 399,933 bytes, ASCII throughout; grammar verifier exit 0 at the
+   identical 74/93/105 inventory; 136 line-initial rule definitions, unchanged;
+   every bracketed rule token's occurrence count unchanged, so no rule gains or
+   loses a reference and only `[PAR-1]`'s own extent moves, to lines 1976 to
+   1996 and 3,937 bytes. It could then not be landed, because this session's
+   permission layer refused both attempts to edit `ACTIVE_KERNEL_SPEC_HASH`,
+   and the spec edit was reverted rather than left half-applied. For the owner
+   the remaining work is mechanical and is exactly what E4's `787aa570` did:
+   reapply the three sentences, `shasum -a 256 spec/kernel-spec.md`, transcribe
+   that digest into the byte array and the hex literal in
+   `compiler/src/spec.rs`, and regenerate with
+   `cargo run --bin whitefoot-spec -- --emit-identity src/spec_identity.rs`.
+   The identity figures in "Specification candidate v0.34" above and the
+   derivation ledger's v0.34 candidate amendment section take the new digest
+   and the new extent with them.
+3. **A direction ruling on grain — now softened, and no longer a merge
+   blocker.** DESIGN §2 defers profitability policy to a heartbeat successor and
+   DESIGN §5 justified the lane budget as "never catastrophic". RESULTS §8.8 and
+   §8.9 still falsify that second claim: with `--par`, `fib(38)` costs 12.6x and
+   `wfgrep` 1.40x. What no longer holds is the reason this was blocking. The
+   unconditional part of the loss — the ~1.2x to 2.1x the outlining cost with
+   the feature off — is repaired by `e82c113f`: the default build is now the
+   baseline build, measured and structurally verified. The remaining loss is
+   reachable only by a build that asks for `--par`, which is an instrument
+   property rather than a shipped regression, so merging as-is ships no
+   regression on any program. The ruling the owner still owns is a direction
+   one: whether the heartbeat profitability policy is the next work (the
+   deferred register says it is) or whether `--par` staying an explicit
+   measurement switch is enough for now.
 
 ### Rulings requested at merge (unchanged from above)
 
@@ -555,7 +659,7 @@ Carried out of this batch with the trigger that reopens each.
 | Indexed-loop permission (Tier A) and buffer-view splitting (Tier B) | recorded hazards OWN-9 granularity and c2-F4 |
 | The I/O concurrency lane (completion-based family) | sequenced **first** among remaining work in the PROPOSED plan; w3 measured 2.83x vs 0.15% |
 | Claim-bearing actualization and trap arbitration | when a claim-bearing region is worth actualizing; the EFF-4 two-half ruling and elision-rank arbitration remain on file |
-| Heartbeat profitability policy | **now the next required work**, not a refinement — RESULTS §8.8/8.9 |
+| Heartbeat profitability policy | the next required work before `--par` could ever become a default — RESULTS §8.8/8.9. No longer a merge blocker: the compile-time option confines the hazard to builds that ask for it |
 | `reduce`-clause regrouping | never needed while joins are source-fixed |
 | The checker's band-vs-derived-index discharge asymmetry (DESIGN §9) | compiler defect candidate, zero spec bytes; it costs `par_layout`'s banded fold its eligibility today |
 | DESIGN §1's "zero trap sites" premise | should read "zero *claim* sites"; the emitter's `abort()` edges are reachable from a claim-free closure (B-F6) |
