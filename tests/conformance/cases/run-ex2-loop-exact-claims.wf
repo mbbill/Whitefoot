@@ -6,12 +6,14 @@ command fn main() -> status: own ExitStatus traps {
     if ige(i, 5_i32) {
       break @l;
     }
-    claim sum_step_defined: sum +defined i because "the bounded loop sum stays representable";
+    claim sum_step_defined: sum +defined i because "premises: the loop reaches this site only for i from 0_i32 through 4_i32 and sum is the accumulated prefix from those values\nderivation: the largest reached sum plus i is 6_i32 plus 4_i32, which is representable as i32\nconclusion: sum +defined i is true\nchecker gap: ENT does not derive this coupled loop recurrence for sum and i\nconsumers: the following exact addition needs the complete IntegerDomain obligation";
     set sum = sum + i;
-    claim index_step_defined: i +defined 1_i32 because "the loop exits before the counter can overflow";
     set i = i + 1_i32;
   }
-  claim sum_drift: ieq(sum, 10_i32) because "sum drift";
+  if ieq(sum, 10_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   let doubled = match sum *checked 2_i32 {
     Ok(value: d) => {
       give d;
@@ -20,6 +22,9 @@ command fn main() -> status: own ExitStatus traps {
       return exit_status(code: 0_u8);
     }
   }
-  claim double_drift: ieq(doubled, 20_i32) because "double drift";
+  if ieq(doubled, 20_i32) {
+  } else {
+    return exit_status(code: 202_u8);
+  }
   return exit_status(code: 0_u8);
 }

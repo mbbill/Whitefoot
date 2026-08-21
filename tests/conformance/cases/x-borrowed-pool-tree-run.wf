@@ -17,11 +17,11 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own u64 re
       let slot = deref(pool).count;
       let left_room = len(deref(pool).left);
       let left_ok = ilt(slot, left_room);
-      claim leaf_left_in_pool: left_ok because "main sizes the pool to hold the complete tree";
+      claim leaf_left_in_pool: left_ok because "premises: main allocates both pool columns with capacity 64, count starts at one, and depth five builds exactly 63 nodes\nderivation: each leaf allocation slot is in the count range 1_u64 through 32_u64 and is strictly below the left-column length\nconclusion: left_ok is true\nchecker gap: ENT does not derive the closed-call tree-size recurrence for pool.count\nconsumers: the following left-column write needs this upper Range component";
       set deref(pool).left[slot] = 0_u64;
       let right_room = len(deref(pool).right);
       let right_ok = ilt(slot, right_room);
-      claim leaf_right_in_pool: right_ok because "main sizes the pool to hold the complete tree";
+      claim leaf_right_in_pool: right_ok because "premises: main allocates both pool columns with capacity 64, count starts at one, and depth five builds exactly 63 nodes\nderivation: each leaf allocation slot is in the count range 1_u64 through 32_u64 and is strictly below the right-column length\nconclusion: right_ok is true\nchecker gap: ENT does not derive the closed-call tree-size recurrence for pool.count\nconsumers: the following right-column write needs this upper Range component";
       set deref(pool).right[slot] = 0_u64;
       set deref(pool).count = slot + 1_u64;
       set index_value = index_value + 1_u64;
@@ -42,21 +42,21 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own u64 re
           break @parents;
         } else {
           let parent_halvable = ile(parent, 9223372036854775807_u64);
-          claim parent_below_half_max: parent_halvable because "main sizes the pool to hold the complete tree";
+          claim parent_below_half_max: parent_halvable because "premises: depth five gives every parent loop a bound no larger than 16_u64\nderivation: every reached parent is therefore at most 15_u64, far below u64 maximum divided by two\nconclusion: parent_halvable is true\nchecker gap: ENT does not propagate the shrinking width recurrence into the nested parent loop\nconsumers: the following exact multiplication needs its upper IntegerDomain component";
           let doubled = parent * 2_u64;
-          claim left_child_defined: start +defined doubled because "the pool capacity bounds every parent index";
+          claim left_child_defined: start +defined doubled because "premises: start is an allocated level start below 64_u64 and doubled is at most 30_u64 for depth five\nderivation: their sum is at most 62_u64 and is representable as u64\nconclusion: start +defined doubled is true\nchecker gap: ENT does not couple the level-start and parent-loop recurrences\nconsumers: the following exact addition needs the complete IntegerDomain obligation";
           let left_child = start + doubled;
           let left_child_incrementable = ile(left_child, 18446744073709551614_u64);
-          claim left_child_below_max: left_child_incrementable because "main sizes the pool to hold the complete tree";
+          claim left_child_below_max: left_child_incrementable because "premises: for depth five the computed left child is at most 62_u64\nderivation: 62_u64 is at most u64 maximum minus one\nconclusion: left_child_incrementable is true\nchecker gap: ENT does not retain the coupled level and parent bounds after the exact addition\nconsumers: the following exact increment needs its upper IntegerDomain component";
           let right_child = left_child + 1_u64;
           let slot = deref(pool).count;
           let left_room = len(deref(pool).left);
           let left_ok = ilt(slot, left_room);
-          claim parent_left_in_pool: left_ok because "main sizes the pool to hold the complete tree";
+          claim parent_left_in_pool: left_ok because "premises: main allocates 64 left slots and the complete depth-five tree advances count only through slot 63_u64\nderivation: the current parent slot is strictly below the left-column length\nconclusion: left_ok is true\nchecker gap: ENT does not derive the closed-call tree allocation count through nested loops\nconsumers: the following left-column write needs this upper Range component";
           set deref(pool).left[slot] = left_child;
           let right_room = len(deref(pool).right);
           let right_ok = ilt(slot, right_room);
-          claim parent_right_in_pool: right_ok because "main sizes the pool to hold the complete tree";
+          claim parent_right_in_pool: right_ok because "premises: main allocates 64 right slots and the complete depth-five tree advances count only through slot 63_u64\nderivation: the current parent slot is strictly below the right-column length\nconclusion: right_ok is true\nchecker gap: ENT does not derive the closed-call tree allocation count through nested loops\nconsumers: the following right-column write needs this upper Range component";
           set deref(pool).right[slot] = right_child;
           set deref(pool).count = slot + 1_u64;
           set parent = parent + 1_u64;
@@ -72,7 +72,7 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own u64 re
 fn checksum['r](pool: &'r Pool, root: own u64) -> function_result: own u64 reads('r), traps {
   let left_room = len(deref(pool).left);
   let left_ok = ilt(root, left_room);
-  claim root_reads_left: left_ok because "build returns indices inside the pool";
+  claim root_reads_left: left_ok because "premises: build on the 64-slot pool returns a root index allocated within the left column\nderivation: every recursive child index was written from an allocated node index, so root is strictly below left_room\nconclusion: left_ok is true\nchecker gap: ENT does not publish build's returned-index range or checksum's recursive argument range\nconsumers: the following left-column read needs this upper Range component";
   let left_child = deref(pool).left[root];
   let leaf = ieq(left_child, 0_u64);
   if leaf {
@@ -80,14 +80,14 @@ fn checksum['r](pool: &'r Pool, root: own u64) -> function_result: own u64 reads
   }
   let right_room = len(deref(pool).right);
   let right_ok = ilt(root, right_room);
-  claim root_reads_right: right_ok because "build returns indices inside the pool";
+  claim root_reads_right: right_ok because "premises: the nonleaf root was allocated in both 64-slot pool columns\nderivation: the same allocated root index is strictly below right_room\nconclusion: right_ok is true\nchecker gap: ENT does not correlate the parallel pool-column lengths across recursive checksum calls\nconsumers: the following right-column read needs this upper Range component";
   let right_child = deref(pool).right[root];
   let left_count = checksum<'r>(pool: pool, root: left_child);
   let right_count = checksum<'r>(pool: pool, root: right_child);
-  claim child_sum_defined: left_count +defined right_count because "the pool holds far fewer than u64 max nodes";
+  claim child_sum_defined: left_count +defined right_count because "premises: each checksum result counts nodes in a subtree of the closed 63-node tree\nderivation: the two child counts sum to at most 62_u64 and are representable as u64\nconclusion: left_count +defined right_count is true\nchecker gap: ENT does not publish recursive result bounds\nconsumers: the following exact addition needs the complete IntegerDomain obligation";
   let children = left_count + right_count;
   let children_countable = ile(children, 18446744073709551614_u64);
-  claim children_below_max: children_countable because "the pool holds far fewer than u64 max nodes";
+  claim children_below_max: children_countable because "premises: children is the sum of two subtree counts in the closed 63-node tree\nderivation: children is at most 62_u64 and therefore at most u64 maximum minus one\nconclusion: children_countable is true\nchecker gap: ENT does not publish recursive result bounds through the preceding addition\nconsumers: the following exact increment needs its upper IntegerDomain component";
   return children + 1_u64;
 }
 
@@ -100,9 +100,15 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   region 'tree {
     let root = build<'tree>(pool: &uniq 'tree pool, depth: depth);
     let nodes = checksum<'tree>(pool: &'tree pool, root: root);
-    claim tree_checksum_drift: ieq(nodes, 63_u64) because "tree checksum drift";
+    if ieq(nodes, 63_u64) {
+    } else {
+      return exit_status(code: 201_u8);
+    }
   }
   let used = pool.count;
-  claim tree_allocation_drift: ieq(used, 64_u64) because "tree allocation drift";
+  if ieq(used, 64_u64) {
+  } else {
+    return exit_status(code: 202_u8);
+  }
   return exit_status(code: 0_u8);
 }

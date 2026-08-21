@@ -5,7 +5,7 @@ struct Counter {
 fn write_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('r), writes('r), traps {
   let room = len(deref(out));
   let first_ok = ilt(0_u64, room);
-  claim first_in_range: first_ok because "callers pass a buffer of at least two bytes";
+  claim first_in_range: first_ok because "premises: main supplies a two-byte buffer through the parent and child unique borrows\nderivation: index 0_u64 is strictly below that preserved buffer length\nconclusion: first_ok is true\nchecker gap: ENT does not publish the borrowed buffer length through the child call\nconsumers: the following child-reborrow write needs this upper Range component";
   set deref(out)[0_u64] = 7_u8;
   return unit;
 }
@@ -16,7 +16,7 @@ fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('
   }
   let room = len(deref(out));
   let second_ok = ilt(1_u64, room);
-  claim second_in_range: second_ok because "callers pass a buffer of at least two bytes";
+  claim second_in_range: second_ok because "premises: main supplies a two-byte buffer through the parent and child unique borrows\nderivation: index 1_u64 is strictly below that preserved buffer length\nconclusion: second_ok is true\nchecker gap: ENT does not publish the borrowed buffer length through the child call\nconsumers: the following child-reborrow write needs this upper Range component";
   set deref(out)[1_u64] = 9_u8;
   return unit;
 }
@@ -44,8 +44,17 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   }
   let first = output[0_u64];
   let second = output[1_u64];
-  claim child_buffer_write: ieq(first, 7_u8) because "child buffer write";
-  claim resumed_buffer_parent: ieq(second, 9_u8) because "resumed buffer parent";
-  claim resumed_struct_parent: ieq(counter.value, 42_u64) because "resumed struct parent";
+  if ieq(first, 7_u8) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  if ieq(second, 9_u8) {
+  } else {
+    return exit_status(code: 202_u8);
+  }
+  if ieq(counter.value, 42_u64) {
+  } else {
+    return exit_status(code: 203_u8);
+  }
   return exit_status(code: 0_u8);
 }

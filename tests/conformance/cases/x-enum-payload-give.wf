@@ -9,13 +9,16 @@ command fn main() -> status: own ExitStatus traps {
   let r = match b {
     Item(n: v) => {
       let v_in_range = ile(v, 2147483612_i32);
-      claim payload_below_max: v_in_range because "the constructed payload is 7";
+      claim payload_below_max: v_in_range because "premises: the matched Item is constructed with payload 7_i32\nderivation: 7_i32 is at most i32 maximum minus 35_i32\nconclusion: v_in_range is true\nchecker gap: ENT does not retain a nominal payload literal through value match\nconsumers: the following exact addition needs this upper IntegerDomain component";
       give v + 35_i32;
     }
     Empty() => {
       give 0_i32;
     }
   }
-  claim payload_drift: ieq(r, 42_i32) because "payload drift";
+  if ieq(r, 42_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

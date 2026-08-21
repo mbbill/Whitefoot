@@ -5,7 +5,7 @@ fn opaque(value: own u8) -> output: own u8 pure {
 command fn main() -> status: own ExitStatus traps {
   let left = opaque(value: 40_u8);
   let right = opaque(value: 2_u8);
-  claim addition_is_defined: left +defined right because "the runtime backstop authorizes the following exact addition";
+  claim addition_is_defined: left +defined right because "premises: opaque returns its inputs unchanged, so left is 40_u8 and right is 2_u8\nderivation: 40_u8 plus 2_u8 equals 42_u8 and is representable as u8\nconclusion: left +defined right is true\nchecker gap: ENT does not publish uncontracted user-call result values\nconsumers: the following exact addition needs the complete IntegerDomain obligation";
   let sum = left + right;
   if ieq(sum, 42_u8) {
     return exit_status(code: 0_u8);

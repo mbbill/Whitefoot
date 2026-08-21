@@ -18,18 +18,24 @@ command fn main() -> status: own ExitStatus traps {
     let passed = pass_slice<'view>(value: move pass_source);
     let passed_room = len(passed);
     let passed_ok = ilt(0_u64, passed_room);
-    claim passed_nonempty: passed_ok because "pass_slice returns the two-byte view";
+    claim passed_nonempty: passed_ok because "premises: pass_slice receives the two-element left slice and returns that slice unchanged\nderivation: the returned passed slice therefore has length two, so index 0_u64 is in range\nconclusion: passed_ok is true\nchecker gap: ENT does not publish slice identity and length through an uncontracted returning call\nconsumers: the following passed slice subscript needs this upper Range component";
     let passed_value = passed[0_u64];
-    claim returned_slice_pass_through: ieq(passed_value, 11_u8) because "returned slice pass through";
+    if ieq(passed_value, 11_u8) {
+    } else {
+      return exit_status(code: 201_u8);
+    }
     let left_source = slice_of(&'view left);
     let right_source = slice_of(&'view right);
     let take_left = False();
     let selected = choose_slice<'view>(take_left: take_left, left: move left_source, right: move right_source);
     let selected_room = len(selected);
     let selected_ok = ilt(0_u64, selected_room);
-    claim selected_nonempty: selected_ok because "choose_slice returns one two-byte view";
+    claim selected_nonempty: selected_ok because "premises: choose_slice receives two two-element slices and False selects the right slice\nderivation: either branch is nonempty and the selected right slice has length two, so index 0_u64 is in range\nconclusion: selected_ok is true\nchecker gap: ENT does not join returned slice lengths across an uncontracted callee branch\nconsumers: the following selected slice subscript needs this upper Range component";
     let selected_value = selected[0_u64];
-    claim returned_slice_choice: ieq(selected_value, 29_u8) because "returned slice choice";
+    if ieq(selected_value, 29_u8) {
+    } else {
+      return exit_status(code: 202_u8);
+    }
   }
   return exit_status(code: 0_u8);
 }

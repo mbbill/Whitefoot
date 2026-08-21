@@ -8,7 +8,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
       break @fill;
     }
     let fill_in_range = ilt(cursor, length);
-    claim fill_cursor_in_range: fill_in_range because "the fill walks 0..length and breaks at length";
+    claim fill_cursor_in_range: fill_in_range because "premises: the fill loop starts its cursor at zero, advances by one, and exits at the runtime buffer length\nderivation: on every body reach the cursor is strictly below that extent, which is the predicate computed immediately above\nconclusion: fill_in_range is true\nchecker gap: ENT does not derive the strict loop range from the equality exit and loop recurrence\nconsumers: the following fill indexed access needs this upper Range component";
     set values[cursor] = cursor +wrap 1_u64;
     set cursor = cursor +wrap 1_u64;
   }
@@ -19,11 +19,14 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
       break @fold;
     }
     let fold_in_range = ilt(cursor, length);
-    claim fold_cursor_in_range: fold_in_range because "the fold walks 0..length and breaks at length";
+    claim fold_cursor_in_range: fold_in_range because "premises: the fold loop starts its cursor at zero, advances by one, and exits at the runtime buffer length\nderivation: on every body reach the cursor is strictly below that extent, which is the predicate computed immediately above\nconclusion: fold_in_range is true\nchecker gap: ENT does not derive the strict loop range from the equality exit and loop recurrence\nconsumers: the following fold indexed access needs this upper Range component";
     let value = values[cursor];
     set total = total +wrap value;
     set cursor = cursor +wrap 1_u64;
   }
-  claim mutable_buffer_checksum_drift: ieq(total, 36_u64) because "mutable buffer checksum drift";
+  if ieq(total, 36_u64) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

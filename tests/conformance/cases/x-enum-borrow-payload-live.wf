@@ -11,7 +11,7 @@ command fn main() -> status: own ExitStatus traps {
     let a = match deref(p) {
       Full(v: x) => {
         let x_in_range = ile(deref(x), 2147483646_i32);
-        claim x_below_max: x_in_range because "the constructed payload is 20";
+        claim x_below_max: x_in_range because "premises: the borrowed enum is constructed once as Full with payload 20_i32\nderivation: the copied payload value 20_i32 satisfies the bound i32 maximum minus one\nconclusion: x_in_range is true\nchecker gap: ENT does not publish a nominal payload value through borrow-mode match\nconsumers: the downstream exact payload arithmetic needs this IntegerDomain component";
         give deref(x) + 1_i32;
       }
       Void() => {
@@ -22,18 +22,21 @@ command fn main() -> status: own ExitStatus traps {
     let b = match deref(q) {
       Full(v: y) => {
         let y_below = ile(deref(y), 1073741823_i32);
-        claim y_below_half_max: y_below because "the constructed payload is 20";
+        claim y_below_half_max: y_below because "premises: the borrowed enum is constructed once as Full with payload 20_i32\nderivation: the copied payload value 20_i32 satisfies the bound 1073741823_i32\nconclusion: y_below is true\nchecker gap: ENT does not publish a nominal payload value through borrow-mode match\nconsumers: the downstream exact payload arithmetic needs this IntegerDomain component";
         let y_above = ige(deref(y), -1073741824_i32);
-        claim y_above_half_min: y_above because "the constructed payload is 20";
+        claim y_above_half_min: y_above because "premises: the borrowed enum is constructed once as Full with payload 20_i32\nderivation: the copied payload value 20_i32 satisfies the bound -1073741824_i32\nconclusion: y_above is true\nchecker gap: ENT does not publish a nominal payload value through borrow-mode match\nconsumers: the downstream exact payload arithmetic needs this IntegerDomain component";
         give deref(y) * 2_i32;
       }
       Void() => {
         give 0_i32;
       }
     }
-    claim payload_sum_defined: a +defined b because "both scores come from the constructed payload";
+    claim payload_sum_defined: a +defined b because "premises: the sole Full payload is 20_i32, so the first match yields 21_i32 and the second yields 40_i32\nderivation: 21_i32 plus 40_i32 equals 61_i32 and is representable as i32\nconclusion: a +defined b is true\nchecker gap: ENT does not join payload-derived result bounds across the two match expressions\nconsumers: the following exact addition needs the complete IntegerDomain obligation";
     let t = a + b;
-    claim borrow_payload_drift: ieq(t, 61_i32) because "borrow payload drift";
+    if ieq(t, 61_i32) {
+    } else {
+      return exit_status(code: 201_u8);
+    }
   }
   return exit_status(code: 0_u8);
 }

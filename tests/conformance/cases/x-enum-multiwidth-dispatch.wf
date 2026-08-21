@@ -9,7 +9,7 @@ fn classify(v: own Val) -> function_result: own i32 traps {
   match v {
     Small(a: n) => {
       let n_in_range = ile(n, 2147483646_i32);
-      claim small_below_max: n_in_range because "the constructed Small payload is 40";
+      claim small_below_max: n_in_range because "premises: the only Small value passed to classify carries 40_i32\nderivation: 40_i32 is at most i32 maximum minus one\nconclusion: n_in_range is true\nchecker gap: ENT does not publish a nominal payload value through an uncontracted call and match\nconsumers: the following exact increment needs its upper IntegerDomain component";
       return n + 1_i32;
     }
     Big(b: m) => {
@@ -33,10 +33,13 @@ command fn main() -> status: own ExitStatus traps {
   let b = classify(v: move big_atom_0002);
   let bare_atom_0003 = Bare();
   let c = classify(v: move bare_atom_0003);
-  claim first_sum_defined: a +defined b because "the classifier results are small";
+  claim first_sum_defined: a +defined b because "premises: the closed calls yield a equal to 41_i32 and b equal to 2_i32\nderivation: their sum is 43_i32 and is representable as i32\nconclusion: a +defined b is true\nchecker gap: ENT does not publish match-derived user-call results\nconsumers: the following exact addition needs the complete IntegerDomain obligation";
   let s0 = a + b;
-  claim second_sum_defined: s0 +defined c because "the classifier results are small";
+  claim second_sum_defined: s0 +defined c because "premises: s0 is 43_i32 and the Bare call yields c equal to 9_i32\nderivation: their sum is 52_i32 and is representable as i32\nconclusion: s0 +defined c is true\nchecker gap: ENT does not publish match-derived user-call results through the prior sum\nconsumers: the following exact addition needs the complete IntegerDomain obligation";
   let s1 = s0 + c;
-  claim multiwidth_drift: ieq(s1, 52_i32) because "multiwidth drift";
+  if ieq(s1, 52_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

@@ -15,12 +15,12 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
       break @fill;
     }
     let fill_left_ok = ilt(cursor, length);
-    claim fill_left_in_range: fill_left_ok because "the fill walks 0..length over the left column";
+    claim fill_left_in_range: fill_left_ok because "premises: both struct-owned buffers have length six and the fill loop exits when cursor equals the left length\nderivation: every reached fill body has cursor below six, so it is below the left buffer length\nconclusion: fill_left_ok is true\nchecker gap: ENT does not derive the strict loop range and correlate the two nominal field lengths\nconsumers: the following left-buffer write needs this upper Range component";
     set columns.left[cursor] = cursor;
     let doubled = cursor *wrap 2_u64;
     let right_room = len(columns.right);
     let fill_right_ok = ilt(cursor, right_room);
-    claim fill_right_in_range: fill_right_ok because "both columns are allocated with six slots";
+    claim fill_right_in_range: fill_right_ok because "premises: both struct-owned buffers have length six and the fill loop exits when cursor equals the left length\nderivation: every reached fill body has cursor below six, so it is below the right buffer length\nconclusion: fill_right_ok is true\nchecker gap: ENT does not derive the strict loop range and correlate the two nominal field lengths\nconsumers: the following right-buffer write needs this upper Range component";
     set columns.right[cursor] = doubled;
     set cursor = cursor +wrap 1_u64;
   }
@@ -31,16 +31,19 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
       break @fold;
     }
     let fold_left_ok = ilt(cursor, length);
-    claim fold_left_in_range: fold_left_ok because "the fold walks 0..length over the left column";
+    claim fold_left_in_range: fold_left_ok because "premises: both struct-owned buffers have length six and the fold loop exits when cursor equals the left length\nderivation: every reached fold body has cursor below six, so it is below the left buffer length\nconclusion: fold_left_ok is true\nchecker gap: ENT does not derive the strict loop range and correlate the two nominal field lengths\nconsumers: the following left-buffer read needs this upper Range component";
     let left_value = columns.left[cursor];
     let right_room = len(columns.right);
     let fold_right_ok = ilt(cursor, right_room);
-    claim fold_right_in_range: fold_right_ok because "both columns are allocated with six slots";
+    claim fold_right_in_range: fold_right_ok because "premises: both struct-owned buffers have length six and the fold loop exits when cursor equals the left length\nderivation: every reached fold body has cursor below six, so it is below the right buffer length\nconclusion: fold_right_ok is true\nchecker gap: ENT does not derive the strict loop range and correlate the two nominal field lengths\nconsumers: the following right-buffer read needs this upper Range component";
     let right_value = columns.right[cursor];
     set total = total +wrap left_value;
     set total = total +wrap right_value;
     set cursor = cursor +wrap 1_u64;
   }
-  claim struct_of_buffers_checksum_drift: ieq(total, 45_u64) because "struct-of-buffers checksum drift";
+  if ieq(total, 45_u64) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

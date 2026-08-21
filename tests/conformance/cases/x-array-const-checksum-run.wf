@@ -8,7 +8,7 @@ fn checksum() -> function_result: own u64 traps {
       break @scan;
     }
     let in_range = ilt(cursor, 8_u64);
-    claim cursor_in_range: in_range because "the scan walks 0..8 and breaks at eight";
+    claim cursor_in_range: in_range because "premises: the scan loop starts its cursor at zero, advances by one, and exits at the fixed eight-element extent\nderivation: on every body reach the cursor is strictly below that extent, which is the predicate computed immediately above\nconclusion: in_range is true\nchecker gap: ENT does not derive the strict loop range from the equality exit and loop recurrence\nconsumers: the following scan indexed access needs this upper Range component";
     let value = input[cursor];
     set total = total +wrap value;
     set cursor = cursor +wrap 1_u64;
@@ -19,6 +19,9 @@ fn checksum() -> function_result: own u64 traps {
 command fn main() -> status: own ExitStatus traps {
   doc "A static fixed array feeds a loop-carried checksum; the loop claim discharges its indexing.";
   let result = checksum();
-  claim array_checksum_drift: ieq(result, 228_u64) because "array checksum drift";
+  if ieq(result, 228_u64) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

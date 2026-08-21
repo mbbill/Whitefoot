@@ -36,10 +36,13 @@ command fn main() -> status: own ExitStatus traps {
   let wa = weight(x: neg);
   let wb = weight(x: 0_i32);
   let wc = weight(x: 7_i32);
-  claim first_weight_sum_defined: wa +defined wb because "each weight is at most two";
+  claim first_weight_sum_defined: wa +defined wb because "premises: weight returns only 0_i32, 1_i32, or 2_i32\nderivation: wa plus wb lies from 0_i32 through 4_i32 and is representable as i32\nconclusion: wa +defined wb is true\nchecker gap: ENT does not publish the finite result set of the uncontracted weight calls\nconsumers: the following exact addition needs the complete IntegerDomain obligation";
   let s0 = wa + wb;
-  claim second_weight_sum_defined: s0 +defined wc because "three small weights stay representable";
+  claim second_weight_sum_defined: s0 +defined wc because "premises: s0 lies from 0_i32 through 4_i32 and weight returns only 0_i32 through 2_i32\nderivation: s0 plus wc lies from 0_i32 through 6_i32 and is representable as i32\nconclusion: s0 +defined wc is true\nchecker gap: ENT does not combine prior-sum and uncontracted-call result ranges\nconsumers: the following exact addition needs the complete IntegerDomain obligation";
   let s1 = s0 + wc;
-  claim weight_sum_drift: ieq(s1, 3_i32) because "weight-sum drift";
+  if ieq(s1, 3_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

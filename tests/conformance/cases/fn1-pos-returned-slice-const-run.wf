@@ -10,9 +10,12 @@ command fn main() -> status: own ExitStatus traps {
     let view = fixed_view<'view>();
     let view_room = len(view);
     let view_ok = ilt(1_u64, view_room);
-    claim view_sized: view_ok because "fixed_view returns the three-byte constant view";
+    claim view_sized: view_ok because "premises: fixed_view returns a slice of fixed_bytes, whose declared length is three\nderivation: index 1_u64 is strictly less than that three-element returned view length\nconclusion: view_ok is true\nchecker gap: ENT does not publish a returned slice length through an uncontracted call\nconsumers: the following view subscript needs this upper Range component";
     let observed = view[1_u64];
-    claim returned_const_slice: ieq(observed, 13_u8) because "returned const slice";
+    if ieq(observed, 13_u8) {
+    } else {
+      return exit_status(code: 201_u8);
+    }
   }
   return exit_status(code: 0_u8);
 }

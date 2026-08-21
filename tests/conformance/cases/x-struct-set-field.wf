@@ -7,8 +7,11 @@ command fn main() -> status: own ExitStatus traps {
   let c = Counter(n: 1_i32);
   set c.n = 41_i32;
   let field_in_range = ile(c.n, 2147483646_i32);
-  claim field_below_max: field_in_range because "the field was just set to 41";
+  claim field_below_max: field_in_range because "premises: c.n is set to 41_i32 immediately before the bound is computed\nderivation: 41_i32 is at most i32 maximum minus one\nconclusion: field_in_range is true\nchecker gap: ENT does not retain a value through a mutable nominal field projection\nconsumers: the following exact field increment needs this upper IntegerDomain component";
   let v = c.n + 1_i32;
-  claim set_field_drift: ieq(v, 42_i32) because "set field drift";
+  if ieq(v, 42_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }
