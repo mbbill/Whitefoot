@@ -5,7 +5,10 @@ designed so that memory corruption, data races, uninitialized reads, and silent
 overflow are unrepresentable in accepted source. There is no writer-accessible
 unsafe escape. Every partial operation is admitted only after machine proof of
 its domain; a written claim is the sole writer-reachable runtime trap and is
-never removed.
+never removed. A claim is only an independently true theorem that the
+normative checker cannot derive and a later admission root genuinely needs;
+it is never an assertion, test oracle, intentional abort, or substitute for
+ordinary control flow, and its `because` record states the complete derivation.
 
 ## Project goal
 

@@ -5,6 +5,13 @@ programs must make memory corruption, data races, uninitialized reads, and
 silent overflow unrepresentable. There is no writer-accessible unsafe escape.
 Every partial operation is admitted only after machine proof of its domain; a
 written claim is the sole writer-reachable runtime trap and is never removed.
+A claim is only an independently true theorem that the normative checker
+cannot derive and a later admission root genuinely needs. It is never an
+assertion, test oracle, intentional abort, or substitute for `if`, `match`, a
+typed outcome, or another ordinary value/control path. Its exact five-field
+`because` record must give premises, derivation, conclusion, checker gap, and
+terminal consumers; placeholder trust prose is a defect even when structural
+validation accepts it.
 
 ## Project goal
 
@@ -51,11 +58,10 @@ probably not the next work.
   code, and design prose do not.
 - `docs/constitution.md` records project law and `docs/patterns.md` records writer
   forms.
-- Consult the relevant live `mcts_mem/` node and its rejected alternatives
-  before a nontrivial design change. The tree's complete rules — formatting,
-  provenance, paired moves, and lint — are the installed `mcts-mem-use`
-  skill document; read it in full and follow it before any tree edit. Never
-  edit the tree without it.
+- Use the installed `mcts-mem-use` skill to consult the relevant live
+  `mcts_mem/` node and its rejected alternatives before a nontrivial design
+  change. Never edit the tree without first loading and following that skill;
+  its formatting, provenance, paired-move, and lint rules are mandatory.
 - Architecture dossiers are current or historical design evidence, and
   `archive/governance/decision-log.md` is a historical decision record. They
   can explain why something exists, but they cannot add current work or
@@ -284,8 +290,8 @@ everything else is upheld by discipline.
   completeness claim.
 - Keep commits cohesive. Record the current landscape in `docs/roadmap.md`,
   current sequencing in `docs/current-plan.md`, durable design choices and
-  rejected alternatives in `mcts_mem/` (per the installed `mcts-mem-use`
-  skill's rules), and protected owner approvals in `governance/APPROVALS.md`;
-  do not use agent instruction files as a status log.
+  rejected alternatives through the `mcts-mem-use` skill, and protected owner
+  approvals in `governance/APPROVALS.md`; do not use agent instruction files as
+  a status log.
 - Delegate only concrete, independent work. Integrate and review delegated
   results against the same goal and relevance rules.

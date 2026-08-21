@@ -278,6 +278,36 @@ at the place it names, so no facts are lost to a conservative merge.
 Replaces: an ambiguous-provenance borrow-returning signature, and the
 caller-side workaround of binding a result the language cannot root.
 
+## P14. Claim only the proof residual
+
+Problem: a partial operation needs a theorem that is true for every execution,
+but the normative checker intentionally does not derive it—for example, an
+ordinary loop invariant or the range of an uncontracted helper result. Write a
+claim only when the proposition has a complete offline derivation and a later
+source-admission root would fail without that exact occurrence. The five
+`because` fields state the available premises, every inference step, the exact
+conclusion, the exact checker limitation, and the exact terminal consumers.
+
+Do not use a claim for a condition that can legitimately be false, an output
+comparison, an impossible-arm sentinel, a test oracle, a deliberate abort, or
+a fact the checker already knows. Use `if`, `match`, a typed outcome, return or
+exit status for ordinary decisions and failures. Use a total operation row
+when the operation's domain is not guaranteed. If removing the claim changes no
+admission root, remove it; if two claims cover for one another, remove or
+restructure both until each surviving occurrence is independently necessary.
+Human, AI, SMT, or certificate review may approve the prose proof, but it never
+changes compiler acceptance and never removes the retained runtime check.
+
+Current value: CLM-1 checks the proof-predicate shape and exact five-field
+record; CLM-2 rejects proved, refuted, ambiguous, unsupported, overlapping,
+vacuous, and non-residual occurrences before publishing a checked program.
+Accepted claims execute through the ordinary IR/backend path in every build
+mode.
+
+Replaces: `assert`, debug-only checks, `unreachable`, intentional aborts,
+"trust me" comments, and claims written merely to silence a partial-operation
+diagnostic.
+
 ## Known gaps (findings, not yet patterns)
 
 - In-place mutation interleaved with traversal of the same structure (graph

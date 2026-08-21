@@ -471,17 +471,23 @@ There is one legal spelling per construct and one legal byte-level formatting, c
 
 ```
 let wrapped = a +wrap b;
-claim sum_defined: a +defined b because "the protocol bounds both operands";
-let exact = a + b;
+let bounded = clamp_hundred(value: a);
+claim sum_defined: bounded +defined 1_u64 because "premises: bounded is returned by clamp_hundred, whose body computes imin(a, 100_u64)\nderivation: bounded is at most 100_u64, so bounded plus 1_u64 is at most 101_u64 and cannot overflow u64\nconclusion: bounded +defined 1_u64 is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following exact addition bounded + 1_u64 requires this exact domain";
+let exact = bounded + 1_u64;
 let checked = a +checked b;
 let saturated = a +sat b;
 ```
 
 The wrapping, checked, and saturating forms are total value operations. The
-bare exact addition has one matching static domain obligation. Here the named
-claim is the explicit runtime backstop and establishes precisely that goal on
-its normal edge; a branch or `requires` clause can establish the same goal
-without a runtime abort. There is no arithmetic-specific trap mode.
+bare exact addition has one matching static domain obligation. Here
+`clamp_hundred` really returns a value at most one hundred, but the normative
+checker deliberately publishes no theorem about an uncontracted user-call
+result. The named claim records that complete offline derivation and is
+load-bearing for the exact addition. It is not a guess that the input will be
+small, an assertion, or a replacement for `if`: a potentially false condition
+uses the checked row or an ordinary branch and value outcome. The retained
+claim still executes, so a violated approved theorem produces the language's
+one runtime trap. There is no arithmetic-specific trap mode.
 
 Why an expert should care rather than wince:
 

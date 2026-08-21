@@ -209,14 +209,27 @@ Subscripts follow OP-4 discharge-or-reject: the L0 entailment engine
 conservative structural graph, an accepted subscript compiles with no runtime
 bounds branch in any build mode, and an undischarged obligation is a
 compile-time OP-4 rejection carrying the exact ENT-6 residual. `claim` is the
-CLM-1 named runtime check: always retained, judged by the engine for CLM-2
-redundancy (a required non-rejecting advisory, printed to stderr by the
-driver) and refutation (a hard CLM-2 rejection), and its passed predicate is
-an ENT-3 S3 fact source. A failing claim aborts with a DIAG-3 record citing
-CLM-1 and the claim name. `claim` is the sole writer-reachable language runtime
-trap carrier; subscripts, exact arithmetic, allocation fit, system ranges, and
-contracts are static, while a callee's `traps` effect can only summarize a
-reachable claim. Buffer fields retain exact
+CLM-1 named runtime check and the sole writer-reachable language runtime trap
+carrier. Its predicate is a side-effect-free proof predicate and its exact
+five-field `because` record names premises, derivation, conclusion, checker
+gap, and terminal consumers. Before its S3 event, the checker rejects a claim
+whose direct, support-canonical, or fully structural lifecycle image is proved,
+refuted, contradictory, ambiguous, or outside the finite contribution basis.
+Every canonical contribution component must be checker-unknown. With one fixed
+eligible occurrence set, fresh Full-minus analyses must then show that removing
+each component and removing the whole occurrence changes at least one
+non-explosive source-admission terminal root while leaving provenance invariant.
+A component or occurrence that is independently reconstructed is a hard CLM-2
+non-residual rejection, not an advisory. Thus an accepted claim is an
+independently true, checker-unknown, load-bearing residual theorem—not an
+assertion, test oracle, intentional abort, or substitute for control flow.
+
+Every accepted claim is retained and executes at every dynamic reach in every
+build mode. Its passed contribution is an ENT-3 S3 fact source; a violated
+approved theorem aborts with one DIAG-3 record citing CLM-1 and the claim name.
+Subscripts, exact arithmetic, allocation fit, system ranges, and contracts are
+static, while a callee's `traps` effect can only summarize a reachable retained
+claim. Buffer fields retain exact
 projected roots through length, read, and write operations without
 re-evaluating source paths.
 
@@ -233,16 +246,17 @@ measurements live in
 `research/investigations/obligation-discharge/ACCEPTANCE.md`.
 
 The successfully checked program also exposes one private read-only
-`ClaimLedger` in dense function and source order. Each named claim carries its
-bundle-local logical path and checked coordinate, exact source spelling,
-justification, lifecycle disposition and the optional redundant/refuted
-lifecycle derivation, plus
-every non-lifecycle retained root whose finalized proof ancestry reaches that
-claim's exact S3 premise. Bounds and call uses additionally join the existing
-protected-leaf, direct-demand, structural/subject bridge, call-argument, and
-bridge-call provenance inventories exactly; a missing or duplicate required
-mapping is an internal compiler failure. Claim-free units take an empty-ledger
-fast path.
+`ClaimLedger` in stable source/instance order. Each retained claim carries its
+source identity and coordinate, exact source spelling and five-field
+justification, the direct/support-canonical/fully-structural predicate images,
+ordered structured contribution facts, component and parent-reconstruction
+proofs, and separately labelled component/whole Full-minus witnesses. Published
+uses are only complete bounds/domain obligations, FN-8 call goals, and complete
+FN-9 aggregates whose finalized non-explosive proof ancestry reaches an exact
+S3 component. Bounds and call uses additionally join the existing protected-
+leaf, direct-demand, structural/subject bridge, call-argument, and bridge-call
+provenance inventories exactly; a missing or duplicate required mapping is an
+internal compiler failure. Claim-free units take an empty-ledger fast path.
 The ledger is neither serialized nor read by semantic acceptance, lowering, or
 optimization, and it performs no second semantic walk or closure. Installed
 real-source populations and the bounded-cost result live in the same acceptance
@@ -346,7 +360,9 @@ This gate is deliberately narrower than taint or noninterference. Control
 choice, write-address choice, path-sensitive storage, recursive payload paths,
 and implicit flow add no provenance edge. An external value used only as a
 bound, base, write address, or unrelated operand is outside the gate, and an
-internal constrained subject may still rely on an ordinary claim. The sole
+internal constrained subject may still rely on an ordinary residual claim,
+but only when that predicate is independently true and passes its complete
+CLM-2 lifecycle and necessity judgment. The sole
 current protected subject is the offset in `i < len(P)`. Provenance changes no
 runtime operation, effect row by itself, optimizer fact, or check-elision
 license, and facts-on/facts-off acceptance and required runtime behavior use

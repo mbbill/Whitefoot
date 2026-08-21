@@ -5,6 +5,13 @@ programs must make memory corruption, data races, uninitialized reads, and
 silent overflow unrepresentable. There is no writer-accessible unsafe escape.
 Every partial operation is admitted only after machine proof of its domain; a
 written claim is the sole writer-reachable runtime trap and is never removed.
+A claim is only an independently true theorem that the normative checker
+cannot derive and a later admission root genuinely needs. It is never an
+assertion, test oracle, intentional abort, or substitute for `if`, `match`, a
+typed outcome, or another ordinary value/control path. Its exact five-field
+`because` record must give premises, derivation, conclusion, checker gap, and
+terminal consumers; placeholder trust prose is a defect even when structural
+validation accepts it.
 
 ## Project goal
 
