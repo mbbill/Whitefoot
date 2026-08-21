@@ -379,6 +379,38 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     assert_eq!(*kind, ConflictKind::WriteOperandRead);
 }
 
+/// The caller-side half in its other direction: s1's own operand reads the
+/// cell s2 writes through. Which member takes a lane is the implementation's
+/// choice, so permission may not depend on it and both directions are judged.
+#[test]
+fn an_operand_read_by_the_first_call_of_storage_the_second_writes_is_denied() {
+    let source = br#"fn take(v: own u64) -> result: own u64 pure {
+  return v;
+}
+
+fn bump['r](slot: &uniq 'r u64) -> result: own u64 writes('r) {
+  set deref(slot) = 7_u64;
+  return 1_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 1_u64;
+  region 'r {
+    let a = take(v: cell);
+    let b = bump<'r>(slot: &uniq 'r cell);
+    let total = imax(a, b);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::Footprint { kind, .. } = denial(pair, 2) else {
+        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(*kind, ConflictKind::OperandReadWrite);
+}
+
 /// Condition 2 in its other direction: s1 only reads, s2 writes the same
 /// place. The judgment's first conflict loop never sees this pair, so the
 /// second one has to.

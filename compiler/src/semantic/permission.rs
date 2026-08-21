@@ -20,12 +20,15 @@
 //!
 //!    The callee projection is not the whole footprint. A statement also
 //!    reaches storage *before* its call, on the calling thread, while it
-//!    evaluates its own operands, and an overlap moves exactly that evaluation
-//!    across s1's call — so W(s1) must also be disjoint from the caller-side
-//!    operand reads of s2. Without this the pair
+//!    evaluates its own operands, and an overlap moves that evaluation across
+//!    the other member's call — so each member's writes must also be disjoint
+//!    from the other's caller-side operand reads. Without this the pair
 //!    `let a = bump(slot: &uniq 'r cell); let b = take(v: cell);` is permitted
 //!    while `take`'s operand reads the storage `bump` writes, which is both a
-//!    changed result and, on a granted lane, a data race.
+//!    changed result and, on a granted lane, a data race. Both directions are
+//!    judged because which member's operands move is the implementation's
+//!    choice of which member takes the lane, which permission may not depend
+//!    on.
 //! 3. **Row gate.** Neither callee's row carries `external` or `blocks`.
 //!    Rows gate; places prove. No disjointness is ever derived from a row.
 //! 4. **No skipping exit.** No exit edge of s1 bypasses s2: s1's only
@@ -133,6 +136,9 @@ pub(crate) enum ConflictKind {
     /// s1 writes and s2 reads the same storage on the calling thread while
     /// evaluating its own operands.
     WriteOperandRead,
+    /// s1 reads storage on the calling thread while evaluating its own
+    /// operands, and s2 writes it.
+    OperandReadWrite,
 }
 
 impl ConflictKind {
@@ -144,6 +150,7 @@ impl ConflictKind {
             Self::WriteRead => "the write of s1 overlaps the read of s2 at",
             Self::ReadWrite => "the read of s1 overlaps the write of s2 at",
             Self::WriteOperandRead => "the write of s1 overlaps the operand read of s2 at",
+            Self::OperandReadWrite => "the operand read of s1 overlaps the write of s2 at",
         }
     }
 }
@@ -491,9 +498,16 @@ impl<'check> Program<'check> {
                 argument,
             });
         }
-        // Only s2's own operand evaluation is moved by an overlap, so only
-        // s2's caller-side reads join the judgment, and only an unresolved one
-        // of s2's denies.
+        // Operand evaluation is part of the statement, so an overlap moves it
+        // too. Which member's operands move depends on which member takes the
+        // lane, so both directions are judged and an unresolved operand read
+        // on either side denies.
+        if let Some(argument) = left.operand_unresolved {
+            return PermissionVerdict::Denied(Denial::UnresolvedFootprint {
+                side: PairSide::First,
+                argument,
+            });
+        }
         if let Some(argument) = right.operand_unresolved {
             return PermissionVerdict::Denied(Denial::UnresolvedFootprint {
                 side: PairSide::Second,
@@ -528,10 +542,19 @@ impl<'check> Program<'check> {
             }
         }
         for write in &right.writes {
-            for read in &left.reads {
+            for (kind, read) in left
+                .reads
+                .iter()
+                .map(|access| (ConflictKind::ReadWrite, access))
+                .chain(
+                    left.operand_reads
+                        .iter()
+                        .map(|access| (ConflictKind::OperandReadWrite, access)),
+                )
+            {
                 if write.conflicts(read) {
                     return PermissionVerdict::Denied(Denial::Footprint {
-                        kind: ConflictKind::ReadWrite,
+                        kind,
                         left: read.clone(),
                         right: write.clone(),
                     });
