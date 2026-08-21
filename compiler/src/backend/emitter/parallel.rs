@@ -1,11 +1,12 @@
 //! Actualization of the permission judgment's overlap groups.
 //!
 //! For a group of sibling calls the checker permitted to overlap, every member
-//! but the last is *handed out*: its arguments are stored into a stack frame,
-//! the call itself is outlined into an internal thunk over that frame, and the
-//! thunk is offered to a worker lane. The remaining member then runs inline on
-//! the calling thread, and each handed-out member is joined immediately after
-//! it — before the group's values are read and before any exit edge.
+//! but the last is *handed out*: a lane is claimed, the call's arguments are
+//! stored into that lane's frame, and the call — outlined into an internal
+//! thunk over the frame — is published to the lane. The remaining member then
+//! runs inline on the calling thread, and each handed-out member is joined
+//! immediately after it — before the group's values are read and before any
+//! exit edge.
 //!
 //! Both edges of the hand-out call the same monomorphized function on the same
 //! arguments, so there is still exactly one lowering of the source call: the
@@ -14,9 +15,22 @@
 //! Nothing here consults a fact, a claim disposition, or a row; it consumes
 //! the group the checker already judged.
 //!
-//! The thunk's frame is an ordinary stack slot of the calling function, so a
-//! recursive body that hands out at every level gives each activation its own
-//! frame, exactly as its own arguments already are.
+//! **The claim comes before the frame.** The frame belongs to the lane, not to
+//! the calling function, and nothing about it is built until a lane has been
+//! granted. An activation that is refused a lane executes a null test and its
+//! own call: no stack slot, no argument spills, nothing the sequential
+//! lowering did not already do. That is what keeps the recursion depth of a
+//! `--par` build the recursion depth of the sequential build, whether the pool
+//! is off or merely busy. The earlier shape — a frame in the calling
+//! function's entry block — put a slot and its stores in *every* activation of
+//! an eligible recursive function, which cost about four times the stack per
+//! frame on a small one and turned a recursion that ran into a bare SIGSEGV.
+//!
+//! Handing a call to another thread does still cost the caller what a
+//! parallel schedule costs: the lane handle is live across the inline member,
+//! and the thunk is a second caller of the handed-out function whose arguments
+//! come out of memory, so an interprocedural fact about those arguments —
+//! a constant, say — does not survive into the `--par` build.
 //!
 //! **Symbol reservation.** A source function is emitted as `wf_` followed by
 //! its own IDENT, and [FORM-3] spells IDENT `[a-z][a-z0-9_]*`, so no source
@@ -36,27 +50,26 @@ use crate::{IrType, IrValueId};
 /// links a Whitefoot executable links the same bytes.
 pub const PARALLEL_RUNTIME_SOURCE: &str = include_str!("../par_runtime.c");
 
-/// The module's own definition of the lane offer: refuse every lane.
+/// The module's own definition of the lane protocol: claim no lane, ever.
 ///
-/// A module that hands work out carries a *weak* sequential answer to both
-/// runtime entry points, so it is a complete program on its own: with no
-/// runtime linked, every offer is refused, every join is a no-op, and every
-/// handed-out call runs on its own thread at its own fallback edge — exactly
-/// today's schedule. Linking the runtime replaces both with its strong
-/// definitions, and only then can a lane be granted.
+/// A module that hands work out carries a *weak* sequential answer to every
+/// runtime entry point, so it is a complete program on its own: with no
+/// runtime linked, every claim is refused, so no frame is ever built, no task
+/// is ever published, and every handed-out call runs on its own thread at its
+/// own fallback edge — exactly today's schedule. Linking the runtime replaces
+/// all four with its strong definitions, and only then can a lane be granted.
 ///
 /// The alternative — plain declarations — would make the runtime a link
 /// obligation of every path that ever builds a Whitefoot program rather than
 /// an option of the paths that want lanes, and would turn a program that
 /// merely *could* overlap into one that cannot be linked without it. The
 /// permission is never an obligation, so neither is its runtime.
-pub(crate) const PARALLEL_RUNTIME_FALLBACK: &str = "define weak ptr @wf__par_try_fork(ptr %fn, ptr %arg) {\nentry:\n  ret ptr null\n}\n\ndefine weak void @wf__par_join(ptr %handle) {\nentry:\n  ret void\n}\n\n";
+pub(crate) const PARALLEL_RUNTIME_FALLBACK: &str = "define weak ptr @wf__par_claim(i64 %bytes) {\nentry:\n  ret ptr null\n}\n\ndefine weak void @wf__par_publish(ptr %frame, ptr %fn) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_join(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_release(ptr %frame) {\nentry:\n  ret void\n}\n\n";
 
 /// The first line of [`PARALLEL_RUNTIME_FALLBACK`], and so the marker a link
 /// path reads: one definition, so the text a module carries and the text a
 /// linker looks for cannot drift apart.
-pub(crate) const PARALLEL_TRY_FORK_SYMBOL: &str =
-    "define weak ptr @wf__par_try_fork(ptr %fn, ptr %arg)";
+pub(crate) const PARALLEL_CLAIM_SYMBOL: &str = "define weak ptr @wf__par_claim(i64 %bytes)";
 
 /// True when this emitted module hands work out, so linking the parallel
 /// runtime would let it take lanes.
@@ -67,7 +80,7 @@ pub(crate) const PARALLEL_TRY_FORK_SYMBOL: &str =
 /// still links and still runs correctly without the runtime; this only says
 /// that linking it is what makes the lanes reachable.
 pub fn module_requires_parallel_runtime(module: &str) -> bool {
-    module.contains(PARALLEL_TRY_FORK_SYMBOL)
+    module.contains(PARALLEL_CLAIM_SYMBOL)
 }
 
 /// The outlined thunks of one module, in emission order.
@@ -103,26 +116,30 @@ impl ParallelThunks {
 /// One hand-out awaiting its join, in the order the group hands them out.
 #[derive(Clone, Debug)]
 pub(crate) struct HandedOut {
-    /// The value the joined call defines, loaded out of the frame at the join.
+    /// The value the joined call defines: a granted lane's result read out of
+    /// the frame, or a refused lane's own call, whichever edge ran.
     result: IrValueId,
     result_type: IrType,
     /// The frame's LLVM struct type, `{ arguments..., result }`.
     frame_type: String,
-    /// The stack slot holding this activation's frame.
+    /// The claimed lane's frame, or null when no lane was granted. It is both
+    /// the storage the thunk reads and the handle the join names.
     frame: String,
-    /// The lane handle, or null when no lane was granted.
-    handle: String,
-    thunk: String,
     /// The frame field the result occupies: the argument count.
     result_field: usize,
+    /// The call the refused edge makes: the same symbol on the same operands
+    /// the thunk calls, rendered once so the two edges cannot drift apart.
+    callee: String,
+    arguments: String,
 }
 
 impl FunctionEmitter<'_, '_> {
     /// Hands one member of an overlap group to a worker lane.
     ///
-    /// Emits the frame stores and the lane offer, and defines nothing: the
-    /// call's value comes into existence at the join, which is the only place
-    /// it is known to have been computed.
+    /// Claims a lane first and builds the frame only inside the granted edge,
+    /// so a refused hand-out leaves nothing behind but a null pointer. Defines
+    /// nothing: the call's value comes into existence at the join, which is
+    /// the only place it is known to have been computed.
     pub(super) fn emit_handed_out_call(
         &mut self,
         result: IrValueId,
@@ -139,11 +156,14 @@ impl FunctionEmitter<'_, '_> {
             return Err(BackendFailure::InvalidIr);
         }
         let mut field_types = Vec::with_capacity(arguments.len() + 1);
+        let mut operands = Vec::with_capacity(arguments.len());
         for (argument, (_, parameter_type)) in arguments.iter().zip(target.parameters()) {
             if self.value_type(*argument) != Some(*parameter_type) {
                 return Err(BackendFailure::InvalidIr);
             }
-            field_types.push(llvm_type(self.program, *parameter_type)?);
+            let parameter = llvm_type(self.program, *parameter_type)?;
+            operands.push(format!("{parameter} {}", self.value_name(*argument)));
+            field_types.push(parameter);
         }
         let result_type = llvm_type(self.program, ty)?;
         let result_field = field_types.len();
@@ -155,21 +175,29 @@ impl FunctionEmitter<'_, '_> {
             thunk_definition(symbol, &frame_type, &field_types, &callee, &result_type)
         })?;
 
-        let frame = self.entry_slot(&frame_type)?;
-        for (index, argument) in arguments.iter().enumerate() {
+        // The frame's size is LLVM's own answer for the frame's type, so the
+        // bound the lane checks is the layout the thunk reads, not a number
+        // this backend computed beside it.
+        let frame = format!("%{}", self.next_temporary()?);
+        let granted = format!("%{}", self.next_temporary()?);
+        let offer = par_offer_label(result);
+        let offered = par_offered_label(result);
+        writeln!(
+            self.output,
+            "  {frame} = call ptr @wf__par_claim(i64 ptrtoint (ptr getelementptr ({frame_type}, ptr null, i32 1) to i64))\n  {granted} = icmp ne ptr {frame}, null\n  br i1 {granted}, label %{offer}, label %{offered}\n{offer}:"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        for (index, operand) in operands.iter().enumerate() {
             let field = format!("%{}", self.next_temporary()?);
             writeln!(
                 self.output,
-                "  {field} = getelementptr inbounds {frame_type}, ptr {frame}, i32 0, i32 {index}\n  store {} {}, ptr {field}",
-                field_types[index],
-                self.value_name(*argument)
+                "  {field} = getelementptr inbounds {frame_type}, ptr {frame}, i32 0, i32 {index}\n  store {operand}, ptr {field}"
             )
             .map_err(|_| BackendFailure::TextEmission)?;
         }
-        let handle = format!("%{}", self.next_temporary()?);
         writeln!(
             self.output,
-            "  {handle} = call ptr @wf__par_try_fork(ptr {thunk}, ptr {frame})"
+            "  call void @wf__par_publish(ptr {frame}, ptr {thunk})\n  br label %{offered}\n{offered}:"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         self.handed_out.push(HandedOut {
@@ -177,18 +205,18 @@ impl FunctionEmitter<'_, '_> {
             result_type: ty,
             frame_type,
             frame,
-            handle,
-            thunk,
             result_field,
+            callee,
+            arguments: operands.join(", "),
         });
         Ok(())
     }
 
     /// Completes every hand-out of the group whose last member just ran.
     ///
-    /// A granted lane is waited for; a refused one runs the same thunk on this
-    /// thread. Either way the group's values exist from here on, and no exit
-    /// edge of the block is reachable before this point.
+    /// A granted lane is waited for, read, and given back; a refused one runs
+    /// the same call on this thread. Either way the group's values exist from
+    /// here on, and no exit edge of the block is reachable before this point.
     pub(super) fn emit_overlap_joins(
         &mut self,
         join_site: IrValueId,
@@ -198,21 +226,32 @@ impl FunctionEmitter<'_, '_> {
         }
         for pending in std::mem::take(&mut self.handed_out) {
             let condition = format!("%{}", self.next_temporary()?);
+            let refused = format!("%{}", self.next_temporary()?);
+            let waited = format!("%{}", self.next_temporary()?);
             let field = format!("%{}", self.next_temporary()?);
             let inline = par_inline_label(pending.result);
             let wait = par_wait_label(pending.result);
             let done = par_done_label(pending.result);
             let result_type = llvm_type(self.program, pending.result_type)?;
+            let HandedOut {
+                frame,
+                frame_type,
+                callee,
+                arguments,
+                result_field,
+                ..
+            } = &pending;
             writeln!(
                 self.output,
-                "  {condition} = icmp eq ptr {}, null\n  br i1 {condition}, label %{inline}, label %{wait}\n{inline}:\n  call void {}(ptr {})\n  br label %{done}\n{wait}:\n  call void @wf__par_join(ptr {})\n  br label %{done}\n{done}:\n  {field} = getelementptr inbounds {}, ptr {}, i32 0, i32 {}\n  {} = load {result_type}, ptr {field}",
-                pending.handle,
-                pending.thunk,
-                pending.frame,
-                pending.handle,
-                pending.frame_type,
-                pending.frame,
-                pending.result_field,
+                "  {condition} = icmp eq ptr {frame}, null\n  \
+                 br i1 {condition}, label %{inline}, label %{wait}\n\
+                 {inline}:\n  {refused} = call {result_type} @{callee}({arguments})\n  \
+                 br label %{done}\n\
+                 {wait}:\n  call void @wf__par_join(ptr {frame})\n  \
+                 {field} = getelementptr inbounds {frame_type}, ptr {frame}, i32 0, i32 {result_field}\n  \
+                 {waited} = load {result_type}, ptr {field}\n  \
+                 call void @wf__par_release(ptr {frame})\n  br label %{done}\n\
+                 {done}:\n  {} = phi {result_type} [ {refused}, %{inline} ], [ {waited}, %{wait} ]",
                 value_name(pending.result),
             )
             .map_err(|_| BackendFailure::TextEmission)?;
@@ -247,7 +286,18 @@ fn thunk_definition(
     body
 }
 
-/// The label a refused lane runs the thunk in.
+/// The label a granted lane's frame is filled and published in.
+fn par_offer_label(value: IrValueId) -> String {
+    format!("par.offer.v{}", value.ordinal())
+}
+
+/// The label both edges of the claim continue in, and so the block the inline
+/// member of the group runs in.
+fn par_offered_label(value: IrValueId) -> String {
+    format!("par.offered.v{}", value.ordinal())
+}
+
+/// The label a refused lane runs the call in.
 fn par_inline_label(value: IrValueId) -> String {
     format!("par.inline.v{}", value.ordinal())
 }

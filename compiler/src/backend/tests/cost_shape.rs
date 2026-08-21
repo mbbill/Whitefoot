@@ -795,21 +795,22 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             | "calloc" | "free"
             // Written claims and their mandatory diagnostic record.
             | "wf_trap" | "abort"
-            // The lane offer and its join at a permitted overlap group
-            // [PAR-1 candidate]. The module this census reads is the default
+            // The lane protocol of a permitted overlap group [PAR-1
+            // candidate]. The module this census reads is the default
             // compilation, which actualizes nothing and therefore names none
             // of these. They are listed for the `--par` build of the same
-            // source, where both are the module's own weak definitions: they
-            // refuse every lane and return, and the handed-out call runs at
-            // its own fallback edge on this thread, so nothing there reaches
-            // a host facility either. That is a statement about the emitted
-            // module, not about every link of it — with the parallel runtime
-            // linked, `wf__par_try_fork` reaches `pthread_create`. This
-            // census inspects the module, and the pool the runtime adds is
-            // trusted computing base below the language, like malloc's own
-            // internals. This row is a permission the target may take, not an
-            // operation of the first slice, so no §9.1 count moves with it.
-            | "wf__par_try_fork" | "wf__par_join"
+            // source, where all four are the module's own weak definitions:
+            // the claim refuses every lane and the rest return, so no frame
+            // is built and the handed-out call runs at its own fallback edge
+            // on this thread, reaching no host facility either. That is a
+            // statement about the emitted module, not about every link of it
+            // — with the parallel runtime linked, `wf__par_claim` reaches
+            // `pthread_create`. This census inspects the module, and the pool
+            // the runtime adds is trusted computing base below the language,
+            // like malloc's own internals. This row is a permission the
+            // target may take, not an operation of the first slice, so no
+            // §9.1 count moves with it.
+            | "wf__par_claim" | "wf__par_publish" | "wf__par_join" | "wf__par_release"
         ) || target.starts_with("wf__par_thunk_")
             || target.starts_with("llvm.")
             // The program's own declared functions, and the optimizer's cold

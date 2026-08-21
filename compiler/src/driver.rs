@@ -806,7 +806,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
             "the default module must name no runtime symbol"
         );
         assert!(
-            requested.contains("wf__par_try_fork"),
+            requested.contains("wf__par_claim"),
             "the requested module must offer a lane"
         );
     }

@@ -158,7 +158,8 @@ is permitted and permanently out of reach in v1 — a design boundary, not a bug
 
 **Linkage.** `zero_elig.wf` is `min_stack.wf` with its one pair broken by an
 interposed builtin. It settles that zero eligible sites really means zero cost:
-no `try_fork` or `join` in the IR, no `wf__par` symbol and no undefined
-`pthread` symbol in the binary, and a byte size identical to the sequential
-build. It is also the control for F4c — an empty ledger exiting 0 is
+no `wf__par` symbol at all in the IR — the check is on that reserved prefix
+rather than on any one entry point's spelling, which has changed since — no
+undefined `pthread` symbol in the binary, and a byte size identical to the
+sequential build. It is also the control for F4c — an empty ledger exiting 0 is
 indistinguishable from a flag that silently did nothing.

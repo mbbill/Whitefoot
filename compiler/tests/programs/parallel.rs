@@ -41,8 +41,12 @@ fn only_the_claim_free_fold_is_handed_out() {
 
     let layout = function_body(&llvm, "@wf_layout");
     assert!(
-        layout.contains("call ptr @wf__par_try_fork(ptr @wf__par_thunk_"),
-        "the claim-free fold must offer its first child call:\n{layout}"
+        layout.contains("= call ptr @wf__par_claim(i64 ptrtoint"),
+        "the claim-free fold must claim a lane for its first child call:\n{layout}"
+    );
+    assert!(
+        layout.contains(", ptr @wf__par_thunk_"),
+        "the claimed lane must be published the outlined call:\n{layout}"
     );
     assert!(
         layout.contains("call void @wf__par_join(ptr"),

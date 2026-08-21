@@ -162,13 +162,22 @@ command fn main() -> status: own ExitStatus pure {
 /// A program whose own functions are spelled like the runtime's entry points.
 ///
 /// It overlaps, so the module carries the runtime symbols too, and both sets
-/// have to coexist. `par_try_fork` and `par_join` are ordinary IDENTs
-/// [FORM-3], so nothing may stop a writer from declaring them.
-const RUNTIME_SHAPED_NAMES: &[u8] = br#"fn par_try_fork(x: own u64) -> result: own u64 pure {
+/// have to coexist. `par_claim`, `par_publish`, `par_join`, and `par_release`
+/// are ordinary IDENTs [FORM-3], so nothing may stop a writer from declaring
+/// them.
+const RUNTIME_SHAPED_NAMES: &[u8] = br#"fn par_claim(x: own u64) -> result: own u64 pure {
+  return imax(x, x);
+}
+
+fn par_publish(x: own u64) -> result: own u64 pure {
   return imax(x, x);
 }
 
 fn par_join(x: own u64) -> result: own u64 pure {
+  return imax(x, x);
+}
+
+fn par_release(x: own u64) -> result: own u64 pure {
   return imax(x, x);
 }
 
@@ -177,11 +186,15 @@ fn par_thunk_0(x: own u64) -> result: own u64 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let a = par_try_fork(x: 1_u64);
-  let b = par_join(x: 2_u64);
+  let a = par_claim(x: 1_u64);
+  let b = par_publish(x: 2_u64);
   let c = par_thunk_0(x: 3_u64);
+  let d = par_join(x: 4_u64);
+  let e = par_release(x: 5_u64);
   let ab = imax(a, b);
-  let total = imax(ab, c);
+  let cd = imax(c, d);
+  let abcd = imax(ab, cd);
+  let total = imax(abcd, e);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -202,19 +215,20 @@ fn a_program_named_like_the_runtime_still_compiles_and_links() {
         "the fixture must actually hand work out:\n{module}"
     );
     assert!(
-        module.contains("define internal i64 @wf_par_try_fork(i64 "),
+        module.contains("define internal i64 @wf_par_claim(i64 "),
         "the source function keeps its own symbol:\n{module}"
     );
     assert!(
-        module.contains("define weak ptr @wf__par_try_fork(ptr %fn, ptr %arg) {"),
+        module.contains("define weak ptr @wf__par_claim(i64 %bytes) {"),
         "the runtime keeps its reserved symbol:\n{module}"
     );
     let output = compile_and_run(&module);
     assert_eq!(output.status.code(), Some(0));
 }
 
-/// One handed-out call emits its frame, its outlined thunk, the lane offer,
-/// and a join whose refusal edge calls the same thunk on the same frame.
+/// One handed-out call emits its outlined thunk, a lane claim, the frame
+/// stores and publication inside the granted edge, and a join whose refusal
+/// edge makes the same call this thread would have made anyway.
 #[test]
 fn a_permitted_pair_is_outlined_offered_and_joined() {
     let module = emit_with_overlap(OVERLAPPING_FOLD);
@@ -235,55 +249,221 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
         module.contains("  store i64 %result, ptr %slot\n  ret void\n"),
         "the thunk must leave its result in the frame:\n{module}"
     );
-    // Both runtime entry points are the module's own weak definitions, so a
+    // Every runtime entry point is the module's own weak definition, so a
     // module that hands work out is still a complete program.
-    assert!(
-        module.contains("define weak ptr @wf__par_try_fork(ptr %fn, ptr %arg) {"),
-        "no weak refusal of the lane offer:\n{module}"
-    );
-    assert!(
-        module.contains("define weak void @wf__par_join(ptr %handle) {"),
-        "no weak join:\n{module}"
-    );
+    for weak in [
+        "define weak ptr @wf__par_claim(i64 %bytes) {",
+        "define weak void @wf__par_publish(ptr %frame, ptr %fn) {",
+        "define weak void @wf__par_join(ptr %frame) {",
+        "define weak void @wf__par_release(ptr %frame) {",
+    ] {
+        assert!(module.contains(weak), "no weak `{weak}`:\n{module}");
+    }
 
-    // `fold`'s own recursive pair: the first call is offered, the second runs
-    // inline on this thread, and only then is the offered one joined. The
-    // ordering is what makes the overlap window exactly the second call.
+    // `fold`'s own recursive pair: a lane is claimed and the first call is
+    // published to it, the second runs inline on this thread, and only then is
+    // the published one joined. The ordering is what makes the overlap window
+    // exactly the second call.
     let body = function_body(&module, "@wf_fold");
-    let offer = body
-        .find("call ptr @wf__par_try_fork(ptr @wf__par_thunk_")
-        .expect("fold must offer its first recursive call");
+    let claim = body
+        .find("= call ptr @wf__par_claim(i64 ptrtoint")
+        .expect("fold must claim a lane for its first recursive call");
+    let publish = body
+        .find("call void @wf__par_publish(ptr")
+        .expect("fold must publish the claimed lane its outlined call");
     let inline = body
-        .find("call i64 @wf_fold(")
+        .find("par.offered.")
+        .and_then(|start| {
+            body[start..]
+                .find("call i64 @wf_fold(")
+                .map(|at| start + at)
+        })
         .expect("fold must run its second recursive call inline");
     let join = body
         .find("call void @wf__par_join(ptr")
         .expect("fold must join what it offered");
     assert!(
-        offer < inline,
+        claim < publish,
+        "the claim must precede the publish:\n{body}"
+    );
+    assert!(
+        publish < inline,
         "the offer must precede the inline call:\n{body}"
     );
     assert!(
         inline < join,
         "the join must follow the inline call:\n{body}"
     );
-    // The refused edge runs the same thunk on the same frame, so the two edges
-    // are one lowering of one source call reached two ways.
+    // The stores and the publish live inside the granted edge, so a refused
+    // hand-out writes nothing and builds nothing.
+    let offer_block = body
+        .split("\npar.offer.")
+        .nth(1)
+        .expect("the granted edge must have its own block");
+    let offer_block = offer_block
+        .split_once("\npar.offered.")
+        .expect("the granted edge must rejoin")
+        .0;
+    assert!(
+        offer_block.contains("  store ") && offer_block.contains("@wf__par_publish"),
+        "the frame stores and the publish must be inside the granted edge:\n{body}"
+    );
+    // The refused edge makes the same call the inline edge makes, so the two
+    // edges are one lowering of one source call reached two ways.
     let refused = body
-        .find("call void @wf__par_thunk_")
-        .expect("the refused edge must run the thunk on this thread");
+        .find("\npar.inline.")
+        .and_then(|start| {
+            body[start..]
+                .find("call i64 @wf_fold(")
+                .map(|at| start + at)
+        })
+        .expect("the refused edge must make the call on this thread");
     assert!(
         inline < refused,
         "the refusal edge belongs to the join, not the offer:\n{body}"
     );
     // Nothing between the offer and the join reads the offered value: the
-    // value is defined by the load in the block the join branches to.
+    // value is defined by the phi in the block both edges branch to.
     let read = body
         .find("\npar.done.")
         .expect("the joined value must be read in the join's own block");
     assert!(
         join < read,
         "the value must be read after the join:\n{body}"
+    );
+    assert!(
+        body[read..].contains(" = phi i64 [ "),
+        "the joined value must be the phi of the two edges:\n{body}"
+    );
+}
+
+/// A recursion that hands one of its two calls out at every level, spelled at
+/// one depth.
+///
+/// Every level scales the value it passes down, so no interprocedural fact
+/// about the arguments collapses the sequential frame, and the two lowerings
+/// of the same source are compared on the same terms. The whole result decides
+/// the exit status, so neither build can drop the recursion.
+const DEEP_RECURSION: &str = r#"fn leaf(v: own f64) -> result: own f64 pure {
+  return fmul.strict(v, 0.5_f64);
+}
+
+fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
+  let done = ieq(depth, 0_u64);
+  if done {
+    return v;
+  }
+  let next = depth -wrap 1_u64;
+  let scaled = fmul.strict(v, 1.0009765625_f64);
+  let a = spine(depth: next, v: scaled);
+  let b = leaf(v: v);
+  return fadd.strict(a, b);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let total = spine(depth: DEPTH_u64, v: 1.0009765625_f64);
+  let bits = reinterpret<f64, u64>(total);
+  let low = iand(bits, 1_u64);
+  match cvt<u64, u8>(low) {
+    Ok(value: byte) => {
+      return exit_status(code: byte);
+    }
+    Err(error: wide) => {
+      return exit_status(code: 2_u8);
+    }
+  }
+}
+"#;
+
+/// Asking for overlap must not cost recursion depth when no lane is granted.
+///
+/// The frame of a handed-out call used to be a stack slot of the *calling*
+/// function, so every activation of an eligible recursive function carried it
+/// and its argument spills whether or not a lane was ever granted. The
+/// measured price was about four times the stack per frame on a small
+/// activation, and the death was a bare SIGSEGV with no diagnostic — a
+/// recursion that ran without `--par` and did not run with it, at the same
+/// schedule. The frame belongs to the lane now, so a refused hand-out builds
+/// nothing.
+///
+/// Both builds run under a stack limit this case sets, so the depth it asks
+/// for means the same thing on every machine. The depth sits between what the
+/// old lowering reached under that limit (about 16 200 frames) and what this
+/// one reaches (about 21 600), roughly 15% clear of each.
+#[test]
+fn handing_calls_out_keeps_the_sequential_recursion_depth() {
+    const STACK_KILOBYTES: u32 = 1024;
+    const DEPTH: u32 = 18_600;
+
+    let source = DEEP_RECURSION
+        .replace("DEPTH", &DEPTH.to_string())
+        .into_bytes();
+    let overlapped_module = emit_with_overlap(&source);
+    assert!(
+        module_requires_parallel_runtime(&overlapped_module),
+        "the fixture must hand work out, or this case is vacuous"
+    );
+
+    let plain_directory = test_directory();
+    let overlapped_directory = test_directory();
+    let sequential = build_executable(&emit(&source), &plain_directory);
+    let overlapped = build_executable(&overlapped_module, &overlapped_directory);
+
+    let expected = run_with_stack(&sequential, STACK_KILOBYTES);
+    assert!(
+        expected < 2,
+        "the sequential build itself did not survive depth {DEPTH} on a \
+         {STACK_KILOBYTES} KB stack (exit {expected}), so this case can say \
+         nothing about the overlapped one"
+    );
+    assert_eq!(
+        run_with_stack(&overlapped, STACK_KILOBYTES),
+        expected,
+        "the --par build did not reach a depth the sequential build reaches on \
+         the same stack, so handing calls out is taxing activations that were \
+         never granted a lane"
+    );
+
+    std::fs::remove_dir_all(&plain_directory).expect("remove the test directory");
+    std::fs::remove_dir_all(&overlapped_directory).expect("remove the test directory");
+}
+
+/// Runs one executable with a stack limit of its own and no pool, and reports
+/// its exit status. A stack overflow arrives here as the shell's report of the
+/// signal, which is no exit status the program itself can produce.
+fn run_with_stack(executable: &Path, kilobytes: u32) -> i32 {
+    let output = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(format!("ulimit -s {kilobytes}; exec \"$0\""))
+        .arg(executable)
+        .env_remove("WF_WORKERS")
+        .output()
+        .expect("run under a stack limit");
+    output.status.code().unwrap_or(-1)
+}
+
+/// The lane's frame is the lane's: asking for overlap adds no stack slot to
+/// any function.
+///
+/// This is the whole resource claim of the hand-out. An earlier lowering put
+/// the frame in the calling function's entry block, so every activation of an
+/// eligible recursive function carried the slot and its argument spills
+/// whether or not a lane was ever granted, and a `--par` build reached about a
+/// quarter of the sequential build's recursion depth before dying on a bare
+/// SIGSEGV. The comparison is against the default compilation of the same
+/// source, so it measures the lowering rather than the program.
+#[test]
+fn handing_a_call_out_adds_no_stack_slot() {
+    let sequential = emit(OVERLAPPING_FOLD);
+    let overlapped = emit_with_overlap(OVERLAPPING_FOLD);
+    assert!(
+        module_requires_parallel_runtime(&overlapped),
+        "the fixture must hand work out, or this test is vacuous"
+    );
+    assert_eq!(
+        overlapped.matches("= alloca ").count(),
+        sequential.matches("= alloca ").count(),
+        "handing calls out must add no stack slot:\n{overlapped}"
     );
 }
 
@@ -355,7 +535,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     assert!(
-        emit_with_overlap(trailing).contains("call ptr @wf__par_try_fork(ptr @wf__par_thunk_"),
+        emit_with_overlap(trailing).contains("call void @wf__par_publish(ptr "),
         "a borrowed last member does not stop the group"
     );
 }
@@ -488,7 +668,8 @@ fn the_default_compilation_hands_nothing_out() {
     // assertions above are about the option and not about the program.
     let requested = emit_with_overlap(OVERLAPPING_FOLD);
     assert!(
-        requested.contains("call ptr @wf__par_try_fork(ptr @wf__par_thunk_"),
+        requested.contains("call void @wf__par_publish(ptr ")
+            && requested.contains(", ptr @wf__par_thunk_"),
         "the fixture must hand work out when asked, or this test is vacuous"
     );
     assert!(module_requires_parallel_runtime(&requested));

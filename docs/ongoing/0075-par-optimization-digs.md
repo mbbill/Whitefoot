@@ -109,6 +109,72 @@ reproduction, never worked around.)
   one, findings and probes by the other); they deconflicted on ownership before
   the commit, and each half was checked against the scratch originals rather
   than trusted.
+- Dig 1 (done, criterion partly met and the remainder attributed): F1 is
+  fixed at its named cause and the residue is measured, not waved at. The
+  hand-out now claims a lane *before* it builds anything, and the frame lives
+  in the lane rather than in the calling function: the runtime contract
+  becomes `wf__par_claim(bytes) -> frame|NULL`, `wf__par_publish(frame, fn)`,
+  `wf__par_join(frame)`, `wf__par_release(frame)` — the release is split out
+  of the join because the caller reads its result out of the frame after the
+  wait, and a lane handed on at the join could refill it under that read. The
+  frame stores and the publish sit inside the granted edge, so a refused
+  activation executes a null test and its own ordinary call. The refused edge
+  now calls the callee directly instead of running the thunk over a
+  caller-owned frame; both edges and the thunk still call the same
+  monomorphized function on the same operands, rendered once. A lane's frame
+  is bounded (256 bytes); a call whose frame is larger is never granted a
+  lane and runs sequentially, which is a schedule every program is already
+  correct under. **Depth, bisected first-failing depth with `WF_WORKERS`
+  unset, all re-measured here.** `min_stack.wf`: sequential 522 460 ok /
+  533 984 fail, unchanged by this commit; `--par` 130 663 before, 173 876
+  after — 25.0% of the sequential ceiling to 33.3%. `bt_skew.tmpl` (the
+  realistic left-spine fold): sequential 128 750 ok / 131 015 fail; `--par`
+  103 827 before, **128 750 after — the same bisection bracket as
+  sequential, exact parity**, from a 19.4% loss. Frames (`otool -tV`):
+  `wf_spine` 16 seq / 64 before / 48 after; `wf_build_skew` 48 seq / 80
+  before / 64 after — the 32-byte alloca is gone in both. **Why `min_stack`
+  cannot reach the ~10% criterion, and why no lowering can.** Its remaining
+  32 bytes over sequential are one callee-saved GPR pair (the lane handle
+  live across the inline member, the arguments live across the claim) and one
+  callee-saved FP pair that the *sequential* build avoids only because LLVM's
+  interprocedural constant propagation proves `v` is the same constant at
+  every level — a fact any thunk destroys, being a second caller whose
+  argument comes out of memory. Isolated by experiment: the same shape with
+  that constant restored by hand inside the thunk compiles to a 16-byte
+  frame. A prototype that outlines the whole overlap group into its own
+  function removes the GPR pair and reaches 32 bytes — still 2x — so the
+  criterion is unreachable on this probe by any hand-out lowering; that
+  option was priced and rejected anyway (it duplicates the group's calls,
+  adds a frame on the granted path, and needs a region outliner). The
+  probe's sequential ceiling is unusually high for a pathological reason, and
+  the realistic probe, which is the one the criterion is about, is at parity.
+  **Verification.** `make -C compiler check` exit 0 before and after. Default
+  lowering byte-identical: 36 modules emitted by the before and after
+  compilers, 0 differ. All 36 `--par` modules verified valid by clang.
+  `par_layout.wf` byte-identical to the sequential build at `WF_WORKERS`
+  unset/1/2/4/8/64/65/0/`abc`, all exit 0; grants 0/0/801/2480/8358, so the
+  anti-false-green counter still counts. Oracle: 24 binaries rebuilt, then
+  `./rerun.zsh 1` — 144/144 cells exit 0, `compare_outputs.zsh` green in both
+  languages and across them. **The one-round table cannot judge timing and
+  was not used to**: WF-seq, whose code this commit does not touch, read
+  40-55% above its own baseline min in that pass while Rust-seq landed on
+  its min, and a min-of-7 head-to-head of the before/after binaries put
+  `bal_d8_w16` seq at 0.5701 vs 0.5610 and `--par` w=1 at 0.5436 vs 0.5622,
+  same sha. A second pass at N=5 (720 runs, all exit 0, byte comparison
+  green) is the timing evidence: `--par` w=1 — the outlining-tax cell this
+  commit touches — is within 4.7% of the N=18 baseline on every one of the
+  twelve configs, and no cell collapsed. Machine: `mobileassetd` held ~97%
+  of one core during an early depth sweep, which reads exit status only; the
+  timed passes ran with nothing above ~14%. **Regression guard**: two cases.
+  `handing_a_call_out_adds_no_stack_slot` compares alloca counts between the
+  two lowerings of one source, so the mechanism cannot come back silently.
+  `handing_calls_out_keeps_the_sequential_recursion_depth` runs both
+  lowerings of a deep recursion under a 1024 KB stack this case sets, at
+  depth 18 600 — measured to sit between the old lowering's ceiling under
+  that limit (16 157) and the new one's (21 598), ~15% clear of each; the old
+  lowering exits 139 there and the new one exits 0, so it is not a false
+  green. Approval classes touched: none — no spec bytes, no conformance or
+  compliance evidence, no new repository root entry.
 - **Dig 0 deviation, recorded not hidden.** Dig 0 was specified as one
   cohesive commit and initially landed as two with byte-identical subject
   lines: two sessions were writing through one worktree and one shared git

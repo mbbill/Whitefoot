@@ -6,44 +6,81 @@
  * and reach no claim site; this file only decides whether a lane is free and
  * hands the work to it. It never chooses what may overlap.
  *
- * Contract with the emitted module:
+ * Contract with the emitted module, in the order the module uses it:
  *
- *   void *wf__par_try_fork(void (*fn)(void *), void *arg)
- *       Hands `fn(arg)` to an idle worker and returns a handle, or returns
- *       NULL when no worker is idle. It never blocks and never runs `fn`
- *       itself: a NULL return means the caller runs `fn(arg)` inline.
+ *   void *wf__par_claim(unsigned long bytes)
+ *       Takes an idle lane and returns its frame — `bytes` of storage the
+ *       caller fills with the handed-out call's arguments and later reads its
+ *       result out of — or returns NULL when no lane is idle or no lane's
+ *       frame is that large. It never blocks and never runs anything.
  *
- *   void wf__par_join(void *handle)
- *       Blocks until the handed-out task has returned. NULL is a no-op.
+ *   void wf__par_publish(void *frame, void (*fn)(void *))
+ *       Runs `fn(frame)` on the lane the frame came from. Only a frame a
+ *       claim returned reaches it.
+ *
+ *   void wf__par_join(void *frame)
+ *       Blocks until that task has returned, after which the frame holds its
+ *       result.
+ *
+ *   void wf__par_release(void *frame)
+ *       Gives the lane back, once the caller has read the result out. The
+ *       frame is the caller's until here, which is why the join does not
+ *       release: a lane handed on at the join could refill the frame under
+ *       the read that follows it.
+ *
+ * The claim comes first because it is what makes the hand-out cost
+ * conditional. The frame lives in the lane rather than in the calling
+ * function, so an activation that is never granted a lane never builds one:
+ * no stack slot, no argument spills, and the recursion depth of a `--par`
+ * build stays the recursion depth of the sequential build.
  *
  * The pool is process-lifetime trusted computing base, like malloc's
  * internals: no Whitefoot construct names it, no Whitefoot value reaches it,
  * and it writes nothing to any output. WF_WORKERS selects the lane count;
- * unset, unparsable, or below two leaves the pool unstarted, so every
- * try_fork returns NULL and every program runs exactly the sequential
- * schedule it runs today.
+ * unset, unparsable, or below two leaves the pool unstarted, so every claim
+ * returns NULL and every program runs exactly the sequential schedule it runs
+ * today.
  */
 
 #include <pthread.h>
 #include <stdlib.h>
 #include <sys/resource.h>
 
-/* One lane. Its own mutex and condition variable carry the whole handshake,
- * so two lanes never contend with each other. */
-struct wf__par_worker {
-    pthread_mutex_t lock;
-    pthread_cond_t signal;
-    void (*run)(void *);
-    void *argument;
-    /* 0 idle, 1 task published, 2 task returned. Guarded by `lock`. */
-    int state;
-    /* Claimed by a forker. Owned atomically so try_fork never blocks. */
-    int claimed;
-};
-
 /* An upper bound on lanes, so a hostile WF_WORKERS cannot ask for unbounded
  * threads. It is a resource ceiling, not a language constant. */
 #define WF_PAR_MAX_WORKERS 64
+
+/* How large a handed-out call's frame a lane can hold: its arguments followed
+ * by its result. A call whose frame is larger is simply never granted a lane
+ * and runs on the calling thread, which is a schedule the program already has
+ * to be correct under. Every argument type the backend emits is a scalar, a
+ * pointer, or a small aggregate of those, so this is far above what a real
+ * call asks for; it exists so the bound is stated rather than assumed. */
+#define WF_PAR_FRAME_BYTES 256
+
+/* One lane. Its own mutex and condition variable carry the whole handshake,
+ * so two lanes never contend with each other. */
+struct wf__par_worker {
+    /* The handed-out call's frame, and the first member: a pointer to the
+     * frame is a pointer to the lane, so the emitted module holds one opaque
+     * pointer for the whole protocol and never learns this layout. The
+     * alignment covers every type the backend puts in a frame, whose widest
+     * member is eight bytes. */
+    _Alignas(16) unsigned char frame[WF_PAR_FRAME_BYTES];
+    pthread_mutex_t lock;
+    pthread_cond_t signal;
+    void (*run)(void *);
+    /* 0 idle, 1 task published, 2 task returned. Guarded by `lock`. */
+    int state;
+    /* Claimed by a caller. Owned atomically so a claim never blocks. */
+    int claimed;
+};
+
+/* The lane a frame belongs to. The frame is the first member, so this is the
+ * pointer the claim returned, read back as what it always was. */
+static struct wf__par_worker *wf__par_lane(void *frame) {
+    return (struct wf__par_worker *)frame;
+}
 
 /* A worker stack is at least as large as the calling thread's own stack, and
  * never below this floor: a forked task is an ordinary Whitefoot call that may
@@ -83,16 +120,14 @@ static void *wf__par_worker_main(void *opaque) {
     struct wf__par_worker *worker = (struct wf__par_worker *)opaque;
     for (;;) {
         void (*run)(void *);
-        void *argument;
         pthread_mutex_lock(&worker->lock);
         while (worker->state != 1) {
             pthread_cond_wait(&worker->signal, &worker->lock);
         }
         run = worker->run;
-        argument = worker->argument;
         pthread_mutex_unlock(&worker->lock);
 
-        run(argument);
+        run(worker->frame);
 
         pthread_mutex_lock(&worker->lock);
         worker->state = 2;
@@ -161,40 +196,46 @@ static void wf__par_start(void) {
     pthread_attr_destroy(&attributes);
 }
 
-void *wf__par_try_fork(void (*fn)(void *), void *arg) {
+void *wf__par_claim(unsigned long bytes) {
     int index;
     pthread_once(&wf__par_started, wf__par_start);
+    if (bytes > (unsigned long)WF_PAR_FRAME_BYTES) {
+        return NULL;
+    }
     for (index = 0; index < wf__par_worker_count; index += 1) {
         struct wf__par_worker *worker = &wf__par_workers[index];
         int expected = 0;
         /* The lane budget: a lane is taken only if it is idle right now.
-         * Nothing queues, so a fork never waits and never oversubscribes. */
+         * Nothing queues, so a claim never waits and never oversubscribes. */
         if (!__atomic_compare_exchange_n(&worker->claimed, &expected, 1, 0,
                                          __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
             continue;
         }
-        pthread_mutex_lock(&worker->lock);
-        worker->run = fn;
-        worker->argument = arg;
-        worker->state = 1;
-        pthread_cond_broadcast(&worker->signal);
-        pthread_mutex_unlock(&worker->lock);
-        __atomic_add_fetch(&wf__par_grants, 1, __ATOMIC_RELAXED);
-        return worker;
+        return worker->frame;
     }
     return NULL;
 }
 
-void wf__par_join(void *handle) {
-    struct wf__par_worker *worker = (struct wf__par_worker *)handle;
-    if (worker == NULL) {
-        return;
-    }
+void wf__par_publish(void *frame, void (*fn)(void *)) {
+    struct wf__par_worker *worker = wf__par_lane(frame);
+    pthread_mutex_lock(&worker->lock);
+    worker->run = fn;
+    worker->state = 1;
+    pthread_cond_broadcast(&worker->signal);
+    pthread_mutex_unlock(&worker->lock);
+    __atomic_add_fetch(&wf__par_grants, 1, __ATOMIC_RELAXED);
+}
+
+void wf__par_join(void *frame) {
+    struct wf__par_worker *worker = wf__par_lane(frame);
     pthread_mutex_lock(&worker->lock);
     while (worker->state != 2) {
         pthread_cond_wait(&worker->signal, &worker->lock);
     }
     worker->state = 0;
     pthread_mutex_unlock(&worker->lock);
-    __atomic_store_n(&worker->claimed, 0, __ATOMIC_RELEASE);
+}
+
+void wf__par_release(void *frame) {
+    __atomic_store_n(&wf__par_lane(frame)->claimed, 0, __ATOMIC_RELEASE);
 }
