@@ -89,10 +89,31 @@ the ledger says so before anything is run.
 | 8       |    400.5 |       407.0 |    425.8 |   6.3% |         1.79x |            1.79x |
 
 Reference, same module linked with **no runtime at all** — the module's own weak
-definitions answer, every offer is refused, and this is exactly today's
-execution: min 715.8 ms, median 718.4 ms, max 735.6 ms. That is statistically
-indistinguishable from `WF_WORKERS=1`, so the default-off path costs nothing
-measurable, and every published byte was identical to every other run's.
+definitions answer and every offer is refused: min 715.8 ms, median 718.4 ms,
+max 735.6 ms. That is statistically indistinguishable from `WF_WORKERS=1`, and
+every published byte was identical to every other run's.
+
+**Correction (batch audit, 2026-08-21).** That reference is the *same emitted
+module* linked differently, so it measures the runtime's absence and not the
+lowering's cost, and the sentence that stood here — "the default-off path costs
+nothing measurable" — did not follow from it. The honest baseline is the same
+source compiled by a compiler with no overlap lowering at all. Re-measured on
+the same machine, `whitefootc -o` on `tests/programs/par_layout.wf`, best of 5
+whole-process wall times:
+
+| build | best (s) | vs baseline |
+|-------|---------:|------------:|
+| baseline compiler from `main`, no overlap lowering | 0.74 | 1.00x |
+| branch, `WF_WORKERS=1` | 0.88 | **0.84x** |
+| branch, `WF_WORKERS=2` | 0.61 | 1.21x |
+| branch, `WF_WORKERS=4` | 0.45 | 1.64x |
+| branch, `WF_WORKERS=8` | 0.45 | 1.64x |
+
+All five publish identical bytes. So on this demo the outlining itself costs
+about 1.2x with the feature off, and the honest whole-program win at four
+workers is **1.64x against a non-outlined build**, not the 1.79x this table
+reports against the outlined-but-serial one. Section 8.9 carries the same
+correction for programs whose grain is far below this one's.
 
 4 versus 8 workers differs by 0.4%: **unresolved** by the 20% rule. The machine
 has 4 performance cores, so more lanes than that buy nothing here.
@@ -220,6 +241,51 @@ Stated plainly, because each one bounds what the numbers above mean.
    bit-exact publication — but a race that never manifested in 109 runs would
    look exactly like this. The load-bearing argument for correctness is the
    permission judgment and its per-condition tests, not this table.
+
+The batch audit added three more, each measured rather than argued.
+
+7. **Every comparison in sections 4 to 7 has the same emitted module on both
+   sides.** The "no runtime" reference, the repeat test, and the phase tables
+   all link one module two ways, so a defect introduced by the lowering itself
+   is present in the reference and compares equal. The audit found exactly such
+   a defect this way — a moved operand read — and it is repaired; the durable
+   guard is now the in-crate differential
+   `the_overlapped_lowering_agrees_with_the_lowering_that_hands_nothing_out`,
+   which compiles one source twice, once with the permission table emptied, and
+   compares the two programs.
+8. **"Default off costs nothing" is false in general.** The outlined thunk
+   passes its arguments through a memory frame and is reached through a
+   function pointer, so the call cannot be inlined, and the weak
+   `wf__par_try_fork` cannot be folded away because a linker may replace it.
+   That cost is unconditional. On `fib(38)` — plain two-way recursion whose
+   child pair is `eligible`, whose per-call body is a handful of instructions —
+   the same source through both compilers, best of 3:
+
+   | build | wall (s) | vs baseline |
+   |-------|---------:|------------:|
+   | baseline compiler from `main` | 0.07 | 1.00x |
+   | branch, no runtime linked | 0.15 | **2.1x slower** |
+   | branch, `WF_WORKERS=1` | 0.27 | **3.9x slower** |
+   | branch, `WF_WORKERS=4` | 1.20 | **~17x slower** |
+
+   All four publish `0000000002547029`. On the demo the same cost is about
+   1.2x (section 4's correction); on `wfgrep` it is not measurable.
+9. **Enabling lanes on a fine-grained program is a large loss, not a small
+   one.** `wfgrep e compiler` over this repository's compiler tree, best of 3:
+   baseline 0.38 s, branch with `WF_WORKERS` unset 0.39 s, branch at
+   `WF_WORKERS=4` **0.88 s** — 2.2x slower, with byte-identical output at
+   unset, 4, and 8 and against the baseline compiler. `wfgrep` offers a lane
+   for `pair(byte_at, byte_at)` three times, one of them inside its
+   directory-entry comparator's byte loop, so it offers a lane per byte
+   comparison of every sort. `sha256_abc` likewise offers one per round of its
+   compression loop.
+
+   Limitation 4's 2.1x was recorded as the concrete case for the deferred
+   heartbeat policy; 17x and 2.2x on the project's own flagship program are two
+   orders of magnitude past the 0.69x worst case the lane-budget rationale
+   rests on. Nothing in v1 gates a fork on grain. This is the deciding evidence
+   that a profitability policy is not a later refinement but the next required
+   piece of work.
 
 ## 9. Reproducing
 
