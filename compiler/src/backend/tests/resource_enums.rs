@@ -16,22 +16,25 @@ fn abandon(owner: own Owner) -> result: own unit pure {
   return unit;
 }
 
-fn consume(owner: own Owner) -> result: own unit traps {
+fn consume(owner: own Owner) -> result: own u8 pure {
   match move owner {
     Empty() => {
+      return 0_u8;
     }
     Full(value: pair) => {
       let room = len(pair.left);
       let ok = ilt(0_u64, room);
-      claim payload_nonempty: ok because "the transferred pair holds one byte per column";
-      let byte = pair.left[0_u64];
-      claim transferred_payload_drift: ieq(byte, 11_u8) because "transferred payload drift";
+      let byte = if ok {
+        give pair.left[0_u64];
+      } else {
+        give 0_u8;
+      }
+      return byte;
     }
   }
-  return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let abandoned_left = buffer_new(1_u64, 7_u8);
   let abandoned_right = buffer_new(1_u64, 9_u8);
   let abandoned_pair = PairBuffers(left: move abandoned_left, right: move abandoned_right);
@@ -43,7 +46,10 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   let consumed_right = buffer_new(1_u64, 13_u8);
   let consumed_pair = PairBuffers(left: move consumed_left, right: move consumed_right);
   let consumed = Full(value: move consumed_pair);
-  consume(owner: move consumed);
+  let consumed_byte = consume(owner: move consumed);
+  if ine(consumed_byte, 11_u8) {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -118,23 +124,25 @@ fn option_buffer_some_none_and_transfer_execute() {
   return unit;
 }
 
-fn consume(value: own Option<buffer<u8>>) -> result: own unit traps {
+fn consume(value: own Option<buffer<u8>>) -> result: own u8 pure {
   match move value {
     None() => {
-      claim some_became_none: False() because "Some became None";
+      return 0_u8;
     }
     Some(value: bytes) => {
       let room = len(bytes);
       let ok = ilt(0_u64, room);
-      claim payload_nonempty: ok because "the transferred buffer holds one byte";
-      let byte = bytes[0_u64];
-      claim some_payload_drift: ieq(byte, 17_u8) because "Some payload drift";
+      let byte = if ok {
+        give bytes[0_u64];
+      } else {
+        give 0_u8;
+      }
+      return byte;
     }
   }
-  return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let abandoned_bytes = buffer_new(1_u64, 5_u8);
   let abandoned_some = Some<buffer<u8>>(value: move abandoned_bytes);
   abandon(value: move abandoned_some);
@@ -142,7 +150,10 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   abandon(value: move abandoned_none);
   let consumed_bytes = buffer_new(1_u64, 17_u8);
   let consumed_some = Some<buffer<u8>>(value: move consumed_bytes);
-  consume(value: move consumed_some);
+  let consumed_byte = consume(value: move consumed_some);
+  if ine(consumed_byte, 17_u8) {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;

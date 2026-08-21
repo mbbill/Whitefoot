@@ -26,39 +26,50 @@ fn a_confined_arena_allocation_reads_and_releases_with_its_region() {
 #[test]
 fn arena_release_covers_loop_reentry_early_return_and_nested_regions() {
     let llvm = compile(
-        br#"fn early() -> result: own i32 traps {
+        br#"fn early() -> result: own i32 pure {
   region 'e {
     let a = arena_new<'e, i32>(5_i32);
     let v = deref(a);
-    claim early_read: ieq(v, 5_i32) because "early read";
     return v;
   }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   for @turns i in 0_u64..200_u64 {
     region 'r {
       let a = arena_new<'r, i32>(1_i32);
       let b = arena_new<'r, i32>(2_i32);
       let first = deref(a);
       let second = deref(b);
-      claim loop_first: ieq(first, 1_i32) because "loop first";
-      claim loop_second: ieq(second, 2_i32) because "loop second";
+      if ine(first, 1_i32) {
+        return exit_status(code: 1_u8);
+      }
+      if ine(second, 2_i32) {
+        return exit_status(code: 2_u8);
+      }
     }
   }
   let got = early();
-  claim early_return: ieq(got, 5_i32) because "early return";
+  if ine(got, 5_i32) {
+    return exit_status(code: 3_u8);
+  }
   region 'outer {
     let base = arena_new<'outer, i32>(7_i32);
     region 'inner {
       let extra = arena_new<'inner, i32>(30_i32);
       let left = deref(base);
       let right = deref(extra);
-      claim nested_outer_read: ieq(left, 7_i32) because "nested outer read";
-      claim nested_inner_read: ieq(right, 30_i32) because "nested inner read";
+      if ine(left, 7_i32) {
+        return exit_status(code: 4_u8);
+      }
+      if ine(right, 30_i32) {
+        return exit_status(code: 5_u8);
+      }
     }
     let after = deref(base);
-    claim outer_survives_inner_exit: ieq(after, 7_i32) because "outer survives inner exit";
+    if ine(after, 7_i32) {
+      return exit_status(code: 6_u8);
+    }
   }
   return exit_status(code: 0_u8);
 }
@@ -79,12 +90,14 @@ command fn main() -> status: own ExitStatus traps {
 #[test]
 fn arena_release_covers_break_edges_and_enclosing_region_allocation() {
     let llvm = compile(
-        br#"command fn main() -> status: own ExitStatus traps {
+        br#"command fn main() -> status: own ExitStatus pure {
   for @turns i in 0_u64..4_u64 {
     region 'r {
       let a = arena_new<'r, i32>(9_i32);
       let v = deref(a);
-      claim break_read: ieq(v, 9_i32) because "break read";
+      if ine(v, 9_i32) {
+        return exit_status(code: 1_u8);
+      }
       break @turns;
     }
   }
@@ -94,8 +107,12 @@ fn arena_release_covers_break_edges_and_enclosing_region_allocation() {
       let b = arena_new<'inner, i32>(4_i32);
       let x = deref(a);
       let y = deref(b);
-      claim enclosing_alloc: ieq(x, 3_i32) because "enclosing alloc";
-      claim inner_alloc: ieq(y, 4_i32) because "inner alloc";
+      if ine(x, 3_i32) {
+        return exit_status(code: 2_u8);
+      }
+      if ine(y, 4_i32) {
+        return exit_status(code: 3_u8);
+      }
     }
   }
   return exit_status(code: 0_u8);
@@ -114,7 +131,7 @@ fn arena_release_covers_break_edges_and_enclosing_region_allocation() {
 #[test]
 fn a_within_region_arena_delivery_executes() {
     let llvm = compile(
-        br#"command fn main() -> status: own ExitStatus traps {
+        br#"command fn main() -> status: own ExitStatus pure {
   let flag = True();
   region 'r {
     let picked = if flag {
@@ -125,7 +142,9 @@ fn a_within_region_arena_delivery_executes() {
       give move b;
     }
     let v = deref(picked);
-    claim delivered_read: ieq(v, 11_i32) because "delivered read";
+    if ine(v, 11_i32) {
+      return exit_status(code: 1_u8);
+    }
   }
   return exit_status(code: 0_u8);
 }

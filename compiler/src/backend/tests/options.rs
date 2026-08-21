@@ -34,24 +34,30 @@ fn missing(code: own u64) -> result: own Result<Extent, u64> pure {
   return Err<Extent, u64>(error: code);
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let found = locate(offset: 3_u64, width: 4_u64);
   match move found {
     Ok(value: found_extent) => {
-      claim offset_drift: ieq(found_extent.offset, 3_u64) because "offset drift";
-      claim width_drift: ieq(found_extent.width, 4_u64) because "width drift";
+      if ine(found_extent.offset, 3_u64) {
+        return exit_status(code: 1_u8);
+      }
+      if ine(found_extent.width, 4_u64) {
+        return exit_status(code: 2_u8);
+      }
     }
     Err(error: found_code) => {
-      claim locate_took_err: False() because "locate took Err";
+      return exit_status(code: 3_u8);
     }
   }
   let absent = missing(code: 9_u64);
   match move absent {
     Ok(value: absent_extent) => {
-      claim missing_took_ok: False() because "missing took Ok";
+      return exit_status(code: 4_u8);
     }
     Err(error: absent_code) => {
-      claim error_payload_drift: ieq(absent_code, 9_u64) because "error payload drift";
+      if ine(absent_code, 9_u64) {
+        return exit_status(code: 5_u8);
+      }
     }
   }
   return exit_status(code: 0_u8);

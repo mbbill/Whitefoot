@@ -29,20 +29,22 @@ fn forward(x: own i32) -> result: own Result<i32, StepError> pure {
   return Ok<i32, StepError>(value: next);
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let accepted = forward(x: 41_i32);
   match move accepted {
     Ok(value: accepted_value) => {
-      claim ok_payload_drift: ieq(accepted_value, 42_i32) because "Ok payload drift";
+      if ine(accepted_value, 42_i32) {
+        return exit_status(code: 1_u8);
+      }
     }
     Err(error: accepted_error) => {
-      claim ok_input_took_the_error_edge: False() because "Ok input took the error edge";
+      return exit_status(code: 2_u8);
     }
   }
   let rejected = forward(x: -1_i32);
   match move rejected {
     Ok(value: rejected_value) => {
-      claim err_input_took_the_normal_edge: False() because "Err input took the normal edge";
+      return exit_status(code: 3_u8);
     }
     Err(error: rejected_error) => {
       match rejected_error {

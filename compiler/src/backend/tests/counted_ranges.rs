@@ -2,8 +2,9 @@ use super::{compile, compile_and_run, emitted_function};
 
 /// The dedicated counted CFG executes empty, reversed, singleton, MAX-edge,
 /// captured-endpoint, shared-binder-borrow, nested-break, and enclosing-break
-/// paths through the normal native backend. The explicit claim is confined to
-/// `main`; the counted worker itself remains pure and has no trap fallback.
+/// paths through the normal native backend. `main` reports any result drift
+/// through its status; the counted worker itself remains pure and has no trap
+/// fallback.
 #[test]
 fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
     let source = br#"fn exercise() -> result: own u64 pure {
@@ -44,9 +45,11 @@ fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
   return total;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let result = exercise();
-  claim counted_range_drift: ieq(result, 8_u64) because "counted range drift";
+  if ine(result, 8_u64) {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;

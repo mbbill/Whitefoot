@@ -55,13 +55,15 @@ fn a_discarded_borrow_returning_call_compiles_and_runs() {
   return x;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let v = 5_i32;
   region 'a {
     let h = &'a v;
     source<'a>(x: h);
   }
-  claim owner_value_changed: ieq(v, 5_i32) because "owner value changed";
+  if ine(v, 5_i32) {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#,
@@ -92,7 +94,7 @@ fn bump['r](n: &uniq 'r i32) -> result: own unit writes('r) {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let v = 1_i32;
   region 'a {
     let h = &uniq 'a v;
@@ -101,7 +103,9 @@ command fn main() -> status: own ExitStatus traps {
       bump<'c>(n: &uniq 'c deref(r));
     }
   }
-  claim chain_write_lost: ieq(v, 42_i32) because "chain write lost";
+  if ine(v, 42_i32) {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#,
@@ -122,12 +126,14 @@ fn a_unique_scalar_borrow_parameter_writes_the_callers_storage() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let a = 0_i32;
   region 'r {
     bump<'r>(n: &uniq 'r a);
   }
-  claim callee_write_lost: ieq(a, 42_i32) because "callee write lost";
+  if ine(a, 42_i32) {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#,
@@ -170,17 +176,21 @@ fn inspect['r](packet: &'r Packet) -> result: own i32 reads('r) {
   }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let pair = Pair(left: 41_i32, right: 1_i32);
   let packet = Data(item: move pair);
   let fallback = Empty();
   region 'r {
     let held = &'r packet;
     let read = inspect<'r>(packet: held);
-    claim payload_left: ieq(read, 41_i32) because "payload left";
+    if ine(read, 41_i32) {
+      return exit_status(code: 1_u8);
+    }
     let hollow = &'r fallback;
     let zero = inspect<'r>(packet: hollow);
-    claim empty_arm: ieq(zero, 0_i32) because "empty arm";
+    if ine(zero, 0_i32) {
+      return exit_status(code: 2_u8);
+    }
   }
   return exit_status(code: 0_u8);
 }
