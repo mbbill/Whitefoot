@@ -103,6 +103,25 @@ fn entailment(source: &[u8], function: &str) -> FunctionEntailment {
     })
 }
 
+/// Reads a summary only after the ordinary acceptance path succeeds. Positive
+/// claim fixtures use this helper so a future non-residual rejection cannot be
+/// hidden by the test-only dark checker.
+fn accepted_entailment(source: &[u8], function: &str) -> FunctionEntailment {
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("accepted entailment fixture must check completely: {outcome:?}");
+        };
+        checked
+            .data
+            .functions
+            .iter()
+            .find(|candidate| candidate.name == function)
+            .unwrap_or_else(|| panic!("function {function} must exist"))
+            .entailment
+            .clone()
+    })
+}
+
 fn entailments(source: &[u8], function: &str) -> Vec<FunctionEntailment> {
     with_semantics_dark(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -179,6 +198,14 @@ fn collect_direct_calls<'checked>(
 
 fn discharge_flags(source: &[u8], function: &str) -> Vec<bool> {
     obligations(source, function)
+        .iter()
+        .map(|outcome| outcome.discharged)
+        .collect()
+}
+
+fn accepted_discharge_flags(source: &[u8], function: &str) -> Vec<bool> {
+    accepted_entailment(source, function)
+        .obligations
         .iter()
         .map(|outcome| outcome.discharged)
         .collect()
@@ -2958,7 +2985,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let directed = entailment(source, "directed");
+    let directed = accepted_entailment(source, "directed");
     validate_derivations(&directed);
     let equality = projected_call_parent(&directed, 0);
     let DerivationNode::Equality {
@@ -2976,7 +3003,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(retained_event(&directed, *event).kind, FlowEventKind::S3);
     }
 
-    let reflexive = entailment(source, "reflexive");
+    let reflexive = accepted_entailment(source, "reflexive");
     validate_derivations(&reflexive);
     assert_root_contains(
         &reflexive,
@@ -3316,9 +3343,9 @@ command fn main() -> status: own ExitStatus pure {
         counts,
         DistinctGroundCounts {
             strict: 2,
-            joins: 1,
-            join_edges: 2,
-            join_parent_counts: vec![2],
+            joins: 3,
+            join_edges: 4,
+            join_parent_counts: vec![2, 1, 1],
             ..DistinctGroundCounts::default()
         },
         "the normalized joined disequality names both opposite strict parents"
@@ -3384,8 +3411,8 @@ command fn main() -> status: own ExitStatus pure {
     let mut counts = DistinctGroundCounts::default();
     collect_distinct_grounds(&summary, distinct, &mut counts);
     assert_eq!(counts.strict, 2);
-    assert_eq!(counts.joins, 1);
-    assert_eq!(counts.join_edges, 2);
+    assert_eq!(counts.joins, 3);
+    assert_eq!(counts.join_edges, 4);
 }
 
 #[test]
@@ -3443,7 +3470,7 @@ command fn main() -> status: own ExitStatus pure {
         &mut kept_counts,
     );
     assert_eq!(kept_counts.strict, 2);
-    assert_eq!(kept_counts.join_edges, 2);
+    assert_eq!(kept_counts.join_edges, 4);
 
     let killed_summary = entailment(source, "killed");
     validate_derivations(&killed_summary);
@@ -3534,9 +3561,9 @@ command fn main() -> status: own ExitStatus pure {
                 DistinctGroundCounts {
                     source: 1,
                     strict: 1,
-                    joins: 2,
-                    join_edges: 3,
-                    join_parent_counts: vec![2, 1],
+                    joins: 3,
+                    join_edges: 4,
+                    join_parent_counts: vec![2, 1, 1],
                     ..DistinctGroundCounts::default()
                 },
                 "the mixed join names its explicit and strict-derived predecessor roots"
@@ -3595,11 +3622,11 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(counts.source, 1);
     assert_eq!(counts.strict, 2);
     assert_eq!(counts.contradiction, 1);
-    assert_eq!(counts.joins, 4);
+    assert_eq!(counts.joins, 6);
     counts.join_parent_counts.sort_unstable();
-    assert_eq!(counts.join_parent_counts, vec![1, 2, 2, 2]);
+    assert_eq!(counts.join_parent_counts, vec![1, 1, 1, 2, 2, 2]);
     assert_eq!(
-        counts.join_edges, 7,
+        counts.join_edges, 9,
         "the guarded inputs retain all four reaching grounds through the nested joins"
     );
 }
@@ -5795,7 +5822,7 @@ fn direct(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
 fn through_origin(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
   let bounded = clamp_three(value: input);
   let ok = ilt(bounded, 4_u64);
-  claim i_must_be_in_range: ok because "premises: bounded is returned by clamp_three and ok is bounded below four\nderivation: clamp_three returns at most three, so ok is true\nconclusion: bounded is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript consumes the comparison origin of ok";
+  claim i_must_be_in_range: ok because "premises: bounded is returned by clamp_three and ok is ilt(bounded, 4)\nderivation: clamp_three returns at most three, so ilt(bounded, 4) evaluates to True\nconclusion: ok is True\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript expands ok and consumes its bounded-below-four comparison";
   return values[bounded];
 }
 
@@ -5803,9 +5830,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_eq!(discharge_flags(source, "direct"), vec![true]);
+    assert_eq!(accepted_discharge_flags(source, "direct"), vec![true]);
     assert_eq!(
-        discharge_flags(source, "through_origin"),
+        accepted_discharge_flags(source, "through_origin"),
         vec![true],
         "the claim reads comparison-origin shape (b) exactly as a match does"
     );
@@ -5825,7 +5852,7 @@ fn read(left_values: own array<i32, 4>, right_values: own array<i32, 4>, left_ra
   let right = clamp_three(value: right_raw);
   let left_inside = ilt(left, 4_u64);
   let right_inside = ilt(right, 4_u64);
-  claim both_inside: band(left_inside, right_inside) because "premises: left and right are returned by clamp_three\nderivation: each result is at most three and is therefore below four\nconclusion: both left and right are below four\nchecker gap: ENT does not publish result bounds for the uncontracted clamp_three calls\nconsumers: the two array subscripts consume the left and right bounds respectively";
+  claim both_inside: band(left_inside, right_inside) because "premises: left and right are returned by clamp_three, and left_inside and right_inside are their below-four comparisons\nderivation: each clamp_three result is at most three, so both comparisons evaluate to True and their band evaluates to True\nconclusion: band(left_inside, right_inside) is True\nchecker gap: ENT does not publish result bounds for the uncontracted clamp_three calls\nconsumers: the two array subscripts consume the left and right comparison components respectively";
   let first = left_values[left];
   let second = right_values[right];
   return first +wrap second;
@@ -5835,7 +5862,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_eq!(discharge_flags(source, "read"), vec![true, true]);
+    assert_eq!(accepted_discharge_flags(source, "read"), vec![true, true]);
 }
 
 // ---------------------------------------------------------------------
@@ -7159,7 +7186,7 @@ fn a_passed_claim_establishes_its_fact_on_the_continuation() {
 fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
   let bounded = clamp_three(value: input);
   let inside = ilt(bounded, 4_u64);
-  claim in_range: inside because "premises: bounded is returned by clamp_three\nderivation: clamp_three returns at most three, so bounded is below four\nconclusion: bounded is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript consumes this bound";
+  claim in_range: inside because "premises: bounded is returned by clamp_three and inside is ilt(bounded, 4)\nderivation: clamp_three returns at most three, so ilt(bounded, 4) evaluates to True\nconclusion: inside is True\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript expands inside and consumes its bounded-below-four comparison";
   return values[bounded];
 }
 
@@ -7167,7 +7194,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let summary = entailment(source, "read");
+    let summary = accepted_entailment(source, "read");
     validate_derivations(&summary);
     let outcomes = &summary.obligations;
     assert_eq!(outcomes.len(), 1);
@@ -7193,7 +7220,7 @@ fn the_claim_ledger_reports_exact_source_text_used_proof_and_provenance() {
 fn read(values: own array<i32, 4>, i: own u64) -> result: own i32 traps {
   let bounded = clamp_three(value: i);
   let inside = ilt(bounded, 4_u64);
-  claim in_range: inside because "premises: bounded is returned by clamp_three called with i\nderivation: clamp_three returns imin(i, 3), which is at most three and below four\nconclusion: bounded is below four\nchecker gap: ENT does not publish result bounds for an uncontracted user call\nconsumers: the array subscript values[bounded] requires this bound";
+  claim in_range: inside because "premises: bounded is returned by clamp_three called with i, and inside is ilt(bounded, 4)\nderivation: clamp_three returns imin(i, 3), which is at most three, so inside evaluates to True\nconclusion: inside is True\nchecker gap: ENT does not publish result bounds for an uncontracted user call\nconsumers: the array subscript values[bounded] expands inside and requires its bounded-below-four comparison";
   return values[bounded];
 }
 
@@ -7214,28 +7241,28 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(entry.predicate, "inside");
         assert_eq!(
             entry.justification.raw,
-            "premises: bounded is returned by clamp_three called with i\n\
-derivation: clamp_three returns imin(i, 3), which is at most three and below four\n\
-conclusion: bounded is below four\n\
+            "premises: bounded is returned by clamp_three called with i, and inside is ilt(bounded, 4)\n\
+derivation: clamp_three returns imin(i, 3), which is at most three, so inside evaluates to True\n\
+conclusion: inside is True\n\
 checker gap: ENT does not publish result bounds for an uncontracted user call\n\
-consumers: the array subscript values[bounded] requires this bound"
+consumers: the array subscript values[bounded] expands inside and requires its bounded-below-four comparison"
         );
         assert_eq!(
             entry.justification.premises,
-            "bounded is returned by clamp_three called with i"
+            "bounded is returned by clamp_three called with i, and inside is ilt(bounded, 4)"
         );
         assert_eq!(
             entry.justification.derivation,
-            "clamp_three returns imin(i, 3), which is at most three and below four"
+            "clamp_three returns imin(i, 3), which is at most three, so inside evaluates to True"
         );
-        assert_eq!(entry.justification.conclusion, "bounded is below four");
+        assert_eq!(entry.justification.conclusion, "inside is True");
         assert_eq!(
             entry.justification.checker_gap,
             "ENT does not publish result bounds for an uncontracted user call"
         );
         assert_eq!(
             entry.justification.consumers,
-            "the array subscript values[bounded] requires this bound"
+            "the array subscript values[bounded] expands inside and requires its bounded-below-four comparison"
         );
         assert_eq!(entry.disposition, ClaimDisposition::Retained);
         assert_eq!(entry.lifecycle_derivation, None);
@@ -7243,7 +7270,7 @@ consumers: the array subscript values[bounded] requires this bound"
         let end = entry.source.coordinate.end().value() as usize;
         assert_eq!(
             &source[start..end],
-            br#"claim in_range: inside because "premises: bounded is returned by clamp_three called with i\nderivation: clamp_three returns imin(i, 3), which is at most three and below four\nconclusion: bounded is below four\nchecker gap: ENT does not publish result bounds for an uncontracted user call\nconsumers: the array subscript values[bounded] requires this bound";"#
+            br#"claim in_range: inside because "premises: bounded is returned by clamp_three called with i, and inside is ilt(bounded, 4)\nderivation: clamp_three returns imin(i, 3), which is at most three, so inside evaluates to True\nconclusion: inside is True\nchecker gap: ENT does not publish result bounds for an uncontracted user call\nconsumers: the array subscript values[bounded] expands inside and requires its bounded-below-four comparison";"#
         );
 
         assert_eq!(entry.uses.len(), 1);
@@ -7375,7 +7402,7 @@ command fn main() -> status: own ExitStatus pure {
 fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
   let i = clamp_three(value: input);
   let inside = ilt(i, 4_u64);
-  claim first: inside because "premises: i is returned by clamp_three\nderivation: clamp_three returns at most three, so i is below four\nconclusion: i is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript consumes this bound";
+  claim first: inside because "premises: i is returned by clamp_three and inside is ilt(i, 4)\nderivation: clamp_three returns at most three, so inside evaluates to True\nconclusion: inside is True\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript expands inside and consumes its bounded-below-four comparison";
   claim second: inside because "premises: the earlier claim already establishes inside\nderivation: no residual remains for a second occurrence\nconclusion: inside is already checker-known at this point\nchecker gap: none; this negative fixture must be rejected as redundant\nconsumers: no consumer may receive duplicate claim authority";
   return values[i];
 }
@@ -7437,7 +7464,7 @@ fn need(index: own u64) -> result: own unit pure contract {
 fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
   let i = clamp_three(value: input);
   let inside = ilt(i, 4_u64);
-  claim bounded: inside because "premises: i is returned by clamp_three\nderivation: clamp_three returns at most three, so i is below four\nconclusion: i is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: both following array subscripts consume the same bound";
+  claim bounded: inside because "premises: i is returned by clamp_three and inside is ilt(i, 4)\nderivation: clamp_three returns at most three, so inside evaluates to True\nconclusion: inside is True\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: both following array subscripts expand inside and consume its bounded-below-four comparison";
   let first = values[i];
   let second = values[i];
   return first;
@@ -7652,7 +7679,7 @@ fn read(values: own array<i32, 4>, input: own u64, leave: own Bool) -> result: o
   loop @again {
     let bounded = clamp_three(value: input);
     let inside = ilt(bounded, 4_u64);
-    claim loop_bound: inside because "premises: bounded is returned by clamp_three in this iteration\nderivation: clamp_three returns at most three, so bounded is below four\nconclusion: bounded is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the array subscript in this iteration consumes this bound";
+    claim loop_bound: inside because "premises: bounded is returned by clamp_three in this iteration and inside is ilt(bounded, 4)\nderivation: clamp_three returns at most three, so inside evaluates to True\nconclusion: inside is True\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the array subscript in this iteration expands inside and consumes its bounded-below-four comparison";
     let value = values[bounded];
     if leave {
       return value;
@@ -7758,12 +7785,12 @@ fn need_true(flag: own Bool) -> result: own unit pure contract {
 
 command fn main() -> status: own ExitStatus traps {
   let flag = hidden_true();
-  claim held: flag because "premises: flag is the result of hidden_true\nderivation: hidden_true returns True, so flag is true\nconclusion: flag is true\nchecker gap: ENT does not publish result predicates for uncontracted calls\nconsumers: need_true requires the exact opaque Bool flag";
+  claim held: flag because "premises: flag is the result of hidden_true\nderivation: hidden_true returns True, so the exact opaque Bool flag evaluates to True\nconclusion: flag is True\nchecker gap: ENT does not publish result predicates for uncontracted calls\nconsumers: need_true requires flag itself to be True";
   need_true(flag: flag);
   return exit_status(code: 0_u8);
 }
 "#;
-    let summary = entailment(source, "main");
+    let summary = accepted_entailment(source, "main");
     validate_derivations(&summary);
     assert_eq!(summary.claims.len(), 1);
     assert_eq!(summary.claims[0].disposition, ClaimDisposition::Retained);
@@ -8175,10 +8202,15 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
             );
             for function in &program.data.functions {
                 validate_derivations(&function.entailment);
+                let expected_counted = match function.name.as_str() {
+                    "append_slice" => 1,
+                    "build_huffman_table" => 2,
+                    _ => 0,
+                };
                 assert_eq!(
                     function.entailment.counted_derivations.len(),
-                    usize::from(function.name == "append_slice"),
-                    "only append_slice has one counted induction group in {}",
+                    expected_counted,
+                    "the frozen source keeps its exact counted induction groups in {}",
                     function.name,
                 );
             }
@@ -9436,7 +9468,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn combined_contradiction_is_absorbing_before_goal_and_l0_support_kills() {
+fn combined_contradiction_survives_ordinary_set_kills_of_goal_and_l0_support() {
     let source = br#"fn guarded(value: own u64) -> result: own unit pure contract {
   define positive = igt(value, 0_u64);
   define small = ilt(value, 10_u64);
@@ -9454,6 +9486,7 @@ fn signed(value: own u64) -> result: own unit pure {
     if complete {
       return unit;
     } else {
+      set value = value +wrap 1_u64;
       guarded(value: value);
     }
   } else {
@@ -9465,6 +9498,7 @@ fn signed(value: own u64) -> result: own unit pure {
 fn l0(value: own u64) -> result: own unit pure {
   if ilt(value, 5_u64) {
     if ige(value, 5_u64) {
+      set value = value +wrap 1_u64;
       guarded(value: value);
     } else {
       return unit;
@@ -9480,7 +9514,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     for (function, is_goal) in [("signed", true), ("l0", false)] {
-        let summary = entailment(source, function);
+        let summary = accepted_entailment(source, function);
         validate_derivations(&summary);
         assert_eq!(summary.call_goals.len(), 1);
         assert_eq!(
@@ -9501,6 +9535,101 @@ command fn main() -> status: own ExitStatus pure {
             "{function} must retain its exact contradiction class: {root:#?}"
         );
     }
+}
+
+#[test]
+fn contradiction_survives_effectful_prepared_call_writes_before_fn8() {
+    let source = br#"fn rewrite['r](out: &uniq 'r i32) -> result: own i32 writes('r) contract {
+  ensures ieq(result, 0_i32);
+} {
+  set deref(out) = 0_i32;
+  return 0_i32;
+}
+
+fn need_negative(value: own i32) -> result: own unit pure contract {
+  requires ilt(value, 0_i32);
+} {
+  return unit;
+}
+
+fn caller(slot: own i32) -> result: own unit pure {
+  if ilt(slot, 5_i32) {
+    if ige(slot, 5_i32) {
+      region 'r {
+        let rewritten = rewrite<'r>(out: &uniq 'r slot);
+      }
+      need_negative(value: slot);
+    } else {
+      return unit;
+    }
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "caller");
+    validate_derivations(&summary);
+    assert_eq!(summary.call_goals.len(), 1);
+    assert_eq!(
+        summary.call_goals[0].disposition,
+        CallGoalDisposition::Discharged
+    );
+    assert_eq!(
+        summary.call_goals[0].evidence,
+        vec![CallGoalEvidence::AllDerivable],
+        "the prepared call's writes row must not erase a contradiction established before its kill"
+    );
+}
+
+#[test]
+fn contradiction_survives_direct_receiver_set_target_kill_before_fn8() {
+    let source = br#"fn choose(ignored: own i32, value: own i32) -> result: own i32 pure contract {
+  ensures ieq(result, value);
+} {
+  return value;
+}
+
+fn need_negative(value: own i32) -> result: own unit pure contract {
+  requires ilt(value, 0_i32);
+} {
+  return unit;
+}
+
+fn caller(slot: own i32, replacement: own i32) -> result: own unit pure {
+  if ilt(slot, 5_i32) {
+    if ige(slot, 5_i32) {
+      set slot = choose(ignored: slot, value: replacement);
+      need_negative(value: slot);
+    } else {
+      return unit;
+    }
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "caller");
+    validate_derivations(&summary);
+    assert_eq!(summary.call_goals.len(), 1);
+    assert_eq!(
+        summary.call_goals[0].disposition,
+        CallGoalDisposition::Discharged
+    );
+    assert_eq!(
+        summary.call_goals[0].evidence,
+        vec![CallGoalEvidence::AllDerivable],
+        "the direct receiver target event must preserve contradiction before killing the old receiver facts"
+    );
 }
 
 #[test]
