@@ -1,0 +1,153 @@
+enum QNode {
+  QLeaf(v: f64, out: f64);
+  QBranch(a: box<QNode>, b: box<QNode>, c: box<QNode>, d: box<QNode>, v: f64, out: f64);
+}
+
+fn boxed_qleaf(v: own f64) -> result: own box<QNode> allocates(heap) {
+  let leaf = QLeaf(v: v, out: 0.0_f64);
+  return box_new(move leaf);
+}
+
+fn build4(depth: own u64, v: own f64) -> result: own box<QNode> allocates(heap) {
+  let done = ieq(depth, 0_u64);
+  if done {
+    return boxed_qleaf(v: v);
+  }
+  let next = depth -wrap 1_u64;
+  let va = fmul.strict(v, 1.0009765625_f64);
+  let vb = fmul.strict(v, 0.9990234375_f64);
+  let vc = fmul.strict(v, 1.0004882812_f64);
+  let vd = fmul.strict(v, 0.9995117188_f64);
+  let ca = build4(depth: next, v: va);
+  let cb = build4(depth: next, v: vb);
+  let cc = build4(depth: next, v: vc);
+  let cd = build4(depth: next, v: vd);
+  let branch = QBranch(a: move ca, b: move cb, c: move cc, d: move cd, v: v, out: 0.0_f64);
+  return box_new(move branch);
+}
+
+fn work(inh: own f64, v: own f64) -> result: own f64 pure {
+  let pad = fmul.strict(v, 0.0625_f64);
+  let border = fmul.strict(v, 0.125_f64);
+  let lr = fadd.strict(pad, border);
+  let lrb = ffma.strict(border, 2.0_f64, lr);
+  let content = fsub.strict(v, lrb);
+  let lo = fmax(content, 0.0_f64);
+  let font = ffma.strict(inh, 0.5_f64, 8.0_f64);
+  let line = fmul.strict(font, 1.25_f64);
+  let words = fdiv.strict(lo, font);
+  let raw = fdiv.strict(words, 16.0_f64);
+  let lines = fceil(raw);
+  let height = fmul.strict(lines, line);
+  let margin = fmul.strict(v, 0.5_f64);
+  let outer = fadd.strict(height, margin);
+  let scaled = ffma.strict(outer, 1.0625_f64, border);
+  let positive = fabs(scaled);
+  let root = fsqrt.strict(positive);
+  let mixed = ffma.strict(root, 3.25_f64, lo);
+  let capped = fmin(mixed, 4096.0_f64);
+  let floored = fmax(capped, 0.0625_f64);
+  let rounded = ffloor(floored);
+  let frac = fsub.strict(floored, rounded);
+  let adj = ffma.strict(frac, 0.5_f64, rounded);
+  return fadd.strict(adj, lrb);
+}
+
+fn qfold['b](node: &uniq 'b box<QNode>, inh: own f64) -> result: own f64 reads('b), writes('b) {
+  doc "Folds the four-way tree. The four adjacent child calls are one chain: every ordered pair inside it has disjoint written footprints, so the checker should record a run of four and the backend should hand out three of them.";
+  match deref(deref(node)) {
+    QLeaf(v: lv, out: lslot) => {
+      let mine = work(inh: inh, v: deref(lv));
+      set deref(lslot) = mine;
+      return mine;
+    }
+    QBranch(a: pa, b: pb, c: pc, d: pd, v: bv, out: bslot) => {
+      let own_h = work(inh: inh, v: deref(bv));
+      let child_inh = fmul.strict(own_h, 0.5_f64);
+      let ra = qfold<'b>(node: move pa, inh: child_inh);
+      let rb = qfold<'b>(node: move pb, inh: child_inh);
+      let rc = qfold<'b>(node: move pc, inh: child_inh);
+      let rd = qfold<'b>(node: move pd, inh: child_inh);
+      let ab = fadd.strict(ra, rb);
+      let cd = fadd.strict(rc, rd);
+      let kids = fadd.strict(ab, cd);
+      let total = fadd.strict(kids, own_h);
+      set deref(bslot) = total;
+      return total;
+    }
+  }
+}
+
+fn hex_digit(v: own u64) -> result: own u8 pure {
+  let nibble = iand(v, 15_u64);
+  let small = ilt(nibble, 10_u64);
+  match cvt<u64, u8>(nibble) {
+    Ok(value: byte) => {
+      if small {
+        return byte +wrap 48_u8;
+      }
+      return byte +wrap 87_u8;
+    }
+    Err(error: wide) => {
+      return 63_u8;
+    }
+  }
+}
+
+fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads('d), writes('d) {
+  let cursor = at;
+  let rest = value;
+  let limit = at +wrap 16_u64;
+  loop @digits {
+    let done = ige(cursor, limit);
+    if done {
+      break @digits;
+    }
+    let shifted = irotl(rest, 4_u32);
+    let digit = hex_digit(v: shifted);
+    let room = len(deref(destination));
+    let writable = ilt(cursor, room);
+    if writable {
+      set deref(destination)[cursor] = digit;
+    }
+    set rest = shifted;
+    set cursor = cursor +wrap 1_u64;
+  }
+  return limit;
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+  let tree = build4(depth: 7_u64, v: 512.0_f64);
+  let i = 0_u64;
+  let last = 0.0_f64;
+  let seed = 16.0_f64;
+  loop @reps {
+    let done = ieq(i, 4000_u64);
+    if done {
+      break @reps;
+    }
+    region 'tree {
+      let total = qfold<'tree>(node: &uniq 'tree tree, inh: seed);
+      set last = total;
+    }
+    set seed = fadd.strict(seed, 0.0625_f64);
+    set i = i +wrap 1_u64;
+  }
+  let bits = reinterpret<f64, u64>(last);
+  let report = buffer_new(17_u64, 10_u8);
+  region 'summary {
+    let first = spell_hex<'summary>(destination: &uniq 'summary report, at: 0_u64, value: bits);
+  }
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 17_u64) {
+        Ok(value: next) => {
+          return exit_status(code: 0_u8);
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}

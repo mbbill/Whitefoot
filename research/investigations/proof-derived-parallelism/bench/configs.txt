@@ -1,0 +1,14 @@
+# shape depth words reps
+# reps chosen from a measured cost model so each config's sequential run is ~0.6 s.
+bal 8 16 100000
+bal 8 64 32000
+bal 8 192 11500
+bal 10 16 25000
+bal 10 64 8000
+bal 10 192 2850
+bal 12 16 6300
+bal 12 64 2000
+bal 12 192 700
+skew 16 16 14000
+skew 16 64 4500
+skew 16 192 1600

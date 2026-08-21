@@ -1,16 +1,20 @@
 # Deciding probes for proof-derived parallelism
 
-These nine Whitefoot sources are the probes that actually decided something
-during the three research rounds behind `../DESIGN.md`. They were written and
-run outside the repository, so they were dying artifacts; they are landed here
-because the design's load-bearing claims cite them and a claim whose evidence
-has evaporated is an assertion. They are **archived evidence, not a gated
-corpus**: no build, test, or tool reads this directory, they are not held to
-the canonical-form or must-compile rules that `tests/programs/` enforces, and
-they are deleted when the design decision each one settles is superseded.
+Two groups live here. The first nine sources decided the design questions behind
+`../DESIGN.md` during the three research rounds; the nine in the second group
+decided the findings in `../gap-hunt-findings.md`. Both were written and run
+outside the repository, so both were dying artifacts; they are landed here
+because the design's and the gap hunt's load-bearing claims cite them, and a
+claim whose evidence has evaporated is an assertion. They are **archived
+evidence, not a gated corpus**: no build, test, or tool reads this directory,
+they are not held to the canonical-form or must-compile rules that
+`tests/programs/` enforces, and each is deleted when the decision or finding it
+settles is superseded.
 
 Every verdict quoted below is what the in-tree compiler's
 `whitefootc --par-ledger` reports for that file today.
+
+## The design-round probes
 
 **The permitted-but-not-actualizable line.** `a2_bubble.wf` is the two-child
 `uniq` tree fold that started the whole investigation: its recursive child pair
@@ -83,3 +87,78 @@ diverges"` is vacuously true because the claim is never reached. It reads as a
 claim justified by unreachability rather than by a lemma, which is the same
 shape of defect at a smaller scale; the file is kept only for the divergence
 observation above.)
+
+## The gap-hunt probes (2026-08-21)
+
+These nine settle the findings recorded in `../gap-hunt-findings.md`. The
+verdicts quoted are what the in-tree compiler's `whitefootc --par-ledger`
+reports for each file today. Two of them are templates, not compilable sources:
+instantiate the placeholder first.
+
+**F1, the hand-out frame's stack tax.** `min_stack.wf` is the minimal carrier:
+one deep `spine` recursion whose single eligible pair is `pair(spine, leafval)`.
+Its `DEPTH` placeholder is substituted to sweep the recursion ceiling
+(`sed 's/DEPTH/140000/' min_stack.wf > ms.wf`). It settles the finding in its
+purest form — the sequential module contains no alloca at all, `--par` adds one
+hand-out frame per function with a pair, the arm64 prologue grows from 16 to 64
+bytes plus two FP spills, and the ceiling falls roughly fourfold *with the pool
+off*, so no worker-stack policy can be the cause. `bt_skew.tmpl` carries the
+same finding on a realistic left-spine `BNode` fold (placeholder `SKEWDEPTH`);
+it is what shows the loss is 23%, not 4x, on a real tree, and it produces the
+case that crashes pool-off and survives with a lane.
+
+**F3, adjacency brittleness and its cost.** `p1a.wf` and `p1b.wf` are the pair
+that makes the finding undeniable, because they are the same program twice.
+`p1a.wf` puts one `fmul.strict` builtin between the two recursive `layout`
+calls; `p1b.wf` puts the identical arithmetic there wrapped in a `pure` user
+function. The ledgers are the evidence: `p1a.wf` reports **no `layout` pair at
+all** — the candidate is not denied, it ceases to exist, because
+`analyze_block` grows a group only from consecutive `let x = f(...)`
+statements — while `p1b.wf` reports `pair(layout, scale_up) eligible` and
+`pair(scale_up, layout) eligible`. The two binaries emit identical bytes and
+are 1.41x apart at four lanes. Both files also carry the `layout_banded`
+contrast (`not-actualizable: 1 claim site via measure_band`) that ties this
+probe back to the claim line the first group establishes.
+
+**F2, grain.** `q4.wf` is the quad tree that produces the fine-grain
+catastrophe: six eligible pairs, three adjacent in `build4` and three in
+`qfold`, about 65.5M offers, and a fall to 48.6x slower than one lane at 64
+workers, non-monotone in between. It is also the N-ary carrier — a run of four
+adjacent calls handing out N−1 — and therefore the file behind F4a, the ledger
+printing three unrelated-looking pairs where the checker built one run of four.
+
+**Nested hand-out actually works.** `bt.wf` is the one probe here that carries a
+positive result, and it is the reason the whole scheduler line of digs is worth
+pursuing rather than abandoning. A depth-16 binary `BNode` fold, three eligible
+pairs (`pair(build_bt, build_bt)`, `pair(build_skew, boxed_bleaf)`,
+`pair(bfold, bfold)`), it offers a hand-out at all sixteen nested levels. At
+eight workers it burns about 1.75 s of CPU in 0.41 s of wall time — roughly 4.3
+concurrent streams, which a binary fold cannot reach unless the workers
+themselves fork and join. So lanes recursing and handing out further is
+demonstrated, sixteen levels deep, byte-identical at every worker count tried up
+to 64, with no deadlock and no livelock. It is also the fine-grain half of F2's
+discriminator: the same structure as `base.wf` but roughly 24 flops per node
+instead of an 8192-word scan, which is what isolates grain rather than thread
+count as the cause. Keep it: it is the sole source of the nested-hand-out
+evidence, and rebuilding it from prose would be rebuilding the argument.
+
+**Denial accuracy.** `p6.wf` is the denial exhaustive: it reaches all five
+refusal conditions in one file, including all four condition-2 sub-kinds, and
+the caller-side operand read that is the subtle one. Reaching conditions 3 and 4
+required unmasking earlier refusals first, which is why the file is shaped the
+way it is. Its three `eligible` lines exist to prove the denials are selective
+rather than a blanket refusal.
+
+**F6, the design limit on dynamic allocation.** `p7_dyn.wf` is four lines of
+consequence: a buffer sized by a parameter raises an undischarged `buffer_fits`
+obligation, the only discharge is a `claim`, and a claim in the closure makes
+the pair `not-actualizable: 1 claim site via mkbuf_dyn`. Dropping the claim does
+not compile. It settles that the natural shape of a per-node style-resolve phase
+is permitted and permanently out of reach in v1 — a design boundary, not a bug.
+
+**Linkage.** `zero_elig.wf` is `min_stack.wf` with its one pair broken by an
+interposed builtin. It settles that zero eligible sites really means zero cost:
+no `try_fork` or `join` in the IR, no `wf__par` symbol and no undefined
+`pthread` symbol in the binary, and a byte size identical to the sequential
+build. It is also the control for F4c — an empty ledger exiting 0 is
+indistinguishable from a flag that silently did nothing.

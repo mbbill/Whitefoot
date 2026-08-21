@@ -1,0 +1,76 @@
+fn leafval(v: own f64) -> result: own f64 pure {
+  return fmul.strict(v, 0.5_f64);
+}
+
+fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
+  doc "One deep recursion with one eligible sibling-call pair. The pair is permitted and eligible, so a --par build gives this function a hand-out frame, and that frame is live across the recursive call.";
+  let done = ieq(depth, 0_u64);
+  if done {
+    return v;
+  }
+  let next = depth -wrap 1_u64;
+  let a = spine(depth: next, v: v);
+  let gap = fmul.strict(v, 1.0_f64);
+  let b = leafval(v: v);
+  let ab = fadd.strict(a, b);
+  return fadd.strict(ab, gap);
+}
+
+fn hex_digit(v: own u64) -> result: own u8 pure {
+  let nibble = iand(v, 15_u64);
+  let small = ilt(nibble, 10_u64);
+  match cvt<u64, u8>(nibble) {
+    Ok(value: byte) => {
+      if small {
+        return byte +wrap 48_u8;
+      }
+      return byte +wrap 87_u8;
+    }
+    Err(error: wide) => {
+      return 63_u8;
+    }
+  }
+}
+
+fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads('d), writes('d) {
+  let cursor = at;
+  let rest = value;
+  let limit = at +wrap 16_u64;
+  loop @digits {
+    let done = ige(cursor, limit);
+    if done {
+      break @digits;
+    }
+    let shifted = irotl(rest, 4_u32);
+    let digit = hex_digit(v: shifted);
+    let room = len(deref(destination));
+    let writable = ilt(cursor, room);
+    if writable {
+      set deref(destination)[cursor] = digit;
+    }
+    set rest = shifted;
+    set cursor = cursor +wrap 1_u64;
+  }
+  return limit;
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+  let total = spine(depth: 1000_u64, v: 1.0009765625_f64);
+  let bits = reinterpret<f64, u64>(total);
+  let report = buffer_new(17_u64, 10_u8);
+  region 'summary {
+    let first = spell_hex<'summary>(destination: &uniq 'summary report, at: 0_u64, value: bits);
+  }
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 17_u64) {
+        Ok(value: next) => {
+          return exit_status(code: 0_u8);
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}

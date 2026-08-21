@@ -1,0 +1,119 @@
+enum Trouble {
+  TooBig(limit: u64);
+}
+
+fn bump['c](cell: &uniq 'c u64) -> result: own u64 reads('c), writes('c) {
+  let was = deref(cell);
+  set deref(cell) = was +wrap 1_u64;
+  return was;
+}
+
+fn peek['c](cell: &'c u64) -> result: own u64 reads('c) {
+  return deref(cell);
+}
+
+fn takeval(v: own u64) -> result: own u64 pure {
+  return v +wrap 1_u64;
+}
+
+fn guard_value(v: own u64) -> result: own Result<u64, Trouble> pure {
+  let big = igt(v, 1000_u64);
+  if big {
+    let problem = TooBig(limit: 1000_u64);
+    return Err<u64, Trouble>(error: move problem);
+  }
+  return Ok<u64, Trouble>(value: v);
+}
+
+fn emit['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>) -> result: own u64 reads('s 'o), writes('o), external, blocks {
+  doc "A user function whose row carries external and blocks, so an adjacent pair of calls to it must be refused by the row gate.";
+  let room = len(deref(source));
+  let fits = ige(room, 1_u64);
+  if fits {
+    match write_once<'o, 's>(output: move output, source: source, start: 0_u64, end: 1_u64) {
+      Ok(value: next) => {
+        return next;
+      }
+      Err(error: problem) => {
+        return 0_u64;
+      }
+    }
+  }
+  return 0_u64;
+}
+
+fn d_write_write(x: own u64) -> result: own u64 pure {
+  doc "Condition 2, write against write: both callees write the same caller place.";
+  let cell = x;
+  region 'c {
+    let a = bump<'c>(cell: &uniq 'c cell);
+    let b = bump<'c>(cell: &uniq 'c cell);
+    let both = a +wrap b;
+    return both;
+  }
+}
+
+fn d_write_read(x: own u64) -> result: own u64 pure {
+  doc "Condition 2, the write of s1 against the callee read of s2.";
+  let cell = x;
+  region 'c {
+    let a = bump<'c>(cell: &uniq 'c cell);
+    let b = peek<'c>(cell: &'c cell);
+    let both = a +wrap b;
+    return both;
+  }
+}
+
+fn d_read_write(x: own u64) -> result: own u64 pure {
+  doc "Condition 2, the callee read of s1 against the write of s2.";
+  let cell = x;
+  region 'c {
+    let a = peek<'c>(cell: &'c cell);
+    let b = bump<'c>(cell: &uniq 'c cell);
+    let both = a +wrap b;
+    return both;
+  }
+}
+
+fn d_operand_read(x: own u64) -> result: own u64 pure {
+  doc "Condition 2, the write of s1 against the caller-side operand read of s2: takeval's operand reads the very storage bump writes.";
+  let cell = x;
+  region 'c {
+    let a = bump<'c>(cell: &uniq 'c cell);
+    let b = takeval(v: cell);
+    let both = a +wrap b;
+    return both;
+  }
+}
+
+fn d_propagate(x: own u64) -> result: own Result<u64, Trouble> pure {
+  doc "Condition 4: the Err edge of the first statement leaves the block without reaching the second.";
+  let a = propagate guard_value(v: x);
+  let b = takeval(v: 5_u64);
+  let both = a +wrap b;
+  return Ok<u64, Trouble>(value: both);
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+  let w = d_write_write(x: 3_u64);
+  let r = d_write_read(x: 5_u64);
+  let rw = d_read_write(x: 7_u64);
+  let op = d_operand_read(x: 9_u64);
+  let report = buffer_new(2_u64, 65_u8);
+  region 'o {
+    region 's {
+      let one = emit<'o, 's>(output: &uniq 'o out, source: &'s report);
+      let two = takeval(v: 11_u64);
+      let sum = one +wrap two;
+      let all = w +wrap r;
+      let more = rw +wrap op;
+      let total = all +wrap more;
+      let last_sum = total +wrap sum;
+      let small = ilt(last_sum, 100000_u64);
+      if small {
+        return exit_status(code: 0_u8);
+      }
+      return exit_status(code: 1_u8);
+    }
+  }
+}

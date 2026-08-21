@@ -1,0 +1,11 @@
+[package]
+name = "paired-layout"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rayon = "1.12.0"
+
+[[bin]]
+name = "paired-layout"
+path = "src/main.rs"

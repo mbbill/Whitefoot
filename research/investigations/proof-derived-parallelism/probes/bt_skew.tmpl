@@ -1,0 +1,158 @@
+enum BNode {
+  BLeaf(v: f64, out: f64);
+  BBranch(left: box<BNode>, right: box<BNode>, v: f64, out: f64);
+}
+
+fn boxed_bleaf(v: own f64) -> result: own box<BNode> allocates(heap) {
+  let leaf = BLeaf(v: v, out: 0.0_f64);
+  return box_new(move leaf);
+}
+
+fn build_bt(depth: own u64, v: own f64) -> result: own box<BNode> allocates(heap) {
+  let done = ieq(depth, 0_u64);
+  if done {
+    return boxed_bleaf(v: v);
+  }
+  let next = depth -wrap 1_u64;
+  let vl = fmul.strict(v, 1.0009765625_f64);
+  let vr = fmul.strict(v, 0.9990234375_f64);
+  let cl = build_bt(depth: next, v: vl);
+  let cr = build_bt(depth: next, v: vr);
+  let branch = BBranch(left: move cl, right: move cr, v: v, out: 0.0_f64);
+  return box_new(move branch);
+}
+
+fn build_skew(depth: own u64, v: own f64) -> result: own box<BNode> allocates(heap) {
+  doc "A left spine: every branch has the whole remaining depth on its left and a single leaf on its right. Folding it hands the spine to one lane, so that lane recurses to the full depth on its own stack.";
+  let done = ieq(depth, 0_u64);
+  if done {
+    return boxed_bleaf(v: v);
+  }
+  let next = depth -wrap 1_u64;
+  let vl = fmul.strict(v, 1.0009765625_f64);
+  let cl = build_skew(depth: next, v: vl);
+  let cr = boxed_bleaf(v: v);
+  let branch = BBranch(left: move cl, right: move cr, v: v, out: 0.0_f64);
+  return box_new(move branch);
+}
+
+fn work(inh: own f64, v: own f64) -> result: own f64 pure {
+  let pad = fmul.strict(v, 0.0625_f64);
+  let border = fmul.strict(v, 0.125_f64);
+  let lr = fadd.strict(pad, border);
+  let lrb = ffma.strict(border, 2.0_f64, lr);
+  let content = fsub.strict(v, lrb);
+  let lo = fmax(content, 0.0_f64);
+  let font = ffma.strict(inh, 0.5_f64, 8.0_f64);
+  let line = fmul.strict(font, 1.25_f64);
+  let words = fdiv.strict(lo, font);
+  let raw = fdiv.strict(words, 16.0_f64);
+  let lines = fceil(raw);
+  let height = fmul.strict(lines, line);
+  let margin = fmul.strict(v, 0.5_f64);
+  let outer = fadd.strict(height, margin);
+  let scaled = ffma.strict(outer, 1.0625_f64, border);
+  let positive = fabs(scaled);
+  let root = fsqrt.strict(positive);
+  let mixed = ffma.strict(root, 3.25_f64, lo);
+  let capped = fmin(mixed, 4096.0_f64);
+  let floored = fmax(capped, 0.0625_f64);
+  let rounded = ffloor(floored);
+  let frac = fsub.strict(floored, rounded);
+  let adj = ffma.strict(frac, 0.5_f64, rounded);
+  return fadd.strict(adj, lrb);
+}
+
+fn bfold['b](node: &uniq 'b box<BNode>, inh: own f64) -> result: own f64 reads('b), writes('b) {
+  match deref(deref(node)) {
+    BLeaf(v: lv, out: lslot) => {
+      let mine = work(inh: inh, v: deref(lv));
+      set deref(lslot) = mine;
+      return mine;
+    }
+    BBranch(left: pl, right: pr, v: bv, out: bslot) => {
+      let own_h = work(inh: inh, v: deref(bv));
+      let child_inh = fmul.strict(own_h, 0.5_f64);
+      let ra = bfold<'b>(node: move pl, inh: child_inh);
+      let rb = bfold<'b>(node: move pr, inh: child_inh);
+      let kids = fadd.strict(ra, rb);
+      let total = fadd.strict(kids, own_h);
+      set deref(bslot) = total;
+      return total;
+    }
+  }
+}
+
+fn hex_digit(v: own u64) -> result: own u8 pure {
+  let nibble = iand(v, 15_u64);
+  let small = ilt(nibble, 10_u64);
+  match cvt<u64, u8>(nibble) {
+    Ok(value: byte) => {
+      if small {
+        return byte +wrap 48_u8;
+      }
+      return byte +wrap 87_u8;
+    }
+    Err(error: wide) => {
+      return 63_u8;
+    }
+  }
+}
+
+fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads('d), writes('d) {
+  let cursor = at;
+  let rest = value;
+  let limit = at +wrap 16_u64;
+  loop @digits {
+    let done = ige(cursor, limit);
+    if done {
+      break @digits;
+    }
+    let shifted = irotl(rest, 4_u32);
+    let digit = hex_digit(v: shifted);
+    let room = len(deref(destination));
+    let writable = ilt(cursor, room);
+    if writable {
+      set deref(destination)[cursor] = digit;
+    }
+    set rest = shifted;
+    set cursor = cursor +wrap 1_u64;
+  }
+  return limit;
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+  let tree = build_skew(depth: SKEWDEPTH_u64, v: 512.0_f64);
+  let i = 0_u64;
+  let last = 0.0_f64;
+  let seed = 16.0_f64;
+  loop @reps {
+    let done = ieq(i, 3_u64);
+    if done {
+      break @reps;
+    }
+    region 'tree {
+      let total = bfold<'tree>(node: &uniq 'tree tree, inh: seed);
+      set last = total;
+    }
+    set seed = fadd.strict(seed, 0.0625_f64);
+    set i = i +wrap 1_u64;
+  }
+  let bits = reinterpret<f64, u64>(last);
+  let report = buffer_new(17_u64, 10_u8);
+  region 'summary {
+    let first = spell_hex<'summary>(destination: &uniq 'summary report, at: 0_u64, value: bits);
+  }
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 17_u64) {
+        Ok(value: next) => {
+          return exit_status(code: 0_u8);
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}
