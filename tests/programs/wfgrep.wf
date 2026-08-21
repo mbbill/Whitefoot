@@ -474,6 +474,8 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
         if done {
           break @walk;
         }
+        let probe_ok = ilt(probe, 4096_u64);
+        claim probe_in_input: probe_ok because "premises: read_once bounds available by 4096_u64; scan starts at zero and advances only past a terminator below available; probe starts at scan and increments only while below available\nderivation: induction over the lines and walk loops gives probe strictly below available at every reached read, and available is at most 4096_u64\nconclusion: probe_ok is true\nchecker gap: ENT carries neither the outer scan invariant nor the inner probe induction and system-result bound across ordinary-loop backedges\nconsumers: input[probe] requires this exact bound";
         let byte = input[probe];
         let newline = ieq(byte, 10_u8);
         if newline {
@@ -498,6 +500,8 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
                 set same = False();
                 break @verify;
               }
+              let spot_ok = ilt(spot, 4096_u64);
+              claim spot_in_input: spot_ok because "premises: read_once bounds available by 4096_u64, and the surviving inside branch establishes spot strictly below available\nderivation: transitivity gives spot strictly below 4096_u64\nconclusion: spot_ok is true\nchecker gap: ENT does not carry the system-result upper bound through the enclosing ordinary-loop backedges to combine it with the inner branch fact\nconsumers: input[spot] requires this exact bound";
               let candidate = input[spot];
               let stopper = ieq(candidate, 10_u8);
               if stopper {
