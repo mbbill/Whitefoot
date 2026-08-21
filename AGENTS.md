@@ -52,10 +52,10 @@ probably not the next work.
 - `docs/constitution.md` records project law and `docs/patterns.md` records writer
   forms.
 - Consult the relevant live `mcts_mem/` node and its rejected alternatives
-  before a nontrivial design change. Do not edit the tree unless you can
-  follow its recorded conventions exactly (formatting, provenance, paired
-  moves, lint discipline); otherwise record the decision in the batch record
-  and leave tree maintenance to a session with the tree tooling.
+  before a nontrivial design change. The tree's complete rules — formatting,
+  provenance, paired moves, and lint — are the installed `mcts-mem-use`
+  skill document; read it in full and follow it before any tree edit. Never
+  edit the tree without it.
 - Architecture dossiers are current or historical design evidence, and
   `archive/governance/decision-log.md` is a historical decision record. They
   can explain why something exists, but they cannot add current work or
@@ -284,8 +284,8 @@ everything else is upheld by discipline.
   completeness claim.
 - Keep commits cohesive. Record the current landscape in `docs/roadmap.md`,
   current sequencing in `docs/current-plan.md`, durable design choices and
-  rejected alternatives in `mcts_mem/` (following its recorded conventions),
-  and protected owner approvals in `governance/APPROVALS.md`; do not use
-  agent instruction files as a status log.
+  rejected alternatives in `mcts_mem/` (per the installed `mcts-mem-use`
+  skill's rules), and protected owner approvals in `governance/APPROVALS.md`;
+  do not use agent instruction files as a status log.
 - Delegate only concrete, independent work. Integrate and review delegated
   results against the same goal and relevance rules.

@@ -196,10 +196,10 @@ performance work, attribute the loss before optimizing, with a same-source
 causal comparison and a falsifier.
 
 Record durable design choices and rejected alternatives in `mcts_mem/`,
-following the tree's recorded conventions (Claude Code sessions load them
-via the `mcts-mem-use` skill). A re-decision must be recorded within its
-batch; the audit checks for silent divergence between the tree and the
-landed code.
+following the complete rules in the installed `mcts-mem-use` skill
+(Claude Code sessions invoke it as a skill; other agents read the skill
+document directly). A re-decision must be recorded within its batch; the
+audit checks for silent divergence between the tree and the landed code.
 
 ## Blocker routing
 
