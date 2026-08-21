@@ -26,9 +26,11 @@ policy; reduce-clause regrouping.
 - `spec/kernel-spec.md` bytes: YES — CANDIDATE v0.34 on the branch;
   activation is the approved merge's activation commit. Packet carries
   SHA-256, exact diff, impact inventory, grammar-verifier output.
-- Protected conformance/compliance evidence: NO changes. Zero corpus
-  cases added or modified (the rule changes no acceptance and no verdict;
-  rationale in DESIGN.md §6). Gates and wiring untouched.
+- Protected conformance/compliance evidence: NO changes on the branch. Zero
+  corpus cases added or modified (the rule changes no acceptance and no
+  verdict; rationale in DESIGN.md §6). Gates and wiring untouched. One
+  protected addition is nevertheless required before merge and is deliberately
+  not landed here — see "Specification candidate v0.34" below.
 - Repository root: no new entries.
 - Rulings requested at merge (not blocking branch work): (a) permission
   attribution is not "undeclared parallelism" under the recorded
@@ -36,6 +38,84 @@ policy; reduce-clause regrouping.
   surface, the `pal` marker, is the named next packet); (b) runtime worker
   threads are TCB implementation below the language (no construct exists to
   carry a row; DESIGN.md §5).
+
+## Specification candidate v0.34
+
+Identity. `spec/kernel-spec.md`, titled `# Kernel Specification v0.34`,
+declared `Status: CANDIDATE v0.34 supersedes v0.33 fc6b5a10...d08f`, at
+SHA-256 `f3e26631c6f168cdcb0add1f1dec6a5e40867d7469150a3854f1878c56eec0f9`,
+3,225 lines and 399,265 bytes. The digest is `shasum -a 256` on the installed
+bytes; the compiler recomputes it independently in
+`computed_identity_is_the_independently_measured_digest`. The activation chain
+in `governance/APPROVALS.md` is untouched and still ends at v0.33.
+
+Delta. One added rule, [PAR-1], in section 13; no existing rule's bytes
+change. The section-13 heading widens from `Capabilities` to `Capabilities and
+execution overlap` so the law is not filed under the capability stub. Rules
+135 to 136; grammar productions, tokens, spellings, operations, and exception
+clauses all +0/-0. The rule states when an implementation may overlap two
+statements — the four permission conditions plus claim-free call closures —
+and requires every observable of a permitted overlap to equal the source-order
+execution's, with worker count, thread identity, and schedule explicitly
+non-observable and the permission explicitly never an obligation.
+
+Grammar verifier (`whitefoot-grammar` baseline candidate, the two-path native
+verifier over the compiler's own lexer and parser): exit 0,
+`grammar-preserving candidate verified by the active compiler: 74 productions,
+93 decisions, 105 terminal predicates` — identical to v0.33's installed
+inventory.
+
+Impact inventory (`whitefoot-spec --index`): 136 rules. [PAR-1] occupies lines
+1976 to 1995, 3,269 bytes, and references CAP-1, CLM-1, DIAG-3, EFF-1, EFF-2,
+EFF-5, FN-1, OWN-7, and SCOPE-3. No rule references [PAR-1]: it is a leaf, so
+the reference graph shows the addition reaching nothing else in the document.
+
+Derived material. `spec/derivation/derivation-ledger.md` gains the [PAR-1] row
+(existence-only, with its form debt stated) and a v0.34 candidate amendment
+section; totals move to 84 derived, 52 existence-only, 0 underived across 136
+rules. `compiler/src/spec.rs` and the generated `spec_identity.rs` name the
+candidate. `backend/qualification.rs`'s per-activation review tripwire is
+re-reviewed and bumped to v0.34: the review's one substantive finding is that
+[PAR-1]'s row gate plus [EFF-2] propagation make all seven `external`/`blocks`
+system operations unreachable from an overlapped statement at any call depth,
+while the eight pure ones may appear inside one and need no row change.
+
+Conformance delta: zero cases, and the reason is exactly that the rule is not
+a source-to-verdict property. It adds no construct, so no program can be
+written that this rule accepts or rejects; acceptance and facts-off lowering
+are identical with the rule present or absent. This is the same class the
+corpus already covers by annotation rather than by case — CAP-1, GATE-1,
+LEDGER-1, OWN-9, DIAG-2, DIAG-3.
+
+BLOCKER (E4, honest stop, not worked around). `make check` cannot be green on
+this branch. `tests/conformance/runner.py coverage` takes its denominator from
+the active specification's rule ids, so a 136th rule with no case and no
+annotation is one uncovered rule and the target exits non-zero. Reproduction
+from the worktree root: `python3 -B tests/conformance/runner.py coverage -v`
+-> exit 1, `coverage (kernel-spec.md): 135/136 rules covered (116 by case
+[+115/-55], 30 by annotation); 1 uncovered` and `uncovered: PAR-1`. The fix is
+one annotation line in
+`tests/conformance/manifest.jsonl`, which is protected evidence this batch is
+forbidden to touch; adding it silently would also be exactly the "regenerate
+evidence to go green" move the constitution names. It is therefore presented
+here as the protected addition the merge approval must name, with its exact
+proposed bytes:
+
+`{"rule": "PAR-1", "covered_by": "compiler-parallel-tests", "reason": "Execution overlap is an implementation liberty with no writer-emittable construct (SCOPE-1): the rule adds no syntax, changes no acceptance, and changes no verdict, so no source-to-verdict pair can assert or violate it. The permission judgment and each of its four denial conditions are covered by in-crate semantic tests, the ledger's per-site verdicts, and a backend determinism repeat test that byte-compares full output at several worker counts against the same module linked with no runtime at all."}`
+
+Nothing else on the branch depends on that line: `make -C compiler check` is
+green without it, and `make check`'s other targets — repository invariants,
+spec append-only, spec archive integrity in candidate mode, spec digest sync,
+and conformance structure — are green with the candidate declared.
+
+Rulings requested at merge, in addition to (a) and (b) above: (c) [PAR-1]
+states its four conditions as necessary, so every later widening (indexed
+loops, buffer views, claim-bearing regions) is a specification amendment
+rather than a checker improvement. The alternative — state only the
+equivalence law and leave the judgment wholly to the implementation — was
+considered and not taken, because DESIGN.md §6 specifies the stated-conditions
+form; the cost is recorded in the [PAR-1] ledger row as that row's live debt.
+(d) The runtime-as-weak-override decision E3 recorded below.
 
 ## Executor log
 
@@ -141,6 +221,22 @@ reproduction, never worked around.)
   a gate test because its failure is a race and a flaky red gate is its own
   defect; `the_runtime_replaces_the_modules_weak_refusal` covers the one
   silent-success mode that mattered.
+
+- E4 (spec candidate v0.34 and the document set): drafted [PAR-1] into section
+  13 and declared the candidate status line; landed the derivation-ledger row
+  and v0.34 candidate amendment, the compiler's candidate identity constants
+  and regenerated `spec_identity.rs`, the re-reviewed v0.34 target-qualification
+  tripwire, a PROPOSED `docs/current-plan.md` for this direction with the I/O
+  lane sequenced first among remaining work, and the outline's revision-46 PAR
+  updates. Grammar verifier reports no production, decision, or terminal-predicate
+  delta; `--index` shows [PAR-1] as a leaf referencing nine rules and referenced
+  by none. `make -C compiler check` green (1005 lib tests and every other target
+  byte-identical to E3). Two things the next stage and the audit must carry: the
+  spec version bump makes the `command_entry_row` review tripwire fire, so a
+  `REVIEWED_FOR` bump with a written v0.34 qualification review is mandatory
+  before any program compiles at all; and the recorded BLOCKER above — `make
+  check` stops at conformance coverage because [PAR-1] is a 136th rule with no
+  annotation, and the annotation is protected evidence this batch may not land.
 
 ## Outcome
 

@@ -1,21 +1,18 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 49 (implemented claim locality and completed migration; exact gate
-reported in the merge handoff)
+Revision: 46 (proof-derived parallelism enters; v0.34 candidate on a branch)
 
-The active language authority is v0.34 at the stable path
+The active language authority is v0.33 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
-`cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`;
-`main` remains on v0.33 until this exact branch revision is approved and
-merged. Exact v0.8 through v0.33 are immutable flat archives on this branch.
-The execution plan at
-[`docs/current-plan.md`](current-plan.md) records the technical sequence for
-the implemented claim-residual branch and its remaining exact-revision gate;
-it does not grant or withhold branch permission.
-Project law is the
-[`Constitution`](constitution.md), and the operational process is
-[`WORKFLOW.md`](WORKFLOW.md).
+`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
+Exact v0.8 through v0.32 are immutable flat archives. Branch
+`par/proof-derived-parallelism` carries a v0.34 CANDIDATE adding one rule,
+[PAR-1]; a candidate is not authority, and only the merge approval activates
+it. The execution plan at [`docs/current-plan.md`](current-plan.md) is PROPOSED
+(proof-derived parallelism) and authorizes no work until the owner approves it.
+Project law is the [`Constitution`](constitution.md), and the operational
+process is [`WORKFLOW.md`](WORKFLOW.md).
 
 ## How to read this outline
 
@@ -26,11 +23,12 @@ This file is the owner-facing map of Whitefoot's live directions. It answers:
 - what evidence exists and whether it is current or historical; and
 - what is missing before a direction can advance.
 
-This outline records the landscape; `current-plan.md` records technical
-sequencing. Neither file grants or withholds permission to work on a branch or
-adds a merge condition beyond the four rules in `WORKFLOW.md`. A project can
-expose a missing capability, but cannot by itself change the language or
-justify a project-shaped compiler special case.
+It does **not** choose the current execution order. Candidate projects determine
+when a direction matters. `current-plan.md` contains the only high-level
+execution proposal or approved plan; after owner selection, it may coordinate
+several workstreams and many planned, ongoing, and done tasks inside one
+approved undertaking. A project can expose a missing capability, but cannot by
+itself change the language or justify a project-shaped compiler special case.
 
 Each item has one canonical home. Other directions link to its ID instead of
 copying its status. Tags are scanning aids. The `Current` sentence is this
@@ -47,8 +45,8 @@ fact:
 - `[speculative]` — an idea has not yet passed a bounded investigation; and
 - `[candidate]` or `[candidate: later]` — a validation-project class, with the
   latter carrying substantial prerequisites; and
-- `[next: ...]` or `[parked]` — the next useful evidence or sequencing note,
-  not an approval boundary.
+- `[next: ...]` or `[parked]` — the next evidence gate, not implementation
+  authorization.
 
 The file is updated in place. Increment `Revision` when an item's goal,
 evidence-backed current state, next gate, or candidate-project disposition
@@ -58,7 +56,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.34]` `[current: safe-Rust compiler]`
+`[current: spec v0.33]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -69,8 +67,8 @@ unsupported rather than invalid source.
 The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
-belong in the [compiler README](../compiler/README.md); v0.33 on `main` remains
-semantic authority until the branch's linked ACTIVE v0.34 revision is merged.
+belong in the [compiler README](../compiler/README.md); the
+active [v0.33 specification](../spec/kernel-spec.md) remains semantic authority.
 The first-slice system interface compiles and runs end-to-end on the native
 macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
 remain ahead of any performance claim.
@@ -80,34 +78,26 @@ Which gap matters next is selected by a project, never by checklist length.
 
 - outline:CAND-1 records the completed flagship selection. outline:CAND-8 remains the selected
   flagship and pressure source. outline:PROOF-8's selected obligation-discharge
-  sequence is now complete, so outline:CAND-8 is unparked; when its next
-  bounded slice is selected, `current-plan.md` records that sequence. Mapped
-  direction items inform the choice but do not grant or withhold branch
-  permission.
+  sequence is now complete, so outline:CAND-8 is unparked; choosing or executing its
+  next bounded slice still requires a new owner-approved plan. Mapped direction
+  items inform that plan, but none authorizes work by itself.
 - outline:PROOF-9 is the owner-selected successor to terminal outline:PROOF-8.
   It takes the explicit-obligation model language-wide, makes `claim` the only
   writer-reachable runtime rejection point, and replaces the historical entry
   contract exception with one closed-world command entry. v0.33 installs this
   successor together with batch 0072's completed outline:CAND-8 language
   deltas; the direction and its plan are terminal.
-- outline:PROOF-10 is the owner-selected lifecycle correction after terminal
-  outline:PROOF-9. It preserves `claim` as the sole writer-reachable runtime
-  trap and preserves runtime execution for every accepted claim. It narrows the
-  source construct to one human-proved, checker-unknown, individually necessary
-  proof residual. Mechanically detectable redundant, contradictory, malformed,
-  and unused forms become source errors; assertion, abort, test-oracle, and
-  possible-failure intent is barred from positive programs and repaired by the
-  author even when only semantic review can recognize its disguise. Its
-  branch revision becomes mainline language authority only when the exact
-  revision is tested, owner-approved, and merged under the four rules.
 - outline:PERF-1 establishes ordinary code quality before a new optimizer fact or
   strategy is blamed or credited.
 - Every production fact consumer in outline:PROOF-1 through outline:PROOF-4 and outline:PROOF-7 depends
   on outline:VERIFY-3. outline:PROOF-2 depends on outline:PROOF-5 only for a `willreturn`-class claim,
   not for memory-effect attributes.
-- outline:PAR-1 selects a source construct only after outline:CAND-8 profiling exposes concrete
-  parallel work; outline:PAR-2 through outline:PAR-4 cannot preselect proof rules, reductions,
-  or a runtime before that evidence.
+- outline:PAR-1 still selects a source construct only after profiling exposes concrete
+  parallel work; batch 0074 deliberately built permission without one. outline:PAR-4's
+  runtime is now selected for the compute lane and measured there, so it is
+  evidence for exactly that lane and preselects nothing for the I/O lane;
+  outline:PAR-2 and outline:PAR-3 cannot preselect proof rules or reductions before their
+  own workload evidence.
 - outline:STORE-2 must expose a concrete unsolved representation privilege before
   outline:PROOF-6 can enter a plan.
 - outline:TARGET-2 through outline:TARGET-4 depend on outline:BOUND-1 whenever their authentic milestone
@@ -385,8 +375,8 @@ creating writer trust or weakening the checked safety envelope.
   specification is sole language authority; the v0.29 activation chain records
   its installed identity, and this outline records terminal `outline:PROOF-8` status.
 - **Missing / next:** none inside outline:PROOF-8. The direction is terminal and
-  `outline:CAND-8` is unparked. Record its next bounded technical sequence in
-  `current-plan.md` when selected.
+  `outline:CAND-8` is unparked. Selecting its next bounded slice requires a new
+  owner-approved high-level plan.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
@@ -400,7 +390,7 @@ creating writer trust or weakening the checked safety envelope.
 
 ### outline:PROOF-9 — Claim-only runtime trap surface and static contracts
 
-`[historical: active v0.33 closure]` `[terminal]`
+`[current: active v0.33]` `[terminal]`
 
 - **Goal:** make `claim` the only writer-reachable source of a language-level
   runtime rejection. Every hazardous operation is either total, returns a
@@ -416,7 +406,7 @@ creating writer trust or weakening the checked safety envelope.
   A checker-detected contradictory requirement set denotes an uninhabited
   function and lowers to an ABI-preserving unreachable stub, never to an
   unchecked version of its source body.
-- **v0.33 closure:** v0.33 and the compiler implemented named results, the unified
+- **Current:** active v0.33 and the compiler implement named results, the unified
   erased contract surface, plural static proofs, command-only entry, exact
   operation/allocation/system obligations, and claim-only DIAG-3 lowering.
   The installed 499-case protected corpus is in exact manifest bijection;
@@ -434,85 +424,6 @@ creating writer trust or weakening the checked safety envelope.
   [system capability architecture](#outlinebound-1) ·
   [batch 0072 closure](done/0072-searching-wfgrep.md) ·
   [batch 0073 closure](done/0073-claim-only-contracts.md).
-
-### outline:PROOF-10 — Claim residual source canonicality
-
-`[implemented on branch 0075]` `[next: exact-revision make check and merge review]`
-
-- **Goal:** make every claim in a successful checker result one mechanically
-  qualified, individually necessary runtime-residual candidate, and every
-  claim in a human-reviewed positive program an actually proved residual. A claim is
-  neither an assertion, abort, test oracle, nor conditional. Its predicate is
-  universally true at that point, unknown to the normative checker, total and
-  observational to evaluate, and has a versioned canonical contribution normal
-  form whose every component is checker-unknown and load-bearing rather than a
-  bundle with known or unused members. It is explained by an actual derivation in
-  `because` and needed by a fixed source-admission proof. Every
-  compiler-accepted claim remains retained, contributes its exact source
-  effects including `traps`, lowers normally, and is evaluated at every dynamic
-  reach in every build mode.
-- **Selection:** the compiler mechanically enforces the residual shape; human,
-  AI-assisted, or offline-prover review owns theorem truth, proposition
-  minimality, and consumer authenticity. The compiler checks a deterministic
-  five-field `because` shape but does not pretend to validate its English.
-  Exact positive and negative lifecycle queries cover the unique D/S/F images:
-  direct snapshot D, support-canonical contribution frontier S, and fully
-  structural lifecycle image F. `Contrib(P)` is derived only from S and uses an operator-specific sound signed
-  conjunctive basis and leaves only justified roots such as positive
-  disjunction as singletons; xor/equivalence may not default to singleton;
-  finite deterministic parent introduction must reconstruct S and then
-  materialize D from checker facts plus its contributions through one shared,
-  non-cyclic ENT rule; F is never an S3 source or reconstruction target
-  in every proof view. Proved, refuted, contradictory,
-  inconsistent, overlapping, and
-  non-load-bearing candidates are source errors. `claim True()` is redundant
-  and `claim False()` is illegal, never an intentional-abort form. Individual
-  necessity is simultaneous `Full-minus(c,a)` for each canonical component plus
-  whole-occurrence `Full-minus(c)` over a fixed otherwise-valid candidate set.
-  Every component and occurrence must make at least one non-contradictory,
-  non-explosive closed-list admission root stop discharging through the exact
-  S3 event. At a join, c need dominate only its c-dependent predecessor
-  lineage, while every reachable predecessor contributing to the root must
-  independently have non-contradictory, non-explosive legal support.
-  All-claims U plus occurrence in one canonical proof is deliberately
-  insufficient. This establishes checker-relative component/occurrence
-  irredundancy, not a unique proof basis or globally weakest proposition.
-  Accepted-claim runtime execution is unchanged, and no optional solver
-  participates in ordinary source acceptance.
-- **Current:** this exact revision carries active v0.34 at SHA-256
-  `cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`;
-  `main` retains v0.33 until the exact revision is approved and merged.
-  The residual lifecycle, contribution basis, reconstruction, fixed eligible
-  set, component/occurrence necessity, stable terminal evidence, generic
-  schema and concrete-instance checks, and unchanged retained lowering path
-  are implemented. The locality correction classifies every user-call or
-  system-call result component as `BoundaryResult` and propagates that
-  authority through value, control, holder, and storage flow. Neither S12 nor
-  a PRV-internal result declassifies it; caller code consumes verified boundary
-  facts directly instead of restating them in a claim. Locality is analyzed
-  once per applicable function inventory, claim-free functions take a fast
-  path, and PRV-1 is frozen once rather than rerun for each mask. Residual
-  component and whole-occurrence masks still rerun all function inventories
-  and the program-level PRV-2/PRV-3 scans; that inherited baseline path remains
-  a high-claim-count scaling risk even though this change removes its repeated
-  PRV-1 fixed point. The real,
-  backend, and protected migrations are complete through `99df5579`. The
-  protected source census is 95 claim statements in 74 `.wf` files using
-  `^[[:space:]]*claim `; raw word counts that include documentation and strings
-  are not source-statement counts. The native adapter reports 500 passes and
-  one intentional skip. Warm probes measured locality at about 226
-  microseconds once per inventory, `utf8parse` compilation about 25% faster,
-  and optimized `wfgrep` compilation about 10–13% faster than the compared
-  baseline; these are bounded development measurements, not a general speed
-  guarantee or a closure of the inherited per-mask scaling risk.
-- **Missing / next:** commit the exact-diff review and the rule-4 specification
-  and conformance record, then run canonical root `make check` on that exact
-  revision and report the result without changing its bytes. The only approval
-  step is owner approval of the exact green revision to be
-  merged into `main`. No other document, artifact, or coordination practice
-  adds an approval or merge precondition.
-- **Facts:** [claim residual canonicality investigation](../research/investigations/obligation-discharge/CLAIM-RESIDUAL-CANONICALITY.md) ·
-  [batch 0073 claim-only closure](done/0073-claim-only-contracts.md).
 
 ## Verification and compiler trust
 
@@ -536,23 +447,21 @@ facts-off evidence rather than trust in the compiler or writer.
 
 ### outline:VERIFY-2 — Execute the conformance corpus against the compiler
 
-`[current: native adapter green on branch ACTIVE revision]`
+`[current: native adapter green on active v0.33]`
 `[next: preserve independent reporting]`
 
 - **Goal:** compare compiler behavior with compiler-independent active-spec
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
   `make conformance-run` compiles and runs every case through the real
-  compiler. Active v0.33 on `main` reports `Pass=498 Skip=1 Fail=0`; the v0.34
-  branch ACTIVE revision reports `Pass=500 Skip=1 Fail=0` with 501
-  manifest/source identities and 135/135 rule coverage. The Cargo integration
-  remains marked `#[ignore]` for ordinary test runs, while canonical root
-  `make check` invokes the complete native adapter explicitly. The earlier
+  compiler. The active v0.33 corpus reports `Pass=498 Skip=1 Fail=0` with
+  499 manifest/source identities and 135/135 rule coverage. This adapter is deliberately `#[ignore]` and
+  invoked separately; `make check` does not silently include it. The earlier
   v0.32 `460/1/0`, v0.28 `423/1/13`, v0.27 `409/1/13`, v0.26 `393/1/13`, and 242/123 runs are
   historical attribution evidence, not current status.
 - **Missing / next:** preserve the independent pass/fail/skip report. Any
-  expectation, source, status, collection, or invocation change is conformance
-  evidence whose exact before/after content is recorded under merge rule 4.
+  expectation, source, status, collection, or invocation change remains
+  owner-protected and must report the exact before/after sets.
 - **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
 
 ### outline:VERIFY-3 — Facts-on/facts-off differential trust
@@ -759,19 +668,31 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
 Serves P0, T1, and T2: concurrency is useful only when checked non-interference
 and failure semantics survive the runtime implementation.
 
-### outline:PAR-1 — Writer-declared, compiler-verified parallelism
+### outline:PAR-1 — Proof-derived permission, writer-declared surface
 
-`[research-only]` `[next: candidate project]`
+`[current: branch candidate]` `[current: measured]` `[next: owner merge decision]`
 
-- **Goal:** let the writer request a parallel construct while the compiler
-  proves non-interference from checked places, effects, loans, and origins.
-- **Current:** v0.17 has no thread construct or runtime. Research rejects the
-  stronger claim that the compiler should discover profitable parallelism the
-  writer did not express; the declared form remains plausible.
-- **Missing / next:** choose a real parallel workload and define its source
-  request, safety judgment, cost boundary, determinism posture, and baseline
-  before language or runtime implementation.
-- **Facts:** [auto-parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md).
+- **Goal:** overlap execution only where the compiler's existing acceptance
+  proofs already show it cannot be observed, and give the writer a
+  non-authoritative way to say what it expects.
+- **Current:** batch 0074 built the permission half on branch
+  `par/proof-derived-parallelism` and left the declared surface for its own
+  packet. The compiler judges sibling call pairs against four conditions read
+  off resolved places, effect rows, the [OWN-7] overlap relation, the [EFF-2]
+  projection, and the call graph; `--par-ledger` prints the verdict for every
+  analyzed site; a default-off pthread lane pool actualizes eligible chains
+  when `WF_WORKERS` is at least 2. Spec CANDIDATE v0.34 states the law as one
+  rule, [PAR-1]. The direction that stays rejected is unchanged and worth
+  keeping straight: the compiler decides *legality* from proofs and never
+  guesses *profitability*, which a runtime lane budget decides at the moment of
+  the offer.
+- **Missing / next:** the owner's merge decision, including two rulings the
+  batch record asks for; then the I/O concurrency lane, which is where the
+  measured profit is, ahead of the `pal` marker and any permission widening.
+- **Facts:** [design contract](../research/investigations/proof-derived-parallelism/DESIGN.md) ·
+  [permission and layer model](../research/investigations/proof-derived-parallelism/PAL.md) ·
+  [batch record 0074](ongoing/0074-proof-derived-parallelism.md) ·
+  [auto-parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md).
 
 ### outline:PAR-2 — Intra-object disjointness
 
@@ -802,16 +723,21 @@ and failure semantics survive the runtime implementation.
 
 ### outline:PAR-4 — Runtime, allocation, and dynamic fan-out
 
-`[research-only]` `[parked]`
+`[current: branch candidate]` `[current: measured]`
 
 - **Goal:** execute selected parallel forms without hiding serialization,
   unbounded overhead, or an unexplained trusted runtime.
-- **Current:** no runtime architecture is selected. The archive audit preserves
-  one required witness: a runtime-count worker set whose workers share-read
-  outer state; the old fixed-spawn answer has no authority.
-- **Missing / next:** the outline:PAR-1 project must exercise or deliberately reject
-  that witness and measure allocation, scheduling, determinism, and absolute
-  wall time; any OWN-11 change needs hostile soundness review.
+- **Current:** batch 0074's branch answers the archive audit's required
+  witness rather than deferring it. The lane pool is a runtime-count worker set
+  sized by `WF_WORKERS` whose workers share-read outer state, it allocates
+  nothing per offer, it never queues (a refused offer is an inline call), and
+  granted-lane counts are measured rather than assumed. Whether that shape
+  survives a second workload is still open, and the I/O lane will need a
+  different one.
+- **Missing / next:** re-measure allocation, scheduling, determinism, and
+  absolute wall time on a workload that is not the compute demo, and settle
+  the completion-based runtime the I/O lane needs; any OWN-11 change needs
+  hostile soundness review.
 - **Facts:** [dynamic fan-out placement](../research/archive-promotion-audit.md#3-dynamic-fan-out-retained-as-a-parallel-design-witness).
 
 ## Boundaries, targets, and deployment
@@ -964,13 +890,12 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
 
 Ripgrep is the owner-selected umbrella project. Selection fixes the external
 pressure source and the headline objective, **2x ripgrep**; it does not
-justify a favorable subset, a monolithic rewrite, or any particular
+authorize a favorable subset, a monolithic rewrite, or any particular
 language, compiler, proof, runtime, or optimizer change. Completed plans
 through batch 0070 closed the bounded outline:PROOF-8 undertaking and the
-specified-gap/take-replace undertaking (v0.31 activated). When the next
-outline:CAND-8 slice is selected, `current-plan.md` records how it returns to
-the unchanged product comparison; that sequencing record is not branch-work
-permission.
+specified-gap/take-replace undertaking (v0.31 activated). No next outline:CAND-8
+slice is authorized until a new owner-approved high-level plan selects it and
+states how it returns to the unchanged product comparison.
 
 Owner framing (2026-08-05): the project's deliverable is what `wfgrep` proves
 about the language's functional and performance ceiling — resolved general
@@ -979,9 +904,9 @@ remains the pressure source and honesty anchor; shipping a finished tool is
 not the completion condition. Every specification amendment on this path is
 sourced from a need the frozen `wfgrep` slice actually exposed, then designed
 as a complete capability rather than a wfgrep-minimal one. A language gap
-exposed by a frozen slice is therefore a finding first; the technical
-language-gap discipline remains its expected path, not a presumption against
-the goal or an additional approval step.
+exposed by a frozen slice is therefore a finding first; the owner-override
+loop in `WORKFLOW.md` is its expected path, and the gap-accumulation rule
+remains as the owner check-in, not as a presumption against the goal.
 
 ### outline:CAND-1 — Select the first external validation project
 
@@ -995,8 +920,8 @@ the goal or an additional approval step.
   performance and immediate tool adoption the primary public test and selected
   pinned ripgrep 15.2.0.
 - **Missing / next:** none; `outline:CAND-8` owns the preserved flagship sequence and
-  is unparked now that outline:PROOF-8 is terminal. Record its next selected
-  slice in `current-plan.md`.
+  is unparked now that outline:PROOF-8 is terminal. Its next slice requires a new
+  owner-approved plan.
 - **Facts:** [historical N1 shortlist](../research/notes/headline-artifact-shortlist.md) ·
   [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md) ·
   [current executable programs](../compiler/README.md).
@@ -1037,9 +962,8 @@ the goal or an additional approval step.
   complete outline:PROOF-8 obligation-discharge sequence selected in the Current Plan
   was implemented and verified. That sequence is now terminal, so the exact
   credited checkpoint and full 2x objective are unparked rather than replaced.
-  The next bounded wfgrep slice should be recorded in `current-plan.md` when
-  selected; neither this outline nor that plan grants or withholds branch
-  permission.
+  The next bounded wfgrep slice must be selected by a new owner-approved plan;
+  this outline does not itself authorize it.
 - **Directions tested:** outline:PERF-1 owns the baseline and attribution; outline:BOUND-1 and
   outline:VERIFY-1 enter with the real CLI/filesystem path; outline:PAR-1 through outline:PAR-4 enter
   only for measured parallel work and its proof/runtime contract; outline:FLOOR-1
@@ -1053,20 +977,23 @@ the goal or an additional approval step.
   [pinned upstream repository](https://github.com/BurntSushi/ripgrep/tree/15.2.0).
 
 The other candidate classes remain comparison evidence or optional separately
-selected probes. They are not phases or prerequisites in front of ripgrep.
+approved probes. They are not phases or prerequisites in front of ripgrep.
 
 | Candidate | Primary outline items | Current disposition | Reopening condition |
 |---|---|---|---|
-| `outline:CAND-2` Compression / binary format | outline:PERF-1, outline:PROOF-1, outline:PROOF-7, outline:VERIFY-1, outline:BOUND-1 | LZ4 and the raw-DEFLATE/zlib evidence are parked; they remain useful binary-transform controls. | A separately selected binary-transform question has independent decision value, including as a bounded cross-check for a live general mechanism. |
-| `outline:CAND-3` Parser / text validation | outline:FLOOR-1, outline:FLOOR-3, outline:FLOOR-4, outline:VERIFY-1, outline:BOUND-1 | The yyjson strict-reader frame and current text witnesses are parked. | A separately selected parser or storage question has independent decision value that the current plan does not answer. |
-| `outline:CAND-5` Embedded / signal processing | outline:TARGET-2, outline:TARGET-3, outline:PROOF-5, outline:BOUND-1 | CMSIS-DSP remains parked; signal and image programs are internal evidence only. | A separately selected target/runtime question has an authentic Cortex boundary. |
-| `outline:CAND-6` Declared parallelism (`later`) | outline:PAR-1 through outline:PAR-4 | BLAKE3 remains a recognizable anchor; ripgrep now supplies the live project pressure, while automatic profitable discovery remains rejected. | A separately selected explicit-parallel question has independent value beyond the ripgrep plan. |
-| `outline:CAND-7` ML systems component (`later`) | outline:APP-1, outline:BOUND-2, outline:TARGET-1 | Llama inference remains a possible attention probe, not a ripgrep prerequisite. | A separately selected ML question has independent value and a bounded real-model boundary. |
+| `outline:CAND-2` Compression / binary format | outline:PERF-1, outline:PROOF-1, outline:PROOF-7, outline:VERIFY-1, outline:BOUND-1 | LZ4 and the raw-DEFLATE/zlib evidence are parked; they remain useful binary-transform controls. | A separately approved binary-transform question has independent decision value, including as a bounded cross-check for a live general mechanism. |
+| `outline:CAND-3` Parser / text validation | outline:FLOOR-1, outline:FLOOR-3, outline:FLOOR-4, outline:VERIFY-1, outline:BOUND-1 | The yyjson strict-reader frame and current text witnesses are parked. | A separately approved parser or storage question has independent decision value that the current plan does not answer. |
+| `outline:CAND-5` Embedded / signal processing | outline:TARGET-2, outline:TARGET-3, outline:PROOF-5, outline:BOUND-1 | CMSIS-DSP remains parked; signal and image programs are internal evidence only. | A separately approved target/runtime question has an authentic Cortex boundary. |
+| `outline:CAND-6` Declared parallelism (`later`) | outline:PAR-1 through outline:PAR-4 | BLAKE3 remains a recognizable anchor; ripgrep now supplies the live project pressure, while automatic profitable discovery remains rejected. | A separately approved explicit-parallel question has independent value beyond the ripgrep plan. |
+| `outline:CAND-7` ML systems component (`later`) | outline:APP-1, outline:BOUND-2, outline:TARGET-1 | Llama inference remains a possible attention probe, not a ripgrep prerequisite. | A separately approved ML question has independent value and a bounded real-model boundary. |
 
 ## Settled exclusions and history
 
-- Automatic profitable parallelism discovery is rejected; only a
-  writer-declared, compiler-verified direction remains live. See outline:PAR-1.
+- Automatic profitable parallelism discovery is rejected: no compiler pass
+  decides that overlapping is worth it. Deriving *permission* from proofs the
+  compiler already computes is a different question and is live, with the
+  writer-declared surface still the intended form for saying what a program
+  expects. See outline:PAR-1.
 - Product-scale artifact replay, capability overlays, whole-compiler resource
   profiles, and stable protocol machinery are not prerequisites for the
   research compiler. Reopen only for a real consumer. See
