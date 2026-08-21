@@ -516,6 +516,63 @@ fn the_repeat_comparison_reports_an_injected_difference() {
     }
 }
 
+/// The negative control the repeat actually needs: a lowering with its joins
+/// removed is caught.
+///
+/// The comparison control above proves the byte comparison reports a
+/// difference it is handed. This one proves the *program* comparison reports a
+/// real lowering defect: the branch's own emitted module, with both join calls
+/// struck out, linked against the real runtime. A missed join lets the calling
+/// thread read a frame slot the worker has not written and lets the frame's
+/// activation return underneath the worker, so a run either publishes
+/// different bytes or dies.
+///
+/// Detection is per-run and not certain — a granted lane sometimes finishes
+/// before the read anyway — so the control runs the injected build twelve
+/// times and requires that at least one run disagree with the reference. The
+/// measured per-run detection rate is about four in five, which puts a false
+/// green here below one in a hundred million.
+#[test]
+fn the_repeat_reports_a_lowering_whose_joins_were_removed() {
+    let module = emit(OVERLAPPING_FOLD);
+    let directory = test_directory();
+
+    let reference = Command::new(build_executable(&module, &directory))
+        .env("WF_WORKERS", "1")
+        .output()
+        .expect("run the intact program");
+    assert_eq!(reference.status.code(), Some(0));
+    assert_eq!(reference.stdout.len(), 8);
+
+    let joinless = module.replace(
+        "  call void @wf__par_join(ptr ",
+        "  call void @wf__par_join_removed(ptr ",
+    );
+    assert_ne!(joinless, module, "the injection must change the module");
+    let joinless = format!(
+        "{joinless}\ndefine internal void @wf__par_join_removed(ptr %handle) {{\nentry:\n  ret void\n}}\n"
+    );
+    let broken = build_executable(&joinless, &directory);
+
+    let mut disagreements = 0;
+    for _ in 0..12 {
+        let output = Command::new(&broken)
+            .env("WF_WORKERS", "4")
+            .output()
+            .expect("run the join-less program");
+        if output.status.code() != Some(0) || output.stdout != reference.stdout {
+            disagreements += 1;
+        }
+    }
+    assert!(
+        disagreements > 0,
+        "removing every join changed nothing observable in twelve runs, \
+         so this comparison cannot see a missed join"
+    );
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
 /// Every run produced the same bytes, or the first run that did not.
 fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
     let Some((first_name, first)) = runs.first() else {

@@ -102,6 +102,16 @@ pub(crate) enum Access {
     /// overlapped calls allocating into one region would both mutate that
     /// region's allocation list, so the region is a written footprint element
     /// of its own, with no actual to project onto.
+    ///
+    /// The other half of the arena boundary is **not** covered and must be
+    /// before any arena program compiles. An `arena<'r, T>` is a
+    /// [`CheckedType::Nominal`], not a variant [`Footprint`] derives a region
+    /// from, so an `own arena<'r, T>` parameter carries no mode region and no
+    /// slice region: a callee row that declares `writes('r)` projects nothing
+    /// onto it, and only the handle's consumed place is recorded. Every arena
+    /// program stops today at `UnsupportedSemanticFeature::ArenaRuntime`, so
+    /// nothing reaches this gap; the arena lane must close it rather than
+    /// inherit the projection.
     Arena {
         region: DeclarationId,
         call: NodePath,

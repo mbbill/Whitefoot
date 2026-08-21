@@ -796,12 +796,17 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // Written claims and their mandatory diagnostic record.
             | "wf_trap" | "abort"
             // The lane offer and its join at a permitted overlap group
-            // [PAR-1 candidate]. Neither reaches a host facility: with no
-            // runtime linked both are the module's own weak definitions,
-            // which refuse every lane and return, and the handed-out call
-            // runs at its own fallback edge on this thread. This row is a
-            // permission the target may take, not an operation of the first
-            // slice, so no §9.1 count moves with it.
+            // [PAR-1 candidate]. In the module this census reads, both are
+            // the module's own weak definitions, which refuse every lane and
+            // return, and the handed-out call runs at its own fallback edge
+            // on this thread — so nothing here reaches a host facility. That
+            // is a statement about the emitted module, not about every link
+            // of it: with the parallel runtime linked, `wf__par_try_fork`
+            // reaches `pthread_create`. This census inspects the module, and
+            // the pool the runtime adds is trusted computing base below the
+            // language, like malloc's own internals. This row is a permission
+            // the target may take, not an operation of the first slice, so no
+            // §9.1 count moves with it.
             | "wf__par_try_fork" | "wf__par_join"
         ) || target.starts_with("wf__par_thunk_")
             || target.starts_with("llvm.")
