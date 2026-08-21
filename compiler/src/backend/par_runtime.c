@@ -53,6 +53,15 @@ static struct wf_par_worker wf_par_workers[WF_PAR_MAX_WORKERS];
 static int wf_par_worker_count;
 static pthread_once_t wf_par_started = PTHREAD_ONCE_INIT;
 
+/* Lanes granted since process start.
+ *
+ * No Whitefoot construct can name it and no program reads it; it exists so
+ * that a measurement, or a gate, can tell a pool that grants lanes from one
+ * that silently never does. Without it an overlap test passes just as well
+ * against a runtime that refuses everything, which is the one way this could
+ * be broken without any test noticing. */
+unsigned long wf_par_grants;
+
 static void *wf_par_worker_main(void *opaque) {
     struct wf_par_worker *worker = (struct wf_par_worker *)opaque;
     for (;;) {
@@ -147,6 +156,7 @@ void *wf_par_try_fork(void (*fn)(void *), void *arg) {
         worker->state = 1;
         pthread_cond_broadcast(&worker->signal);
         pthread_mutex_unlock(&worker->lock);
+        __atomic_add_fetch(&wf_par_grants, 1, __ATOMIC_RELAXED);
         return worker;
     }
     return NULL;

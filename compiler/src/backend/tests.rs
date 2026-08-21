@@ -18,6 +18,7 @@ mod integer_conversion;
 mod integer_extended;
 mod integer_negation;
 mod options;
+mod parallel;
 mod propagation;
 mod reborrows;
 mod reinterpret;
