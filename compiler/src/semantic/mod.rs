@@ -10,7 +10,7 @@ mod claim_locality;
 mod entailment;
 mod goal;
 mod model;
-mod permission;
+pub(crate) mod permission;
 mod permission_ledger;
 mod places;
 mod postcondition;

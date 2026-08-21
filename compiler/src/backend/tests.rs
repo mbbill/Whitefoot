@@ -89,6 +89,30 @@ const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
 static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
 
 fn emit(source: &[u8]) -> String {
+    emit_lowered(source, |_| ())
+}
+
+/// [`emit`] with the permission table emptied before lowering: the same
+/// checked program, lowered with no overlap group at all.
+///
+/// This is the only *non-outlined* reference on this path. Every other
+/// comparison the parallel tests make links one emitted module two ways, so a
+/// defect in the lowering itself sits on both sides of the comparison and
+/// cannot be seen. Compiling one source both ways and byte-comparing the two
+/// programs is what makes an overlap's "changes nothing observable" claim a
+/// statement about the lowering rather than about the linker.
+fn emit_without_overlap(source: &[u8]) -> String {
+    emit_lowered(source, |checked| {
+        checked.data.permission = crate::semantic::permission::PermissionMetadata::default();
+    })
+}
+
+/// The shared front half: check `source`, let `adjust` edit the checked
+/// program, then lower and emit it.
+fn emit_lowered(
+    source: &[u8],
+    adjust: impl FnOnce(&mut crate::semantic::CheckedProgram<'_, '_, '_>),
+) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
     let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -115,9 +139,10 @@ fn emit(source: &[u8]) -> String {
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("backend test source must resolve");
     };
-    let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
+    let SemanticOutcome::Complete(mut checked) = check_semantics(resolved) else {
         panic!("backend test source must check");
     };
+    adjust(&mut checked);
     let ir = lower_checked(*checked).expect("checked program must lower");
     emit_llvm(&ir)
         .expect("lowered program must emit")

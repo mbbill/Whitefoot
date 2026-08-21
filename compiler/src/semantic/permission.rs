@@ -17,6 +17,15 @@
 //!    W(s1) disjoint from W(s2) and R(s2), and W(s2) disjoint from R(s1),
 //!    under [OWN-7]'s overlap relation over resolved places. An actual whose
 //!    caller place this analysis cannot resolve fails closed.
+//!
+//!    The callee projection is not the whole footprint. A statement also
+//!    reaches storage *before* its call, on the calling thread, while it
+//!    evaluates its own operands, and an overlap moves exactly that evaluation
+//!    across s1's call — so W(s1) must also be disjoint from the caller-side
+//!    operand reads of s2. Without this the pair
+//!    `let a = bump(slot: &uniq 'r cell); let b = take(v: cell);` is permitted
+//!    while `take`'s operand reads the storage `bump` writes, which is both a
+//!    changed result and, on a granted lane, a data race.
 //! 3. **Row gate.** Neither callee's row carries `external` or `blocks`.
 //!    Rows gate; places prove. No disjointness is ever derived from a row.
 //! 4. **No skipping exit.** No exit edge of s1 bypasses s2: s1's only
@@ -110,6 +119,35 @@ impl Access {
     }
 }
 
+/// Which two footprint halves a condition-2 conflict joins. The ledger states
+/// it, so a denial names the access it actually found rather than calling
+/// every conflict a write/write one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ConflictKind {
+    /// s1 writes and s2 writes.
+    WriteWrite,
+    /// s1 writes and s2's callee reads through an actual.
+    WriteRead,
+    /// s1 reads and s2 writes.
+    ReadWrite,
+    /// s1 writes and s2 reads the same storage on the calling thread while
+    /// evaluating its own operands.
+    WriteOperandRead,
+}
+
+impl ConflictKind {
+    /// How the ledger words the conflict, with `{left}` the s1 access and
+    /// `{right}` the s2 access.
+    pub(crate) const fn phrase(self) -> &'static str {
+        match self {
+            Self::WriteWrite => "writes overlap at",
+            Self::WriteRead => "the write of s1 overlaps the read of s2 at",
+            Self::ReadWrite => "the read of s1 overlaps the write of s2 at",
+            Self::WriteOperandRead => "the write of s1 overlaps the operand read of s2 at",
+        }
+    }
+}
+
 /// Why P does not hold for one analyzed pair. Each variant names exactly one
 /// condition of the judgment.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -117,7 +155,11 @@ pub(crate) enum Denial {
     /// Condition 1: an argument of s2 mentions a binding s1 defines.
     Dataflow { binding: BindingId },
     /// Condition 2: two accesses of the two footprints conflict.
-    Footprint { left: Access, right: Access },
+    Footprint {
+        kind: ConflictKind,
+        left: Access,
+        right: Access,
+    },
     /// Condition 2, fail-closed: the row projects an access through an actual
     /// whose caller place this analysis cannot resolve.
     UnresolvedFootprint { side: PairSide, argument: NodePath },
@@ -449,10 +491,36 @@ impl<'check> Program<'check> {
                 argument,
             });
         }
+        // Only s2's own operand evaluation is moved by an overlap, so only
+        // s2's caller-side reads join the judgment, and only an unresolved one
+        // of s2's denies.
+        if let Some(argument) = right.operand_unresolved {
+            return PermissionVerdict::Denied(Denial::UnresolvedFootprint {
+                side: PairSide::Second,
+                argument,
+            });
+        }
         for write in &left.writes {
-            for access in right.writes.iter().chain(right.reads.iter()) {
+            for (kind, access) in right
+                .writes
+                .iter()
+                .map(|access| (ConflictKind::WriteWrite, access))
+                .chain(
+                    right
+                        .reads
+                        .iter()
+                        .map(|access| (ConflictKind::WriteRead, access)),
+                )
+                .chain(
+                    right
+                        .operand_reads
+                        .iter()
+                        .map(|access| (ConflictKind::WriteOperandRead, access)),
+                )
+            {
                 if write.conflicts(access) {
                     return PermissionVerdict::Denied(Denial::Footprint {
+                        kind,
                         left: write.clone(),
                         right: access.clone(),
                     });
@@ -463,6 +531,7 @@ impl<'check> Program<'check> {
             for read in &left.reads {
                 if write.conflicts(read) {
                     return PermissionVerdict::Denied(Denial::Footprint {
+                        kind: ConflictKind::ReadWrite,
                         left: read.clone(),
                         right: write.clone(),
                     });
@@ -585,6 +654,17 @@ impl<'check> Program<'check> {
                 });
             }
         }
+
+        // The caller-side half: what this statement's own operand evaluation
+        // touches before the call. An overlap moves it across the earlier
+        // call, so it is part of the footprint even though no row mentions it.
+        for (index, argument) in candidate.arguments.iter().enumerate() {
+            let node = candidate
+                .argument_nodes
+                .get(index)
+                .unwrap_or(&candidate.call);
+            collect_operand_reads(places, argument, node, &mut footprint);
+        }
         footprint
     }
 
@@ -668,9 +748,16 @@ fn witness_path(
 struct Footprint {
     writes: Vec<Access>,
     reads: Vec<Access>,
+    /// Storage this statement's own operand expressions read on the calling
+    /// thread, before the call. Only the second member's copy is judged: the
+    /// overlap moves exactly its evaluation across the first member's call.
+    operand_reads: Vec<Access>,
     /// Set when the row projects an access this analysis cannot resolve to a
     /// caller place. Every such call is denied.
     unresolved: Option<NodePath>,
+    /// Set when an operand expression reads storage this analysis cannot
+    /// resolve to a caller place. Denies whenever this statement is s2.
+    operand_unresolved: Option<NodePath>,
 }
 
 /// One candidate statement, or `None` for every other statement shape.
@@ -731,10 +818,25 @@ fn push_nested_blocks<'check>(
         CheckedStatement::Loop { body, .. }
         | CheckedStatement::Region { body, .. }
         | CheckedStatement::CountedRange { body, .. } => blocks.push(body.as_slice()),
-        _ => {}
+        CheckedStatement::Let { .. }
+        | CheckedStatement::PropagateLet { .. }
+        | CheckedStatement::Set { .. }
+        | CheckedStatement::Replace { .. }
+        | CheckedStatement::DropExpression { .. }
+        | CheckedStatement::Evaluate(_)
+        | CheckedStatement::Claim { .. }
+        | CheckedStatement::Return { .. }
+        | CheckedStatement::Give { .. }
+        | CheckedStatement::Break { .. } => {}
     }
 }
 
+/// Every `claim` statement of one body, in source order.
+///
+/// The match is exhaustive on purpose: a future body-bearing statement form
+/// that this walk did not descend into would hide the claims inside it, and a
+/// hidden claim *widens* eligibility — the one direction this judgment must
+/// never fail in. Every other axis of P denies when it cannot see.
 fn collect_claim_sites(statements: &[CheckedStatement], out: &mut Vec<ClaimRecord>) {
     for statement in statements {
         match statement {
@@ -750,7 +852,15 @@ fn collect_claim_sites(statements: &[CheckedStatement], out: &mut Vec<ClaimRecor
             CheckedStatement::Loop { body, .. }
             | CheckedStatement::Region { body, .. }
             | CheckedStatement::CountedRange { body, .. } => collect_claim_sites(body, out),
-            _ => {}
+            CheckedStatement::Let { .. }
+            | CheckedStatement::PropagateLet { .. }
+            | CheckedStatement::Set { .. }
+            | CheckedStatement::Replace { .. }
+            | CheckedStatement::DropExpression { .. }
+            | CheckedStatement::Evaluate(_)
+            | CheckedStatement::Return { .. }
+            | CheckedStatement::Give { .. }
+            | CheckedStatement::Break { .. } => {}
         }
     }
 }
@@ -814,6 +924,109 @@ fn collect_used_bindings(expression: &CheckedExpression, out: &mut Vec<BindingId
     }
     for child in expression_children(expression) {
         collect_used_bindings(child, out);
+    }
+}
+
+/// Every caller place one operand expression reads on the calling thread,
+/// with an unresolved read failing closed.
+///
+/// This is deliberately not the [EFF-2] callee projection. It is the storage
+/// the *caller* touches while building an actual: a value read out of a
+/// binding, a field, a `deref`, a buffer or array element. Forming a borrow
+/// takes an address and reads no content, so it contributes nothing here — the
+/// callee's declared row already covers whatever it reaches through that
+/// borrow. Reading through a slice descriptor cannot be resolved to the
+/// storage it views, so it denies rather than resolving to the descriptor.
+///
+/// The match is exhaustive on purpose. A future expression form that reads
+/// caller storage must be classified here rather than silently contributing
+/// nothing, because a missing operand read widens permission.
+fn collect_operand_reads(
+    places: &PlaceMap,
+    expression: &CheckedExpression,
+    node: &NodePath,
+    footprint: &mut Footprint,
+) {
+    fn read(footprint: &mut Footprint, node: &NodePath, place: ResolvedPlace) {
+        footprint.operand_reads.push(Access::Place {
+            place,
+            argument: node.clone(),
+        });
+    }
+    match expression {
+        // Reads no caller storage of its own.
+        CheckedExpression::Constant(_)
+        | CheckedExpression::NamedConstant { .. }
+        | CheckedExpression::IntegerOperation { .. }
+        | CheckedExpression::FloatOperation { .. }
+        | CheckedExpression::NumericConversion { .. }
+        | CheckedExpression::Reinterpret { .. }
+        | CheckedExpression::BooleanOperation { .. }
+        | CheckedExpression::EnumEquality { .. }
+        | CheckedExpression::ArrayFill { .. }
+        | CheckedExpression::BufferFill { .. }
+        | CheckedExpression::BufferVacant { .. }
+        | CheckedExpression::BufferFits { .. }
+        | CheckedExpression::BoxNew { .. }
+        | CheckedExpression::ArenaNew { .. }
+        | CheckedExpression::ConstructStruct { .. }
+        | CheckedExpression::ConstructEnum { .. }
+        | CheckedExpression::ProjectValue { .. } => {}
+        // Address formation: no content is read on this thread.
+        CheckedExpression::BorrowBuffer { .. }
+        | CheckedExpression::BorrowAddressed { .. }
+        | CheckedExpression::BorrowBox { .. }
+        | CheckedExpression::BorrowSystemResource { .. }
+        | CheckedExpression::ReborrowAddressed { .. } => {}
+        // The handle itself is the recursed child, and its resolved place is
+        // where an opaque referent anchors, so the child walk covers both.
+        CheckedExpression::BoxDeref { .. } | CheckedExpression::ArenaDeref { .. } => {}
+        CheckedExpression::Binding { binding, .. } => {
+            read(footprint, node, rooted_place(places, *binding, &[]));
+        }
+        CheckedExpression::Project {
+            binding, fields, ..
+        } => read(footprint, node, rooted_place(places, *binding, fields)),
+        CheckedExpression::DerefAddressed { binding, .. } => {
+            read(footprint, node, places.resolve_deref(*binding, 0));
+        }
+        CheckedExpression::BufferLength { root } | CheckedExpression::BufferIndex { root, .. } => {
+            read(
+                footprint,
+                node,
+                rooted_place(places, root.binding, &root.fields),
+            );
+        }
+        CheckedExpression::ArrayLength { root, .. }
+        | CheckedExpression::ArrayIndex { root, .. } => match root {
+            CheckedArrayRoot::Binding { binding, fields } => {
+                read(footprint, node, rooted_place(places, *binding, fields));
+            }
+            CheckedArrayRoot::Constant(id) => read(
+                footprint,
+                node,
+                ResolvedPlace {
+                    root: PlaceRoot::Constant(*id),
+                    fields: Vec::new(),
+                },
+            ),
+        },
+        CheckedExpression::SliceOf { source, .. } => {
+            read(footprint, node, slice_source_place(places, source));
+        }
+        // A slice descriptor names storage this analysis does not resolve, so
+        // reading through one fails closed.
+        CheckedExpression::SliceLength { .. } | CheckedExpression::SliceIndex { .. } => {
+            footprint.operand_unresolved = Some(node.clone());
+        }
+        // [GRAM-9] forbids a call in argument position; if one ever reaches
+        // here its whole footprint is unaccounted for.
+        CheckedExpression::UserCall { .. } | CheckedExpression::SystemCall { .. } => {
+            footprint.operand_unresolved = Some(node.clone());
+        }
+    }
+    for child in expression_children(expression) {
+        collect_operand_reads(places, child, node, footprint);
     }
 }
 

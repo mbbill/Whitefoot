@@ -17,6 +17,15 @@
 //! The thunk's frame is an ordinary stack slot of the calling function, so a
 //! recursive body that hands out at every level gives each activation its own
 //! frame, exactly as its own arguments already are.
+//!
+//! **Symbol reservation.** A source function is emitted as `wf_` followed by
+//! its own IDENT, and [FORM-3] spells IDENT `[a-z][a-z0-9_]*`, so no source
+//! name can produce a symbol whose first character after `wf_` is an
+//! underscore. Every symbol this module and the runtime introduce therefore
+//! begins `wf__par_`: the prefix is unreachable from source, so a program that
+//! declares `fn par_try_fork(...)` still compiles and links exactly as it did
+//! before this module existed. That is a reserved namespace, not a name check
+//! — nothing here inspects a source function's spelling.
 
 use std::fmt::Write;
 
@@ -41,13 +50,13 @@ pub const PARALLEL_RUNTIME_SOURCE: &str = include_str!("../par_runtime.c");
 /// an option of the paths that want lanes, and would turn a program that
 /// merely *could* overlap into one that cannot be linked without it. The
 /// permission is never an obligation, so neither is its runtime.
-pub(crate) const PARALLEL_RUNTIME_FALLBACK: &str = "define weak ptr @wf_par_try_fork(ptr %fn, ptr %arg) {\nentry:\n  ret ptr null\n}\n\ndefine weak void @wf_par_join(ptr %handle) {\nentry:\n  ret void\n}\n\n";
+pub(crate) const PARALLEL_RUNTIME_FALLBACK: &str = "define weak ptr @wf__par_try_fork(ptr %fn, ptr %arg) {\nentry:\n  ret ptr null\n}\n\ndefine weak void @wf__par_join(ptr %handle) {\nentry:\n  ret void\n}\n\n";
 
 /// The first line of [`PARALLEL_RUNTIME_FALLBACK`], and so the marker a link
 /// path reads: one definition, so the text a module carries and the text a
 /// linker looks for cannot drift apart.
 pub(crate) const PARALLEL_TRY_FORK_SYMBOL: &str =
-    "define weak ptr @wf_par_try_fork(ptr %fn, ptr %arg)";
+    "define weak ptr @wf__par_try_fork(ptr %fn, ptr %arg)";
 
 /// True when this emitted module hands work out, so linking the parallel
 /// runtime would let it take lanes.
@@ -81,7 +90,7 @@ impl ParallelThunks {
 
     /// Records one thunk body and returns the symbol that names it.
     fn register(&mut self, body: impl FnOnce(&str) -> String) -> Result<String, BackendFailure> {
-        let symbol = format!("@wf_par_thunk_{}", self.count);
+        let symbol = format!("@wf__par_thunk_{}", self.count);
         self.count = self
             .count
             .checked_add(1)
@@ -160,7 +169,7 @@ impl FunctionEmitter<'_, '_> {
         let handle = format!("%{}", self.next_temporary()?);
         writeln!(
             self.output,
-            "  {handle} = call ptr @wf_par_try_fork(ptr {thunk}, ptr {frame})"
+            "  {handle} = call ptr @wf__par_try_fork(ptr {thunk}, ptr {frame})"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         self.handed_out.push(HandedOut {
@@ -196,7 +205,7 @@ impl FunctionEmitter<'_, '_> {
             let result_type = llvm_type(self.program, pending.result_type)?;
             writeln!(
                 self.output,
-                "  {condition} = icmp eq ptr {}, null\n  br i1 {condition}, label %{inline}, label %{wait}\n{inline}:\n  call void {}(ptr {})\n  br label %{done}\n{wait}:\n  call void @wf_par_join(ptr {})\n  br label %{done}\n{done}:\n  {field} = getelementptr inbounds {}, ptr {}, i32 0, i32 {}\n  {} = load {result_type}, ptr {field}",
+                "  {condition} = icmp eq ptr {}, null\n  br i1 {condition}, label %{inline}, label %{wait}\n{inline}:\n  call void {}(ptr {})\n  br label %{done}\n{wait}:\n  call void @wf__par_join(ptr {})\n  br label %{done}\n{done}:\n  {field} = getelementptr inbounds {}, ptr {}, i32 0, i32 {}\n  {} = load {result_type}, ptr {field}",
                 pending.handle,
                 pending.thunk,
                 pending.frame,

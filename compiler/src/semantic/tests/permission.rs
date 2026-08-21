@@ -8,8 +8,8 @@
 use crate::SemanticOutcome;
 
 use super::super::permission::{
-    Access, Denial, ExitKind, FunctionPermissions, PairSide, PermissionMetadata, PermissionPair,
-    PermissionVerdict,
+    Access, ConflictKind, Denial, ExitKind, FunctionPermissions, PairSide, PermissionMetadata,
+    PermissionPair, PermissionVerdict,
 };
 use super::with_semantics;
 
@@ -280,14 +280,143 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "main");
-    let Denial::Footprint { left, right } = denial(pair, 2) else {
+    let Denial::Footprint { kind, left, right } = denial(pair, 2) else {
         panic!("expected a footprint denial, got {:?}", pair.verdict);
     };
+    assert_eq!(
+        *kind,
+        ConflictKind::WriteWrite,
+        "both actuals are written through"
+    );
     let (Access::Place { place: left, .. }, Access::Place { place: right, .. }) = (left, right)
     else {
         panic!("expected two conflicting places, got {left:?} and {right:?}");
     };
     assert!(left.overlaps(right));
+    assert_eq!(left, right, "both actuals resolve to the one cell");
+}
+
+/// Condition 2, the caller-side half. `take`'s row is `pure` and reaches no
+/// caller storage at all, but its own operand reads the cell `bump` writes,
+/// and the overlap moves exactly that read across `bump`'s call. Before this
+/// condition existed the pair was permitted, eligible, and produced the
+/// pre-write value with no runtime linked.
+#[test]
+fn an_operand_read_of_written_storage_is_denied_by_condition_two() {
+    let source = br#"fn bump['r](slot: &uniq 'r u64) -> result: own u64 writes('r) {
+  set deref(slot) = 15_u64;
+  return 1_u64;
+}
+
+fn take(v: own u64) -> result: own u64 pure {
+  return v;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 1_u64;
+  region 'r {
+    let a = bump<'r>(slot: &uniq 'r cell);
+    let b = take(v: cell);
+    let total = imax(a, b);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::Footprint { kind, left, right } = denial(pair, 2) else {
+        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(*kind, ConflictKind::WriteOperandRead);
+    let (Access::Place { place: left, .. }, Access::Place { place: right, .. }) = (left, right)
+    else {
+        panic!("expected two conflicting places, got {left:?} and {right:?}");
+    };
+    assert_eq!(
+        left, right,
+        "the borrow and the operand resolve to the one cell"
+    );
+}
+
+/// The same hazard through a subscript rather than a whole binding: the
+/// element read is rooted at the buffer the first call writes through.
+#[test]
+fn an_operand_element_read_of_a_written_buffer_is_denied_by_condition_two() {
+    let source =
+        br#"fn fill['d](dst: &uniq 'd buffer<u64>, mark: own u64) -> result: own u64 reads('d), writes('d) {
+  let room = len(deref(dst));
+  let k = 0_u64;
+  loop @go {
+    let done = ige(k, room);
+    if done {
+      break @go;
+    }
+    set deref(dst)[k] = mark;
+    set k = k +wrap 1_u64;
+  }
+  return mark;
+}
+
+fn take(v: own u64) -> result: own u64 pure {
+  return v;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let buf = buffer_new(4_u64, 1_u64);
+  region 'd {
+    let a = fill<'d>(dst: &uniq 'd buf, mark: 9_u64);
+    let b = take(v: buf[0_u64]);
+    let total = imax(a, b);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::Footprint { kind, .. } = denial(pair, 2) else {
+        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(*kind, ConflictKind::WriteOperandRead);
+}
+
+/// Condition 2 in its other direction: s1 only reads, s2 writes the same
+/// place. The judgment's first conflict loop never sees this pair, so the
+/// second one has to.
+#[test]
+fn a_write_by_the_second_call_over_a_read_by_the_first_is_denied_by_condition_two() {
+    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+  return deref(v);
+}
+
+fn bump['r](slot: &uniq 'r u64) -> result: own u64 writes('r) {
+  set deref(slot) = 7_u64;
+  return 1_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 1_u64;
+  region 'r {
+    let a = peek<'r>(v: &'r cell);
+    let b = bump<'r>(slot: &uniq 'r cell);
+    let total = imax(a, b);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::Footprint { kind, left, right } = denial(pair, 2) else {
+        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(
+        *kind,
+        ConflictKind::ReadWrite,
+        "s1 reads and s2 writes, which is not two writes"
+    );
+    let (Access::Place { place: left, .. }, Access::Place { place: right, .. }) = (left, right)
+    else {
+        panic!("expected two conflicting places, got {left:?} and {right:?}");
+    };
     assert_eq!(left, right, "both actuals resolve to the one cell");
 }
 

@@ -13,7 +13,7 @@ use std::process::Command;
 
 use super::{
     HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_RUNTIME_SOURCE, build_executable, compile_and_run, emit,
-    module_requires_parallel_runtime, test_directory,
+    emit_without_overlap, module_requires_parallel_runtime, test_directory,
 };
 
 /// A claim-free recursive fold over a heap tree, the smallest shape that has
@@ -153,6 +153,60 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
 
+/// A program whose own functions are spelled like the runtime's entry points.
+///
+/// It overlaps, so the module carries the runtime symbols too, and both sets
+/// have to coexist. `par_try_fork` and `par_join` are ordinary IDENTs
+/// [FORM-3], so nothing may stop a writer from declaring them.
+const RUNTIME_SHAPED_NAMES: &[u8] = br#"fn par_try_fork(x: own u64) -> result: own u64 pure {
+  return imax(x, x);
+}
+
+fn par_join(x: own u64) -> result: own u64 pure {
+  return imax(x, x);
+}
+
+fn par_thunk_0(x: own u64) -> result: own u64 pure {
+  return imax(x, x);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = par_try_fork(x: 1_u64);
+  let b = par_join(x: 2_u64);
+  let c = par_thunk_0(x: 3_u64);
+  let ab = imax(a, b);
+  let total = imax(ab, c);
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// The backend's own symbols never collide with a source function's.
+///
+/// A source function is emitted as `wf_` plus its IDENT, and [FORM-3] spells
+/// IDENT `[a-z][a-z0-9_]*`, so the `wf__par_` prefix the runtime uses is
+/// unreachable from source. Without that reservation this program is accepted
+/// by the checker and then rejected by the host toolchain with a raw
+/// `invalid redefinition of function` — an accepted program failing to build,
+/// which no source-level diagnostic explains.
+#[test]
+fn a_program_named_like_the_runtime_still_compiles_and_links() {
+    let module = emit(RUNTIME_SHAPED_NAMES);
+    assert!(
+        module_requires_parallel_runtime(&module),
+        "the fixture must actually hand work out:\n{module}"
+    );
+    assert!(
+        module.contains("define internal i64 @wf_par_try_fork(i64 "),
+        "the source function keeps its own symbol:\n{module}"
+    );
+    assert!(
+        module.contains("define weak ptr @wf__par_try_fork(ptr %fn, ptr %arg) {"),
+        "the runtime keeps its reserved symbol:\n{module}"
+    );
+    let output = compile_and_run(&module);
+    assert_eq!(output.status.code(), Some(0));
+}
+
 /// One handed-out call emits its frame, its outlined thunk, the lane offer,
 /// and a join whose refusal edge calls the same thunk on the same frame.
 #[test]
@@ -178,11 +232,11 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
     // Both runtime entry points are the module's own weak definitions, so a
     // module that hands work out is still a complete program.
     assert!(
-        module.contains("define weak ptr @wf_par_try_fork(ptr %fn, ptr %arg) {"),
+        module.contains("define weak ptr @wf__par_try_fork(ptr %fn, ptr %arg) {"),
         "no weak refusal of the lane offer:\n{module}"
     );
     assert!(
-        module.contains("define weak void @wf_par_join(ptr %handle) {"),
+        module.contains("define weak void @wf__par_join(ptr %handle) {"),
         "no weak join:\n{module}"
     );
 
@@ -191,13 +245,13 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
     // ordering is what makes the overlap window exactly the second call.
     let body = function_body(&module, "@wf_fold");
     let offer = body
-        .find("call ptr @wf_par_try_fork(ptr @wf_par_thunk_")
+        .find("call ptr @wf__par_try_fork(ptr @wf__par_thunk_")
         .expect("fold must offer its first recursive call");
     let inline = body
         .find("call i64 @wf_fold(")
         .expect("fold must run its second recursive call inline");
     let join = body
-        .find("call void @wf_par_join(ptr")
+        .find("call void @wf__par_join(ptr")
         .expect("fold must join what it offered");
     assert!(
         offer < inline,
@@ -210,7 +264,7 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
     // The refused edge runs the same thunk on the same frame, so the two edges
     // are one lowering of one source call reached two ways.
     let refused = body
-        .find("call void @wf_par_thunk_")
+        .find("call void @wf__par_thunk_")
         .expect("the refused edge must run the thunk on this thread");
     assert!(
         inline < refused,
@@ -295,7 +349,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     assert!(
-        emit(trailing).contains("call ptr @wf_par_try_fork(ptr @wf_par_thunk_"),
+        emit(trailing).contains("call ptr @wf__par_try_fork(ptr @wf__par_thunk_"),
         "a borrowed last member does not stop the group"
     );
 }
@@ -395,6 +449,54 @@ fn an_overlapped_program_reports_one_byte_sequence_at_every_worker_count() {
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
+/// The differential: the same source lowered *without* any overlap group
+/// produces the same bytes as the overlapped lowering, at every worker count.
+///
+/// This is the comparison the rest of this module cannot make. Every other
+/// test here links one emitted module two ways, so a defect introduced by the
+/// outlining itself — a moved read, a hoisted operand, a join in the wrong
+/// place — is present in the reference too and compares equal. The reference
+/// here is a second compilation whose calls were never handed out, which is
+/// the only way an overlap's "changes nothing observable" claim can be
+/// checked against something other than itself.
+#[test]
+fn the_overlapped_lowering_agrees_with_the_lowering_that_hands_nothing_out() {
+    let sequential_module = emit_without_overlap(OVERLAPPING_FOLD);
+    assert!(
+        !module_requires_parallel_runtime(&sequential_module),
+        "the reference module must contain no hand-out at all"
+    );
+    assert!(
+        module_requires_parallel_runtime(&emit(OVERLAPPING_FOLD)),
+        "the overlapped module must hand work out, or the comparison is vacuous"
+    );
+
+    let directory = test_directory();
+    let reference = Command::new(build_executable(&sequential_module, &directory))
+        .output()
+        .expect("run the module that hands nothing out");
+    assert_eq!(reference.status.code(), Some(0));
+    assert_eq!(
+        reference.stdout.len(),
+        8,
+        "the fold must report eight bytes"
+    );
+
+    let overlapped = build_executable(&emit(OVERLAPPING_FOLD), &directory);
+    let mut runs = vec![("no overlap lowering".to_owned(), reference.stdout)];
+    for workers in ["1", "2", "4", "8"] {
+        let output = Command::new(&overlapped)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the overlapped program");
+        assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
+        runs.push((format!("WF_WORKERS={workers}"), output.stdout));
+    }
+    identical(&runs).expect("outlining a call must not move one byte of the result");
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
 /// The negative control for the repeat above: its comparison reports a
 /// difference when one is present, so a green repeat is a claim about the
 /// program rather than about the comparison.
@@ -455,7 +557,7 @@ fn build_executable_without_runtime(module: &str, directory: &Path) -> std::path
 /// Links one module against the runtime plus an observer that reports the
 /// runtime's own grant count at process exit, then runs it at `workers`.
 ///
-/// The observer reads `wf_par_grants`, which no Whitefoot construct can name;
+/// The observer reads `wf__par_grants`, which no Whitefoot construct can name;
 /// it exists exactly so a pool that never grants a lane cannot pass for one
 /// that does.
 fn run_counting_grants(
@@ -471,7 +573,7 @@ fn run_counting_grants(
     std::fs::write(&runtime, PARALLEL_RUNTIME_SOURCE).expect("write the runtime");
     std::fs::write(
         &observer,
-        "#include <stdio.h>\nextern unsigned long wf_par_grants;\n__attribute__((destructor)) static void wf_par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf_par_grants);\n}\n",
+        "#include <stdio.h>\nextern unsigned long wf__par_grants;\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants);\n}\n",
     )
     .expect("write the observer");
     let linked = Command::new("/usr/bin/clang")

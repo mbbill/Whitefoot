@@ -104,8 +104,11 @@ fn denied_detail<Source: LedgerSource>(
         // The judged pair is two `let` statements, so the one binding s1
         // defines is its result; naming it that way needs no binding table.
         Denial::Dataflow { .. } => "an argument of s2 uses the result of s1".to_owned(),
-        Denial::Footprint { left, right } => format!(
-            "writes overlap at {} vs {}",
+        // The kind comes from the conflict loop that found it, so a read/write
+        // conflict is never reported as two writes.
+        Denial::Footprint { kind, left, right } => format!(
+            "{} {} vs {}",
+            kind.phrase(),
             access(left, source)?,
             access(right, source)?
         ),
