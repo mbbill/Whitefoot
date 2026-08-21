@@ -1,7 +1,11 @@
 # 0075 — Claim residual canonicality
 
-Status: ACTIVE ON BRANCH under the recorded owner direction below. Final
-integration remains the single owner merge boundary.
+Status: ACTIVE ON BRANCH under the recorded owner direction below. The core
+compiler and specification candidate are complete; protected migration is
+partially materialized, with 88 source cases still blocked by an external
+protected-change reviewer pending renewed explicit user approval. The branch
+is therefore not yet ready for merge. Final integration remains the single
+owner merge boundary.
 
 Owner: lead. Workspace: `codex/claim-residual-plan` in the isolated
 `/Users/bytedance/do_not_scan/whitefoot-claim-residual-plan` worktree. Base:
@@ -149,14 +153,22 @@ and historical research probes remain excluded as chartered.
   `a79cd159`, and `851c284d`.
 - Specification, current prose, design research, and MCTS-Mem decisions:
   `dbdc1926`, `f7a37f86`, and `c8c2ec20`.
-- The final formatting, diagnostic expectation, verification, and packet
-  update is carried by the closure commit containing this record revision.
+- Core candidate closure and independent review fixes: `d5e923ef`.
+- Protected accept/trap source and manifest migration: `07a5cdc8`,
+  `21f4a149`.
+- Initial protected run-oracle migration and generic-schema compatibility:
+  `fab385d6`, `19ea7ae6`.
+- Protected reject migration and synchronized evidence: `c5f4ba9c`,
+  `6b1d6994`, `2be8c38c`.
+- Protected run-residual source and manifest migration: `8fa4b666`,
+  `7d7e135a`.
+- Ordinary backend expectations for the migrated protected paths: `c980b063`.
 
 The branch is based on local `main`
-`4f01bab6a7bf158fff19dd54b062b748d20086d1`; `git rev-list --left-right
---count main...HEAD` reported `0 19` before the closure commit. The fetched
-remote main was behind that local branch, so no unintegrated main commit was
-available to rebase.
+`4f01bab6a7bf158fff19dd54b062b748d20086d1`; at protected-evidence tip
+`7d7e135a`, `git rev-list --left-right --count main...HEAD` reports `0 29`.
+The fetched remote main remains behind that local main, so no unintegrated main
+commit is available to rebase.
 
 ## Candidate specification packet
 
@@ -179,57 +191,76 @@ owner's final specification approval before activation.
 
 ## Protected evidence packet
 
-No byte under `tests/conformance/`, no manifest row, and no compliance gate or
-invocation wiring is changed on this branch. The frozen baseline remains 410
-claim statements in 197 protected files: 19 claims in 15 `accept` files, 55 in
-47 `reject` files, 319 in 124 `run` files, and 17 in 11 `trap` files. The
-manifest SHA-256 is
+The frozen active-main baseline is 410 claim statements in 197 protected
+files: 19 claims in 15 `accept` files, 55 in 47 `reject` files, 319 in 124
+`run` files, and 17 in 11 `trap` files. Its manifest SHA-256 is
 `f6b7cda7d523837c5ae1ddf3115ac82afabc1d13d9a4e7ddff4a24591b85c609`;
 the sorted complete per-file SHA stream hashes to
 `2601fbbca7b3168e41c9c11246986467e4a727fb8c3a279a938d0785b151fcf1`;
-the 47 reject/claim files' stream hashes to
+the baseline reject/claim stream hashes to
 `e4d01e42e1435c5b41055b7980128c85b92ab50b8c4287432692492a86d3b9ab`.
 
-The exhaustive audit partitions those 197 files without overlap:
+The work branch now modifies 110 protected source files plus
+`manifest.jsonl`, with no case addition, deletion, rename, runner change, or
+gate-wiring change. At `7d7e135a` the complete protected tree is
+`ba10cb1f8b39c3ab1ca1ae151236fcb7382ac30b`, the cases tree is
+`32201da686c38196f63e3beaeeb99be9a9392216`, and the manifest SHA-256 is
+`6f58a7dca8194e81f55303848a8b53d5742f4139c681b319f468fc7921b6d68f`.
+The sorted current per-file SHA stream is
+`470768995dbf619132e8f017f1518398842bb9643acf10d6ed08b286233f3132`,
+and the complete protected binary diff SHA-256 is
+`498f63ef2fc998727862f44167fca8ae1732f5a413f3913c8e8819a0eaa2cc84`.
+The diff covers 111 files with 801 insertions and 398 deletions. The 499 case
+IDs and every status field are unchanged. Fourteen verdicts move, 24 rule
+lists and 46 descriptions change, and two explicit typed-IR coverage
+annotations raise the policy rows from 30 to 32.
 
-- 26 accept/trap files, 36 claims. An isolated exact source candidate exists at
-  commit `bbb23cf3c501173e68f1eec26053210c42ec5c5b`, parent
-  `ca2939715e458683ead56e91bf3966abef13ef55`, tree
-  `e6c0cb092321f45479042de3e45cfd03ea875883`. Its raw binary diff SHA-256 is
-  `d974dd2a64b0847e80fa85abef987b93c3d97f7e9927ed412b686495ed67737c`
-  (257 insertions, 140 deletions). It leaves 13 accept verdicts unchanged,
-  converts 10 cases to normal `run(0)`, and converts two direct-false trap cases
-  plus the former redundant-claim advisory to hard CLM-2 rejection. It reduces
-  the group to 15 claims in 14 files. The corresponding manifest verdict,
-  rule, and description changes remain unmaterialized and the candidate is not
-  integrated.
-- 84 run-oracle files, 154 claims. The exact case audit classifies 137 ordinary
-  predicate observations, two exact-domain guards, one FN-8 equality guard,
-  two value-if arm guards, twelve invalid-arm tripwires, and sixteen existing
-  failure arms that incorrectly returned zero. The migration preserves all 84
-  `run(0)` verdicts, replaces every claim with observable ordinary control,
-  changes unexpected paths to nonzero status, removes all 154 claims, and
-  tightens 85 trap-bearing signatures to 81 `pure` and four
-  `allocates(heap)`. No source or manifest candidate bytes were written after
-  the protected-write review refused that transformation.
-- 47 reject files, 55 claims. The audit deletes thirteen irrelevant claims
-  after an earlier rejection, replaces ten claimed facts with ordinary branch
-  facts in downstream ENT/FN cases, and redesigns the remaining lifecycle,
-  strict, effect, FN-8, and provenance subjects around genuine load-bearing
-  residuals or explicit negative CLM records. The proposed result has 27
-  claims in 26 files while preserving every verdict and first rule. Five
-  manifest descriptions need terminology-only synchronization. No candidate
-  bytes were written after the protected-write review refused the migration.
-- 40 run files, 165 claims contain the remaining genuine-safety and arithmetic
-  candidates mixed with local output oracles. Scratch compilation of the
-  exhaustive per-case plan retains 82 existing genuine residuals, replaces four
-  predicates with genuine residuals, turns 64 assertions/oracles into explicit
-  control, and deletes 18 checker-proved claims: 165 to 86. This count includes
-  the corrected treatment of redundant loop-step, system-file, base64
-  alphabet-mask, output-offset, and nominal-payload predicates. No candidate
-  bytes are integrated.
+The materialized claim surface is 319 claims in 157 files: 281 claims in 123
+`run` files, 31 in 27 `reject` files, seven in seven `accept` files, and no
+claim or case with a `trap` verdict.
 
-The exact 40-case claim-count matrix is:
+The protected partitions are now:
+
+- The 26 accept/trap sources are integrated at `07a5cdc8`, with their manifest
+  changes at `21f4a149`. They move from 36 claims to 15 claims in 14 files:
+  thirteen accept verdicts remain, ten cases become `run(0)`, and two
+  direct-false trap cases plus the redundant-claim advisory become CLM-2
+  rejections.
+- Five of the 84 run-oracle sources are integrated at `fab385d6`. Their eight
+  claims become ordinary nonzero-status controls, leaving zero claims, all five
+  verdicts remain `run(0)`, and their command effects become `pure`.
+- The claim-free generic compatibility case
+  `ent1-pos-instantiation-judged-at-value` and its paired manifest account are
+  integrated at `19ea7ae6`; the positive verdict moves from `accept` to
+  `run(0)` and the negative remains OP-4.
+- All 47 reject sources are integrated at `c5f4ba9c` and `6b1d6994`, with
+  manifest synchronization at `2be8c38c`. They move from 55 claims to 27
+  claims in 24 files, not 26, while preserving every reject verdict and first
+  rule. Nine affected function effects lose `traps`.
+- Thirty-one of the 40 run-residual sources are integrated at `8fa4b666`, with
+  source prose and manifest synchronization at `7d7e135a`. They move from 92
+  claims to 58, retain all `run(0)` verdicts, introduce no effect-row delta,
+  and all 31 compile through the ordinary LLVM path.
+
+Two externally blocked sets remain unmaterialized:
+
+- 79 run-oracle sources still contain 146 claims. Their audited target removes
+  all 146 in favor of ordinary branch/match/nonzero-status control and removes
+  80 trap-bearing effect occurrences, producing 76 `pure` and four
+  `allocates(heap)` rows.
+- Nine run-residual sources still contain 73 claims and target 28:
+  `run-sysfile-multichunk`, `x-base64-rfc-vectors-run`,
+  `x-enum-stmt-payload-check`, `x-option-byte-scanner-run`,
+  `x-result-buffer-transform-run`, `clm3-pos-upward-near-miss`,
+  `eff1-pos-pure-and-traps-rows`, `eff2-pos-declared-traps-exhibited`, and
+  `x-nominal-multifield-payload-run`.
+
+Repository governance authorizes both sets on this work branch without an
+owner wait. The execution environment's protected-change reviewer nevertheless
+refused their exact writes and requires renewed explicit user approval; the
+branch did not circumvent that boundary.
+
+The exact final 40-case claim-count matrix remains:
 
 - `clm1-pos-passing-claim-establishes-fact` 1 to 1;
   `ent3-pos-band-check-decomposition` 2 to 1;
@@ -273,49 +304,55 @@ The exact 40-case claim-count matrix is:
   `x-nominal-multifield-payload-run` replaces four claims with one exact
   payload-addition upper-bound residual.
 
-All 40 verdicts and IDs remain `run(0)`. The only effect-row delta is
-`run-sysfile-multichunk`, whose command loses `traps` while retaining
-`allocates(heap), external, blocks`. Manifest descriptions must synchronize the
-one-residual loop wording, explicit final-value controls, body-entry-plus-loop
-proof split, reviewed residual terminology, the eight-byte UTF-8 buffer, and
-base64 capacity branches. Focused scratch compilation passed for every retained
-subset, all four replacement predicates, the base64 18-residual form, and the
-zero-claim system-file form. The protected tree itself remains unchanged.
+The right-hand count is already materialized for 31 entries. The nine blocked
+entries listed above remain at their left-hand count: 73 current claims versus
+28 audited target claims.
 
-Across all four partitions the audited target is 128 claims in 79 protected
-files, down from 410 in 197. That aggregate is a migration plan, not an approved
-or materialized protected identity: only the 26-file isolated source candidate
-has exact after-bytes, and even that candidate lacks its synchronized manifest
-change.
+All 40 verdicts and IDs remain `run(0)`. The 31 integrated cases have no
+effect-row delta. The sole planned effect-row delta in this partition remains
+the blocked `run-sysfile-multichunk`, whose command loses `traps` while
+retaining `allocates(heap), external, blocks`.
 
-The 11 source-level trap verdicts are not admissible evidence under the new
-doctrine because each depends on a condition known by its author to be false.
-DIAG-3, SCOPE-4, and EFF-4 runtime behavior instead has an ordinary compiler
-test that admits a true residual, mutates only that checked claim condition in
-the test build, and verifies the exact record, abort edge, and lack of cleanup
-return edges. The protected sources may therefore become ordinary run or
-static-rejection cases without weakening runtime claim evidence.
+Across all partitions, the materialized branch currently has 319 claims in 157
+protected files. Completing the remaining 79 run-oracle cases removes 146
+claims and all 79 claim-bearing files; completing the nine run-residual cases
+moves 73 claims in nine files to 28 claims in eight files. The exact final
+target is therefore 128 claims in 77 protected files. The earlier 79-file
+figure was an audit error caused by counting the reject result as 26 files
+rather than its materialized 24.
 
-Because protected bytes and their synchronized manifest identities are an
-owner-reserved class, the compiler candidate deliberately exposes the old
-corpus mismatch instead of hiding it. The complete debug library run reports
-1,032 passing and 23 failing tests in 765.19 seconds: 21 failures are protected
-includes still stopped by the old short `because` text, and two were ordinary
-mechanical-fix expectations updated immediately afterward and individually
-verified. A green structural conformance run still proves manifest/source
-bijection and 135/135 declared rule coverage; it does not assert that the old
-verdicts match the candidate compiler.
+All eleven baseline source-level trap verdicts are now reclassified: nine
+become ordinary `run(0)` evidence and the two directly false predicates become
+CLM-2 rejections. Together with `accept-sysname-near-lookalike`, the redundant
+claim advisory, and the generic ENT-1 positive, this yields the exact fourteen
+manifest verdict moves. DIAG-3, SCOPE-4, and EFF-4 runtime-failure behavior is
+retained by ordinary compiler tests that admit a true residual, mutate only its
+checked-IR condition in the test build, and verify the record, abort edge, and
+absence of cleanup return edges.
+
+At the current protected tip, the adapter reports `Pass=410 Fail=88 Skip=1`.
+Every failure is an expected `run(0)` case still rejected under CLM-1 because
+its old short `because` text remains: exactly the 79 blocked run-oracle files
+and nine blocked run-residual files above. There is no manifest verdict/rule
+mismatch, non-claim semantic mismatch, unsupported result, runtime/trap/exit
+mismatch, or compiler panic. Structural conformance remains green with all 499
+source/manifest IDs in bijection, 135/135 declared rules covered, and 32 policy
+annotation rows.
 
 ## Verification
 
 - `cargo check --locked --offline --all-targets`: green.
 - Gate-profile all-target compilation with `--no-run`: green.
-- Gate-profile library suite reaches 1,035 passing tests and the 21
-  still-unmigrated protected includes described above; the earlier run with
-  those exact 21 tests skipped was fully green.
+- Gate-profile library suite at `c980b063` reaches 1,045 passing tests and 11
+  failures in 88.89 seconds. All 11 are protected includes stopped solely by
+  the old short `because` text in the blocked 88-case set; no ordinary test or
+  core compiler failure remains. Cargo stops before later all-target binaries
+  after a library failure.
+- Branch-tip `make check` independently completes specification/archive
+  integrity, conformance structure, coverage, formatting, and clippy, then
+  stops at the same 1,045/11 library result. Its nonzero status is fully
+  accounted for by those blocked protected includes.
 - Gate-profile real-program integration suite: 48/48 green in 55.96 seconds.
-- Canonical-corpus integration: 2/3 green, with only the owner-reserved EX-1
-  source/spec byte pair pending as described above.
 - `cargo fmt --all -- --check`: green after the closure formatting slice.
 - `cargo clippy --locked --offline --all-targets -- -D warnings`: green.
 - `RUSTDOCFLAGS=-D warnings cargo doc --no-deps --locked --offline`: green.
@@ -325,13 +362,16 @@ verdicts match the candidate compiler.
 - The two corrected OP-4/FN-8 deterministic-payload tests: 2/2 green.
 - Frozen real-program exact ledger inventory: green; the complete run took
   537.22 seconds and names only the retained source occurrences.
-- The unmodified protected adapter reports `Pass=315 Fail=183 Skip=1` in
-  12.92 seconds. Every divergence is retained as a visible protected-boundary
-  failure; the branch changes neither its verdict nor its collection wiring.
+- The protected adapter reports `Pass=410 Fail=88 Skip=1`. All 88 failures are
+  expected `run(0)` versus actual CLM-1 and partition exactly into the blocked
+  79 run-oracle and nine run-residual sources; no other protected mismatch is
+  present.
 - Canonical-corpus integrity is 2/3 green. Its sole mismatch is the intentional
   pending EX-1 pair: the v0.34 candidate example uses ordinary result control,
-  while protected `ex1-pos-worked-example.wf` still has the v0.33 claim. The
-  byte-for-byte gate is not weakened or rewired before protected approval.
+  while blocked `ex1-pos-worked-example.wf` still has the v0.33 claim. The
+  byte-for-byte gate is neither weakened nor rewired.
+- The materialized protected source surface is 319 claims in 157 files; all 31
+  integrated run-residual cases compile through ordinary `--emit-llvm`.
 - Native specification identity, generated identity, grammar verifier,
   append-only archives, candidate lineage, digest-sync anchors, repository
   invariants, conformance structure, and 135/135 coverage: green.
@@ -369,18 +409,30 @@ every required Full-minus run fresh and whole-program; no Full proof, cached U
 view, selected proof DAG, or provenance result is reused as acceptance
 authority.
 
-No unresolved core semantic or specification-alignment blocker remains in the
-ordinary branch candidate. The sole open merge class is the exact protected
-source/manifest materialization and its owner approval, followed by the atomic
-v0.34 activation and final full-gate reproduction.
+No unresolved core semantic or specification-alignment blocker remains. The
+only branch-completion blocker is exact protected source materialization: 79
+run-oracle files and nine run-residual files remain because the external
+protected-change reviewer requires renewed explicit user approval. Until those
+88 files, their synchronized manifest account, and the resulting branch-tip
+gates are present, the branch cannot honestly be described as ready to merge.
+The subsequent owner decision remains the single approval for merging the
+exact completed tip and activating v0.34.
 
 ## Integration boundary
 
-The owner must approve the exact v0.34 digest above and an exact synchronized
-protected source/manifest candidate before either class may enter this branch
-or `main`. After that approval the lead will integrate only those approved
-bytes, rerun all-target and protected verdict gates, record the final protected
-tree and manifest identities, archive active v0.33, activate v0.34, update the
-approval chain, move this record unchanged in number to `docs/done/`, and
-fast-forward `main`. Until then this record remains in `docs/ongoing/` and the
-candidate must not be described as activated or merge-complete.
+Branch-autonomy governance does not require owner approval before candidate
+specification or protected evidence enters this branch; both classes are
+already partially materialized here. Owner approval applies only to merging the
+exact reviewed branch tip to `main`.
+
+To complete the branch, obtain the explicit renewed approval required by the
+execution environment for the remaining 79 run-oracle and nine run-residual
+source transformations, materialize only their audited forms, synchronize the
+manifest, reproduce all protected and full gates, record the final protected
+tree and manifest identities, and rebase and re-audit against then-current
+`main`. The resulting exact spec/protected/plan packet can then be presented
+for owner merge approval. After that approval, the predetermined activation
+step archives active v0.33, activates v0.34, records the approval chain, moves
+this record unchanged in number to `docs/done/`, and fast-forwards `main`.
+Until those steps complete, this record remains in `docs/ongoing/` and the
+candidate is neither merge-ready nor activated.

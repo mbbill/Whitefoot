@@ -437,7 +437,7 @@ creating writer trust or weakening the checked safety envelope.
 
 ### outline:PROOF-10 — Claim residual source canonicality
 
-`[in progress: branch 0075]` `[next: exact candidate and owner merge packet]`
+`[in progress: branch 0075]` `[next: complete blocked protected remainder and owner merge packet]`
 
 - **Goal:** make every claim in a successful checker result one mechanically
   qualified, individually necessary runtime-residual candidate, and every
@@ -499,13 +499,14 @@ creating writer trust or weakening the checked safety envelope.
   migrated, typed-IR fault injection carries runtime-failure evidence, and the
   project-law, writer-law, and paired MCTS updates are present on the branch.
   They remain candidate evidence, not active language.
-- **Missing / next:** approve and integrate the exact protected source/manifest
-  migration packet; freeze the candidate specification identity; finish the
-  accepted-set differential and complete gates.
-  Rebase and re-audit it before presenting its digest, diffs, gates, batch
-  audit, and frozen prospective activation/closure transformation in the single
-  owner merge packet; the approved mechanical activation is the only route to
-  `main`. Acceptance requires a reviewed derivation and at
+- **Missing / next:** complete the remaining 79 run-oracle and nine
+  run-residual protected migrations plus their synchronized manifest account;
+  finish the exact protected differential and branch-tip gates; then rebase,
+  re-audit, and present the exact candidate for owner merge approval. The
+  frozen candidate specification identity remains part of that packet, which
+  presents its digest, diffs, gates, batch audit, and frozen prospective
+  activation/closure transformation. The approved mechanical activation is
+  the only route to `main`. Acceptance requires a reviewed derivation and at
   least one authentic terminal consumer for every surviving claim,
   failure-atomic machine rejection with no artifact, exclusion of every
   review-invalid claim from approved positive/production programs (while
