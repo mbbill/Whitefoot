@@ -1,17 +1,23 @@
-fn opaque_length(n: own u64) -> result: own u64 pure {
-  return n;
+const values: array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
+
+fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
-  doc "A conforming claim whose predicate is false at runtime aborts with the DIAG-3 record citing CLM-1 and the claim name. The empty length passes through a call so no fact reaches the claim [ENT-2] and CLM-2 neither proves nor refutes it. This carries the retired runtime OP-4 bounds-trap concern: out-of-bounds is now a compile-time rejection, and the claim is the runtime trap surface.";
-  let hidden = opaque_length(n: 0_u64);
-  let allocation_fits = buffer_fits<i64>(hidden);
-  claim allocation_fit: allocation_fits because "the hostile length still satisfies the static allocation obligation";
-  let b = buffer_new(hidden, 0_i64);
-  let room = len(b);
-  let ok = ilt(0_u64, room);
-  claim nonempty: ok because "this hostile fixture wants the trap record";
-  let x = b[0_u64];
-  claim unreachable: ieq(x, 0_i64) because "unreachable";
-  return exit_status(code: 0_u8);
+command fn main() -> status: own ExitStatus traps {
+  doc "The accepted source carries one true, load-bearing residual and runs normally. A compiler test redirects this retained claim to the existing false constant in typed IR to verify the exact DIAG-3 runtime record without admitting a knowingly false source claim.";
+  let injection_false = False();
+  let bounded = clamp_three(value: 9_u64);
+  let inside = ilt(bounded, 4_u64);
+  claim reviewed_index: inside because "premises: values has length four and bounded is returned by clamp_three, whose body computes imin(9_u64, 3_u64)\nderivation: bounded is 3_u64, which is strictly less than 4_u64\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: the following values[bounded] subscript requires this exact bound";
+  let selected = values[bounded];
+  if injection_false {
+    return exit_status(code: 1_u8);
+  }
+  let expected = ieq(selected, 40_u8);
+  if expected {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
 }

@@ -2,11 +2,16 @@ fn opaque(value: own i32) -> result: own i32 pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus traps {
-  doc "A false executed claim is the sole runtime contract violation [ERR-4, SCOPE-4]. Calls hide the concrete operands from the checker so the false integer-domain predicate remains a runtime claim.";
+command fn main() -> status: own ExitStatus pure {
+  doc "Representability failure is an expected typed value, not a deliberately false claim [ERR-4]. The checked operation returns Err on i32 max plus one and ordinary control reports successful handling.";
   let peak = opaque(value: 2147483647_i32);
   let step = opaque(value: 1_i32);
-  let addition_defined = peak +defined step;
-  claim exact_addition_domain: addition_defined because "the hostile fixture intentionally violates the exact-addition domain";
-  return exit_status(code: 0_u8);
+  match peak +checked step {
+    Ok(value: sum) => {
+      return exit_status(code: 1_u8);
+    }
+    Err(error: overflow) => {
+      return exit_status(code: 0_u8);
+    }
+  }
 }

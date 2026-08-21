@@ -1,9 +1,14 @@
-fn first(b: own buffer<u8>, i: own u64) -> function_result: own u8 traps {
-  doc "TYPE-5: a subscript states no element type; the selected type derives from the base place's buffer<u8>, so the binder's stated own u8 is the only type that matches. The dominating claim discharges the bounds obligation [OP-4, CLM-1].";
-  let n = len(b);
-  let ok = ilt(i, n);
-  claim offset_in_bounds: ok because "callers index below the buffer length";
-  let value = b[i];
+fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
+fn first(b: own array<u8, 4>, i: own u64) -> function_result: own u8 traps {
+  doc "TYPE-5: a subscript states no element type; the selected own u8 type derives from the array base. A genuine residual about an uncontracted clamp discharges the exact bound [OP-4, CLM-1, CLM-2].";
+  let bounded = clamp_three(value: i);
+  let room = len(b);
+  let inside = ilt(bounded, room);
+  claim offset_in_bounds: inside because "premises: b has fixed length four and bounded is returned by clamp_three, whose body computes imin(i, 3_u64)\nderivation: bounded is at most 3_u64, which is strictly less than the array length 4_u64\nconclusion: ilt(bounded, room) is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: the following b[bounded] subscript requires this exact bound";
+  let value = b[bounded];
   return value;
 }
 

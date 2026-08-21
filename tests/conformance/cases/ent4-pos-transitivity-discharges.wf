@@ -1,11 +1,14 @@
-fn get(b: own buffer<u8>, i: own u64, j: own u64) -> result: own u8 traps {
-  doc "Closure rule (1): from `i - j <= 0` and `j - room <= -1` the least closure derives `i - room <= -1` [ENT-4]. Neither claim states the obligation directly; the derivation is what discharges the subscript [OP-4].";
+fn get(b: own buffer<u8>, i: own u64, j: own u64) -> result: own u8 pure {
+  doc "Closure rule (1): ordinary executed control establishes i at most j and j below room, from which ENT-4 derives i below room and discharges the subscript [OP-4]. No claim stands in for either caller-dependent branch.";
   let room = len(b);
   let ordered = ile(i, j);
-  claim the_offsets_are_out_of_order: ordered because "the offsets are out of order";
-  let inside = ilt(j, room);
-  claim the_upper_offset_is_out_of_range: inside because "the upper offset is out of range";
-  return b[i];
+  if ordered {
+    let inside = ilt(j, room);
+    if inside {
+      return b[i];
+    }
+  }
+  return 0_u8;
 }
 
 command fn main() -> status: own ExitStatus pure {

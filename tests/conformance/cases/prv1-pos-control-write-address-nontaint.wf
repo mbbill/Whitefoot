@@ -11,7 +11,7 @@ command fn main(command.args as args: own Args) -> return_value: own ExitStatus 
       let bytes = buffer_new(1_u64, 0_u8);
       let room = len(bytes);
       let inside = ilt(internal_offset, room);
-      claim internal_index_in_bytes: inside because "control and target-address choices do not taint the stored value";
+      claim internal_index_in_bytes: inside because "premises: offsets is initialized entirely to 0_u64, the only possible write also stores 0_u64, internal_offset reads offsets[0_u64], and bytes has length 1_u64\nderivation: external control may choose whether and where the idempotent zero write occurs, but offsets[0_u64] remains 0_u64 and is therefore below 1_u64\nconclusion: ilt(internal_offset, room) is true\nchecker gap: ENT does not track buffer element values through an external-control write and later read\nconsumers: the following bytes[internal_offset] subscript requires this exact bound";
       let value = bytes[internal_offset];
       return exit_status(code: 0_u8);
     } else {

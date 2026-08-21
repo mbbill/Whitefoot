@@ -2,11 +2,16 @@ fn opaque(n: own i32) -> function_result: own i32 pure {
   return n;
 }
 
-command fn main() -> status: own ExitStatus traps {
-  doc "The +defined query for i32 max plus one is false, so its executed claim is the sole runtime trap boundary and aborts before the following bare exact addition [FORM-7, CLM-1].";
+command fn main() -> status: own ExitStatus pure {
+  doc "The literals are individually canonical FORM-7 values, while their checked sum is the typed Err case. Ordinary control handles the expected overflow instead of spelling a false claim.";
   let a = opaque(n: 2147483647_i32);
   let one = opaque(n: 1_i32);
-  claim addition_defined: a +defined one because "i32 max plus one must remain representable";
-  let b = a + one;
-  return exit_status(code: 0_u8);
+  match a +checked one {
+    Ok(value: sum) => {
+      return exit_status(code: 1_u8);
+    }
+    Err(error: overflow) => {
+      return exit_status(code: 0_u8);
+    }
+  }
 }

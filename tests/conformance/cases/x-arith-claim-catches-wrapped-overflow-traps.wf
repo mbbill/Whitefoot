@@ -1,7 +1,11 @@
-command fn main() -> status: own ExitStatus traps {
-  doc "A claim is a runtime check in all build modes, never elided [CLM-1]; the wrapped i32::MAX + 1 is negative, so an `igt 0` invariant is violated and the process traps and aborts [SCOPE-4]. The predicate is computed from a wrapping add, so no fact reaches it and CLM-2 neither proves nor refutes it.";
+command fn main() -> status: own ExitStatus pure {
+  doc "Wrapping overflow is total and produces the specified negative value. Ordinary control observes that expected result; a claim is not used as a test oracle or abort.";
   let hi = 2147483647_i32;
   let w = hi +wrap 1_i32;
-  claim wrapped_value_is_not_positive: igt(w, 0_i32) because "wrapped value is not positive";
-  return exit_status(code: 0_u8);
+  let wrapped_negative = ilt(w, 0_i32);
+  if wrapped_negative {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
 }

@@ -1,20 +1,23 @@
-fn get(b: own buffer<u8>, stop: own Bool, done: own Bool) -> result: own u8 traps {
-  doc "A return edge inside a loop cannot reach a later iteration head, so its scope-exit kills do not remove a pre-loop bound at the head [ENT-5]. The two else-free false edges can continue, but neither kills the bound; therefore the first subscript discharges [OP-4].";
+fn get(b: own buffer<u8>, stop: own Bool, done: own Bool) -> result: own u8 pure {
+  doc "An ordinary branch establishes the zero offset's bound before the loop. A return edge inside the loop cannot reach a later iteration head, so its scope-exit kills do not remove that real pre-loop fact [ENT-5, OP-4].";
   let room = len(b);
   let offset = 0_u64;
   let inside = ilt(offset, room);
-  claim the_buffer_is_empty: inside because "the buffer is empty";
-  let sample = 0_u8;
-  loop @walk {
-    set sample = b[offset];
-    if stop {
-      return sample;
+  if inside {
+    let sample = 0_u8;
+    loop @walk {
+      set sample = b[offset];
+      if stop {
+        return sample;
+      }
+      if done {
+        break @walk;
+      }
     }
-    if done {
-      break @walk;
-    }
+    return sample;
+  } else {
+    return 0_u8;
   }
-  return sample;
 }
 
 command fn main() -> status: own ExitStatus pure {

@@ -1,11 +1,14 @@
-fn get(b: own buffer<u8>, i: own u64) -> result: own u8 traps {
-  doc "Closure rule (2): from `i - room <= 0` and a disequality between the two terms in either orientation, the least closure derives `i - room <= -1` [ENT-4]. The non-strict bound alone does not discharge; the disequality is what makes it strict.";
+fn get(b: own buffer<u8>, i: own u64) -> result: own u8 pure {
+  doc "Closure rule (2): ordinary executed control establishes i at most room and i unequal to room, from which ENT-4 derives the strict bound required by the subscript. No claim stands in for either input-dependent condition.";
   let room = len(b);
   let within = ile(i, room);
-  claim offset_past_the_length: within because "offset past the length";
-  let distinct = ine(i, room);
-  claim offset_equals_the_length: distinct because "offset equals the length";
-  return b[i];
+  if within {
+    let distinct = ine(i, room);
+    if distinct {
+      return b[i];
+    }
+  }
+  return 0_u8;
 }
 
 command fn main() -> status: own ExitStatus pure {

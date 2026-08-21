@@ -3,8 +3,12 @@ enum PrvChoice {
   PrvInternal(value: u64);
 }
 
+fn clamp_zero(value: own u64) -> return_value: own u64 pure {
+  return imin(value, 0_u64);
+}
+
 command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
-  doc "An external enum payload seeds only its direct projection; the unseeded sibling binder stays internal and may use a claim to protect its subscript.";
+  doc "An external enum payload seeds only its direct projection. The unseeded sibling binder stays internal and may carry a genuine residual about an uncontracted clamp to protect its subscript.";
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     let choice = PrvExternal(value: external_value);
@@ -13,11 +17,12 @@ command fn main(command.args as args: own Args) -> return_value: own ExitStatus 
         return exit_status(code: 0_u8);
       }
       PrvInternal(value: selected_internal) => {
+        let bounded = clamp_zero(value: selected_internal);
         let bytes = buffer_new(1_u64, 0_u8);
         let room = len(bytes);
-        let inside = ilt(selected_internal, room);
-        claim sibling_index_in_bytes: inside because "the unseeded direct projection is internal";
-        let value = bytes[selected_internal];
+        let inside = ilt(bounded, room);
+        claim sibling_index_in_bytes: inside because "premises: bounded is returned by clamp_zero, whose body computes imin(selected_internal, 0_u64), and bytes has length 1_u64\nderivation: every unsigned minimum with zero is 0_u64, which is strictly less than 1_u64\nconclusion: ilt(bounded, room) is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: the following bytes[bounded] subscript requires this exact bound";
+        let value = bytes[bounded];
         return exit_status(code: 0_u8);
       }
     }

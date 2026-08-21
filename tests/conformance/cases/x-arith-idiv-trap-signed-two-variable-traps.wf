@@ -1,17 +1,27 @@
-fn opaque(n: own i32) -> function_result: own i32 pure {
-  return n;
+fn positive_divisor(n: own i32) -> function_result: own i32 pure {
+  return imax(n, 1_i32);
 }
 
 fn divide(p: own i32, q: own i32) -> function_result: own i32 traps {
-  doc "The total /defined query states the complete exact-division domain [OP-2]. Its executed claim is the sole runtime boundary; when true it also discharges the following bare exact division, and when false it aborts before that operation [CLM-1].";
-  claim division_defined: p /defined q because "the divisor and signed quotient must be defined";
-  let r = p / q;
+  doc "A reviewed theorem about an uncontracted positive-divisor normalizer is a genuine residual. It discharges the complete domain of the following signed exact division [OP-2, CLM-1, CLM-2].";
+  let injection_false = False();
+  let divisor = positive_divisor(n: q);
+  let positive = igt(divisor, 0_i32);
+  claim division_defined: positive because "premises: divisor is returned by positive_divisor, whose body computes imax(q, 1_i32)\nderivation: divisor is at least 1_i32, so it is strictly greater than 0_i32\nconclusion: igt(divisor, 0_i32) is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: the following exact p / divisor operation uses this positive bound to exclude both signed-division failure cases";
+  let r = p / divisor;
+  if injection_false {
+    return 0_i32;
+  }
   return r;
 }
 
 command fn main() -> status: own ExitStatus traps {
-  doc "The divisor passes through a call so the division claim executes at runtime, and the zero divisor makes that claim abort the process [SCOPE-4].";
-  let z = opaque(n: 0_i32);
-  let v = divide(p: 10_i32, q: z);
-  return exit_status(code: 0_u8);
+  doc "The source program runs normally with the normalized divisor. A compiler test redirects the retained division claim to the same-function false constant in typed IR to exercise its runtime failure path without admitting a false theorem.";
+  let v = divide(p: 10_i32, q: 0_i32);
+  let expected = ieq(v, 10_i32);
+  if expected {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
 }

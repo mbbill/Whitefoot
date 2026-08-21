@@ -1,9 +1,14 @@
+fn positive_divisor(x: own i32) -> result: own i32 pure {
+  return imax(x, 1_i32);
+}
+
 fn risky_checked(x: own i32) -> result: own Result<i32, Overflow> traps {
-  doc "A claim behind a Result surface; the row declares the claim-only runtime trap capability.";
-  claim admitted: True() because "the callee retains the claim-only runtime trap capability";
-  let step = 1_i32;
-  let bumped = x +wrap step;
-  return Ok<i32, Overflow>(value: bumped);
+  doc "A genuine claim residual sits behind a Result surface; its exact arithmetic consumer makes the retained claim necessary and the row declares its claim-only runtime trap capability.";
+  let divisor = positive_divisor(x: x);
+  let positive = igt(divisor, 0_i32);
+  claim admitted_divisor: positive because "premises: divisor is returned by positive_divisor, whose body computes imax(x, 1_i32)\nderivation: divisor is at least 1_i32, so it is strictly greater than 0_i32\nconclusion: igt(divisor, 0_i32) is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: the following exact 84_i32 / divisor operation uses this positive bound to exclude both signed-division failure cases";
+  let quotient = 84_i32 / divisor;
+  return Ok<i32, Overflow>(value: quotient);
 }
 
 fn g(x: own i32) -> result: own Result<i32, Overflow> traps {

@@ -1,5 +1,5 @@
-command fn main() -> status: own ExitStatus traps {
-  doc "A loop folds a running product with bare exact * [OP-1]. Its claim executes the total *defined query before every multiply and becomes false when the accumulator would overflow, so the claim-only runtime boundary aborts before the exact operation [CLM-1, SCOPE-4].";
+command fn main() -> status: own ExitStatus pure {
+  doc "A loop folds a running product with checked multiplication [OP-1]. Overflow is an expected typed Err handled by ordinary control, not a knowingly false claim used as an abort.";
   let i = 0_i32;
   let acc = 1_i32;
   let factor = 7_i32;
@@ -7,11 +7,15 @@ command fn main() -> status: own ExitStatus traps {
     if ige(i, 20_i32) {
       break @l;
     }
-    claim product_defined: acc *defined factor because "the running product must remain representable";
-    set acc = acc * factor;
-    claim index_step_defined: i +defined 1_i32 because "the loop bound keeps the counter representable";
-    set i = i + 1_i32;
+    match acc *checked factor {
+      Ok(value: product) => {
+        set acc = product;
+      }
+      Err(error: overflow) => {
+        return exit_status(code: 0_u8);
+      }
+    }
+    set i = i +wrap 1_i32;
   }
-  claim unreachable_after_overflow: igt(acc, 0_i32) because "unreachable after overflow";
-  return exit_status(code: 0_u8);
+  return exit_status(code: 1_u8);
 }

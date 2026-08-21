@@ -3,14 +3,14 @@ fn internal_zero() -> return_value: own u64 pure {
 }
 
 command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
-  doc "External provenance in a buffer length and bound does not gate a subscript whose constrained offset subject is internal.";
+  doc "External provenance in a buffer length and bound does not gate a genuine residual whose constrained offset subject is internal.";
   region 'a {
     let external_length = args_count<'a>(args: &'a args);
     let bytes = buffer_new(external_length, 0_u8);
     let index = internal_zero();
     let room = len(bytes);
     let inside = ilt(index, room);
-    claim nonempty_arguments: inside because "the native argument vector contains its invoked name";
+    claim nonempty_arguments: inside because "premises: Args contains the complete native argument vector including invoked-name position zero, internal_zero returns 0_u64, and bytes has external_length elements\nderivation: every process invocation has at least its invoked name, so external_length is at least 1_u64 and index 0_u64 is strictly below it\nconclusion: ilt(index, room) is true\nchecker gap: ENT does not combine the host argument nonemptiness guarantee with the uncontracted internal_zero result\nconsumers: the following bytes[index] subscript requires this exact bound";
     let value = bytes[index];
     return exit_status(code: 0_u8);
   }
