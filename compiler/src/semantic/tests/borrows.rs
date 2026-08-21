@@ -6,8 +6,83 @@ use super::{
     with_semantics_extension,
 };
 
-pub(super) const BORROWED_COLUMNS: &[u8] =
-    include_bytes!("../../../../tests/conformance/cases/x-buffer-borrowed-columns-run.wf");
+pub(super) const BORROWED_COLUMNS: &[u8] = br#"struct Columns {
+  left: buffer<u64>;
+  right: buffer<u64>;
+}
+
+fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit reads('r), writes('r) {
+  let left_room = len(deref(left));
+  let right_room = len(deref(right));
+  let index_value = 0_u64;
+  loop @fill {
+    let done = ieq(index_value, length);
+    if done {
+      break @fill;
+    } else {
+      let in_left = ilt(index_value, left_room);
+      if in_left {
+        set deref(left)[index_value] = index_value;
+      }
+      let shifted = index_value +wrap 10_u64;
+      let in_right = ilt(index_value, right_room);
+      if in_right {
+        set deref(right)[index_value] = shifted;
+      }
+      set index_value = index_value +wrap 1_u64;
+    }
+  }
+  return unit;
+}
+
+fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads('r) {
+  let left_room = len(deref(left));
+  let right_room = len(deref(right));
+  let index_value = 0_u64;
+  let total = 0_u64;
+  loop @fold {
+    let done = ieq(index_value, length);
+    if done {
+      break @fold;
+    } else {
+      let in_left = ilt(index_value, left_room);
+      let left_value = if in_left {
+        give deref(left)[index_value];
+      } else {
+        give 0_u64;
+      }
+      let in_right = ilt(index_value, right_room);
+      let right_value = if in_right {
+        give deref(right)[index_value];
+      } else {
+        give 0_u64;
+      }
+      set total = total +wrap left_value;
+      set total = total +wrap right_value;
+      set index_value = index_value +wrap 1_u64;
+    }
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let length = 4_u64;
+  let left = buffer_new(length, 0_u64);
+  let right = buffer_new(length, 0_u64);
+  let columns = Columns(left: move left, right: move right);
+  region 'fill_region {
+    let left_out = &uniq 'fill_region columns.left;
+    let right_out = &uniq 'fill_region columns.right;
+    fill<'fill_region>(left: move left_out, right: move right_out, length: length);
+  }
+  region 'fold_region {
+    let left_in = &'fold_region columns.left;
+    let right_in = &'fold_region columns.right;
+    let total = fold<'fold_region>(left: left_in, right: right_in, length: length);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
 
 #[test]
 fn buffer_borrows_keep_modes_provenance_effects_and_distinct_field_loans() {
@@ -17,7 +92,7 @@ fn buffer_borrows_keep_modes_provenance_effects_and_distinct_field_loans() {
         };
         let fill = &checked.data.functions[0];
         assert!(matches!(fill.parameters[0].mode, CheckedMode::Unique(_)));
-        // The migrated fixture pre-binds both column lengths for its claims,
+        // The migrated fixture pre-binds both column lengths for its guards,
         // so the loop follows the two length lets and the index let.
         let CheckedStatement::Loop { body, .. } = &fill.body[3] else {
             panic!("fill must retain its loop");
@@ -25,9 +100,20 @@ fn buffer_borrows_keep_modes_provenance_effects_and_distinct_field_loans() {
         let CheckedStatement::Match { arms, .. } = &body[1] else {
             panic!("fill loop must retain its terminating match");
         };
-        let CheckedStatement::Set { target, .. } = &arms[1].body[2] else {
-            panic!("fill must write the left borrowed buffer after its claim");
+        let CheckedStatement::Match {
+            arms: guard_arms, ..
+        } = &arms[1].body[1]
+        else {
+            panic!("fill must retain the explicit left bounds guard");
         };
+        let target = guard_arms
+            .iter()
+            .flat_map(|arm| &arm.body)
+            .find_map(|statement| match statement {
+                CheckedStatement::Set { target, .. } => Some(target),
+                _ => None,
+            })
+            .expect("the true guard arm writes the left borrowed buffer");
         assert!(matches!(target, CheckedSetTarget::BufferIndex(_)));
 
         let main = &checked.data.functions[2];
@@ -54,13 +140,13 @@ fn buffer_borrows_keep_modes_provenance_effects_and_distinct_field_loans() {
 #[test]
 fn borrowed_column_effect_rows_are_exact() {
     let wrong = BORROWED_COLUMNS
-        .windows(b"writes('r), traps".len())
-        .position(|window| window == b"writes('r), traps")
+        .windows(b"reads('r), writes('r)".len())
+        .position(|window| window == b"reads('r), writes('r)")
         .expect("fixture contains fill effects");
     let mut source = BORROWED_COLUMNS.to_vec();
     source.splice(
-        wrong..wrong + b"writes('r), traps".len(),
-        b"traps".iter().copied(),
+        wrong..wrong + b"reads('r), writes('r)".len(),
+        b"reads('r)".iter().copied(),
     );
     with_semantics(&source, |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
@@ -418,7 +504,55 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
 
 #[test]
 fn child_reborrow_shape_and_sibling_exclusivity_follow_own6() {
-    let positive = include_bytes!("../../../../tests/conformance/cases/x-child-reborrow-run.wf");
+    let positive = br#"struct Counter {
+  value: u64;
+}
+
+fn write_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('r), writes('r) {
+  let room = len(deref(out));
+  let first_ok = ilt(0_u64, room);
+  if first_ok {
+    set deref(out)[0_u64] = 7_u8;
+  }
+  return unit;
+}
+
+fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit reads('r), writes('r) {
+  region 'byte_child {
+    write_byte<'byte_child>(out: &uniq 'byte_child deref(out));
+  }
+  let room = len(deref(out));
+  let second_ok = ilt(1_u64, room);
+  if second_ok {
+    set deref(out)[1_u64] = 9_u8;
+  }
+  return unit;
+}
+
+fn bump_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads('r), writes('r) {
+  let next = deref(counter).value +wrap 1_u64;
+  set deref(counter).value = next;
+  return unit;
+}
+
+fn proxy_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads('r), writes('r) {
+  region 'counter_child {
+    bump_counter<'counter_child>(counter: &uniq 'counter_child deref(counter));
+  }
+  set deref(counter).value = deref(counter).value +wrap 1_u64;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let output = buffer_new(2_u64, 0_u8);
+  let counter = Counter(value: 40_u64);
+  region 'owners {
+    proxy_byte<'owners>(out: &uniq 'owners output);
+    proxy_counter<'owners>(counter: &uniq 'owners counter);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
     with_semantics(positive, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {
             panic!("statement-scoped child reborrows must check: {outcome:?}");
