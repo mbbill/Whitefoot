@@ -1,10 +1,19 @@
 fn element<const n: u64>(values: own array<u8, n>) -> result: own u8 pure {
-  doc "Discharge is judged per concrete instantiation, and a const-generic constant term is judged at its instantiated value, never symbolically [ENT-1]. The same body is judged against n = 4, where the constant offset 2 is below the array's implicit length.";
-  return values[2_u64];
+  doc "Every generic source body first receives the source-schema ordinary judgment [ENT-1]. Executed control supplies the symbolic length bound required by the subscript, and the n = 4 concrete instance is then rechecked independently.";
+  let room = len(values);
+  let inside = ilt(2_u64, room);
+  if inside {
+    return values[2_u64];
+  }
+  return 0_u8;
 }
 
 command fn main() -> status: own ExitStatus pure {
   let wide = array_new<u8, 4>(7_u8);
   let value = element<4>(values: move wide);
-  return exit_status(code: 0_u8);
+  let expected = ieq(value, 7_u8);
+  if expected {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
 }
