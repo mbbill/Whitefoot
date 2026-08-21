@@ -2,56 +2,128 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn every_direct_float_operation_executes_for_both_widths() {
-    let template = r#"command fn main() -> status: own ExitStatus traps {
+    let template = r#"command fn main() -> status: own ExitStatus pure {
   let sum = fadd.strict(1.5_$TYPE, 2.25_$TYPE);
-  claim fadd: feq(sum, 3.75_$TYPE) because "fadd";
+  if feq(sum, 3.75_$TYPE) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let difference = fsub.strict(sum, 0.75_$TYPE);
-  claim fsub: feq(difference, 3.0_$TYPE) because "fsub";
+  if feq(difference, 3.0_$TYPE) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   let product = fmul.strict(difference, 2.0_$TYPE);
-  claim fmul: feq(product, 6.0_$TYPE) because "fmul";
+  if feq(product, 6.0_$TYPE) {
+  } else {
+    return exit_status(code: 3_u8);
+  }
   let quotient = fdiv.strict(product, 4.0_$TYPE);
-  claim fdiv: feq(quotient, 1.5_$TYPE) because "fdiv";
+  if feq(quotient, 1.5_$TYPE) {
+  } else {
+    return exit_status(code: 4_u8);
+  }
   let negative = fneg(quotient);
-  claim fneg: feq(negative, -1.5_$TYPE) because "fneg";
+  if feq(negative, -1.5_$TYPE) {
+  } else {
+    return exit_status(code: 5_u8);
+  }
   let absolute = fabs(negative);
-  claim fabs: feq(absolute, 1.5_$TYPE) because "fabs";
+  if feq(absolute, 1.5_$TYPE) {
+  } else {
+    return exit_status(code: 6_u8);
+  }
   let signed = fcopysign(absolute, negative);
-  claim fcopysign: feq(signed, -1.5_$TYPE) because "fcopysign";
+  if feq(signed, -1.5_$TYPE) {
+  } else {
+    return exit_status(code: 7_u8);
+  }
   let minimum = fmin(negative, absolute);
-  claim fmin: feq(minimum, -1.5_$TYPE) because "fmin";
+  if feq(minimum, -1.5_$TYPE) {
+  } else {
+    return exit_status(code: 8_u8);
+  }
   let maximum = fmax(negative, absolute);
-  claim fmax: feq(maximum, 1.5_$TYPE) because "fmax";
+  if feq(maximum, 1.5_$TYPE) {
+  } else {
+    return exit_status(code: 9_u8);
+  }
   let floor = ffloor(1.75_$TYPE);
-  claim ffloor: feq(floor, 1.0_$TYPE) because "ffloor";
+  if feq(floor, 1.0_$TYPE) {
+  } else {
+    return exit_status(code: 10_u8);
+  }
   let ceil = fceil(1.25_$TYPE);
-  claim fceil: feq(ceil, 2.0_$TYPE) because "fceil";
+  if feq(ceil, 2.0_$TYPE) {
+  } else {
+    return exit_status(code: 11_u8);
+  }
   let truncated = ftrunc(-1.75_$TYPE);
-  claim ftrunc: feq(truncated, -1.0_$TYPE) because "ftrunc";
+  if feq(truncated, -1.0_$TYPE) {
+  } else {
+    return exit_status(code: 12_u8);
+  }
   let rounded = froundeven(2.5_$TYPE);
-  claim froundeven: feq(rounded, 2.0_$TYPE) because "froundeven";
+  if feq(rounded, 2.0_$TYPE) {
+  } else {
+    return exit_status(code: 13_u8);
+  }
   let remainder = frem(5.5_$TYPE, 2.0_$TYPE);
-  claim frem: feq(remainder, 1.5_$TYPE) because "frem";
+  if feq(remainder, 1.5_$TYPE) {
+  } else {
+    return exit_status(code: 14_u8);
+  }
   let root = fsqrt.strict(4.0_$TYPE);
-  claim fsqrt_strict: feq(root, 2.0_$TYPE) because "fsqrt.strict";
+  if feq(root, 2.0_$TYPE) {
+  } else {
+    return exit_status(code: 15_u8);
+  }
   let fused = ffma.strict(2.0_$TYPE, 3.0_$TYPE, 1.0_$TYPE);
-  claim ffma_strict: feq(fused, 7.0_$TYPE) because "ffma.strict";
+  if feq(fused, 7.0_$TYPE) {
+  } else {
+    return exit_status(code: 16_u8);
+  }
   let infinity = finf<$TYPE>();
-  claim finf: fgt(infinity, fused) because "finf";
+  if fgt(infinity, fused) {
+  } else {
+    return exit_status(code: 17_u8);
+  }
   let negative_infinity = fneg(infinity);
-  claim negative_infinity: flt(negative_infinity, negative) because "negative infinity";
+  if flt(negative_infinity, negative) {
+  } else {
+    return exit_status(code: 18_u8);
+  }
   let nan = fnan<$TYPE>();
-  claim fnan: fne(nan, nan) because "fnan";
+  if fne(nan, nan) {
+  } else {
+    return exit_status(code: 19_u8);
+  }
   let minimum_nan = fmin(nan, fused);
-  claim fmin_nan_propagation: fne(minimum_nan, minimum_nan) because "fmin NaN propagation";
+  if fne(minimum_nan, minimum_nan) {
+  } else {
+    return exit_status(code: 20_u8);
+  }
   let negative_zero = fneg(0.0_$TYPE);
   let minimum_zero = fmin(negative_zero, 0.0_$TYPE);
   let minimum_reciprocal = fdiv.strict(1.0_$TYPE, minimum_zero);
-  claim fmin_signed_zero: feq(minimum_reciprocal, negative_infinity) because "fmin signed zero";
+  if feq(minimum_reciprocal, negative_infinity) {
+  } else {
+    return exit_status(code: 21_u8);
+  }
   let maximum_zero = fmax(negative_zero, 0.0_$TYPE);
   let maximum_reciprocal = fdiv.strict(1.0_$TYPE, maximum_zero);
-  claim fmax_signed_zero: feq(maximum_reciprocal, infinity) because "fmax signed zero";
-  claim fle: fle(absolute, sum) because "fle";
-  claim fge: fge(sum, absolute) because "fge";
+  if feq(maximum_reciprocal, infinity) {
+  } else {
+    return exit_status(code: 22_u8);
+  }
+  if fle(absolute, sum) {
+  } else {
+    return exit_status(code: 23_u8);
+  }
+  if fge(sum, absolute) {
+  } else {
+    return exit_status(code: 24_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -112,13 +184,19 @@ fn right(a: own f32, b: own f32, c: own f32) -> result: own f32 pure {
   return fadd.strict(a, bc);
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let one = 1.0_f32;
   let half_ulp = 4.0e-8_f32;
   let stepwise = left(a: one, b: half_ulp, c: half_ulp);
   let regrouped = right(a: one, b: half_ulp, c: half_ulp);
-  claim each_strict_addition_must_round_on_its_own: feq(stepwise, one) because "each strict addition must round on its own";
-  claim strict_addition_was_reassociated: fne(stepwise, regrouped) because "strict addition was reassociated";
+  if feq(stepwise, one) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if fne(stepwise, regrouped) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -145,12 +223,15 @@ fn float_constants_work_in_aggregates_arrays_and_buffers() {
 
 const values: array<f32, 2> =[1.5_f32, 2.5_f32];
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let sample = Sample(value: values[0_u64]);
   let storage = buffer_new(2_u64, 0.0_f32);
   set storage[1_u64] = sample.value;
   let loaded = storage[1_u64];
-  claim float_storage: feq(loaded, 1.5_f32) because "float storage";
+  if feq(loaded, 1.5_f32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;

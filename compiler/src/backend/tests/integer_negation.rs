@@ -2,28 +2,43 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn executes_every_negation_mode_for_every_signed_width() {
-    let template = r#"command fn main() -> status: own ExitStatus traps {
+    let template = r#"command fn main() -> status: own ExitStatus pure {
   let wrapped = ineg.wrap($MIN_$TYPE);
-  claim wrapped_negation_drift: ieq(wrapped, $MIN_$TYPE) because "wrapped negation drift";
+  if ieq(wrapped, $MIN_$TYPE) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let exact = ineg(-42_$TYPE);
-  claim exact_negation_drift: ieq(exact, 42_$TYPE) because "exact negation drift";
+  if ieq(exact, 42_$TYPE) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   let ordinary_defined = ineg.defined(-42_$TYPE);
-  claim ordinary_negation_is_defined: ordinary_defined because "ordinary negation must be defined";
+  if ordinary_defined {
+  } else {
+    return exit_status(code: 3_u8);
+  }
   let minimum_defined = ineg.defined($MIN_$TYPE);
-  claim minimum_negation_is_undefined: bnot(minimum_defined) because "minimum negation must be undefined";
+  if bnot(minimum_defined) {
+  } else {
+    return exit_status(code: 4_u8);
+  }
   let safe_result = ineg.checked(-42_$TYPE);
   match move safe_result {
     Ok(value: safe_value) => {
-      claim checked_negation_drift: ieq(safe_value, 42_$TYPE) because "checked negation drift";
+      if ieq(safe_value, 42_$TYPE) {
+      } else {
+        return exit_status(code: 5_u8);
+      }
     }
     Err(error: safe_error) => {
-      claim safe_negation_took_err: False() because "safe negation took Err";
+      return exit_status(code: 6_u8);
     }
   }
   let overflow_result = ineg.checked($MIN_$TYPE);
   match move overflow_result {
     Ok(value: overflow_value) => {
-      claim minimum_negation_took_ok: False() because "minimum negation took Ok";
+      return exit_status(code: 7_u8);
     }
     Err(error: overflow_error) => {
     }
@@ -64,9 +79,12 @@ fn executes_every_negation_mode_for_every_signed_width() {
 
 #[test]
 fn defined_minimum_reports_false_without_executing_negation() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let is_defined = ineg.defined(-128_i8);
-  claim minimum_is_not_defined: bnot(is_defined) because "minimum negation must be undefined";
+  if bnot(is_defined) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;

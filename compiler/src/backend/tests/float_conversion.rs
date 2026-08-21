@@ -71,29 +71,62 @@ const NUMERIC_TYPES: [NumericType; 10] = [
 
 #[test]
 fn every_total_conversion_with_a_float_endpoint_executes() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let i8_f32 = cvt<i8, f32>(-8_i8);
-  claim i8_to_f32: feq(i8_f32, -8.0_f32) because "i8 to f32";
+  if feq(i8_f32, -8.0_f32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let i16_f32 = cvt<i16, f32>(32767_i16);
-  claim i16_to_f32: feq(i16_f32, 32767.0_f32) because "i16 to f32";
+  if feq(i16_f32, 32767.0_f32) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   let u8_f32 = cvt<u8, f32>(8_u8);
-  claim u8_to_f32: feq(u8_f32, 8.0_f32) because "u8 to f32";
+  if feq(u8_f32, 8.0_f32) {
+  } else {
+    return exit_status(code: 3_u8);
+  }
   let u16_f32 = cvt<u16, f32>(65535_u16);
-  claim u16_to_f32: feq(u16_f32, 65535.0_f32) because "u16 to f32";
+  if feq(u16_f32, 65535.0_f32) {
+  } else {
+    return exit_status(code: 4_u8);
+  }
   let i8_f64 = cvt<i8, f64>(-8_i8);
-  claim i8_to_f64: feq(i8_f64, -8.0_f64) because "i8 to f64";
+  if feq(i8_f64, -8.0_f64) {
+  } else {
+    return exit_status(code: 5_u8);
+  }
   let i16_f64 = cvt<i16, f64>(-16_i16);
-  claim i16_to_f64: feq(i16_f64, -16.0_f64) because "i16 to f64";
+  if feq(i16_f64, -16.0_f64) {
+  } else {
+    return exit_status(code: 6_u8);
+  }
   let i32_f64 = cvt<i32, f64>(2147483647_i32);
-  claim i32_to_f64: feq(i32_f64, 2147483647.0_f64) because "i32 to f64";
+  if feq(i32_f64, 2147483647.0_f64) {
+  } else {
+    return exit_status(code: 7_u8);
+  }
   let u8_f64 = cvt<u8, f64>(8_u8);
-  claim u8_to_f64: feq(u8_f64, 8.0_f64) because "u8 to f64";
+  if feq(u8_f64, 8.0_f64) {
+  } else {
+    return exit_status(code: 8_u8);
+  }
   let u16_f64 = cvt<u16, f64>(16_u16);
-  claim u16_to_f64: feq(u16_f64, 16.0_f64) because "u16 to f64";
+  if feq(u16_f64, 16.0_f64) {
+  } else {
+    return exit_status(code: 9_u8);
+  }
   let u32_f64 = cvt<u32, f64>(4294967295_u32);
-  claim u32_to_f64: feq(u32_f64, 4294967295.0_f64) because "u32 to f64";
+  if feq(u32_f64, 4294967295.0_f64) {
+  } else {
+    return exit_status(code: 10_u8);
+  }
   let f32_f64 = cvt<f32, f64>(1.5_f32);
-  claim f32_to_f64: feq(f32_f64, 1.5_f64) because "f32 to f64";
+  if feq(f32_f64, 1.5_f64) {
+  } else {
+    return exit_status(code: 11_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -124,7 +157,7 @@ fn every_total_conversion_with_a_float_endpoint_executes() {
 
 #[test]
 fn every_partial_conversion_with_a_float_endpoint_has_exact_success_and_failure() {
-    let mut source = String::from("command fn main() -> status: own ExitStatus traps {\n");
+    let mut source = String::from("command fn main() -> status: own ExitStatus pure {\n");
     let mut conversion = 0;
     for source_type in NUMERIC_TYPES {
         for destination_type in NUMERIC_TYPES {
@@ -194,72 +227,104 @@ fn power_f64(exponent: own u32) -> result: own f64 pure {
   return value;
 }
 
-fn reject_f32_i32(value: own f32) -> result: own unit traps {
+fn reject_f32_i32(value: own f32) -> result: own Bool pure {
+  let rejected = False();
   match cvt<f32, i32>(value) {
     Ok(value: converted) => {
-      claim f32_to_i32_boundary_succeeded: False() because "f32 to i32 boundary succeeded";
     }
     Err(error: narrow) => {
+      set rejected = True();
     }
   }
-  return unit;
+  return rejected;
 }
 
-fn reject_f32_u32(value: own f32) -> result: own unit traps {
+fn reject_f32_u32(value: own f32) -> result: own Bool pure {
+  let rejected = False();
   match cvt<f32, u32>(value) {
     Ok(value: converted) => {
-      claim f32_to_u32_boundary_succeeded: False() because "f32 to u32 boundary succeeded";
     }
     Err(error: narrow) => {
+      set rejected = True();
     }
   }
-  return unit;
+  return rejected;
 }
 
-fn reject_f64_i64(value: own f64) -> result: own unit traps {
+fn reject_f64_i64(value: own f64) -> result: own Bool pure {
+  let rejected = False();
   match cvt<f64, i64>(value) {
     Ok(value: converted) => {
-      claim f64_to_i64_boundary_succeeded: False() because "f64 to i64 boundary succeeded";
     }
     Err(error: narrow) => {
+      set rejected = True();
     }
   }
-  return unit;
+  return rejected;
 }
 
-fn reject_f64_u64(value: own f64) -> result: own unit traps {
+fn reject_f64_u64(value: own f64) -> result: own Bool pure {
+  let rejected = False();
   match cvt<f64, u64>(value) {
     Ok(value: converted) => {
-      claim f64_to_u64_boundary_succeeded: False() because "f64 to u64 boundary succeeded";
     }
     Err(error: narrow) => {
+      set rejected = True();
     }
   }
-  return unit;
+  return rejected;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let i32_boundary = power_f32(exponent: 31_u32);
-  reject_f32_i32(value: i32_boundary);
+  let rejected_i32_boundary = reject_f32_i32(value: i32_boundary);
+  if rejected_i32_boundary {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let u32_boundary = power_f32(exponent: 32_u32);
-  reject_f32_u32(value: u32_boundary);
+  let rejected_u32_boundary = reject_f32_u32(value: u32_boundary);
+  if rejected_u32_boundary {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   let i64_boundary = power_f64(exponent: 63_u32);
-  reject_f64_i64(value: i64_boundary);
+  let rejected_i64_boundary = reject_f64_i64(value: i64_boundary);
+  if rejected_i64_boundary {
+  } else {
+    return exit_status(code: 3_u8);
+  }
   let u64_boundary = power_f64(exponent: 64_u32);
-  reject_f64_u64(value: u64_boundary);
+  let rejected_u64_boundary = reject_f64_u64(value: u64_boundary);
+  if rejected_u64_boundary {
+  } else {
+    return exit_status(code: 4_u8);
+  }
   let nan_f32 = fnan<f32>();
-  reject_f32_i32(value: nan_f32);
+  let rejected_nan_f32 = reject_f32_i32(value: nan_f32);
+  if rejected_nan_f32 {
+  } else {
+    return exit_status(code: 5_u8);
+  }
   let infinity_f32 = finf<f32>();
-  reject_f32_i32(value: infinity_f32);
+  let rejected_infinity_f32 = reject_f32_i32(value: infinity_f32);
+  if rejected_infinity_f32 {
+  } else {
+    return exit_status(code: 6_u8);
+  }
   let infinity_f64 = finf<f64>();
   let negative_infinity = fneg(infinity_f64);
-  reject_f64_u64(value: negative_infinity);
+  let rejected_negative_infinity = reject_f64_u64(value: negative_infinity);
+  if rejected_negative_infinity {
+  } else {
+    return exit_status(code: 7_u8);
+  }
   let two_to_52 = power_f64(exponent: 52_u32);
   let one_ulp = fdiv.strict(1.0_f64, two_to_52);
   let not_f32 = fadd.strict(1.0_f64, one_ulp);
   match cvt<f64, f32>(not_f32) {
     Ok(value: rounded) => {
-      claim inexact_f64_to_f32_succeeded: False() because "inexact f64 to f32 succeeded";
+      return exit_status(code: 8_u8);
     }
     Err(error: narrow) => {
     }
@@ -267,25 +332,34 @@ command fn main() -> status: own ExitStatus traps {
   let nan_f64 = fnan<f64>();
   match cvt<f64, f32>(nan_f64) {
     Ok(value: narrow_nan) => {
-      claim narrow_nan: fne(narrow_nan, narrow_nan) because "narrow NaN";
+      if fne(narrow_nan, narrow_nan) {
+      } else {
+        return exit_status(code: 9_u8);
+      }
     }
     Err(error: narrow_error) => {
-      claim nan_conversion_failed: False() because "NaN conversion failed";
+      return exit_status(code: 10_u8);
     }
   }
   let narrowable_infinity = finf<f64>();
   match cvt<f64, f32>(narrowable_infinity) {
     Ok(value: narrow_infinity) => {
       let expected_infinity = finf<f32>();
-      claim narrow_infinity: feq(narrow_infinity, expected_infinity) because "narrow infinity";
+      if feq(narrow_infinity, expected_infinity) {
+      } else {
+        return exit_status(code: 11_u8);
+      }
     }
     Err(error: infinity_error) => {
-      claim infinity_conversion_failed: False() because "infinity conversion failed";
+      return exit_status(code: 12_u8);
     }
   }
   let narrow_nan_source = fnan<f32>();
   let wide_nan = cvt<f32, f64>(narrow_nan_source);
-  claim wide_nan: fne(wide_nan, wide_nan) because "wide NaN";
+  if fne(wide_nan, wide_nan) {
+  } else {
+    return exit_status(code: 13_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -333,7 +407,7 @@ fn emit_success_case(
     let equality = format!("{domain}eq(success_value{conversion}, {destination_value})");
     writeln!(
         source,
-        "  let success{conversion} = cvt<{source_type}, {destination}>({source_value});\n  match move success{conversion} {{\n    Ok(value: success_value{conversion}) => {{\n      claim partial_success_value_{conversion}: {equality} because \"partial success value {conversion}\";\n    }}\n    Err(error: success_error{conversion}) => {{\n      claim partial_success_became_error_{conversion}: False() because \"partial success became error {conversion}\";\n    }}\n  }}",
+        "  let success{conversion} = cvt<{source_type}, {destination}>({source_value});\n  match move success{conversion} {{\n    Ok(value: success_value{conversion}) => {{\n      if {equality} {{\n      }} else {{\n        return exit_status(code: 1_u8);\n      }}\n    }}\n    Err(error: success_error{conversion}) => {{\n      return exit_status(code: 1_u8);\n    }}\n  }}",
         destination = destination_type.spelling,
         source_type = source_type.spelling,
     )
@@ -369,7 +443,7 @@ fn emit_failure_case(
     };
     writeln!(
         source,
-        "  let failure{conversion} = cvt<{source_type}, {destination}>({source_value});\n  match move failure{conversion} {{\n    Ok(value: failure_value{conversion}) => {{\n      claim inexact_conversion_succeeded_{conversion}: False() because \"inexact conversion succeeded {conversion}\";\n    }}\n    Err(error: failure_error{conversion}) => {{\n    }}\n  }}",
+        "  let failure{conversion} = cvt<{source_type}, {destination}>({source_value});\n  match move failure{conversion} {{\n    Ok(value: failure_value{conversion}) => {{\n      return exit_status(code: 1_u8);\n    }}\n    Err(error: failure_error{conversion}) => {{\n    }}\n  }}",
         destination = destination_type.spelling,
         source_type = source_type.spelling,
     )

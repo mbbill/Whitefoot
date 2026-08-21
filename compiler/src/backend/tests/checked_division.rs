@@ -2,36 +2,42 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn guards_every_integer_error_before_llvm() {
-    let template = r#"command fn main() -> status: own ExitStatus traps {
+    let template = r#"command fn main() -> status: own ExitStatus pure {
   let quotient = 84_$TYPE /checked 2_$TYPE;
   match move quotient {
     Ok(value: quotient_value) => {
-      claim quotient_drift: ieq(quotient_value, 42_$TYPE) because "quotient drift";
+      if ieq(quotient_value, 42_$TYPE) {
+      } else {
+        return exit_status(code: 1_u8);
+      }
     }
     Err(error: quotient_error) => {
-      claim quotient_took_err: False() because "quotient took Err";
+      return exit_status(code: 2_u8);
     }
   }
   let remainder = 85_$TYPE %checked 43_$TYPE;
   match move remainder {
     Ok(value: remainder_value) => {
-      claim remainder_drift: ieq(remainder_value, 42_$TYPE) because "remainder drift";
+      if ieq(remainder_value, 42_$TYPE) {
+      } else {
+        return exit_status(code: 3_u8);
+      }
     }
     Err(error: remainder_error) => {
-      claim remainder_took_err: False() because "remainder took Err";
+      return exit_status(code: 4_u8);
     }
   }
   let divide_zero = 42_$TYPE /checked 0_$TYPE;
   match move divide_zero {
     Ok(value: divide_zero_value) => {
-      claim zero_division_took_ok: False() because "zero division took Ok";
+      return exit_status(code: 5_u8);
     }
     Err(error: divide_zero_error) => {
       match divide_zero_error {
         DivideByZero() => {
         }
         DivOverflow() => {
-          claim zero_division_became_overflow: False() because "zero division became overflow";
+          return exit_status(code: 6_u8);
         }
       }
     }
@@ -39,14 +45,14 @@ fn guards_every_integer_error_before_llvm() {
   let remainder_zero = 42_$TYPE %checked 0_$TYPE;
   match move remainder_zero {
     Ok(value: remainder_zero_value) => {
-      claim zero_remainder_took_ok: False() because "zero remainder took Ok";
+      return exit_status(code: 7_u8);
     }
     Err(error: remainder_zero_error) => {
       match remainder_zero_error {
         DivideByZero() => {
         }
         DivOverflow() => {
-          claim zero_remainder_became_overflow: False() because "zero remainder became overflow";
+          return exit_status(code: 8_u8);
         }
       }
     }
@@ -69,12 +75,12 @@ $SIGNED_CASES  return exit_status(code: 0_u8);
                 r#"  let divide_overflow = {minimum}_{ty} /checked -1_{ty};
   match move divide_overflow {{
     Ok(value: divide_overflow_value) => {{
-      claim division_overflow_took_ok: False() because "division overflow took Ok";
+      return exit_status(code: 9_u8);
     }}
     Err(error: divide_overflow_error) => {{
       match divide_overflow_error {{
         DivideByZero() => {{
-          claim division_overflow_became_zero: False() because "division overflow became zero";
+          return exit_status(code: 10_u8);
         }}
         DivOverflow() => {{
         }}
@@ -84,12 +90,12 @@ $SIGNED_CASES  return exit_status(code: 0_u8);
   let remainder_overflow = {minimum}_{ty} %checked -1_{ty};
   match move remainder_overflow {{
     Ok(value: remainder_overflow_value) => {{
-      claim remainder_overflow_took_ok: False() because "remainder overflow took Ok";
+      return exit_status(code: 11_u8);
     }}
     Err(error: remainder_overflow_error) => {{
       match remainder_overflow_error {{
         DivideByZero() => {{
-          claim remainder_overflow_became_zero: False() because "remainder overflow became zero";
+          return exit_status(code: 12_u8);
         }}
         DivOverflow() => {{
         }}

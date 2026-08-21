@@ -2,28 +2,43 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn executes_every_absolute_mode_for_every_signed_width() {
-    let template = r#"command fn main() -> status: own ExitStatus traps {
+    let template = r#"command fn main() -> status: own ExitStatus pure {
   let wrapped = iabs.wrap($MIN_$TYPE);
-  claim wrapped_absolute_value_drift: ieq(wrapped, $MIN_$TYPE) because "wrapped absolute value drift";
+  if ieq(wrapped, $MIN_$TYPE) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let exact = iabs(-42_$TYPE);
-  claim exact_absolute_value_drift: ieq(exact, 42_$TYPE) because "exact absolute value drift";
+  if ieq(exact, 42_$TYPE) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   let ordinary_defined = iabs.defined(-42_$TYPE);
-  claim ordinary_absolute_value_is_defined: ordinary_defined because "ordinary absolute value must be defined";
+  if ordinary_defined {
+  } else {
+    return exit_status(code: 3_u8);
+  }
   let minimum_defined = iabs.defined($MIN_$TYPE);
-  claim minimum_absolute_value_is_undefined: bnot(minimum_defined) because "minimum absolute value must be undefined";
+  if bnot(minimum_defined) {
+  } else {
+    return exit_status(code: 4_u8);
+  }
   let safe_result = iabs.checked(-42_$TYPE);
   match move safe_result {
     Ok(value: safe_value) => {
-      claim checked_absolute_value_drift: ieq(safe_value, 42_$TYPE) because "checked absolute value drift";
+      if ieq(safe_value, 42_$TYPE) {
+      } else {
+        return exit_status(code: 5_u8);
+      }
     }
     Err(error: safe_error) => {
-      claim safe_absolute_value_took_err: False() because "safe absolute value took Err";
+      return exit_status(code: 6_u8);
     }
   }
   let overflow_result = iabs.checked($MIN_$TYPE);
   match move overflow_result {
     Ok(value: overflow_value) => {
-      claim minimum_absolute_value_took_ok: False() because "minimum absolute value took Ok";
+      return exit_status(code: 7_u8);
     }
     Err(error: overflow_error) => {
     }
@@ -62,9 +77,12 @@ fn executes_every_absolute_mode_for_every_signed_width() {
 
 #[test]
 fn defined_minimum_reports_false_without_executing_absolute_value() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let is_defined = iabs.defined(-128_i8);
-  claim minimum_is_not_defined: bnot(is_defined) because "minimum absolute value must be undefined";
+  if bnot(is_defined) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
