@@ -5,11 +5,17 @@ struct Window {
 
 const frame: Window = Window(width: 3_u64, height: 2_u64);
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "CONST-2 struct-typed consts: a source struct whose every field type is const-eligible is itself const-eligible. The cvalue takes the construction form naming its exact struct and writing every declared field in declared order, and the const is laid out as one read-only static aggregate in the nominal's ordinary representation. It is read via its field suffixes exactly as subscript reads, so a copy-scalar selection copies out.";
   let width = frame.width;
-  claim struct_const_width: ieq(width, 3_u64) because "struct const width";
+  if ieq(width, 3_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let height = frame.height;
-  claim struct_const_height: ieq(height, 2_u64) because "struct const height";
+  if ieq(height, 2_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }

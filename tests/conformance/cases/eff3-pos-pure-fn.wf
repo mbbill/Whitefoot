@@ -4,8 +4,11 @@ fn dbl(x: own i32) -> result: own i32 pure {
   return r;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let a = dbl(x: 21_i32);
-  claim x: ieq(a, 42_i32) because "x";
+  if ieq(a, 42_i32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }

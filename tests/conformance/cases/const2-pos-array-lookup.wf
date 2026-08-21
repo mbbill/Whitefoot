@@ -1,10 +1,16 @@
 const table: array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "A const array is read-only static rodata, indexed with copy-out [CONST-2].";
   let v = table[2_u64];
-  claim const_table_drift: ieq(v, 30_u8) because "const table drift";
+  if ieq(v, 30_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let n = len(table);
-  claim const_len_drift: ieq(n, 4_u64) because "const len drift";
+  if ieq(n, 4_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
