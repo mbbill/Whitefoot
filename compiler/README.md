@@ -23,8 +23,12 @@ ordered source bundle
   -> host executable
 ```
 
-The frontend targets the exact v0.33 bytes at `../spec/kernel-spec.md`, SHA-256
+On `main`, the frontend targets exact v0.33 bytes, SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
+This work branch instead carries the v0.34 `CANDIDATE` at
+`../spec/kernel-spec.md`, SHA-256
+`b9284417e12f41a9c4c78728bf684c088aadd2d1fcfd10d305c0ef24c448d27a`;
+it becomes active only in the owner-approved atomic merge.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same
 specification identity. The committed grammar tables are ordinary compiler
@@ -372,7 +376,7 @@ Each `ensures` clause declares one verified normal-return relation without an
 executable epilogue. The mandatory header result binder denotes the whole
 result symbolically; a routed `when Ok(value: payload):` clause instead names
 that clause's selected payload. Every relation is proved independently at
-every selected normal exit in complete, assertion-blinded, and S4-blinded
+every selected normal exit in complete, claim-blinded, and S4-blinded
 views. Concrete call components are scheduled callee before caller;
 same-component summaries remain unavailable, and a component publishes all of
 its verified summaries atomically without iteration or a summary fixed point.

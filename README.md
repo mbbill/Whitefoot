@@ -26,18 +26,23 @@ not current goals.
 [docs/roadmap.md](docs/roadmap.md) is the living Direction Outline: the current
 map of capabilities, open directions, evidence, and candidate projects.
 [docs/current-plan.md](docs/current-plan.md) is the single rolling execution
-proposal or approved plan derived from that outline; only its `ACTIVE` status
-authorizes execution. [docs/WORKFLOW.md](docs/WORKFLOW.md)
+proposal or approved plan derived from that outline. Execution requires either
+its `ACTIVE` status or an explicit owner branch direction recorded in the
+corresponding batch; candidate merge and activation still require the owner
+boundary named there. [docs/WORKFLOW.md](docs/WORKFLOW.md)
 defines the project-driven process, parallel research lane, and guarded
 language-change branch. [AGENTS.md](AGENTS.md) records the priority rule and
 structure discipline future agents must apply.
 
 ## Current state
 
-[Kernel specification v0.33](spec/kernel-spec.md), SHA-256
+On `main`, kernel specification v0.33, SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`,
-is the active specification at its stable path. Exact v0.8 through v0.32
-remain immutable flat archives.
+remains active. This work branch carries the v0.34 `CANDIDATE` at the stable
+[specification path](spec/kernel-spec.md), SHA-256
+`b9284417e12f41a9c4c78728bf684c088aadd2d1fcfd10d305c0ef24c448d27a`;
+it has no language authority until the owner-approved atomic merge. Exact v0.8
+through v0.32 remain immutable flat archives.
 
 The safe-Rust compiler currently implements one ordinary path:
 

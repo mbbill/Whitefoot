@@ -647,8 +647,8 @@ pub(crate) struct PostconditionSchedule {
 /// with the fact state before the claim's own passed fact.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ClaimDisposition {
-    /// The predicate has no comparison origin, or the state derives neither
-    /// it nor its negation: an ordinary retained runtime check.
+    /// The predicate has an admitted canonical contribution basis, every
+    /// lifecycle image is unknown on both signs, and residuality retained it.
     Retained,
     /// The non-contradictory pre-S3 state derives the predicate. This is a
     /// CLM-2 source-upgrade error, never an elision request.

@@ -1,6 +1,6 @@
 - Every proof-required hazardous fact is established by a deterministic derivation, by executed control flow, or by the normal continuation of a named retained claim; otherwise the program is rejected. Index, integer-domain, allocation-fit, and system-range obligations follow [[obligation-discharge]], and function contracts follow [[requires-entry-contract]].
 - A partial operation lowers only after its exact domain is machine-discharged; a solver may promote performance facts but never licenses acceptance or elision, and no implicit operation check remains as a fallback.
-- No writer-accessible syntax removes, weakens, or silences a required proof. The sole writer-reachable runtime trap is a named claim, which remains executable even when the checker advises that it is redundant.
+- No writer-accessible syntax removes, weakens, or silences a required proof. The sole writer-reachable runtime trap is a named claim admitted only as an exact, independently true proof residual that the normative checker cannot derive and a later terminal admission root needs; redundant, refuted, vacuous, overlapping, unsupported, and non-residual claims reject, while every admitted claim remains executable.
 - The active safe-Rust compiler reaches semantic and ownership checking, exact
   memory-effect checking, normative index and ordinary-call requirement
   discharge, verified normal-return postconditions, constrained-subject

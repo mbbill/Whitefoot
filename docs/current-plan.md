@@ -10,9 +10,10 @@ status is `COMPLETE` rather than an intermediate persisted `ACTIVE` state.
 Derived from Direction Outline revision 47 and main at
 `4f01bab6a7bf158fff19dd54b062b748d20086d1`. Supersedes the completed
 claim-only runtime-trap plan in place; its landed history remains in batch 0073
-and git. Active language authority remains v0.33 at
-`spec/kernel-spec.md`, SHA-256
+and git. Active language authority on `main` remains v0.33, SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
+This branch carries the v0.34 `CANDIDATE` at `spec/kernel-spec.md`, SHA-256
+`b9284417e12f41a9c4c78728bf684c088aadd2d1fcfd10d305c0ef24c448d27a`.
 
 ## Objective
 

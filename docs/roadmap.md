@@ -6,8 +6,9 @@ Revision: 47 (claim-residual branch execution chartered in batch 0075)
 The active language authority on `main` is v0.33, SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
 This work branch carries a v0.34 CANDIDATE at the stable path
-[`spec/kernel-spec.md`](../spec/kernel-spec.md); it is not active authority until
-the exact owner-approved activation merge.
+[`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
+`b9284417e12f41a9c4c78728bf684c088aadd2d1fcfd10d305c0ef24c448d27a`;
+it is not active authority until the exact owner-approved activation merge.
 Exact v0.8 through v0.32 are immutable flat archives. The execution plan at
 [`docs/current-plan.md`](current-plan.md) is PROPOSED (claim residual
 canonicality) on the work branch; only an owner-approved merge makes it
@@ -489,19 +490,18 @@ creating writer trust or weakening the checked safety envelope.
   repository separately contains 15 claims in dormant codegen files and 14 in
   historical research probes; they remain explicitly excluded unchanged unless
   a live caller or gate is found, and create no per-item migration work. Every
-  in-scope claim and justification requires review. The relevant MCTS-Mem nodes
-  retain the old defensive/advisory choice and require paired redecision. Batch
-  0075 now carries the v0.34 candidate: proof-predicate admission, five-field
+  in-scope claim and justification requires review. Batch 0075 now carries the
+  v0.34 candidate: proof-predicate admission, five-field
   review records, D/S/F lifecycle, S-derived component normal form and S-to-D reconstruction, simultaneous
   component/occurrence masks, stable terminal evidence, and generic
   source-schema plus inhabited-instance rechecks are implemented on the branch
-  and under hostile ordinary tests; they remain candidate evidence, not active
-  language.
-- **Missing / next:** finish ordinary fixture, real-program, effect-closure, and
-  protected migration by semantic purpose; complete the 11 old source-trap to
-  typed-IR fault-injection evidence mapping; measure counterfactual cost; update
-  project law, writer/AI author law, and paired MCTS decisions; then finish exact
-  candidate identity and accepted-set evidence.
+  and under hostile ordinary tests; ordinary fixtures and real programs are
+  migrated, typed-IR fault injection carries runtime-failure evidence, and the
+  project-law, writer-law, and paired MCTS updates are present on the branch.
+  They remain candidate evidence, not active language.
+- **Missing / next:** approve and integrate the exact protected source/manifest
+  migration packet; freeze the candidate specification identity; finish the
+  accepted-set differential and complete gates.
   Rebase and re-audit it before presenting its digest, diffs, gates, batch
   audit, and frozen prospective activation/closure transformation in the single
   owner merge packet; the approved mechanical activation is the only route to

@@ -2081,8 +2081,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // The [ENT] engine is acceptance-bearing [ENT-1]: it computes the
         // closed fact states, obligation and ordinary-call goal dispositions,
         // and claim lifecycle dispositions. The first offending OP-4, FN-8,
-        // or CLM-2 node in document/rule order is cited; redundancy advisories
-        // never reject and are collected at the program level.
+        // or CLM-2 node in document/rule order is cited; every invalid claim
+        // classification is a source rejection rather than an advisory.
         let mut schedule =
             postcondition_schedule(functions.iter().map(|checked| &checked.function))
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;

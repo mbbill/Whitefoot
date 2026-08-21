@@ -1,10 +1,11 @@
 # Claim residual canonicality
 
-Status: RESEARCH ONLY. This document records the 2026-08-21 owner direction,
-the feasibility argument, the current implementation and corpus evidence, and
-the boundary of a possible implementation plan. It is not a specification and
-authorizes no compiler, protected-conformance, or gate change. The active
-language remains v0.33 at `spec/kernel-spec.md`.
+Status: BRANCH EVIDENCE. This document records the 2026-08-21 owner direction,
+the feasibility argument, the implemented branch candidate, corpus evidence,
+and the remaining owner boundary. It is not a specification and authorizes no
+merge by itself. On `main` the active language remains v0.33; this work branch
+carries the v0.34 `CANDIDATE` at `spec/kernel-spec.md`, SHA-256
+`b9284417e12f41a9c4c78728bf684c088aadd2d1fcfd10d305c0ef24c448d27a`.
 
 ## 1. Conclusion
 
@@ -594,7 +595,7 @@ The v0.33 baseline compiler has several useful foundations:
   provenance; and
 - accepted claims use one ordinary lowering and backend path.
 
-It also exposes the exact baseline gaps:
+It also exposed the exact baseline gaps that the branch candidate closes:
 
 - CLM-1 currently accepts any `own Bool`, including effectful or nonterminating
   predicates;
@@ -614,9 +615,13 @@ The branch candidate implements the bounded extension rather than a solver:
 canonical contribution normalization, finite exact-parent reconstruction,
 claim/component-blinded counterfactuals, a closed terminal-root test, a
 proof-expression judgment, stable concrete/schema audit evidence, and source
-errors, while keeping accepted-claim lowering unchanged. The remaining evidence
-work is corpus migration, protected before/after audit, full-gate verification,
-performance measurement, and adversarial review.
+errors, while keeping accepted-claim lowering unchanged. The ordinary inline
+fixtures and real programs are migrated, typed-IR mutation replaces known-false
+source claims for runtime-failure evidence, the hostile semantic suite is green,
+the MCTS decision is paired, and current-tip frozen real bundles completed in
+537.22 seconds. The remaining boundary is exact protected candidate bytes and
+manifest synchronization, final specification identity, rebase, complete gates,
+and the owner merge review.
 
 ## 12. Current corpus impact
 
@@ -658,7 +663,15 @@ or `rejected`. These are heuristic risk indicators, not semantic verdicts.
 Every claim must be audited individually, and every protected change requires
 an exact before/after inventory in the owner merge packet.
 
-## 13. Implementation feasibility and sequence
+On the branch, the 241 real-program claims have been reduced to 23 reviewed
+residuals in eight files. The protected baseline deliberately remains unchanged
+at 410 claims in 197 files until the final owner boundary: all 197 files have a
+read-only disposition, the 84 run-oracle cases have an exact control/effect
+rewrite matrix, the 47 reject cases have an exact first-diagnostic matrix, and
+the 26 accept/trap cases have a separately verified candidate commit. Those
+three protected groups are packet evidence, not yet integrated authority.
+
+## 13. Implementation sequence and branch disposition
 
 This research document is not execution authority. The owner-chartered branch
 uses the Current Plan and batch 0075 to proceed in this order:
@@ -697,6 +710,12 @@ uses the Current Plan and batch 0075 to proceed in this order:
 9. rebase the complete branch candidate onto then-current `main`, rerun complete
    gates, artifact checks, and adversarial audit, then present it for owner
    approval and perform only predetermined activation mechanics afterward.
+
+Steps 1 through 6 and 8 are complete on the branch. Step 7 is complete as an
+exact read-only migration contract plus a separately verified 26-case candidate,
+but protected bytes and their manifest synchronization remain at the owner
+boundary. Step 9 begins only after those exact bytes are approved and integrated;
+the current branch therefore remains a candidate rather than a closed release.
 
 If N counterfactual flows are too expensive, measure and implement an exactly
 equivalent dependency analysis. Performance cannot justify accepting a weaker

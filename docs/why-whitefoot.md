@@ -677,6 +677,6 @@ Every number above, with its committed record. Protocols, machines, and caveats 
 | Kernel-shape dry runs (C mockups vs `Vec`/hashbrown; bands) | `archive/research/systems-performance-coverage/m3a-kernel-dryrun/RESULTS.md` |
 | Queue: exhaustive model check, all 4 weakened-ordering mutants caught; zero-RMW hot path; latency vs throughput vs `rtrb` | `archive/research/systems-performance-coverage/m6a-spsc-dryrun/RESULTS.md` |
 | Reproducibility direction and the absence of a complete object claim | `docs/roadmap.md`, item `VERIFY-4` |
-| Current language rules cited (one spelling; reject-not-reformat; two-way effect checking; static contracts; exact integer domains; claim = sole runtime trap) | `spec/kernel-spec.md`: FORM-1/2/3, EFF-1/2/4, FN-8, OP-1/2, CLM-1 |
+| Current language rules cited (one spelling; reject-not-reformat; two-way effect checking; static contracts; exact integer domains; claim = sole residual runtime trap) | `spec/kernel-spec.md`: FORM-1/2/3, EFF-1/2/4, FN-8, OP-1/2, CLM-1/2 |
 | Pattern doctrine (command buffer, SoA pool, boolean classifier, traps-to-boundary) | `docs/patterns.md` |
 | Founding evidence for the premise (escape analysis conditionality, JIT recovery machinery, non-interference as the central enabler, IR semantics preservation) | `archive/research/phase2-notes/verified-findings.md`, `archive/research/phase2-notes/phase2-jit-findings.jsonl`, `archive/research/debates/round1-static-vs-profile.md` |
