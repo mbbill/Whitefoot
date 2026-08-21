@@ -874,7 +874,7 @@ Approximation/fast-math modes remain an OPEN numeric-semantics question; a relax
 The subscript carries the bounds obligation `i < len(p)` [ENT-6].
 A discharged subscript reads or writes with no runtime bounds check in every build mode, and its checked-program disposition records the discharging derivation [DIAG-2].
 Base discharge is judged before provenance: a subscript whose obligation the complete fact state does not discharge is a compile-time rejection citing OP-4 at that subscript's `psuffix` node, carrying the residual obligation rendered exactly per [ENT-6]; it forms no [PRV-2] or [PRV-3] candidate and publishes no checked program.
-Its mechanical fix is a dominating `claim` of the residual [CLM-1] or a dominating branch establishing it [ENT-3].
+Its mechanical fix is a dominating branch establishing the residual [ENT-3], or, only when the residual is an independently true theorem outside the normative checker, a CLM-2-admissible residual `claim` with a complete exact `because` record [CLM-1].
 Only after complete-state discharge succeeds may the constrained-subject gate replace that success with a [PRV-3] local-leaf rejection or retain a downstream demand for [PRV-2].
 Discharge is a deterministic checker derivation [ENT-1]; a solver result never participates.
 A `buffer<T>` obligation is over the runtime length term.

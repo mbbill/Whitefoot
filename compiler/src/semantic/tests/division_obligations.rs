@@ -12,7 +12,7 @@ use super::super::entailment::ObligationFamily;
 use super::super::model::CheckedFunction;
 use super::with_semantics;
 
-const DIVISION_FIX: &str = "add a dominating `claim` of the `.defined` predicate or a dominating branch establishing its fixed normalization, or use an available total non-exact row";
+const DIVISION_FIX: &str = "establish the fixed `.defined` normalization with a dominating branch, use an available total non-exact row, or, only when the predicate is an independently true theorem outside checker rules, add a CLM-2-admissible residual `claim` with a complete exact `because` record";
 
 fn named<'functions>(
     functions: &'functions [CheckedFunction],

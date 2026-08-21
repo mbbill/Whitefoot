@@ -3986,7 +3986,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             location,
                             kind: SemanticIssueKind::UndischargedBoundsObligation {
                                 residual,
-                                mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it",
+                                mechanical_fix: "establish the residual with a dominating branch, or, only when it is an independently true theorem outside checker rules, add a CLM-2-admissible residual `claim` with a complete exact `because` record",
                             },
                         },
                         super::entailment::ObligationFamily::IntegerDomain => SemanticIssue {
@@ -3999,7 +3999,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 } else {
                                     StaticObligationDisposition::Unproved
                                 },
-                                mechanical_fix: "add a dominating `claim` of the `.defined` predicate or a dominating branch establishing its fixed normalization, or use an available total non-exact row",
+                                mechanical_fix: "establish the fixed `.defined` normalization with a dominating branch, use an available total non-exact row, or, only when the predicate is an independently true theorem outside checker rules, add a CLM-2-admissible residual `claim` with a complete exact `because` record",
                             },
                         },
                         super::entailment::ObligationFamily::AllocationFit => SemanticIssue {
@@ -4007,7 +4007,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             location,
                             kind: SemanticIssueKind::UndischargedAllocationFitObligation {
                                 residual,
-                                mechanical_fix: "add a dominating `claim buffer_fits<T>(n)` or a branch/requirement establishing that exact predicate",
+                                mechanical_fix: "establish `buffer_fits<T>(n)` with a branch or requirement, or, only when it is an independently true theorem outside checker rules, add a CLM-2-admissible residual `claim` with a complete exact `because` record",
                             },
                         },
                         super::entailment::ObligationFamily::SystemRange => SemanticIssue {
@@ -4015,7 +4015,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             location,
                             kind: SemanticIssueKind::UndischargedSystemRangeObligation {
                                 residual,
-                                mechanical_fix: "add a dominating `claim` of the residual or a branch/requirement establishing it",
+                                mechanical_fix: "establish the residual with a branch or requirement, or, only when it is an independently true theorem outside checker rules, add a CLM-2-admissible residual `claim` with a complete exact `because` record",
                             },
                         },
                     }))
@@ -4041,7 +4041,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let mechanical_fix = if first_ephemeral_argument(&outcome.goal.root).is_some() {
                         "bind that argument or referent value with one preceding ordinary let, establish the complete requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow"
                     } else {
-                        "establish the complete callee requirement with one dominating branch or claim before the call"
+                        "establish the complete callee requirement with one dominating branch before the call, or, only when it is an independently true theorem outside checker rules, add a CLM-2-admissible residual claim with a complete exact `because` record"
                     };
                     Err(CheckStop::source_issue(SemanticIssue {
                         rule: SemanticRule::Fn8,
