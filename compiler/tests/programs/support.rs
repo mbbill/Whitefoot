@@ -7,7 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
     CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, Inventory, PARALLEL_RUNTIME_SOURCE, SourceInput,
-    compile, compile_with_inventory, module_requires_parallel_runtime,
+    compile, compile_with_inventory, compile_with_permission_ledger,
+    module_requires_parallel_runtime,
 };
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
@@ -59,6 +60,19 @@ pub fn compile_programs(names: &[&str]) -> String {
         .map(|(name, source)| SourceInput::new(name, source))
         .collect::<Vec<_>>();
     compile(&inputs, CompilerLimits::default()).expect("program corpus source must compile")
+}
+
+/// Compiles one corpus program and returns its permission ledger lines.
+///
+/// The ledger is the developer-channel rendering of the permission judgment,
+/// so a case that asks what the compiler decided about a corpus program reads
+/// exactly the lines a developer would see rather than re-deriving them.
+pub fn program_permission_ledger(name: &str) -> Vec<String> {
+    let source = read_program(name);
+    let inputs = [SourceInput::new(name, &source)];
+    let (_, ledger) = compile_with_permission_ledger(&inputs, CompilerLimits::default())
+        .expect("program corpus source must compile");
+    ledger
 }
 
 /// Compiles one corpus program against one named [SYS-2] inventory state.
@@ -198,6 +212,23 @@ impl CompiledProgram {
             .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)))
             .output()
             .expect("run compiled program")
+    }
+
+    /// Runs the program with the runtime's worker setting named explicitly.
+    ///
+    /// `workers` is `None` for the shipped default — the variable unset, which
+    /// is every other case in this corpus — and `Some(count)` for a run that
+    /// offers lanes. A case that compares the two needs both spellings from one
+    /// built executable, because the difference under test is the execution and
+    /// not the program.
+    pub fn run_with_workers(&self, workers: Option<&str>) -> Output {
+        let mut command = Command::new(&self.executable);
+        command.current_dir(&self.directory);
+        match workers {
+            Some(count) => command.env("WF_WORKERS", count),
+            None => command.env_remove("WF_WORKERS"),
+        };
+        command.output().expect("run compiled program")
     }
 
     /// Runs the program with standard output on a pipe whose read end this

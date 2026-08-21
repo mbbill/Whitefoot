@@ -8,6 +8,7 @@ mod programs {
     mod image;
     mod network;
     mod numerics;
+    mod parallel;
     mod raw_deflate;
     mod signal;
     mod support;
