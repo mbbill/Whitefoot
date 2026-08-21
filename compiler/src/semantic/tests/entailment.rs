@@ -8168,19 +8168,36 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
         crate::Inventory::ACTIVE,
         crate::Inventory::OpenByName,
     ];
+    let expected_claims: [&[(&str, &str)]; 3] = [
+        &[("parse", "byte_in_source"), ("parse", "events_behind_scan")],
+        &[("decode_dynamic", "code_index_in_order")],
+        &[
+            ("search_file", "carry_in_input"),
+            ("search_file", "probe_in_input"),
+            ("search_file", "spot_in_input"),
+            ("search_file", "shift_read_in_input"),
+            ("search_file", "shift_write_in_input"),
+        ],
+    ];
     for ((inputs, expected_claims), inventory) in
-        bundles.into_iter().zip([2, 1, 3]).zip(inventories)
+        bundles.into_iter().zip(expected_claims).zip(inventories)
     {
         super::with_semantics_inputs_for(inputs, inventory, |outcome| {
             let SemanticOutcome::Complete(program) = outcome else {
                 panic!("frozen real source bundle must remain accepted: {outcome:?}");
             };
             validate_claim_ledger(&program.data);
-            assert_eq!(
-                program.data.claim_ledger.entries.len(),
-                expected_claims,
-                "the complete real-source claim population comes from the checked-program ledger"
-            );
+            let actual_claims = program
+                .data
+                .claim_ledger
+                .entries
+                .iter()
+                .map(|entry| {
+                    let function = &program.data.functions[entry.source.function.0 as usize];
+                    (function.name.as_str(), entry.name.as_str())
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(actual_claims, expected_claims);
             let claim_keys = program
                 .data
                 .claim_ledger

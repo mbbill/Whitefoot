@@ -2379,12 +2379,18 @@ pub(super) fn assert_canonical_deflate_provenance(program: &CheckedProgramData) 
             .iter()
             .any(|claim| claim.name == "distance_position_in_lengths")
     );
+    let retained_claims = program
+        .claim_ledger
+        .entries
+        .iter()
+        .map(|entry| {
+            let function = &program.functions[entry.source.function.0 as usize];
+            (function.name.as_str(), entry.name.as_str())
+        })
+        .collect::<Vec<_>>();
     assert_eq!(
-        program
-            .functions
-            .iter()
-            .map(|function| function.entailment.claims.len())
-            .sum::<usize>(),
-        12
+        retained_claims,
+        [("decode_dynamic", "code_index_in_order")],
+        "the canonical DEFLATE bundle retains only its audited loop-induction residual"
     );
 }

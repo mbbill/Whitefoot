@@ -1834,12 +1834,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         break 'claims;
                     }
                     if component_count == 1 {
-                        let mut whole = full[*function_index].function.entailment.claims
-                            [claim_index]
-                            .residual_witnesses
-                            .first()
-                            .cloned()
-                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                        let component_witnesses = &full[*function_index]
+                            .function
+                            .entailment
+                            .claims[claim_index]
+                            .residual_witnesses;
+                        if component_witnesses.len() != 1
+                            || component_witnesses[0].component != Some(0)
+                        {
+                            return Err(SemanticCompilerFailure::InvalidResolution.into());
+                        }
+                        let mut whole = component_witnesses[0].clone();
                         whole.component = None;
                         full[*function_index].function.entailment.claims[claim_index]
                             .residual_witnesses
@@ -2577,10 +2582,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
 
                 if component_count == 1 {
-                    let mut whole = witnesses
-                        .first()
-                        .cloned()
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    if witnesses.len() != 1 || witnesses[0].component != Some(0) {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    }
+                    let mut whole = witnesses[0].clone();
                     whole.component = None;
                     witnesses.push(whole);
                     functions[function_index].entailment.claims[claim_index]
