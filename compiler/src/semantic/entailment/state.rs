@@ -11,9 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::mem::size_of;
 
 use super::super::goal::{GoalExpression, GoalOperation, GoalProjection};
-use super::super::model::{
-    BindingId, CheckedBooleanOperation, CheckedValue, IntegerType,
-};
+use super::super::model::{BindingId, CheckedBooleanOperation, CheckedValue, IntegerType};
 use super::VerifiedPostconditionSummaryRef;
 use super::term::{LengthBound, TermId, TermKind, TermTable, ZERO, type_range};
 use crate::{NodePath, PreludeDeclarationId};
@@ -928,8 +926,7 @@ impl DerivationLedger {
                 node_event(node).and_then(|event| self.events.get(event.0 as usize))
                 && event.kind == FlowEventKind::S3
             {
-                let (Some(node_path), Some(component)) =
-                    (&event.node_path, event.claim_component)
+                let (Some(node_path), Some(component)) = (&event.node_path, event.claim_component)
                 else {
                     return None;
                 };
@@ -2084,10 +2081,7 @@ impl FactState {
         event: FlowEventId,
     ) -> DerivationId {
         let fact = (goal, sign);
-        let proof = ledger.intern_for(
-            self.view,
-            DerivationNode::SourceGoal { goal, sign, event },
-        );
+        let proof = ledger.intern_for(self.view, DerivationNode::SourceGoal { goal, sign, event });
         if !self.all_derivable
             && (self.opaque.insert(fact) || ledger.better(proof, self.opaque_proofs[&fact]))
         {
@@ -2149,10 +2143,7 @@ impl FactState {
         self.view
     }
 
-    fn selected_relations_depend_on_postcondition_call(
-        &self,
-        ledger: &DerivationLedger,
-    ) -> bool {
+    fn selected_relations_depend_on_postcondition_call(&self, ledger: &DerivationLedger) -> bool {
         let mut memo = HashMap::new();
         self.bound_proofs
             .values()
@@ -2374,10 +2365,7 @@ pub(crate) struct ClosedState {
 }
 
 impl ClosedState {
-    fn selected_relations_depend_on_postcondition_call(
-        &self,
-        ledger: &DerivationLedger,
-    ) -> bool {
+    fn selected_relations_depend_on_postcondition_call(&self, ledger: &DerivationLedger) -> bool {
         let mut memo = HashMap::new();
         self.bound_proofs
             .values()
@@ -2523,13 +2511,14 @@ impl ClosedState {
                 arguments,
                 ..
             } => {
-                let child = |argument: &GoalExpression,
-                             child_sign: GoalSign,
-                             visiting: &mut HashSet<(GoalId, GoalSign)>| {
-                    goals.id(argument).is_some_and(|child| {
-                        self.derives_goal_inner(child, child_sign, goals, visiting)
-                    })
-                };
+                let child =
+                    |argument: &GoalExpression,
+                     child_sign: GoalSign,
+                     visiting: &mut HashSet<(GoalId, GoalSign)>| {
+                        goals.id(argument).is_some_and(|child| {
+                            self.derives_goal_inner(child, child_sign, goals, visiting)
+                        })
+                    };
                 match (operation, sign) {
                     (CheckedBooleanOperation::And, GoalSign::Positive) => arguments
                         .iter()
@@ -2552,8 +2541,7 @@ impl ClosedState {
                     (CheckedBooleanOperation::ExclusiveOr, _) => false,
                 }
             }
-            GoalExpression::Datum(_)
-            | GoalExpression::Operation { .. } => false,
+            GoalExpression::Datum(_) | GoalExpression::Operation { .. } => false,
         };
         visiting.remove(&(goal, sign));
         result
@@ -2750,10 +2738,9 @@ impl ClosedState {
             return direct;
         }
         if literal_goal_sign(goals.expression(goal)).is_some_and(|truth| truth == sign) {
-            return Some(ledger.intern_for(
-                self.view,
-                DerivationNode::BooleanLiteral { goal, sign },
-            ));
+            return Some(
+                ledger.intern_for(self.view, DerivationNode::BooleanLiteral { goal, sign }),
+            );
         }
         if !visiting.insert((goal, sign)) {
             return None;
@@ -2764,13 +2751,14 @@ impl ClosedState {
                 arguments,
                 ..
             } => {
-                let child_proof = |argument: &GoalExpression,
-                                   child_sign: GoalSign,
-                                   visiting: &mut HashSet<(GoalId, GoalSign)>,
-                                   ledger: &mut DerivationLedger| {
-                    let child = goals.id(argument)?;
-                    self.goal_proof_inner(child, child_sign, goals, ledger, visiting)
-                };
+                let child_proof =
+                    |argument: &GoalExpression,
+                     child_sign: GoalSign,
+                     visiting: &mut HashSet<(GoalId, GoalSign)>,
+                     ledger: &mut DerivationLedger| {
+                        let child = goals.id(argument)?;
+                        self.goal_proof_inner(child, child_sign, goals, ledger, visiting)
+                    };
                 let all = |child_sign: GoalSign,
                            visiting: &mut HashSet<(GoalId, GoalSign)>,
                            ledger: &mut DerivationLedger| {
@@ -2784,8 +2772,7 @@ impl ClosedState {
                            ledger: &mut DerivationLedger| {
                     let mut best = None;
                     for argument in arguments {
-                        let Some(candidate) =
-                            child_proof(argument, child_sign, visiting, ledger)
+                        let Some(candidate) = child_proof(argument, child_sign, visiting, ledger)
                         else {
                             continue;
                         };
@@ -2833,8 +2820,7 @@ impl ClosedState {
                     )
                 })
             }
-            GoalExpression::Datum(_)
-            | GoalExpression::Operation { .. } => None,
+            GoalExpression::Datum(_) | GoalExpression::Operation { .. } => None,
         };
         visiting.remove(&(goal, sign));
         proof
@@ -3066,8 +3052,8 @@ fn close_with_excluded_term(
         };
     }
     let term_count = terms.ids().count();
-    let term_count_id = u32::try_from(term_count)
-        .expect("ENT term inventory exceeds the u32 identity space");
+    let term_count_id =
+        u32::try_from(term_count).expect("ENT term inventory exceeds the u32 identity space");
     if excluded.is_none() && state.closed_term_count == Some(term_count_id) {
         return close_goal_contradictions(
             ClosedState {
@@ -3089,11 +3075,7 @@ fn close_with_excluded_term(
     let mut bound_proofs = state.bound_proofs.clone();
     let mut distinct = state.distinct.clone();
     let mut distinct_proofs = state.distinct_proofs.clone();
-    let mut dense_bounds = DenseClosureBounds::from_maps(
-        term_count,
-        &bounds,
-        &bound_proofs,
-    );
+    let mut dense_bounds = DenseClosureBounds::from_maps(term_count, &bounds, &bound_proofs);
     let ids = terms
         .ids()
         .filter(|id| Some(*id) != excluded)
@@ -3309,10 +3291,7 @@ fn close_with_excluded_term(
             }
             let candidate = ledger.intern_for(
                 state.view,
-                DerivationNode::L0Contradiction {
-                    term: *id,
-                    parent,
-                },
+                DerivationNode::L0Contradiction { term: *id, parent },
             );
             if contradiction.is_none_or(|current| ledger.better(candidate, current)) {
                 contradiction = Some(candidate);
@@ -3583,8 +3562,7 @@ pub(crate) fn materialize_closure_at(
             ..FactState::for_view(state.view)
         };
     }
-    let needs_ordinary_fallback =
-        closed.selected_relations_depend_on_postcondition_call(ledger);
+    let needs_ordinary_fallback = closed.selected_relations_depend_on_postcondition_call(ledger);
     let mut bound_proofs = HashMap::new();
     let mut bound_keys: Vec<_> = closed.bounds.keys().copied().collect();
     bound_keys.sort_unstable();
@@ -3952,8 +3930,7 @@ fn join_at_once(
                 .get(binding)
                 .is_some_and(|other| other == goal)
         });
-        ambiguous_goal_origins
-            .retain(|binding| state.ambiguous_goal_origins.contains(binding));
+        ambiguous_goal_origins.retain(|binding| state.ambiguous_goal_origins.contains(binding));
     }
     let bound_candidates = bound_proofs
         .iter()
@@ -3989,9 +3966,9 @@ fn join_at_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DeclarationId;
     use crate::semantic::entailment::VerifiedPostconditionSummary;
     use crate::semantic::model::FunctionId;
-    use crate::DeclarationId;
 
     #[test]
     fn dormant_const_length_aliases_still_transfer_ranges_and_equality() {

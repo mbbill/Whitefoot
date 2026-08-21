@@ -861,33 +861,32 @@ impl ClaimTerminalRoot {
                     relation_ordinal: other_ordinal,
                     ..
                 },
-            ) => {
-                owner == other_owner
-                    && block == other_block
-                    && relation_ordinal == other_ordinal
-            }
+            ) => owner == other_owner && block == other_block && relation_ordinal == other_ordinal,
             _ => false,
         }
     }
 
     fn accepts_masked_disposition(&self, masked: &ClaimMaskedDisposition) -> bool {
-        match (self, masked) {
+        matches!(
+            (self, masked),
             (Self::Obligation { .. }, ClaimMaskedDisposition::Missing)
-            | (Self::Obligation { .. }, ClaimMaskedDisposition::Obligation { .. })
-            | (Self::Call { .. }, ClaimMaskedDisposition::Missing)
-            | (
-                Self::Call { .. },
-                ClaimMaskedDisposition::Call(
-                    CallGoalDisposition::Refuted | CallGoalDisposition::Unproved,
-                ),
-            )
-            | (Self::Postcondition { .. }, ClaimMaskedDisposition::Missing)
-            | (
-                Self::Postcondition { .. },
-                ClaimMaskedDisposition::PostconditionFailed,
-            ) => true,
-            _ => false,
-        }
+                | (
+                    Self::Obligation { .. },
+                    ClaimMaskedDisposition::Obligation { .. }
+                )
+                | (Self::Call { .. }, ClaimMaskedDisposition::Missing)
+                | (
+                    Self::Call { .. },
+                    ClaimMaskedDisposition::Call(
+                        CallGoalDisposition::Refuted | CallGoalDisposition::Unproved,
+                    ),
+                )
+                | (Self::Postcondition { .. }, ClaimMaskedDisposition::Missing)
+                | (
+                    Self::Postcondition { .. },
+                    ClaimMaskedDisposition::PostconditionFailed
+                )
+        )
     }
 }
 
@@ -1691,9 +1690,9 @@ pub(crate) fn build_claim_ledger(
                     .derivations
                     .is_non_explosive(proof.reconstructions.direct)
                 || entry.uses.iter().any(|use_| {
-                    use_.component_premises.iter().any(|premise| {
-                        premise.component as usize >= entry.components.len()
-                    })
+                    use_.component_premises
+                        .iter()
+                        .any(|premise| premise.component as usize >= entry.components.len())
                 })
             {
                 return Err(SemanticCompilerFailure::InvalidResolution);
@@ -1720,9 +1719,7 @@ pub(crate) fn build_claim_ledger(
                     })
                     .count();
                 if witness.component != expected
-                    || !witness
-                        .terminal
-                        .accepts_masked_disposition(&witness.masked)
+                    || !witness.terminal.accepts_masked_disposition(&witness.masked)
                     || matching_uses != 1
                 {
                     return Err(SemanticCompilerFailure::InvalidResolution);

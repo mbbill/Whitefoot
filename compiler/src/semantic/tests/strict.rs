@@ -100,7 +100,8 @@ fn a_direct_unreachable_redundant_claim_rejects_at_the_claim_with_full_identity(
 
 #[test]
 fn the_first_root_call_importing_a_generic_claim_carries_the_least_claim_identity() {
-    let source = format!(r#"fn need_nonnegative<T: Int>(value: own T) -> result: own unit pure contract {{
+    let source = format!(
+        r#"fn need_nonnegative<T: Int>(value: own T) -> result: own unit pure contract {{
   requires ige(value, 0_T);
 }} {{
   return unit;
@@ -123,7 +124,8 @@ deny_claims command fn main() -> status: own ExitStatus traps {{
   let second = relay<i8>(value: 3_i8);
   return exit_status(code: 0_u8);
 }}
-"#);
+"#
+    );
     let issue = rejection(
         source.as_bytes(),
         SemanticRule::Clm3,
@@ -150,7 +152,8 @@ deny_claims command fn main() -> status: own ExitStatus traps {{
 
 #[test]
 fn a_mutual_component_converges_one_claim_seed_to_the_root_import() {
-    let source = format!(r#"fn clamp_seven(value: own u64) -> result: own u64 pure {{
+    let source = format!(
+        r#"fn clamp_seven(value: own u64) -> result: own u64 pure {{
   return imin(value, 7_u64);
 }}
 
@@ -188,7 +191,8 @@ command fn main() -> status: own ExitStatus traps {{
   let result = strict_root(value: 0_u64);
   return exit_status(code: 0_u8);
 }}
-"#);
+"#
+    );
     let issue = rejection(source.as_bytes(), SemanticRule::Clm3, "right(value: value)");
     let SemanticIssueKind::StrictImportedClaim(detail) = issue.kind() else {
         panic!("expected imported claim: {issue:?}");
@@ -228,14 +232,8 @@ command fn main() -> status: own ExitStatus traps {{
 }}
 "#
     );
-    let cited = format!(
-        "claim body_authorization: inside because \"{CLAMP_LT_FOUR_REVIEW}\";"
-    );
-    let issue = rejection(
-        asserted.as_bytes(),
-        SemanticRule::Clm3,
-        &cited,
-    );
+    let cited = format!("claim body_authorization: inside because \"{CLAMP_LT_FOUR_REVIEW}\";");
+    let issue = rejection(asserted.as_bytes(), SemanticRule::Clm3, &cited);
     let SemanticIssueKind::StrictDirectClaim(detail) = issue.kind() else {
         panic!("expected direct-claim detail: {issue:?}");
     };
@@ -275,14 +273,8 @@ command fn main() -> status: own ExitStatus traps {{
 }}
 "#
     );
-    let cited = format!(
-        "claim body_authorization: allowed because \"{CLAMP_LT_EIGHT_REVIEW}\";"
-    );
-    let issue = rejection(
-        asserted.as_bytes(),
-        SemanticRule::Clm3,
-        &cited,
-    );
+    let cited = format!("claim body_authorization: allowed because \"{CLAMP_LT_EIGHT_REVIEW}\";");
+    let issue = rejection(asserted.as_bytes(), SemanticRule::Clm3, &cited);
     let SemanticIssueKind::StrictDirectClaim(detail) = issue.kind() else {
         panic!("expected direct-claim detail: {issue:?}");
     };
@@ -299,7 +291,8 @@ command fn main() -> status: own ExitStatus traps {{
 /// least downstream claim's function and the root's own call site.
 #[test]
 fn a_downstream_authorization_is_reported_against_the_real_leaf() {
-    let source = format!(r#"fn clamp_three(value: own u64) -> result: own u64 pure {{
+    let source = format!(
+        r#"fn clamp_three(value: own u64) -> result: own u64 pure {{
   return imin(value, 3_u64);
 }}
 
@@ -321,7 +314,8 @@ command fn main() -> status: own ExitStatus traps {{
   let value = root(values: move values, index: 0_u64);
   return exit_status(code: 0_u8);
 }}
-"#);
+"#
+    );
     let issue = rejection(
         source.as_bytes(),
         SemanticRule::Clm3,
@@ -379,7 +373,8 @@ command fn main() -> status: own ExitStatus traps {{
 
 #[test]
 fn an_outside_call_does_not_demand_its_actual_expression_obligations_in_u() {
-    let source = format!(r#"fn clamp_three(value: own u64) -> result: own u64 pure {{
+    let source = format!(
+        r#"fn clamp_three(value: own u64) -> result: own u64 pure {{
   return imin(value, 3_u64);
 }}
 
@@ -404,7 +399,8 @@ command fn main() -> status: own ExitStatus traps {{
   ordinary(values: move values, index: 0_u64);
   return exit_status(code: 0_u8);
 }}
-"#);
+"#
+    );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("outside actual U failure must not flow upward: {outcome:?}");
@@ -509,7 +505,8 @@ deny_claims command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn strict_closures_do_not_flow_upward_into_an_ordinary_claiming_caller() {
-    let source = format!(r#"fn clamp_three(value: own u64) -> result: own u64 pure {{
+    let source = format!(
+        r#"fn clamp_three(value: own u64) -> result: own u64 pure {{
   return imin(value, 3_u64);
 }}
 
@@ -533,7 +530,8 @@ command fn main() -> status: own ExitStatus traps {{
   let value = ordinary(index: 99_u64);
   return exit_status(code: 0_u8);
 }}
-"#);
+"#
+    );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("upward near miss must remain accepted: {outcome:?}");
@@ -546,7 +544,8 @@ command fn main() -> status: own ExitStatus traps {{
 
 #[test]
 fn removing_the_marker_preserves_the_ordinary_diagnostic_and_dark_observability() {
-    let source = format!(r#"fn clamp_three(value: own u64) -> result: own u64 pure {{
+    let source = format!(
+        r#"fn clamp_three(value: own u64) -> result: own u64 pure {{
   return imin(value, 3_u64);
 }}
 
@@ -563,7 +562,8 @@ command fn main() -> status: own ExitStatus traps {{
   let value = read(values: move values, index: 0_u64);
   return exit_status(code: 0_u8);
 }}
-"#);
+"#
+    );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("unmarked ordinary source must retain v0.28 acceptance: {outcome:?}");
@@ -604,7 +604,8 @@ fn a_refuted_direct_claim_rejects_before_clm3() {
 
 #[test]
 fn ordinary_fn3_contract_validation_precedes_a_marker_failure() {
-    let source = format!(r#"contract Repeated {{
+    let source = format!(
+        r#"contract Repeated {{
   fn value() -> result: own i32 pure;
   fn value() -> result: own i32 pure;
 }}
@@ -623,7 +624,8 @@ deny_claims command fn main() -> status: own ExitStatus traps {{
   let observed = values[bounded];
   return exit_status(code: 0_u8);
 }}
-"#);
+"#
+    );
     let issue = rejection(
         source.as_bytes(),
         SemanticRule::Fn3,
@@ -639,7 +641,8 @@ deny_claims command fn main() -> status: own ExitStatus traps {{
 
 #[test]
 fn ordinary_fn4_law_validation_precedes_a_marker_failure() {
-    let source = format!(r#"contract BadIdentity {{
+    let source = format!(
+        r#"contract BadIdentity {{
   fn combine(x: own u64, y: own u64) -> result: own u64 pure;
   law identity(combine, unit);
 }}
@@ -658,7 +661,8 @@ deny_claims command fn main() -> status: own ExitStatus traps {{
   let observed = values[bounded];
   return exit_status(code: 0_u8);
 }}
-"#);
+"#
+    );
     let issue = rejection(
         source.as_bytes(),
         SemanticRule::Fn4,

@@ -669,12 +669,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         self.build_checked_postcondition_inner(
-            function,
-            parameters,
-            selector,
-            relation,
-            body,
-            false,
+            function, parameters, selector, relation, body, false,
         )
     }
 
@@ -703,22 +698,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(None);
         }
         let checked = self.build_checked_postcondition_inner(
-            function,
-            parameters,
-            selector,
-            relation,
-            body,
-            true,
+            function, parameters, selector, relation, body, true,
         )?;
-        let fragment_returns = checked.selected_returns.iter().all(|selected| match &selected.value {
-            PostconditionReturnDatum::Place(place) => {
-                matches!(place.ty, CheckedType::Integer(_))
-            }
-            PostconditionReturnDatum::Literal { value, .. } => {
-                matches!(value.ty(), CheckedType::Integer(_))
-            }
-            PostconditionReturnDatum::Length(_) => true,
-        });
+        let fragment_returns =
+            checked
+                .selected_returns
+                .iter()
+                .all(|selected| match &selected.value {
+                    PostconditionReturnDatum::Place(place) => {
+                        matches!(place.ty, CheckedType::Integer(_))
+                    }
+                    PostconditionReturnDatum::Literal { value, .. } => {
+                        matches!(value.ty(), CheckedType::Integer(_))
+                    }
+                    PostconditionReturnDatum::Length(_) => true,
+                });
         Ok(fragment_returns.then_some(checked))
     }
 

@@ -699,7 +699,11 @@ command fn main() -> status: own ExitStatus pure {
             panic!("Pair<T> must retain its checked struct shape");
         };
         assert_eq!(fields.len(), 2);
-        assert!(fields.iter().all(|field| matches!(field.ty, CheckedType::GenericInt(_))));
+        assert!(
+            fields
+                .iter()
+                .all(|field| matches!(field.ty, CheckedType::GenericInt(_)))
+        );
         lower_checked(*checked).expect("metadata-only symbolic nominals must not reach lowering");
     });
 }
@@ -728,7 +732,10 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(derived.right, CheckedConst::Value(1));
         let rendered = format!(
             "{:#?}",
-            checked.data.generic_requirements[0].requirement.template.root
+            checked.data.generic_requirements[0]
+                .requirement
+                .template
+                .root
         );
         assert!(
             rendered.contains("DerivedConstId") && rendered.contains("0,"),

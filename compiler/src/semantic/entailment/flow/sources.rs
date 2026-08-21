@@ -29,8 +29,7 @@ use super::super::term::{
 use super::super::{
     ClaimComponentEvidence, ClaimImageEvidence, ClaimProofEvidence, ClaimReconstructionEvidence,
     CountedAtomicDerivation, CountedBoundDerivation, CountedDerivationSet,
-    CountedEqualityDerivation, CountedProofPoint, S7Derivation, S7DerivationKind,
-    ShiftOneIdentity,
+    CountedEqualityDerivation, CountedProofPoint, S7Derivation, S7DerivationKind, ShiftOneIdentity,
 };
 use super::{Analyzer, ArmFacts};
 use crate::SYSTEM_OPERATIONS;
@@ -257,28 +256,23 @@ impl Analyzer<'_, '_> {
         {
             return None;
         }
-        let active_mask = self.claim_mask.filter(|mask| {
-            mask.function == self.function.id && mask.node_path == *node_path
-        });
+        let active_mask = self
+            .claim_mask
+            .filter(|mask| mask.function == self.function.id && mask.node_path == *node_path);
         let mut component_evidence = Vec::with_capacity(contribution.components.len());
         for (index, component) in contribution.components.iter().enumerate() {
             let ordinal = u32::try_from(index)
                 .expect("claim contribution component count exceeds the u32 identity space");
-            if active_mask.is_some_and(|mask| {
-                mask.component.is_none() || mask.component == Some(ordinal)
-            }) {
+            if active_mask
+                .is_some_and(|mask| mask.component.is_none() || mask.component == Some(ordinal))
+            {
                 continue;
             }
-            let event = self
-                .derivations
-                .claim_event(node_path.clone(), ordinal);
+            let event = self.derivations.claim_event(node_path.clone(), ordinal);
             let source = match component {
-                super::ClaimComponentFact::Goal { goal, sign } => state.establish_goal_with_proof(
-                    *goal,
-                    *sign,
-                    &mut self.derivations,
-                    event,
-                ),
+                super::ClaimComponentFact::Goal { goal, sign } => {
+                    state.establish_goal_with_proof(*goal, *sign, &mut self.derivations, event)
+                }
                 super::ClaimComponentFact::Relation(Relation::Bound { left, right, bound }) => {
                     state.establish_bound_with_proof(
                         *left,
@@ -288,13 +282,9 @@ impl Analyzer<'_, '_> {
                         event,
                     )
                 }
-                super::ClaimComponentFact::Relation(Relation::Distinct { left, right }) => state
-                    .establish_distinct_with_proof(
-                        *left,
-                        *right,
-                        &mut self.derivations,
-                        event,
-                    ),
+                super::ClaimComponentFact::Relation(Relation::Distinct { left, right }) => {
+                    state.establish_distinct_with_proof(*left, *right, &mut self.derivations, event)
+                }
                 super::ClaimComponentFact::Relation(Relation::Equal { .. }) => return None,
             };
             self.derivations.add_root(
@@ -314,24 +304,28 @@ impl Analyzer<'_, '_> {
         if active_mask.is_some_and(|mask| mask.component.is_none()) {
             return None;
         }
-        let Some(canonical) = contribution.exact_goals.last().copied() else {
-            return None;
-        };
+        let canonical = contribution.exact_goals.last().copied()?;
         let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
         if closed.contradictory()
-            || !closed.derives_goal(canonical, super::super::state::GoalSign::Positive, &self.goals)
-            || closed.derives_goal(canonical, super::super::state::GoalSign::Negative, &self.goals)
+            || !closed.derives_goal(
+                canonical,
+                super::super::state::GoalSign::Positive,
+                &self.goals,
+            )
+            || closed.derives_goal(
+                canonical,
+                super::super::state::GoalSign::Negative,
+                &self.goals,
+            )
         {
             return None;
         }
-        let Some(parent) = closed.goal_proof(
+        let parent = closed.goal_proof(
             canonical,
             super::super::state::GoalSign::Positive,
             &self.goals,
             &mut self.derivations,
-        ) else {
-            return None;
-        };
+        )?;
         self.derivations.add_root(
             DerivationRootKind::ClaimReconstruction {
                 occurrence,

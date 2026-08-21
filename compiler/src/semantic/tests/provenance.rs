@@ -316,8 +316,8 @@ command fn main() -> status: own ExitStatus pure {
             .iter()
             .filter(|argument| {
                 matches!(argument.complete, ProvenanceGoalObservation::Evaluated(_))
-                && matches!(argument.unasserted, ProvenanceGoalObservation::Evaluated(_))
-                && matches!(argument.s4_blinded, ProvenanceGoalObservation::Evaluated(_))
+                    && matches!(argument.unasserted, ProvenanceGoalObservation::Evaluated(_))
+                    && matches!(argument.s4_blinded, ProvenanceGoalObservation::Evaluated(_))
             })
             .count();
         assert_eq!(observed, 6);

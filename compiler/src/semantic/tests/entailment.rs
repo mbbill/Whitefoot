@@ -2012,22 +2012,23 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert_eq!(evidence.ordinal, component);
                 assert_eq!(evidence.source, root.node);
                 match (&evidence.fact, conclusion) {
-                    (ClaimComponentFact::Relation(expected), DerivationConclusion::Relation(actual)) => {
-                        match (expected, actual) {
-                            (
-                                Relation::Distinct {
-                                    left: expected_left,
-                                    right: expected_right,
-                                },
-                                Relation::Distinct { left, right },
-                            ) => assert!(
-                                (expected_left == left && expected_right == right)
-                                    || (expected_left == right && expected_right == left),
-                                "claim disequality evidence uses unordered fact identity"
-                            ),
-                            _ => assert_eq!(expected, actual),
-                        }
-                    }
+                    (
+                        ClaimComponentFact::Relation(expected),
+                        DerivationConclusion::Relation(actual),
+                    ) => match (expected, actual) {
+                        (
+                            Relation::Distinct {
+                                left: expected_left,
+                                right: expected_right,
+                            },
+                            Relation::Distinct { left, right },
+                        ) => assert!(
+                            (expected_left == left && expected_right == right)
+                                || (expected_left == right && expected_right == left),
+                            "claim disequality evidence uses unordered fact identity"
+                        ),
+                        _ => assert_eq!(expected, actual),
+                    },
                     (
                         ClaimComponentFact::Goal { goal, sign },
                         DerivationConclusion::Goal {
@@ -2448,12 +2449,7 @@ fn validate_claim_ledger(program: &CheckedProgramData) {
                     }),
                 _ => false,
             };
-            if !eligible
-                || !function
-                    .entailment
-                    .derivations
-                    .is_non_explosive(root.node)
-            {
+            if !eligible || !function.entailment.derivations.is_non_explosive(root.node) {
                 continue;
             }
             let mut used_claims = Vec::<NodePath>::new();
@@ -4067,16 +4063,17 @@ command fn main() -> status: own ExitStatus pure {
             .filter(|(index, node)| {
                 summary.derivations.node_views[*index] == ProofView::Complete
                     && matches!(
-                *node,
-                DerivationNode::PostconditionGive {
-                    relation: Relation::Bound {
-                        right: ZERO,
-                        bound: 7 | 127,
-                        ..
-                    },
-                    ..
-                }
-            )})
+                        *node,
+                        DerivationNode::PostconditionGive {
+                            relation: Relation::Bound {
+                                right: ZERO,
+                                bound: 7 | 127,
+                                ..
+                            },
+                            ..
+                        }
+                    )
+            })
             .count(),
         2,
         "the target bound retains exactly its two selected edge facts"
@@ -4089,23 +4086,24 @@ command fn main() -> status: own ExitStatus pure {
             .filter(|root| {
                 summary.derivations.node_views[root.node.0 as usize] == ProofView::Complete
                     && matches!(
-                &summary.derivations.nodes[root.node.0 as usize],
-                DerivationNode::PostconditionGive {
-                    relation: Relation::Bound {
-                        right: ZERO,
-                        bound: 7 | 127,
-                        ..
-                    },
-                    ..
-                } | DerivationNode::PostconditionDeliveryJoin {
-                    relation: Relation::Bound {
-                        right: ZERO,
-                        bound: 127,
-                        ..
-                    },
-                    ..
-                }
-            )})
+                        &summary.derivations.nodes[root.node.0 as usize],
+                        DerivationNode::PostconditionGive {
+                            relation: Relation::Bound {
+                                right: ZERO,
+                                bound: 7 | 127,
+                                ..
+                            },
+                            ..
+                        } | DerivationNode::PostconditionDeliveryJoin {
+                            relation: Relation::Bound {
+                                right: ZERO,
+                                bound: 127,
+                                ..
+                            },
+                            ..
+                        }
+                    )
+            })
             .count(),
         3,
         "the target has two direct Give roots and one joined root"
@@ -7588,12 +7586,14 @@ command fn main() -> status: own ExitStatus pure {
             caller.entailment.call_goals[0].disposition,
             CallGoalDisposition::Discharged
         );
-        assert!(program
-            .data
-            .provenance
-            .call_argument_dispositions
-            .iter()
-            .all(|argument| argument.caller != caller.id));
+        assert!(
+            program
+                .data
+                .provenance
+                .call_argument_dispositions
+                .iter()
+                .all(|argument| argument.caller != caller.id)
+        );
     });
 }
 
@@ -7797,7 +7797,10 @@ command fn main() -> status: own ExitStatus traps {
     assert_eq!(summary.claims[0].lifecycle_derivation, None);
     assert_eq!(summary.derivations.metrics.claim_lifecycle_roots, 0);
     assert_eq!(summary.call_goals.len(), 1);
-    assert_eq!(summary.call_goals[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(
+        summary.call_goals[0].disposition,
+        CallGoalDisposition::Discharged
+    );
 }
 
 // ---------------------------------------------------------------------
@@ -7983,7 +7986,7 @@ command fn main() -> status: own ExitStatus pure {
         SemanticRule::Op4,
         SemanticIssueKind::UndischargedBoundsObligation {
             residual: "i < len(values)".to_owned(),
-            mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it",
+            mechanical_fix: "establish the residual with a dominating branch, or, only when it is an independently true theorem outside checker rules, add a CLM-2-admissible residual `claim` with a complete exact `because` record",
         },
     );
 }
@@ -9162,14 +9165,8 @@ command fn main() -> status: own ExitStatus pure {
 "#;
 
     for (function, evidence) in [
-        (
-            "from_branch",
-            vec![CallGoalEvidence::OpaquePositive],
-        ),
-        (
-            "from_requirement",
-            vec![CallGoalEvidence::OpaquePositive],
-        ),
+        ("from_branch", vec![CallGoalEvidence::OpaquePositive]),
+        ("from_requirement", vec![CallGoalEvidence::OpaquePositive]),
         (
             "from_children",
             vec![CallGoalEvidence::BooleanIntroductionPositive],
@@ -9355,8 +9352,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_copy_referent_read_through_an_affine_box_is_an_exact_goal_origin() {
-    let source =
-        br#"fn observe['r](value: &'r box<i32>) -> result: own unit reads('r) contract {
+    let source = br#"fn observe['r](value: &'r box<i32>) -> result: own unit reads('r) contract {
   define positive = igt(deref(deref(value)), 0_i32);
   define small = ilt(deref(deref(value)), 10_i32);
   define complete = band(positive, small);
@@ -9732,7 +9728,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
         assert_eq!(
             detail.mechanical_fix,
-            "establish the complete callee requirement with one dominating branch or claim before the call"
+            "establish the complete callee requirement with one dominating branch before the call, or, only when it is an independently true theorem outside checker rules, add a CLM-2-admissible residual claim with a complete exact `because` record"
         );
         let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
             panic!("FN-8 must cite the source call");

@@ -25,9 +25,9 @@ use crate::{
 };
 
 use super::entailment::{
-    CallGoalDisposition, CheckedGenericClaimSchema, ClaimCounterfactualWitness,
-    ClaimMaskedDisposition, ClaimMask, ClaimSchemaProofEvidence, ClaimSourceIdentity,
-    ClaimTerminalOwner, ClaimTerminalRoot, DerivationRootKind, EntailmentCallee, EntailmentContext,
+    CallGoalDisposition, CheckedGenericClaimSchema, ClaimCounterfactualWitness, ClaimMask,
+    ClaimMaskedDisposition, ClaimSchemaProofEvidence, ClaimSourceIdentity, ClaimTerminalOwner,
+    ClaimTerminalRoot, DerivationRootKind, EntailmentCallee, EntailmentContext,
     PostconditionSchedule, VerifiedPostconditionSummary, analyze_function,
     analyze_function_candidate, analyze_function_candidate_masked, analyze_function_masked,
     build_claim_ledger, finalize_function_entailment, postcondition_schedule,
@@ -40,8 +40,8 @@ use super::model::{
     BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract,
     CheckedExpression, CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode,
     CheckedNominal, CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedSliceOrigin,
-    CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId,
-    FunctionId, NominalId, ValueInitializerKind, evaluate_const_operation,
+    CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId,
+    NominalId, ValueInitializerKind, evaluate_const_operation,
 };
 use super::postcondition::CheckedPostconditionSelector;
 use super::provenance::{
@@ -54,9 +54,7 @@ use super::{CheckStop, CheckedProgram};
 use borrows::{AccessKind, ResolvedPlace};
 use borrows::{BorrowInfo, BorrowKind, SliceInfo, SliceLoan};
 use control::{ControlCounters, ControlScope};
-use generics::{
-    GenericArgument, GenericParameter, GenericSubstitution, PendingGenericRequirement,
-};
+use generics::{GenericArgument, GenericParameter, GenericSubstitution, PendingGenericRequirement};
 
 #[derive(Clone)]
 struct ParameterSignature {
@@ -945,10 +943,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             None,
         )?;
         let schema_provenance_issue = self.generic_claim_schema_provenance_issue.take();
-        let selected_provenance_issue = match (
-            schema_provenance_issue,
-            concrete_provenance_issue,
-        ) {
+        let selected_provenance_issue = match (schema_provenance_issue, concrete_provenance_issue) {
             (Some(schema), Some(concrete)) => {
                 let ordering = Self::source_issue_path(&schema)?
                     .components()
@@ -1685,12 +1680,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 || Self::statements_contain_value_if(&checked.function.body)
         });
         let mut full = phase_a.to_vec();
-        self.analyze_function_inventory_with_mask(
-            &mut full,
-            callees,
-            optimistic_batch,
-            None,
-        )?;
+        self.analyze_function_inventory_with_mask(&mut full, callees, optimistic_batch, None)?;
         let full_schema_functions = full
             .iter()
             .map(|checked| checked.function.clone())
@@ -1703,19 +1693,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
         )?;
 
-        let has_lifecycle_failure = canonical.iter().try_fold(false, |found, (index, declaration)| {
-            let checked = full
-                .get(*index)
-                .filter(|checked| checked.function.declaration == *declaration)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            Ok::<_, CheckStop>(found
-                || checked
-                    .function
-                    .entailment
-                    .claims
-                    .iter()
-                    .any(|claim| claim.disposition != super::entailment::ClaimDisposition::Retained))
-        })?;
+        let has_lifecycle_failure =
+            canonical
+                .iter()
+                .try_fold(false, |found, (index, declaration)| {
+                    let checked = full
+                        .get(*index)
+                        .filter(|checked| checked.function.declaration == *declaration)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    Ok::<_, CheckStop>(
+                        found
+                            || checked.function.entailment.claims.iter().any(|claim| {
+                                claim.disposition != super::entailment::ClaimDisposition::Retained
+                            }),
+                    )
+                })?;
 
         self.generic_claim_schema_entailment_issue = None;
         if !has_lifecycle_failure && self.reject_entailment {
@@ -1730,17 +1722,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 match self.entailment_rejection(&function) {
                     Ok(()) => {}
                     Err(CheckStop::Issue(mut issue)) => {
+                        let path = Self::source_issue_path(&issue)?.clone();
                         if let SemanticIssueKind::UndischargedCallRequirement(detail) =
                             &mut issue.kind
                         {
+                            let call = checked
+                                .function
+                                .entailment
+                                .call_goals
+                                .iter()
+                                .find(|call| {
+                                    call.node_path == path
+                                        && call.requires_clause == detail.requires_clause
+                                })
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                             let signature = self
                                 .signatures
-                                .iter()
-                                .find(|signature| signature.symbol == detail.concrete_callee)
+                                .get(call.callee.0 as usize)
+                                .filter(|signature| signature.id == call.callee)
                                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                             detail.concrete_callee.clone_from(&signature.name);
+                            detail.instantiated_goal =
+                                self.render_stable_schema_goal(&call.goal.root)?;
                         }
-                        let path = Self::source_issue_path(&issue)?.clone();
                         rejections.push((path, issue.rule.definition_rank(), *issue));
                     }
                     Err(stop) => return Err(stop),
@@ -1756,31 +1760,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 rejections.into_iter().next().map(|(_, _, issue)| issue);
         }
 
-        self.generic_claim_schema_provenance_issue = if has_lifecycle_failure
-            || self.generic_claim_schema_entailment_issue.is_some()
-        {
-            None
-        } else {
-            let mut diagnostic_functions = full_schema_functions.clone();
-            for function in &mut diagnostic_functions {
-                function.symbol.clone_from(&function.name);
-            }
-            let schema_owners = canonical
-                .iter()
-                .map(|(index, _)| {
-                    full_schema_functions
-                        .get(*index)
-                        .map(|function| function.id)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            self.provenance_rejection(
-                &diagnostic_functions,
-                &full_schema_provenance.metadata,
-                &full_schema_provenance.failures,
-                Some(&schema_owners),
-            )?
-        };
+        self.generic_claim_schema_provenance_issue =
+            if has_lifecycle_failure || self.generic_claim_schema_entailment_issue.is_some() {
+                None
+            } else {
+                let mut diagnostic_functions = full_schema_functions.clone();
+                for function in &mut diagnostic_functions {
+                    function.symbol.clone_from(&function.name);
+                }
+                let schema_owners = canonical
+                    .iter()
+                    .map(|(index, _)| {
+                        full_schema_functions
+                            .get(*index)
+                            .map(|function| function.id)
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                self.provenance_rejection(
+                    &diagnostic_functions,
+                    &full_schema_provenance.metadata,
+                    &full_schema_provenance.failures,
+                    Some(&schema_owners),
+                )?
+            };
 
         if !has_lifecycle_failure
             && self.generic_claim_schema_entailment_issue.is_none()
@@ -1817,7 +1820,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             &mask,
                             &full_schema_provenance.failures,
                             None,
-                        )? else {
+                        )?
+                        else {
                             full[*function_index].function.entailment.claims[claim_index]
                                 .disposition = super::entailment::ClaimDisposition::NonResidual {
                                 component: Some(component),
@@ -1834,10 +1838,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         break 'claims;
                     }
                     if component_count == 1 {
-                        let component_witnesses = &full[*function_index]
-                            .function
-                            .entailment
-                            .claims[claim_index]
+                        let component_witnesses = &full[*function_index].function.entailment.claims
+                            [claim_index]
                             .residual_witnesses;
                         if component_witnesses.len() != 1
                             || component_witnesses[0].component != Some(0)
@@ -1871,8 +1873,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         None,
                     )?
                     else {
-                        full[*function_index].function.entailment.claims[claim_index]
-                            .disposition =
+                        full[*function_index].function.entailment.claims[claim_index].disposition =
                             super::entailment::ClaimDisposition::NonResidual { component: None };
                         break 'claims;
                     };
@@ -1909,28 +1910,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let mut claims = checked.function.entailment.claims.clone();
             for (occurrence, claim) in claims.iter_mut().enumerate() {
                 claim.lifecycle_derivation = None;
-                claim.schema_proof = claim
-                    .proof
-                    .take()
-                    .map(|proof| {
-                        Self::stabilize_schema_proof(
-                            &checked.function.entailment,
-                            u32::try_from(occurrence)
-                                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
-                            proof,
-                        )
-                    })
-                    .transpose()?;
+                if let Some(proof) = claim.proof.take() {
+                    let (schema_proof, components) = self.stabilize_schema_proof(
+                        &checked.function.entailment,
+                        u32::try_from(occurrence)
+                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+                        proof,
+                    )?;
+                    claim.schema_proof = Some(schema_proof);
+                    claim.components = components;
+                }
                 if claim.disposition == super::entailment::ClaimDisposition::Retained
                     && claim.schema_proof.is_none()
                 {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
                 for witness in &mut claim.residual_witnesses {
-                    Self::stabilize_schema_terminal(
-                        &mut witness.terminal,
-                        &full_schema_functions,
-                    )?;
+                    Self::stabilize_schema_terminal(&mut witness.terminal, &full_schema_functions)?;
                     let owner = match &witness.terminal {
                         ClaimTerminalRoot::Obligation { owner, .. }
                         | ClaimTerminalRoot::Call { owner, .. }
@@ -1954,19 +1950,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn stabilize_schema_proof(
+        &self,
         entailment: &super::entailment::FunctionEntailment,
         occurrence: u32,
         proof: super::entailment::ClaimProofEvidence,
-    ) -> Result<ClaimSchemaProofEvidence, SemanticCompilerFailure> {
+    ) -> Result<(ClaimSchemaProofEvidence, Vec<String>), CheckStop> {
         let render_image = |goal: super::entailment::GoalId| {
-            let index = usize::try_from(goal.0)
-                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-            entailment
+            let index =
+                usize::try_from(goal.0).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+            let expression = entailment
                 .inventory
                 .goals
                 .get(index)
-                .map(|goal| render_goal(&goal.expression))
-                .ok_or(SemanticCompilerFailure::InvalidResolution)
+                .map(|goal| &goal.expression)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            self.render_stable_schema_goal(expression)
         };
         let expanded_root = entailment.derivations.roots.iter().any(|root| {
             root.kind
@@ -1985,14 +1983,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 && root.node == proof.reconstructions.direct
         });
         if !expanded_root || !direct_root {
-            return Err(SemanticCompilerFailure::InvalidResolution);
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        Ok(ClaimSchemaProofEvidence {
-            direct_image: render_image(proof.images.direct)?,
-            expanded_image: render_image(proof.images.expanded)?,
-            complete_image: render_image(proof.images.complete)?,
-            reconstruction_succeeded: true,
-        })
+        let mut components = Vec::with_capacity(proof.components.len());
+        for component in &proof.components {
+            components.push(match component.fact {
+                super::entailment::ClaimComponentFact::Goal { goal, sign } => {
+                    let index = usize::try_from(goal.0)
+                        .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+                    let expression = entailment
+                        .inventory
+                        .goals
+                        .get(index)
+                        .map(|goal| &goal.expression)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    format!("{sign:?} {}", self.render_stable_schema_goal(expression)?)
+                }
+                super::entailment::ClaimComponentFact::Relation(_) => component.rendering.clone(),
+            });
+        }
+        Ok((
+            ClaimSchemaProofEvidence {
+                direct_image: render_image(proof.images.direct)?,
+                expanded_image: render_image(proof.images.expanded)?,
+                complete_image: render_image(proof.images.complete)?,
+                reconstruction_succeeded: true,
+            },
+            components,
+        ))
     }
 
     fn stabilize_schema_terminal(
@@ -2063,12 +2081,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         optimistic_batch: bool,
         mask: &ClaimMask,
     ) -> Result<PostconditionSchedule, CheckStop> {
-        self.analyze_function_inventory_with_mask(
-            functions,
-            callees,
-            optimistic_batch,
-            Some(mask),
-        )
+        self.analyze_function_inventory_with_mask(functions, callees, optimistic_batch, Some(mask))
     }
 
     fn analyze_function_inventory_with_mask(
@@ -2155,20 +2168,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .filter(|checked| checked.function.id == *function)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     let context = EntailmentContext {
-                            callees,
-                            constants: &self.checked_constants,
-                            constant_ids: &self.constants,
-                            nominals: &self.nominals,
-                            verified_postconditions: &verified_postconditions,
-                            verified_postcondition_proofs: &verified_postcondition_proofs,
-                            binding_names: &checked.binding_names,
-                        };
+                        callees,
+                        constants: &self.checked_constants,
+                        constant_ids: &self.constants,
+                        nominals: &self.nominals,
+                        verified_postconditions: &verified_postconditions,
+                        verified_postcondition_proofs: &verified_postcondition_proofs,
+                        binding_names: &checked.binding_names,
+                    };
                     let entailment = match mask {
-                        Some(mask) => analyze_function_candidate_masked(
-                            &checked.function,
-                            &context,
-                            mask,
-                        ),
+                        Some(mask) => {
+                            analyze_function_candidate_masked(&checked.function, &context, mask)
+                        }
                         None => analyze_function_candidate(&checked.function, &context),
                     };
                     drop(verified_postconditions);
@@ -2307,6 +2318,207 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    fn render_stable_schema_goal(&self, expression: &GoalExpression) -> Result<String, CheckStop> {
+        match expression {
+            GoalExpression::Datum(datum) => self.render_stable_schema_datum(datum),
+            GoalExpression::Operation {
+                row,
+                type_arguments,
+                const_arguments,
+                result,
+                arguments,
+            } => {
+                let type_arguments = type_arguments
+                    .iter()
+                    .map(|ty| self.stable_claim_type_name(*ty))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join(", ");
+                let const_arguments = const_arguments
+                    .iter()
+                    .map(|value| self.checked_const_name(*value))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join(", ");
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| self.render_stable_schema_goal(argument))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join(", ");
+                Ok(format!(
+                    "{}<types=[{}], consts=[{}]>({arguments}):{}",
+                    self.render_stable_schema_operation(row)?,
+                    type_arguments,
+                    const_arguments,
+                    self.stable_claim_type_name(*result)?
+                ))
+            }
+        }
+    }
+
+    fn render_stable_schema_datum(&self, datum: &GoalDatum) -> Result<String, CheckStop> {
+        Ok(match datum {
+            GoalDatum::Parameter {
+                ordinal,
+                projections,
+                ty,
+            } => format!(
+                "parameter#{ordinal}{}:{}",
+                Self::render_stable_schema_projections(projections),
+                self.stable_claim_type_name(*ty)?
+            ),
+            GoalDatum::NamedConst {
+                declaration,
+                projections,
+                ty,
+            } => format!(
+                "const#{}{}:{}",
+                declaration.index(),
+                Self::render_stable_schema_projections(projections),
+                self.stable_claim_type_name(*ty)?
+            ),
+            GoalDatum::Place {
+                root,
+                projections,
+                ty,
+            } => format!(
+                "place#{}{}:{}",
+                root.0,
+                Self::render_stable_schema_projections(projections),
+                self.stable_claim_type_name(*ty)?
+            ),
+            GoalDatum::EphemeralActual {
+                caller,
+                call,
+                argument,
+                captured_type,
+                projections,
+                ty,
+            } => {
+                let caller = self
+                    .signatures
+                    .get(caller.0 as usize)
+                    .filter(|signature| signature.id == *caller)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                format!(
+                    "argument#{argument}(caller={}#decl{}, call={call:?}, captured={}, projections={}, type={})",
+                    caller.name,
+                    caller.declaration.index(),
+                    self.stable_claim_type_name(*captured_type)?,
+                    Self::render_stable_schema_projections(projections),
+                    self.stable_claim_type_name(*ty)?
+                )
+            }
+            GoalDatum::Literal(value) => self.render_stable_schema_value(value)?,
+        })
+    }
+
+    fn render_stable_schema_operation(&self, row: &GoalOperation) -> Result<String, CheckStop> {
+        Ok(match row {
+            GoalOperation::Integer {
+                operation,
+                operand_type,
+            } => format!(
+                "Integer({operation:?}, operand={})",
+                self.stable_claim_type_name(*operand_type)?
+            ),
+            GoalOperation::Float {
+                operation,
+                operand_type,
+            } => format!(
+                "Float({operation:?}, operand={})",
+                self.stable_claim_type_name(*operand_type)?
+            ),
+            GoalOperation::NumericConversion {
+                source,
+                destination,
+            } => format!("NumericConversion({source:?}->{destination:?})"),
+            GoalOperation::Reinterpret {
+                source,
+                destination,
+            } => format!("Reinterpret({source:?}->{destination:?})"),
+            GoalOperation::Boolean(operation) => format!("Boolean({operation:?})"),
+            GoalOperation::EnumEquality {
+                equal,
+                operand_type,
+            } => format!(
+                "EnumEquality(equal={equal}, operand={})",
+                self.stable_claim_type_name(*operand_type)?
+            ),
+            GoalOperation::ArrayFill { element, length } => format!(
+                "ArrayFill(element={}, length={})",
+                self.stable_claim_type_name(element.ty())?,
+                self.checked_const_name(*length)?
+            ),
+            GoalOperation::ArrayLength { element, length } => format!(
+                "ArrayLength(element={}, length={})",
+                self.stable_claim_type_name(element.ty())?,
+                self.checked_const_name(*length)?
+            ),
+            GoalOperation::BufferLength { element } => format!(
+                "BufferLength(element={})",
+                self.stable_claim_type_name(element.ty())?
+            ),
+            GoalOperation::BufferFits {
+                element,
+                maximum_length,
+            } => format!(
+                "BufferFits(element={}, maximum_length={maximum_length})",
+                self.stable_claim_type_name(*element)?
+            ),
+            GoalOperation::SliceLength { region, element } => format!(
+                "SliceLength(region={}, element={})",
+                region.index(),
+                self.stable_claim_type_name(element.ty())?
+            ),
+        })
+    }
+
+    fn render_stable_schema_value(&self, value: &CheckedValue) -> Result<String, CheckStop> {
+        Ok(match value {
+            CheckedValue::Unit => "unit".to_owned(),
+            CheckedValue::Bool(value) => value.to_string(),
+            CheckedValue::Integer { ty, bits } => format!("Integer({ty:?}, bits={bits})"),
+            CheckedValue::Float { ty, bits } => format!("Float({ty:?}, bits={bits})"),
+            CheckedValue::NumericIdentity { ty, one } => format!(
+                "NumericIdentity(type={}, one={one})",
+                self.stable_claim_type_name(*ty)?
+            ),
+            CheckedValue::Array { ty, elements } => {
+                let elements = elements
+                    .iter()
+                    .map(|element| self.render_stable_schema_value(element))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join(", ");
+                format!(
+                    "Array(type={}, elements=[{elements}])",
+                    self.stable_claim_type_name(*ty)?
+                )
+            }
+            CheckedValue::Struct { ty, fields } => {
+                let fields = fields
+                    .iter()
+                    .map(|field| self.render_stable_schema_value(field))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join(", ");
+                format!(
+                    "Struct(type={}, fields=[{fields}])",
+                    self.stable_claim_type_name(*ty)?
+                )
+            }
+        })
+    }
+
+    fn render_stable_schema_projections(projections: &[GoalProjection]) -> String {
+        let projections = projections
+            .iter()
+            .map(|projection| match projection {
+                GoalProjection::Deref => "deref".to_owned(),
+                GoalProjection::Field(field) => format!("field#{field}"),
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("[{projections}]")
+    }
+
     fn stable_claim_argument_name(&self, argument: GenericArgument) -> Result<String, CheckStop> {
         match argument {
             GenericArgument::Type(ty) => self.stable_claim_type_name(ty),
@@ -2357,7 +2569,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .flat_map(|schema| &schema.claims)
             .filter(|claim| claim.disposition != super::entailment::ClaimDisposition::Retained)
-            .min_by(|left, right| left.node_path.components().cmp(right.node_path.components()))
+            .min_by(|left, right| {
+                left.node_path
+                    .components()
+                    .cmp(right.node_path.components())
+            })
     }
 
     fn claim_lifecycle_rejection_global(
@@ -2396,9 +2612,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .then(left.1.cmp(&right.1))
         });
         match invalid.first() {
-            Some((_, _, instance, claim)) => {
-                self.claim_outcome_rejection(claim, instance.clone())
-            }
+            Some((_, _, instance, claim)) => self.claim_outcome_rejection(claim, instance.clone()),
             None => Ok(()),
         }
     }
@@ -2408,14 +2622,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         functions: &[CheckedFunction],
         concrete: Option<&(FunctionId, super::entailment::ClaimOutcome)>,
     ) -> Result<(), CheckStop> {
-        let schema = self
-            .first_schema_invalid_claim()
-            .filter(|claim| {
-                matches!(
-                    claim.disposition,
-                    super::entailment::ClaimDisposition::NonResidual { .. }
-                )
-            });
+        let schema = self.first_schema_invalid_claim().filter(|claim| {
+            matches!(
+                claim.disposition,
+                super::entailment::ClaimDisposition::NonResidual { .. }
+            )
+        });
         let selected = match (schema, concrete) {
             (Some(schema), Some((function, concrete))) => {
                 if schema.node_path.components() <= concrete.node_path.components() {
@@ -2538,65 +2750,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         });
 
         for (_, _, function_index, claim_index) in candidates {
-                let node_path = functions[function_index].entailment.claims[claim_index]
-                    .node_path
-                    .clone();
-                let component_count = functions[function_index].entailment.claims[claim_index]
-                    .components
-                    .len();
-                let mut witnesses = Vec::with_capacity(component_count + 1);
-                for component_index in 0..component_count {
-                    let component = u32::try_from(component_index).map_err(|_| {
-                        SemanticCompilerFailure::CounterOverflow
-                    })?;
-                    let mask = ClaimMask {
-                        function: functions[function_index].id,
-                        node_path: node_path.clone(),
-                        component: Some(component),
-                    };
-                    let mut scratch = phase_a.to_vec();
-                    self.analyze_function_inventory_masked(
-                        &mut scratch,
-                        callees,
-                        optimistic_batch,
-                        &mask,
-                    )?;
-                    if let Some(witness) = self.counterfactual_witness(
-                        functions,
-                        &scratch,
-                        &mask,
-                        full_provenance_failures,
-                        Some(main),
-                    )? {
-                        witnesses.push(witness);
-                    } else {
-                        functions[function_index].entailment.claims[claim_index].disposition =
-                            super::entailment::ClaimDisposition::NonResidual {
-                                component: Some(component),
-                            };
-                        return Ok(Some((
-                            functions[function_index].id,
-                            functions[function_index].entailment.claims[claim_index].clone(),
-                        )));
-                    }
-                }
-
-                if component_count == 1 {
-                    if witnesses.len() != 1 || witnesses[0].component != Some(0) {
-                        return Err(SemanticCompilerFailure::InvalidResolution.into());
-                    }
-                    let mut whole = witnesses[0].clone();
-                    whole.component = None;
-                    witnesses.push(whole);
-                    functions[function_index].entailment.claims[claim_index]
-                        .residual_witnesses = witnesses;
-                    continue;
-                }
-
+            let node_path = functions[function_index].entailment.claims[claim_index]
+                .node_path
+                .clone();
+            let component_count = functions[function_index].entailment.claims[claim_index]
+                .components
+                .len();
+            let mut witnesses = Vec::with_capacity(component_count + 1);
+            for component_index in 0..component_count {
+                let component = u32::try_from(component_index)
+                    .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
                 let mask = ClaimMask {
                     function: functions[function_index].id,
-                    node_path,
-                    component: None,
+                    node_path: node_path.clone(),
+                    component: Some(component),
                 };
                 let mut scratch = phase_a.to_vec();
                 self.analyze_function_inventory_masked(
@@ -2615,14 +2782,52 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     witnesses.push(witness);
                 } else {
                     functions[function_index].entailment.claims[claim_index].disposition =
-                        super::entailment::ClaimDisposition::NonResidual { component: None };
+                        super::entailment::ClaimDisposition::NonResidual {
+                            component: Some(component),
+                        };
                     return Ok(Some((
                         functions[function_index].id,
                         functions[function_index].entailment.claims[claim_index].clone(),
                     )));
                 }
+            }
+
+            if component_count == 1 {
+                if witnesses.len() != 1 || witnesses[0].component != Some(0) {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                let mut whole = witnesses[0].clone();
+                whole.component = None;
+                witnesses.push(whole);
                 functions[function_index].entailment.claims[claim_index].residual_witnesses =
                     witnesses;
+                continue;
+            }
+
+            let mask = ClaimMask {
+                function: functions[function_index].id,
+                node_path,
+                component: None,
+            };
+            let mut scratch = phase_a.to_vec();
+            self.analyze_function_inventory_masked(&mut scratch, callees, optimistic_batch, &mask)?;
+            if let Some(witness) = self.counterfactual_witness(
+                functions,
+                &scratch,
+                &mask,
+                full_provenance_failures,
+                Some(main),
+            )? {
+                witnesses.push(witness);
+            } else {
+                functions[function_index].entailment.claims[claim_index].disposition =
+                    super::entailment::ClaimDisposition::NonResidual { component: None };
+                return Ok(Some((
+                    functions[function_index].id,
+                    functions[function_index].entailment.claims[claim_index].clone(),
+                )));
+            }
+            functions[function_index].entailment.claims[claim_index].residual_witnesses = witnesses;
         }
         Ok(None)
     }
@@ -2685,19 +2890,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     || !full_function
                         .entailment
                         .derivations
-                        .reaches_claim_component(
-                            derivation,
-                            &mask.node_path,
-                            mask.component,
-                        )
+                        .reaches_claim_component(derivation, &mask.node_path, mask.component)
                 {
                     continue;
                 }
-                let masked_root = masked_function.entailment.obligations.iter().find(|candidate| {
-                    candidate.node_path == full_root.node_path
-                        && candidate.family == full_root.family
-                        && candidate.conjunct == full_root.conjunct
-                });
+                let masked_root = masked_function
+                    .entailment
+                    .obligations
+                    .iter()
+                    .find(|candidate| {
+                        candidate.node_path == full_root.node_path
+                            && candidate.family == full_root.family
+                            && candidate.conjunct == full_root.conjunct
+                    });
                 if let Some(masked_root) = masked_root {
                     if masked_root.contradictory {
                         return Err(SemanticCompilerFailure::InvalidResolution);
@@ -2748,39 +2953,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     || !full_function
                         .entailment
                         .derivations
-                        .reaches_claim_component(
-                            derivation,
-                            &mask.node_path,
-                            mask.component,
-                        )
+                        .reaches_claim_component(derivation, &mask.node_path, mask.component)
                 {
                     continue;
                 }
-                let masked_root = masked_function.entailment.call_goals.iter().find(|candidate| {
-                    candidate.node_path == full_root.node_path
-                        && candidate.callee == full_root.callee
-                        && candidate.requires_clause == full_root.requires_clause
-                });
-                if let Some(masked_root) = masked_root {
-                    if masked_root.disposition == CallGoalDisposition::Discharged {
-                        if masked_root
-                            .evidence
-                            .contains(&super::entailment::CallGoalEvidence::AllDerivable)
-                        {
-                            return Err(SemanticCompilerFailure::InvalidResolution);
-                        }
-                        let masked_derivation = masked_root
-                            .derivation
-                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                        if !masked_function
-                            .entailment
-                            .derivations
-                            .is_non_explosive(masked_derivation)
-                        {
-                            return Err(SemanticCompilerFailure::InvalidResolution);
-                        }
-                        continue;
+                let masked_root = masked_function
+                    .entailment
+                    .call_goals
+                    .iter()
+                    .find(|candidate| {
+                        candidate.node_path == full_root.node_path
+                            && candidate.callee == full_root.callee
+                            && candidate.requires_clause == full_root.requires_clause
+                    });
+                if let Some(masked_root) = masked_root
+                    && masked_root.disposition == CallGoalDisposition::Discharged
+                {
+                    if masked_root
+                        .evidence
+                        .contains(&super::entailment::CallGoalEvidence::AllDerivable)
+                    {
+                        return Err(SemanticCompilerFailure::InvalidResolution);
                     }
+                    let masked_derivation = masked_root
+                        .derivation
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    if !masked_function
+                        .entailment
+                        .derivations
+                        .is_non_explosive(masked_derivation)
+                    {
+                        return Err(SemanticCompilerFailure::InvalidResolution);
+                    }
+                    continue;
                 }
                 let callee_symbol = full
                     .get(full_root.callee.0 as usize)
@@ -2815,37 +3020,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     || !full_function
                         .entailment
                         .derivations
-                        .reaches_claim_component(
-                            derivation,
-                            &mask.node_path,
-                            mask.component,
-                        )
+                        .reaches_claim_component(derivation, &mask.node_path, mask.component)
                 {
                     continue;
                 }
-                let masked_proof = masked_function
-                    .entailment
-                    .postconditions
-                    .iter()
-                    .find(|candidate| {
-                        candidate.block == full_proof.block
-                            && candidate.relation_ordinal == full_proof.relation_ordinal
-                    });
-                if let Some(masked_proof) = masked_proof {
-                    if masked_proof.complete.discharged {
-                        let masked_derivation = masked_proof
-                            .complete
-                            .derivation
-                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                        if !masked_function
-                            .entailment
-                            .derivations
-                            .is_non_explosive(masked_derivation)
-                        {
-                            return Err(SemanticCompilerFailure::InvalidResolution);
-                        }
-                        continue;
+                let masked_proof =
+                    masked_function
+                        .entailment
+                        .postconditions
+                        .iter()
+                        .find(|candidate| {
+                            candidate.block == full_proof.block
+                                && candidate.relation_ordinal == full_proof.relation_ordinal
+                        });
+                if let Some(masked_proof) = masked_proof
+                    && masked_proof.complete.discharged
+                {
+                    let masked_derivation = masked_proof
+                        .complete
+                        .derivation
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    if !masked_function
+                        .entailment
+                        .derivations
+                        .is_non_explosive(masked_derivation)
+                    {
+                        return Err(SemanticCompilerFailure::InvalidResolution);
                     }
+                    continue;
                 }
                 witness.get_or_insert(ClaimCounterfactualWitness {
                     component: mask.component,
@@ -2855,10 +3057,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         block: full_proof.block.clone(),
                         relation_ordinal: full_proof.relation_ordinal,
                     },
-                    masked: masked_proof.map_or(
-                        ClaimMaskedDisposition::Missing,
-                        |_| ClaimMaskedDisposition::PostconditionFailed,
-                    ),
+                    masked: masked_proof.map_or(ClaimMaskedDisposition::Missing, |_| {
+                        ClaimMaskedDisposition::PostconditionFailed
+                    }),
                 });
             }
         }
@@ -3643,7 +3844,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    fn source_issue_path(issue: &SemanticIssue) -> Result<&crate::NodePath, SemanticCompilerFailure> {
+    fn source_issue_path(
+        issue: &SemanticIssue,
+    ) -> Result<&crate::NodePath, SemanticCompilerFailure> {
         match &issue.location {
             SemanticLocation::SourceNode(path, _) => Ok(path),
             SemanticLocation::BundleRoot(_) => Err(SemanticCompilerFailure::InvalidResolution),
@@ -3686,16 +3889,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
 
-        let local =
-            failures
-                .local_rejections
-                .iter()
-                .filter(|(leaf, _, _, _)| {
-                    owner_filter.is_none_or(|owners| owners.contains(&leaf.function))
-                })
-                .map(|(leaf, dependency, requirement, carrier)| {
-                    Rejection::Local(leaf, dependency, requirement.as_ref(), carrier)
-                });
+        let local = failures
+            .local_rejections
+            .iter()
+            .filter(|(leaf, _, _, _)| {
+                owner_filter.is_none_or(|owners| owners.contains(&leaf.function))
+            })
+            .map(|(leaf, dependency, requirement, carrier)| {
+                Rejection::Local(leaf, dependency, requirement.as_ref(), carrier)
+            });
         let calls = failures
             .call_events
             .iter()
@@ -3822,10 +4024,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .node_with_path(&outcome.node_path)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let location = SemanticLocation::SourceNode(
-            outcome.node_path.clone(),
-            self.tree.coordinate(node)?,
-        );
+        let location =
+            SemanticLocation::SourceNode(outcome.node_path.clone(), self.tree.coordinate(node)?);
         if let super::entailment::ClaimDisposition::Refuted {
             predicate,
             negation,
@@ -3852,19 +4052,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 "the checker already derives the exact predicate",
             ),
             super::entailment::ClaimDisposition::Vacuous { cause } => match cause {
-                super::entailment::ClaimVacuity::PreStateContradiction => (
-                    "vacuous",
-                    None,
-                    "the pre-claim state is contradictory",
-                ),
+                super::entailment::ClaimVacuity::PreStateContradiction => {
+                    ("vacuous", None, "the pre-claim state is contradictory")
+                }
                 super::entailment::ClaimVacuity::ExactImageConflict => (
                     "vacuous",
                     None,
                     "equivalent exact predicate images have opposite signs",
                 ),
-                super::entailment::ClaimVacuity::ComponentManifestationConflict {
-                    component,
-                } => (
+                super::entailment::ClaimVacuity::ComponentManifestationConflict { component } => (
                     "vacuous",
                     Some(component),
                     "equivalent manifestations of this contribution component have opposite signs",

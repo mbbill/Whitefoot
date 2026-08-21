@@ -36,7 +36,7 @@ structure discipline future agents must apply.
 
 ## Current state
 
-On `main`, kernel specification v0.33, SHA-256
+On `main`, Kernel specification v0.33, SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`,
 remains active. This work branch carries the v0.34 `CANDIDATE` at the stable
 [specification path](spec/kernel-spec.md), SHA-256

@@ -45,13 +45,12 @@ use super::term::{
 use super::{
     BoundsRequest, CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome,
     ClaimComponentFact, ClaimDisposition, ClaimMask, ClaimOutcome, ClaimVacuity,
-    CountedDerivationSet, EntailmentContext,
-    FunctionEntailment, FunctionEntailmentView, FunctionPostconditionProof, ObligationFamily,
-    ObligationOutcome,
-    PostconditionAggregate, PostconditionDisposition, PostconditionEntryImage,
-    PostconditionEntryImageOutcome, PostconditionExit, PostconditionViewExit, S7Derivation,
-    VerifiedPostconditionSummary, VerifiedPostconditionSummaryRef, ViewObligationOutcome,
-    fragment_type, overflow_conjuncts_for_values,
+    CountedDerivationSet, EntailmentContext, FunctionEntailment, FunctionEntailmentView,
+    FunctionPostconditionProof, ObligationFamily, ObligationOutcome, PostconditionAggregate,
+    PostconditionDisposition, PostconditionEntryImage, PostconditionEntryImageOutcome,
+    PostconditionExit, PostconditionViewExit, S7Derivation, VerifiedPostconditionSummary,
+    VerifiedPostconditionSummaryRef, ViewObligationOutcome, fragment_type,
+    overflow_conjuncts_for_values,
 };
 use crate::{SYSTEM_OPERATIONS, SystemParameterMode};
 
@@ -3086,12 +3085,13 @@ impl Analyzer<'_, '_> {
     /// that an earlier branch or claim already established.
     fn event_kills_goal_origin_binding(&self, binding: BindingId, event: &KillEvent) -> bool {
         match event {
-            KillEvent::Write { place, .. }
-            | KillEvent::EntryImageHolderWrite { place, .. } => ResolvedPlace {
-                root: PlaceRoot::Binding(binding),
-                fields: Vec::new(),
+            KillEvent::Write { place, .. } | KillEvent::EntryImageHolderWrite { place, .. } => {
+                ResolvedPlace {
+                    root: PlaceRoot::Binding(binding),
+                    fields: Vec::new(),
+                }
+                .overlaps(place)
             }
-            .overlaps(place),
             KillEvent::Consume {
                 binding: consumed, ..
             } => binding == *consumed,
@@ -3111,9 +3111,7 @@ impl Analyzer<'_, '_> {
     /// before every kill entry so a write cannot erase one premise and make
     /// an unreachable point reachable again.
     fn promote_contradiction(&mut self, state: &mut FactState) {
-        if !state.all_derivable
-            && contradiction_without_proofs(state, &self.terms, &self.goals)
-        {
+        if !state.all_derivable && contradiction_without_proofs(state, &self.terms, &self.goals) {
             let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
             if closed.contradictory() {
                 state.all_derivable = true;
@@ -3261,7 +3259,11 @@ impl Analyzer<'_, '_> {
     }
 
     fn exit_scopes_to(&mut self, states: &mut ViewStates, depth: usize) {
-        let has_exited_bindings = self.scopes.iter().skip(depth).any(|scope| !scope.is_empty());
+        let has_exited_bindings = self
+            .scopes
+            .iter()
+            .skip(depth)
+            .any(|scope| !scope.is_empty());
         if !has_exited_bindings {
             return;
         }
@@ -3997,11 +3999,7 @@ impl Analyzer<'_, '_> {
         })
     }
 
-    fn goal_has_ambiguous_origin(
-        &self,
-        expression: &GoalExpression,
-        state: &FactState,
-    ) -> bool {
+    fn goal_has_ambiguous_origin(&self, expression: &GoalExpression, state: &FactState) -> bool {
         match expression {
             GoalExpression::Datum(GoalDatum::Place { root, .. }) => {
                 state.ambiguous_goal_origins.contains(root)
@@ -4027,23 +4025,20 @@ impl Analyzer<'_, '_> {
         state.ambiguous_goal_origins.remove(&binding);
     }
 
-    fn record_value_initializer_origin(
-        &self,
-        frame: &GiveFrame,
-        state: &mut FactState,
-    ) {
-        let mut origins = frame
-            .gives
-            .iter()
-            .zip(&frame.give_goal_origins)
-            .filter_map(|(edge, origin)| {
-                let edge = match state.proof_view() {
-                    ProofView::Complete => &edge.complete,
-                    ProofView::Unasserted => &edge.unasserted,
-                    ProofView::S4Blinded => &edge.s4_blinded,
-                };
-                (!edge.all_derivable).then_some(*origin)
-            });
+    fn record_value_initializer_origin(&self, frame: &GiveFrame, state: &mut FactState) {
+        let mut origins =
+            frame
+                .gives
+                .iter()
+                .zip(&frame.give_goal_origins)
+                .filter_map(|(edge, origin)| {
+                    let edge = match state.proof_view() {
+                        ProofView::Complete => &edge.complete,
+                        ProofView::Unasserted => &edge.unasserted,
+                        ProofView::S4Blinded => &edge.s4_blinded,
+                    };
+                    (!edge.all_derivable).then_some(*origin)
+                });
         let Some(first) = origins.next() else {
             return;
         };
@@ -4177,8 +4172,7 @@ impl Analyzer<'_, '_> {
                     right: right_b,
                 }),
             ) => {
-                (left_a == right_a && left_b == right_b)
-                    || (left_a == right_b && left_b == right_a)
+                (left_a == right_a && left_b == right_b) || (left_a == right_b && left_b == right_a)
             }
             _ => left == right,
         }
@@ -4232,12 +4226,8 @@ impl Analyzer<'_, '_> {
             let child_sign = match (support_operation, sign) {
                 (CheckedBooleanOperation::And, GoalSign::Positive)
                 | (CheckedBooleanOperation::Or, GoalSign::Negative) => Some(sign),
-                (CheckedBooleanOperation::Not, GoalSign::Positive) => {
-                    Some(GoalSign::Negative)
-                }
-                (CheckedBooleanOperation::Not, GoalSign::Negative) => {
-                    Some(GoalSign::Positive)
-                }
+                (CheckedBooleanOperation::Not, GoalSign::Positive) => Some(GoalSign::Negative),
+                (CheckedBooleanOperation::Not, GoalSign::Negative) => Some(GoalSign::Positive),
                 (CheckedBooleanOperation::ExclusiveOr, _) => return Err(()),
                 _ => None,
             };
@@ -4267,12 +4257,7 @@ impl Analyzer<'_, '_> {
                     })
                     .collect::<Vec<_>>();
                 for (support, complete) in pairs {
-                    self.collect_claim_component_groups(
-                        support,
-                        complete,
-                        child_sign,
-                        grouped,
-                    )?;
+                    self.collect_claim_component_groups(support, complete, child_sign, grouped)?;
                 }
                 return Ok(());
             }
@@ -4292,8 +4277,8 @@ impl Analyzer<'_, '_> {
             goal: complete_goal,
             sign,
         };
-        let one_to_one = complete_components_available
-            && support_components.len() == complete_components.len();
+        let one_to_one =
+            complete_components_available && support_components.len() == complete_components.len();
         let one_component = support_components.len() == 1;
         for (ordinal, component) in support_components.into_iter().enumerate() {
             let mut lifecycle = ClaimComponentLifecycle::default();
@@ -7226,9 +7211,7 @@ impl Analyzer<'_, '_> {
                                 {
                                     let (positive, negative, cross_contradiction) = self
                                         .claim_component_lifecycle_proof(
-                                            component,
-                                            lifecycle,
-                                            &closed,
+                                            component, lifecycle, &closed,
                                         );
                                     let ordinal = u32::try_from(index).expect(
                                         "claim contribution component count exceeds the u32 identity space",
@@ -7242,16 +7225,16 @@ impl Analyzer<'_, '_> {
                                         }
                                     } else if first_component_issue.is_none() {
                                         first_component_issue = match (positive, negative) {
-                                            (Some(_), None) => Some(
-                                                ClaimDisposition::ComponentRedundant {
+                                            (Some(_), None) => {
+                                                Some(ClaimDisposition::ComponentRedundant {
                                                     component: ordinal,
-                                                },
-                                            ),
-                                            (None, Some(_)) => Some(
-                                                ClaimDisposition::ComponentRefuted {
+                                                })
+                                            }
+                                            (None, Some(_)) => {
+                                                Some(ClaimDisposition::ComponentRefuted {
                                                     component: ordinal,
-                                                },
-                                            ),
+                                                })
+                                            }
                                             (None, None) => None,
                                             (Some(_), Some(_)) => unreachable!(
                                                 "component both-signs handled before ordinal selection"

@@ -772,14 +772,10 @@ pub enum SemanticIssueKind {
     InvalidPredicateCondition,
     /// A claim predicate contains computation outside CLM-1's total,
     /// observational, non-consuming proof-expression subset.
-    InvalidClaimProofPredicate {
-        reason: &'static str,
-    },
+    InvalidClaimProofPredicate { reason: &'static str },
     /// A decoded claim justification is not the exact five-field CLM-1
     /// review record.
-    InvalidClaimJustification {
-        expected: &'static str,
-    },
+    InvalidClaimJustification { expected: &'static str },
     /// A conditional was written in a form GRAM-6 does not admit for its
     /// class: a Bool-scrutinee `match`, an empty `else`, or an `else` block
     /// holding exactly one `if`.

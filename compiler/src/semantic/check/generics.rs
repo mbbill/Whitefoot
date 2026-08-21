@@ -844,10 +844,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(());
         }
         let concrete_signatures = std::mem::take(&mut self.signatures);
-        let concrete_functions_by_declaration =
-            std::mem::take(&mut self.functions_by_declaration);
-        let concrete_postcondition_selectors =
-            std::mem::take(&mut self.postcondition_selectors);
+        let concrete_functions_by_declaration = std::mem::take(&mut self.functions_by_declaration);
+        let concrete_postcondition_selectors = std::mem::take(&mut self.postcondition_selectors);
         let nominal_checkpoint = self.nominal_checkpoint();
         // Record only the initial source-canonical symbolic instance for each
         // generic. Transitive discovery below may instantiate another
@@ -890,22 +888,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .filter(|checked| checked.function.declaration == *declaration)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             for requirement in &checked.function.requirements {
-                self.pending_generic_requirements.push(
-                    self.stabilize_generic_requirement(
+                self.pending_generic_requirements
+                    .push(self.stabilize_generic_requirement(
                         *declaration,
                         requirement,
                         nominal_checkpoint,
-                    )?,
-                );
+                    )?);
             }
         }
         self.install_call_requirements(&mut phase_a)?;
         let callees = self.entailment_callees()?;
-        self.evaluate_generic_claim_schemas(
-            &phase_a,
-            &canonical_generic_signatures,
-            &callees,
-        )?;
+        self.evaluate_generic_claim_schemas(&phase_a, &canonical_generic_signatures, &callees)?;
         self.signatures.clear();
         self.functions_by_declaration.clear();
         self.postcondition_selectors.clear();
@@ -980,16 +973,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     let substitution =
                         self.call_generic_substitution(call, &callee, &caller_substitution)?;
-                    if !work.iter().any(|(candidate_template, candidate_substitution)| {
-                        *candidate_template == callee_template_index
-                            && candidate_substitution == &substitution
-                    }) {
+                    if !work
+                        .iter()
+                        .any(|(candidate_template, candidate_substitution)| {
+                            *candidate_template == callee_template_index
+                                && candidate_substitution == &substitution
+                        })
+                    {
                         work.push((callee_template_index, substitution.clone()));
                     }
-                    if let Some(stable) = self.stabilize_concrete_substitution(
-                        &substitution,
-                        nominal_checkpoint,
-                    )? {
+                    if let Some(stable) =
+                        self.stabilize_concrete_substitution(&substitution, nominal_checkpoint)?
+                    {
                         candidates.push((callee_template_index, callee.declaration, stable));
                     }
                 }
@@ -1048,11 +1043,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for (declaration, argument) in &substitution.bindings {
             let stable = match argument {
                 GenericArgument::Type(ty) => {
-                    let Some(ty) = self.stabilize_concrete_type(
-                        *ty,
-                        nominal_checkpoint,
-                        &mut visiting,
-                    )? else {
+                    let Some(ty) =
+                        self.stabilize_concrete_type(*ty, nominal_checkpoint, &mut visiting)?
+                    else {
                         return Ok(None);
                     };
                     StableGenericArgument::Type(ty)
@@ -1100,9 +1093,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Bool
             | CheckedType::Integer(_)
             | CheckedType::Float(_) => StableCheckedType::Scalar(ty),
-            CheckedType::Generic(_)
-            | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_) => {
+            CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => {
                 if !allow_symbolic {
                     return Ok(None);
                 }
@@ -1133,7 +1124,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         nominal_checkpoint,
                         visiting,
                         allow_symbolic,
-                    )? else {
+                    )?
+                    else {
                         visiting.remove(&id);
                         return Ok(None);
                     };
@@ -1147,7 +1139,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         nominal_checkpoint,
                         visiting,
                         allow_symbolic,
-                    )? else {
+                    )?
+                    else {
                         visiting.remove(&id);
                         return Ok(None);
                     };
@@ -1162,7 +1155,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 nominal_checkpoint,
                                 visiting,
                                 allow_symbolic,
-                            )? else {
+                            )?
+                            else {
                                 visiting.remove(&id);
                                 return Ok(None);
                             };
@@ -1174,7 +1168,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 nominal_checkpoint,
                                 visiting,
                                 allow_symbolic,
-                            )? else {
+                            )?
+                            else {
                                 visiting.remove(&id);
                                 return Ok(None);
                             };
@@ -1202,7 +1197,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     nominal_checkpoint,
                     visiting,
                     allow_symbolic,
-                )? else {
+                )?
+                else {
                     return Ok(None);
                 };
                 if !allow_symbolic && !length.is_concrete() {
@@ -1216,7 +1212,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     nominal_checkpoint,
                     visiting,
                     allow_symbolic,
-                )? else {
+                )?
+                else {
                     return Ok(None);
                 };
                 StableCheckedType::Slice { region, element }
@@ -1227,7 +1224,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     nominal_checkpoint,
                     visiting,
                     allow_symbolic,
-                )? else {
+                )?
+                else {
                     return Ok(None);
                 };
                 StableCheckedType::Buffer { element }
@@ -1247,12 +1245,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for (declaration, argument) in &substitution.bindings {
             let stable = match argument {
                 GenericArgument::Type(ty) => {
-                    let Some(ty) = self.stabilize_type(
-                        *ty,
-                        nominal_checkpoint,
-                        visiting,
-                        allow_symbolic,
-                    )? else {
+                    let Some(ty) =
+                        self.stabilize_type(*ty, nominal_checkpoint, visiting, allow_symbolic)?
+                    else {
                         return Ok(None);
                     };
                     StableGenericArgument::Type(ty)
@@ -1281,10 +1276,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedFlatElement::Bool => Some(StableFlatElement::Bool),
             CheckedFlatElement::Integer(ty) => Some(StableFlatElement::Integer(ty)),
             CheckedFlatElement::Float(ty) => Some(StableFlatElement::Float(ty)),
-            CheckedFlatElement::GenericInt(declaration) => allow_symbolic
-                .then_some(StableFlatElement::GenericInt(declaration)),
-            CheckedFlatElement::GenericFloat(declaration) => allow_symbolic
-                .then_some(StableFlatElement::GenericFloat(declaration)),
+            CheckedFlatElement::GenericInt(declaration) => {
+                allow_symbolic.then_some(StableFlatElement::GenericInt(declaration))
+            }
+            CheckedFlatElement::GenericFloat(declaration) => {
+                allow_symbolic.then_some(StableFlatElement::GenericFloat(declaration))
+            }
             CheckedFlatElement::TagOnlyNominal(id) => self
                 .stabilize_type(
                     CheckedType::Nominal(id),
@@ -1316,20 +1313,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .stabilize_type(value, nominal_checkpoint, visiting, allow_symbolic)?
                 .map(|value| StablePreludeType::Option(Box::new(value))),
             PreludeType::Result(ok, error) => {
-                let Some(ok) = self.stabilize_type(
-                    ok,
-                    nominal_checkpoint,
-                    visiting,
-                    allow_symbolic,
-                )? else {
+                let Some(ok) =
+                    self.stabilize_type(ok, nominal_checkpoint, visiting, allow_symbolic)?
+                else {
                     return Ok(None);
                 };
-                let Some(error) = self.stabilize_type(
-                    error,
-                    nominal_checkpoint,
-                    visiting,
-                    allow_symbolic,
-                )? else {
+                let Some(error) =
+                    self.stabilize_type(error, nominal_checkpoint, visiting, allow_symbolic)?
+                else {
                     return Ok(None);
                 };
                 Some(StablePreludeType::Result(Box::new(ok), Box::new(error)))
@@ -1350,19 +1341,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 StableGenericArgument::Type(ty) => {
                     GenericArgument::Type(self.reify_concrete_type(ty)?)
                 }
-                StableGenericArgument::Const(value) => {
-                    GenericArgument::Const(*value)
-                }
+                StableGenericArgument::Const(value) => GenericArgument::Const(*value),
             };
             bindings.push((*declaration, argument));
         }
         GenericSubstitution::from_bindings(bindings).map_err(CheckStop::Compiler)
     }
 
-    fn reify_concrete_type(
-        &mut self,
-        ty: &StableCheckedType,
-    ) -> Result<CheckedType, CheckStop> {
+    fn reify_concrete_type(&mut self, ty: &StableCheckedType) -> Result<CheckedType, CheckStop> {
         Ok(match ty {
             StableCheckedType::Scalar(ty) => *ty,
             StableCheckedType::SourceNominal {
@@ -1370,9 +1356,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 substitution,
             } => {
                 let substitution = self.reify_concrete_substitution(substitution)?;
-                CheckedType::Nominal(
-                    self.ensure_source_nominal_instance(*template, substitution)?,
-                )
+                CheckedType::Nominal(self.ensure_source_nominal_instance(*template, substitution)?)
             }
             StableCheckedType::Prelude(ty) => {
                 let ty = match ty {

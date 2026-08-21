@@ -1115,9 +1115,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::UserCall { .. } => {
                 Some("the predicate contains a user call that may not terminate")
             }
-            CheckedExpression::SystemCall { .. } => {
-                Some("the predicate contains a system call")
-            }
+            CheckedExpression::SystemCall { .. } => Some("the predicate contains a system call"),
             CheckedExpression::ArrayIndex { .. }
             | CheckedExpression::BufferIndex { .. }
             | CheckedExpression::SliceIndex { .. } => Some("the predicate contains a subscript"),

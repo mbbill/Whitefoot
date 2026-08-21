@@ -1,8 +1,8 @@
 use std::os::unix::process::ExitStatusExt;
 
 use super::support::{
-    build_program, compile_and_run, compile_programs, compile_sources, emitted_function,
-    fixture_directory, CompiledProgram,
+    CompiledProgram, build_program, compile_and_run, compile_programs, compile_sources,
+    emitted_function, fixture_directory,
 };
 
 /// The accepted compressed input length in `tests/programs/raw_deflate_boundary.wf`.

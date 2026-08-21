@@ -3,7 +3,7 @@
 Status: CANONICAL DIRECTION OUTLINE
 Revision: 47 (claim-residual branch execution chartered in batch 0075)
 
-The active language authority on `main` is v0.33, SHA-256
+The active language authority is v0.33 on `main`, SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
 This work branch carries a v0.34 CANDIDATE at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256

@@ -23,7 +23,7 @@ ordered source bundle
   -> host executable
 ```
 
-On `main`, the frontend targets exact v0.33 bytes, SHA-256
+On `main`, the frontend targets the exact v0.33 bytes, SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
 This work branch instead carries the v0.34 `CANDIDATE` at
 `../spec/kernel-spec.md`, SHA-256

@@ -97,10 +97,12 @@ command fn main() -> status: own ExitStatus pure {{
                 ..
             } if owner == read.id
         ));
-        assert!(entry.residual_witnesses.iter().all(|witness| matches!(
-            witness.masked,
-            ClaimMaskedDisposition::Obligation { .. }
-        )));
+        assert!(
+            entry
+                .residual_witnesses
+                .iter()
+                .all(|witness| matches!(witness.masked, ClaimMaskedDisposition::Obligation { .. }))
+        );
     });
 }
 
@@ -233,7 +235,10 @@ command fn main() -> status: own ExitStatus pure {{
         };
         assert_eq!(issue.rule(), SemanticRule::Clm2);
         let SemanticIssueKind::RefutedClaim(detail) = issue.kind() else {
-            panic!("the exact support image must produce a refutation: {:?}", issue.kind());
+            panic!(
+                "the exact support image must produce a refutation: {:?}",
+                issue.kind()
+            );
         };
         assert_eq!(detail.name, "second");
     });
@@ -748,49 +753,45 @@ command fn main() -> status: own ExitStatus pure {{
 
 #[test]
 fn duplicate_conjunction_members_have_one_normative_component_identity() {
-    let source = format!(
-        r#"fn clamp_seven(value: own u64) -> result: own u64 pure {{
+    let source = r#"fn clamp_seven(value: own u64) -> result: own u64 pure {
   return imin(value, 7_u64);
-}}
+}
 
-fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {{
+fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {
   let size = len(values);
   let bounded = clamp_seven(value: index);
   let inside = ilt(bounded, size);
   let repeated = band(inside, inside);
   claim in_range: repeated because "premises: values has length 8 and bounded is returned by clamp_seven, whose body computes imin(index, 7_u64)\nderivation: bounded is at most 7_u64, so both duplicate inside conjuncts are true\nconclusion: band(inside, inside) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following length-eight array subscript uses bounded";
   return values[bounded];
-}}
+}
 
-command fn main() -> status: own ExitStatus pure {{
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
-}}
-"#
-    );
+}
+"#.to_string();
     assert_complete(source.as_bytes());
 }
 
 #[test]
 fn an_expanded_binding_origin_disappears_with_its_masked_component() {
-    let source = format!(
-        r#"fn clamp_seven(value: own u64) -> result: own u64 pure {{
+    let source = r#"fn clamp_seven(value: own u64) -> result: own u64 pure {
   return imin(value, 7_u64);
-}}
+}
 
-fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {{
+fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {
   let size = len(values);
   let bounded = clamp_seven(value: index);
   let inside = ilt(bounded, size);
   let copied = inside;
   claim in_range: copied because "premises: values has length 8, bounded is returned by clamp_seven, and copied is ilt(bounded, size)\nderivation: bounded is at most 7_u64 and therefore strictly below size\nconclusion: copied is true\nchecker gap: ENT expands copied but does not publish an uncontracted user-call result bound\nconsumers: the following array subscript uses bounded";
   return values[bounded];
-}}
+}
 
-command fn main() -> status: own ExitStatus pure {{
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
-}}
-"#
-    );
+}
+"#.to_string();
     assert_complete(source.as_bytes());
 }
 
@@ -823,27 +824,25 @@ command fn main() -> status: own ExitStatus pure {{
 
 #[test]
 fn a_positive_disjunction_can_be_an_exact_fn8_residual() {
-    let source = format!(
-        r#"fn need_either(flag: own Bool) -> result: own unit pure contract {{
+    let source = r#"fn need_either(flag: own Bool) -> result: own unit pure contract {
   requires flag;
-}} {{
+} {
   return unit;
-}}
+}
 
-fn probe(index: own u64, right: own Bool) -> result: own unit traps {{
+fn probe(index: own u64, right: own Bool) -> result: own unit traps {
   let bounded = imin(index, 7_u64);
   let left = ilt(bounded, 8_u64);
   let either = bor(left, right);
   claim reviewed_disjunction: either because "premises: bounded is imin(index, 7_u64), so left is true regardless of right\nderivation: a disjunction with the true left operand is true\nconclusion: bor(left, right) is true\nchecker gap: ENT preserves the exact disjunction but does not derive the result range of imin\nconsumers: the following FN-8 requirement needs the exact either predicate";
   need_either(flag: either);
   return unit;
-}}
+}
 
-command fn main() -> status: own ExitStatus pure {{
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
-}}
-"#
-    );
+}
+"#.to_string();
     assert_complete(source.as_bytes());
 }
 
@@ -929,25 +928,23 @@ command fn main() -> status: own ExitStatus pure {{
 
 #[test]
 fn a_claim_can_be_load_bearing_only_for_the_complete_fn9_postcondition() {
-    let source = format!(
-        r#"fn reviewed_one(value: own i32) -> result: own i32 pure {{
+    let source = r#"fn reviewed_one(value: own i32) -> result: own i32 pure {
   let upper = imin(value, 1_i32);
   return imax(upper, 1_i32);
-}}
+}
 
-fn reviewed(value: own i32) -> result: own i32 traps contract {{
+fn reviewed(value: own i32) -> result: own i32 traps contract {
   ensures ieq(result, 1_i32);
-}} {{
+} {
   let normalized = reviewed_one(value: value);
   claim result_is_one: ieq(normalized, 1_i32) because "premises: normalized is returned by reviewed_one, whose body computes imax(imin(value, 1_i32), 1_i32)\nderivation: the inner minimum is at most 1_i32 and the outer maximum with 1_i32 is exactly 1_i32\nconclusion: ieq(normalized, 1_i32) is true\nchecker gap: ENT does not publish an uncontracted user-call result equality\nconsumers: the complete FN-9 selected-return proof needs result equal to 1_i32";
   return normalized;
-}}
+}
 
-command fn main() -> status: own ExitStatus pure {{
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
-}}
-"#
-    );
+}
+"#.to_string();
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("the true imax theorem must support FN-9: {outcome:?}");
@@ -971,10 +968,12 @@ command fn main() -> status: own ExitStatus pure {{
             entry.uses[0].terminal,
             ClaimTerminalRoot::Postcondition { .. }
         ));
-        assert!(entry.residual_witnesses.iter().all(|witness| matches!(
-            witness.terminal,
-            ClaimTerminalRoot::Postcondition { .. }
-        )));
+        assert!(
+            entry
+                .residual_witnesses
+                .iter()
+                .all(|witness| matches!(witness.terminal, ClaimTerminalRoot::Postcondition { .. }))
+        );
     });
 }
 
@@ -1248,18 +1247,17 @@ command fn main() -> status: own ExitStatus pure {{
 
 #[test]
 fn a_masked_component_is_non_residual_when_an_unmasked_component_reconstructs_it() {
-    let source = format!(
-        r#"fn need(flag: own Bool) -> result: own unit pure contract {{
+    let source = r#"fn need(flag: own Bool) -> result: own unit pure contract {
   requires flag;
-}} {{
+} {
   return unit;
-}}
+}
 
-fn clamp_four(value: own u64) -> result: own u64 pure {{
+fn clamp_four(value: own u64) -> result: own u64 pure {
   return imin(value, 4_u64);
-}}
+}
 
-fn probe(value: own u64) -> result: own unit traps {{
+fn probe(value: own u64) -> result: own unit traps {
   let bounded = clamp_four(value: value);
   let tight = ilt(bounded, 5_u64);
   let weak = ilt(bounded, 10_u64);
@@ -1267,42 +1265,39 @@ fn probe(value: own u64) -> result: own unit traps {{
   claim overcomplete: both because "premises: bounded is returned by clamp_four, whose body computes imin(value, 4_u64)\nderivation: bounded is at most 4_u64 and therefore strictly below both 5_u64 and 10_u64\nconclusion: band(tight, weak) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following FN-8 requirement names the exact conjunction";
   need(flag: both);
   return unit;
-}}
+}
 
-command fn main() -> status: own ExitStatus pure {{
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
-}}
-"#
-    );
+}
+"#.to_string();
     assert_source_rule(source.as_bytes(), SemanticRule::Clm2);
 }
 
 #[test]
 fn residuality_uses_one_fixed_eligible_set_instead_of_selecting_survivors() {
-    let source = format!(
-        r#"fn clamp_four(value: own u64) -> result: own u64 pure {{
+    let source = r#"fn clamp_four(value: own u64) -> result: own u64 pure {
   return imin(value, 4_u64);
-}}
+}
 
-fn need_under_ten(value: own u64) -> result: own unit pure contract {{
+fn need_under_ten(value: own u64) -> result: own unit pure contract {
   requires ilt(value, 10_u64);
-}} {{
+} {
   return unit;
-}}
+}
 
-fn prove(input: own u64) -> result: own unit traps {{
+fn prove(input: own u64) -> result: own unit traps {
   let bounded = clamp_four(value: input);
   claim under_seven: ilt(bounded, 7_u64) because "premises: bounded is returned by clamp_four, whose body computes imin(input, 4_u64)\nderivation: bounded is at most 4_u64 and therefore strictly below 7_u64\nconclusion: ilt(bounded, 7_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following FN-8 requirement can be discharged from this bound";
   claim under_five: ilt(bounded, 5_u64) because "premises: bounded is returned by clamp_four, whose body computes imin(input, 4_u64)\nderivation: bounded is at most 4_u64 and therefore strictly below 5_u64\nconclusion: ilt(bounded, 5_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following FN-8 requirement can be discharged from this stronger bound";
   need_under_ten(value: bounded);
   return unit;
-}}
+}
 
-command fn main() -> status: own ExitStatus pure {{
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
-}}
-"#
-    );
+}
+"#.to_string();
     assert_source_rule(source.as_bytes(), SemanticRule::Clm2);
 }
 
@@ -1361,61 +1356,57 @@ command fn main() -> status: own ExitStatus pure {{
 
 #[test]
 fn a_write_through_a_moved_unique_holder_kills_an_earlier_claim_fact() {
-    let source = format!(
-        r#"fn overwrite['r](target: &uniq 'r u64) -> result: own unit writes('r) {{
+    let source = r#"fn overwrite['r](target: &uniq 'r u64) -> result: own unit writes('r) {
   set deref(target) = 100_u64;
   return unit;
-}}
+}
 
-fn clamp_seven(value: own u64) -> result: own u64 pure {{
+fn clamp_seven(value: own u64) -> result: own u64 pure {
   return imin(value, 7_u64);
-}}
+}
 
-fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {{
+fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {
   let size = len(values);
   let bounded = clamp_seven(value: index);
   let inside = ilt(bounded, size);
   claim initially_inside: inside because "premises: bounded is returned by clamp_seven, whose body computes imin(index, 7_u64), and values has length 8\nderivation: bounded is at most 7_u64 and therefore strictly below size at the claim\nconclusion: ilt(bounded, size) is true at this statement\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the later subscript would consume this fact only if no intervening write killed it";
-  region 'r {{
+  region 'r {
     let holder = &uniq 'r bounded;
     overwrite<'r>(target: move holder);
-  }}
+  }
   return values[bounded];
-}}
+}
 
-command fn main() -> status: own ExitStatus pure {{
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
-}}
-"#
-    );
+}
+"#.to_string();
     assert_source_rule(source.as_bytes(), SemanticRule::Op4);
 }
 
 #[test]
 fn a_copy_read_through_a_projected_affine_holder_is_a_valid_proof_predicate() {
-    let source = format!(
-        r#"struct Holder {{
+    let source = r#"struct Holder {
   value: box<u64>;
-}}
+}
 
-fn clamped_holder(value: own u64) -> result: own Holder allocates(heap) {{
+fn clamped_holder(value: own u64) -> result: own Holder allocates(heap) {
   let bounded = imin(value, 7_u64);
   let owner = box_new(bounded);
   return Holder(value: move owner);
-}}
+}
 
-fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 allocates(heap), traps {{
+fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 allocates(heap), traps {
   let size = len(values);
   let holder = clamped_holder(value: index);
   claim projected: ilt(deref(holder.value), size) because "premises: holder is returned by clamped_holder, whose body stores imin(index, 7_u64), and values has length 8\nderivation: deref(holder.value) is at most 7_u64 and therefore strictly below size\nconclusion: ilt(deref(holder.value), size) is true\nchecker gap: ENT accepts the projected affine-holder copy read but does not publish the uncontracted call result invariant\nconsumers: the following length-eight array subscript uses deref(holder.value)";
   return values[deref(holder.value)];
-}}
+}
 
-command fn main() -> status: own ExitStatus pure {{
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
-}}
-"#
-    );
+}
+"#.to_string();
     assert_complete(source.as_bytes());
 }
 
@@ -1445,25 +1436,23 @@ command fn main() -> status: own ExitStatus pure {{
 
 #[test]
 fn symmetric_disequality_components_deduplicate_by_normative_fact_identity() {
-    let source = format!(
-        r#"fn reviewed_nonzero(value: own u64) -> result: own u64 pure {{
+    let source = r#"fn reviewed_nonzero(value: own u64) -> result: own u64 pure {
   return imax(value, 1_u64);
-}}
+}
 
-fn ratio(n: own u64, d: own u64) -> result: own u64 traps {{
+fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
   let divisor = reviewed_nonzero(value: d);
   let forward = ine(divisor, 0_u64);
   let reverse = ine(0_u64, divisor);
   let repeated = band(forward, reverse);
   claim nonzero: repeated because "premises: divisor is returned by reviewed_nonzero, whose body computes imax(d, 1_u64)\nderivation: divisor is at least 1_u64, hence nonzero in either written orientation, and their conjunction is true\nconclusion: band(forward, reverse) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound but canonicalizes symmetric disequality identity\nconsumers: the following exact unsigned division requires divisor nonzero";
   return n / divisor;
-}}
+}
 
-command fn main() -> status: own ExitStatus pure {{
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
-}}
-"#
-    );
+}
+"#.to_string();
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("the symmetric true disequalities must deduplicate: {outcome:?}");
@@ -1600,9 +1589,11 @@ command fn main() -> status: own ExitStatus pure {{
         for scratch_identity in [
             "$instance$",
             "FunctionId(",
+            "NominalId(",
             "GoalId(",
             "TermId(",
             "DerivationId(",
+            "DerivedConstId(",
         ] {
             assert!(
                 !stable_debug.contains(scratch_identity),
@@ -1610,6 +1601,103 @@ command fn main() -> status: own ExitStatus pure {{
             );
         }
         assert!(program.data.claim_ledger.entries.is_empty());
+    });
+}
+
+#[test]
+fn nominal_bearing_generic_schema_diagnostics_and_proofs_use_source_stable_renderings() {
+    let rejected = br#"enum Flag<T: Int> {
+  Off();
+  On();
+}
+
+fn need<T: Int>(left: own Flag<T>, right: own Flag<T>) -> result: own unit pure contract {
+  requires eeq(left, right);
+} {
+  return unit;
+}
+
+fn unused<T: Int>(left: own Flag<T>, right: own Flag<T>) -> result: own unit pure {
+  need<T>(left: left, right: right);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(rejected, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("the unproved symbolic requirement must be rejected: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn8);
+        let SemanticIssueKind::UndischargedCallRequirement(detail) = issue.kind() else {
+            panic!("the generic source-body rejection must retain its FN-8 payload");
+        };
+        assert!(detail.instantiated_goal.contains("Flag<"));
+        for scratch_identity in ["$instance$", "FunctionId(", "NominalId("] {
+            assert!(
+                !detail.instantiated_goal.contains(scratch_identity),
+                "schema diagnostic leaked scratch identity {scratch_identity}: {}",
+                detail.instantiated_goal
+            );
+        }
+    });
+
+    let accepted = br#"enum Flag<T: Int> {
+  Off();
+  On();
+}
+
+fn hidden<T: Int>() -> result: own Flag<T> pure {
+  return Off<T>();
+}
+
+fn need<T: Int>(left: own Flag<T>, right: own Flag<T>) -> result: own unit pure contract {
+  requires eeq(left, right);
+} {
+  return unit;
+}
+
+fn prove<T: Int>() -> result: own unit traps {
+  let left = hidden<T>();
+  let right = hidden<T>();
+  claim same: eeq(left, right) because "premises: left and right are returned by hidden<T>, whose body returns Off<T>()\nderivation: both values therefore have the same tag-only Flag<T> value\nconclusion: eeq(left, right) is true\nchecker gap: schema ENT does not publish uncontracted generic call-result equality\nconsumers: the following FN-8 requirement needs the exact Flag<T> equality";
+  need<T>(left: left, right: right);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(accepted, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("the nominal-bearing source schema residual must check: {outcome:?}");
+        };
+        let schema = program
+            .data
+            .generic_claim_schemas
+            .iter()
+            .find(|schema| schema.display_symbol == "prove")
+            .expect("prove schema report");
+        assert_eq!(schema.claims.len(), 1);
+        let stable_debug = format!("{schema:?}");
+        assert!(stable_debug.contains("Flag<"));
+        for scratch_identity in [
+            "$instance$",
+            "FunctionId(",
+            "NominalId(",
+            "GoalId(",
+            "TermId(",
+            "DerivationId(",
+            "DerivedConstId(",
+        ] {
+            assert!(
+                !stable_debug.contains(scratch_identity),
+                "schema proof leaked scratch identity {scratch_identity}: {stable_debug}"
+            );
+        }
     });
 }
 
@@ -1647,10 +1735,12 @@ command fn main() -> status: own ExitStatus traps {{
             .find(|schema| schema.claims.iter().any(|claim| claim.name == "theorem"))
             .expect("prove source schema");
         assert_eq!(schema.concrete_reports.len(), 2);
-        assert!(schema
-            .concrete_reports
-            .windows(2)
-            .all(|pair| pair[0].function.0 < pair[1].function.0));
+        assert!(
+            schema
+                .concrete_reports
+                .windows(2)
+                .all(|pair| pair[0].function.0 < pair[1].function.0)
+        );
         let entries = program
             .data
             .claim_ledger
@@ -1767,16 +1857,20 @@ command fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("the concrete nominal substitution must be replayed: {outcome:?}");
         };
-        assert!(program
-            .data
-            .functions
-            .iter()
-            .any(|function| function.name == "consume"));
-        assert!(program
-            .data
-            .nominals
-            .iter()
-            .any(|nominal| nominal.name.starts_with("Pair<")));
+        assert!(
+            program
+                .data
+                .functions
+                .iter()
+                .any(|function| function.name == "consume")
+        );
+        assert!(
+            program
+                .data
+                .nominals
+                .iter()
+                .any(|nominal| nominal.name.starts_with("Pair<"))
+        );
     });
 }
 
@@ -1900,25 +1994,23 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_concrete_fragment_fn9_root_can_consume_an_uninstantiated_generic_schema_claim() {
-    let source = format!(
-        r#"fn reviewed_one(value: own u64) -> result: own u64 pure {{
+    let source = r#"fn reviewed_one(value: own u64) -> result: own u64 pure {
   let upper = imin(value, 1_u64);
   return imax(upper, 1_u64);
-}}
+}
 
-fn reviewed<T>(value: own u64) -> result: own u64 traps contract {{
+fn reviewed<T>(value: own u64) -> result: own u64 traps contract {
   ensures ieq(result, 1_u64);
-}} {{
+} {
   let normalized = reviewed_one(value: value);
   claim result_is_one: ieq(normalized, 1_u64) because "premises: normalized is returned by reviewed_one, whose body computes imax(imin(value, 1_u64), 1_u64)\nderivation: the inner minimum is at most 1_u64 and the outer maximum with 1_u64 is exactly 1_u64\nconclusion: ieq(normalized, 1_u64) is true\nchecker gap: schema ENT does not publish an uncontracted user-call result equality\nconsumers: the complete concrete-u64 FN-9 selected-return proof needs result equal to 1_u64";
   return normalized;
-}}
+}
 
-command fn main() -> status: own ExitStatus pure {{
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
-}}
-"#
-    );
+}
+"#.to_string();
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("the concrete-fragment FN-9 schema root must check: {outcome:?}");
@@ -1945,20 +2037,18 @@ command fn main() -> status: own ExitStatus pure {{
 
 #[test]
 fn a_generic_int_fn9_root_is_concrete_instance_only_not_a_schema_consumer() {
-    let source = format!(
-        r#"fn reviewed<T: Int>(value: own T) -> result: own T traps contract {{
+    let source = r#"fn reviewed<T: Int>(value: own T) -> result: own T traps contract {
   ensures ige(result, 1_T);
-}} {{
+} {
   let normalized = imax(value, 1_T);
   claim result_at_least_one: ige(normalized, 1_T) because "premises: normalized is imax(value, 1_T) for every integer T\nderivation: imax returns an operand no smaller than 1_T\nconclusion: ige(normalized, 1_T) is true\nchecker gap: schema ENT does not treat GenericInt as an L0 FN-9 fragment\nconsumers: only a generic-T FN-9 clause would consume this theorem, and that root is concrete-instance-only";
   return normalized;
-}}
+}
 
-command fn main() -> status: own ExitStatus pure {{
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
-}}
-"#
-    );
+}
+"#.to_string();
     assert_source_rule(source.as_bytes(), SemanticRule::Clm2);
 }
 
@@ -1991,7 +2081,9 @@ command fn main() -> status: own ExitStatus traps {{
     );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
-            panic!("the uninhabited concrete instance must not reject the schema claim: {outcome:?}");
+            panic!(
+                "the uninhabited concrete instance must not reject the schema claim: {outcome:?}"
+            );
         };
         assert_eq!(
             program
@@ -2052,7 +2144,8 @@ command fn main() -> status: own ExitStatus traps {{
 
 #[test]
 fn ordinary_admission_diagnostics_order_source_before_dense_instance_identity() {
-    let source = br#"fn earlier<T>(values: own array<u8, 4>, index: own u64) -> result: own u8 pure {
+    let source =
+        br#"fn earlier<T>(values: own array<u8, 4>, index: own u64) -> result: own u8 pure {
   return values[index];
 }
 
