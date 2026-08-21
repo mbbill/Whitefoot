@@ -14,7 +14,7 @@ fn sum['r](values: own slice<'r, u8>) -> result: own u64 reads('r), traps {
       break @items;
     }
     let read_ok = ilt(offset, length);
-    claim offset_in_values: read_ok because "the walk stops at the slice length";
+    claim offset_in_values: read_ok because "premises: offset starts at 0_u64, the loop exits when offset equals length, and every continuing iteration increments offset once\nderivation: induction keeps offset at most length; in a continuing iteration offset is strictly below length, so the increment cannot wrap\nconclusion: read_ok is true\nchecker gap: ENT does not synthesize the monotone loop invariant relating offset to length\nconsumers: the following values[offset] subscript requires this exact OP-4 bound";
     let byte = values[offset];
     let word = cvt<u8, u64>(byte);
     set total = total +wrap word;
@@ -24,24 +24,31 @@ fn sum['r](values: own slice<'r, u8>) -> result: own u64 reads('r), traps {
 }
 
 command fn main() -> status: own ExitStatus allocates(heap), traps {
+  let code = 0_u8;
   region 'static_view {
     let view = slice_of(&'static_view bytes);
     let total = sum<'static_view>(values: move view);
-    claim array_slice: ieq(total, 10_u64) because "array slice";
+    if ine(total, 10_u64) {
+      set code = 1_u8;
+    }
   }
   let local = array_new<u8, 4>(3_u8);
   region 'local_view {
     let view = slice_of(&'local_view local);
     let total = sum<'local_view>(values: move view);
-    claim local_array_slice: ieq(total, 12_u64) because "local array slice";
+    if ine(total, 12_u64) {
+      set code = 2_u8;
+    }
   }
   let runtime = buffer_new(4_u64, 2_u8);
   region 'runtime_view {
     let view = slice_of(&'runtime_view runtime);
     let total = sum<'runtime_view>(values: move view);
-    claim buffer_slice: ieq(total, 8_u64) because "buffer slice";
+    if ine(total, 8_u64) {
+      set code = 3_u8;
+    }
   }
-  return exit_status(code: 0_u8);
+  return exit_status(code: code);
 }
 "#;
     let llvm = compile(source);
@@ -98,10 +105,10 @@ fn fixed_view['r]() -> result: own slice<'r, u8> pure {
   return slice_of(&'r fixed);
 }
 
-fn borrowed_first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads('descriptor 'data), traps {
-  let room = len(deref(value));
-  let ok = ilt(0_u64, room);
-  claim nonempty: ok because "callers pass a two-byte view";
+fn borrowed_first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads('descriptor 'data) contract {
+  define room = len(deref(value));
+  requires ilt(0_u64, room);
+} {
   return deref(value)[0_u64];
 }
 
@@ -112,30 +119,38 @@ command fn main() -> status: own ExitStatus traps {
     let borrowed_source = slice_of(&'view left);
     region 'descriptor {
       let borrowed_value = borrowed_first<'descriptor, 'view>(value: &'descriptor borrowed_source);
-      claim borrowed: ieq(borrowed_value, 11_u8) because "borrowed";
+      if ine(borrowed_value, 11_u8) {
+        return exit_status(code: 1_u8);
+      }
     }
     let initial = slice_of(&'view left);
     let passed = pass<'view>(value: move initial);
     let passed_room = len(passed);
     let passed_ok = ilt(0_u64, passed_room);
-    claim passed_nonempty: passed_ok because "pass returns the two-byte view";
+    claim passed_nonempty: passed_ok because "premises: passed is returned by pass, whose body returns the two-byte slice argument unchanged\nderivation: the returned descriptor retains length 2_u64, so 0_u64 is strictly below passed_room\nconclusion: passed_ok is true\nchecker gap: ENT does not publish the descriptor length of an uncontracted user-call result\nconsumers: the following passed[0_u64] subscript requires this exact OP-4 bound";
     let pass_value = passed[0_u64];
-    claim pass: ieq(pass_value, 11_u8) because "pass";
+    if ine(pass_value, 11_u8) {
+      return exit_status(code: 2_u8);
+    }
     let left_view = slice_of(&'view left);
     let right_view = slice_of(&'view right);
     let take_left = False();
     let selected = choose<'view>(take_left: take_left, left: move left_view, right: move right_view);
     let selected_room = len(selected);
     let selected_ok = ilt(0_u64, selected_room);
-    claim selected_nonempty: selected_ok because "choose returns one two-byte view";
+    claim selected_nonempty: selected_ok because "premises: selected is returned by choose from left_view and right_view, and both arguments are two-byte slices\nderivation: either returned descriptor has length 2_u64, so 0_u64 is strictly below selected_room\nconclusion: selected_ok is true\nchecker gap: ENT does not publish the descriptor length of an uncontracted user-call result\nconsumers: the following selected[0_u64] subscript requires this exact OP-4 bound";
     let selected_value = selected[0_u64];
-    claim choice: ieq(selected_value, 29_u8) because "choice";
+    if ine(selected_value, 29_u8) {
+      return exit_status(code: 3_u8);
+    }
     let constant = fixed_view<'view>();
     let constant_room = len(constant);
     let constant_ok = ilt(1_u64, constant_room);
-    claim constant_sized: constant_ok because "fixed_view returns the two-byte constant view";
+    claim constant_sized: constant_ok because "premises: constant is returned by fixed_view, whose body returns a slice of the two-byte fixed array\nderivation: the returned descriptor has length 2_u64, so 1_u64 is strictly below constant_room\nconclusion: constant_ok is true\nchecker gap: ENT does not publish the descriptor length of an uncontracted user-call result\nconsumers: the following constant[1_u64] subscript requires this exact OP-4 bound";
     let constant_value = constant[1_u64];
-    claim const_holds: ieq(constant_value, 13_u8) because "const";
+    if ine(constant_value, 13_u8) {
+      return exit_status(code: 4_u8);
+    }
   }
   return exit_status(code: 0_u8);
 }

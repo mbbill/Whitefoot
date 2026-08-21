@@ -2,10 +2,15 @@ use super::*;
 
 #[test]
 fn primitive_buffers_cross_functions_update_and_free_once() {
-    let source = br#"fn make(n: own u64) -> result: own buffer<u16> allocates(heap), traps {
-  let fits = buffer_fits<u16>(n);
-  claim allocation_fits: fits because "the requested u16 buffer fits every selected target";
-  return buffer_new(n, 3_u16);
+    let source = br#"fn bounded_count(n: own u64) -> result: own u64 pure {
+  return imin(n, 9223372036854775807_u64);
+}
+
+fn make(n: own u64) -> result: own buffer<u16> allocates(heap), traps {
+  let bounded = bounded_count(n: n);
+  let fits = buffer_fits<u16>(bounded);
+  claim allocation_fits: fits because "premises: bounded is returned by bounded_count, whose body computes imin(n, 9223372036854775807_u64), and buffer_fits<u16> admits counts through 9223372036854775807_u64\nderivation: imin is no greater than its second operand, so bounded is within the u16 language allocation ceiling\nconclusion: fits is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: the following buffer_new requires this exact OP-9 allocation-fit fact";
+  return buffer_new(bounded, 3_u16);
 }
 
 fn replacement() -> result: own u16 pure {
@@ -16,12 +21,17 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   let values = make(n: 4_u64);
   let length = len(values);
   let room = ilt(2_u64, length);
-  claim sized_by_make: room because "make allocates n slots and main passes four";
+  claim sized_by_make: room because "premises: main calls make with 4_u64, bounded_count leaves 4_u64 unchanged, and make returns a buffer of that bounded length\nderivation: length is 4_u64, so 2_u64 is strictly less than length\nconclusion: room is true\nchecker gap: ENT does not publish the length of an uncontracted user-call buffer result\nconsumers: the following set and read each require this exact OP-4 index bound";
   set values[2_u64] = replacement();
   let stored = values[2_u64];
-  claim length_drift: ieq(length, 4_u64) because "length drift";
-  claim store_drift: ieq(stored, 9_u16) because "store drift";
-  return exit_status(code: 0_u8);
+  let code = 0_u8;
+  if ine(length, 4_u64) {
+    set code = 1_u8;
+  }
+  if ine(stored, 9_u16) {
+    set code = 2_u8;
+  }
+  return exit_status(code: code);
 }
 "#;
     let llvm = compile(source);
@@ -96,12 +106,11 @@ fn target_domain_failure_aborts_before_allocation_without_a_language_record() {
 fn an_out_of_bounds_buffer_set_is_an_op4_compile_rejection() {
     // The allocation-length equality proves 2 < 2 underivable, so the
     // program rejects at compile time with the residual [OP-4, ENT-6].
-    let source = br#"fn replacement() -> result: own u8 traps {
-  claim rhs_evaluated: False() because "RHS evaluated";
+    let source = br#"fn replacement() -> result: own u8 pure {
   return 9_u8;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let values = buffer_new(2_u64, 0_u8);
   set values[2_u64] = replacement();
   return exit_status(code: 0_u8);
@@ -114,10 +123,12 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
 
 #[test]
 fn empty_buffer_has_zero_length_and_a_normal_free() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let values = buffer_new(0_u64, 7_u8);
   let length = len(values);
-  claim length_drift: ieq(length, 0_u64) because "length drift";
+  if ine(length, 0_u64) {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -198,29 +209,33 @@ fn borrowed_struct_projection_updates_caller_storage_through_one_address_path() 
   count: u64;
 }
 
-fn update['r](pool: &uniq 'r Pool) -> result: own unit reads('r), writes('r), traps {
+fn update['r](pool: &uniq 'r Pool) -> result: own unit reads('r), writes('r) {
   let room = len(deref(pool).left);
   let ok = ilt(1_u64, room);
-  claim left_sized: ok because "main pools two slots per column";
-  set deref(pool).left[1_u64] = 13_u64;
-  set deref(pool).count = 1_u64;
+  if ok {
+    set deref(pool).left[1_u64] = 13_u64;
+    set deref(pool).count = 1_u64;
+  }
   return unit;
 }
 
-fn observe['r](pool: &'r Pool) -> result: own u64 reads('r), traps {
+fn observe['r](pool: &'r Pool) -> result: own u64 reads('r) {
   let room = len(deref(pool).left);
   let ok = ilt(1_u64, room);
-  claim left_sized: ok because "main pools two slots per column";
-  let value = deref(pool).left[1_u64];
   let count = deref(pool).count;
-  claim observed_sum_defined: value +defined count because "the observed fields have a representable sum";
-  return value + count;
+  if ok {
+    let value = deref(pool).left[1_u64];
+    return value +wrap count;
+  } else {
+    return count;
+  }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let left = buffer_new(2_u64, 0_u64);
   let right = buffer_new(2_u64, 0_u64);
   let pool = Pool(left: move left, right: move right, count: 0_u64);
+  let code = 0_u8;
   let apply = True();
   if apply {
     region 'write {
@@ -229,9 +244,11 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   }
   region 'read {
     let observed = observe<'read>(pool: &'read pool);
-    claim borrowed_struct_update_drift: ieq(observed, 14_u64) because "borrowed struct update drift";
+    if ine(observed, 14_u64) {
+      set code = 1_u8;
+    }
   }
-  return exit_status(code: 0_u8);
+  return exit_status(code: code);
 }
 "#;
     let llvm = compile(source);
@@ -313,35 +330,41 @@ fn replacement() -> result: own u16 pure {
   return 9_u16;
 }
 
-fn update(columns: own Columns) -> result: own Columns traps {
+fn update(columns: own Columns) -> result: own Columns pure {
   let room = len(columns.left);
   let ok = ilt(1_u64, room);
-  claim left_sized: ok because "main sizes both columns to two slots";
-  set columns.left[1_u64] = replacement();
+  if ok {
+    set columns.left[1_u64] = replacement();
+  }
   return move columns;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let left = buffer_new(2_u64, 0_u16);
   let right = buffer_new(2_u64, 0_u16);
   let columns = Columns(left: move left, right: move right);
   let updated = update(columns: move columns);
   let updated_room = len(updated.left);
   let updated_ok = ilt(1_u64, updated_room);
-  claim updated_sized: updated_ok because "update returns the two-slot columns";
-  let value = updated.left[1_u64];
-  claim projected_store_drift: ieq(value, 9_u16) because "projected store drift";
+  if updated_ok {
+    let value = updated.left[1_u64];
+    if ine(value, 9_u16) {
+      return exit_status(code: 1_u8);
+    }
+  } else {
+    return exit_status(code: 2_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
     let update = emitted_function(&llvm, "update");
-    // The length read projects the field once for the claim; the discharged
-    // target projects it once more at the store, with no bounds branch.
+    // The length read projects the field once for the explicit control; the
+    // target projects it once more at the store, with no language trap.
     assert_eq!(update.matches("extractvalue %wf.t0").count(), 2);
     let guard = update
-        .find("call void @wf_trap")
-        .expect("the claim must retain its CLM-1 trap edge");
+        .find("icmp ult i64")
+        .expect("the explicit control must test the projected buffer length");
     let rhs = update
         .find("call i16 @wf_replacement")
         .expect("the RHS must execute once");
@@ -349,6 +372,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
         .find("store i16")
         .expect("the target must receive one store");
     assert!(guard < rhs && rhs < store);
+    assert!(!update.contains("call void @wf_trap"));
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
@@ -443,17 +467,16 @@ fn compiler_independent_struct_of_buffers_checksum_executes() {
 
 #[test]
 fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let slots = buffer_vacant<box<u64>>(3_u64);
   let first = box_new(11_u64);
   let wrapped = Some<box<u64>>(value: move first);
   let vacant = replace slots[0_u64] = move wrapped;
   match vacant {
     None() => {
-      claim unreachable: True() because "unreachable";
     }
     Some(value: stray) => {
-      claim fresh_slot_must_be_vacant: False() because "fresh slot must be vacant";
+      return exit_status(code: 1_u8);
     }
   }
   let second = box_new(22_u64);
@@ -461,20 +484,21 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
   let vacant2 = replace slots[2_u64] = move wrapped2;
   match vacant2 {
     None() => {
-      claim unreachable_2: True() because "unreachable";
     }
     Some(value: stray2) => {
-      claim fresh_slot_must_be_vacant_2: False() because "fresh slot must be vacant";
+      return exit_status(code: 2_u8);
     }
   }
   let taken = replace slots[0_u64] = None<box<u64>>();
   match taken {
     None() => {
-      claim slot_zero_must_be_full: False() because "slot zero must be full";
+      return exit_status(code: 3_u8);
     }
     Some(value: payload) => {
       let observed = deref(payload);
-      claim payload_zero: ieq(observed, 11_u64) because "payload zero";
+      if ine(observed, 11_u64) {
+        return exit_status(code: 4_u8);
+      }
     }
   }
   return exit_status(code: 0_u8);

@@ -581,7 +581,7 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
                         break @fold;
                       }
                       let fold_ok = ilt(cursor, 8_u64);
-                      claim cursor_in_bytes: fold_ok because "the fold walks 0..8 over the eight-byte buffer";
+                      claim cursor_in_bytes: fold_ok because "premises: cursor starts at 0_u64, the loop exits when cursor equals 8_u64, and each continuing iteration increments cursor once\nderivation: induction keeps cursor at most 8_u64; in a continuing iteration cursor is strictly below 8_u64, so the increment cannot wrap\nconclusion: fold_ok is true\nchecker gap: ENT does not synthesize the monotone loop invariant for cursor\nconsumers: the following bytes[cursor] subscript requires this exact OP-4 bound";
                       let byte = bytes[cursor];
                       let widened = cvt<u8, u64>(byte);
                       let scaled = digest *wrap 31_u64;

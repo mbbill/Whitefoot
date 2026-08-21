@@ -107,7 +107,7 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> resul
         Ok(value: next) => {
         }
         Err(error: problem) => {
-          claim exact_capacity_must_fit: False() because "exact capacity must fit";
+          return 18446744073709551615_u64;
         }
       }
     }
@@ -119,7 +119,7 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> resul
         break @sum;
       }
       let sum_ok = ilt(cursor, length);
-      claim cursor_in_bytes: sum_ok because "the sum stops at the copied length";
+      claim cursor_in_bytes: sum_ok because "premises: cursor starts at 0_u64, the loop exits when cursor equals length, and each continuing iteration increments cursor once\nderivation: induction keeps cursor at most length; in a continuing iteration cursor is strictly below length, so the increment cannot wrap\nconclusion: sum_ok is true\nchecker gap: ENT does not synthesize the monotone loop invariant relating cursor to length\nconsumers: the following bytes[cursor] subscript requires this exact OP-4 bound";
       let byte = bytes[cursor];
       let widened = cvt<u8, u64>(byte);
       set total = total +wrap widened;

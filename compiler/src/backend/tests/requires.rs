@@ -13,7 +13,7 @@ const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes['r](out: &uniq 'r buffer<u8>, s
       break @copy;
     } else {
       let copy_ok = ilt(offset, length);
-      claim copy_offset_in_source: copy_ok because "the copy stops at the source length and the contract sizes the output";
+      claim copy_offset_in_source: copy_ok because "premises: offset starts at 0_u64, the loop exits when offset equals length, and each continuing iteration increments offset once; the contract establishes length at most len(deref(out))\nderivation: induction keeps offset at most length; in a continuing iteration offset is strictly below length, so the increment cannot wrap and both the source and output indices are in range\nconclusion: copy_ok is true\nchecker gap: ENT does not synthesize the monotone loop invariant relating offset to length\nconsumers: the following source read consumes this OP-4 bound directly and the following output set combines it with the contract bound";
       let value = source[offset];
       set deref(out)[offset] = value;
       set offset = offset +wrap 1_u64;
@@ -28,14 +28,15 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   let output = buffer_new(length, 0_u8);
   region 'copy_region {
     let destination = &uniq 'copy_region output;
-    let source_length = len(source);
-    let output_length = len(deref(destination));
-    claim destination_capacity: ile(source_length, output_length) because "the equal-sized buffers satisfy the copy contract";
     let written = copy_bytes<'copy_region>(out: move destination, source: move source);
-    claim copy_length: ieq(written, length) because "copy length";
+    if ine(written, length) {
+      return exit_status(code: 1_u8);
+    }
   }
   let last = output[3_u64];
-  claim copy_content: ieq(last, 7_u8) because "copy content";
+  if ine(last, 7_u8) {
+    return exit_status(code: 2_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -84,11 +85,14 @@ fn contract_define_is_symbolic_and_not_emitted_as_runtime_work() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let bits = ipopcount(0_u8);
-  claim zero_has_no_set_bits: ieq(bits, 0_u32) because "zero has no set bits";
-  let zero = identity(value: 0_u8);
-  return exit_status(code: zero);
+  if ieq(bits, 0_u32) {
+    let zero = identity(value: 0_u8);
+    return exit_status(code: zero);
+  } else {
+    return exit_status(code: 1_u8);
+  }
 }
 "#,
     );
@@ -110,7 +114,7 @@ fn contract_define_can_hold_a_float_endpoint_conversion_without_runtime_code() {
 
 command fn main() -> status: own ExitStatus traps {
   let converted = cvt<u8, f32>(1_u8);
-  claim one_converts_exactly: feq(converted, 1.0_f32) because "one converts exactly";
+  claim one_converts_exactly: feq(converted, 1.0_f32) because "premises: converted is the f32 conversion of the exactly representable u8 value 1_u8\nderivation: f32 represents the integer one exactly, so the conversion has the bit-exact value 1.0_f32\nconclusion: feq(converted, 1.0_f32) is true\nchecker gap: ENT does not evaluate integer-to-float conversion on literal endpoints\nconsumers: the following identity call requires this exact FN-8 equality";
   let one = identity(value: 1_u8);
   let code = one -wrap 1_u8;
   return exit_status(code: code);
@@ -137,11 +141,12 @@ fn ordinary_requirement_is_not_emitted_as_a_callee_prologue() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let value = 7_i32;
-  claim caller_evidence: ige(value, 0_i32) because "caller evidence";
   let returned = bounded(value: value);
-  claim result_drift: ieq(returned, 7_i32) because "result drift";
+  if ine(returned, 7_i32) {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#,

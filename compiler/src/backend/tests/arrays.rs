@@ -53,19 +53,28 @@ fn filled_arrays_cross_function_boundaries_and_keep_a_checked_read() {
   return array_new<u16, 4>(42_u16);
 }
 
+fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
 fn read(values: own array<u16, 4>, offset: own u64) -> result: own u16 traps {
-  let in_range = ilt(offset, 4_u64);
-  claim offset_in_range: in_range because "main reads offset three of four";
-  let value = values[offset];
+  let bounded = clamp_three(value: offset);
+  let in_range = ilt(bounded, 4_u64);
+  claim offset_in_range: in_range because "premises: bounded is returned by clamp_three, whose body computes imin(offset, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: in_range is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: the following values[bounded] subscript requires this exact OP-4 bound";
+  let value = values[bounded];
   return value;
 }
 
 command fn main() -> status: own ExitStatus traps {
   let values = make();
   let length = len(values);
-  claim length_drift: ieq(length, 4_u64) because "length drift";
+  if ine(length, 4_u64) {
+    return exit_status(code: 1_u8);
+  }
   let value = read(values: move values, offset: 3_u64);
-  claim fill_drift: ieq(value, 42_u16) because "fill drift";
+  if ine(value, 42_u16) {
+    return exit_status(code: 2_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -142,16 +151,17 @@ fn compiler_independent_array_checksum_executes() {
 
 #[test]
 fn indexed_set_checks_before_rhs_and_updates_the_array() {
-    let source = br#"fn replacement() -> result: own u8 traps {
-  claim replacement_drift: True() because "replacement drift";
+    let source = br#"fn replacement() -> result: own u8 pure {
   return 9_u8;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   set values[1_u64] = replacement();
   let stored = values[1_u64];
-  claim set_drift: ieq(stored, 9_u8) because "set drift";
+  if ine(stored, 9_u8) {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -183,12 +193,11 @@ command fn main() -> status: own ExitStatus traps {
 fn an_out_of_bounds_indexed_set_is_an_op4_compile_rejection() {
     // A target whose obligation is underivable cannot reach runtime: the
     // program rejects at the subscript with the residual [OP-4, ENT-6].
-    let source = br#"fn replacement() -> result: own u8 traps {
-  claim rhs_evaluated: False() because "RHS evaluated";
+    let source = br#"fn replacement() -> result: own u8 pure {
   return 9_u8;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   set values[2_u64] = replacement();
   return exit_status(code: 0_u8);
@@ -217,7 +226,7 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
       break @stream;
     }
     let cursor_ok = ilt(cursor, 8_u64);
-    claim cursor_in_window: cursor_ok because "the rotating cursor wraps at seven";
+    claim cursor_in_window: cursor_ok because "premises: cursor starts at 0_u64 and every continuing iteration replaces 7_u64 by 0_u64 or increments a value below 7_u64 by one\nderivation: induction over completed iterations keeps cursor in the closed interval 0_u64 through 7_u64 before each access; the only increment starts below 7_u64 and cannot wrap\nconclusion: cursor_ok is true\nchecker gap: ENT does not synthesize the loop induction invariant for the rotating cursor\nconsumers: the following read and indexed set each require this exact OP-4 bound";
     let previous = window[cursor];
     let mixed = ixor(previous, step);
     set window[cursor] = mixed *wrap 1099511628211_u64;
@@ -231,8 +240,12 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
     set cursor = next_cursor;
     set step = step + 1_u64;
   }
-  claim stream_length_drift: ieq(step, 200000_u64) because "stream length drift";
-  claim stream_cursor_drift: ieq(cursor, 0_u64) because "stream cursor drift";
+  if ine(step, 200000_u64) {
+    return exit_status(code: 1_u8);
+  }
+  if ine(cursor, 0_u64) {
+    return exit_status(code: 2_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -280,20 +293,25 @@ struct Outer {
   inner: Inner;
 }
 
-fn replacement() -> result: own u8 traps {
-  claim replacement_drift: True() because "replacement drift";
+fn replacement() -> result: own u8 pure {
   return 9_u8;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   let inner = Inner(values: move values, sibling: 77_u16);
   let outer = Outer(prefix: 123_u32, inner: move inner);
   set outer.inner.values[1_u64] = replacement();
   let stored = outer.inner.values[1_u64];
-  claim array_update: ieq(stored, 9_u8) because "array update";
-  claim inner_sibling: ieq(outer.inner.sibling, 77_u16) because "inner sibling";
-  claim outer_sibling: ieq(outer.prefix, 123_u32) because "outer sibling";
+  if ine(stored, 9_u8) {
+    return exit_status(code: 1_u8);
+  }
+  if ine(outer.inner.sibling, 77_u16) {
+    return exit_status(code: 2_u8);
+  }
+  if ine(outer.prefix, 123_u32) {
+    return exit_status(code: 3_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
