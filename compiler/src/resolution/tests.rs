@@ -1563,7 +1563,7 @@ fn probe() -> result: own unit traps {
     let borrowed = &'r ordinary;
     let called = user<i32, 'r, one>(arg: borrowed);
     let view = move called;
-    claim bad: ieq(ordinary, two) because "bad";
+    let comparison = ieq(ordinary, two);
   }
   loop @done {
     break @done;
@@ -1821,13 +1821,13 @@ fn sibling_contract_signatures_do_not_share_region_parameters() {
 /// otherwise hide it.
 #[test]
 fn conditional_branches_are_separate_lexical_scopes() {
-    let sibling_branches = br#"fn get(pick: own Bool) -> result: own unit traps {
+    let sibling_branches = br#"fn get(pick: own Bool) -> result: own unit pure {
   if pick {
     let inside = 1_u64;
-    claim left: ieq(inside, 1_u64) because "left";
+    let observed = inside;
   } else {
     let inside = 2_u64;
-    claim right: ieq(inside, 2_u64) because "right";
+    let observed = inside;
   }
   return unit;
 }
@@ -1844,15 +1844,15 @@ fn conditional_branches_are_separate_lexical_scopes() {
   Right();
 }
 
-fn get(pick: own Pick) -> result: own unit traps {
+fn get(pick: own Pick) -> result: own unit pure {
   match pick {
     Left() => {
       let inside = 1_u64;
-      claim left: ieq(inside, 1_u64) because "left";
+      let observed = inside;
     }
     Right() => {
       let inside = 2_u64;
-      claim right: ieq(inside, 2_u64) because "right";
+      let observed = inside;
     }
   }
   return unit;
@@ -1865,13 +1865,13 @@ fn get(pick: own Pick) -> result: own unit traps {
         );
     });
 
-    let expired_then_enclosing = br#"fn get(pick: own Bool) -> result: own unit traps {
+    let expired_then_enclosing = br#"fn get(pick: own Bool) -> result: own unit pure {
   if pick {
     let offset = 0_u64;
-    claim inner: ieq(offset, 0_u64) because "inner";
+    let inner = offset;
   }
   let offset = 1_u64;
-  claim outer: ieq(offset, 1_u64) because "outer";
+  let outer = offset;
   return unit;
 }
 "#;
@@ -1882,13 +1882,13 @@ fn get(pick: own Pick) -> result: own unit traps {
         );
     });
 
-    let live_shadow = br#"fn get(pick: own Bool) -> result: own unit traps {
+    let live_shadow = br#"fn get(pick: own Bool) -> result: own unit pure {
   let offset = 0_u64;
   if pick {
     let offset = 1_u64;
-    claim inner_2: ieq(offset, 1_u64) because "inner";
+    let inner = offset;
   }
-  claim outer_2: ieq(offset, 0_u64) because "outer";
+  let outer = offset;
   return unit;
 }
 "#;

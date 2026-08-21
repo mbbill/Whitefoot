@@ -532,10 +532,11 @@ return unit;
 loop @again { break @again; }
 for @range index in 0_u64..1_u64 { break @range; }
 region 'inner { give ordinary; }
-claim check_claim: ordinary because "check";
-claim named: ordinary because "claim";
+let parser_flag = True();
+claim parser_only: parser_flag because "premises: parser_flag is constructed as True() in this parser-only fixture\nderivation: normalization proves parser_flag without any written theorem authority\nconclusion: this occurrence is checker-proved and therefore semantically non-residual\nchecker gap: none; semantic checking must reject it after the parser derives ClaimStmt\nconsumers: no admissible consumer exists because this fixture covers parsing only";
+let named = ordinary;
 match ordinary { Some(value: payload) => { give payload; } }
-if compared { claim then_branch: ordinary because "then"; } else if chosen { break @again; } else { return unit; }
+if compared { let then_branch = ordinary; } else if chosen { break @again; } else { return unit; }
 }
 fn main() -> result: own unit pure {}
 "#;
@@ -603,7 +604,7 @@ const BLOCKS_EFFECT_ROW: &[u8] = b"fn probe() -> result: own unit blocks {\n  re
 const RESERVED_SPELLINGS_AS_IDENTIFIERS: &[u8] =
     b"fn external() -> result: own unit pure {\n  let as = blocks;\n  return unit;\n}\n";
 
-const CLAIM_STATEMENT: &[u8] = b"fn probe() -> result: own unit traps {\n  let flag = True();\n  claim held: flag because \"constructed true\";\n  return unit;\n}\n";
+const CLAIM_STATEMENT: &[u8] = b"fn probe() -> result: own unit traps {\n  let flag = True();\n  claim held: flag because \"premises: flag is constructed as True() in this parser-only fixture\\nderivation: normalization proves flag without any written theorem authority\\nconclusion: this occurrence is checker-proved and therefore semantically non-residual\\nchecker gap: none; semantic checking must reject it after the parser derives ClaimStmt\\nconsumers: no admissible consumer exists because this fixture covers parsing only\";\n  return unit;\n}\n";
 
 const CLAIM_SPELLINGS_AS_IDENTIFIERS: &[u8] =
     b"fn probe() -> result: own unit pure {\n  let claim = 0_i32;\n  return unit;\n}\n";

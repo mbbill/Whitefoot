@@ -567,9 +567,14 @@ fn returning_or_passing_an_owner_derives_no_release_here() {
 #[test]
 fn releases_keep_reverse_declaration_order_and_never_sit_on_a_trapping_edge() {
     let source = format!(
-        "fn ordered(first: own ReadFile, second: own ReadFile, ready: own Bool) \
+        "fn hidden_true() -> result: own Bool pure {{\n  return True();\n}}\n\n\
+         fn need_true(flag: own Bool) -> result: own unit pure contract {{\n  \
+         requires flag;\n}} {{\n  return unit;\n}}\n\n\
+         fn ordered(first: own ReadFile, second: own ReadFile) \
          -> result: own unit external, blocks, traps {{\n  \
-         claim ordering_probe: ready because \"ordering probe\";\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
+         let ready = hidden_true();\n  \
+         claim ordering_probe: ready because \"premises: ready is returned by hidden_true, whose body returns True()\\nderivation: substituting the helper body's returned constructor makes ready evaluate to True()\\nconclusion: ready is true\\nchecker gap: ENT does not publish the result predicate of an uncontracted user call\\nconsumers: the following need_true call requires this exact ready predicate\";\n  \
+         need_true(flag: ready);\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let function = function(program, "ordered");
@@ -697,9 +702,8 @@ fn ordinary_requires_is_not_lowered_as_a_callee_prologue() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let value = 4_u64;
-  claim caller_evidence: ilt(value, 8_u64) because "caller evidence";
   let result = bounded(value: value);
   return exit_status(code: 0_u8);
 }
@@ -768,7 +772,7 @@ fn a_memory_only_release_carries_no_system_action_or_row() {
 /// and `{STEP}` varied per case.
 fn byte_walk_source(middle: &str, step: &str) -> Vec<u8> {
     format!(
-        "command fn main() -> status: own ExitStatus allocates(heap), traps {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = ige(cursor, stop);\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  claim walk_drift: ilt(seen, 1000_u64) because \"walk drift\";\n  return exit_status(code: 0_u8);\n}}\n"
+        "command fn main() -> status: own ExitStatus allocates(heap) {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = ige(cursor, stop);\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }

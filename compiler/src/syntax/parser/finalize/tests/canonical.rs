@@ -61,12 +61,12 @@ fn ordered_canonical_sources_keep_independent_forests() {
 
 #[test]
 fn nested_blocks_arms_and_requires_follow_tree_depth() {
-    let source = br#"fn guarded(value: own i32) -> result: own unit traps contract {
+    let source = br#"fn guarded(value: own i32) -> result: own unit pure contract {
   requires ieq(value, 0_i32);
 } {
   match value {
     Some(payload: item) => {
-      claim drift: ieq(item, payload) because "drift";
+      let drift = ieq(item, payload);
     }
     None() => {
       return unit;
@@ -423,13 +423,13 @@ fn rendering_normalizes_any_parseable_layout_onto_canonical_bytes() {
         // `if`/`else` from a `match` produces the close and the `else` with no
         // idea they share a line; the renderer is what puts them there.
         (
-            b"command fn main() -> status: own ExitStatus traps {\nlet flag = True();\nif flag {\nclaim then: flag because \"then\";\n}\nelse\n{\nclaim else_claim: flag because \"else\";\n}\nreturn unit;\n}\n".as_slice(),
-            b"command fn main() -> status: own ExitStatus traps {\n  let flag = True();\n  if flag {\n    claim then: flag because \"then\";\n  } else {\n    claim else_claim: flag because \"else\";\n  }\n  return unit;\n}\n".as_slice(),
+            b"command fn main() -> status: own ExitStatus pure {\nlet flag = True();\nif flag {\nlet then_value = flag;\n}\nelse\n{\nlet else_value = flag;\n}\nreturn unit;\n}\n".as_slice(),
+            b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let then_value = flag;\n  } else {\n    let else_value = flag;\n  }\n  return unit;\n}\n".as_slice(),
         ),
         // A flattened `else if` chain, likewise joined by the renderer.
         (
-            b"command fn main() -> status: own ExitStatus traps {\nlet flag = True();\nif flag {\nclaim a: flag because \"a\";\n} else if flag {\nclaim b: flag because \"b\";\n} else {\nclaim c: flag because \"c\";\n}\nreturn unit;\n}\n".as_slice(),
-            b"command fn main() -> status: own ExitStatus traps {\n  let flag = True();\n  if flag {\n    claim a: flag because \"a\";\n  } else if flag {\n    claim b: flag because \"b\";\n  } else {\n    claim c: flag because \"c\";\n  }\n  return unit;\n}\n".as_slice(),
+            b"command fn main() -> status: own ExitStatus pure {\nlet flag = True();\nif flag {\nlet first = flag;\n} else if flag {\nlet second = flag;\n} else {\nlet third = flag;\n}\nreturn unit;\n}\n".as_slice(),
+            b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let first = flag;\n  } else if flag {\n    let second = flag;\n  } else {\n    let third = flag;\n  }\n  return unit;\n}\n".as_slice(),
         ),
     ] {
         assert!(!reaches_canonical_syntax(sloppy));
@@ -453,16 +453,16 @@ fn an_item_free_source_renders_as_one_newline() {
 fn if_else_renders_its_join_line_and_indents_both_blocks() {
     // An else-free `if`: one block, ordinary break after the close.
     only_these_trivia_bytes_render(
-        b"command fn main() -> status: own ExitStatus traps {\n  let flag = True();\n  if flag {\n    claim then: flag because \"then\";\n  }\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let then_value = flag;\n  }\n  return unit;\n}\n",
     );
     // A braced `else`: two blocks joined by `} else {` on one line.
     only_these_trivia_bytes_render(
-        b"command fn main() -> status: own ExitStatus traps {\n  let flag = True();\n  if flag {\n    claim then: flag because \"then\";\n  } else {\n    claim else_claim: flag because \"else\";\n  }\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let then_value = flag;\n  } else {\n    let else_value = flag;\n  }\n  return unit;\n}\n",
     );
     // An `else if` chain: the nested `if_stmt` owns the second block, so the
     // outer node has one pair plus an `else`, and still suppresses its break.
     only_these_trivia_bytes_render(
-        b"command fn main() -> status: own ExitStatus traps {\n  let flag = True();\n  if flag {\n    claim then: flag because \"then\";\n  } else if flag {\n    claim chain: flag because \"chain\";\n  } else {\n    claim else_claim: flag because \"else\";\n  }\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let first = flag;\n  } else if flag {\n    let second = flag;\n  } else {\n    let third = flag;\n  }\n  return unit;\n}\n",
     );
     // A `value_if` initializer delivers from both branches.
     only_these_trivia_bytes_render(
@@ -477,7 +477,7 @@ fn if_else_renders_its_join_line_and_indents_both_blocks() {
     // brace. Do not add a special case here: depth would then accumulate and
     // this fixture would indent each arm one level deeper.
     only_these_trivia_bytes_render(
-        b"command fn main() -> status: own ExitStatus traps {\n  let flag = True();\n  if flag {\n    claim a: flag because \"a\";\n  } else if flag {\n    claim b: flag because \"b\";\n  } else if flag {\n    claim c: flag because \"c\";\n  } else {\n    claim d: flag because \"d\";\n  }\n  return unit;\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let first = flag;\n  } else if flag {\n    let second = flag;\n  } else if flag {\n    let third = flag;\n  } else {\n    let fourth = flag;\n  }\n  return unit;\n}\n",
     );
 }
 
