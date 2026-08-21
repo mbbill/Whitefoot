@@ -49,13 +49,19 @@ re-sequenced accordingly.
   state: lane-budget tops out at 2.23x, optimum never past 4 lanes, and at
   16 words/node 8 lanes run up to 7x SLOWER than sequential, while rayon
   reaches 4.46x and even a dumb depth cutoff handles fine grain. Approach:
-  heartbeat-class promotion in `par_runtime.c` (a lane may accept/offer work
-  only after a minimum interval of local work since its last promotion —
-  bounds scheduling overhead as a fraction of useful work; no static size
-  constant, which measurement already falsified). Success criteria against
-  the oracle: no grid cell with workers>=2 slower than WF-sequential
-  (today's 0.13x cells die), and best-case moves toward rayon. Work stealing
-  is the NEXT dig if heartbeat alone leaves a large gap; not this one.
+  **work stealing in `par_runtime.c`** — per-thread deques replace the lane
+  scan and the hand-off, an idle thread takes the oldest (coarsest) entry,
+  and the join reclaims its own offer instead of blocking on it.
+  **Resequenced from heartbeat-class promotion by lead decision,
+  2026-08-21:** rate-limiting kills the pathological cells but cannot lift
+  the ceiling, because the 2.23x limit is measured at the cell where
+  overhead is already amortised 4.6:1 and the skew shape is flat because the
+  caller blocks on the half it handed away — neither of those is a rate. And
+  a heartbeat that promotes the *oldest* pending fork point has to retain
+  fork points, which is a deque, so the chartered dig followed honestly
+  arrives here anyway. Success criteria against the oracle: no grid cell with
+  workers>=2 slower than WF-sequential (today's 0.13x cells die), and
+  absolute wall time at or better than rayon's at the same cell.
 - **Dig 3 — the skew sequential gap (1.22x/1.41x).** WF-seq loses to
   Rust-seq only on the skewed deep tree, growing with per-node work; two
   recorded suspects: box_new allocation order/locality under skewed
@@ -175,6 +181,104 @@ reproduction, never worked around.)
   lowering exits 139 there and the new one exits 0, so it is not a false
   green. Approval classes touched: none — no spec bytes, no conformance or
   compliance evidence, no new repository root entry.
+- Dig 2 stage 1 (C1-C5, done, criteria met): the lane scan and the hand-off
+  are gone. `par_runtime.c` is rewritten around a per-thread Chase-Lev deque:
+  `wf__par_claim` takes a slot from the calling thread's own free list (no
+  atomic, no shared line, no scan), `wf__par_publish` is a buffer store plus
+  one release store of `bottom`, an idle thread steals the **oldest** entry —
+  on a recursive descent the shallowest fork point, so the largest remaining
+  subtree — and `wf__par_join` pops its own offer back and runs it as an
+  ordinary call. The four entry-point signatures, the weak fallback text, and
+  every emitted IR byte are unchanged; the whole stage-1 diff is that one C
+  file. The refusal path is now one thread-local load and a branch, and the
+  bound on outstanding offers is the slot count (a stated bound like
+  `WF_PAR_FRAME_BYTES`, not a grain knob): a thread out of slots refuses its
+  *deepest* fork points and keeps the shallow ones it already offered.
+  **Numbers, full protocol rotation, N=9, 144 cells, 1296 runs, every run
+  byte-identical within and across both languages.** No cell with workers>=2
+  is slower than its own `--par` w=1 column — worst is `bal_d8_w16`/8 at
+  1.16x, and the 0.13x cells are dead (`bal_d8_w16`/8: 4.3245 s -> 0.4905 s).
+  Best cell `bal_d12_w192`/8: 0.3052 s -> 0.1272 s, 4.71x against rayon's
+  4.54x at the same cell. Against rayon's absolute wall time, WF is faster
+  outside the 0.83-1.20x band in 14 of 36 cells (`bal_d8_w16`/4 is 0.2233 s
+  vs rayon's 0.4865 s, 2.18x) and inside the band — parity — in the other 22.
+  **There is no cell where rayon is faster.** Per-fork excess at
+  `bal_d12_w192`/4, ((measured - w1/4) / 2 866 500 forks): **48.8 ns -> 4.80
+  ns**, against rayon's 5.80 ns measured in the same pass. Probes,
+  `timeit.zsh` min-of-7, all byte-identical: `q4.wf` W=64 25.55 s -> 0.2530 s
+  against W=1's 0.5026 s, so the 48.6x-slower cell is now 1.99x *faster*;
+  `bt.wf` W=8 0.3992 s -> 0.0440 s and W=64 4.0218 s -> 0.0550 s (73x).
+  **Dig 1's depth property survives**: `min_stack.wf` bisected under a 1024 KB
+  stack, first failing depth 22 000 pool-off — unchanged — and 22 500 at
+  W=4/W=8, i.e. the pool-on ceiling is at or *above* the pool-off ceiling,
+  because the slot bound stops the reclaim path after the first 64 levels and
+  handed-out work runs on 8 MB worker stacks. **The spin bound is measured,
+  not chosen**: a park and its wake cost 2 097-2 514 ns here, so a thread that
+  looks for work for less than that sleeps to save less than the sleep costs;
+  the spin phase is set to a few multiples of that round trip.
+  **NAMED RISK, disposition — the gate-integrity test is UNTOUCHED, but its
+  guarantee changed character and that belongs in the merge packet.**
+  `the_runtime_replaces_the_modules_weak_refusal` asserts `granted > 0`, and
+  `wf__par_grants` still counts exactly one thing: a frame executed by a
+  thread other than the one that offered it. Counting pushes instead would
+  have been the precise false green the counter exists to catch, and was
+  refused. But under a hand-off every publish incremented it, so `granted > 0`
+  held *structurally*; under a deque a steal must actually happen, so it now
+  holds by *timing*. Measured: 0 failures in 1000 direct runs and 0 in 40
+  runs of the case under `cargo test`. The sensitivity is real and is
+  reported rather than hidden — at an under-set spin bound of 128 rounds the
+  same case failed 24% of the time (48/200), which is how the bound came to be
+  measured rather than guessed. No byte of the test or its fixture changed.
+  **Verification.** `make -C compiler check` exit 0 before and after; all 13
+  `backend::tests::parallel` cases and all 4 `programs::parallel` cases green.
+  Approval classes touched: no spec bytes, no conformance or compliance
+  evidence edited, no new repository root entry.
+- Dig 2 stage 2 (C6, two-version sequential-clone compilation: **built,
+  measured, and NOT landed**). The chartered stage 2 was to emit a sequential
+  clone of every function in an eligible pair's call closure and switch a whole
+  subtree onto it when the runtime signals no demand, so an un-promoted fork
+  point costs zero rather than cheap. It is not the next work, and the reason
+  is measured rather than argued.
+  **(a) The premise it rests on is not true here.** C6's argument is that the
+  un-promoted path carries an overhead the sequential program does not. After
+  stage 1 it does not: `wf_par/1` — the same binary with the pool off — is
+  *faster* than `wf_seq` on 9 of the 12 configs (0.68x to 0.99x; 1.02x worst).
+  There is no tax for the clone to remove; the outlining that would be undone
+  is the same effect Dig 4 is queued to explain.
+  **(b) The win is bounded below the instrument.** The whole excess over
+  ideal-linear at w4 is 1.05x-1.09x at every `w192` cell and 1.07x-1.21x at
+  `w64` — and that excess still contains load imbalance and memory effects, so
+  the fork-cost share is smaller again. A *zero*-cost fork point could not
+  produce a resolvable gain at the coarse cells, whose ratios all sit inside
+  the 0.83-1.20x unresolved band. The cells with real headroom (`w16`, 1.14x
+  to 1.56x) are the ones stage 1 already wins by 1.22x-2.29x, so C6 cannot
+  change a verdict either way. This bound does not depend on how the demand
+  signal is built, which is why it, and not (c), is the load-bearing reason.
+  **(c) The signal it needs costs more than it can win — measured, and
+  attributed by discriminator.** "No demand" needs to know whether any thread
+  is looking for work, which is a word every thread writes as it runs out of
+  work and finds more. Built as a shared seeking bitmask, `bal_d8_w16`/8 went
+  0.4905 s -> 0.9319 s. Disabling only the refusal and keeping the bookkeeping
+  still measured 0.9254 s, so the cost is the two contended read-modify-writes
+  per task on one shared line — not the refusal, which was free to within
+  noise. That is exactly the "no global RMW on the hot path" rule stage 1
+  keeps, broken by the signal C6 requires. Reverted whole; `par_runtime.c` is
+  the committed stage-1 file and `emitter/parallel.rs` was never touched, so
+  no clone symbol, no fifth runtime entry point, and no `cost_shape` census
+  change was introduced.
+- **The residual at the parity cells is not the scheduler, and here is what it
+  is.** After stage 1 there is no cell where rayon is faster, but 22 of 36 sit
+  inside the unresolved band. Two mechanisms, both outside this dig: the
+  **sequential floor**, which is Dig 3's territory — WF-seq is 1.18x to 1.47x
+  slower than Rust-seq on every `w64`/`w192` and skew config, and the cells
+  with the thinnest parallel margin are exactly those (skew_d16_w192: seq
+  1.44x, parallel margin 1.08x; skew_d16_w64: 1.47x and 1.26x) while the cells
+  where WF-seq is at parity are the ones stage 1 wins outright (bal_d8_w16:
+  seq 0.99x, parallel margin 2.29x) — and the **machine ceiling** at the
+  coarsest cells, where 8 threads on 4 performance plus 6 efficiency cores put
+  both implementations near the same limit (bal_d12_w192/8: WF 4.71x, rayon
+  4.54x). The scheduler is already making up a code-generation handicap of up
+  to 47%; the next parallel gain is a sequential one.
 - **Dig 0 deviation, recorded not hidden.** Dig 0 was specified as one
   cohesive commit and initially landed as two with byte-identical subject
   lines: two sessions were writing through one worktree and one shared git

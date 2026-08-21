@@ -467,6 +467,139 @@ fn handing_a_call_out_adds_no_stack_slot() {
     );
 }
 
+/// A recursion far deeper than the runtime can hold offers for, whose whole
+/// result is published as bytes so a wrong schedule is a wrong output.
+///
+/// One eligible pair per activation, and the handed-out member is the deep
+/// side, so every level of the descent offers.
+const DEEP_OVERLAPPED_SPINE: &str = r#"fn leafval(v: own f64) -> result: own f64 pure {
+  return fmul.strict(v, 0.5_f64);
+}
+
+fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
+  let done = ieq(depth, 0_u64);
+  if done {
+    return v;
+  }
+  let next = depth -wrap 1_u64;
+  let scaled = fmul.strict(v, 1.0009765625_f64);
+  let a = spine(depth: next, v: scaled);
+  let b = leafval(v: v);
+  return fadd.strict(a, b);
+}
+
+fn low_byte(v: own u64) -> result: own u8 pure {
+  let nibble = iand(v, 255_u64);
+  match cvt<u64, u8>(nibble) {
+    Ok(value: byte) => {
+      return byte;
+    }
+    Err(error: wide) => {
+      return 0_u8;
+    }
+  }
+}
+
+fn spell['d](destination: &uniq 'd buffer<u8>, value: own u64) -> result: own u64 reads('d), writes('d) {
+  let cursor = 0_u64;
+  let rest = value;
+  loop @octets {
+    let done = ige(cursor, 8_u64);
+    if done {
+      break @octets;
+    }
+    let room = len(deref(destination));
+    let writable = ilt(cursor, room);
+    if writable {
+      let byte = low_byte(v: rest);
+      set deref(destination)[cursor] = byte;
+    }
+    set rest = irotr(rest, 8_u32);
+    set cursor = cursor +wrap 1_u64;
+  }
+  return cursor;
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+  let total = spine(depth: DEPTH_u64, v: 1.0009765625_f64);
+  let bits = reinterpret<f64, u64>(total);
+  let report = buffer_new(8_u64, 0_u8);
+  region 'r {
+    let filled = spell<'r>(destination: &uniq 'r report, value: bits);
+  }
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
+        Ok(value: next) => {
+          return exit_status(code: 0_u8);
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}
+"#;
+
+/// A recursion deeper than the runtime holds offers for still computes the
+/// sequential answer, at every worker count.
+///
+/// The runtime can only hold a bounded number of outstanding offers per
+/// thread, so a descent this deep runs out partway down and every offer below
+/// that point is refused — which puts three different edges in one run: the
+/// reclaimed offer near the root, the refused offer below the bound, and
+/// whatever a thief took. Nothing else here exercises the exhausted bound,
+/// and a runtime that mishandled it would either lose a result or reuse a
+/// frame that is still live, both of which move the published bytes.
+#[test]
+fn a_recursion_deeper_than_the_offer_bound_still_publishes_the_sequential_bytes() {
+    const DEPTH: u32 = 4_000;
+
+    let source = DEEP_OVERLAPPED_SPINE
+        .replace("DEPTH", &DEPTH.to_string())
+        .into_bytes();
+    let module = emit_with_overlap(&source);
+    assert!(
+        module_requires_parallel_runtime(&module),
+        "the fixture must hand work out, or this case is vacuous"
+    );
+    let directory = test_directory();
+    let executable = build_executable(&module, &directory);
+
+    let mut runs = Vec::new();
+    for workers in ["1", "2", "4", "8"] {
+        for _ in 0..3 {
+            let output = Command::new(&executable)
+                .env("WF_WORKERS", workers)
+                .output()
+                .expect("run the deep overlapped spine");
+            assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
+            assert_eq!(
+                output.stdout.len(),
+                8,
+                "the spine must report eight bytes at WF_WORKERS={workers}"
+            );
+            runs.push((format!("WF_WORKERS={workers}"), output.stdout));
+        }
+    }
+    // The reference is the same source compiled with no hand-outs at all, so
+    // the comparison is against the sequential answer rather than against the
+    // overlapped build agreeing with itself.
+    let plain = test_directory();
+    let sequential = build_executable(&emit(&source), &plain);
+    let reference = Command::new(&sequential)
+        .output()
+        .expect("run the sequential spine");
+    assert_eq!(reference.status.code(), Some(0));
+    runs.push(("no hand-outs".to_owned(), reference.stdout));
+
+    identical(&runs).expect("a deep overlapped recursion must publish the sequential bytes");
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+    std::fs::remove_dir_all(&plain).expect("remove the test directory");
+}
+
 /// A pair the judgment denies emits exactly the sequential calls, with no
 /// frame, no thunk, no offer, and no join anywhere in the module.
 #[test]
