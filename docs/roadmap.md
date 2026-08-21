@@ -1,14 +1,16 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 45 (v0.33 activated; claim-only direction terminal)
+Revision: 47 (claim-residual branch execution chartered in batch 0075)
 
 The active language authority is v0.33 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
 Exact v0.8 through v0.32 are immutable flat archives. The execution plan at
-[`docs/current-plan.md`](current-plan.md) is COMPLETE (claim-only runtime trap
-surface and static contracts) and authorizes no further work. Project law is the
+[`docs/current-plan.md`](current-plan.md) is PROPOSED (claim residual
+canonicality) on the work branch; only an owner-approved merge makes it
+authoritative on `main`.
+Project law is the
 [`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -85,6 +87,16 @@ Which gap matters next is selected by a project, never by checklist length.
   contract exception with one closed-world command entry. v0.33 installs this
   successor together with batch 0072's completed outline:CAND-8 language
   deltas; the direction and its plan are terminal.
+- outline:PROOF-10 is the owner-selected lifecycle correction after terminal
+  outline:PROOF-9. It preserves `claim` as the sole writer-reachable runtime
+  trap and preserves runtime execution for every accepted claim. It narrows the
+  source construct to one human-proved, checker-unknown, individually necessary
+  proof residual. Mechanically detectable redundant, contradictory, malformed,
+  and unused forms become source errors; assertion, abort, test-oracle, and
+  possible-failure intent is barred from approved programs and repaired by the
+  author even when only semantic review can recognize its disguise. Its
+  proposed plan becomes mainline authority only through the
+  repository's owner-approved merge boundary.
 - outline:PERF-1 establishes ordinary code quality before a new optimizer fact or
   strategy is blamed or credited.
 - Every production fact consumer in outline:PROOF-1 through outline:PROOF-4 and outline:PROOF-7 depends
@@ -419,6 +431,85 @@ creating writer trust or weakening the checked safety envelope.
   [system capability architecture](#outlinebound-1) ·
   [batch 0072 closure](done/0072-searching-wfgrep.md) ·
   [batch 0073 closure](done/0073-claim-only-contracts.md).
+
+### outline:PROOF-10 — Claim residual source canonicality
+
+`[in progress: branch 0075]` `[next: exact candidate and owner merge packet]`
+
+- **Goal:** make every claim in a successful checker result one mechanically
+  qualified, individually necessary runtime-residual candidate, and every
+  claim in a human-approved program an actually proved residual. A claim is
+  neither an assertion, abort, test oracle, nor conditional. Its predicate is
+  universally true at that point, unknown to the normative checker, total and
+  observational to evaluate, and has a versioned canonical contribution normal
+  form whose every component is checker-unknown and load-bearing rather than a
+  bundle with known or unused members. It is explained by an actual derivation in
+  `because` and needed by a fixed source-admission proof. Every
+  compiler-accepted claim remains retained, contributes its exact source
+  effects including `traps`, lowers normally, and is evaluated at every dynamic
+  reach in every build mode.
+- **Selection:** the compiler mechanically enforces the residual shape; human,
+  AI-assisted, or offline-prover review owns theorem truth, proposition
+  minimality, and consumer authenticity. The compiler checks a deterministic
+  five-field `because` shape but does not pretend to validate its English.
+  Exact positive and negative lifecycle queries cover every admitted canonical
+  predicate/origin image. `Contrib(P)` uses an operator-specific sound signed
+  conjunctive basis and leaves only justified roots such as positive
+  disjunction as singletons; xor/equivalence may not default to singleton;
+  finite deterministic parent introduction must reconstruct exact P from
+  checker facts plus its contributions through one shared, non-cyclic ENT rule
+  in every proof view. Proved, refuted, contradictory,
+  inconsistent, overlapping, and
+  non-load-bearing candidates are source errors. `claim True()` is redundant
+  and `claim False()` is illegal, never an intentional-abort form. Individual
+  necessity is simultaneous `Full-minus(c,a)` for each canonical component plus
+  whole-occurrence `Full-minus(c)` over a fixed otherwise-valid candidate set.
+  Every component and occurrence must make at least one non-contradictory,
+  non-explosive closed-list admission root stop discharging through the exact
+  S3 event. At a join, c need dominate only its c-dependent predecessor
+  lineage, while every reachable predecessor contributing to the root must
+  independently have non-contradictory, non-explosive legal support.
+  All-claims U plus occurrence in one canonical proof is deliberately
+  insufficient. This establishes checker-relative component/occurrence
+  irredundancy, not a unique proof basis or globally weakest proposition.
+  Accepted-claim runtime execution is unchanged, and no optional solver
+  participates in ordinary source acceptance.
+- **Current:** active v0.33 accepts redundant claims with an advisory, permits
+  constructed `False()` and non-load-bearing claims, admits any `own Bool`
+  condition, and stores arbitrary `because` text. The compiler already has the
+  right pre-S3 lifecycle point, complete/U/B flows, derivation ancestry, and
+  one retained lowering path, but U blinds all claims and cannot prove
+  individual necessity. The in-scope external corpus has 241 real-program and
+  410 protected claims: 651 total, including 79 direct `False()`, five direct
+  `True()`, and 43 more currently measured real/protected redundancies. The
+  repository separately contains 15 claims in dormant codegen files and 14 in
+  historical research probes; they remain explicitly excluded unchanged unless
+  a live caller or gate is found, and create no per-item migration work. Every
+  in-scope claim and justification requires review. The relevant MCTS-Mem nodes
+  retain the old defensive/advisory choice and require paired redecision.
+- **Missing / next:** once a recorded owner direction explicitly charters
+  branch execution, freeze the full
+  claim/effect/diagnostic inventory, prototype and measure exact per-claim
+  counterfactual flow, falsify proof-predicate, contribution-normal-form,
+  Boolean-reconstruction, generic, and source-schema reachability boundaries,
+  and test hidden compound origins, known-plus-residual parent construction,
+  positive-disjunction singleton, partial-known xor/equivalence, downstream
+  explosion, over-strong facts, and
+  manufactured consumers. Build the minimal deterministic semantic path,
+  migrate source by purpose, and complete the exact specification/protected,
+  project-law, AI-author-law, and paired-MCTS candidate on the work branch.
+  Rebase and re-audit it before presenting its digest, diffs, gates, batch
+  audit, and frozen prospective activation/closure transformation in the single
+  owner merge packet; the approved mechanical activation is the only route to
+  `main`. Acceptance requires a reviewed derivation and at
+  least one authentic terminal consumer for every surviving claim,
+  failure-atomic machine rejection with no artifact, exclusion of every
+  review-invalid claim from approved positive/production programs (while
+  explicitly classified negative fixtures remain), unchanged execution for
+  every retained claim, exact accepted-set and first-diagnostic differentials,
+  full gates, MCTS lint, and adversarial audit.
+- **Facts:** [claim residual canonicality investigation](../research/investigations/obligation-discharge/CLAIM-RESIDUAL-CANONICALITY.md) ·
+  [batch 0073 claim-only closure](done/0073-claim-only-contracts.md).
 
 ## Verification and compiler trust
 
