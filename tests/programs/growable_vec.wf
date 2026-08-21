@@ -8,78 +8,117 @@ fn vec_new() -> result: own ByteVec allocates(heap) {
   return ByteVec(buf: move empty, fill: 0_u64);
 }
 
-fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> result: own unit reads('a), writes('a), allocates(heap), traps {
+fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> result: own Result<unit, Overflow> reads('a), writes('a), allocates(heap) {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
-  let cap_headroom = ilt(cap, 18446744073709551608_u64);
-  claim capacity_has_headroom: cap_headroom because "a byte vector capacity leaves room for one growth step";
   let full = ige(count, cap);
   if full {
-    let ncap = cap + 8_u64;
+    let ncap = propagate cap +checked 8_u64;
     let nbuf = buffer_new(ncap, x);
+    if ilt(cap, ncap) {
+    } else {
+      let overflow = Overflow();
+      return Err<unit, Overflow>(error: overflow);
+    }
     for @copy i in 0_u64..cap {
       let e = deref(v).buf[i];
       set nbuf[i] = e;
     }
     let old = replace deref(v).buf = move nbuf;
-    let grown = cap + 1_u64;
+    let grown = propagate cap +checked 1_u64;
     set deref(v).fill = grown;
-    return unit;
+    return Ok<unit, Overflow>(value: unit);
   }
   set deref(v).buf[count] = x;
-  let bumped = count + 1_u64;
+  let bumped = propagate count +checked 1_u64;
   set deref(v).fill = bumped;
-  return unit;
+  return Ok<unit, Overflow>(value: unit);
 }
 
-fn bytes_append['d, 's](dst: &uniq 'd ByteVec, src: &'s buffer<u8>) -> result: own unit reads('d 's), writes('d), allocates(heap), traps {
+fn bytes_append['d, 's](dst: &uniq 'd ByteVec, src: &'s buffer<u8>) -> result: own Result<unit, Overflow> reads('d 's), writes('d), allocates(heap) {
   let count = len(deref(src));
   for @append i in 0_u64..count {
     let byte = deref(src)[i];
     region 'c {
-      vec_push<'c>(v: &uniq 'c deref(dst), x: byte);
+      let pushed = propagate vec_push<'c>(v: &uniq 'c deref(dst), x: byte);
     }
   }
-  return unit;
+  return Ok<unit, Overflow>(value: unit);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let v = vec_new();
   let b = 7_u8;
   for @seed i in 0_u64..20_u64 {
     region 'push {
-      vec_push<'push>(v: &uniq 'push v, x: b);
+      match vec_push<'push>(v: &uniq 'push v, x: b) {
+        Ok(value: pushed) => {
+        }
+        Err(error: overflow) => {
+          return exit_status(code: 1_u8);
+        }
+      }
     }
     set b = b +wrap 7_u8;
   }
   let total = v.fill;
-  claim vector_length: ieq(total, 20_u64) because "vector length";
+  if ieq(total, 20_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let cap_now = len(v.buf);
-  claim vector_capacity: ieq(cap_now, 24_u64) because "vector capacity";
+  if ieq(cap_now, 24_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   if ilt(3_u64, cap_now) {
     let third = v.buf[3_u64];
-    claim vector_content_at_3: ieq(third, 28_u8) because "vector content at 3";
+    if ieq(third, 28_u8) {
+    } else {
+      return exit_status(code: 1_u8);
+    }
   } else {
-    claim vector_capacity_too_small: False() because "vector capacity too small";
+    return exit_status(code: 1_u8);
   }
   let s = vec_new();
   region 'first {
-    vec_push<'first>(v: &uniq 'first s, x: 65_u8);
+    match vec_push<'first>(v: &uniq 'first s, x: 65_u8) {
+      Ok(value: pushed) => {
+      }
+      Err(error: overflow) => {
+        return exit_status(code: 1_u8);
+      }
+    }
   }
   let raw = buffer_new(5_u64, 33_u8);
   region 'grow {
-    bytes_append<'grow, 'grow>(dst: &uniq 'grow s, src: &'grow raw);
+    match bytes_append<'grow, 'grow>(dst: &uniq 'grow s, src: &'grow raw) {
+      Ok(value: appended) => {
+      }
+      Err(error: overflow) => {
+        return exit_status(code: 1_u8);
+      }
+    }
   }
   let stored = s.fill;
-  claim byte_string_length: ieq(stored, 6_u64) because "byte string length";
+  if ieq(stored, 6_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let scap = len(s.buf);
   if ilt(5_u64, scap) {
     let last = s.buf[5_u64];
-    claim byte_string_tail: ieq(last, 33_u8) because "byte string tail";
+    if ieq(last, 33_u8) {
+    } else {
+      return exit_status(code: 1_u8);
+    }
     let head = s.buf[0_u64];
-    claim byte_string_head: ieq(head, 65_u8) because "byte string head";
+    if ieq(head, 65_u8) {
+    } else {
+      return exit_status(code: 1_u8);
+    }
   } else {
-    claim byte_string_capacity_too_small: False() because "byte string capacity too small";
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

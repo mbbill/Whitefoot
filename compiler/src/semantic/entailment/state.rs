@@ -10,8 +10,10 @@
 use std::collections::{HashMap, HashSet};
 use std::mem::size_of;
 
-use super::super::goal::{GoalExpression, GoalProjection};
-use super::super::model::{BindingId, IntegerType};
+use super::super::goal::{GoalExpression, GoalOperation, GoalProjection};
+use super::super::model::{
+    BindingId, CheckedBooleanOperation, CheckedValue, IntegerType,
+};
 use super::VerifiedPostconditionSummaryRef;
 use super::term::{LengthBound, TermId, TermKind, TermTable, ZERO, type_range};
 use crate::{NodePath, PreludeDeclarationId};
@@ -120,7 +122,6 @@ impl GoalNormalization {
     }
 
     /// Exact selected clause relations, for retained-proof verification.
-    #[cfg(test)]
     pub(crate) fn clause_relations(&self, sign: GoalSign, clause: u32) -> Option<Vec<Relation>> {
         self.clauses(sign)
             .get(usize::try_from(clause).ok()?)?
@@ -137,6 +138,15 @@ impl GoalNormalization {
                 })
             })
             .collect()
+    }
+
+    /// The unique conjunction basis for a signed goal, when that sign has
+    /// exactly one complete clause. Alternative clauses are deliberately not
+    /// collapsed into one claim component.
+    pub(crate) fn conjunctive_relations(&self, sign: GoalSign) -> Option<Vec<Relation>> {
+        (self.clauses(sign).len() == 1)
+            .then(|| self.clause_relations(sign, 0))
+            .flatten()
     }
 }
 
@@ -171,6 +181,7 @@ pub(crate) enum FlowEventKind {
     S9,
     S10,
     S11,
+    ClaimReconstruction,
     Join,
     Snapshot,
     PostconditionEntryImageInvalidation,
@@ -188,6 +199,8 @@ pub(crate) enum FlowEventKind {
 pub(crate) struct FlowEvent {
     pub(crate) kind: FlowEventKind,
     pub(crate) node_path: Option<NodePath>,
+    /// Present only for one component-specific S3 source event.
+    pub(crate) claim_component: Option<u32>,
 }
 
 /// Canonical retained identity for one dense goal ID after analysis.
@@ -262,6 +275,12 @@ pub(crate) enum DerivationNode {
         sign: GoalSign,
         event: FlowEventId,
     },
+    /// The canonical truth sign of a Bool literal in the finite goal
+    /// universe. This is an ordinary ENT-4 ground, not a source event.
+    BooleanLiteral {
+        goal: GoalId,
+        sign: GoalSign,
+    },
     ImplicitBound {
         left: TermId,
         right: TermId,
@@ -330,6 +349,13 @@ pub(crate) enum DerivationNode {
         goal: GoalId,
         sign: GoalSign,
         clause: u32,
+        parents: Vec<DerivationId>,
+    },
+    /// One finite truth-table introduction for an already-interned Boolean
+    /// parent (`band`, `bor`, or `bnot`).
+    BooleanIntroduction {
+        goal: GoalId,
+        sign: GoalSign,
         parents: Vec<DerivationId>,
     },
     JoinBound {
@@ -505,6 +531,7 @@ impl DerivationNode {
             Self::PostconditionAggregate { parents, .. }
             | Self::IntegerDomain { parents, .. }
             | Self::GoalNormalization { parents, .. }
+            | Self::BooleanIntroduction { parents, .. }
             | Self::PostconditionCall {
                 view_parents: parents,
                 ..
@@ -516,6 +543,7 @@ impl DerivationNode {
             Self::SourceBound { .. }
             | Self::SourceDistinct { .. }
             | Self::SourceGoal { .. }
+            | Self::BooleanLiteral { .. }
             | Self::ImplicitBound { .. } => {}
         }
     }
@@ -564,9 +592,9 @@ impl DerivationNode {
             | Self::JoinContradiction { parents, .. }
             | Self::PostconditionDeliveryJoin { parents, .. } => parents.len(),
             Self::PostconditionAggregate { parents, .. } => parents.len(),
-            Self::IntegerDomain { parents, .. } | Self::GoalNormalization { parents, .. } => {
-                parents.len()
-            }
+            Self::IntegerDomain { parents, .. }
+            | Self::GoalNormalization { parents, .. }
+            | Self::BooleanIntroduction { parents, .. } => parents.len(),
             Self::PostconditionCall {
                 a0_parents,
                 view_parents,
@@ -575,6 +603,7 @@ impl DerivationNode {
             Self::SourceBound { .. }
             | Self::SourceDistinct { .. }
             | Self::SourceGoal { .. }
+            | Self::BooleanLiteral { .. }
             | Self::ImplicitBound { .. } => 0,
         }
     }
@@ -593,34 +622,36 @@ impl DerivationNode {
             Self::SourceBound { .. } => 0,
             Self::SourceDistinct { .. } => 1,
             Self::SourceGoal { .. } => 2,
-            Self::ImplicitBound { .. } => 3,
-            Self::TransitiveBound { .. } => 4,
-            Self::StrengthenedBound { .. } => 5,
-            Self::SubsumedBound { .. } => 6,
-            Self::Equality { .. } => 7,
-            Self::DisequalityFromStrictBound { .. } => 8,
-            Self::GoalProjection { .. } => 9,
-            Self::L0Contradiction { .. } => 10,
-            Self::GoalContradiction { .. } => 11,
-            Self::JoinBound { .. } => 12,
-            Self::JoinDistinct { .. } => 13,
-            Self::JoinGoal { .. } => 14,
-            Self::JoinContradiction { .. } => 15,
-            Self::MaterializedBound { .. } => 16,
-            Self::MaterializedDistinct { .. } => 17,
-            Self::MaterializedGoal { .. } => 18,
-            Self::MaterializedContradiction { .. } => 19,
-            Self::PostconditionExit { .. } => 20,
-            Self::PostconditionAggregate { .. } => 21,
-            Self::PostconditionCall { .. } => 22,
-            Self::PostconditionDirectResult { .. } => 23,
-            Self::PostconditionDirectMatch { .. } => 24,
-            Self::PostconditionDirectReceiver { .. } => 25,
-            Self::PostconditionSelectedReceiver { .. } => 26,
-            Self::PostconditionGive { .. } => 27,
-            Self::PostconditionDeliveryJoin { .. } => 28,
-            Self::IntegerDomain { .. } => 29,
-            Self::GoalNormalization { .. } => 30,
+            Self::BooleanLiteral { .. } => 3,
+            Self::ImplicitBound { .. } => 4,
+            Self::TransitiveBound { .. } => 5,
+            Self::StrengthenedBound { .. } => 6,
+            Self::SubsumedBound { .. } => 7,
+            Self::Equality { .. } => 8,
+            Self::DisequalityFromStrictBound { .. } => 9,
+            Self::GoalProjection { .. } => 10,
+            Self::GoalNormalization { .. } => 11,
+            Self::BooleanIntroduction { .. } => 12,
+            Self::L0Contradiction { .. } => 13,
+            Self::GoalContradiction { .. } => 14,
+            Self::JoinBound { .. } => 15,
+            Self::JoinDistinct { .. } => 16,
+            Self::JoinGoal { .. } => 17,
+            Self::JoinContradiction { .. } => 18,
+            Self::MaterializedBound { .. } => 19,
+            Self::MaterializedDistinct { .. } => 20,
+            Self::MaterializedGoal { .. } => 21,
+            Self::MaterializedContradiction { .. } => 22,
+            Self::PostconditionExit { .. } => 23,
+            Self::PostconditionAggregate { .. } => 24,
+            Self::PostconditionCall { .. } => 25,
+            Self::PostconditionDirectResult { .. } => 26,
+            Self::PostconditionDirectMatch { .. } => 27,
+            Self::PostconditionDirectReceiver { .. } => 28,
+            Self::PostconditionSelectedReceiver { .. } => 29,
+            Self::PostconditionGive { .. } => 30,
+            Self::PostconditionDeliveryJoin { .. } => 31,
+            Self::IntegerDomain { .. } => 32,
         }
     }
 }
@@ -634,6 +665,7 @@ pub(crate) struct DerivationMetrics {
     pub(crate) projected_goal_roots: u32,
     pub(crate) contradiction_roots: u32,
     pub(crate) claim_lifecycle_roots: u32,
+    pub(crate) claim_evidence_roots: u32,
     pub(crate) unique_nodes: u32,
     pub(crate) parent_edges: u32,
     pub(crate) maximum_depth: u32,
@@ -704,6 +736,14 @@ pub(crate) enum DerivationRootKind {
         occurrence: u32,
         kind: ClaimLifecycleKind,
     },
+    ClaimComponent {
+        occurrence: u32,
+        component: u32,
+    },
+    ClaimReconstruction {
+        occurrence: u32,
+        direct: bool,
+    },
     Strict {
         occurrence: u32,
         kind: StrictDerivationRootKind,
@@ -762,7 +802,24 @@ impl DerivationLedger {
             u32::try_from(self.events.len())
                 .expect("ENT flow event inventory exceeds the u32 identity space"),
         );
-        self.events.push(FlowEvent { kind, node_path });
+        self.events.push(FlowEvent {
+            kind,
+            node_path,
+            claim_component: None,
+        });
+        id
+    }
+
+    pub(crate) fn claim_event(&mut self, node_path: NodePath, component: u32) -> FlowEventId {
+        let id = FlowEventId(
+            u32::try_from(self.events.len())
+                .expect("ENT flow event inventory exceeds the u32 identity space"),
+        );
+        self.events.push(FlowEvent {
+            kind: FlowEventKind::S3,
+            node_path: Some(node_path),
+            claim_component: Some(component),
+        });
         id
     }
 
@@ -820,6 +877,7 @@ impl DerivationLedger {
     /// Returns the exact retained proof nodes under `root` whose own event has
     /// the requested kind. The traversal follows the already-retained proof
     /// references and performs no closure or semantic reconstruction.
+    #[cfg(test)]
     pub(crate) fn event_premises(
         &self,
         root: DerivationId,
@@ -846,6 +904,97 @@ impl DerivationLedger {
         }
         premises.sort_by_key(|(_, id)| *id);
         premises
+    }
+
+    /// Returns the exact component-specific S3 premises below one retained
+    /// terminal root. Claim evidence and counterfactual reports use the
+    /// component ordinal as authority; a path-only S3 inventory is not
+    /// precise enough when one occurrence contributes multiple facts.
+    pub(crate) fn claim_component_premises(
+        &self,
+        root: DerivationId,
+    ) -> Option<Vec<(NodePath, u32, DerivationId)>> {
+        let mut seen = vec![false; self.nodes.len()];
+        let mut stack = vec![root];
+        let mut premises = Vec::new();
+        while let Some(id) = stack.pop() {
+            let index = id.0 as usize;
+            if seen[index] {
+                continue;
+            }
+            seen[index] = true;
+            let node = &self.nodes[index];
+            if let Some(event) =
+                node_event(node).and_then(|event| self.events.get(event.0 as usize))
+                && event.kind == FlowEventKind::S3
+            {
+                let (Some(node_path), Some(component)) =
+                    (&event.node_path, event.claim_component)
+                else {
+                    return None;
+                };
+                premises.push((node_path.clone(), component, id));
+            }
+            node.for_each_retained_reference(|parent| stack.push(parent));
+        }
+        premises.sort_by_key(|(_, component, id)| (*component, *id));
+        Some(premises)
+    }
+
+    /// Whether one retained proof reaches the selected component-specific S3
+    /// authority. `component == None` matches any component of the occurrence.
+    pub(crate) fn reaches_claim_component(
+        &self,
+        root: DerivationId,
+        node_path: &NodePath,
+        component: Option<u32>,
+    ) -> bool {
+        let mut seen = vec![false; self.nodes.len()];
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            let index = id.0 as usize;
+            if seen[index] {
+                continue;
+            }
+            seen[index] = true;
+            let node = &self.nodes[index];
+            if let Some(event) = node_event(node).and_then(|id| self.events.get(id.0 as usize))
+                && event.kind == FlowEventKind::S3
+                && event.node_path.as_ref() == Some(node_path)
+                && event.claim_component.is_some()
+                && component.is_none_or(|component| event.claim_component == Some(component))
+            {
+                return true;
+            }
+            node.for_each_retained_reference(|parent| stack.push(parent));
+        }
+        false
+    }
+
+    /// CLM-2 consumers must not succeed through ex-falso, including a
+    /// contradictory predecessor hidden below a non-contradictory join.
+    pub(crate) fn is_non_explosive(&self, root: DerivationId) -> bool {
+        let mut seen = vec![false; self.nodes.len()];
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            let index = id.0 as usize;
+            if seen[index] {
+                continue;
+            }
+            seen[index] = true;
+            let node = &self.nodes[index];
+            if matches!(
+                node,
+                DerivationNode::L0Contradiction { .. }
+                    | DerivationNode::GoalContradiction { .. }
+                    | DerivationNode::JoinContradiction { .. }
+                    | DerivationNode::MaterializedContradiction { .. }
+            ) {
+                return false;
+            }
+            node.for_each_retained_reference(|parent| stack.push(parent));
+        }
+        true
     }
 
     /// Whether this proof's same-view derivation ancestry consumes an S12
@@ -1043,9 +1192,17 @@ impl DerivationLedger {
     fn measure(&self) -> DerivationMetrics {
         let mut metrics = DerivationMetrics::default();
         for root in &self.roots {
-            if matches!(root.kind, DerivationRootKind::ClaimLifecycle { .. }) {
-                metrics.claim_lifecycle_roots += 1;
-                continue;
+            match root.kind {
+                DerivationRootKind::ClaimLifecycle { .. } => {
+                    metrics.claim_lifecycle_roots += 1;
+                    continue;
+                }
+                DerivationRootKind::ClaimComponent { .. }
+                | DerivationRootKind::ClaimReconstruction { .. } => {
+                    metrics.claim_evidence_roots += 1;
+                    continue;
+                }
+                _ => {}
             }
             match &self.nodes[root.node.0 as usize] {
                 DerivationNode::SourceGoal { .. }
@@ -1170,6 +1327,15 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         DerivationNode::SourceBound { event, .. }
         | DerivationNode::SourceDistinct { event, .. }
         | DerivationNode::SourceGoal { event, .. } => (index == 0).then_some(event.0),
+        DerivationNode::BooleanLiteral { goal, sign } => [
+            goal.0,
+            match sign {
+                GoalSign::Positive => 0,
+                GoalSign::Negative => 1,
+            },
+        ]
+        .get(index)
+        .copied(),
         DerivationNode::ImplicitBound { kind, .. } => (index == 0).then_some(match kind {
             ImplicitBoundKind::Reflexive => 0,
             ImplicitBoundKind::Constant => 1,
@@ -1212,6 +1378,20 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         .get(index)
         .copied()
         .or_else(|| parents.get(index.checked_sub(3)?).map(|parent| parent.0)),
+        DerivationNode::BooleanIntroduction {
+            goal,
+            sign,
+            parents,
+        } => [
+            goal.0,
+            match sign {
+                GoalSign::Positive => 0,
+                GoalSign::Negative => 1,
+            },
+        ]
+        .get(index)
+        .copied()
+        .or_else(|| parents.get(index.checked_sub(2)?).map(|parent| parent.0)),
         DerivationNode::SubsumedBound { parent, .. }
         | DerivationNode::DisequalityFromStrictBound { parent, .. }
         | DerivationNode::GoalProjection { parent, .. }
@@ -1437,7 +1617,8 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
             remap_id(negative, remap);
         }
         DerivationNode::IntegerDomain { parents, .. }
-        | DerivationNode::GoalNormalization { parents, .. } => {
+        | DerivationNode::GoalNormalization { parents, .. }
+        | DerivationNode::BooleanIntroduction { parents, .. } => {
             for parent in parents {
                 remap_id(parent, remap);
             }
@@ -1486,6 +1667,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         DerivationNode::SourceBound { .. }
         | DerivationNode::SourceDistinct { .. }
         | DerivationNode::SourceGoal { .. }
+        | DerivationNode::BooleanLiteral { .. }
         | DerivationNode::ImplicitBound { .. } => {}
     }
 }
@@ -1554,6 +1736,10 @@ impl GoalTable {
 
     pub(crate) fn expression(&self, id: GoalId) -> &GoalExpression {
         &self.records[id.0 as usize].expression
+    }
+
+    pub(crate) fn id(&self, expression: &GoalExpression) -> Option<GoalId> {
+        self.ids.get(expression).copied()
     }
 
     pub(crate) fn projection(&self, id: GoalId) -> Option<&Relation> {
@@ -1645,6 +1831,12 @@ pub(crate) struct OutcomeFact {
 #[derive(Clone, Debug)]
 pub(crate) struct FactState {
     view: ProofView,
+    /// Term-universe size for which `bounds` and `distinct` already contain
+    /// the complete ENT-4 relation closure. S11 materialization and ENT-5
+    /// joins produce such states. Endpoint kills preserve closure; adding a
+    /// source relation, removing a proof candidate, or interning a new term
+    /// invalidates the marker.
+    closed_term_count: Option<u32>,
     /// The loop rule's empty join: the contradictory all-derivable state, in
     /// which every relation is derivable and every fact is present. Z has
     /// empty support, so `Z - Z <= -1` never dies and the flag is absorbing
@@ -1679,6 +1871,9 @@ pub(crate) struct FactState {
     /// Complete still-valid pure/total origin expansion of an ordinary let.
     /// The binding's own direct value goal is intentionally separate.
     pub(crate) goal_origins: HashMap<BindingId, GoalId>,
+    /// Bool value initializers with two or more distinct live source goals.
+    /// Such a receiver has no unique claim contribution expansion [CLM-2].
+    pub(crate) ambiguous_goal_origins: HashSet<BindingId>,
 }
 
 impl Default for FactState {
@@ -1691,6 +1886,7 @@ impl FactState {
     pub(crate) fn for_view(view: ProofView) -> Self {
         Self {
             view,
+            closed_term_count: None,
             all_derivable: false,
             contradiction: None,
             bounds: HashMap::new(),
@@ -1704,6 +1900,7 @@ impl FactState {
             opaque: HashSet::new(),
             opaque_proofs: HashMap::new(),
             goal_origins: HashMap::new(),
+            ambiguous_goal_origins: HashSet::new(),
         }
     }
 
@@ -1876,14 +2073,54 @@ impl FactState {
         ledger: &mut DerivationLedger,
         event: FlowEventId,
     ) {
-        if !self.all_derivable {
-            let fact = (goal, sign);
-            let proof =
-                ledger.intern_for(self.view, DerivationNode::SourceGoal { goal, sign, event });
-            if self.opaque.insert(fact) || ledger.better(proof, self.opaque_proofs[&fact]) {
-                self.opaque_proofs.insert(fact, proof);
-            }
+        let _ = self.establish_goal_with_proof(goal, sign, ledger, event);
+    }
+
+    pub(crate) fn establish_goal_with_proof(
+        &mut self,
+        goal: GoalId,
+        sign: GoalSign,
+        ledger: &mut DerivationLedger,
+        event: FlowEventId,
+    ) -> DerivationId {
+        let fact = (goal, sign);
+        let proof = ledger.intern_for(
+            self.view,
+            DerivationNode::SourceGoal { goal, sign, event },
+        );
+        if !self.all_derivable
+            && (self.opaque.insert(fact) || ledger.better(proof, self.opaque_proofs[&fact]))
+        {
+            self.opaque_proofs.insert(fact, proof);
         }
+        proof
+    }
+
+    pub(crate) fn establish_goal_from_proof(
+        &mut self,
+        goal: GoalId,
+        sign: GoalSign,
+        parent: DerivationId,
+        ledger: &mut DerivationLedger,
+        event: FlowEventId,
+    ) -> Option<DerivationId> {
+        if self.all_derivable {
+            return None;
+        }
+        let fact = (goal, sign);
+        let proof = ledger.intern_for(
+            self.view,
+            DerivationNode::MaterializedGoal {
+                goal,
+                sign,
+                event,
+                parent,
+            },
+        );
+        if self.opaque.insert(fact) || ledger.better(proof, self.opaque_proofs[&fact]) {
+            self.opaque_proofs.insert(fact, proof);
+        }
+        Some(proof)
     }
 
     pub(crate) fn establish_distinct_with_proof(
@@ -1920,6 +2157,7 @@ impl FactState {
         proof: DerivationId,
         ledger: &DerivationLedger,
     ) {
+        self.closed_term_count = None;
         let pair = (left, right);
         let candidates = self.bound_candidates.entry(pair).or_default();
         if !candidates.contains(&(bound, proof)) {
@@ -1934,6 +2172,7 @@ impl FactState {
         proof: DerivationId,
         ledger: &DerivationLedger,
     ) {
+        self.closed_term_count = None;
         let candidates = self.distinct_candidates.entry(pair).or_default();
         if !candidates.contains(&proof) {
             candidates.push(proof);
@@ -2022,35 +2261,50 @@ impl FactState {
         &mut self,
         ledger: &DerivationLedger,
         mut killed: impl FnMut(TermId, TermId, DerivationId) -> bool,
-    ) {
+    ) -> bool {
         if self.all_derivable {
-            return;
+            return false;
         }
+        let mut changed = false;
         let mut bound_pairs = self.bound_candidates.keys().copied().collect::<Vec<_>>();
         bound_pairs.sort_unstable();
         for pair in bound_pairs {
-            self.bound_candidates
+            let candidates = self
+                .bound_candidates
                 .get_mut(&pair)
-                .expect("candidate key came from the same map")
-                .retain(|(_, proof)| !killed(pair.0, pair.1, *proof));
+                .expect("candidate key came from the same map");
+            let before = candidates.len();
+            candidates.retain(|(_, proof)| !killed(pair.0, pair.1, *proof));
+            changed |= candidates.len() != before;
             self.select_bound_candidate(pair, ledger);
         }
         let mut distinct_pairs = self.distinct_candidates.keys().copied().collect::<Vec<_>>();
         distinct_pairs.sort_unstable();
         for pair in distinct_pairs {
-            self.distinct_candidates
+            let candidates = self
+                .distinct_candidates
                 .get_mut(&pair)
-                .expect("candidate key came from the same map")
-                .retain(|proof| !killed(pair.0, pair.1, *proof));
+                .expect("candidate key came from the same map");
+            let before = candidates.len();
+            candidates.retain(|proof| !killed(pair.0, pair.1, *proof));
+            changed |= candidates.len() != before;
             self.select_distinct_candidate(pair, ledger);
         }
+        if changed {
+            // Candidate removal is not an endpoint projection. A surviving
+            // ordinary and S12 candidate can rederive a relation whose one
+            // retained materialized proof was just removed, so the next
+            // query must close the surviving set again.
+            self.closed_term_count = None;
+        }
+        changed
     }
 
-    fn retain_non_postcondition_candidates(&mut self, ledger: &DerivationLedger) {
+    fn retain_non_postcondition_candidates(&mut self, ledger: &DerivationLedger) -> bool {
         let mut memo = HashMap::new();
         self.kill_proof_candidates(ledger, |_, _, proof| {
             ledger.depends_on_postcondition_call(proof, &mut memo)
-        });
+        })
     }
 
     fn merge_relation_candidates_from(&mut self, other: &Self, ledger: &DerivationLedger) {
@@ -2212,8 +2466,19 @@ impl ClosedState {
     }
 
     /// Exact signed-goal derivability: a retained opaque sign, its one
-    /// comparison-root projection, or its family's fixed normalization.
+    /// comparison-root projection, its family's fixed normalization, a Bool
+    /// literal, or finite truth-table introduction for an interned parent.
     pub(crate) fn derives_goal(&self, goal: GoalId, sign: GoalSign, goals: &GoalTable) -> bool {
+        self.derives_goal_inner(goal, sign, goals, &mut HashSet::new())
+    }
+
+    fn derives_goal_inner(
+        &self,
+        goal: GoalId,
+        sign: GoalSign,
+        goals: &GoalTable,
+        visiting: &mut HashSet<(GoalId, GoalSign)>,
+    ) -> bool {
         if self.all_derivable || self.opaque.contains(&(goal, sign)) {
             return true;
         }
@@ -2221,7 +2486,55 @@ impl ClosedState {
             GoalSign::Positive => self.derives(relation),
             GoalSign::Negative => self.derives(&relation.negated()),
         });
-        projected || self.derives_normalized_goal(goal, sign, goals)
+        if projected || self.derives_normalized_goal(goal, sign, goals) {
+            return true;
+        }
+        if literal_goal_sign(goals.expression(goal)).is_some_and(|truth| truth == sign) {
+            return true;
+        }
+        if !visiting.insert((goal, sign)) {
+            return false;
+        }
+        let result = match goals.expression(goal) {
+            GoalExpression::Operation {
+                row: GoalOperation::Boolean(operation),
+                arguments,
+                ..
+            } => {
+                let child = |argument: &GoalExpression,
+                             child_sign: GoalSign,
+                             visiting: &mut HashSet<(GoalId, GoalSign)>| {
+                    goals.id(argument).is_some_and(|child| {
+                        self.derives_goal_inner(child, child_sign, goals, visiting)
+                    })
+                };
+                match (operation, sign) {
+                    (CheckedBooleanOperation::And, GoalSign::Positive) => arguments
+                        .iter()
+                        .all(|argument| child(argument, GoalSign::Positive, visiting)),
+                    (CheckedBooleanOperation::And, GoalSign::Negative) => arguments
+                        .iter()
+                        .any(|argument| child(argument, GoalSign::Negative, visiting)),
+                    (CheckedBooleanOperation::Or, GoalSign::Positive) => arguments
+                        .iter()
+                        .any(|argument| child(argument, GoalSign::Positive, visiting)),
+                    (CheckedBooleanOperation::Or, GoalSign::Negative) => arguments
+                        .iter()
+                        .all(|argument| child(argument, GoalSign::Negative, visiting)),
+                    (CheckedBooleanOperation::Not, GoalSign::Positive) => arguments
+                        .first()
+                        .is_some_and(|argument| child(argument, GoalSign::Negative, visiting)),
+                    (CheckedBooleanOperation::Not, GoalSign::Negative) => arguments
+                        .first()
+                        .is_some_and(|argument| child(argument, GoalSign::Positive, visiting)),
+                    (CheckedBooleanOperation::ExclusiveOr, _) => false,
+                }
+            }
+            GoalExpression::Datum(_)
+            | GoalExpression::Operation { .. } => false,
+        };
+        visiting.remove(&(goal, sign));
+        result
     }
 
     pub(crate) fn holds_opaque(&self, goal: GoalId, sign: GoalSign) -> bool {
@@ -2393,13 +2706,130 @@ impl ClosedState {
         goals: &GoalTable,
         ledger: &mut DerivationLedger,
     ) -> Option<DerivationId> {
+        self.goal_proof_inner(goal, sign, goals, ledger, &mut HashSet::new())
+    }
+
+    fn goal_proof_inner(
+        &self,
+        goal: GoalId,
+        sign: GoalSign,
+        goals: &GoalTable,
+        ledger: &mut DerivationLedger,
+        visiting: &mut HashSet<(GoalId, GoalSign)>,
+    ) -> Option<DerivationId> {
         if self.all_derivable {
             return self.contradiction;
         }
-        self.opaque_proof(goal, sign)
+        let direct = self
+            .opaque_proof(goal, sign)
             .or_else(|| self.goal_projection_proof(goal, sign, goals, ledger))
-            .or_else(|| self.normalization_proof(goal, sign, goals, ledger))
+            .or_else(|| self.normalization_proof(goal, sign, goals, ledger));
+        if direct.is_some() {
+            return direct;
+        }
+        if literal_goal_sign(goals.expression(goal)).is_some_and(|truth| truth == sign) {
+            return Some(ledger.intern_for(
+                self.view,
+                DerivationNode::BooleanLiteral { goal, sign },
+            ));
+        }
+        if !visiting.insert((goal, sign)) {
+            return None;
+        }
+        let proof = match goals.expression(goal) {
+            GoalExpression::Operation {
+                row: GoalOperation::Boolean(operation),
+                arguments,
+                ..
+            } => {
+                let child_proof = |argument: &GoalExpression,
+                                   child_sign: GoalSign,
+                                   visiting: &mut HashSet<(GoalId, GoalSign)>,
+                                   ledger: &mut DerivationLedger| {
+                    let child = goals.id(argument)?;
+                    self.goal_proof_inner(child, child_sign, goals, ledger, visiting)
+                };
+                let all = |child_sign: GoalSign,
+                           visiting: &mut HashSet<(GoalId, GoalSign)>,
+                           ledger: &mut DerivationLedger| {
+                    arguments
+                        .iter()
+                        .map(|argument| child_proof(argument, child_sign, visiting, ledger))
+                        .collect::<Option<Vec<_>>>()
+                };
+                let any = |child_sign: GoalSign,
+                           visiting: &mut HashSet<(GoalId, GoalSign)>,
+                           ledger: &mut DerivationLedger| {
+                    let mut best = None;
+                    for argument in arguments {
+                        let Some(candidate) =
+                            child_proof(argument, child_sign, visiting, ledger)
+                        else {
+                            continue;
+                        };
+                        if best.is_none_or(|current| ledger.better(candidate, current)) {
+                            best = Some(candidate);
+                        }
+                    }
+                    best.map(|parent| vec![parent])
+                };
+                let parents = match (operation, sign) {
+                    (CheckedBooleanOperation::And, GoalSign::Positive) => {
+                        all(GoalSign::Positive, visiting, ledger)
+                    }
+                    (CheckedBooleanOperation::And, GoalSign::Negative) => {
+                        any(GoalSign::Negative, visiting, ledger)
+                    }
+                    (CheckedBooleanOperation::Or, GoalSign::Positive) => {
+                        any(GoalSign::Positive, visiting, ledger)
+                    }
+                    (CheckedBooleanOperation::Or, GoalSign::Negative) => {
+                        all(GoalSign::Negative, visiting, ledger)
+                    }
+                    (CheckedBooleanOperation::Not, GoalSign::Positive) => arguments
+                        .first()
+                        .and_then(|argument| {
+                            child_proof(argument, GoalSign::Negative, visiting, ledger)
+                        })
+                        .map(|parent| vec![parent]),
+                    (CheckedBooleanOperation::Not, GoalSign::Negative) => arguments
+                        .first()
+                        .and_then(|argument| {
+                            child_proof(argument, GoalSign::Positive, visiting, ledger)
+                        })
+                        .map(|parent| vec![parent]),
+                    (CheckedBooleanOperation::ExclusiveOr, _) => None,
+                };
+                parents.map(|parents| {
+                    ledger.intern_for(
+                        self.view,
+                        DerivationNode::BooleanIntroduction {
+                            goal,
+                            sign,
+                            parents,
+                        },
+                    )
+                })
+            }
+            GoalExpression::Datum(_)
+            | GoalExpression::Operation { .. } => None,
+        };
+        visiting.remove(&(goal, sign));
+        proof
     }
+}
+
+fn literal_goal_sign(expression: &GoalExpression) -> Option<GoalSign> {
+    let GoalExpression::Datum(super::super::goal::GoalDatum::Literal(CheckedValue::Bool(value))) =
+        expression
+    else {
+        return None;
+    };
+    Some(if *value {
+        GoalSign::Positive
+    } else {
+        GoalSign::Negative
+    })
 }
 
 /// Computes the [ENT-4] closure of `state` over the registered terms.
@@ -2410,6 +2840,173 @@ pub(crate) fn close(
     ledger: &mut DerivationLedger,
 ) -> ClosedState {
     close_with_excluded_term(state, terms, goals, ledger, None)
+}
+
+/// Exact contradiction query without constructing a derivation DAG.
+///
+/// Kill handling needs to know whether contradiction must become absorbing,
+/// but an accepted path almost always answers no.  Building every canonical
+/// transitive proof merely to obtain that Boolean answer dominated CLM-2's
+/// fresh whole-program reruns.  This computes the same finite ENT-4 value
+/// closure in a dense matrix, including disequality strengthening and finite
+/// goal introduction; callers construct the ordinary proof closure only for
+/// the exceptional contradictory result.
+pub(crate) fn contradiction_without_proofs(
+    state: &FactState,
+    terms: &TermTable,
+    goals: &GoalTable,
+) -> bool {
+    if state.all_derivable {
+        return true;
+    }
+    let dimension = terms.ids().count();
+    let ids = terms.ids().collect::<Vec<_>>();
+    let active_middles = closure_middle_terms(state, terms, goals, &ids);
+    let cells = dimension
+        .checked_mul(dimension)
+        .expect("ENT contradiction matrix exceeds the address space");
+    let mut bounds = vec![None; cells];
+    let index = |left: TermId, right: TermId| {
+        let left = left.0 as usize;
+        let right = right.0 as usize;
+        assert!(left < dimension && right < dimension);
+        left * dimension + right
+    };
+    let insert = |bounds: &mut [Option<i128>], left: TermId, right: TermId, bound: i128| {
+        let cell = &mut bounds[index(left, right)];
+        if cell.is_none_or(|current| bound < current) {
+            *cell = Some(bound);
+        }
+    };
+    for (&(left, right), &bound) in &state.bounds {
+        insert(&mut bounds, left, right, bound);
+    }
+    for id in terms.ids() {
+        insert(&mut bounds, id, id, 0);
+        match terms.kind(id) {
+            TermKind::Zero | TermKind::ConstParameter(_) => {}
+            TermKind::Constant(value) => {
+                insert(&mut bounds, id, ZERO, *value);
+                insert(&mut bounds, ZERO, id, -value);
+            }
+            TermKind::Place(_, ty) | TermKind::ProjectedPlace(_, ty) => {
+                let (minimum, maximum) = type_range(*ty);
+                insert(&mut bounds, id, ZERO, maximum);
+                insert(&mut bounds, ZERO, id, -minimum);
+            }
+            TermKind::Length(_) | TermKind::ProjectedLength(_) => {
+                let (minimum, maximum) = type_range(IntegerType::U64);
+                insert(&mut bounds, id, ZERO, maximum);
+                insert(&mut bounds, ZERO, id, -minimum);
+                match terms.length_bound(id) {
+                    Some(LengthBound::Constant(length)) => {
+                        insert(&mut bounds, id, ZERO, length);
+                        insert(&mut bounds, ZERO, id, -length);
+                    }
+                    Some(LengthBound::Equal(parameter)) => {
+                        insert(&mut bounds, id, parameter, 0);
+                        insert(&mut bounds, parameter, id, 0);
+                    }
+                    None => {}
+                }
+            }
+            TermKind::CountedCapture { .. } => {
+                let (minimum, maximum) = type_range(IntegerType::U64);
+                insert(&mut bounds, id, ZERO, maximum);
+                insert(&mut bounds, ZERO, id, -minimum);
+            }
+        }
+    }
+
+    let mut distinct = state.distinct.clone();
+    loop {
+        // Floyd-Warshall over the exact same saturating difference bounds.
+        // One pass closes the current edge set; a second is needed only when
+        // a newly derived disequality strengthens a weak bound below.
+        for middle in ids.iter().filter(|id| active_middles.contains(id)) {
+            let middle = middle.0 as usize;
+            let middle_row = middle * dimension;
+            for left in 0..dimension {
+                let left_row = left * dimension;
+                let Some(first) = bounds[left_row + middle] else {
+                    continue;
+                };
+                for right in 0..dimension {
+                    let Some(second) = bounds[middle_row + right] else {
+                        continue;
+                    };
+                    let via = first.saturating_add(second);
+                    let cell = &mut bounds[left_row + right];
+                    if cell.is_none_or(|current| via < current) {
+                        *cell = Some(via);
+                    }
+                }
+            }
+        }
+        if (0..dimension).any(|id| bounds[id * dimension + id].is_some_and(|bound| bound < 0)) {
+            return true;
+        }
+
+        for left in 0..dimension {
+            for right in (left + 1)..dimension {
+                let forward = bounds[left * dimension + right];
+                let reverse = bounds[right * dimension + left];
+                if forward.is_some_and(|bound| bound <= -1)
+                    || reverse.is_some_and(|bound| bound <= -1)
+                {
+                    distinct.insert((
+                        TermId(u32::try_from(left).expect("term index fits u32")),
+                        TermId(u32::try_from(right).expect("term index fits u32")),
+                    ));
+                }
+            }
+        }
+        let mut strengthened = false;
+        for &(left, right) in &distinct {
+            for (from, to) in [(left, right), (right, left)] {
+                let cell = &mut bounds[index(from, to)];
+                if *cell == Some(0) {
+                    *cell = Some(-1);
+                    strengthened = true;
+                }
+            }
+        }
+        if !strengthened {
+            break;
+        }
+    }
+
+    // Reuse the ordinary goal truth table over proof-free relation maps.
+    // `derives_goal` consults no proof identity.
+    let mut closed_bounds = HashMap::with_capacity(bounds.iter().flatten().count());
+    for left in 0..dimension {
+        for right in 0..dimension {
+            if let Some(bound) = bounds[left * dimension + right] {
+                closed_bounds.insert(
+                    (
+                        TermId(u32::try_from(left).expect("term index fits u32")),
+                        TermId(u32::try_from(right).expect("term index fits u32")),
+                    ),
+                    bound,
+                );
+            }
+        }
+    }
+    let closed = ClosedState {
+        view: state.view,
+        all_derivable: false,
+        contradiction: None,
+        bounds: closed_bounds,
+        bound_proofs: HashMap::new(),
+        distinct,
+        distinct_proofs: HashMap::new(),
+        opaque: state.opaque.clone(),
+        opaque_proofs: HashMap::new(),
+    };
+    goals.ids().any(|goal| {
+        closed.derives_goal(goal, GoalSign::Positive, goals)
+            && closed.derives_goal(goal, GoalSign::Negative, goals)
+    })
 }
 
 /// The ordinary closure with one fresh, not-yet-in-scope receiver withheld
@@ -2446,14 +3043,40 @@ fn close_with_excluded_term(
             opaque_proofs: HashMap::new(),
         };
     }
+    let term_count = terms.ids().count();
+    let term_count_id = u32::try_from(term_count)
+        .expect("ENT term inventory exceeds the u32 identity space");
+    if excluded.is_none() && state.closed_term_count == Some(term_count_id) {
+        return close_goal_contradictions(
+            ClosedState {
+                view: state.view,
+                all_derivable: false,
+                contradiction: None,
+                bounds: state.bounds.clone(),
+                bound_proofs: state.bound_proofs.clone(),
+                distinct: state.distinct.clone(),
+                distinct_proofs: state.distinct_proofs.clone(),
+                opaque: state.opaque.clone(),
+                opaque_proofs: state.opaque_proofs.clone(),
+            },
+            goals,
+            ledger,
+        );
+    }
     let mut bounds = state.bounds.clone();
     let mut bound_proofs = state.bound_proofs.clone();
     let mut distinct = state.distinct.clone();
     let mut distinct_proofs = state.distinct_proofs.clone();
+    let mut dense_bounds = DenseClosureBounds::from_maps(
+        term_count,
+        &bounds,
+        &bound_proofs,
+    );
     let ids = terms
         .ids()
         .filter(|id| Some(*id) != excluded)
         .collect::<Vec<_>>();
+    let active_middles = closure_middle_terms(state, terms, goals, &ids);
     {
         let mut add = |left: TermId,
                        right: TermId,
@@ -2470,6 +3093,7 @@ fn close_with_excluded_term(
                 state.view,
                 &mut bounds,
                 &mut bound_proofs,
+                &mut dense_bounds,
                 ClosedBoundCandidate {
                     left,
                     right,
@@ -2525,20 +3149,49 @@ fn close_with_excluded_term(
     // -1, so the outer loop runs at most a handful of rounds.
     loop {
         let mut changed = false;
-        for middle in &ids {
-            for left in &ids {
-                let Some(first) = bounds.get(&(*left, *middle)).copied() else {
-                    continue;
-                };
-                let first_proof = bound_proofs[&(*left, *middle)];
-                for right in &ids {
-                    let Some(second) = bounds.get(&(*middle, *right)).copied() else {
-                        continue;
-                    };
-                    let second_proof = bound_proofs[&(*middle, *right)];
+        for middle in ids.iter().filter(|id| active_middles.contains(id)) {
+            // Preserve the former dense TermId order while skipping absent
+            // matrix cells.  Transitivity cannot add a new incoming or
+            // outgoing key for `middle` while processing this middle: the
+            // only candidate with `left == middle` or `right == middle`
+            // already requires that same key plus the reflexive diagonal.
+            // Proofs for existing keys may improve, so fetch their current
+            // values inside the product rather than snapshotting them here.
+            let incoming = ids
+                .iter()
+                .copied()
+                .filter(|left| dense_bounds.get(*left, *middle).is_some())
+                .collect::<Vec<_>>();
+            let outgoing = ids
+                .iter()
+                .copied()
+                .filter(|right| dense_bounds.get(*middle, *right).is_some())
+                .collect::<Vec<_>>();
+            for left in incoming {
+                let (first, first_proof) = dense_bounds
+                    .get(left, *middle)
+                    .expect("incoming closure key collected above");
+                for right in &outgoing {
+                    let (second, second_proof) = dense_bounds
+                        .get(*middle, *right)
+                        .expect("outgoing closure key collected above");
                     let via = first.saturating_add(second);
+                    if let Some((current_bound, current_proof)) = dense_bounds.get(left, *right) {
+                        if via > current_bound {
+                            continue;
+                        }
+                        if via == current_bound {
+                            let candidate_depth = ledger
+                                .depth(first_proof)
+                                .max(ledger.depth(second_proof))
+                                .saturating_add(1);
+                            if candidate_depth > ledger.depth(current_proof) {
+                                continue;
+                            }
+                        }
+                    }
                     let node = DerivationNode::TransitiveBound {
-                        left: *left,
+                        left,
                         middle: *middle,
                         right: *right,
                         bound: via,
@@ -2549,8 +3202,9 @@ fn close_with_excluded_term(
                         state.view,
                         &mut bounds,
                         &mut bound_proofs,
+                        &mut dense_bounds,
                         ClosedBoundCandidate {
-                            left: *left,
+                            left,
                             right: *right,
                             bound: via,
                             node,
@@ -2567,17 +3221,20 @@ fn close_with_excluded_term(
         for left in &ids {
             for right in &ids {
                 if left == right
-                    || !bounds
-                        .get(&(*left, *right))
-                        .is_some_and(|bound| *bound <= -1)
+                    || !dense_bounds
+                        .get(*left, *right)
+                        .is_some_and(|(bound, _)| bound <= -1)
                 {
                     continue;
                 }
                 let pair = ordered(*left, *right);
+                let (_, parent) = dense_bounds
+                    .get(*left, *right)
+                    .expect("strict bound checked above");
                 let node = DerivationNode::DisequalityFromStrictBound {
                     left: pair.0,
                     right: pair.1,
-                    parent: bound_proofs[&(*left, *right)],
+                    parent,
                 };
                 let accepted = distinct_proofs
                     .get(&pair)
@@ -2594,18 +3251,19 @@ fn close_with_excluded_term(
         distinct_pairs.sort_unstable();
         for (left, right) in distinct_pairs {
             for (from, to) in [(left, right), (right, left)] {
-                if bounds.get(&(from, to)).is_some_and(|bound| *bound == 0) {
+                if let Some((0, weak)) = dense_bounds.get(from, to) {
                     let node = DerivationNode::StrengthenedBound {
                         left: from,
                         right: to,
                         bound: -1,
-                        weak: bound_proofs[&(from, to)],
+                        weak,
                         distinct: distinct_proofs[&ordered(left, right)],
                     };
                     changed |= insert_closed_candidate(
                         state.view,
                         &mut bounds,
                         &mut bound_proofs,
+                        &mut dense_bounds,
                         ClosedBoundCandidate {
                             left: from,
                             right: to,
@@ -2623,12 +3281,15 @@ fn close_with_excluded_term(
     }
     let mut contradiction = None;
     for id in &ids {
-        if bounds.get(&(*id, *id)).is_some_and(|bound| *bound < 0) {
+        if let Some((bound, parent)) = dense_bounds.get(*id, *id) {
+            if bound >= 0 {
+                continue;
+            }
             let candidate = ledger.intern_for(
                 state.view,
                 DerivationNode::L0Contradiction {
                     term: *id,
-                    parent: bound_proofs[&(*id, *id)],
+                    parent,
                 },
             );
             if contradiction.is_none_or(|current| ledger.better(candidate, current)) {
@@ -2636,7 +3297,7 @@ fn close_with_excluded_term(
             }
         }
     }
-    let mut closed = ClosedState {
+    let closed = ClosedState {
         view: state.view,
         all_derivable: contradiction.is_some(),
         contradiction,
@@ -2647,6 +3308,14 @@ fn close_with_excluded_term(
         opaque: state.opaque.clone(),
         opaque_proofs: state.opaque_proofs.clone(),
     };
+    close_goal_contradictions(closed, goals, ledger)
+}
+
+fn close_goal_contradictions(
+    mut closed: ClosedState,
+    goals: &GoalTable,
+    ledger: &mut DerivationLedger,
+) -> ClosedState {
     if !closed.all_derivable {
         for goal in goals.ids() {
             if !closed.derives_goal(goal, GoalSign::Positive, goals)
@@ -2658,7 +3327,7 @@ fn close_with_excluded_term(
             let negative = closed.goal_proof(goal, GoalSign::Negative, goals, ledger);
             if let (Some(positive), Some(negative)) = (positive, negative) {
                 let candidate = ledger.intern_for(
-                    state.view,
+                    closed.view,
                     DerivationNode::GoalContradiction {
                         goal,
                         positive,
@@ -2678,6 +3347,93 @@ fn close_with_excluded_term(
     closed
 }
 
+/// Terms that can improve a transitive path beyond the direct implicit path
+/// through zero.
+///
+/// Every term remains an endpoint in the closed matrix. A term carrying only
+/// its reflexive and integer-range edges cannot be a useful middle: entering
+/// and leaving it adds a nonnegative range cycle to the path already available
+/// through `ZERO` (and an equal path has greater proof depth). Live relation
+/// endpoints can be useful, as can an exact array-length alias connected to
+/// one, so those are the only additional middle vertices the fixed point
+/// needs. Opaque goals are included because their opposite sign can be proved
+/// from a projected or normalized relation and form a contradiction.
+fn closure_middle_terms(
+    state: &FactState,
+    terms: &TermTable,
+    goals: &GoalTable,
+    ids: &[TermId],
+) -> HashSet<TermId> {
+    let available = ids.iter().copied().collect::<HashSet<_>>();
+    let mut active = HashSet::new();
+    if available.contains(&ZERO) {
+        active.insert(ZERO);
+    }
+    for &(left, right) in state.bounds.keys() {
+        if available.contains(&left) {
+            active.insert(left);
+        }
+        if available.contains(&right) {
+            active.insert(right);
+        }
+    }
+    for &(left, right) in &state.distinct {
+        if available.contains(&left) {
+            active.insert(left);
+        }
+        if available.contains(&right) {
+            active.insert(right);
+        }
+    }
+
+    let mut pending_goals = state
+        .opaque
+        .iter()
+        .map(|(goal, _)| *goal)
+        .collect::<Vec<_>>();
+    let mut visited_goals = HashSet::new();
+    while let Some(goal) = pending_goals.pop() {
+        if !visited_goals.insert(goal) {
+            continue;
+        }
+        if let Some(relation) = goals.projection(goal) {
+            for term in relation.terms() {
+                if available.contains(&term) {
+                    active.insert(term);
+                }
+            }
+        }
+        if let Some(normalization) = goals.normalization(goal) {
+            for relation in normalization.components.iter().flatten() {
+                for term in relation.terms() {
+                    if available.contains(&term) {
+                        active.insert(term);
+                    }
+                }
+            }
+        }
+        if let GoalExpression::Operation { arguments, .. } = goals.expression(goal) {
+            pending_goals.extend(arguments.iter().filter_map(|argument| goals.id(argument)));
+        }
+    }
+
+    // Array/slice length aliases are the only implicit non-zero-to-non-zero
+    // edges. Every such edge needs both endpoints as middles even without a
+    // live source: the length range transfers to an otherwise unbounded const
+    // parameter, and two lengths equal to that parameter become equal to one
+    // another. `available` keeps an excluded receiver out of this universe.
+    for id in ids {
+        let Some(LengthBound::Equal(parameter)) = terms.length_bound(*id) else {
+            continue;
+        };
+        active.insert(*id);
+        if available.contains(&parameter) {
+            active.insert(parameter);
+        }
+    }
+    active
+}
+
 struct ClosedBoundCandidate {
     left: TermId,
     right: TermId,
@@ -2685,10 +3441,72 @@ struct ClosedBoundCandidate {
     node: DerivationNode,
 }
 
+/// Dense scratch index for ENT-4's fixed point.
+///
+/// `TermId` is a dense function-local identity.  The closed result remains in
+/// the long-lived maps above, but using tuple-key hash tables for every probe
+/// in the transitivity cube made each fresh CLM-2 counterfactual spend most of
+/// its time hashing the same two integers.  This index preserves the existing
+/// TermId traversal and proof-selection order; it is updated only alongside
+/// the authoritative maps and is discarded when this one closure finishes.
+struct DenseClosureBounds {
+    dimension: usize,
+    bounds: Vec<Option<i128>>,
+    proofs: Vec<Option<DerivationId>>,
+}
+
+impl DenseClosureBounds {
+    fn from_maps(
+        dimension: usize,
+        bounds: &HashMap<(TermId, TermId), i128>,
+        proofs: &HashMap<(TermId, TermId), DerivationId>,
+    ) -> Self {
+        let cells = dimension
+            .checked_mul(dimension)
+            .expect("ENT closure matrix exceeds the address space");
+        let mut dense = Self {
+            dimension,
+            bounds: vec![None; cells],
+            proofs: vec![None; cells],
+        };
+        for (&(left, right), &bound) in bounds {
+            let proof = proofs
+                .get(&(left, right))
+                .copied()
+                .expect("every live ENT bound has a proof");
+            dense.set(left, right, bound, proof);
+        }
+        dense
+    }
+
+    fn index(&self, left: TermId, right: TermId) -> usize {
+        let left = left.0 as usize;
+        let right = right.0 as usize;
+        assert!(left < self.dimension && right < self.dimension);
+        left * self.dimension + right
+    }
+
+    fn get(&self, left: TermId, right: TermId) -> Option<(i128, DerivationId)> {
+        let index = self.index(left, right);
+        match (self.bounds[index], self.proofs[index]) {
+            (Some(bound), Some(proof)) => Some((bound, proof)),
+            (None, None) => None,
+            _ => panic!("ENT closure bound/proof index diverged"),
+        }
+    }
+
+    fn set(&mut self, left: TermId, right: TermId, bound: i128, proof: DerivationId) {
+        let index = self.index(left, right);
+        self.bounds[index] = Some(bound);
+        self.proofs[index] = Some(proof);
+    }
+}
+
 fn insert_closed_candidate(
     view: ProofView,
     bounds: &mut HashMap<(TermId, TermId), i128>,
     proofs: &mut HashMap<(TermId, TermId), DerivationId>,
+    dense: &mut DenseClosureBounds,
     candidate: ClosedBoundCandidate,
     ledger: &mut DerivationLedger,
 ) -> bool {
@@ -2699,10 +3517,10 @@ fn insert_closed_candidate(
         node,
     } = candidate;
     let pair = (left, right);
-    let accepted = match bounds.get(&pair).copied() {
+    let accepted = match dense.get(left, right) {
         None => true,
-        Some(current) if bound < current => true,
-        Some(current) if bound == current => ledger.candidate_better(&node, proofs[&pair]),
+        Some((current, _)) if bound < current => true,
+        Some((current, proof)) if bound == current => ledger.candidate_better(&node, proof),
         Some(_) => false,
     };
     if !accepted {
@@ -2711,6 +3529,7 @@ fn insert_closed_candidate(
     let proof = ledger.intern_for(view, node);
     bounds.insert(pair, bound);
     proofs.insert(pair, proof);
+    dense.set(left, right, bound, proof);
     true
 }
 
@@ -2799,6 +3618,10 @@ pub(crate) fn materialize_closure_at(
         .collect();
     let mut materialized = FactState {
         view: state.view,
+        closed_term_count: Some(
+            u32::try_from(terms.ids().count())
+                .expect("ENT term inventory exceeds the u32 identity space"),
+        ),
         all_derivable: false,
         contradiction: None,
         bounds: closed.bounds,
@@ -2812,6 +3635,7 @@ pub(crate) fn materialize_closure_at(
         opaque: closed.opaque,
         opaque_proofs,
         goal_origins: state.goal_origins.clone(),
+        ambiguous_goal_origins: state.ambiguous_goal_origins.clone(),
     };
 
     // Preserve the ordinary fallback when the canonical closure happened to
@@ -2853,6 +3677,10 @@ pub(crate) fn materialize_closure_at(
             materialized.add_distinct_candidate((left, right), proof, ledger);
         }
     }
+    materialized.closed_term_count = Some(
+        u32::try_from(terms.ids().count())
+            .expect("ENT term inventory exceeds the u32 identity space"),
+    );
     materialized
 }
 
@@ -2888,13 +3716,21 @@ pub(crate) fn join_at(
         return joined;
     }
     let mut ordinary_states = states.to_vec();
+    let mut removed_postcondition_candidate = false;
     for state in &mut ordinary_states {
-        state.retain_non_postcondition_candidates(ledger);
+        removed_postcondition_candidate |= state.retain_non_postcondition_candidates(ledger);
+    }
+    if !removed_postcondition_candidate {
+        return joined;
     }
     let ordinary = join_at_once(&ordinary_states, terms, goals, ledger, view, event);
     if !ordinary.all_derivable {
         joined.merge_relation_candidates_from(&ordinary, ledger);
     }
+    joined.closed_term_count = Some(
+        u32::try_from(terms.ids().count())
+            .expect("ENT term inventory exceeds the u32 identity space"),
+    );
     joined
 }
 
@@ -3065,6 +3901,7 @@ fn join_at_once(
     let mut origins = contributing_states[0].origins.clone();
     let mut outcomes = contributing_states[0].outcomes.clone();
     let mut goal_origins = contributing_states[0].goal_origins.clone();
+    let mut ambiguous_goal_origins = contributing_states[0].ambiguous_goal_origins.clone();
     for state in contributing_states.iter().skip(1) {
         origins.retain(|binding, relation| {
             state
@@ -3084,6 +3921,8 @@ fn join_at_once(
                 .get(binding)
                 .is_some_and(|other| other == goal)
         });
+        ambiguous_goal_origins
+            .retain(|binding| state.ambiguous_goal_origins.contains(binding));
     }
     let bound_candidates = bound_proofs
         .iter()
@@ -3095,6 +3934,10 @@ fn join_at_once(
         .collect();
     FactState {
         view,
+        closed_term_count: Some(
+            u32::try_from(terms.ids().count())
+                .expect("ENT term inventory exceeds the u32 identity space"),
+        ),
         all_derivable: false,
         contradiction: None,
         bounds,
@@ -3108,6 +3951,7 @@ fn join_at_once(
         opaque,
         opaque_proofs,
         goal_origins,
+        ambiguous_goal_origins,
     }
 }
 
@@ -3116,6 +3960,38 @@ mod tests {
     use super::*;
     use crate::semantic::entailment::VerifiedPostconditionSummary;
     use crate::semantic::model::FunctionId;
+    use crate::DeclarationId;
+
+    #[test]
+    fn dormant_const_length_aliases_still_transfer_ranges_and_equality() {
+        let mut terms = TermTable::new();
+        let parameter = terms.intern(TermKind::ConstParameter(
+            DeclarationId::from_index(0).expect("zero declaration identity exists"),
+        ));
+        let length = |terms: &mut TermTable, binding| {
+            let term = terms.intern(TermKind::Length(super::super::term::PlaceTerm {
+                root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                deref: false,
+                fields: Vec::new(),
+            }));
+            terms.set_length_bound(term, LengthBound::Equal(parameter));
+            term
+        };
+        let first = length(&mut terms, 0);
+        let second = length(&mut terms, 1);
+        let mut ledger = DerivationLedger::default();
+        let closed = close(
+            &FactState::for_view(ProofView::Complete),
+            &terms,
+            &GoalTable::default(),
+            &mut ledger,
+        );
+
+        assert!(closed.derives_bound(first, second, 0));
+        assert!(closed.derives_bound(second, first, 0));
+        assert!(closed.derives_bound(parameter, ZERO, u64::MAX.into()));
+        assert!(closed.derives_bound(ZERO, parameter, 0));
+    }
 
     #[test]
     fn an_empty_join_remains_the_contradictory_all_derivable_state() {

@@ -35,8 +35,8 @@ use super::state::{
     ClaimLifecycleKind, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
     GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
-    PostconditionCallSubstitution, ProofView, Relation, close, close_excluding_term, join_at,
-    materialize_closure_at,
+    PostconditionCallSubstitution, ProofView, Relation, close, close_excluding_term,
+    contradiction_without_proofs, join_at, materialize_closure_at,
 };
 use super::term::{
     CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm,
@@ -44,8 +44,10 @@ use super::term::{
 };
 use super::{
     BoundsRequest, CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome,
-    ClaimDisposition, ClaimOutcome, CountedDerivationSet, EntailmentContext, FunctionEntailment,
-    FunctionEntailmentView, FunctionPostconditionProof, ObligationFamily, ObligationOutcome,
+    ClaimComponentFact, ClaimDisposition, ClaimMask, ClaimOutcome, ClaimVacuity,
+    CountedDerivationSet, EntailmentContext,
+    FunctionEntailment, FunctionEntailmentView, FunctionPostconditionProof, ObligationFamily,
+    ObligationOutcome,
     PostconditionAggregate, PostconditionDisposition, PostconditionEntryImage,
     PostconditionEntryImageOutcome, PostconditionExit, PostconditionViewExit, S7Derivation,
     VerifiedPostconditionSummary, VerifiedPostconditionSummaryRef, ViewObligationOutcome,
@@ -180,6 +182,7 @@ struct GiveFrame {
     binding: BindingId,
     result_type: CheckedType,
     gives: Vec<ViewStates>,
+    give_goal_origins: Vec<Option<GoalId>>,
     delivery_images: Vec<ViewStates>,
     delivery_edges: Vec<crate::NodePath>,
 }
@@ -436,7 +439,17 @@ pub(super) fn analyze(
     function: &CheckedFunction,
     context: &EntailmentContext<'_>,
 ) -> FunctionEntailment {
-    let mut entailment = analyze_candidate(function, context);
+    let mut entailment = analyze_candidate_with_mask(function, context, None);
+    finish(&mut entailment);
+    entailment
+}
+
+pub(super) fn analyze_masked(
+    function: &CheckedFunction,
+    context: &EntailmentContext<'_>,
+    mask: &ClaimMask,
+) -> FunctionEntailment {
+    let mut entailment = analyze_candidate_with_mask(function, context, Some(mask));
     finish(&mut entailment);
     entailment
 }
@@ -449,7 +462,23 @@ pub(super) fn analyze_candidate(
     function: &CheckedFunction,
     context: &EntailmentContext<'_>,
 ) -> FunctionEntailment {
-    let run = run(function, context);
+    analyze_candidate_with_mask(function, context, None)
+}
+
+pub(super) fn analyze_candidate_masked(
+    function: &CheckedFunction,
+    context: &EntailmentContext<'_>,
+    mask: &ClaimMask,
+) -> FunctionEntailment {
+    analyze_candidate_with_mask(function, context, Some(mask))
+}
+
+fn analyze_candidate_with_mask(
+    function: &CheckedFunction,
+    context: &EntailmentContext<'_>,
+    claim_mask: Option<&ClaimMask>,
+) -> FunctionEntailment {
+    let run = run(function, context, claim_mask);
     FunctionEntailment {
         body_disposition: run.body_disposition,
         obligations: run.obligations,
@@ -482,10 +511,44 @@ struct AnalysisRun {
     inventory: DerivationInventory,
 }
 
-fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisRun {
+#[derive(Clone, Debug)]
+struct ClaimContribution {
+    /// Direct plus support-canonical image reconstructed from S3 components.
+    exact_goals: Vec<GoalId>,
+    /// Fully structurally expanded image used by exact lifecycle queries.
+    lifecycle_complete: GoalId,
+    components: Vec<ClaimComponentFact>,
+    /// Checker-equivalent manifestations of each snapshot-frontier
+    /// component, plus complete structural parents whose positive proof
+    /// entails that component. These are admission-only lifecycle queries;
+    /// S3 still establishes exactly `components`.
+    component_lifecycle: Vec<ClaimComponentLifecycle>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ClaimComponentLifecycle {
+    /// Either sign is equivalent to the contribution fact at the claim point.
+    equivalent: Vec<ClaimComponentFact>,
+    /// Positive proof entails the contribution fact, but negative proof need
+    /// not refute one conjunct of a larger structural predicate.
+    positive_only: Vec<ClaimComponentFact>,
+}
+
+struct ClaimGoalOrigins {
+    lifecycle: Vec<GoalId>,
+    contribution: Vec<GoalId>,
+    complete: GoalId,
+}
+
+fn run(
+    function: &CheckedFunction,
+    context: &EntailmentContext<'_>,
+    claim_mask: Option<&ClaimMask>,
+) -> AnalysisRun {
     let mut analyzer = Analyzer {
         context,
         function,
+        claim_mask,
         bindings: Vec::new(),
         terms: TermTable::new(),
         goals: GoalTable::default(),
@@ -622,6 +685,28 @@ pub(super) fn finish(entailment: &mut FunctionEntailment) {
         outcome.lifecycle_derivation = outcome
             .lifecycle_derivation
             .and_then(|id| remap.nodes.get(id.0 as usize).copied().flatten());
+        if let Some(proof) = &mut outcome.proof {
+            for component in &mut proof.components {
+                component.source = remap
+                    .nodes
+                    .get(component.source.0 as usize)
+                    .copied()
+                    .flatten()
+                    .expect("claim component evidence root retained by finish");
+            }
+            proof.reconstructions.expanded = remap
+                .nodes
+                .get(proof.reconstructions.expanded.0 as usize)
+                .copied()
+                .flatten()
+                .expect("expanded claim reconstruction root retained by finish");
+            proof.reconstructions.direct = remap
+                .nodes
+                .get(proof.reconstructions.direct.0 as usize)
+                .copied()
+                .flatten()
+                .expect("direct claim reconstruction root retained by finish");
+        }
     }
     for outcome in entailment
         .unasserted
@@ -755,6 +840,7 @@ fn remap_postcondition(
 struct Analyzer<'check, 'unit> {
     context: &'check EntailmentContext<'unit>,
     function: &'check CheckedFunction,
+    claim_mask: Option<&'check ClaimMask>,
     /// Dense per-binding summaries indexed by [`BindingId`].
     bindings: Vec<BindingSummary>,
     terms: TermTable,
@@ -2832,24 +2918,32 @@ impl Analyzer<'_, '_> {
             // handled separately from source-place write/consume events.
             TermKind::CountedCapture { .. } => false,
             TermKind::Place(place, _) => match event {
-                KillEvent::Write { place: written, .. } => self.resolve(&place).overlaps(written),
+                KillEvent::Write { place: written, .. }
+                | KillEvent::EntryImageHolderWrite { place: written, .. } => {
+                    self.resolve(&place).overlaps(written)
+                }
                 KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
-                KillEvent::EntryImageHolderConsume { .. }
-                | KillEvent::EntryImageHolderWrite { .. } => false,
+                KillEvent::EntryImageHolderConsume { .. } => false,
             },
             TermKind::ProjectedPlace(place, _) => match event {
-                KillEvent::Write { place: written, .. } => {
+                KillEvent::Write { place: written, .. }
+                | KillEvent::EntryImageHolderWrite { place: written, .. } => {
                     self.resolve_projected(&place).overlaps(written)
                 }
                 KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
-                KillEvent::EntryImageHolderConsume { .. }
-                | KillEvent::EntryImageHolderWrite { .. } => false,
+                KillEvent::EntryImageHolderConsume { .. } => false,
             },
             TermKind::Length(place) => match event {
                 // An element write never kills a length fact: the length is
                 // fixed at allocation or by the type [ENT-5].
-                KillEvent::Write { element: true, .. } => false,
+                KillEvent::Write { element: true, .. }
+                | KillEvent::EntryImageHolderWrite { element: true, .. } => false,
                 KillEvent::Write {
+                    place: written,
+                    element: false,
+                    ..
+                }
+                | KillEvent::EntryImageHolderWrite {
                     place: written,
                     element: false,
                     ..
@@ -2862,19 +2956,23 @@ impl Analyzer<'_, '_> {
                     self.resolve(&root).overlaps(written)
                 }
                 KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
-                KillEvent::EntryImageHolderConsume { .. }
-                | KillEvent::EntryImageHolderWrite { .. } => false,
+                KillEvent::EntryImageHolderConsume { .. } => false,
             },
             TermKind::ProjectedLength(place) => match event {
-                KillEvent::Write { element: true, .. } => false,
+                KillEvent::Write { element: true, .. }
+                | KillEvent::EntryImageHolderWrite { element: true, .. } => false,
                 KillEvent::Write {
+                    place: written,
+                    element: false,
+                    ..
+                }
+                | KillEvent::EntryImageHolderWrite {
                     place: written,
                     element: false,
                     ..
                 } => self.resolve_projected(&place).overlaps(written),
                 KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
-                KillEvent::EntryImageHolderConsume { .. }
-                | KillEvent::EntryImageHolderWrite { .. } => false,
+                KillEvent::EntryImageHolderConsume { .. } => false,
             },
         }
     }
@@ -2963,13 +3061,20 @@ impl Analyzer<'_, '_> {
         self.goals.support(goal).iter().any(|support| {
             let (place, holders) = self.resolve_goal_support(support);
             match event {
-                KillEvent::Write { element: true, .. } if support.length => false,
-                KillEvent::Write { place: written, .. } => place.overlaps(written),
+                KillEvent::Write { element: true, .. }
+                | KillEvent::EntryImageHolderWrite { element: true, .. }
+                    if support.length =>
+                {
+                    false
+                }
+                KillEvent::Write { place: written, .. }
+                | KillEvent::EntryImageHolderWrite { place: written, .. } => {
+                    place.overlaps(written)
+                }
                 KillEvent::Consume { binding, .. } => {
                     holders.contains(binding) || place.root == PlaceRoot::Binding(*binding)
                 }
-                KillEvent::EntryImageHolderConsume { .. }
-                | KillEvent::EntryImageHolderWrite { .. } => false,
+                KillEvent::EntryImageHolderConsume { .. } => false,
             }
         })
     }
@@ -2981,7 +3086,8 @@ impl Analyzer<'_, '_> {
     /// that an earlier branch or claim already established.
     fn event_kills_goal_origin_binding(&self, binding: BindingId, event: &KillEvent) -> bool {
         match event {
-            KillEvent::Write { place, .. } => ResolvedPlace {
+            KillEvent::Write { place, .. }
+            | KillEvent::EntryImageHolderWrite { place, .. } => ResolvedPlace {
                 root: PlaceRoot::Binding(binding),
                 fields: Vec::new(),
             }
@@ -2989,9 +3095,7 @@ impl Analyzer<'_, '_> {
             KillEvent::Consume {
                 binding: consumed, ..
             } => binding == *consumed,
-            KillEvent::EntryImageHolderConsume { .. } | KillEvent::EntryImageHolderWrite { .. } => {
-                false
-            }
+            KillEvent::EntryImageHolderConsume { .. } => false,
         }
     }
 
@@ -3007,7 +3111,9 @@ impl Analyzer<'_, '_> {
     /// before every kill entry so a write cannot erase one premise and make
     /// an unreachable point reachable again.
     fn promote_contradiction(&mut self, state: &mut FactState) {
-        if !state.all_derivable {
+        if !state.all_derivable
+            && contradiction_without_proofs(state, &self.terms, &self.goals)
+        {
             let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
             if closed.contradictory() {
                 state.all_derivable = true;
@@ -3016,11 +3122,32 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// Promotes contradiction across the monotonically nested proof views.
+    ///
+    /// Complete contains every U fact, and U contains every B fact: U removes
+    /// S3 and B removes S4 from U, while all ordinary sources, kills, joins,
+    /// and loop rules are shared.  A non-contradictory superset therefore
+    /// proves that its remaining subsets are non-contradictory, so the common
+    /// pre-kill path needs one closure in the usual case rather than three.
+    /// Once a wider view is contradictory we still close the next view
+    /// independently, because its missing sources may remove that
+    /// contradiction.
+    fn promote_view_contradictions(&mut self, states: &mut ViewStates) {
+        self.promote_contradiction(&mut states.complete);
+        if !states.complete.all_derivable {
+            return;
+        }
+        self.promote_contradiction(&mut states.unasserted);
+        if !states.unasserted.all_derivable {
+            return;
+        }
+        self.promote_contradiction(&mut states.s4_blinded);
+    }
+
     fn apply_kills_one(&mut self, state: &mut FactState, events: &[KillEvent]) {
         if events.is_empty() {
             return;
         }
-        self.promote_contradiction(state);
         state.kill(|term| {
             events
                 .iter()
@@ -3039,9 +3166,18 @@ impl Analyzer<'_, '_> {
                 .iter()
                 .any(|event| self.event_kills_goal_origin_binding(*binding, event))
         });
+        state.ambiguous_goal_origins.retain(|binding| {
+            !events
+                .iter()
+                .any(|event| self.event_kills_goal_origin_binding(*binding, event))
+        });
     }
 
     fn apply_kills(&mut self, states: &mut ViewStates, events: &[KillEvent]) {
+        if events.is_empty() {
+            return;
+        }
+        self.promote_view_contradictions(states);
         self.apply_kills_one(&mut states.complete, events);
         self.apply_kills_one(&mut states.unasserted, events);
         self.apply_kills_one(&mut states.s4_blinded, events);
@@ -3109,7 +3245,6 @@ impl Analyzer<'_, '_> {
         if exited.is_empty() {
             return;
         }
-        self.promote_contradiction(state);
         state.kill(|term| self.scope_kills_term(term, &exited));
         self.kill_s12_candidates_for_scope(state, &exited);
         state.kill_goals(|goal| self.scope_kills_goal(goal, &exited));
@@ -3120,9 +3255,17 @@ impl Analyzer<'_, '_> {
         state
             .goal_origins
             .retain(|binding, _| !exited.contains(binding));
+        state
+            .ambiguous_goal_origins
+            .retain(|binding| !exited.contains(binding));
     }
 
     fn exit_scopes_to(&mut self, states: &mut ViewStates, depth: usize) {
+        let has_exited_bindings = self.scopes.iter().skip(depth).any(|scope| !scope.is_empty());
+        if !has_exited_bindings {
+            return;
+        }
+        self.promote_view_contradictions(states);
         self.exit_scopes_to_one(&mut states.complete, depth);
         self.exit_scopes_to_one(&mut states.unasserted, depth);
         self.exit_scopes_to_one(&mut states.s4_blinded, depth);
@@ -3130,7 +3273,6 @@ impl Analyzer<'_, '_> {
 
     /// Applies the private capture-scope kill of one counted construct.
     fn exit_counted_capture_scope_one(&mut self, state: &mut FactState, range_path: &[u32]) {
-        self.promote_contradiction(state);
         state.kill(|term| {
             matches!(
                 self.terms.kind(term),
@@ -3140,6 +3282,7 @@ impl Analyzer<'_, '_> {
     }
 
     fn exit_counted_capture_scope(&mut self, states: &mut ViewStates, range_path: &[u32]) {
+        self.promote_view_contradictions(states);
         self.exit_counted_capture_scope_one(&mut states.complete, range_path);
         self.exit_counted_capture_scope_one(&mut states.unasserted, range_path);
         self.exit_counted_capture_scope_one(&mut states.s4_blinded, range_path);
@@ -3662,18 +3805,31 @@ impl Analyzer<'_, '_> {
     /// origin. Leaves without a valid origin remain direct, so expansion is
     /// all-or-nothing over exactly the eligible leaves.
     fn expand_goal_expression(
-        &self,
+        &mut self,
         expression: &GoalExpression,
         state: &FactState,
     ) -> GoalExpression {
-        self.expand_goal_expression_inner(expression, state, &mut HashSet::new())
+        self.expand_goal_expression_inner(expression, state, &mut HashSet::new(), false)
+    }
+
+    /// Expands the Boolean origin skeleton while retaining the first
+    /// projection/normalization-bearing leaf. That leaf is the S3
+    /// manifestation with the snapshot support actually read by the claim;
+    /// the fully expanded image remains a separate lifecycle query.
+    fn expand_claim_contribution_expression(
+        &mut self,
+        expression: &GoalExpression,
+        state: &FactState,
+    ) -> GoalExpression {
+        self.expand_goal_expression_inner(expression, state, &mut HashSet::new(), true)
     }
 
     fn expand_goal_expression_inner(
-        &self,
+        &mut self,
         expression: &GoalExpression,
         state: &FactState,
         expanding: &mut HashSet<BindingId>,
+        preserve_normalized_leaf: bool,
     ) -> GoalExpression {
         match expression {
             GoalExpression::Datum(GoalDatum::Place {
@@ -3688,7 +3844,12 @@ impl Analyzer<'_, '_> {
                     return expression.clone();
                 }
                 let origin = self.goals.expression(origin).clone();
-                let mut expanded = self.expand_goal_expression_inner(&origin, state, expanding);
+                let mut expanded = self.expand_goal_expression_inner(
+                    &origin,
+                    state,
+                    expanding,
+                    preserve_normalized_leaf,
+                );
                 expanding.remove(root);
                 for projection in projections {
                     let Some(result) = self.goal_projection_type(expanded.ty(), *projection) else {
@@ -3711,16 +3872,37 @@ impl Analyzer<'_, '_> {
                 const_arguments,
                 result,
                 arguments,
-            } => GoalExpression::Operation {
-                row: *row,
-                type_arguments: type_arguments.clone(),
-                const_arguments: const_arguments.clone(),
-                result: *result,
-                arguments: arguments
-                    .iter()
-                    .map(|argument| self.expand_goal_expression_inner(argument, state, expanding))
-                    .collect(),
-            },
+            } => {
+                // Once an operation already has an exact L0 projection or
+                // domain normalization, expanding one of its place operands
+                // into a non-fragment expression would erase the checker
+                // fact that Contrib(P) must classify. Boolean parents still
+                // expand their children, so their normalized leaf predicates
+                // remain visible without sacrificing those leaf identities.
+                if preserve_normalized_leaf
+                    && (self.goal_projection(expression).is_some()
+                        || self.goal_normalization(expression).is_some())
+                {
+                    return expression.clone();
+                }
+                GoalExpression::Operation {
+                    row: *row,
+                    type_arguments: type_arguments.clone(),
+                    const_arguments: const_arguments.clone(),
+                    result: *result,
+                    arguments: arguments
+                        .iter()
+                        .map(|argument| {
+                            self.expand_goal_expression_inner(
+                                argument,
+                                state,
+                                expanding,
+                                preserve_normalized_leaf,
+                            )
+                        })
+                        .collect(),
+                }
+            }
             GoalExpression::Datum(_) => expression.clone(),
         }
     }
@@ -3766,13 +3948,68 @@ impl Analyzer<'_, '_> {
         if direct.ty() != CheckedType::Bool {
             return Vec::new();
         }
-        let expanded = self.expand_goal_expression(&direct, state);
+        let complete = self.expand_goal_expression(&direct, state);
         let direct = self.intern_goal_expression(direct);
-        let expanded = self.intern_goal_expression(expanded);
-        if direct == expanded {
+        let complete = self.intern_goal_expression(complete);
+        if direct == complete {
             vec![direct]
         } else {
-            vec![direct, expanded]
+            vec![direct, complete]
+        }
+    }
+
+    fn claim_goal_origin_set(
+        &mut self,
+        expression: &CheckedExpression,
+        state: &FactState,
+    ) -> Result<ClaimGoalOrigins, ()> {
+        let Some(direct) = self.direct_goal_expression(expression) else {
+            return Err(());
+        };
+        if direct.ty() != CheckedType::Bool {
+            return Err(());
+        }
+        if self.goal_has_ambiguous_origin(&direct, state) {
+            return Err(());
+        }
+        let complete = self.expand_goal_expression(&direct, state);
+        let contribution = self.expand_claim_contribution_expression(&direct, state);
+        let direct = self.intern_goal_expression(direct);
+        let complete = self.intern_goal_expression(complete);
+        let contribution = self.intern_goal_expression(contribution);
+        let ordered_pair = |second| {
+            if direct == second {
+                vec![direct]
+            } else {
+                vec![direct, second]
+            }
+        };
+        let mut lifecycle = vec![direct];
+        for image in [contribution, complete] {
+            if !lifecycle.contains(&image) {
+                lifecycle.push(image);
+            }
+        }
+        Ok(ClaimGoalOrigins {
+            lifecycle,
+            contribution: ordered_pair(contribution),
+            complete,
+        })
+    }
+
+    fn goal_has_ambiguous_origin(
+        &self,
+        expression: &GoalExpression,
+        state: &FactState,
+    ) -> bool {
+        match expression {
+            GoalExpression::Datum(GoalDatum::Place { root, .. }) => {
+                state.ambiguous_goal_origins.contains(root)
+            }
+            GoalExpression::Operation { arguments, .. } => arguments
+                .iter()
+                .any(|argument| self.goal_has_ambiguous_origin(argument, state)),
+            GoalExpression::Datum(_) => false,
         }
     }
 
@@ -3787,9 +4024,47 @@ impl Analyzer<'_, '_> {
         };
         let origin = self.intern_goal_expression(direct);
         state.goal_origins.insert(binding, origin);
+        state.ambiguous_goal_origins.remove(&binding);
+    }
+
+    fn record_value_initializer_origin(
+        &self,
+        frame: &GiveFrame,
+        state: &mut FactState,
+    ) {
+        let mut origins = frame
+            .gives
+            .iter()
+            .zip(&frame.give_goal_origins)
+            .filter_map(|(edge, origin)| {
+                let edge = match state.proof_view() {
+                    ProofView::Complete => &edge.complete,
+                    ProofView::Unasserted => &edge.unasserted,
+                    ProofView::S4Blinded => &edge.s4_blinded,
+                };
+                (!edge.all_derivable).then_some(*origin)
+            });
+        let Some(first) = origins.next() else {
+            return;
+        };
+        if origins.any(|origin| origin != first) {
+            state.ambiguous_goal_origins.insert(frame.binding);
+        }
     }
 
     fn intern_goal_expression(&mut self, expression: GoalExpression) -> GoalId {
+        if let GoalExpression::Operation {
+            row: GoalOperation::Boolean(_),
+            arguments,
+            ..
+        } = &expression
+        {
+            for argument in arguments {
+                if argument.ty() == CheckedType::Bool {
+                    self.intern_goal_expression(argument.clone());
+                }
+            }
+        }
         let projection = self.goal_projection(&expression);
         let normalization = self.goal_normalization(&expression);
         let mut support = Vec::new();
@@ -3847,6 +4122,342 @@ impl Analyzer<'_, '_> {
             }
             self.collect_decomposition_members(argument, child_sign, members);
         }
+    }
+
+    fn claim_contribution(
+        &mut self,
+        exact_goals: Vec<GoalId>,
+        lifecycle_complete: GoalId,
+    ) -> Result<ClaimContribution, ()> {
+        let canonical = exact_goals.last().copied().ok_or(())?;
+        let mut grouped = Vec::new();
+        self.collect_claim_component_groups(
+            canonical,
+            lifecycle_complete,
+            GoalSign::Positive,
+            &mut grouped,
+        )?;
+        let mut components = Vec::with_capacity(grouped.len());
+        let mut component_lifecycle = Vec::with_capacity(grouped.len());
+        for (component, lifecycle) in grouped {
+            if let Some(index) = components
+                .iter()
+                .position(|retained| Self::same_claim_component_identity(retained, &component))
+            {
+                let retained = component_lifecycle.get_mut(index).ok_or(())?;
+                Self::merge_claim_component_lifecycle(retained, lifecycle);
+            } else {
+                components.push(component);
+                component_lifecycle.push(lifecycle);
+            }
+        }
+        if components.is_empty() || components.len() != component_lifecycle.len() {
+            return Err(());
+        }
+        Ok(ClaimContribution {
+            exact_goals,
+            lifecycle_complete,
+            components,
+            component_lifecycle,
+        })
+    }
+
+    fn same_claim_component_identity(
+        left: &ClaimComponentFact,
+        right: &ClaimComponentFact,
+    ) -> bool {
+        match (left, right) {
+            (
+                ClaimComponentFact::Relation(Relation::Distinct {
+                    left: left_a,
+                    right: left_b,
+                }),
+                ClaimComponentFact::Relation(Relation::Distinct {
+                    left: right_a,
+                    right: right_b,
+                }),
+            ) => {
+                (left_a == right_a && left_b == right_b)
+                    || (left_a == right_b && left_b == right_a)
+            }
+            _ => left == right,
+        }
+    }
+
+    fn push_claim_component_manifestation(
+        manifestations: &mut Vec<ClaimComponentFact>,
+        candidate: ClaimComponentFact,
+    ) {
+        if !manifestations
+            .iter()
+            .any(|retained| Self::same_claim_component_identity(retained, &candidate))
+        {
+            manifestations.push(candidate);
+        }
+    }
+
+    fn merge_claim_component_lifecycle(
+        retained: &mut ClaimComponentLifecycle,
+        incoming: ClaimComponentLifecycle,
+    ) {
+        for manifestation in incoming.equivalent {
+            Self::push_claim_component_manifestation(&mut retained.equivalent, manifestation);
+        }
+        for manifestation in incoming.positive_only {
+            Self::push_claim_component_manifestation(&mut retained.positive_only, manifestation);
+        }
+    }
+
+    /// Walks the support-canonical and fully structural predicate images in
+    /// lockstep. One structural leaf is a lifecycle manifestation of the
+    /// snapshot-frontier contribution produced from the same ordinary-let
+    /// origin. If that leaf normalizes to several conjuncts, positive proof of
+    /// the exact structural leaf entails each conjunct, while its negative
+    /// sign does not refute any one conjunct.
+    fn collect_claim_component_groups(
+        &mut self,
+        support_goal: GoalId,
+        complete_goal: GoalId,
+        sign: GoalSign,
+        grouped: &mut Vec<(ClaimComponentFact, ClaimComponentLifecycle)>,
+    ) -> Result<(), ()> {
+        let support_expression = self.goals.expression(support_goal).clone();
+        let complete_expression = self.goals.expression(complete_goal).clone();
+        if let GoalExpression::Operation {
+            row: GoalOperation::Boolean(support_operation),
+            arguments: support_arguments,
+            ..
+        } = &support_expression
+        {
+            let child_sign = match (support_operation, sign) {
+                (CheckedBooleanOperation::And, GoalSign::Positive)
+                | (CheckedBooleanOperation::Or, GoalSign::Negative) => Some(sign),
+                (CheckedBooleanOperation::Not, GoalSign::Positive) => {
+                    Some(GoalSign::Negative)
+                }
+                (CheckedBooleanOperation::Not, GoalSign::Negative) => {
+                    Some(GoalSign::Positive)
+                }
+                (CheckedBooleanOperation::ExclusiveOr, _) => return Err(()),
+                _ => None,
+            };
+            if let Some(child_sign) = child_sign {
+                let GoalExpression::Operation {
+                    row: GoalOperation::Boolean(complete_operation),
+                    arguments: complete_arguments,
+                    ..
+                } = &complete_expression
+                else {
+                    return Err(());
+                };
+                if support_operation != complete_operation
+                    || support_arguments.len() != complete_arguments.len()
+                {
+                    return Err(());
+                }
+                let pairs = support_arguments
+                    .iter()
+                    .cloned()
+                    .zip(complete_arguments.iter().cloned())
+                    .map(|(support, complete)| {
+                        (
+                            self.intern_goal_expression(support),
+                            self.intern_goal_expression(complete),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                for (support, complete) in pairs {
+                    self.collect_claim_component_groups(
+                        support,
+                        complete,
+                        child_sign,
+                        grouped,
+                    )?;
+                }
+                return Ok(());
+            }
+        }
+
+        let mut support_components = Vec::new();
+        self.collect_claim_components(support_goal, sign, &mut support_components)?;
+        let mut complete_components = Vec::new();
+        let complete_components_available = self
+            .collect_claim_components(complete_goal, sign, &mut complete_components)
+            .is_ok()
+            && !complete_components.is_empty();
+        if support_components.is_empty() {
+            return Err(());
+        }
+        let exact_complete = ClaimComponentFact::Goal {
+            goal: complete_goal,
+            sign,
+        };
+        let one_to_one = complete_components_available
+            && support_components.len() == complete_components.len();
+        let one_component = support_components.len() == 1;
+        for (ordinal, component) in support_components.into_iter().enumerate() {
+            let mut lifecycle = ClaimComponentLifecycle::default();
+            if one_to_one {
+                let manifestation = complete_components.get(ordinal).cloned().ok_or(())?;
+                if !Self::same_claim_component_identity(&component, &manifestation) {
+                    Self::push_claim_component_manifestation(
+                        &mut lifecycle.equivalent,
+                        manifestation,
+                    );
+                }
+            }
+            if one_component {
+                Self::push_claim_component_manifestation(
+                    &mut lifecycle.equivalent,
+                    exact_complete.clone(),
+                );
+            } else {
+                Self::push_claim_component_manifestation(
+                    &mut lifecycle.positive_only,
+                    exact_complete.clone(),
+                );
+            }
+            grouped.push((component, lifecycle));
+        }
+        Ok(())
+    }
+
+    fn collect_claim_components(
+        &mut self,
+        goal: GoalId,
+        sign: GoalSign,
+        components: &mut Vec<ClaimComponentFact>,
+    ) -> Result<(), ()> {
+        let expression = self.goals.expression(goal).clone();
+        if matches!(
+            expression,
+            GoalExpression::Operation {
+                row: GoalOperation::EnumEquality {
+                    operand_type: CheckedType::Bool,
+                    ..
+                },
+                ..
+            }
+        ) {
+            return Err(());
+        }
+        if let GoalExpression::Operation {
+            row: GoalOperation::Boolean(operation),
+            arguments,
+            ..
+        } = &expression
+        {
+            let child_sign = match (operation, sign) {
+                (CheckedBooleanOperation::And, GoalSign::Positive)
+                | (CheckedBooleanOperation::Or, GoalSign::Negative) => Some(sign),
+                (CheckedBooleanOperation::Not, GoalSign::Positive) => Some(GoalSign::Negative),
+                (CheckedBooleanOperation::Not, GoalSign::Negative) => Some(GoalSign::Positive),
+                (CheckedBooleanOperation::ExclusiveOr, _) => return Err(()),
+                _ => None,
+            };
+            if let Some(child_sign) = child_sign {
+                for argument in arguments {
+                    let child = self.intern_goal_expression(argument.clone());
+                    self.collect_claim_components(child, child_sign, components)?;
+                }
+                return Ok(());
+            }
+        }
+
+        if let Some(projected) = self.goals.projection(goal).cloned() {
+            let projected = match sign {
+                GoalSign::Positive => projected,
+                GoalSign::Negative => projected.negated(),
+            };
+            match projected {
+                Relation::Equal { left, right } => {
+                    components.push(ClaimComponentFact::Relation(Relation::Bound {
+                        left,
+                        right,
+                        bound: 0,
+                    }));
+                    components.push(ClaimComponentFact::Relation(Relation::Bound {
+                        left: right,
+                        right: left,
+                        bound: 0,
+                    }));
+                }
+                relation => components.push(ClaimComponentFact::Relation(relation)),
+            }
+            return Ok(());
+        }
+
+        if let Some(normalization) = self.goals.normalization(goal) {
+            let relations = normalization.conjunctive_relations(sign).ok_or(())?;
+            components.extend(relations.into_iter().map(ClaimComponentFact::Relation));
+            return Ok(());
+        }
+
+        components.push(ClaimComponentFact::Goal { goal, sign });
+        Ok(())
+    }
+
+    fn claim_component_rendering(&self, component: &ClaimComponentFact) -> String {
+        match component {
+            ClaimComponentFact::Goal { goal, sign } => {
+                format!("{sign:?} {:?}", self.goals.expression(*goal))
+            }
+            ClaimComponentFact::Relation(relation) => self.render_relation(relation),
+        }
+    }
+
+    fn claim_component_proof(
+        &mut self,
+        component: &ClaimComponentFact,
+        closed: &ClosedState,
+    ) -> (Option<DerivationId>, Option<DerivationId>) {
+        match component {
+            ClaimComponentFact::Goal { goal, sign } => {
+                let opposite = match sign {
+                    GoalSign::Positive => GoalSign::Negative,
+                    GoalSign::Negative => GoalSign::Positive,
+                };
+                (
+                    closed.goal_proof(*goal, *sign, &self.goals, &mut self.derivations),
+                    closed.goal_proof(*goal, opposite, &self.goals, &mut self.derivations),
+                )
+            }
+            ClaimComponentFact::Relation(relation) => (
+                closed.relation_proof(relation, &mut self.derivations),
+                closed.relation_proof(&relation.negated(), &mut self.derivations),
+            ),
+        }
+    }
+
+    fn claim_component_lifecycle_proof(
+        &mut self,
+        component: &ClaimComponentFact,
+        lifecycle: &ClaimComponentLifecycle,
+        closed: &ClosedState,
+    ) -> (Option<DerivationId>, Option<DerivationId>, bool) {
+        let (mut positive, mut negative) = self.claim_component_proof(component, closed);
+        let mut one_manifestation_has_both = positive.is_some() && negative.is_some();
+        for manifestation in &lifecycle.equivalent {
+            let (manifest_positive, manifest_negative) =
+                self.claim_component_proof(manifestation, closed);
+            one_manifestation_has_both |=
+                manifest_positive.is_some() && manifest_negative.is_some();
+            if positive.is_none() {
+                positive = manifest_positive;
+            }
+            if negative.is_none() {
+                negative = manifest_negative;
+            }
+        }
+        for manifestation in &lifecycle.positive_only {
+            if positive.is_some() {
+                break;
+            }
+            positive = self.claim_component_proof(manifestation, closed).0;
+        }
+        let cross_manifestation_contradiction =
+            positive.is_some() && negative.is_some() && !one_manifestation_has_both;
+        (positive, negative, cross_manifestation_contradiction)
     }
 
     /// [ENT-3] Establishes the signed Boolean decomposition set of one
@@ -4136,7 +4747,9 @@ impl Analyzer<'_, '_> {
             CheckedType::Unit
             | CheckedType::Bool
             | CheckedType::Integer(_)
-            | CheckedType::Float(_) => true,
+            | CheckedType::Float(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_) => true,
             CheckedType::Nominal(id) => self
                 .context
                 .nominals
@@ -4632,6 +5245,10 @@ impl Analyzer<'_, '_> {
                 .is_some_and(|relation| closed.derives(relation));
             let positive_normalization =
                 closed.derives_normalized_goal(id, GoalSign::Positive, &self.goals);
+            let positive_introduction = !positive_opaque
+                && !positive_projection
+                && !positive_normalization
+                && closed.derives_goal(id, GoalSign::Positive, &self.goals);
             let negative_opaque = closed.holds_opaque(id, GoalSign::Negative);
             let negative_projection = self
                 .goals
@@ -4639,8 +5256,16 @@ impl Analyzer<'_, '_> {
                 .is_some_and(|relation| closed.derives(&relation.negated()));
             let negative_normalization =
                 closed.derives_normalized_goal(id, GoalSign::Negative, &self.goals);
-            if positive_opaque || positive_projection || positive_normalization {
-                let mut evidence = Vec::with_capacity(3);
+            let negative_introduction = !negative_opaque
+                && !negative_projection
+                && !negative_normalization
+                && closed.derives_goal(id, GoalSign::Negative, &self.goals);
+            if positive_opaque
+                || positive_projection
+                || positive_normalization
+                || positive_introduction
+            {
+                let mut evidence = Vec::with_capacity(4);
                 if positive_opaque {
                     evidence.push(CallGoalEvidence::OpaquePositive);
                 }
@@ -4650,11 +5275,18 @@ impl Analyzer<'_, '_> {
                 if positive_normalization {
                     evidence.push(CallGoalEvidence::NormalizationPositive);
                 }
+                if positive_introduction {
+                    evidence.push(CallGoalEvidence::BooleanIntroductionPositive);
+                }
                 let derivation =
                     closed.goal_proof(id, GoalSign::Positive, &self.goals, &mut self.derivations);
                 (CallGoalDisposition::Discharged, evidence, derivation)
-            } else if negative_opaque || negative_projection || negative_normalization {
-                let mut evidence = Vec::with_capacity(3);
+            } else if negative_opaque
+                || negative_projection
+                || negative_normalization
+                || negative_introduction
+            {
+                let mut evidence = Vec::with_capacity(4);
                 if negative_opaque {
                     evidence.push(CallGoalEvidence::OpaqueNegative);
                 }
@@ -4663,6 +5295,9 @@ impl Analyzer<'_, '_> {
                 }
                 if negative_normalization {
                     evidence.push(CallGoalEvidence::NormalizationNegative);
+                }
+                if negative_introduction {
+                    evidence.push(CallGoalEvidence::BooleanIntroductionNegative);
                 }
                 (CallGoalDisposition::Refuted, evidence, None)
             } else {
@@ -6251,6 +6886,9 @@ impl Analyzer<'_, '_> {
         let mut events = Vec::new();
         self.collect_expression_kills(expression, &mut events);
         if let Some(prepared) = &mut prepared {
+            if !events.is_empty() {
+                self.promote_view_contradictions(state);
+            }
             for event in &events {
                 let kind = match event {
                     KillEvent::Consume { .. } | KillEvent::EntryImageHolderConsume { .. } => {
@@ -6347,6 +6985,9 @@ impl Analyzer<'_, '_> {
         let target_event = (force_target_event || !receivers.is_empty())
             .then(|| self.proof_event(FlowEventKind::PostconditionReceiverWrite, Some(node_path)));
         if let Some(target_event) = target_event {
+            if !target_kills.is_empty() {
+                self.promote_view_contradictions(state);
+            }
             for event in &target_kills {
                 self.apply_kills_one(&mut state.complete, std::slice::from_ref(event));
                 self.apply_kills_one(&mut state.unasserted, std::slice::from_ref(event));
@@ -6464,25 +7105,20 @@ impl Analyzer<'_, '_> {
                 ..
             } => {
                 let _ = self.expression_effects(condition, state);
-                // [CLM-2] is judged at the claim with the state before the
-                // claim's own passed fact: redundancy when the closed state
-                // derives the predicate (a contradictory state derives
-                // everything and never refutes), refutation when the
-                // non-contradictory state derives the exact negation.
-                let relation = self.scrutinee_relation(condition, &state.complete);
-                let domain_goal = self
-                    .goal_origin_set(condition, &state.complete)
-                    .into_iter()
-                    .rev()
-                    .find(|goal| {
-                        matches!(
-                            self.goals.expression(*goal),
-                            GoalExpression::Operation {
-                                row: GoalOperation::Integer { operation, .. },
-                                ..
-                            } if operation.is_defined_query()
-                        )
-                    });
+                // [CLM-2] is judged against every still-valid exact image in
+                // direct-then-expanded order, before this claim's S3 source.
+                // Contradiction is classified first so ex-falso cannot turn
+                // an unreachable assertion into a redundant theorem.
+                let origins = self.claim_goal_origin_set(condition, &state.complete);
+                let ambiguous_origin = origins.is_err();
+                let (lifecycle_goals, contribution_goals, lifecycle_complete) = match origins {
+                    Ok(origins) => (
+                        origins.lifecycle,
+                        origins.contribution,
+                        Some(origins.complete),
+                    ),
+                    Err(()) => (Vec::new(), Vec::new(), None),
+                };
                 let closed = close(
                     &state.complete,
                     &self.terms,
@@ -6491,68 +7127,184 @@ impl Analyzer<'_, '_> {
                 );
                 let occurrence = u32::try_from(self.claims.len())
                     .expect("ENT claim-root occurrence exceeds the u32 identity space");
-                let (disposition, lifecycle) = if let Some(relation) = relation {
-                    if closed.derives(&relation) {
-                        let proof = closed
-                            .relation_proof(&relation, &mut self.derivations)
-                            .expect("a derivable claim relation must retain its canonical proof");
-                        (
-                            ClaimDisposition::Redundant,
-                            Some((ClaimLifecycleKind::Redundant, proof)),
-                        )
-                    } else {
-                        let negation = relation.negated();
-                        if !closed.contradictory() && closed.derives(&negation) {
-                            let proof = closed
-                                .relation_proof(&negation, &mut self.derivations)
-                                .expect("a derived claim negation must retain its canonical proof");
-                            (
-                                ClaimDisposition::Refuted {
-                                    predicate: self.render_relation(&relation),
-                                    negation: self.render_relation(&negation),
-                                },
-                                Some((ClaimLifecycleKind::Refuted, proof)),
-                            )
-                        } else {
-                            (ClaimDisposition::Retained, None)
-                        }
-                    }
-                } else if let Some(goal) = domain_goal {
-                    if closed.derives_goal(goal, GoalSign::Positive, &self.goals) {
-                        let proof = closed
-                            .goal_proof(
+                let (mut disposition, lifecycle) = if closed.contradictory() {
+                    (
+                        ClaimDisposition::Vacuous {
+                            cause: ClaimVacuity::PreStateContradiction,
+                        },
+                        None,
+                    )
+                } else if ambiguous_origin {
+                    (ClaimDisposition::UnsupportedContribution, None)
+                } else {
+                    let mut positive = None;
+                    let mut negative = None;
+                    let mut one_image_has_both = false;
+                    for goal in lifecycle_goals.iter().copied() {
+                        let goal_positive =
+                            closed.derives_goal(goal, GoalSign::Positive, &self.goals);
+                        let goal_negative =
+                            closed.derives_goal(goal, GoalSign::Negative, &self.goals);
+                        one_image_has_both |= goal_positive && goal_negative;
+                        if positive.is_none() && goal_positive {
+                            positive = closed.goal_proof(
                                 goal,
                                 GoalSign::Positive,
                                 &self.goals,
                                 &mut self.derivations,
-                            )
-                            .expect("a derivable domain claim must retain its canonical proof");
-                        (
-                            ClaimDisposition::Redundant,
-                            Some((ClaimLifecycleKind::Redundant, proof)),
-                        )
-                    } else if closed.derives_goal(goal, GoalSign::Negative, &self.goals) {
-                        let proof = closed
-                            .goal_proof(
+                            );
+                        }
+                        if negative.is_none() && goal_negative {
+                            negative = closed.goal_proof(
                                 goal,
                                 GoalSign::Negative,
                                 &self.goals,
                                 &mut self.derivations,
-                            )
-                            .expect("a refuted domain claim must retain its canonical proof");
-                        (
+                            );
+                        }
+                    }
+                    match (positive, negative) {
+                        (Some(_), Some(_)) if one_image_has_both => {
+                            (ClaimDisposition::BothSigns, None)
+                        }
+                        (Some(_), Some(_)) => (
+                            ClaimDisposition::Vacuous {
+                                cause: ClaimVacuity::ExactImageConflict,
+                            },
+                            None,
+                        ),
+                        (Some(proof), None) => (
+                            ClaimDisposition::Redundant,
+                            Some((ClaimLifecycleKind::Redundant, proof)),
+                        ),
+                        (None, Some(proof)) => (
                             ClaimDisposition::Refuted {
                                 predicate: predicate.clone(),
                                 negation: format!("bnot({predicate})"),
                             },
                             Some((ClaimLifecycleKind::Refuted, proof)),
-                        )
-                    } else {
-                        (ClaimDisposition::Retained, None)
+                        ),
+                        (None, None) => (ClaimDisposition::Retained, None),
                     }
-                } else {
-                    (ClaimDisposition::Retained, None)
                 };
+                let counterfactual = self.claim_mask.is_some();
+                let mut proof_evidence = None;
+                if counterfactual {
+                    // Eligible was frozen by the successful full run. A
+                    // counterfactual rewalk changes only the selected S3
+                    // authority; it never reclassifies another source claim.
+                    disposition = ClaimDisposition::Retained;
+                }
+                let mut component_renderings = Vec::new();
+                let mut contribution = None;
+                if !matches!(
+                    disposition,
+                    ClaimDisposition::UnsupportedContribution
+                        | ClaimDisposition::Vacuous { .. }
+                        | ClaimDisposition::BothSigns
+                ) {
+                    match self.claim_contribution(
+                        contribution_goals,
+                        lifecycle_complete
+                            .expect("classified claim has one complete lifecycle image"),
+                    ) {
+                        Ok(candidate) => {
+                            component_renderings = candidate
+                                .components
+                                .iter()
+                                .map(|component| self.claim_component_rendering(component))
+                                .collect();
+                            if !counterfactual {
+                                let mut first_component_issue = None;
+                                let mut cross_manifestation_contradiction = None;
+                                let mut component_both_signs = false;
+                                for (index, (component, lifecycle)) in candidate
+                                    .components
+                                    .iter()
+                                    .zip(&candidate.component_lifecycle)
+                                    .enumerate()
+                                {
+                                    let (positive, negative, cross_contradiction) = self
+                                        .claim_component_lifecycle_proof(
+                                            component,
+                                            lifecycle,
+                                            &closed,
+                                        );
+                                    let ordinal = u32::try_from(index).expect(
+                                        "claim contribution component count exceeds the u32 identity space",
+                                    );
+                                    if positive.is_some() && negative.is_some() {
+                                        if cross_contradiction {
+                                            cross_manifestation_contradiction
+                                                .get_or_insert(ordinal);
+                                        } else {
+                                            component_both_signs = true;
+                                        }
+                                    } else if first_component_issue.is_none() {
+                                        first_component_issue = match (positive, negative) {
+                                            (Some(_), None) => Some(
+                                                ClaimDisposition::ComponentRedundant {
+                                                    component: ordinal,
+                                                },
+                                            ),
+                                            (None, Some(_)) => Some(
+                                                ClaimDisposition::ComponentRefuted {
+                                                    component: ordinal,
+                                                },
+                                            ),
+                                            (None, None) => None,
+                                            (Some(_), Some(_)) => unreachable!(
+                                                "component both-signs handled before ordinal selection"
+                                            ),
+                                        };
+                                    }
+                                }
+                                let exact_lifecycle_retained =
+                                    disposition == ClaimDisposition::Retained;
+                                disposition = if component_both_signs {
+                                    ClaimDisposition::BothSigns
+                                } else if let Some(component) = cross_manifestation_contradiction {
+                                    ClaimDisposition::Vacuous {
+                                        cause: ClaimVacuity::ComponentManifestationConflict {
+                                            component,
+                                        },
+                                    }
+                                } else if exact_lifecycle_retained {
+                                    first_component_issue.unwrap_or(ClaimDisposition::Retained)
+                                } else {
+                                    disposition
+                                };
+                            }
+                            contribution = Some(candidate);
+                        }
+                        Err(()) if disposition == ClaimDisposition::Retained => {
+                            disposition = ClaimDisposition::UnsupportedContribution;
+                        }
+                        Err(()) => {}
+                    }
+                }
+                if disposition == ClaimDisposition::Retained {
+                    let contribution = contribution
+                        .as_ref()
+                        .expect("retained claim candidate has a contribution");
+                    let mut trial = state.complete.clone();
+                    let reconstructed = self.establish_claim_contribution(
+                        &site.node_path,
+                        contribution,
+                        &component_renderings,
+                        occurrence,
+                        &mut trial,
+                    );
+                    let targeted = self.claim_mask.is_some_and(|mask| {
+                        mask.function == self.function.id && mask.node_path == site.node_path
+                    });
+                    if reconstructed.is_some() || targeted {
+                        state.complete = trial;
+                        proof_evidence = reconstructed;
+                    } else {
+                        disposition = ClaimDisposition::InconsistentContribution;
+                    }
+                }
                 let lifecycle_derivation = lifecycle.map(|(kind, proof)| {
                     self.derivations.add_root(
                         DerivationRootKind::ClaimLifecycle { occurrence, kind },
@@ -6565,12 +7317,13 @@ impl Analyzer<'_, '_> {
                     name: name.clone(),
                     predicate: predicate.clone(),
                     justification: justification.clone(),
+                    components: component_renderings,
                     disposition,
                     lifecycle_derivation,
+                    proof: proof_evidence,
+                    schema_proof: None,
+                    residual_witnesses: Vec::new(),
                 });
-                // [ENT-3] S3: the passed predicate holds on the normal
-                // continuation as the sole writer-stated fact source.
-                self.establish_claim_condition(&site.node_path, condition, &mut state.complete);
                 true
             }
             CheckedStatement::Return {
@@ -6595,6 +7348,12 @@ impl Analyzer<'_, '_> {
                         )
                     })
                 {
+                    let give_goal_origin = if result_type == CheckedType::Bool {
+                        self.direct_goal_expression(value)
+                            .map(|origin| self.intern_goal_expression(origin))
+                    } else {
+                        None
+                    };
                     let delivery = (kind == ValueInitializerKind::ValueIf).then(|| {
                         self.value_if_delivery_image(
                             value,
@@ -6613,6 +7372,7 @@ impl Analyzer<'_, '_> {
                     self.exit_counted_loops_from(&mut exit, loop_depth);
                     if let Some(frame) = self.gives.last_mut() {
                         frame.gives.push(exit);
+                        frame.give_goal_origins.push(give_goal_origin);
                         if let Some(delivery) = delivery {
                             frame.delivery_images.push(delivery);
                             frame.delivery_edges.push(node_path.clone());
@@ -6683,6 +7443,7 @@ impl Analyzer<'_, '_> {
                     binding: *binding,
                     result_type: *result_type,
                     gives: Vec::new(),
+                    give_goal_origins: Vec::new(),
                     delivery_images: Vec::new(),
                     delivery_edges: Vec::new(),
                 });
@@ -6703,6 +7464,9 @@ impl Analyzer<'_, '_> {
                     return false;
                 }
                 *state = self.join_views(&frame.gives);
+                self.record_value_initializer_origin(&frame, &mut state.complete);
+                self.record_value_initializer_origin(&frame, &mut state.unasserted);
+                self.record_value_initializer_origin(&frame, &mut state.s4_blinded);
                 if frame.kind == ValueInitializerKind::ValueIf {
                     self.establish_value_if_delivery_join(&frame, state);
                 }
@@ -7350,7 +8114,6 @@ impl Analyzer<'_, '_> {
     }
 
     fn apply_loop_kills_one(&mut self, state: &mut FactState, kills: &LoopKills) {
-        self.promote_contradiction(state);
         state.kill(|term| {
             kills
                 .events
@@ -7381,6 +8144,9 @@ impl Analyzer<'_, '_> {
         state
             .goal_origins
             .retain(|binding, _| !kills.set_bindings.contains(binding));
+        state
+            .ambiguous_goal_origins
+            .retain(|binding| !kills.set_bindings.contains(binding));
     }
 
     fn apply_loop_kills(
@@ -7389,6 +8155,7 @@ impl Analyzer<'_, '_> {
         kills: &LoopKills,
         event: Option<FlowEventId>,
     ) {
+        self.promote_view_contradictions(states);
         self.apply_loop_kills_one(&mut states.complete, kills);
         self.apply_loop_kills_one(&mut states.unasserted, kills);
         self.apply_loop_kills_one(&mut states.s4_blinded, kills);
@@ -7686,6 +8453,7 @@ fn checked_integer_constant(expression: &CheckedExpression) -> Option<i128> {
 /// value identity even when a separately established length fact survives.
 fn invalidate_goal_origin_for_set(state: &mut FactState, target: &CheckedSetTarget) {
     state.goal_origins.remove(&target.binding());
+    state.ambiguous_goal_origins.remove(&target.binding());
 }
 
 fn holder_from_value(value: &CheckedExpression) -> Option<HolderReferent> {

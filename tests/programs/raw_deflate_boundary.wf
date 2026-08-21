@@ -40,7 +40,7 @@ fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text:
   }
 }
 
-fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads('d 's), writes('d), traps {
+fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads('d 's), writes('d) {
   doc "Copies one half-open source range into the destination at one offset.";
   let source_room = len(deref(source));
   let destination_room = len(deref(destination));
@@ -52,10 +52,16 @@ fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s
       break @copy;
     }
     let read_ok = ilt(cursor, source_room);
-    claim copy_read_in_source: read_ok because "callers clamp the range to the source length";
+    if read_ok {
+    } else {
+      return target;
+    }
     let byte = deref(source)[cursor];
     let write_ok = ilt(target, destination_room);
-    claim copy_write_in_destination: write_ok because "callers leave room for the copied range";
+    if write_ok {
+    } else {
+      return target;
+    }
     set deref(destination)[target] = byte;
     set target = target +wrap 1_u64;
     set cursor = cursor +wrap 1_u64;

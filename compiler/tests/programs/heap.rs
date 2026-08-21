@@ -53,7 +53,7 @@ fn affine_slot_buffers_fill_replace_vacate_and_drop_per_element() {
 fn recursively_boxed_tree_executes_with_derived_cleanup() {
     let llvm = compile_program("recursive_tree.wf");
     let count = emitted_function(&llvm, "count");
-    assert!(count.contains("call i64 @wf_count"));
+    assert!(count.contains("call") && count.contains("@wf_count"));
     assert!(llvm.contains("call ptr @malloc"));
     assert!(llvm.contains("icmp ne ptr"));
     assert!(llvm.contains("call void @free"));

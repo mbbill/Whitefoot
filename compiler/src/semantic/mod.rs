@@ -379,6 +379,23 @@ pub struct RefutedClaimDetail {
     pub predicate: String,
     /// The derived negation.
     pub negation: String,
+    /// Stable concrete generic instance spelling, or `None` for a source
+    /// schema or nongeneric occurrence.
+    pub instance: Option<String>,
+}
+
+/// One CLM-2 source-upgrade or residual-canonicality rejection other than an
+/// exact refutation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InvalidClaimDetail {
+    pub name: String,
+    pub predicate: String,
+    pub classification: &'static str,
+    pub component: Option<u32>,
+    pub reason: &'static str,
+    /// Stable concrete generic instance spelling, or `None` for a source
+    /// schema or nongeneric occurrence.
+    pub instance: Option<String>,
 }
 
 /// One non-discharged static source obligation disposition [ENT-6].
@@ -424,13 +441,8 @@ pub enum StrictProofView {
 /// Public lifecycle spelling retained in a direct [CLM-3] claim diagnostic.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StrictClaimLifecycleDisposition {
-    /// Ordinary CLM-1 retained runtime check.
+    /// A CLM-1/CLM-2-validated proof residual retained as a runtime check.
     Retained,
-    /// Ordinary CLM-2 non-rejecting redundancy disposition.
-    Redundant,
-    /// Test-only dark-checker observation; the production path rejects this
-    /// earlier under CLM-2, before CLM-3 begins.
-    Refuted,
 }
 
 /// The least downstream direct-claim identity carried by an import event.
@@ -758,6 +770,16 @@ pub enum SemanticIssueKind {
     InvalidOperation,
     /// A contract or claim predicate is not exactly `own Bool`.
     InvalidPredicateCondition,
+    /// A claim predicate contains computation outside CLM-1's total,
+    /// observational, non-consuming proof-expression subset.
+    InvalidClaimProofPredicate {
+        reason: &'static str,
+    },
+    /// A decoded claim justification is not the exact five-field CLM-1
+    /// review record.
+    InvalidClaimJustification {
+        expected: &'static str,
+    },
     /// A conditional was written in a form GRAM-6 does not admit for its
     /// class: a Bool-scrutinee `match`, an empty `else`, or an `else` block
     /// holding exactly one `if`.
@@ -820,6 +842,9 @@ pub enum SemanticIssueKind {
     /// The fact state at a claim derives the exact negation of its predicate
     /// [CLM-2].
     RefutedClaim(Box<RefutedClaimDetail>),
+    /// A claim is vacuous, redundant, overlapping, inconsistent,
+    /// unreconstructable, unsupported, or not individually load-bearing.
+    InvalidClaim(Box<InvalidClaimDetail>),
     /// A direct claim belongs to the marked root's own SCC [CLM-3].
     StrictDirectClaim(Box<StrictDirectClaimDetail>),
     /// A root-SCC call imports a nonempty downstream `MayClaims` set [CLM-3].

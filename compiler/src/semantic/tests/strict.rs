@@ -9,6 +9,12 @@ use crate::{
 use super::super::entailment::{ProofView, StrictDerivationRootKind};
 use super::{with_semantics, with_semantics_dark};
 
+const CLAMP_LT_FOUR_REVIEW: &str = "premises: values has length 4 and bounded is returned by clamp_three, whose body computes imin(index, 3_u64)\\nderivation: bounded is at most 3_u64 and therefore strictly less than room\\nconclusion: ilt(bounded, room) is true\\nchecker gap: ENT does not publish an uncontracted user-call result bound\\nconsumers: the following length-four array subscript uses bounded";
+
+const CLAMP_LT_EIGHT_REVIEW: &str = "premises: bounded is returned by clamp_seven, whose body computes imin(value, 7_u64)\\nderivation: bounded is at most 7_u64 and therefore strictly less than 8_u64\\nconclusion: ilt(bounded, 8_u64) is true\\nchecker gap: ENT does not publish an uncontracted user-call result bound\\nconsumers: the following FN-8 requirement needs bounded below 8_u64";
+
+const GENERIC_MAX_NONNEGATIVE_REVIEW: &str = "premises: nonnegative is imax(value, 0_T) for an integer type T\\nderivation: imax returns an operand no smaller than 0_T\\nconclusion: ige(nonnegative, 0_T) is true\\nchecker gap: ENT does not derive the result range of imax for GenericInt\\nconsumers: the following FN-8 requirement needs nonnegative at least 0_T";
+
 fn rejection(source: &[u8], rule: SemanticRule, cited: &str) -> SemanticIssue {
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
@@ -79,51 +85,50 @@ fn a_direct_unreachable_redundant_claim_rejects_at_the_claim_with_full_identity(
   let never = False();
   if never {
     let same = ieq(0_u64, 0_u64);
-    claim hidden: same because "still structural";
+    claim hidden: same because "premises: the branch is unreachable\nderivation: explosion would prove the predicate\nconclusion: the values are equal\nchecker gap: unreachable code is not a proof residual\nconsumers: no reachable terminal consumer";
   }
   return exit_status(code: 0_u8);
 }
 "#;
-    let issue = rejection(
-        source,
-        SemanticRule::Clm3,
-        "claim hidden: same because \"still structural\";",
-    );
-    let SemanticIssueKind::StrictDirectClaim(detail) = issue.kind() else {
-        panic!("expected direct-claim detail: {issue:?}");
-    };
-    assert_eq!(detail.strict_root, "main");
-    assert_eq!(detail.concrete_claim_owner, "main");
-    assert_eq!(detail.name, "hidden");
-    assert_eq!(detail.predicate, "same");
-    assert_eq!(detail.justification, "still structural");
-    assert_eq!(detail.lifecycle, StrictClaimLifecycleDisposition::Redundant);
-    let SemanticLocation::SourceNode(path, _) = issue.location() else {
-        unreachable!()
-    };
-    assert_eq!(&detail.claim, path);
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("an unreachable claim must reject before CLM-3: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Clm2);
+    });
 }
 
 #[test]
 fn the_first_root_call_importing_a_generic_claim_carries_the_least_claim_identity() {
-    let source = br#"fn claimed<T: Int>(value: own T) -> result: own T traps {
-  let flag = True();
-  claim generic_seed: flag because "one concrete seed";
-  return value;
-}
+    let source = format!(r#"fn need_nonnegative<T: Int>(value: own T) -> result: own unit pure contract {{
+  requires ige(value, 0_T);
+}} {{
+  return unit;
+}}
 
-fn relay<T: Int>(value: own T) -> result: own T traps {
+fn claimed<T: Int>(value: own T) -> result: own T traps {{
+  let nonnegative = imax(value, 0_T);
+  claim generic_seed: ige(nonnegative, 0_T) because "{GENERIC_MAX_NONNEGATIVE_REVIEW}";
+  need_nonnegative<T>(value: nonnegative);
+  return nonnegative;
+}}
+
+fn relay<T: Int>(value: own T) -> result: own T traps {{
   let result = claimed<T>(value: value);
   return result;
-}
+}}
 
-deny_claims command fn main() -> status: own ExitStatus traps {
-  let first = relay<u64>(value: 2_u64);
-  let second = relay<u8>(value: 3_u8);
+deny_claims command fn main() -> status: own ExitStatus traps {{
+  let first = relay<i64>(value: 2_i64);
+  let second = relay<i8>(value: 3_i8);
   return exit_status(code: 0_u8);
-}
-"#;
-    let issue = rejection(source, SemanticRule::Clm3, "relay<u64>(value: 2_u64)");
+}}
+"#);
+    let issue = rejection(
+        source.as_bytes(),
+        SemanticRule::Clm3,
+        "relay<i64>(value: 2_i64)",
+    );
     let SemanticIssueKind::StrictImportedClaim(detail) = issue.kind() else {
         panic!("expected imported-claim detail: {issue:?}");
     };
@@ -145,34 +150,46 @@ deny_claims command fn main() -> status: own ExitStatus traps {
 
 #[test]
 fn a_mutual_component_converges_one_claim_seed_to_the_root_import() {
-    let source = br#"fn left(value: own u64) -> result: own u64 traps {
+    let source = format!(r#"fn clamp_seven(value: own u64) -> result: own u64 pure {{
+  return imin(value, 7_u64);
+}}
+
+fn need_below_eight(value: own u64) -> result: own unit pure contract {{
+  requires ilt(value, 8_u64);
+}} {{
+  return unit;
+}}
+
+fn left(value: own u64) -> result: own u64 traps {{
   let done = ieq(value, 0_u64);
-  if done {
-    let flag = True();
-    claim cycle_seed: flag because "component seed";
-    return value;
-  } else {
+  if done {{
+    let bounded = clamp_seven(value: value);
+    let inside = ilt(bounded, 8_u64);
+    claim cycle_seed: inside because "{CLAMP_LT_EIGHT_REVIEW}";
+    need_below_eight(value: bounded);
+    return bounded;
+  }} else {{
     let result = right(value: value);
     return result;
-  }
-}
+  }}
+}}
 
-fn right(value: own u64) -> result: own u64 traps {
+fn right(value: own u64) -> result: own u64 traps {{
   let result = left(value: value);
   return result;
-}
+}}
 
-deny_claims fn strict_root(value: own u64) -> result: own u64 traps {
+deny_claims fn strict_root(value: own u64) -> result: own u64 traps {{
   let result = right(value: value);
   return result;
-}
+}}
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus traps {{
   let result = strict_root(value: 0_u64);
   return exit_status(code: 0_u8);
-}
-"#;
-    let issue = rejection(source, SemanticRule::Clm3, "right(value: value)");
+}}
+"#);
+    let issue = rejection(source.as_bytes(), SemanticRule::Clm3, "right(value: value)");
     let SemanticIssueKind::StrictImportedClaim(detail) = issue.kind() else {
         panic!("expected imported claim: {issue:?}");
     };
@@ -191,24 +208,33 @@ command fn main() -> status: own ExitStatus traps {
 /// above.
 #[test]
 fn a_load_bearing_claim_cannot_authorize_a_strict_bounds_query() {
-    let asserted =
-        br#"deny_claims fn read(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {
-  let room = len(values);
-  let inside = ilt(index, room);
-  claim body_authorization: inside because "body authorization";
-  return values[index];
-}
+    let asserted = format!(
+        r#"fn clamp_three(value: own u64) -> result: own u64 pure {{
+  return imin(value, 3_u64);
+}}
 
-command fn main() -> status: own ExitStatus traps {
+deny_claims fn read(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {{
+  let bounded = clamp_three(value: index);
+  let room = len(values);
+  let inside = ilt(bounded, room);
+  claim body_authorization: inside because "{CLAMP_LT_FOUR_REVIEW}";
+  return values[bounded];
+}}
+
+command fn main() -> status: own ExitStatus traps {{
   let values = array_new<u8, 4>(0_u8);
   let value = read(values: move values, index: 0_u64);
   return exit_status(code: 0_u8);
-}
-"#;
+}}
+"#
+    );
+    let cited = format!(
+        "claim body_authorization: inside because \"{CLAMP_LT_FOUR_REVIEW}\";"
+    );
     let issue = rejection(
-        asserted,
+        asserted.as_bytes(),
         SemanticRule::Clm3,
-        "claim body_authorization: inside because \"body authorization\";",
+        &cited,
     );
     let SemanticIssueKind::StrictDirectClaim(detail) = issue.kind() else {
         panic!("expected direct-claim detail: {issue:?}");
@@ -224,30 +250,38 @@ command fn main() -> status: own ExitStatus traps {
 /// at the claim, not deferred to the U view of the call.
 #[test]
 fn a_load_bearing_claim_cannot_authorize_a_strict_required_call() {
-    let asserted =
-        br#"fn required(value: own u64, limit: own u64) -> result: own unit pure contract {
-  define allowed = ilt(value, limit);
-  requires allowed;
-} {
-  return unit;
-}
+    let asserted = format!(
+        r#"fn clamp_seven(value: own u64) -> result: own u64 pure {{
+  return imin(value, 7_u64);
+}}
 
-deny_claims fn forward(value: own u64, limit: own u64) -> result: own unit traps {
-  let allowed = ilt(value, limit);
-  claim body_authorization: allowed because "body authorization";
-  required(value: value, limit: limit);
+fn required(value: own u64) -> result: own unit pure contract {{
+  requires ilt(value, 8_u64);
+}} {{
   return unit;
-}
+}}
 
-command fn main() -> status: own ExitStatus traps {
-  forward(value: 0_u64, limit: 1_u64);
+deny_claims fn forward(value: own u64) -> result: own unit traps {{
+  let bounded = clamp_seven(value: value);
+  let allowed = ilt(bounded, 8_u64);
+  claim body_authorization: allowed because "{CLAMP_LT_EIGHT_REVIEW}";
+  required(value: bounded);
+  return unit;
+}}
+
+command fn main() -> status: own ExitStatus traps {{
+  forward(value: 0_u64);
   return exit_status(code: 0_u8);
-}
-"#;
+}}
+"#
+    );
+    let cited = format!(
+        "claim body_authorization: allowed because \"{CLAMP_LT_EIGHT_REVIEW}\";"
+    );
     let issue = rejection(
-        asserted,
+        asserted.as_bytes(),
         SemanticRule::Clm3,
-        "claim body_authorization: allowed because \"body authorization\";",
+        &cited,
     );
     let SemanticIssueKind::StrictDirectClaim(detail) = issue.kind() else {
         panic!("expected direct-claim detail: {issue:?}");
@@ -265,26 +299,31 @@ command fn main() -> status: own ExitStatus traps {
 /// least downstream claim's function and the root's own call site.
 #[test]
 fn a_downstream_authorization_is_reported_against_the_real_leaf() {
-    let source = br#"fn leaf(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {
-  let room = len(values);
-  let inside = ilt(index, room);
-  claim leaf_authorization: inside because "leaf authorization";
-  return values[index];
-}
+    let source = format!(r#"fn clamp_three(value: own u64) -> result: own u64 pure {{
+  return imin(value, 3_u64);
+}}
 
-deny_claims fn root(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {
+fn leaf(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {{
+  let bounded = clamp_three(value: index);
+  let room = len(values);
+  let inside = ilt(bounded, room);
+  claim leaf_authorization: inside because "{CLAMP_LT_FOUR_REVIEW}";
+  return values[bounded];
+}}
+
+deny_claims fn root(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {{
   let value = leaf(values: move values, index: index);
   return value;
-}
+}}
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus traps {{
   let values = array_new<u8, 4>(0_u8);
   let value = root(values: move values, index: 0_u64);
   return exit_status(code: 0_u8);
-}
-"#;
+}}
+"#);
     let issue = rejection(
-        source,
+        source.as_bytes(),
         SemanticRule::Clm3,
         "leaf(values: move values, index: index)",
     );
@@ -300,30 +339,35 @@ command fn main() -> status: own ExitStatus traps {
 
 #[test]
 fn an_outside_caller_must_prove_a_marked_root_requirement_in_its_own_u_view() {
-    let source =
-        br#"deny_claims fn guarded(value: own u64, limit: own u64) -> result: own unit pure contract {
-  define allowed = ilt(value, limit);
-  requires allowed;
-} {
-  return unit;
-}
+    let source = format!(
+        r#"fn clamp_seven(value: own u64) -> result: own u64 pure {{
+  return imin(value, 7_u64);
+}}
 
-fn ordinary(value: own u64, limit: own u64) -> result: own unit traps {
-  let allowed = ilt(value, limit);
-  claim ordinary_authorization: allowed because "ordinary authorization";
-  guarded(value: value, limit: limit);
+deny_claims fn guarded(value: own u64) -> result: own unit pure contract {{
+  requires ilt(value, 8_u64);
+}} {{
   return unit;
-}
+}}
 
-command fn main() -> status: own ExitStatus traps {
-  ordinary(value: 0_u64, limit: 1_u64);
+fn ordinary(value: own u64) -> result: own unit traps {{
+  let bounded = clamp_seven(value: value);
+  let allowed = ilt(bounded, 8_u64);
+  claim ordinary_authorization: allowed because "{CLAMP_LT_EIGHT_REVIEW}";
+  guarded(value: bounded);
+  return unit;
+}}
+
+command fn main() -> status: own ExitStatus traps {{
+  ordinary(value: 0_u64);
   return exit_status(code: 0_u8);
-}
-"#;
+}}
+"#
+    );
     let issue = rejection(
-        source,
+        source.as_bytes(),
         SemanticRule::Fn8,
-        "guarded(value: value, limit: limit)",
+        "guarded(value: bounded)",
     );
     let SemanticIssueKind::StrictUndischargedCallRequirement(detail) = issue.kind() else {
         panic!("expected outside-caller strict call detail: {issue:?}");
@@ -335,28 +379,33 @@ command fn main() -> status: own ExitStatus traps {
 
 #[test]
 fn an_outside_call_does_not_demand_its_actual_expression_obligations_in_u() {
-    let source = br#"deny_claims fn sink(value: own u8) -> result: own unit pure contract {
+    let source = format!(r#"fn clamp_three(value: own u64) -> result: own u64 pure {{
+  return imin(value, 3_u64);
+}}
+
+deny_claims fn sink(value: own u8) -> result: own unit pure contract {{
   define valid = ieq(0_u64, 0_u64);
   requires valid;
-} {
+}} {{
   return unit;
-}
+}}
 
-fn ordinary(values: own array<u8, 4>, index: own u64) -> result: own unit traps {
+fn ordinary(values: own array<u8, 4>, index: own u64) -> result: own unit traps {{
+  let bounded = clamp_three(value: index);
   let room = len(values);
-  let inside = ilt(index, room);
-  claim ordinary_actual_authorization: inside because "ordinary actual authorization";
-  sink(value: values[index]);
+  let inside = ilt(bounded, room);
+  claim ordinary_actual_authorization: inside because "{CLAMP_LT_FOUR_REVIEW}";
+  sink(value: values[bounded]);
   return unit;
-}
+}}
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus traps {{
   let values = array_new<u8, 4>(0_u8);
   ordinary(values: move values, index: 0_u64);
   return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
+}}
+"#);
+    with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("outside actual U failure must not flow upward: {outcome:?}");
         };
@@ -374,7 +423,7 @@ command fn main() -> status: own ExitStatus traps {
                 .iter()
                 .any(|outcome| {
                     !outcome.discharged
-                        && outcome.residual.as_deref() == Some("index < len(values)")
+                        && outcome.residual.as_deref() == Some("bounded < len(values)")
                 })
         );
         assert!(
@@ -460,24 +509,32 @@ deny_claims command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn strict_closures_do_not_flow_upward_into_an_ordinary_claiming_caller() {
-    let source = br#"deny_claims fn identity<T: Int>(value: own T) -> result: own T pure {
-  return value;
-}
+    let source = format!(r#"fn clamp_three(value: own u64) -> result: own u64 pure {{
+  return imin(value, 3_u64);
+}}
 
-fn ordinary() -> result: own u64 traps {
-  let flag = True();
-  claim caller_only: flag because "outside every outgoing closure";
+deny_claims fn identity<T: Int>(value: own T) -> result: own T pure {{
+  return value;
+}}
+
+fn ordinary(index: own u64) -> result: own u64 traps {{
+  let values = array_new<u8, 4>(0_u8);
+  let bounded = clamp_three(value: index);
+  let room = len(values);
+  let inside = ilt(bounded, room);
+  claim caller_only: inside because "{CLAMP_LT_FOUR_REVIEW}";
+  let observed = values[bounded];
   let small = identity<u8>(value: 3_u8);
   let large = identity<u64>(value: 4_u64);
   return large;
-}
+}}
 
-command fn main() -> status: own ExitStatus traps {
-  let value = ordinary();
+command fn main() -> status: own ExitStatus traps {{
+  let value = ordinary(index: 99_u64);
   return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
+}}
+"#);
+    with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("upward near miss must remain accepted: {outcome:?}");
         };
@@ -489,27 +546,32 @@ command fn main() -> status: own ExitStatus traps {
 
 #[test]
 fn removing_the_marker_preserves_the_ordinary_diagnostic_and_dark_observability() {
-    let source = br#"fn read(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {
-  let room = len(values);
-  let inside = ilt(index, room);
-  claim ordinary_authorization: inside because "ordinary authorization";
-  return values[index];
-}
+    let source = format!(r#"fn clamp_three(value: own u64) -> result: own u64 pure {{
+  return imin(value, 3_u64);
+}}
 
-command fn main() -> status: own ExitStatus traps {
+fn read(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {{
+  let bounded = clamp_three(value: index);
+  let room = len(values);
+  let inside = ilt(bounded, room);
+  claim ordinary_authorization: inside because "{CLAMP_LT_FOUR_REVIEW}";
+  return values[bounded];
+}}
+
+command fn main() -> status: own ExitStatus traps {{
   let values = array_new<u8, 4>(0_u8);
   let value = read(values: move values, index: 0_u64);
   return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
+}}
+"#);
+    with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("unmarked ordinary source must retain v0.28 acceptance: {outcome:?}");
         };
         assert!(program.data.strict_partition.roots.is_empty());
         assert!(program.data.strict_partition.components.is_empty());
     });
-    with_semantics_dark(source, |outcome| {
+    with_semantics_dark(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("dark entailment observability must remain intact: {outcome:?}");
         };
@@ -518,44 +580,52 @@ command fn main() -> status: own ExitStatus traps {
 }
 
 #[test]
-fn the_dark_hook_still_reports_a_refuted_direct_claim_as_failure_atomic_clm3() {
+fn a_refuted_direct_claim_rejects_before_clm3() {
     let source = br#"deny_claims command fn main() -> status: own ExitStatus traps {
   let same = ieq(0_u64, 0_u64);
   let different = ine(0_u64, 0_u64);
   if same {
-    claim refuted_seed: different because "dark lifecycle observation";
+    claim refuted_seed: different because "premises: zero equals itself\nderivation: the proposed disequality contradicts equality\nconclusion: zero differs from itself\nchecker gap: none because the checker refutes it\nconsumers: no valid terminal consumer";
   }
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_dark(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
             panic!("dark marker failure must publish no checked program: {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Clm3);
-        let SemanticIssueKind::StrictDirectClaim(detail) = issue.kind() else {
-            panic!("expected direct strict claim: {issue:?}");
+        assert_eq!(issue.rule(), SemanticRule::Clm2);
+        let SemanticIssueKind::RefutedClaim(detail) = issue.kind() else {
+            panic!("expected claim refutation: {issue:?}");
         };
         assert_eq!(detail.name, "refuted_seed");
-        assert_eq!(detail.lifecycle, StrictClaimLifecycleDisposition::Refuted);
     });
 }
 
 #[test]
 fn ordinary_fn3_contract_validation_precedes_a_marker_failure() {
-    let source = br#"contract Repeated {
+    let source = format!(r#"contract Repeated {{
   fn value() -> result: own i32 pure;
   fn value() -> result: own i32 pure;
-}
+}}
 
-deny_claims command fn main() -> status: own ExitStatus traps {
-  let flag = True();
-  claim later_seed: flag because "CLM-3 must run later";
+fn clamp_three(value: own u64) -> result: own u64 pure {{
+  return imin(value, 3_u64);
+}}
+
+deny_claims command fn main() -> status: own ExitStatus traps {{
+  let values = array_new<u8, 4>(0_u8);
+  let index = 9_u64;
+  let bounded = clamp_three(value: index);
+  let room = len(values);
+  let inside = ilt(bounded, room);
+  claim later_seed: inside because "{CLAMP_LT_FOUR_REVIEW}";
+  let observed = values[bounded];
   return exit_status(code: 0_u8);
-}
-"#;
+}}
+"#);
     let issue = rejection(
-        source,
+        source.as_bytes(),
         SemanticRule::Fn3,
         "fn value() -> result: own i32 pure;",
     );
@@ -569,18 +639,31 @@ deny_claims command fn main() -> status: own ExitStatus traps {
 
 #[test]
 fn ordinary_fn4_law_validation_precedes_a_marker_failure() {
-    let source = br#"contract BadIdentity {
+    let source = format!(r#"contract BadIdentity {{
   fn combine(x: own u64, y: own u64) -> result: own u64 pure;
   law identity(combine, unit);
-}
+}}
 
-deny_claims command fn main() -> status: own ExitStatus traps {
-  let flag = True();
-  claim later_seed: flag because "CLM-3 must run later";
+fn clamp_three(value: own u64) -> result: own u64 pure {{
+  return imin(value, 3_u64);
+}}
+
+deny_claims command fn main() -> status: own ExitStatus traps {{
+  let values = array_new<u8, 4>(0_u8);
+  let index = 9_u64;
+  let bounded = clamp_three(value: index);
+  let room = len(values);
+  let inside = ilt(bounded, room);
+  claim later_seed: inside because "{CLAMP_LT_FOUR_REVIEW}";
+  let observed = values[bounded];
   return exit_status(code: 0_u8);
-}
-"#;
-    let issue = rejection(source, SemanticRule::Fn4, "law identity(combine, unit);");
+}}
+"#);
+    let issue = rejection(
+        source.as_bytes(),
+        SemanticRule::Fn4,
+        "law identity(combine, unit);",
+    );
     assert_eq!(issue.kind(), &SemanticIssueKind::InvalidContractLaw);
 }
 

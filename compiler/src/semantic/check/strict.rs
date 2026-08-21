@@ -454,8 +454,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let lifecycle = match claim.disposition {
             ClaimDisposition::Retained => crate::StrictClaimLifecycleDisposition::Retained,
-            ClaimDisposition::Redundant => crate::StrictClaimLifecycleDisposition::Redundant,
-            ClaimDisposition::Refuted { .. } => crate::StrictClaimLifecycleDisposition::Refuted,
+            _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
         let location = self.strict_location(&claim.node_path)?;
         Err(CheckStop::source_issue(SemanticIssue {
@@ -467,7 +466,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 claim: claim.node_path.clone(),
                 name: claim.name.clone(),
                 predicate: claim.predicate.clone(),
-                justification: claim.justification.clone(),
+                justification: claim.justification.raw.clone(),
                 lifecycle,
             })),
         }))

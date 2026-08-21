@@ -49,9 +49,9 @@ fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 
       break @decode_loop;
     }
     let scan_ok = ilt(input_index, source_length);
-    claim scan_in_source: scan_ok because "the scan stops at the source length";
+    claim scan_in_source: scan_ok because "premises: input_index starts at zero and every path increments it by one or three before the loop exits at source_length\nderivation: every continuing iteration starts at an input position strictly before the source end\nconclusion: input_index is below source_length\nchecker gap: ENT does not derive this variable-stride ordinary-loop invariant\nconsumers: the following source subscript uses input_index";
     let writes_behind = ile(output_index, input_index);
-    claim writes_behind_scan: writes_behind because "each consumed byte emits at most one output byte";
+    claim writes_behind_scan: writes_behind because "premises: both indices start at zero; a plain byte increments both by one and a valid escape increments input by three and output by one\nderivation: each transition preserves output_index at or behind input_index\nconclusion: output_index is at most input_index\nchecker gap: ENT does not derive this coupled ordinary-loop invariant\nconsumers: every output subscript in the loop uses output_index together with the output-length requirement";
     let byte = src[input_index];
     let is_percent = ieq(byte, 37_u8);
     let remaining = source_length -wrap input_index;
@@ -61,10 +61,10 @@ fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 
       let next_index = input_index +wrap 1_u64;
       let last_index = input_index +wrap 2_u64;
       let high_ok = ilt(next_index, source_length);
-      claim high_in_source: high_ok because "a candidate escape has two bytes after the percent";
+      claim high_in_source: high_ok because "premises: candidate requires at least three source bytes remaining and next_index is input_index plus one\nderivation: at least three remaining bytes place the successor strictly before source_length\nconclusion: next_index is below source_length\nchecker gap: ENT does not normalize the remaining-length guard into this offset bound\nconsumers: the following source subscript uses next_index";
       let high_byte = src[next_index];
       let low_ok = ilt(last_index, source_length);
-      claim low_in_source: low_ok because "a candidate escape has two bytes after the percent";
+      claim low_in_source: low_ok because "premises: candidate requires at least three source bytes remaining and last_index is input_index plus two\nderivation: at least three remaining bytes place the second successor strictly before source_length\nconclusion: last_index is below source_length\nchecker gap: ENT does not normalize the remaining-length guard into this offset bound\nconsumers: the following source subscript uses last_index";
       let low_byte = src[last_index];
       let high_valid = is_hex(byte: high_byte);
       let low_valid = is_hex(byte: low_byte);
@@ -107,7 +107,10 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   let output = buffer_new(11_u64, 204_u8);
   region 'decode_region {
     let produced = decode<'decode_region>(out: &uniq 'decode_region output, src: move input);
-    claim decoded_length: ieq(produced, 7_u64) because "decoded length";
+    if ieq(produced, 7_u64) {
+    } else {
+      return exit_status(code: 1_u8);
+    }
   }
   let output_zero = output[0_u64];
   let output_one = output[1_u64];
@@ -117,13 +120,37 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   let output_five = output[5_u64];
   let output_six = output[6_u64];
   let output_tail = output[7_u64];
-  claim decoded_byte_zero: ieq(output_zero, 65_u8) because "decoded byte zero";
-  claim decoded_byte_one: ieq(output_one, 66_u8) because "decoded byte one";
-  claim decoded_byte_two: ieq(output_two, 74_u8) because "decoded byte two";
-  claim decoded_byte_three: ieq(output_three, 37_u8) because "decoded byte three";
-  claim decoded_byte_four: ieq(output_four, 122_u8) because "decoded byte four";
-  claim decoded_byte_five: ieq(output_five, 122_u8) because "decoded byte five";
-  claim decoded_byte_six: ieq(output_six, 37_u8) because "decoded byte six";
-  claim output_tail_changed: ieq(output_tail, 204_u8) because "output tail changed";
+  if ieq(output_zero, 65_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_one, 66_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_two, 74_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_three, 37_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_four, 122_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_five, 122_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_six, 37_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(output_tail, 204_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }

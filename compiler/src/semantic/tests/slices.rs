@@ -9,17 +9,20 @@ use super::{assert_rule, assert_unsupported, with_semantics};
 fn slices_retain_type_source_and_access_operations() {
     let source = br#"const bytes: array<u8, 2> =[4_u8, 9_u8];
 
-fn first['r](values: own slice<'r, u8>) -> result: own u8 reads('r), traps {
+fn first['r](values: own slice<'r, u8>) -> result: own u8 reads('r) {
   let length = len(values);
-  claim length: ieq(length, 2_u64) because "length";
-  return values[0_u64];
+  let nonempty = ilt(0_u64, length);
+  if nonempty {
+    return values[0_u64];
+  } else {
+    return 0_u8;
+  }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   region 'view {
     let values = slice_of(&'view bytes);
     let value = first<'view>(values: move values);
-    claim value: ieq(value, 4_u8) because "value";
   }
   return exit_status(code: 0_u8);
 }
@@ -37,13 +40,16 @@ command fn main() -> status: own ExitStatus traps {
                 ..
             }
         ));
-        assert!(matches!(
-            first.body[2],
-            CheckedStatement::Return {
+        let CheckedStatement::Match { arms, .. } = &first.body[2] else {
+            panic!("the explicit nonempty guard must remain a checked branch");
+        };
+        assert!(arms.iter().any(|arm| matches!(
+            arm.body.first(),
+            Some(CheckedStatement::Return {
                 value: CheckedExpression::SliceIndex { .. },
                 ..
-            }
-        ));
+            })
+        )));
 
         let main = &checked.data.functions[1];
         let CheckedStatement::Region { body, .. } = &main.body[0] else {
@@ -457,13 +463,12 @@ command fn main() -> status: own ExitStatus pure {
 /// untested, and one that only derived would not reject the deleted form.
 #[test]
 fn slice_of_derives_its_region_and_rejects_a_written_argument() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(4_u64, 0_u8);
   region 'outer {
     region 'inner {
       let view = slice_of(&'inner data);
       let length = len(view);
-      claim length: ieq(length, 4_u64) because "length";
     }
   }
   return exit_status(code: 0_u8);
@@ -534,18 +539,16 @@ command fn main() -> status: own ExitStatus traps {
     let passed = pass<'view>(value: move pass_source);
     let passed_room = len(passed);
     let passed_ok = ilt(0_u64, passed_room);
-    claim passed_sized: passed_ok because "pass returns the two-byte view of left";
+    claim passed_sized: passed_ok because "premises: left has two elements; pass_source views all of left; pass returns its input descriptor unchanged\nderivation: passed therefore has length 2, and 0_u64 is less than 2_u64\nconclusion: passed_ok is true\nchecker gap: the checker does not carry the caller's concrete slice length through this uncontracted user call\nconsumers: the bounds obligation of passed[0_u64]";
     let passed_value = passed[0_u64];
-    claim returned_slice_pass_through: ieq(passed_value, 11_u8) because "returned slice pass through";
     let left_source = slice_of(&'view left);
     let right_source = slice_of(&'view right);
     let take_left = False();
     let selected = choose<'view>(take_left: take_left, left: move left_source, right: move right_source);
     let selected_room = len(selected);
     let selected_ok = ilt(0_u64, selected_room);
-    claim selected_sized: selected_ok because "choose returns one two-byte view";
+    claim selected_sized: selected_ok because "premises: left_source and right_source each view a two-element array; choose returns exactly one input descriptor\nderivation: either return branch produces a slice of length 2, and 0_u64 is less than 2_u64\nconclusion: selected_ok is true\nchecker gap: the checker preserves both possible origins but does not derive their common concrete length across the uncontracted user call\nconsumers: the bounds obligation of selected[0_u64]";
     let selected_value = selected[0_u64];
-    claim returned_slice_choice: ieq(selected_value, 29_u8) because "returned slice choice";
   }
   return exit_status(code: 0_u8);
 }
@@ -591,7 +594,7 @@ command fn main() -> status: own ExitStatus traps {
                     ..
                 },
             ..
-        } = &body[10]
+        } = &body[9]
         else {
             panic!("choice call must retain every permitted slice origin");
         };
@@ -612,12 +615,15 @@ fn returned_slice_origins_drive_effects_and_alias_conflicts() {
   return move value;
 }
 
-fn first['r](value: own slice<'r, u8>) -> result: own u8 reads('r), traps {
+fn first['r](value: own slice<'r, u8>) -> result: own u8 reads('r) {
   let returned = pass<'r>(value: move value);
   let room = len(returned);
   let ok = ilt(0_u64, room);
-  claim nonempty: ok because "pass returns the caller's nonempty view";
-  return returned[0_u64];
+  if ok {
+    return returned[0_u64];
+  } else {
+    return 0_u8;
+  }
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -716,14 +722,17 @@ command fn main() -> status: own ExitStatus pure {
         },
     );
 
-    let borrowed_input = br#"fn first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads('descriptor 'data), traps {
+    let borrowed_input = br#"fn first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads('descriptor 'data) {
   let room = len(deref(value));
   let ok = ilt(0_u64, room);
-  claim nonempty: ok because "callers pass a nonempty view";
-  return deref(value)[0_u64];
+  if ok {
+    return deref(value)[0_u64];
+  } else {
+    return 0_u8;
+  }
 }
 
-fn wrapper['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads('descriptor 'data), traps {
+fn wrapper['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads('descriptor 'data) {
   return first<'descriptor, 'data>(value: value);
 }
 

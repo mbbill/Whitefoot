@@ -38,10 +38,15 @@ command fn main() -> status: own ExitStatus pure {
         assert!(!allocation[0].discharged);
     });
 
-    let exact = br#"fn allocate(n: own u64) -> result: own unit allocates(heap), traps {
-  let fits = buffer_fits<u16>(n);
-  claim reviewed_fit: fits because "the caller's size was reviewed";
-  let values = buffer_new(n, 0_u16);
+    let exact = br#"fn bounded_count(n: own u64) -> result: own u64 pure {
+  return imin(n, 9223372036854775807_u64);
+}
+
+fn allocate(n: own u64) -> result: own unit allocates(heap), traps {
+  let bounded = bounded_count(n: n);
+  let fits = buffer_fits<u16>(bounded);
+  claim reviewed_fit: fits because "premises: bounded_count returns imin(n, 9223372036854775807_u64), and a u16 buffer fits when its count is at most 9223372036854775807_u64\nderivation: imin is no greater than its second operand, so bounded is within the u16 allocation ceiling\nconclusion: buffer_fits<u16>(bounded) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following buffer_new allocation requires this exact allocation-fit fact";
+  let values = buffer_new(bounded, 0_u16);
   return unit;
 }
 
@@ -212,21 +217,17 @@ fn zero_length_arrays_have_the_empty_sequence_layout_ceiling() {
 
 #[test]
 fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
-    let source = br#"fn make(n: own u64) -> result: own buffer<u16> allocates(heap), traps {
-  let fits = buffer_fits<u16>(n);
-  claim allocation_fits: fits because "caller-selected length must fit";
-  return buffer_new(n, 3_u16);
+    let source = br#"fn make() -> result: own buffer<u16> allocates(heap) {
+  return buffer_new(4_u64, 3_u16);
 }
 
 command fn main() -> status: own ExitStatus allocates(heap), traps {
-  let values = make(n: 4_u64);
+  let values = make();
   let length = len(values);
   let ok = ilt(2_u64, length);
-  claim sized_by_make: ok because "make allocates n slots and main passes four";
+  claim sized_by_make: ok because "premises: make returns buffer_new(4_u64, 3_u16), so length is 4_u64\nderivation: 2_u64 is strictly less than 4_u64\nconclusion: 2_u64 is strictly less than length\nchecker gap: ENT does not publish the length of an uncontracted user-call buffer result\nconsumers: the following set and read operations require this exact index bound";
   set values[2_u64] = 9_u16;
   let stored = values[2_u64];
-  claim length_drift: ieq(length, 4_u64) because "length drift";
-  claim store_drift: ieq(stored, 9_u16) because "store drift";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -236,9 +237,9 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
         };
         let make = &checked.data.functions[0];
         assert!(make.declared_allocates_heap);
-        assert!(make.declared_traps);
+        assert!(!make.declared_traps);
         assert!(matches!(
-            &make.body[2],
+            &make.body[0],
             CheckedStatement::Return {
                 value: CheckedExpression::BufferFill {
                     element: CheckedFlatElement::Integer(IntegerType::U16),
@@ -288,7 +289,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
                 ..
             } if !obligation.components().is_empty()
         ));
-        let CheckedStatement::Return { drops, .. } = &main.body[8] else {
+        let CheckedStatement::Return { drops, .. } = &main.body[6] else {
             panic!("main must end in return");
         };
         assert_eq!(drops.len(), 1);
@@ -321,10 +322,9 @@ fn buffer_effect_rows_are_checked_both_ways() {
 
 #[test]
 fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let slots = buffer_vacant<box<u64>>(3_u64);
   let count = len(slots);
-  claim vacant_length: ieq(count, 3_u64) because "vacant length";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -493,12 +493,10 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   let columns = Columns(left: move left, right: move right);
   let left_room = len(columns.left);
   let ok = ilt(2_u64, left_room);
-  claim left_sized: ok because "columns.left was allocated with four slots";
+  claim left_sized: ok because "premises: columns.left is the buffer created by buffer_new(4_u64, 0_u64), so left_room is 4_u64\nderivation: 2_u64 is strictly less than 4_u64\nconclusion: 2_u64 is strictly less than left_room\nchecker gap: ENT does not retain the allocation length through nominal construction and projected buffer length\nconsumers: the following projected set and read operations require this exact index bound";
   set columns.left[2_u64] = 7_u64;
   let length = len(columns.right);
   let value = columns.left[2_u64];
-  claim length_drift: ieq(length, 4_u64) because "length drift";
-  claim value_drift: ieq(value, 7_u64) because "value drift";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -528,7 +526,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
                 ..
             } if root.fields == [0]
         ));
-        let CheckedStatement::Return { drops, .. } = &main.body[11] else {
+        let CheckedStatement::Return { drops, .. } = &main.body[9] else {
             panic!("main must end in return");
         };
         assert_eq!(drops.len(), 3);

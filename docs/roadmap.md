@@ -3,9 +3,11 @@
 Status: CANONICAL DIRECTION OUTLINE
 Revision: 47 (claim-residual branch execution chartered in batch 0075)
 
-The active language authority is v0.33 at the stable path
-[`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
+The active language authority on `main` is v0.33, SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
+This work branch carries a v0.34 CANDIDATE at the stable path
+[`spec/kernel-spec.md`](../spec/kernel-spec.md); it is not active authority until
+the exact owner-approved activation merge.
 Exact v0.8 through v0.32 are immutable flat archives. The execution plan at
 [`docs/current-plan.md`](current-plan.md) is PROPOSED (claim residual
 canonicality) on the work branch; only an owner-approved merge makes it
@@ -486,18 +488,18 @@ creating writer trust or weakening the checked safety envelope.
   historical research probes; they remain explicitly excluded unchanged unless
   a live caller or gate is found, and create no per-item migration work. Every
   in-scope claim and justification requires review. The relevant MCTS-Mem nodes
-  retain the old defensive/advisory choice and require paired redecision.
-- **Missing / next:** once a recorded owner direction explicitly charters
-  branch execution, freeze the full
-  claim/effect/diagnostic inventory, prototype and measure exact per-claim
-  counterfactual flow, falsify proof-predicate, contribution-normal-form,
-  Boolean-reconstruction, generic, and source-schema reachability boundaries,
-  and test hidden compound origins, known-plus-residual parent construction,
-  positive-disjunction singleton, partial-known xor/equivalence, downstream
-  explosion, over-strong facts, and
-  manufactured consumers. Build the minimal deterministic semantic path,
-  migrate source by purpose, and complete the exact specification/protected,
-  project-law, AI-author-law, and paired-MCTS candidate on the work branch.
+  retain the old defensive/advisory choice and require paired redecision. Batch
+  0075 now carries the v0.34 candidate: proof-predicate admission, five-field
+  review records, component normal form and reconstruction, simultaneous
+  component/occurrence masks, stable terminal evidence, and generic
+  source-schema plus inhabited-instance rechecks are implemented on the branch
+  and under hostile ordinary tests; they remain candidate evidence, not active
+  language.
+- **Missing / next:** finish ordinary fixture, real-program, effect-closure, and
+  protected migration by semantic purpose; complete the 11 old source-trap to
+  typed-IR fault-injection evidence mapping; measure counterfactual cost; update
+  project law, writer/AI author law, and paired MCTS decisions; then finish exact
+  candidate identity and accepted-set evidence.
   Rebase and re-audit it before presenting its digest, diffs, gates, batch
   audit, and frozen prospective activation/closure transformation in the single
   owner merge packet; the approved mechanical activation is the only route to

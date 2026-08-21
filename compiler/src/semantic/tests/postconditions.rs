@@ -301,7 +301,7 @@ fn body_claims_and_s4_are_routed_to_the_fixed_postcondition_views() {
     let body_claim = br#"fn guarded(value: own i32) -> result: own i32 traps contract {
   ensures ieq(result, 1_i32);
 } {
-  claim body: ieq(value, 1_i32) because "body";
+  claim body: ieq(value, 1_i32) because "premises: fixture context: body\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   return value;
 }
 
@@ -924,7 +924,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn an_ordinary_fallback_survives_when_the_same_s12_candidate_dies() {
+fn an_ordinary_fallback_survives_when_a_neighboring_s12_candidate_dies() {
     let source = br#"fn observe(value: own i32) -> result: own i32 pure contract {
   ensures ieq(result, value);
 } {
@@ -933,6 +933,10 @@ fn an_ordinary_fallback_survives_when_the_same_s12_candidate_dies() {
 
 fn sink(owner: own box<i32>) -> result: own unit pure {
   return unit;
+}
+
+fn opaque_identity(value: own i32) -> result: own i32 pure {
+  return value;
 }
 
 fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
@@ -945,9 +949,10 @@ fn caller() -> result: own unit allocates(heap), traps {
   let owner = box_new(1_i32);
   let expected = deref(owner);
   let observed = observe(value: deref(owner));
-  claim ordinary_fallback: ieq(observed, deref(owner)) because "ordinary fallback";
+  let fallback = opaque_identity(value: expected);
+  claim ordinary_fallback: ieq(fallback, expected) because "premises: fallback is returned by opaque_identity, whose body returns its value parameter unchanged\nderivation: the call argument is expected, so fallback equals expected\nconclusion: ieq(fallback, expected) is true\nchecker gap: ENT does not publish an uncontracted user-call result equality\nconsumers: guard requires this equality after the neighboring S12 owner-supported candidate is killed";
   sink(owner: move owner);
-  guard(left: observed, right: expected);
+  guard(left: fallback, right: expected);
   return unit;
 }
 
@@ -2361,6 +2366,39 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn a_concrete_instance_named_only_by_an_uninstantiated_generic_still_checks_fn9() {
+    let source = br#"fn bad<T: Int>(value: own T) -> result: own T pure contract {
+  ensures ilt(result, value);
+} {
+  return value;
+}
+
+fn wrapper<U>() -> result: own unit pure {
+  let ignored = bad<u8>(value: 0_u8);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("the replayed bad<u8> postcondition must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn9);
+        let SemanticIssueKind::UndischargedPostcondition(detail) = issue.kind() else {
+            panic!("FN-9 must retain its concrete proof disposition: {issue:?}");
+        };
+        assert_eq!(
+            detail.disposition,
+            crate::PostconditionProofDisposition::Refuted
+        );
+        assert!(detail.concrete_function.contains("bad"));
+    });
+}
+
+#[test]
 fn accepted_provenance_views_use_the_finalized_function_derivation_ids() {
     let source = br#"fn normalized(value: own i32) -> result: own i32 pure contract {
   requires ieq(value, 1_i32);
@@ -2429,7 +2467,7 @@ fn relay(value: own i32) -> result: own i32 pure contract {
 
 fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
   let room = len(values);
-  claim bounded: ilt(position, room) because "claimed parameter bound";
+  claim bounded: ilt(position, room) because "premises: fixture context: claimed parameter bound\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   return values[position];
 }
 

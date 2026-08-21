@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::syntax::NodeId;
 use crate::syntax::terminal::TerminalPredicate;
 use crate::{
@@ -6,11 +8,15 @@ use crate::{
     SemanticRule, UnsupportedSemanticFeature,
 };
 
-use super::super::goal::{GoalDatum, GoalExpression, GoalOperation};
+use super::super::goal::{CheckedRequirement, GoalDatum, GoalExpression, GoalOperation};
 use super::super::model::{
-    CheckedConst, CheckedFlatElement, CheckedGenericRequirement, CheckedType, CheckedValue,
+    CheckedConst, CheckedFlatElement, CheckedGenericRequirement, CheckedNominalKind, CheckedType,
+    CheckedValue, FloatType, IntegerType, NominalId,
 };
-use super::{CheckStop, Checker, FunctionSignature, FunctionTemplate, derive_slice_return_ceiling};
+use super::{
+    CheckStop, Checker, FunctionSignature, FunctionTemplate, PreludeType,
+    derive_slice_return_ceiling,
+};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum GenericBound {
@@ -47,6 +53,80 @@ pub(super) enum GenericArgument {
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub(super) struct GenericSubstitution {
     bindings: Vec<(DeclarationId, GenericArgument)>,
+}
+
+/// Nominal-arena-independent identity for a concrete substitution discovered
+/// while replaying generic source bodies. Replay intentionally runs in a
+/// scratch nominal suffix; only this structural form crosses its rollback.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct StableGenericSubstitution {
+    bindings: Vec<(DeclarationId, StableGenericArgument)>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum StableGenericArgument {
+    Type(StableCheckedType),
+    Const(CheckedConst),
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum StableCheckedType {
+    Scalar(CheckedType),
+    SourceNominal {
+        template: usize,
+        substitution: StableGenericSubstitution,
+    },
+    Prelude(StablePreludeType),
+    Boxed(Box<StableCheckedType>),
+    Arena {
+        region: DeclarationId,
+        content: Box<StableCheckedType>,
+    },
+    System(u8),
+    Array {
+        element: StableFlatElement,
+        length: CheckedConst,
+    },
+    Slice {
+        region: DeclarationId,
+        element: StableFlatElement,
+    },
+    Buffer {
+        element: StableFlatElement,
+    },
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum StableFlatElement {
+    Unit,
+    Bool,
+    Integer(IntegerType),
+    Float(FloatType),
+    GenericInt(DeclarationId),
+    GenericFloat(DeclarationId),
+    TagOnlyNominal(Box<StableCheckedType>),
+    Nominal(Box<StableCheckedType>),
+}
+
+/// One symbolic generic requirement while its scratch nominal suffix is
+/// rolled back. The checked predicate remains exact, but every scratch
+/// nominal it mentions has a structural bridge that can be re-interned only
+/// after the executable nominal prefix is closed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct PendingGenericRequirement {
+    declaration: DeclarationId,
+    requirement: CheckedRequirement,
+    nominal_checkpoint: usize,
+    replacements: Vec<(NominalId, StableCheckedType)>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum StablePreludeType {
+    Option(Box<StableCheckedType>),
+    Result(Box<StableCheckedType>, Box<StableCheckedType>),
+    Overflow,
+    DivError,
+    NarrowError,
 }
 
 impl GenericSubstitution {
@@ -124,7 +204,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn collect_function_templates(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
         self.collect_function_template_inventory(items)?;
         self.reject_generic_call_cycles()?;
-        self.validate_generic_templates()?;
         Ok(())
     }
 
@@ -744,13 +823,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    fn validate_generic_templates(&mut self) -> Result<(), CheckStop> {
-        if !self.signatures.is_empty()
-            || !self.functions_by_declaration.is_empty()
+    pub(super) fn validate_generic_templates(&mut self) -> Result<(), CheckStop> {
+        if !self.pending_generic_requirements.is_empty()
             || !self.generic_requirements.is_empty()
+            || !self.generic_claim_schemas.is_empty()
         {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
+        // A closed unit with no generic function declaration has no source
+        // schema to validate.  Rechecking every concrete function through a
+        // temporary symbolic inventory would duplicate the ordinary ENT and
+        // provenance baseline without producing a schema report, and claim
+        // residuality would then pay that whole-program cost once more for
+        // every mask.
+        if self
+            .function_templates
+            .iter()
+            .all(|template| template.generic_parameters.is_empty())
+        {
+            return Ok(());
+        }
+        let concrete_signatures = std::mem::take(&mut self.signatures);
+        let concrete_functions_by_declaration =
+            std::mem::take(&mut self.functions_by_declaration);
+        let concrete_postcondition_selectors =
+            std::mem::take(&mut self.postcondition_selectors);
         let nominal_checkpoint = self.nominal_checkpoint();
         // Record only the initial source-canonical symbolic instance for each
         // generic. Transitive discovery below may instantiate another
@@ -771,37 +868,642 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         self.discover_called_function_signatures(false, false)?;
+        // Concrete selectors are keyed by the dense FunctionId inventory.
+        // Schema validation uses a separate scratch inventory starting at
+        // zero, so it must build and later discard its own selector table
+        // rather than aliasing the real concrete entries by accident.
+        self.admit_postcondition_selectors()?;
+        let mut phase_a = Vec::with_capacity(self.signatures.len());
         for index in 0..self.signatures.len() {
-            if !self.signatures[index].substitution.bindings.is_empty() {
-                // Symbolic generic validation may discover a derived box or
-                // prelude nominal (for example the Result produced by a
-                // `+checked` requires-local). Use the same deferred-nominal
-                // retry loop as concrete checking; the checkpoint below
-                // discards these symbolic-only instances afterwards.
-                let checked = self.check_function_interning_nominals(index)?;
-                if let Some((_, declaration)) = canonical_generic_signatures
-                    .iter()
-                    .find(|(canonical, _)| *canonical == index)
-                {
-                    if checked.function.declaration != *declaration {
-                        return Err(SemanticCompilerFailure::InvalidResolution.into());
-                    }
-                    for requirement in checked.function.requirements {
-                        if !goal_uses_nominal_prefix(&requirement.template.root, nominal_checkpoint)
-                        {
-                            return Err(SemanticCompilerFailure::InvalidResolution.into());
-                        }
-                        self.generic_requirements.push(CheckedGenericRequirement {
-                            declaration: *declaration,
-                            requirement,
-                        });
-                    }
-                }
+            // Symbolic generic validation may discover a derived box or
+            // prelude nominal (for example the Result produced by a
+            // `+checked` requires-local). Use the same deferred-nominal
+            // retry loop as concrete checking; the checkpoint below
+            // discards these symbolic-only instances afterwards. The dense
+            // inventory also includes nongeneric callees so FN-8 requirement
+            // installation uses the ordinary FunctionId-indexed path.
+            phase_a.push(self.check_function_interning_nominals(index)?);
+        }
+        for (canonical, declaration) in &canonical_generic_signatures {
+            let checked = phase_a
+                .get(*canonical)
+                .filter(|checked| checked.function.declaration == *declaration)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            for requirement in &checked.function.requirements {
+                self.pending_generic_requirements.push(
+                    self.stabilize_generic_requirement(
+                        *declaration,
+                        requirement,
+                        nominal_checkpoint,
+                    )?,
+                );
             }
         }
+        self.install_call_requirements(&mut phase_a)?;
+        let callees = self.entailment_callees()?;
+        self.evaluate_generic_claim_schemas(
+            &phase_a,
+            &canonical_generic_signatures,
+            &callees,
+        )?;
         self.signatures.clear();
         self.functions_by_declaration.clear();
+        self.postcondition_selectors.clear();
         self.restore_nominal_checkpoint(nominal_checkpoint)?;
+        self.signatures = concrete_signatures;
+        self.functions_by_declaration = concrete_functions_by_declaration;
+        self.postcondition_selectors = concrete_postcondition_selectors;
+        let replayed_concrete = self.discover_schema_written_concrete_instances()?;
+        // The replay above can append a concrete instance that is mentioned
+        // only inside an uninstantiated generic body. Rebuild the selector
+        // table over the final concrete inventory so those instances receive
+        // the same FN-9 judgment as directly discovered instances.
+        self.postcondition_selectors.clear();
+        self.admit_postcondition_selectors_including(&replayed_concrete)?;
+        Ok(())
+    }
+
+    /// Replays the generic source-call graph after the symbolic nominal
+    /// checkpoint and retains every explicitly concrete substitution it
+    /// contains. The replay carries only source template indices and freshly
+    /// reconstructed substitutions, so a concrete nominal argument never
+    /// leaks a scratch `NominalId` from schema validation into the executable
+    /// inventory.
+    fn discover_schema_written_concrete_instances(
+        &mut self,
+    ) -> Result<Vec<super::super::model::FunctionId>, CheckStop> {
+        if !self.pending_nominals.borrow().is_empty() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        let nominal_checkpoint = self.nominal_checkpoint();
+        let discovered = (|| {
+            let mut work = Vec::new();
+            let mut candidates = Vec::new();
+            for template_index in 0..self.function_templates.len() {
+                let template = self
+                    .function_templates
+                    .get(template_index)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                if template.generic_parameters.is_empty() {
+                    continue;
+                }
+                work.push((
+                    template_index,
+                    self.symbolic_generic_substitution(&template.generic_parameters)?,
+                ));
+            }
+            let mut cursor = 0_usize;
+            while cursor < work.len() {
+                let (caller_template_index, caller_substitution) = work
+                    .get(cursor)
+                    .cloned()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let caller = self
+                    .function_templates
+                    .get(caller_template_index)
+                    .cloned()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                for call in self.tree.descendants_with(caller.node, Production::Call)? {
+                    if self.call_is_inside_postcondition(call)? {
+                        continue;
+                    }
+                    let Some((callee_template_index, callee)) =
+                        self.called_function_template(call)?
+                    else {
+                        continue;
+                    };
+                    if callee.generic_parameters.is_empty() {
+                        continue;
+                    }
+                    if let Some(targs) = self.tree.first_child_with(call, Production::Targs)? {
+                        self.ensure_nominals_in_node(targs, &caller_substitution)?;
+                    }
+                    let substitution =
+                        self.call_generic_substitution(call, &callee, &caller_substitution)?;
+                    if !work.iter().any(|(candidate_template, candidate_substitution)| {
+                        *candidate_template == callee_template_index
+                            && candidate_substitution == &substitution
+                    }) {
+                        work.push((callee_template_index, substitution.clone()));
+                    }
+                    if let Some(stable) = self.stabilize_concrete_substitution(
+                        &substitution,
+                        nominal_checkpoint,
+                    )? {
+                        candidates.push((callee_template_index, callee.declaration, stable));
+                    }
+                }
+                cursor = cursor
+                    .checked_add(1)
+                    .ok_or(SemanticCompilerFailure::CounterOverflow)?;
+            }
+            Ok::<_, CheckStop>(candidates)
+        })();
+        self.restore_nominal_checkpoint(nominal_checkpoint)?;
+        if !self.pending_nominals.borrow().is_empty() {
+            self.pending_nominals.borrow_mut().clear();
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        let mut discovered = discovered?;
+        discovered.sort_by(|left, right| {
+            left.1
+                .cmp(&right.1)
+                .then_with(|| format!("{:?}", left.2).cmp(&format!("{:?}", right.2)))
+        });
+        discovered.dedup_by(|left, right| left.0 == right.0 && left.2 == right.2);
+
+        let mut replayed = Vec::new();
+        for (template_index, declaration, stable) in discovered {
+            let substitution = self.reify_concrete_substitution(&stable)?;
+            let already_present = self
+                .functions_by_declaration
+                .get(&declaration)
+                .into_iter()
+                .flatten()
+                .any(|id| {
+                    self.signatures
+                        .get(id.0 as usize)
+                        .is_some_and(|signature| signature.substitution == substitution)
+                });
+            if already_present {
+                continue;
+            }
+            let id = super::super::model::FunctionId(
+                u32::try_from(self.signatures.len())
+                    .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+            );
+            self.instantiate_function_signature(template_index, substitution)?;
+            replayed.push(id);
+        }
+        Ok(replayed)
+    }
+
+    fn stabilize_concrete_substitution(
+        &self,
+        substitution: &GenericSubstitution,
+        nominal_checkpoint: usize,
+    ) -> Result<Option<StableGenericSubstitution>, CheckStop> {
+        let mut visiting = HashSet::new();
+        let mut bindings = Vec::with_capacity(substitution.bindings.len());
+        for (declaration, argument) in &substitution.bindings {
+            let stable = match argument {
+                GenericArgument::Type(ty) => {
+                    let Some(ty) = self.stabilize_concrete_type(
+                        *ty,
+                        nominal_checkpoint,
+                        &mut visiting,
+                    )? else {
+                        return Ok(None);
+                    };
+                    StableGenericArgument::Type(ty)
+                }
+                GenericArgument::Const(value) => {
+                    let Some(value) = value.value() else {
+                        return Ok(None);
+                    };
+                    StableGenericArgument::Const(CheckedConst::Value(value))
+                }
+            };
+            bindings.push((*declaration, stable));
+        }
+        Ok(Some(StableGenericSubstitution { bindings }))
+    }
+
+    fn stabilize_concrete_type(
+        &self,
+        ty: CheckedType,
+        nominal_checkpoint: usize,
+        visiting: &mut HashSet<NominalId>,
+    ) -> Result<Option<StableCheckedType>, CheckStop> {
+        self.stabilize_type(ty, nominal_checkpoint, visiting, false)
+    }
+
+    fn stabilize_schema_type(
+        &self,
+        ty: CheckedType,
+        nominal_checkpoint: usize,
+        visiting: &mut HashSet<NominalId>,
+    ) -> Result<StableCheckedType, CheckStop> {
+        self.stabilize_type(ty, nominal_checkpoint, visiting, true)?
+            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    fn stabilize_type(
+        &self,
+        ty: CheckedType,
+        nominal_checkpoint: usize,
+        visiting: &mut HashSet<NominalId>,
+        allow_symbolic: bool,
+    ) -> Result<Option<StableCheckedType>, CheckStop> {
+        let stable = match ty {
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_) => StableCheckedType::Scalar(ty),
+            CheckedType::Generic(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_) => {
+                if !allow_symbolic {
+                    return Ok(None);
+                }
+                StableCheckedType::Scalar(ty)
+            }
+            CheckedType::Nominal(id) => {
+                if !visiting.insert(id) {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                let source = self
+                    .source_nominal_instances
+                    .get(id.0 as usize)
+                    .cloned()
+                    .flatten();
+                let prelude = self.prelude_types.get(id.0 as usize).cloned().flatten();
+                let system = self
+                    .system_nominals
+                    .iter()
+                    .find_map(|(index, candidate)| (*candidate == id).then_some(*index));
+                let kind = self
+                    .nominals
+                    .get(id.0 as usize)
+                    .map(|nominal| nominal.kind.clone())
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let stable = if let Some((template, substitution)) = source {
+                    let Some(substitution) = self.stabilize_substitution_with_visiting(
+                        &substitution,
+                        nominal_checkpoint,
+                        visiting,
+                        allow_symbolic,
+                    )? else {
+                        visiting.remove(&id);
+                        return Ok(None);
+                    };
+                    StableCheckedType::SourceNominal {
+                        template,
+                        substitution,
+                    }
+                } else if let Some(prelude) = prelude {
+                    let Some(prelude) = self.stabilize_prelude_type(
+                        prelude,
+                        nominal_checkpoint,
+                        visiting,
+                        allow_symbolic,
+                    )? else {
+                        visiting.remove(&id);
+                        return Ok(None);
+                    };
+                    StableCheckedType::Prelude(prelude)
+                } else if let Some(system) = system {
+                    StableCheckedType::System(system)
+                } else {
+                    match kind {
+                        CheckedNominalKind::Box { referent } => {
+                            let Some(referent) = self.stabilize_type(
+                                referent,
+                                nominal_checkpoint,
+                                visiting,
+                                allow_symbolic,
+                            )? else {
+                                visiting.remove(&id);
+                                return Ok(None);
+                            };
+                            StableCheckedType::Boxed(Box::new(referent))
+                        }
+                        CheckedNominalKind::Arena { region, content } => {
+                            let Some(content) = self.stabilize_type(
+                                content,
+                                nominal_checkpoint,
+                                visiting,
+                                allow_symbolic,
+                            )? else {
+                                visiting.remove(&id);
+                                return Ok(None);
+                            };
+                            StableCheckedType::Arena {
+                                region,
+                                content: Box::new(content),
+                            }
+                        }
+                        CheckedNominalKind::SystemResource { .. } => {
+                            return Err(SemanticCompilerFailure::InvalidResolution.into());
+                        }
+                        CheckedNominalKind::Struct { .. }
+                        | CheckedNominalKind::Enum { .. }
+                        | CheckedNominalKind::ArenaStorage => {
+                            return Err(SemanticCompilerFailure::InvalidResolution.into());
+                        }
+                    }
+                };
+                visiting.remove(&id);
+                stable
+            }
+            CheckedType::Array { element, length } => {
+                let Some(element) = self.stabilize_flat_element(
+                    element,
+                    nominal_checkpoint,
+                    visiting,
+                    allow_symbolic,
+                )? else {
+                    return Ok(None);
+                };
+                if !allow_symbolic && !length.is_concrete() {
+                    return Ok(None);
+                }
+                StableCheckedType::Array { element, length }
+            }
+            CheckedType::Slice { region, element } => {
+                let Some(element) = self.stabilize_flat_element(
+                    element,
+                    nominal_checkpoint,
+                    visiting,
+                    allow_symbolic,
+                )? else {
+                    return Ok(None);
+                };
+                StableCheckedType::Slice { region, element }
+            }
+            CheckedType::Buffer { element } => {
+                let Some(element) = self.stabilize_flat_element(
+                    element,
+                    nominal_checkpoint,
+                    visiting,
+                    allow_symbolic,
+                )? else {
+                    return Ok(None);
+                };
+                StableCheckedType::Buffer { element }
+            }
+        };
+        Ok(Some(stable))
+    }
+
+    fn stabilize_substitution_with_visiting(
+        &self,
+        substitution: &GenericSubstitution,
+        nominal_checkpoint: usize,
+        visiting: &mut HashSet<NominalId>,
+        allow_symbolic: bool,
+    ) -> Result<Option<StableGenericSubstitution>, CheckStop> {
+        let mut bindings = Vec::with_capacity(substitution.bindings.len());
+        for (declaration, argument) in &substitution.bindings {
+            let stable = match argument {
+                GenericArgument::Type(ty) => {
+                    let Some(ty) = self.stabilize_type(
+                        *ty,
+                        nominal_checkpoint,
+                        visiting,
+                        allow_symbolic,
+                    )? else {
+                        return Ok(None);
+                    };
+                    StableGenericArgument::Type(ty)
+                }
+                GenericArgument::Const(value) => {
+                    if !allow_symbolic && !value.is_concrete() {
+                        return Ok(None);
+                    }
+                    StableGenericArgument::Const(*value)
+                }
+            };
+            bindings.push((*declaration, stable));
+        }
+        Ok(Some(StableGenericSubstitution { bindings }))
+    }
+
+    fn stabilize_flat_element(
+        &self,
+        element: CheckedFlatElement,
+        nominal_checkpoint: usize,
+        visiting: &mut HashSet<NominalId>,
+        allow_symbolic: bool,
+    ) -> Result<Option<StableFlatElement>, CheckStop> {
+        Ok(match element {
+            CheckedFlatElement::Unit => Some(StableFlatElement::Unit),
+            CheckedFlatElement::Bool => Some(StableFlatElement::Bool),
+            CheckedFlatElement::Integer(ty) => Some(StableFlatElement::Integer(ty)),
+            CheckedFlatElement::Float(ty) => Some(StableFlatElement::Float(ty)),
+            CheckedFlatElement::GenericInt(declaration) => allow_symbolic
+                .then_some(StableFlatElement::GenericInt(declaration)),
+            CheckedFlatElement::GenericFloat(declaration) => allow_symbolic
+                .then_some(StableFlatElement::GenericFloat(declaration)),
+            CheckedFlatElement::TagOnlyNominal(id) => self
+                .stabilize_type(
+                    CheckedType::Nominal(id),
+                    nominal_checkpoint,
+                    visiting,
+                    allow_symbolic,
+                )?
+                .map(|ty| StableFlatElement::TagOnlyNominal(Box::new(ty))),
+            CheckedFlatElement::Nominal(id) => self
+                .stabilize_type(
+                    CheckedType::Nominal(id),
+                    nominal_checkpoint,
+                    visiting,
+                    allow_symbolic,
+                )?
+                .map(|ty| StableFlatElement::Nominal(Box::new(ty))),
+        })
+    }
+
+    fn stabilize_prelude_type(
+        &self,
+        ty: PreludeType,
+        nominal_checkpoint: usize,
+        visiting: &mut HashSet<NominalId>,
+        allow_symbolic: bool,
+    ) -> Result<Option<StablePreludeType>, CheckStop> {
+        Ok(match ty {
+            PreludeType::Option(value) => self
+                .stabilize_type(value, nominal_checkpoint, visiting, allow_symbolic)?
+                .map(|value| StablePreludeType::Option(Box::new(value))),
+            PreludeType::Result(ok, error) => {
+                let Some(ok) = self.stabilize_type(
+                    ok,
+                    nominal_checkpoint,
+                    visiting,
+                    allow_symbolic,
+                )? else {
+                    return Ok(None);
+                };
+                let Some(error) = self.stabilize_type(
+                    error,
+                    nominal_checkpoint,
+                    visiting,
+                    allow_symbolic,
+                )? else {
+                    return Ok(None);
+                };
+                Some(StablePreludeType::Result(Box::new(ok), Box::new(error)))
+            }
+            PreludeType::Overflow => Some(StablePreludeType::Overflow),
+            PreludeType::DivError => Some(StablePreludeType::DivError),
+            PreludeType::NarrowError => Some(StablePreludeType::NarrowError),
+        })
+    }
+
+    fn reify_concrete_substitution(
+        &mut self,
+        substitution: &StableGenericSubstitution,
+    ) -> Result<GenericSubstitution, CheckStop> {
+        let mut bindings = Vec::with_capacity(substitution.bindings.len());
+        for (declaration, argument) in &substitution.bindings {
+            let argument = match argument {
+                StableGenericArgument::Type(ty) => {
+                    GenericArgument::Type(self.reify_concrete_type(ty)?)
+                }
+                StableGenericArgument::Const(value) => {
+                    GenericArgument::Const(*value)
+                }
+            };
+            bindings.push((*declaration, argument));
+        }
+        GenericSubstitution::from_bindings(bindings).map_err(CheckStop::Compiler)
+    }
+
+    fn reify_concrete_type(
+        &mut self,
+        ty: &StableCheckedType,
+    ) -> Result<CheckedType, CheckStop> {
+        Ok(match ty {
+            StableCheckedType::Scalar(ty) => *ty,
+            StableCheckedType::SourceNominal {
+                template,
+                substitution,
+            } => {
+                let substitution = self.reify_concrete_substitution(substitution)?;
+                CheckedType::Nominal(
+                    self.ensure_source_nominal_instance(*template, substitution)?,
+                )
+            }
+            StableCheckedType::Prelude(ty) => {
+                let ty = match ty {
+                    StablePreludeType::Option(value) => {
+                        PreludeType::Option(self.reify_concrete_type(value)?)
+                    }
+                    StablePreludeType::Result(ok, error) => PreludeType::Result(
+                        self.reify_concrete_type(ok)?,
+                        self.reify_concrete_type(error)?,
+                    ),
+                    StablePreludeType::Overflow => PreludeType::Overflow,
+                    StablePreludeType::DivError => PreludeType::DivError,
+                    StablePreludeType::NarrowError => PreludeType::NarrowError,
+                };
+                CheckedType::Nominal(self.intern_prelude_nominal(ty)?)
+            }
+            StableCheckedType::Boxed(referent) => {
+                let referent = self.reify_concrete_type(referent)?;
+                CheckedType::Nominal(self.intern_box_nominal(referent)?)
+            }
+            StableCheckedType::Arena { region, content } => {
+                let content = self.reify_concrete_type(content)?;
+                CheckedType::Nominal(self.intern_arena_nominal(*region, content)?)
+            }
+            StableCheckedType::System(index) => {
+                CheckedType::Nominal(self.intern_system_nominal(*index)?)
+            }
+            StableCheckedType::Array { element, length } => CheckedType::Array {
+                element: self.reify_flat_element(element)?,
+                length: *length,
+            },
+            StableCheckedType::Slice { region, element } => CheckedType::Slice {
+                region: *region,
+                element: self.reify_flat_element(element)?,
+            },
+            StableCheckedType::Buffer { element } => CheckedType::Buffer {
+                element: self.reify_flat_element(element)?,
+            },
+        })
+    }
+
+    fn reify_flat_element(
+        &mut self,
+        element: &StableFlatElement,
+    ) -> Result<CheckedFlatElement, CheckStop> {
+        Ok(match element {
+            StableFlatElement::Unit => CheckedFlatElement::Unit,
+            StableFlatElement::Bool => CheckedFlatElement::Bool,
+            StableFlatElement::Integer(ty) => CheckedFlatElement::Integer(*ty),
+            StableFlatElement::Float(ty) => CheckedFlatElement::Float(*ty),
+            StableFlatElement::GenericInt(declaration) => {
+                CheckedFlatElement::GenericInt(*declaration)
+            }
+            StableFlatElement::GenericFloat(declaration) => {
+                CheckedFlatElement::GenericFloat(*declaration)
+            }
+            StableFlatElement::TagOnlyNominal(ty) => {
+                let CheckedType::Nominal(id) = self.reify_concrete_type(ty)? else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                CheckedFlatElement::TagOnlyNominal(id)
+            }
+            StableFlatElement::Nominal(ty) => {
+                let CheckedType::Nominal(id) = self.reify_concrete_type(ty)? else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                CheckedFlatElement::Nominal(id)
+            }
+        })
+    }
+
+    fn stabilize_generic_requirement(
+        &self,
+        declaration: DeclarationId,
+        requirement: &CheckedRequirement,
+        nominal_checkpoint: usize,
+    ) -> Result<PendingGenericRequirement, CheckStop> {
+        let mut nominals = Vec::new();
+        collect_goal_nominals(&requirement.template.root, &mut nominals);
+        nominals.sort_by_key(|id| id.0);
+        nominals.dedup();
+
+        let mut replacements = Vec::new();
+        for nominal in nominals {
+            if (nominal.0 as usize) < nominal_checkpoint {
+                continue;
+            }
+            let stable = self.stabilize_schema_type(
+                CheckedType::Nominal(nominal),
+                nominal_checkpoint,
+                &mut HashSet::new(),
+            )?;
+            replacements.push((nominal, stable));
+        }
+        Ok(PendingGenericRequirement {
+            declaration,
+            requirement: requirement.clone(),
+            nominal_checkpoint,
+            replacements,
+        })
+    }
+
+    /// Re-interns metadata-only symbolic nominals after the executable prefix
+    /// has already been measured. No scratch `NominalId` crosses the schema
+    /// checkpoint, and lowering continues to see one contiguous concrete
+    /// prefix.
+    pub(super) fn materialize_generic_requirements(&mut self) -> Result<(), CheckStop> {
+        if !self.generic_requirements.is_empty() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        let pending = std::mem::take(&mut self.pending_generic_requirements);
+        for mut pending in pending {
+            let mut replacements = HashMap::new();
+            for (old, stable) in &pending.replacements {
+                let CheckedType::Nominal(new) = self.reify_concrete_type(stable)? else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                if replacements.insert(*old, new).is_some() {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+            }
+            rewrite_goal_nominals(
+                &mut pending.requirement.template.root,
+                pending.nominal_checkpoint,
+                &replacements,
+            )?;
+            self.generic_requirements.push(CheckedGenericRequirement {
+                declaration: pending.declaration,
+                requirement: pending.requirement,
+            });
+        }
         Ok(())
     }
 
@@ -1293,9 +1995,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 }
 
-fn goal_uses_nominal_prefix(expression: &GoalExpression, checkpoint: usize) -> bool {
+fn collect_goal_nominals(expression: &GoalExpression, output: &mut Vec<NominalId>) {
     match expression {
-        GoalExpression::Datum(datum) => goal_datum_uses_nominal_prefix(datum, checkpoint),
+        GoalExpression::Datum(datum) => match datum {
+            GoalDatum::Parameter { ty, .. }
+            | GoalDatum::NamedConst { ty, .. }
+            | GoalDatum::Place { ty, .. } => collect_type_nominals(*ty, output),
+            GoalDatum::EphemeralActual {
+                captured_type, ty, ..
+            } => {
+                collect_type_nominals(*captured_type, output);
+                collect_type_nominals(*ty, output);
+            }
+            GoalDatum::Literal(value) => collect_value_nominals(value, output),
+        },
         GoalExpression::Operation {
             row,
             type_arguments,
@@ -1303,102 +2016,231 @@ fn goal_uses_nominal_prefix(expression: &GoalExpression, checkpoint: usize) -> b
             arguments,
             ..
         } => {
-            type_arguments
-                .iter()
-                .copied()
-                .all(|ty| type_uses_nominal_prefix(ty, checkpoint))
-                && type_uses_nominal_prefix(*result, checkpoint)
-                && goal_operation_uses_nominal_prefix(*row, checkpoint)
-                && arguments
-                    .iter()
-                    .all(|argument| goal_uses_nominal_prefix(argument, checkpoint))
+            collect_operation_nominals(*row, output);
+            for ty in type_arguments {
+                collect_type_nominals(*ty, output);
+            }
+            collect_type_nominals(*result, output);
+            for argument in arguments {
+                collect_goal_nominals(argument, output);
+            }
         }
     }
 }
 
-fn goal_datum_uses_nominal_prefix(datum: &GoalDatum, checkpoint: usize) -> bool {
-    match datum {
-        GoalDatum::Parameter { ty, .. }
-        | GoalDatum::NamedConst { ty, .. }
-        | GoalDatum::Place { ty, .. } => type_uses_nominal_prefix(*ty, checkpoint),
-        GoalDatum::EphemeralActual {
-            captured_type, ty, ..
-        } => {
-            type_uses_nominal_prefix(*captured_type, checkpoint)
-                && type_uses_nominal_prefix(*ty, checkpoint)
-        }
-        GoalDatum::Literal(value) => value_uses_nominal_prefix(value, checkpoint),
-    }
-}
-
-fn goal_operation_uses_nominal_prefix(row: GoalOperation, checkpoint: usize) -> bool {
-    match row {
+fn collect_operation_nominals(operation: GoalOperation, output: &mut Vec<NominalId>) {
+    match operation {
         GoalOperation::Integer { operand_type, .. }
         | GoalOperation::Float { operand_type, .. }
-        | GoalOperation::EnumEquality { operand_type, .. } => {
-            type_uses_nominal_prefix(operand_type, checkpoint)
-        }
+        | GoalOperation::EnumEquality { operand_type, .. }
+        | GoalOperation::BufferFits {
+            element: operand_type,
+            ..
+        } => collect_type_nominals(operand_type, output),
         GoalOperation::ArrayFill { element, .. }
         | GoalOperation::ArrayLength { element, .. }
         | GoalOperation::BufferLength { element }
         | GoalOperation::SliceLength { element, .. } => {
-            flat_element_uses_nominal_prefix(element, checkpoint)
+            collect_flat_element_nominals(element, output);
         }
-        GoalOperation::BufferFits { element, .. } => type_uses_nominal_prefix(element, checkpoint),
         GoalOperation::NumericConversion { .. }
         | GoalOperation::Reinterpret { .. }
-        | GoalOperation::Boolean(_) => true,
+        | GoalOperation::Boolean(_) => {}
     }
 }
 
-fn value_uses_nominal_prefix(value: &CheckedValue, checkpoint: usize) -> bool {
-    match value {
-        CheckedValue::NumericIdentity { ty, .. } => type_uses_nominal_prefix(*ty, checkpoint),
-        CheckedValue::Array { ty, elements } => {
-            type_uses_nominal_prefix(*ty, checkpoint)
-                && elements
-                    .iter()
-                    .all(|element| value_uses_nominal_prefix(element, checkpoint))
-        }
-        CheckedValue::Struct { ty, fields } => {
-            type_uses_nominal_prefix(*ty, checkpoint)
-                && fields
-                    .iter()
-                    .all(|field| value_uses_nominal_prefix(field, checkpoint))
-        }
-        CheckedValue::Unit
-        | CheckedValue::Bool(_)
-        | CheckedValue::Integer { .. }
-        | CheckedValue::Float { .. } => true,
-    }
-}
-
-fn type_uses_nominal_prefix(ty: CheckedType, checkpoint: usize) -> bool {
+fn collect_type_nominals(ty: CheckedType, output: &mut Vec<NominalId>) {
     match ty {
-        CheckedType::Nominal(id) => (id.0 as usize) < checkpoint,
+        CheckedType::Nominal(id) => output.push(id),
         CheckedType::Array { element, .. }
         | CheckedType::Slice { element, .. }
-        | CheckedType::Buffer { element } => flat_element_uses_nominal_prefix(element, checkpoint),
+        | CheckedType::Buffer { element } => collect_flat_element_nominals(element, output),
         CheckedType::Unit
         | CheckedType::Bool
         | CheckedType::Integer(_)
         | CheckedType::Float(_)
         | CheckedType::Generic(_)
         | CheckedType::GenericInt(_)
-        | CheckedType::GenericFloat(_) => true,
+        | CheckedType::GenericFloat(_) => {}
     }
 }
 
-fn flat_element_uses_nominal_prefix(element: CheckedFlatElement, checkpoint: usize) -> bool {
+fn collect_flat_element_nominals(element: CheckedFlatElement, output: &mut Vec<NominalId>) {
     match element {
-        CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id) => {
-            (id.0 as usize) < checkpoint
+        CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id) => output.push(id),
+        CheckedFlatElement::Unit
+        | CheckedFlatElement::Bool
+        | CheckedFlatElement::Integer(_)
+        | CheckedFlatElement::Float(_)
+        | CheckedFlatElement::GenericInt(_)
+        | CheckedFlatElement::GenericFloat(_) => {}
+    }
+}
+
+fn collect_value_nominals(value: &CheckedValue, output: &mut Vec<NominalId>) {
+    match value {
+        CheckedValue::NumericIdentity { ty, .. } => collect_type_nominals(*ty, output),
+        CheckedValue::Array { ty, elements } => {
+            collect_type_nominals(*ty, output);
+            for element in elements {
+                collect_value_nominals(element, output);
+            }
+        }
+        CheckedValue::Struct { ty, fields } => {
+            collect_type_nominals(*ty, output);
+            for field in fields {
+                collect_value_nominals(field, output);
+            }
+        }
+        CheckedValue::Unit
+        | CheckedValue::Bool(_)
+        | CheckedValue::Integer { .. }
+        | CheckedValue::Float { .. } => {}
+    }
+}
+
+fn rewrite_goal_nominals(
+    expression: &mut GoalExpression,
+    checkpoint: usize,
+    replacements: &HashMap<NominalId, NominalId>,
+) -> Result<(), CheckStop> {
+    match expression {
+        GoalExpression::Datum(datum) => match datum {
+            GoalDatum::Parameter { ty, .. }
+            | GoalDatum::NamedConst { ty, .. }
+            | GoalDatum::Place { ty, .. } => rewrite_type_nominals(ty, checkpoint, replacements)?,
+            GoalDatum::EphemeralActual {
+                captured_type, ty, ..
+            } => {
+                rewrite_type_nominals(captured_type, checkpoint, replacements)?;
+                rewrite_type_nominals(ty, checkpoint, replacements)?;
+            }
+            GoalDatum::Literal(value) => rewrite_value_nominals(value, checkpoint, replacements)?,
+        },
+        GoalExpression::Operation {
+            row,
+            type_arguments,
+            result,
+            arguments,
+            ..
+        } => {
+            rewrite_operation_nominals(row, checkpoint, replacements)?;
+            for ty in type_arguments {
+                rewrite_type_nominals(ty, checkpoint, replacements)?;
+            }
+            rewrite_type_nominals(result, checkpoint, replacements)?;
+            for argument in arguments {
+                rewrite_goal_nominals(argument, checkpoint, replacements)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn rewrite_operation_nominals(
+    operation: &mut GoalOperation,
+    checkpoint: usize,
+    replacements: &HashMap<NominalId, NominalId>,
+) -> Result<(), CheckStop> {
+    match operation {
+        GoalOperation::Integer { operand_type, .. }
+        | GoalOperation::Float { operand_type, .. }
+        | GoalOperation::EnumEquality { operand_type, .. }
+        | GoalOperation::BufferFits {
+            element: operand_type,
+            ..
+        } => rewrite_type_nominals(operand_type, checkpoint, replacements)?,
+        GoalOperation::ArrayFill { element, .. }
+        | GoalOperation::ArrayLength { element, .. }
+        | GoalOperation::BufferLength { element }
+        | GoalOperation::SliceLength { element, .. } => {
+            rewrite_flat_element_nominals(element, checkpoint, replacements)?;
+        }
+        GoalOperation::NumericConversion { .. }
+        | GoalOperation::Reinterpret { .. }
+        | GoalOperation::Boolean(_) => {}
+    }
+    Ok(())
+}
+
+fn rewrite_type_nominals(
+    ty: &mut CheckedType,
+    checkpoint: usize,
+    replacements: &HashMap<NominalId, NominalId>,
+) -> Result<(), CheckStop> {
+    match ty {
+        CheckedType::Nominal(id) if (id.0 as usize) >= checkpoint => {
+            *id = *replacements
+                .get(id)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        }
+        CheckedType::Array { element, .. }
+        | CheckedType::Slice { element, .. }
+        | CheckedType::Buffer { element } => {
+            rewrite_flat_element_nominals(element, checkpoint, replacements)?;
+        }
+        CheckedType::Unit
+        | CheckedType::Bool
+        | CheckedType::Integer(_)
+        | CheckedType::Float(_)
+        | CheckedType::Generic(_)
+        | CheckedType::GenericInt(_)
+        | CheckedType::GenericFloat(_)
+        | CheckedType::Nominal(_) => {}
+    }
+    Ok(())
+}
+
+fn rewrite_flat_element_nominals(
+    element: &mut CheckedFlatElement,
+    checkpoint: usize,
+    replacements: &HashMap<NominalId, NominalId>,
+) -> Result<(), CheckStop> {
+    match element {
+        CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id)
+            if (id.0 as usize) >= checkpoint =>
+        {
+            *id = *replacements
+                .get(id)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         }
         CheckedFlatElement::Unit
         | CheckedFlatElement::Bool
         | CheckedFlatElement::Integer(_)
         | CheckedFlatElement::Float(_)
         | CheckedFlatElement::GenericInt(_)
-        | CheckedFlatElement::GenericFloat(_) => true,
+        | CheckedFlatElement::GenericFloat(_)
+        | CheckedFlatElement::TagOnlyNominal(_)
+        | CheckedFlatElement::Nominal(_) => {}
     }
+    Ok(())
+}
+
+fn rewrite_value_nominals(
+    value: &mut CheckedValue,
+    checkpoint: usize,
+    replacements: &HashMap<NominalId, NominalId>,
+) -> Result<(), CheckStop> {
+    match value {
+        CheckedValue::NumericIdentity { ty, .. } => {
+            rewrite_type_nominals(ty, checkpoint, replacements)?;
+        }
+        CheckedValue::Array { ty, elements } => {
+            rewrite_type_nominals(ty, checkpoint, replacements)?;
+            for element in elements {
+                rewrite_value_nominals(element, checkpoint, replacements)?;
+            }
+        }
+        CheckedValue::Struct { ty, fields } => {
+            rewrite_type_nominals(ty, checkpoint, replacements)?;
+            for field in fields {
+                rewrite_value_nominals(field, checkpoint, replacements)?;
+            }
+        }
+        CheckedValue::Unit
+        | CheckedValue::Bool(_)
+        | CheckedValue::Integer { .. }
+        | CheckedValue::Float { .. } => {}
+    }
+    Ok(())
 }

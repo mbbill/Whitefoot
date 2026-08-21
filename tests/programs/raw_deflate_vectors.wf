@@ -10,56 +10,29 @@ const literal_only_dynamic_input_bytes: array<u8, 13> =[5_u8, 192_u8, 129_u8, 8_
 
 const dynamic_expected_bytes: array<u8, 100> =[16_u8, 15_u8, 0_u8, 0_u8, 12_u8, 9_u8, 8_u8, 3_u8, 7_u8, 7_u8, 7_u8, 1_u8, 5_u8, 4_u8, 9_u8, 18_u8, 15_u8, 6_u8, 5_u8, 2_u8, 0_u8, 0_u8, 5_u8, 3_u8, 4_u8, 13_u8, 6_u8, 6_u8, 2_u8, 0_u8, 3_u8, 1_u8, 6_u8, 19_u8, 8_u8, 1_u8, 13_u8, 11_u8, 9_u8, 14_u8, 10_u8, 11_u8, 4_u8, 17_u8, 16_u8, 1_u8, 10_u8, 9_u8, 5_u8, 6_u8, 5_u8, 14_u8, 6_u8, 12_u8, 4_u8, 13_u8, 13_u8, 5_u8, 7_u8, 14_u8, 9_u8, 5_u8, 2_u8, 3_u8, 9_u8, 1_u8, 14_u8, 2_u8, 14_u8, 3_u8, 16_u8, 9_u8, 6_u8, 6_u8, 8_u8, 7_u8, 3_u8, 2_u8, 6_u8, 15_u8, 7_u8, 0_u8, 11_u8, 9_u8, 14_u8, 2_u8, 10_u8, 0_u8, 8_u8, 3_u8, 2_u8, 13_u8, 1_u8, 6_u8, 12_u8, 2_u8, 2_u8, 13_u8, 4_u8, 9_u8];
 
-fn make_dynamic_input() -> result: own buffer<u8> allocates(heap), traps {
+fn make_dynamic_input() -> result: own buffer<u8> allocates(heap) {
   let input = buffer_new(72_u64, 0_u8);
-  let index_value = 0_u64;
-  loop @fill_dynamic_source {
-    let done = ieq(index_value, 72_u64);
-    if done {
-      break @fill_dynamic_source;
-    } else {
-      let fill_ok = ilt(index_value, 72_u64);
-      claim fill_in_range: fill_ok because "the fill walks 0..72 and breaks at 72";
-      let byte = dynamic_input_bytes[index_value];
-      set input[index_value] = byte;
-      set index_value = index_value +wrap 1_u64;
-    }
+  for @fill_dynamic_source index_value in 0_u64..72_u64 {
+    let byte = dynamic_input_bytes[index_value];
+    set input[index_value] = byte;
   }
   return move input;
 }
 
-fn make_dynamic_match_input() -> result: own buffer<u8> allocates(heap), traps {
+fn make_dynamic_match_input() -> result: own buffer<u8> allocates(heap) {
   let input = buffer_new(82_u64, 0_u8);
-  let index_value = 0_u64;
-  loop @fill_dynamic_match_source {
-    let done = ieq(index_value, 82_u64);
-    if done {
-      break @fill_dynamic_match_source;
-    } else {
-      let fill_ok = ilt(index_value, 82_u64);
-      claim fill_in_range: fill_ok because "the fill walks 0..82 and breaks at 82";
-      let byte = dynamic_match_input_bytes[index_value];
-      set input[index_value] = byte;
-      set index_value = index_value +wrap 1_u64;
-    }
+  for @fill_dynamic_match_source index_value in 0_u64..82_u64 {
+    let byte = dynamic_match_input_bytes[index_value];
+    set input[index_value] = byte;
   }
   return move input;
 }
 
-fn make_literal_only_dynamic_input() -> result: own buffer<u8> allocates(heap), traps {
+fn make_literal_only_dynamic_input() -> result: own buffer<u8> allocates(heap) {
   let input = buffer_new(13_u64, 0_u8);
-  let index_value = 0_u64;
-  loop @fill_literal_only_dynamic_source {
-    let done = ieq(index_value, 13_u64);
-    if done {
-      break @fill_literal_only_dynamic_source;
-    } else {
-      let fill_ok = ilt(index_value, 13_u64);
-      claim fill_in_range: fill_ok because "the fill walks 0..13 and breaks at 13";
-      let byte = literal_only_dynamic_input_bytes[index_value];
-      set input[index_value] = byte;
-      set index_value = index_value +wrap 1_u64;
-    }
+  for @fill_literal_only_dynamic_source index_value in 0_u64..13_u64 {
+    let byte = literal_only_dynamic_input_bytes[index_value];
+    set input[index_value] = byte;
   }
   return move input;
 }
@@ -112,10 +85,16 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let valid_result = inflate<'valid_region>(out: &uniq 'valid_region valid_output, input: move valid_input);
     match move valid_result {
       Ok(value: valid_length) => {
-        claim stored_output_length: ieq(valid_length, 5_u64) because "stored output length";
+        if ieq(valid_length, 5_u64) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: valid_error) => {
-        claim stored_stream_rejected: False() because "stored stream rejected";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -124,11 +103,26 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   let valid_two = valid_output[2_u64];
   let valid_three = valid_output[3_u64];
   let valid_four = valid_output[4_u64];
-  claim stored_byte_zero: ieq(valid_zero, 104_u8) because "stored byte zero";
-  claim stored_byte_one: ieq(valid_one, 101_u8) because "stored byte one";
-  claim stored_byte_two: ieq(valid_two, 108_u8) because "stored byte two";
-  claim stored_byte_three: ieq(valid_three, 108_u8) because "stored byte three";
-  claim stored_byte_four: ieq(valid_four, 111_u8) because "stored byte four";
+  if ieq(valid_zero, 104_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(valid_one, 101_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(valid_two, 108_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(valid_three, 108_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(valid_four, 111_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let invalid_length_input = buffer_new(6_u64, 0_u8);
   set invalid_length_input[0_u64] = 1_u8;
   set invalid_length_input[1_u64] = 1_u8;
@@ -141,36 +135,60 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let invalid_length_result = inflate<'invalid_length_region>(out: &uniq 'invalid_length_region invalid_length_output, input: move invalid_length_input);
     match move invalid_length_result {
       Ok(value: invalid_length_value) => {
-        claim invalid_stored_length_accepted: False() because "invalid stored length accepted";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: invalid_length_error) => {
         match invalid_length_error {
           InvalidStoredLength() => {
           }
           Truncated() => {
-            claim invalid_length_became_truncation: False() because "invalid length became truncation";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           OutputFull() => {
-            claim invalid_length_became_output_full: False() because "invalid length became output full";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           InvalidHuffmanCode() => {
-            claim invalid_length_became_huffman_error: False() because "invalid length became Huffman error";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           InvalidHuffmanTree() => {
-            claim invalid_length_became_huffman_tree: False() because "invalid length became Huffman tree";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           InvalidDistance() => {
-            claim invalid_length_became_distance_error: False() because "invalid length became distance error";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           InvalidBlockType() => {
-            claim invalid_length_became_block_type: False() because "invalid length became block type";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
         }
       }
     }
   }
   let invalid_length_sentinel = invalid_length_output[0_u64];
-  claim invalid_length_wrote_output: ieq(invalid_length_sentinel, 9_u8) because "invalid length wrote output";
+  if ieq(invalid_length_sentinel, 9_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let truncated_input = buffer_new(4_u64, 0_u8);
   set truncated_input[0_u64] = 1_u8;
   set truncated_input[1_u64] = 2_u8;
@@ -181,36 +199,60 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let truncated_result = inflate<'truncated_region>(out: &uniq 'truncated_region truncated_output, input: move truncated_input);
     match move truncated_result {
       Ok(value: truncated_value) => {
-        claim truncated_stream_accepted: False() because "truncated stream accepted";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: truncated_error) => {
         match truncated_error {
           Truncated() => {
           }
           InvalidStoredLength() => {
-            claim truncation_became_invalid_length: False() because "truncation became invalid length";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           OutputFull() => {
-            claim truncation_became_output_full: False() because "truncation became output full";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           InvalidHuffmanCode() => {
-            claim truncation_became_huffman_error: False() because "truncation became Huffman error";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           InvalidHuffmanTree() => {
-            claim truncation_became_huffman_tree: False() because "truncation became Huffman tree";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           InvalidDistance() => {
-            claim truncation_became_distance_error: False() because "truncation became distance error";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           InvalidBlockType() => {
-            claim truncation_became_block_type: False() because "truncation became block type";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
         }
       }
     }
   }
   let truncated_sentinel = truncated_output[0_u64];
-  claim truncation_wrote_output: ieq(truncated_sentinel, 7_u8) because "truncation wrote output";
+  if ieq(truncated_sentinel, 7_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let full_input = buffer_new(7_u64, 0_u8);
   set full_input[0_u64] = 1_u8;
   set full_input[1_u64] = 2_u8;
@@ -224,36 +266,60 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let full_result = inflate<'full_region>(out: &uniq 'full_region full_output, input: move full_input);
     match move full_result {
       Ok(value: full_value) => {
-        claim undersized_output_accepted: False() because "undersized output accepted";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: full_error) => {
         match full_error {
           OutputFull() => {
           }
           Truncated() => {
-            claim output_full_became_truncation: False() because "output full became truncation";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           InvalidStoredLength() => {
-            claim output_full_became_invalid_length: False() because "output full became invalid length";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           InvalidHuffmanCode() => {
-            claim output_full_became_huffman_error: False() because "output full became Huffman error";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           InvalidHuffmanTree() => {
-            claim output_full_became_huffman_tree: False() because "output full became Huffman tree";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           InvalidDistance() => {
-            claim output_full_became_distance_error: False() because "output full became distance error";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
           InvalidBlockType() => {
-            claim output_full_became_block_type: False() because "output full became block type";
+            if False() {
+            } else {
+              return exit_status(code: 1_u8);
+            }
           }
         }
       }
     }
   }
   let full_sentinel = full_output[0_u64];
-  claim output_full_wrote_prefix: ieq(full_sentinel, 11_u8) because "output full wrote prefix";
+  if ieq(full_sentinel, 11_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let fixed_literal_input = buffer_new(7_u64, 0_u8);
   set fixed_literal_input[0_u64] = 203_u8;
   set fixed_literal_input[1_u64] = 72_u8;
@@ -267,10 +333,16 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let fixed_literal_result = inflate<'fixed_literal_region>(out: &uniq 'fixed_literal_region fixed_literal_output, input: move fixed_literal_input);
     match move fixed_literal_result {
       Ok(value: fixed_literal_length) => {
-        claim fixed_literal_output_length: ieq(fixed_literal_length, 5_u64) because "fixed literal output length";
+        if ieq(fixed_literal_length, 5_u64) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: fixed_literal_error) => {
-        claim fixed_literal_stream_rejected: False() because "fixed literal stream rejected";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -279,11 +351,26 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   let fixed_literal_two = fixed_literal_output[2_u64];
   let fixed_literal_three = fixed_literal_output[3_u64];
   let fixed_literal_four = fixed_literal_output[4_u64];
-  claim fixed_literal_byte_zero: ieq(fixed_literal_zero, 104_u8) because "fixed literal byte zero";
-  claim fixed_literal_byte_one: ieq(fixed_literal_one, 101_u8) because "fixed literal byte one";
-  claim fixed_literal_byte_two: ieq(fixed_literal_two, 108_u8) because "fixed literal byte two";
-  claim fixed_literal_byte_three: ieq(fixed_literal_three, 108_u8) because "fixed literal byte three";
-  claim fixed_literal_byte_four: ieq(fixed_literal_four, 111_u8) because "fixed literal byte four";
+  if ieq(fixed_literal_zero, 104_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(fixed_literal_one, 101_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(fixed_literal_two, 108_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(fixed_literal_three, 108_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(fixed_literal_four, 111_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let fixed_match_input = buffer_new(5_u64, 0_u8);
   set fixed_match_input[0_u64] = 75_u8;
   set fixed_match_input[1_u64] = 76_u8;
@@ -295,10 +382,16 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let fixed_match_result = inflate<'fixed_match_region>(out: &uniq 'fixed_match_region fixed_match_output, input: move fixed_match_input);
     match move fixed_match_result {
       Ok(value: fixed_match_length) => {
-        claim fixed_match_output_length: ieq(fixed_match_length, 16_u64) because "fixed match output length";
+        if ieq(fixed_match_length, 16_u64) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: fixed_match_error) => {
-        claim fixed_match_stream_rejected: False() because "fixed match stream rejected";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -310,9 +403,15 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     } else {
       let fixed_match_room = len(fixed_match_output);
       let fixed_match_ok = ilt(fixed_match_index, fixed_match_room);
-      claim fixed_match_in_output: fixed_match_ok because "the walk stops at sixteen and the output holds sixteen bytes";
+      if fixed_match_ok {
+      } else {
+        return exit_status(code: 1_u8);
+      }
       let fixed_match_byte = fixed_match_output[fixed_match_index];
-      claim fixed_overlapping_match_byte: ieq(fixed_match_byte, 97_u8) because "fixed overlapping match byte";
+      if ieq(fixed_match_byte, 97_u8) {
+      } else {
+        return exit_status(code: 1_u8);
+      }
       set fixed_match_index = fixed_match_index +wrap 1_u64;
     }
   }
@@ -332,10 +431,16 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let fixed_phrase_result = inflate<'fixed_phrase_region>(out: &uniq 'fixed_phrase_region fixed_phrase_output, input: move fixed_phrase_input);
     match move fixed_phrase_result {
       Ok(value: fixed_phrase_length) => {
-        claim fixed_phrase_output_length: ieq(fixed_phrase_length, 17_u64) because "fixed phrase output length";
+        if ieq(fixed_phrase_length, 17_u64) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: fixed_phrase_error) => {
-        claim fixed_phrase_stream_rejected: False() because "fixed phrase stream rejected";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -347,10 +452,16 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     } else {
       let fixed_phrase_room = len(fixed_phrase_output);
       let fixed_phrase_out_ok = ilt(fixed_phrase_index, fixed_phrase_room);
-      claim fixed_phrase_in_output: fixed_phrase_out_ok because "the walk stops at seventeen and the output holds seventeen bytes";
+      if fixed_phrase_out_ok {
+      } else {
+        return exit_status(code: 1_u8);
+      }
       let fixed_phrase_actual = fixed_phrase_output[fixed_phrase_index];
       let fixed_phrase_wanted = fixed_phrase_expected[fixed_phrase_index];
-      claim fixed_distance_extra_byte: ieq(fixed_phrase_actual, fixed_phrase_wanted) because "fixed distance-extra byte";
+      if ieq(fixed_phrase_actual, fixed_phrase_wanted) {
+      } else {
+        return exit_status(code: 1_u8);
+      }
       set fixed_phrase_index = fixed_phrase_index +wrap 1_u64;
     }
   }
@@ -360,10 +471,16 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let dynamic_result = inflate<'dynamic_region>(out: &uniq 'dynamic_region dynamic_output, input: move dynamic_input);
     match move dynamic_result {
       Ok(value: dynamic_length) => {
-        claim dynamic_output_length: ieq(dynamic_length, 100_u64) because "dynamic output length";
+        if ieq(dynamic_length, 100_u64) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: dynamic_error) => {
-        claim dynamic_stream_rejected: False() because "dynamic stream rejected";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -375,10 +492,16 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     } else {
       let dynamic_room = len(dynamic_output);
       let dynamic_out_ok = ilt(dynamic_output_index, dynamic_room);
-      claim dynamic_in_output: dynamic_out_ok because "the walk stops at one hundred and the output holds one hundred bytes";
+      if dynamic_out_ok {
+      } else {
+        return exit_status(code: 1_u8);
+      }
       let dynamic_actual = dynamic_output[dynamic_output_index];
       let dynamic_wanted = dynamic_expected_bytes[dynamic_output_index];
-      claim dynamic_output_byte: ieq(dynamic_actual, dynamic_wanted) because "dynamic output byte";
+      if ieq(dynamic_actual, dynamic_wanted) {
+      } else {
+        return exit_status(code: 1_u8);
+      }
       set dynamic_output_index = dynamic_output_index +wrap 1_u64;
     }
   }
@@ -388,25 +511,40 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let literal_only_result = inflate<'literal_only_region>(out: &uniq 'literal_only_region literal_only_output, input: move literal_only_input);
     match move literal_only_result {
       Ok(value: literal_only_length) => {
-        claim literal_only_dynamic_output_length: ieq(literal_only_length, 1_u64) because "literal-only dynamic output length";
+        if ieq(literal_only_length, 1_u64) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: literal_only_error) => {
-        claim literal_only_dynamic_stream_rejected: False() because "literal-only dynamic stream rejected";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
   let literal_only_byte = literal_only_output[0_u64];
-  claim literal_only_dynamic_output_byte: ieq(literal_only_byte, 65_u8) because "literal-only dynamic output byte";
+  if ieq(literal_only_byte, 65_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let dynamic_match_input = make_dynamic_match_input();
   let dynamic_match_output = buffer_new(400_u64, 0_u8);
   region 'dynamic_match_region {
     let dynamic_match_result = inflate<'dynamic_match_region>(out: &uniq 'dynamic_match_region dynamic_match_output, input: move dynamic_match_input);
     match move dynamic_match_result {
       Ok(value: dynamic_match_length) => {
-        claim dynamic_match_output_length: ieq(dynamic_match_length, 400_u64) because "dynamic match output length";
+        if ieq(dynamic_match_length, 400_u64) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: dynamic_match_error) => {
-        claim dynamic_match_stream_rejected: False() because "dynamic match stream rejected";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -426,12 +564,21 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
           let output_index = dynamic_match_base +wrap dynamic_match_index;
           let dynamic_match_room = len(dynamic_match_output);
           let dynamic_match_out_ok = ilt(output_index, dynamic_match_room);
-          claim dynamic_match_in_output: dynamic_match_out_ok because "five hundred output bytes hold every repeated chunk";
+          if dynamic_match_out_ok {
+          } else {
+            return exit_status(code: 1_u8);
+          }
           let dynamic_match_actual = dynamic_match_output[output_index];
           let dynamic_match_exp_ok = ilt(dynamic_match_index, 100_u64);
-          claim dynamic_match_in_expected: dynamic_match_exp_ok because "the chunk walk stops at one hundred";
+          if dynamic_match_exp_ok {
+          } else {
+            return exit_status(code: 1_u8);
+          }
           let dynamic_match_wanted = dynamic_expected_bytes[dynamic_match_index];
-          claim dynamic_match_output_byte: ieq(dynamic_match_actual, dynamic_match_wanted) because "dynamic match output byte";
+          if ieq(dynamic_match_actual, dynamic_match_wanted) {
+          } else {
+            return exit_status(code: 1_u8);
+          }
           set dynamic_match_index = dynamic_match_index +wrap 1_u64;
         }
       }
@@ -446,7 +593,10 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
       break @fill_mixed_block_input;
     } else {
       let mixed_fill_ok = ilt(mixed_block_input_index, 78_u64);
-      claim mixed_fill_in_range: mixed_fill_ok because "the fill walks 0..78 and breaks at seventy-eight";
+      if mixed_fill_ok {
+      } else {
+        return exit_status(code: 1_u8);
+      }
       let mixed_block_input_byte = mixed_block_input_bytes[mixed_block_input_index];
       set mixed_block_input[mixed_block_input_index] = mixed_block_input_byte;
       set mixed_block_input_index = mixed_block_input_index +wrap 1_u64;
@@ -457,10 +607,16 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let mixed_block_result = inflate<'mixed_block_region>(out: &uniq 'mixed_block_region mixed_block_output, input: move mixed_block_input);
     match move mixed_block_result {
       Ok(value: mixed_block_length) => {
-        claim mixed_block_output_length: ieq(mixed_block_length, 105_u64) because "mixed block output length";
+        if ieq(mixed_block_length, 105_u64) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: mixed_block_error) => {
-        claim mixed_block_stream_rejected: False() because "mixed block stream rejected";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -472,12 +628,21 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     } else {
       let mixed_room = len(mixed_block_output);
       let mixed_out_ok = ilt(mixed_block_index, mixed_room);
-      claim mixed_in_output: mixed_out_ok because "the prefix walk stops at one hundred and the output holds one hundred five bytes";
+      if mixed_out_ok {
+      } else {
+        return exit_status(code: 1_u8);
+      }
       let mixed_block_actual = mixed_block_output[mixed_block_index];
       let mixed_exp_ok = ilt(mixed_block_index, 100_u64);
-      claim mixed_in_expected: mixed_exp_ok because "the prefix walk stops at one hundred";
+      if mixed_exp_ok {
+      } else {
+        return exit_status(code: 1_u8);
+      }
       let mixed_block_wanted = dynamic_expected_bytes[mixed_block_index];
-      claim mixed_block_prefix_byte: ieq(mixed_block_actual, mixed_block_wanted) because "mixed block prefix byte";
+      if ieq(mixed_block_actual, mixed_block_wanted) {
+      } else {
+        return exit_status(code: 1_u8);
+      }
       set mixed_block_index = mixed_block_index +wrap 1_u64;
     }
   }
@@ -486,11 +651,26 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   let mixed_block_l0 = mixed_block_output[102_u64];
   let mixed_block_l1 = mixed_block_output[103_u64];
   let mixed_block_o = mixed_block_output[104_u64];
-  claim mixed_block_suffix_h: ieq(mixed_block_h, 104_u8) because "mixed block suffix h";
-  claim mixed_block_suffix_e: ieq(mixed_block_e, 101_u8) because "mixed block suffix e";
-  claim mixed_block_suffix_first_l: ieq(mixed_block_l0, 108_u8) because "mixed block suffix first l";
-  claim mixed_block_suffix_second_l: ieq(mixed_block_l1, 108_u8) because "mixed block suffix second l";
-  claim mixed_block_suffix_o: ieq(mixed_block_o, 111_u8) because "mixed block suffix o";
+  if ieq(mixed_block_h, 104_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(mixed_block_e, 101_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(mixed_block_l0, 108_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(mixed_block_l1, 108_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(mixed_block_o, 111_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let invalid_tree_input = buffer_new(4_u64, 0_u8);
   set invalid_tree_input[0_u64] = 5_u8;
   let invalid_tree_output = buffer_new(1_u64, 0_u8);
@@ -498,11 +678,17 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let invalid_tree_result = inflate<'invalid_tree_region>(out: &uniq 'invalid_tree_region invalid_tree_output, input: move invalid_tree_input);
     match move invalid_tree_result {
       Ok(value: invalid_tree_length) => {
-        claim invalid_dynamic_tree_accepted: False() because "invalid dynamic tree accepted";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: invalid_tree_error) => {
         let invalid_tree_code = error_code(error: invalid_tree_error);
-        claim invalid_dynamic_tree_misclassified: ieq(invalid_tree_code, 3_u8) because "invalid dynamic tree misclassified";
+        if ieq(invalid_tree_code, 3_u8) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -514,7 +700,10 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
       break @fill_dynamic_truncated;
     } else {
       let truncated_fill_ok = ilt(dynamic_truncated_index, 10_u64);
-      claim truncated_fill_in_range: truncated_fill_ok because "the fill walks 0..10 and breaks at ten";
+      if truncated_fill_ok {
+      } else {
+        return exit_status(code: 1_u8);
+      }
       let dynamic_truncated_byte = dynamic_input_bytes[dynamic_truncated_index];
       set dynamic_truncated_input[dynamic_truncated_index] = dynamic_truncated_byte;
       set dynamic_truncated_index = dynamic_truncated_index +wrap 1_u64;
@@ -525,11 +714,17 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let dynamic_truncated_result = inflate<'dynamic_truncated_region>(out: &uniq 'dynamic_truncated_region dynamic_truncated_output, input: move dynamic_truncated_input);
     match move dynamic_truncated_result {
       Ok(value: dynamic_truncated_length) => {
-        claim truncated_dynamic_stream_accepted: False() because "truncated dynamic stream accepted";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: dynamic_truncated_error) => {
         let dynamic_truncated_code = error_code(error: dynamic_truncated_error);
-        claim truncated_dynamic_stream_misclassified: ieq(dynamic_truncated_code, 1_u8) because "truncated dynamic stream misclassified";
+        if ieq(dynamic_truncated_code, 1_u8) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -539,11 +734,17 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let dynamic_full_result = inflate<'dynamic_full_region>(out: &uniq 'dynamic_full_region dynamic_full_output, input: move dynamic_full_input);
     match move dynamic_full_result {
       Ok(value: dynamic_full_length) => {
-        claim undersized_dynamic_output_accepted: False() because "undersized dynamic output accepted";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: dynamic_full_error) => {
         let dynamic_full_code = error_code(error: dynamic_full_error);
-        claim dynamic_output_shortage_misclassified: ieq(dynamic_full_code, 7_u8) because "dynamic output shortage misclassified";
+        if ieq(dynamic_full_code, 7_u8) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -553,11 +754,17 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let reserved_block_result = inflate<'reserved_block_region>(out: &uniq 'reserved_block_region reserved_block_output, input: move reserved_block_input);
     match move reserved_block_result {
       Ok(value: reserved_block_length) => {
-        claim reserved_block_type_accepted: False() because "reserved block type accepted";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: reserved_block_error) => {
         let reserved_block_code = error_code(error: reserved_block_error);
-        claim reserved_block_type_misclassified: ieq(reserved_block_code, 6_u8) because "reserved block type misclassified";
+        if ieq(reserved_block_code, 6_u8) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -567,11 +774,17 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let fixed_truncated_result = inflate<'fixed_truncated_region>(out: &uniq 'fixed_truncated_region fixed_truncated_output, input: move fixed_truncated_input);
     match move fixed_truncated_result {
       Ok(value: fixed_truncated_length) => {
-        claim truncated_fixed_stream_accepted: False() because "truncated fixed stream accepted";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: fixed_truncated_error) => {
         let fixed_truncated_code = error_code(error: fixed_truncated_error);
-        claim truncated_fixed_stream_misclassified: ieq(fixed_truncated_code, 1_u8) because "truncated fixed stream misclassified";
+        if ieq(fixed_truncated_code, 1_u8) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -583,11 +796,17 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let invalid_huffman_result = inflate<'invalid_huffman_region>(out: &uniq 'invalid_huffman_region invalid_huffman_output, input: move invalid_huffman_input);
     match move invalid_huffman_result {
       Ok(value: invalid_huffman_length) => {
-        claim reserved_fixed_symbol_accepted: False() because "reserved fixed symbol accepted";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: invalid_huffman_error) => {
         let invalid_huffman_code = error_code(error: invalid_huffman_error);
-        claim reserved_fixed_symbol_misclassified: ieq(invalid_huffman_code, 4_u8) because "reserved fixed symbol misclassified";
+        if ieq(invalid_huffman_code, 4_u8) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -599,11 +818,17 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let invalid_distance_result = inflate<'invalid_distance_region>(out: &uniq 'invalid_distance_region invalid_distance_output, input: move invalid_distance_input);
     match move invalid_distance_result {
       Ok(value: invalid_distance_length) => {
-        claim distance_before_history_accepted: False() because "distance before history accepted";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: invalid_distance_error) => {
         let invalid_distance_code = error_code(error: invalid_distance_error);
-        claim distance_before_history_misclassified: ieq(invalid_distance_code, 5_u8) because "distance before history misclassified";
+        if ieq(invalid_distance_code, 5_u8) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
@@ -620,11 +845,17 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let fixed_full_result = inflate<'fixed_full_region>(out: &uniq 'fixed_full_region fixed_full_output, input: move fixed_full_input);
     match move fixed_full_result {
       Ok(value: fixed_full_length) => {
-        claim undersized_fixed_output_accepted: False() because "undersized fixed output accepted";
+        if False() {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       Err(error: fixed_full_error) => {
         let fixed_full_code = error_code(error: fixed_full_error);
-        claim fixed_output_shortage_misclassified: ieq(fixed_full_code, 7_u8) because "fixed output shortage misclassified";
+        if ieq(fixed_full_code, 7_u8) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }

@@ -10,7 +10,7 @@ fn controller_output(error: own f64, integral: own f64, previous_error: own f64,
   return fmin(lower_bounded, 2.0_f64);
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let iteration = 0_u64;
   let measured = 0.0_f64;
   let integral = 0.0_f64;
@@ -31,6 +31,9 @@ command fn main() -> status: own ExitStatus traps {
   }
   let above_floor = fgt(measured, 0.5_f64);
   let below_ceiling = flt(measured, 1.5_f64);
-  claim feedback_controller_failed_to_converge: band(above_floor, below_ceiling) because "feedback controller failed to converge";
+  if band(above_floor, below_ceiling) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }

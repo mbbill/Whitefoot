@@ -14,8 +14,8 @@ use crate::{
 };
 
 use super::super::model::{
-    BindingId, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMode, CheckedStatement,
-    CheckedType, ClaimSite, ValueInitializerKind,
+    BindingId, CheckedBooleanOperation, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMode,
+    CheckedStatement, CheckedType, ClaimJustification, ClaimSite, ValueInitializerKind,
 };
 use super::borrows::ReborrowPosition;
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
@@ -430,7 +430,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         kind: SemanticIssueKind::InvalidPredicateCondition,
                     }));
                 }
-                let justification = self.check_message(node)?;
+                self.check_claim_proof_predicate(
+                    expression_node,
+                    &condition.expression,
+                    &condition.effects,
+                )?;
+                let justification = self.check_claim_justification(node)?;
                 let predicate = self.tree.source_spelling(expression_node)?;
                 Ok(Self::continuing_statement(
                     CheckedStatement::Claim {
@@ -935,6 +940,205 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .checked_add(1)
             .ok_or(SemanticCompilerFailure::CounterOverflow)?;
         Ok(binding)
+    }
+
+    fn check_claim_justification(&self, node: NodeId) -> Result<ClaimJustification, CheckStop> {
+        const LABELS: [&str; 5] = [
+            "premises: ",
+            "derivation: ",
+            "conclusion: ",
+            "checker gap: ",
+            "consumers: ",
+        ];
+        const EXPECTED: &str = "exactly five LF-separated nonempty fields: premises, derivation, conclusion, checker gap, consumers";
+        let raw = self.check_message(node)?;
+        let lines = raw.split('\n').collect::<Vec<_>>();
+        if lines.len() != LABELS.len() {
+            return self.issue_node(
+                SemanticRule::Clm1,
+                node,
+                SemanticIssueKind::InvalidClaimJustification { expected: EXPECTED },
+            );
+        }
+        let mut values = Vec::with_capacity(LABELS.len());
+        for (line, label) in lines.into_iter().zip(LABELS) {
+            let Some(value) = line.strip_prefix(label) else {
+                return self.issue_node(
+                    SemanticRule::Clm1,
+                    node,
+                    SemanticIssueKind::InvalidClaimJustification { expected: EXPECTED },
+                );
+            };
+            let value = value.trim_matches(' ');
+            if value.is_empty() {
+                return self.issue_node(
+                    SemanticRule::Clm1,
+                    node,
+                    SemanticIssueKind::InvalidClaimJustification { expected: EXPECTED },
+                );
+            }
+            values.push(value.to_owned());
+        }
+        let [premises, derivation, conclusion, checker_gap, consumers]: [String; 5] = values
+            .try_into()
+            .map_err(|_| SemanticCompilerFailure::InvalidResolution)?;
+        Ok(ClaimJustification {
+            raw,
+            premises,
+            derivation,
+            conclusion,
+            checker_gap,
+            consumers,
+        })
+    }
+
+    fn check_claim_proof_predicate(
+        &self,
+        expression_node: NodeId,
+        expression: &CheckedExpression,
+        effects: &EffectSet,
+    ) -> Result<(), CheckStop> {
+        let effectful = !effects.writes.is_empty()
+            || effects.allocates_heap
+            || !effects.allocates_arenas.is_empty()
+            || effects.external
+            || effects.blocks
+            || effects.traps;
+        let invalid = if effectful {
+            Some("the predicate has a forbidden effect")
+        } else {
+            self.invalid_claim_expression(expression, false)?
+        };
+        if let Some(reason) = invalid {
+            return self.issue_node(
+                SemanticRule::Clm1,
+                expression_node,
+                SemanticIssueKind::InvalidClaimProofPredicate { reason },
+            );
+        }
+        Ok(())
+    }
+
+    /// Returns the first reason an expression falls outside CLM-1's proof
+    /// subset. `holder` admits an affine owner only while an explicit deref
+    /// reads copy content; it never admits the owner as a proof datum.
+    fn invalid_claim_expression(
+        &self,
+        expression: &CheckedExpression,
+        holder: bool,
+    ) -> Result<Option<&'static str>, CheckStop> {
+        let recurse = |this: &Self,
+                       arguments: &[CheckedExpression]|
+         -> Result<Option<&'static str>, CheckStop> {
+            for argument in arguments {
+                if let Some(reason) = this.invalid_claim_expression(argument, false)? {
+                    return Ok(Some(reason));
+                }
+            }
+            Ok(None)
+        };
+        Ok(match expression {
+            CheckedExpression::Constant(_) | CheckedExpression::NamedConstant { .. } => None,
+            CheckedExpression::Binding {
+                ty, consume_root, ..
+            } => {
+                if *consume_root {
+                    Some("the predicate consumes a binding")
+                } else if holder || self.is_copy_type(*ty)? {
+                    None
+                } else {
+                    Some("the predicate reads an affine value rather than copy data")
+                }
+            }
+            CheckedExpression::IntegerOperation {
+                operation,
+                arguments,
+                ..
+            } => {
+                if operation.is_exact() {
+                    Some("the predicate contains a proof-required exact operation")
+                } else if operation.checked_error().is_some() {
+                    Some("the predicate contains a checked-result operation")
+                } else {
+                    recurse(self, arguments)?
+                }
+            }
+            CheckedExpression::FloatOperation { arguments, .. }
+            | CheckedExpression::EnumEquality { arguments, .. } => recurse(self, arguments)?,
+            CheckedExpression::BooleanOperation {
+                operation,
+                arguments,
+                ..
+            } => {
+                if *operation == CheckedBooleanOperation::ExclusiveOr {
+                    // Evaluation is a valid proof expression; CLM-2 may later
+                    // reject its unsupported contribution normal form.
+                }
+                recurse(self, arguments)?
+            }
+            CheckedExpression::NumericConversion { value, .. }
+            | CheckedExpression::Reinterpret { value, .. } => {
+                self.invalid_claim_expression(value, false)?
+            }
+            CheckedExpression::ArrayLength { .. }
+            | CheckedExpression::BufferLength { .. }
+            | CheckedExpression::SliceLength { .. }
+            | CheckedExpression::DerefAddressed { .. } => None,
+            CheckedExpression::BufferFits { length, .. } => {
+                self.invalid_claim_expression(length, false)?
+            }
+            CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ArenaDeref { value, .. } => {
+                self.invalid_claim_expression(value, true)?
+            }
+            CheckedExpression::Project {
+                ty,
+                consume_root,
+                residual_drops,
+                ..
+            } => {
+                if *consume_root || !residual_drops.is_empty() {
+                    Some("the predicate contains a consuming projection or residual cleanup")
+                } else if holder || self.is_copy_type(*ty)? {
+                    None
+                } else {
+                    Some("the predicate projects affine data")
+                }
+            }
+            CheckedExpression::ProjectValue { value, ty, .. } => {
+                if holder || self.is_copy_type(*ty)? {
+                    self.invalid_claim_expression(value, true)?
+                } else {
+                    Some("the predicate projects affine data")
+                }
+            }
+            CheckedExpression::UserCall { .. } => {
+                Some("the predicate contains a user call that may not terminate")
+            }
+            CheckedExpression::SystemCall { .. } => {
+                Some("the predicate contains a system call")
+            }
+            CheckedExpression::ArrayIndex { .. }
+            | CheckedExpression::BufferIndex { .. }
+            | CheckedExpression::SliceIndex { .. } => Some("the predicate contains a subscript"),
+            CheckedExpression::ArrayFill { .. }
+            | CheckedExpression::BufferFill { .. }
+            | CheckedExpression::BufferVacant { .. }
+            | CheckedExpression::BoxNew { .. }
+            | CheckedExpression::ArenaNew { .. }
+            | CheckedExpression::ConstructStruct { .. }
+            | CheckedExpression::ConstructEnum { .. } => {
+                Some("the predicate contains construction or allocation")
+            }
+            CheckedExpression::SliceOf { .. }
+            | CheckedExpression::BorrowBuffer { .. }
+            | CheckedExpression::BorrowAddressed { .. }
+            | CheckedExpression::BorrowBox { .. }
+            | CheckedExpression::BorrowSystemResource { .. }
+            | CheckedExpression::ReborrowAddressed { .. } => {
+                Some("the predicate changes borrowing or ownership")
+            }
+        })
     }
 
     fn continuing_statement(statement: CheckedStatement, effects: EffectSet) -> StatementResult {

@@ -502,7 +502,7 @@ fn positional_region_alpha_equality_includes_slice_type_regions() {
 fn read_first['input](bytes: own slice<'input, u8>) -> result: own u8 reads('input), traps {
   let room = len(bytes);
   let ok = ilt(0_u64, room);
-  claim nonempty: ok because "conforming callers pass a nonempty slice";
+  claim nonempty: ok because "premises: fixture context: conforming callers pass a nonempty slice\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   return bytes[0_u64];
 }
 

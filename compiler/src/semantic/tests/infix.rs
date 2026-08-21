@@ -193,10 +193,19 @@ command fn main() -> status: own ExitStatus pure {
     ),
     (
         "claim_stmt",
-        "command fn main() -> status: own ExitStatus traps {
-  let a = 6_u64;
-  let b = 7_u64;
-  claim addition_defined: a +defined b because \"six plus seven is defined\";
+        "fn clamp_ten(value: own i64) -> result: own i64 pure {
+  let lower = imax(value, -10_i64);
+  return imin(lower, 10_i64);
+}
+
+fn multiply_seven(input: own i64) -> result: own i64 traps {
+  let a = clamp_ten(value: input);
+  let b = 7_i64;
+  claim product_defined: a *defined b because \"premises: a is returned by clamp_ten, whose body clamps its result to -10_i64 through 10_i64\\nderivation: multiplying any value in that interval by 7_i64 produces -70_i64 through 70_i64\\nconclusion: a *defined b is true\\nchecker gap: ENT does not publish the range of an uncontracted user-call result\\nconsumers: the following exact a * b operation requires both signed product bounds\";
+  return a * b;
+}
+
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 ",
@@ -280,6 +289,8 @@ command fn main() -> status: own ExitStatus pure {
 /// The second operand's binding, and the disagreeing type that replaces it.
 const AGREEING_OPERAND: &str = "let b = 7_u64;";
 const DISAGREEING_OPERAND: &str = "let b = 7_i32;";
+const CLAIM_AGREEING_OPERAND: &str = "let b = 7_i64;";
+const CLAIM_DISAGREEING_OPERAND: &str = "let b = 7_u64;";
 
 /// Every [GRAM-5] position that admits an infix expression checks one, and
 /// none of them fails the tree.
@@ -311,13 +322,18 @@ fn infix_is_checked_at_every_expression_position() {
 #[test]
 fn a_disagreeing_operand_is_reported_at_that_operand_from_every_position() {
     for (position, source) in EXPRESSION_POSITIONS {
+        let (agreeing, disagreeing) = if position == "claim_stmt" {
+            (CLAIM_AGREEING_OPERAND, CLAIM_DISAGREEING_OPERAND)
+        } else {
+            (AGREEING_OPERAND, DISAGREEING_OPERAND)
+        };
         assert_eq!(
-            source.matches(AGREEING_OPERAND).count(),
+            source.matches(agreeing).count(),
             1,
             "{position} must bind its second operand with the rewritten line",
         );
-        let disagreeing = source.replace(AGREEING_OPERAND, DISAGREEING_OPERAND);
-        assert_rule_at(disagreeing.as_bytes(), SemanticRule::Type5, "b");
+        let source = source.replace(agreeing, disagreeing);
+        assert_rule_at(source.as_bytes(), SemanticRule::Type5, "b");
     }
 }
 

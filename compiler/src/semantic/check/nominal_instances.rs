@@ -621,7 +621,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(id)
     }
 
-    fn ensure_source_nominal_instance(
+    pub(super) fn ensure_source_nominal_instance(
         &mut self,
         template_index: usize,
         substitution: GenericSubstitution,

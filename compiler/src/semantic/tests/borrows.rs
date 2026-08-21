@@ -157,15 +157,16 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn call_effects_preserve_the_incoming_storage_origin() {
     let source =
-        br#"fn write['r](out: &uniq 'r buffer<u8>) -> result: own unit reads('r), writes('r), traps {
+        br#"fn write['r](out: &uniq 'r buffer<u8>) -> result: own unit reads('r), writes('r) {
   let room = len(deref(out));
   let ok = ilt(0_u64, room);
-  claim has_room: ok because "callers pass a nonempty buffer";
-  set deref(out)[0_u64] = 1_u8;
+  if ok {
+    set deref(out)[0_u64] = 1_u8;
+  }
   return unit;
 }
 
-fn proxy['r](out: &uniq 'r buffer<u8>) -> result: own unit reads('r), writes('r), traps {
+fn proxy['r](out: &uniq 'r buffer<u8>) -> result: own unit reads('r), writes('r) {
   write<'r>(out: move out);
   return unit;
 }
@@ -178,7 +179,7 @@ command fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("incoming call effects must retain their formal origin: {outcome:?}");
         };
-        assert!(checked.data.functions[1].declared_traps);
+        assert!(!checked.data.functions[1].declared_traps);
     });
 }
 
@@ -194,18 +195,22 @@ fn count['r](pool: &'r Pool) -> result: own u64 reads('r) {
   return deref(pool).count;
 }
 
-fn first['r](pool: &'r Pool) -> result: own u64 reads('r), traps {
+fn first['r](pool: &'r Pool) -> result: own u64 reads('r) {
   let room = len(deref(pool).left);
   let ok = ilt(0_u64, room);
-  claim left_nonempty: ok because "callers pool at least one element per column";
-  return deref(pool).left[0_u64];
+  if ok {
+    return deref(pool).left[0_u64];
+  } else {
+    return 0_u64;
+  }
 }
 
-fn update['r](pool: &uniq 'r Pool) -> result: own unit reads('r), writes('r), traps {
+fn update['r](pool: &uniq 'r Pool) -> result: own unit reads('r), writes('r) {
   let room = len(deref(pool).right);
   let ok = ilt(0_u64, room);
-  claim right_nonempty: ok because "callers pool at least one element per column";
-  set deref(pool).right[0_u64] = 9_u64;
+  if ok {
+    set deref(pool).right[0_u64] = 9_u64;
+  }
   set deref(pool).count = 1_u64;
   return unit;
 }
@@ -234,30 +239,40 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(fields, &[2]);
         assert!(!consume_root);
 
-        // The subscripting helpers open with a length let, a comparison
-        // let, and the discharging claim; their subscript statements follow.
-        let CheckedStatement::Return {
-            value: CheckedExpression::BufferIndex { root, .. },
-            ..
-        } = &checked.data.functions[1].body[3]
-        else {
-            panic!("borrowed buffer field read must retain its checked root");
+        let CheckedStatement::Match { arms, .. } = &checked.data.functions[1].body[2] else {
+            panic!("borrowed buffer field read must retain its explicit guard");
         };
+        let root = arms
+            .iter()
+            .find_map(|arm| match arm.body.first() {
+                Some(CheckedStatement::Return {
+                    value: CheckedExpression::BufferIndex { root, .. },
+                    ..
+                }) => Some(root),
+                _ => None,
+            })
+            .expect("guarded borrowed buffer field read");
         assert_eq!(root.fields, [0]);
 
         let update = &checked.data.functions[2];
-        let CheckedStatement::Set {
-            target: CheckedSetTarget::BufferIndex(target),
-            ..
-        } = &update.body[3]
-        else {
-            panic!("borrowed buffer field write must retain its checked target");
+        let CheckedStatement::Match { arms, .. } = &update.body[2] else {
+            panic!("borrowed buffer field write must retain its explicit guard");
         };
+        let target = arms
+            .iter()
+            .find_map(|arm| match arm.body.first() {
+                Some(CheckedStatement::Set {
+                    target: CheckedSetTarget::BufferIndex(target),
+                    ..
+                }) => Some(target.as_ref()),
+                _ => None,
+            })
+            .expect("guarded borrowed buffer field write");
         assert_eq!(target.root.fields, [1]);
         let CheckedStatement::Set {
             target: CheckedSetTarget::Place(target),
             ..
-        } = &update.body[4]
+        } = &update.body[3]
         else {
             panic!("borrowed copy field write must retain its checked target");
         };
@@ -643,17 +658,15 @@ fn score['r](c: &'r Cell) -> result: own i32 reads('r) {
   }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let a = 5_i32;
   region 'r {
     let s = &'r a;
-    claim read: ieq(deref(s), 5_i32) because "read";
   }
   region 'q {
     let u = &uniq 'q a;
     set deref(u) = 7_i32;
   }
-  claim write: ieq(a, 7_i32) because "write";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -777,7 +790,7 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
 #[test]
 fn outer_region_borrows_may_be_held_under_inner_regions() {
     with_semantics(
-        b"command fn main() -> status: own ExitStatus traps {\n  let a = 7_i32;\n  region 'r {\n    region 's {\n      region 't {\n        let q = &'r a;\n        claim q: ieq(deref(q), 7_i32) because \"q\";\n      }\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let a = 7_i32;\n  region 'r {\n    region 's {\n      region 't {\n        let q = &'r a;\n        let observed = deref(q);\n      }\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
                 panic!("an outer-region borrow held two blocks deeper must check: {outcome:?}");

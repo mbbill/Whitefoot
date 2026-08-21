@@ -26,7 +26,9 @@ mod flow;
 mod state;
 mod term;
 
-pub(crate) use state::{DerivationId, DerivationRootKind, ProofView, StrictDerivationRootKind};
+pub(crate) use state::{
+    DerivationId, DerivationRootKind, GoalId, ProofView, StrictDerivationRootKind,
+};
 use state::{DerivationInventory, DerivationLedger};
 #[cfg(not(test))]
 use term::TermId;
@@ -34,7 +36,7 @@ use term::TermId;
 #[cfg(test)]
 pub(crate) use state::{
     ClaimLifecycleKind, CountedRootAtom, DerivationNode, FlowEvent, FlowEventId, FlowEventKind,
-    GoalId, GoalSign, ImplicitBoundKind, JoinParent, Relation,
+    GoalSign, ImplicitBoundKind, JoinParent, Relation,
 };
 #[cfg(test)]
 pub(crate) use term::{
@@ -47,7 +49,7 @@ use super::goal::{ConcreteGoal, GoalExpression};
 use super::model::{
     BindingId, CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFunction,
     CheckedIntegerOperation, CheckedMode, CheckedNominal, CheckedSetTarget, CheckedStatement,
-    CheckedType, FunctionId, IntegerType,
+    CheckedType, ClaimJustification, FunctionId, IntegerType,
 };
 use super::postcondition::CheckedPostcondition;
 use crate::{DeclarationId, NodePath, SemanticCompilerFailure, SyntaxCoordinate};
@@ -105,6 +107,15 @@ pub(crate) struct EntailmentContext<'check> {
     /// Binding names in dense [`super::model::BindingId`] order, for the
     /// [ENT-6] canonical residual rendering.
     pub(crate) binding_names: &'check [String],
+}
+
+/// One scratch-only CLM-2 counterfactual. `component == None` withholds the
+/// whole occurrence; `Some(k)` withholds only canonical component k.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimMask {
+    pub(crate) function: FunctionId,
+    pub(crate) node_path: NodePath,
+    pub(crate) component: Option<u32>,
 }
 
 impl EntailmentContext<'_> {
@@ -639,8 +650,8 @@ pub(crate) enum ClaimDisposition {
     /// The predicate has no comparison origin, or the state derives neither
     /// it nor its negation: an ordinary retained runtime check.
     Retained,
-    /// The closed state derives the predicate: accepted, still executed,
-    /// reported through the required non-rejecting advisory.
+    /// The non-contradictory pre-S3 state derives the predicate. This is a
+    /// CLM-2 source-upgrade error, never an elision request.
     Redundant,
     /// The non-contradictory closed state derives the exact negation: a
     /// compile-time rejection citing CLM-2.
@@ -650,6 +661,86 @@ pub(crate) enum ClaimDisposition {
         /// The derived negation.
         negation: String,
     },
+    /// The claim is locally vacuous before S3: either the ordinary pre-state
+    /// is already contradictory or two still-valid equivalent images expose
+    /// opposite signs that no one runtime predicate can satisfy.
+    Vacuous { cause: ClaimVacuity },
+    /// A supposedly non-contradictory state derived both exact signs. This is
+    /// a compiler consistency failure, not a source classification.
+    BothSigns,
+    /// One canonical contribution component was already derivable.
+    ComponentRedundant { component: u32 },
+    /// One canonical contribution component's negation was derivable.
+    ComponentRefuted { component: u32 },
+    /// The admitted first-version fact vocabulary cannot give this predicate
+    /// a unique support-correct contribution normal form.
+    UnsupportedContribution,
+    /// The contribution failed consistency or exact-P reconstruction.
+    InconsistentContribution,
+    /// A component or the whole occurrence changed no eligible admission
+    /// root under its fresh counterfactual analysis.
+    NonResidual { component: Option<u32> },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ClaimVacuity {
+    PreStateContradiction,
+    ExactImageConflict,
+    ComponentManifestationConflict { component: u32 },
+}
+
+/// One normative checker fact contributed by a retained claim component.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ClaimComponentFact {
+    Goal {
+        goal: state::GoalId,
+        sign: state::GoalSign,
+    },
+    Relation(state::Relation),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimImageEvidence {
+    pub(crate) direct: state::GoalId,
+    /// Support-canonical Boolean expansion used for Contrib(P) and S3.
+    pub(crate) expanded: state::GoalId,
+    /// Fully structural ordinary-let expansion queried by exact lifecycle.
+    pub(crate) complete: state::GoalId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimComponentEvidence {
+    pub(crate) ordinal: u32,
+    pub(crate) fact: ClaimComponentFact,
+    pub(crate) rendering: String,
+    pub(crate) source: DerivationId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimReconstructionEvidence {
+    pub(crate) expanded: DerivationId,
+    pub(crate) direct: DerivationId,
+}
+
+/// Complete concrete baseline proof packet for one mechanically retained
+/// claim. Generic source schemas retain a separate stable summary and never
+/// publish scratch IDs in this structure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimProofEvidence {
+    pub(crate) images: ClaimImageEvidence,
+    pub(crate) components: Vec<ClaimComponentEvidence>,
+    pub(crate) reconstructions: ClaimReconstructionEvidence,
+}
+
+/// Source-stable projection of a symbolic generic claim proof. The rendered
+/// images preserve the typed direct/expanded structure while every
+/// symbolic-scratch goal and derivation identity is discarded.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimSchemaProofEvidence {
+    pub(crate) direct_image: String,
+    pub(crate) expanded_image: String,
+    pub(crate) complete_image: String,
+    pub(crate) reconstruction_succeeded: bool,
 }
 
 /// [CLM-2] outcome of one claim statement, judged at its node.
@@ -662,11 +753,183 @@ pub(crate) struct ClaimOutcome {
     /// Exact canonical spelling of the predicate expression.
     pub(crate) predicate: String,
     /// The writer's compile-time review justification.
-    pub(crate) justification: String,
+    pub(crate) justification: ClaimJustification,
+    /// Canonical CLM-2 contribution components in normative ordinal order.
+    pub(crate) components: Vec<String>,
     pub(crate) disposition: ClaimDisposition,
     /// The already-selected proof of a redundant predicate or refuted
     /// negation. Retained claims deliberately have no lifecycle proof.
     pub(crate) lifecycle_derivation: Option<DerivationId>,
+    pub(crate) proof: Option<ClaimProofEvidence>,
+    /// Present only on the retained source-schema report of a generic claim.
+    /// Concrete outcomes keep the full function-local `proof` packet instead.
+    pub(crate) schema_proof: Option<ClaimSchemaProofEvidence>,
+    /// Stable source identities of the terminal roots changed by each
+    /// successful component mask followed by the whole-occurrence mask.
+    /// Masked derivation IDs never escape their scratch analysis.
+    pub(crate) residual_witnesses: Vec<ClaimCounterfactualWitness>,
+}
+
+/// A source-stable terminal root whose successful complete proof disappears
+/// in one CLM-2 Full-minus counterfactual.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ClaimTerminalOwner {
+    Concrete(FunctionId),
+    Schema(DeclarationId),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ClaimTerminalRoot {
+    Obligation {
+        owner: ClaimTerminalOwner,
+        function_symbol: String,
+        node_path: NodePath,
+        family: ObligationFamily,
+        conjunct: u8,
+    },
+    Call {
+        owner: ClaimTerminalOwner,
+        function_symbol: String,
+        node_path: NodePath,
+        callee: ClaimTerminalOwner,
+        callee_symbol: String,
+        requires_clause: NodePath,
+    },
+    Postcondition {
+        owner: ClaimTerminalOwner,
+        function_symbol: String,
+        block: NodePath,
+        relation_ordinal: u32,
+    },
+}
+
+impl ClaimTerminalRoot {
+    fn same_authority(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::Obligation {
+                    owner,
+                    node_path,
+                    family,
+                    conjunct,
+                    ..
+                },
+                Self::Obligation {
+                    owner: other_owner,
+                    node_path: other_path,
+                    family: other_family,
+                    conjunct: other_conjunct,
+                    ..
+                },
+            ) => {
+                owner == other_owner
+                    && node_path == other_path
+                    && family == other_family
+                    && conjunct == other_conjunct
+            }
+            (
+                Self::Call {
+                    owner,
+                    node_path,
+                    callee,
+                    requires_clause,
+                    ..
+                },
+                Self::Call {
+                    owner: other_owner,
+                    node_path: other_path,
+                    callee: other_callee,
+                    requires_clause: other_requires,
+                    ..
+                },
+            ) => {
+                owner == other_owner
+                    && node_path == other_path
+                    && callee == other_callee
+                    && requires_clause == other_requires
+            }
+            (
+                Self::Postcondition {
+                    owner,
+                    block,
+                    relation_ordinal,
+                    ..
+                },
+                Self::Postcondition {
+                    owner: other_owner,
+                    block: other_block,
+                    relation_ordinal: other_ordinal,
+                    ..
+                },
+            ) => {
+                owner == other_owner
+                    && block == other_block
+                    && relation_ordinal == other_ordinal
+            }
+            _ => false,
+        }
+    }
+
+    fn accepts_masked_disposition(&self, masked: &ClaimMaskedDisposition) -> bool {
+        match (self, masked) {
+            (Self::Obligation { .. }, ClaimMaskedDisposition::Missing)
+            | (Self::Obligation { .. }, ClaimMaskedDisposition::Obligation { .. })
+            | (Self::Call { .. }, ClaimMaskedDisposition::Missing)
+            | (
+                Self::Call { .. },
+                ClaimMaskedDisposition::Call(
+                    CallGoalDisposition::Refuted | CallGoalDisposition::Unproved,
+                ),
+            )
+            | (Self::Postcondition { .. }, ClaimMaskedDisposition::Missing)
+            | (
+                Self::Postcondition { .. },
+                ClaimMaskedDisposition::PostconditionFailed,
+            ) => true,
+            _ => false,
+        }
+    }
+}
+
+/// Stable evidence for one successful component or whole-occurrence mask.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimCounterfactualWitness {
+    pub(crate) component: Option<u32>,
+    pub(crate) terminal: ClaimTerminalRoot,
+    pub(crate) masked: ClaimMaskedDisposition,
+}
+
+/// Stable failure summary from a discarded Full-minus run. No scratch-local
+/// fact, goal, event, or derivation identity is published.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ClaimMaskedDisposition {
+    Missing,
+    Obligation { refuted: bool },
+    Call(CallGoalDisposition),
+    PostconditionFailed,
+}
+
+/// Non-executable source-schema result for one generic declaration. All
+/// symbolic function, nominal, goal, and derivation identities have been
+/// erased before this record survives the symbolic validation checkpoint.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedGenericClaimSchema {
+    pub(crate) declaration: DeclarationId,
+    pub(crate) function_path: NodePath,
+    /// Display-only spelling; `declaration` is the stable authority.
+    pub(crate) display_symbol: String,
+    pub(crate) claims: Vec<ClaimOutcome>,
+    /// Ordered inhabited concrete reports for this source declaration.
+    /// Their full finalized proof packets live in the ordinary concrete
+    /// functions and ClaimLedger; the schema stores only stable links.
+    pub(crate) concrete_reports: Vec<CheckedGenericClaimConcreteReport>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedGenericClaimConcreteReport {
+    pub(crate) function: FunctionId,
+    pub(crate) claim: NodePath,
+    pub(crate) name: String,
 }
 
 /// Bundle-local source identity of one concrete checked claim occurrence.
@@ -676,6 +939,7 @@ pub(crate) struct ClaimSourceIdentity {
     pub(crate) logical_path: String,
     pub(crate) coordinate: SyntaxCoordinate,
     pub(crate) node_path: NodePath,
+    pub(crate) declaration: DeclarationId,
     pub(crate) function: FunctionId,
     pub(crate) function_symbol: String,
 }
@@ -702,14 +966,27 @@ pub(crate) enum ClaimUseProvenance {
     },
 }
 
+/// One exact component-specific S3 premise in a retained terminal proof.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimComponentPremise {
+    pub(crate) component: u32,
+    pub(crate) derivation: DerivationId,
+}
+
 /// One canonical retained query whose proof actually reaches this claim's S3
 /// event. Dense derivation IDs are function-local and valid only in the
 /// enclosing checked program.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ClaimLedgerUse {
+    pub(crate) terminal: ClaimTerminalRoot,
     pub(crate) root: state::DerivationRootKind,
     pub(crate) root_derivation: DerivationId,
+    pub(crate) component_premises: Vec<ClaimComponentPremise>,
+    /// Backward-compatible projection of `component_premises`; retained only
+    /// for current internal diagnostics while callers migrate to ordinals.
     pub(crate) premise_derivations: Vec<DerivationId>,
+    pub(crate) query_noncontradictory: bool,
+    pub(crate) non_explosive: bool,
     pub(crate) provenance: ClaimUseProvenance,
 }
 
@@ -719,9 +996,12 @@ pub(crate) struct ClaimLedgerEntry {
     pub(crate) source: ClaimSourceIdentity,
     pub(crate) name: String,
     pub(crate) predicate: String,
-    pub(crate) justification: String,
+    pub(crate) justification: ClaimJustification,
+    pub(crate) components: Vec<String>,
     pub(crate) disposition: ClaimDisposition,
     pub(crate) lifecycle_derivation: Option<DerivationId>,
+    pub(crate) proof: Option<ClaimProofEvidence>,
+    pub(crate) residual_witnesses: Vec<ClaimCounterfactualWitness>,
     pub(crate) uses: Vec<ClaimLedgerUse>,
 }
 
@@ -748,9 +1028,11 @@ pub(crate) enum CallGoalEvidence {
     OpaquePositive,
     ExactL0Projection,
     NormalizationPositive,
+    BooleanIntroductionPositive,
     OpaqueNegative,
     NegatedL0Projection,
     NormalizationNegative,
+    BooleanIntroductionNegative,
 }
 
 /// Retained checked metadata for one ordinary call carrying a requirement.
@@ -1048,6 +1330,14 @@ pub(crate) fn analyze_function(
     flow::analyze(function, context)
 }
 
+pub(crate) fn analyze_function_masked(
+    function: &CheckedFunction,
+    context: &EntailmentContext<'_>,
+    mask: &ClaimMask,
+) -> FunctionEntailment {
+    flow::analyze_masked(function, context, mask)
+}
+
 /// Computes one optimistic FN-9/CLM-3 function batch without pruning its
 /// shared derivation ledger. Program provenance and strict validation decide
 /// whether this candidate batch is discarded or finalized unchanged.
@@ -1058,10 +1348,110 @@ pub(crate) fn analyze_function_candidate(
     flow::analyze_candidate(function, context)
 }
 
+pub(crate) fn analyze_function_candidate_masked(
+    function: &CheckedFunction,
+    context: &EntailmentContext<'_>,
+    mask: &ClaimMask,
+) -> FunctionEntailment {
+    flow::analyze_candidate_masked(function, context, mask)
+}
+
 /// Performs the sole root retention and dense-ID remap for one accepted
 /// optimistic function batch.
 pub(crate) fn finalize_function_entailment(entailment: &mut FunctionEntailment) {
     flow::finish(entailment);
+}
+
+fn concrete_claim_terminal_root(
+    functions: &[CheckedFunction],
+    function: &CheckedFunction,
+    root: &state::DerivationRoot,
+) -> Result<Option<ClaimTerminalRoot>, SemanticCompilerFailure> {
+    let terminal = match root.kind {
+        state::DerivationRootKind::BoundsObligation(ordinal)
+        | state::DerivationRootKind::IntegerDomainObligation(ordinal) => {
+            let outcome = function
+                .entailment
+                .obligations
+                .get(ordinal as usize)
+                .filter(|outcome| outcome.derivation == Some(root.node))
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let expected_integer = matches!(
+                root.kind,
+                state::DerivationRootKind::IntegerDomainObligation(_)
+            );
+            if (outcome.family == ObligationFamily::IntegerDomain) != expected_integer {
+                return Err(SemanticCompilerFailure::InvalidResolution);
+            }
+            if !outcome.discharged {
+                return Err(SemanticCompilerFailure::InvalidResolution);
+            }
+            if outcome.contradictory {
+                return Ok(None);
+            }
+            ClaimTerminalRoot::Obligation {
+                owner: ClaimTerminalOwner::Concrete(function.id),
+                function_symbol: function.symbol.clone(),
+                node_path: outcome.node_path.clone(),
+                family: outcome.family,
+                conjunct: outcome.conjunct,
+            }
+        }
+        state::DerivationRootKind::CallGoal(ordinal) => {
+            let outcome = function
+                .entailment
+                .call_goals
+                .get(ordinal as usize)
+                .filter(|outcome| outcome.derivation == Some(root.node))
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            if outcome.disposition != CallGoalDisposition::Discharged {
+                return Err(SemanticCompilerFailure::InvalidResolution);
+            }
+            if outcome.evidence.contains(&CallGoalEvidence::AllDerivable) {
+                return Ok(None);
+            }
+            let callee = functions
+                .get(outcome.callee.0 as usize)
+                .filter(|callee| callee.id == outcome.callee)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            ClaimTerminalRoot::Call {
+                owner: ClaimTerminalOwner::Concrete(function.id),
+                function_symbol: function.symbol.clone(),
+                node_path: outcome.node_path.clone(),
+                callee: ClaimTerminalOwner::Concrete(callee.id),
+                callee_symbol: callee.symbol.clone(),
+                requires_clause: outcome.requires_clause.clone(),
+            }
+        }
+        state::DerivationRootKind::PostconditionAggregate {
+            relation_ordinal,
+            view: ProofView::Complete,
+        } => {
+            let proof = function
+                .entailment
+                .postconditions
+                .get(relation_ordinal as usize)
+                .filter(|proof| {
+                    proof.relation_ordinal == relation_ordinal
+                        && proof.complete.derivation == Some(root.node)
+                })
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            if !proof.complete.discharged {
+                return Err(SemanticCompilerFailure::InvalidResolution);
+            }
+            ClaimTerminalRoot::Postcondition {
+                owner: ClaimTerminalOwner::Concrete(function.id),
+                function_symbol: function.symbol.clone(),
+                block: proof.block.clone(),
+                relation_ordinal,
+            }
+        }
+        _ => return Ok(None),
+    };
+    if !function.entailment.derivations.is_non_explosive(root.node) {
+        return Ok(None);
+    }
+    Ok(Some(terminal))
 }
 
 /// Builds the read-only Stage 9a claim report from finalized function-local
@@ -1089,6 +1479,7 @@ pub(crate) fn build_claim_ledger(
             function.entailment.claims.iter().zip(sources).enumerate()
         {
             if source.function != function.id
+                || source.declaration != function.declaration
                 || source.function_symbol != function.symbol
                 || source.node_path != claim.node_path
                 || claim_by_path
@@ -1102,8 +1493,11 @@ pub(crate) fn build_claim_ledger(
                 name: claim.name.clone(),
                 predicate: claim.predicate.clone(),
                 justification: claim.justification.clone(),
+                components: claim.components.clone(),
                 disposition: claim.disposition.clone(),
                 lifecycle_derivation: claim.lifecycle_derivation,
+                proof: claim.proof.clone(),
+                residual_witnesses: claim.residual_witnesses.clone(),
                 uses: Vec::new(),
             });
         }
@@ -1112,22 +1506,26 @@ pub(crate) fn build_claim_ledger(
         }
 
         for root in &function.entailment.derivations.roots {
-            if matches!(root.kind, state::DerivationRootKind::ClaimLifecycle { .. }) {
+            let Some(terminal) = concrete_claim_terminal_root(functions, function, root)? else {
                 continue;
-            }
-            let mut premise_derivations = vec![Vec::new(); function.entailment.claims.len()];
-            for (node_path, premise) in function
+            };
+            let mut component_premises = vec![Vec::new(); function.entailment.claims.len()];
+            for (node_path, component, premise) in function
                 .entailment
                 .derivations
-                .event_premises(root.node, state::FlowEventKind::S3)
+                .claim_component_premises(root.node)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
             {
                 let occurrence = claim_by_path
                     .get(&node_path)
                     .copied()
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                premise_derivations[occurrence].push(premise);
+                component_premises[occurrence].push(ClaimComponentPremise {
+                    component,
+                    derivation: premise,
+                });
             }
-            for (occurrence, premises) in premise_derivations.into_iter().enumerate() {
+            for (occurrence, premises) in component_premises.into_iter().enumerate() {
                 if premises.is_empty() {
                     continue;
                 }
@@ -1147,7 +1545,7 @@ pub(crate) fn build_claim_ledger(
                         let leaf = super::provenance::ProtectedLeaf {
                             function: function.id,
                             obligation: outcome.node_path.clone(),
-                            conjunct: 0,
+                            conjunct: u32::from(outcome.conjunct),
                         };
                         let mut matches = provenance
                             .local_leaf_dispositions
@@ -1245,11 +1643,90 @@ pub(crate) fn build_claim_ledger(
                 ledger.entries[entry_start + occurrence]
                     .uses
                     .push(ClaimLedgerUse {
+                        terminal: terminal.clone(),
                         root: root.kind,
                         root_derivation: root.node,
-                        premise_derivations: premises,
+                        premise_derivations: premises
+                            .iter()
+                            .map(|premise| premise.derivation)
+                            .collect(),
+                        component_premises: premises,
+                        query_noncontradictory: true,
+                        non_explosive: true,
                         provenance: use_provenance,
                     });
+            }
+        }
+        for entry in &ledger.entries[entry_start..] {
+            let proof = entry
+                .proof
+                .as_ref()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            if proof.components.len() != entry.components.len()
+                || entry.residual_witnesses.len() != entry.components.len() + 1
+                || proof
+                    .components
+                    .iter()
+                    .enumerate()
+                    .any(|(ordinal, component)| {
+                        component.ordinal as usize != ordinal
+                            || component.source.0 as usize
+                                >= function.entailment.derivations.nodes.len()
+                            || !function.entailment.derivations.reaches_claim_component(
+                                component.source,
+                                &entry.source.node_path,
+                                Some(component.ordinal),
+                            )
+                    })
+                || proof.reconstructions.expanded.0 as usize
+                    >= function.entailment.derivations.nodes.len()
+                || proof.reconstructions.direct.0 as usize
+                    >= function.entailment.derivations.nodes.len()
+                || !function
+                    .entailment
+                    .derivations
+                    .is_non_explosive(proof.reconstructions.expanded)
+                || !function
+                    .entailment
+                    .derivations
+                    .is_non_explosive(proof.reconstructions.direct)
+                || entry.uses.iter().any(|use_| {
+                    use_.component_premises.iter().any(|premise| {
+                        premise.component as usize >= entry.components.len()
+                    })
+                })
+            {
+                return Err(SemanticCompilerFailure::InvalidResolution);
+            }
+            for (ordinal, witness) in entry.residual_witnesses.iter().enumerate() {
+                let expected = if ordinal < entry.components.len() {
+                    Some(
+                        u32::try_from(ordinal)
+                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+                    )
+                } else {
+                    None
+                };
+                let matching_uses = entry
+                    .uses
+                    .iter()
+                    .filter(|use_| {
+                        use_.terminal.same_authority(&witness.terminal)
+                            && expected.is_none_or(|component| {
+                                use_.component_premises
+                                    .iter()
+                                    .any(|premise| premise.component == component)
+                            })
+                    })
+                    .count();
+                if witness.component != expected
+                    || !witness
+                        .terminal
+                        .accepts_masked_disposition(&witness.masked)
+                    || matching_uses != 1
+                {
+                    return Err(SemanticCompilerFailure::InvalidResolution);
+                }
             }
         }
     }

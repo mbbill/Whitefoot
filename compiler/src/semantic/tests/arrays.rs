@@ -12,14 +12,11 @@ fn constants_fill_length_and_index_share_exact_array_types() {
 
 const table: array<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let values = array_new<i32, count>(7_i32);
   let length = len(values);
   let local = values[2_u64];
   let stored = table[2_u64];
-  claim length_drift: ieq(length, 4_u64) because "length drift";
-  claim fill_drift: ieq(local, 7_i32) because "fill drift";
-  claim const_drift: ieq(stored, 30_u8) because "const drift";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -174,11 +171,10 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   set values[1_u64] = 9_u8;
   let stored = values[1_u64];
-  claim set_drift: ieq(stored, 9_u8) because "set drift";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -247,15 +243,13 @@ struct Outer {
   inner: Inner;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
   let length = len(outer.inner.values);
   set outer.inner.values[1_u64] = 9_u8;
   let stored = outer.inner.values[1_u64];
-  claim length_drift: ieq(length, 2_u64) because "length drift";
-  claim set_drift: ieq(stored, 9_u8) because "set drift";
   return exit_status(code: 0_u8);
 }
 "#;

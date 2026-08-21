@@ -82,7 +82,8 @@ const fn event_source(kind: FlowEventKind) -> Option<u8> {
         // S12 has no event kind of its own: FN-9 publishes a verified callee
         // summary through the postcondition group below, under a formula whose
         // establishment point is a call rather than a statement.
-        FlowEventKind::Join
+        FlowEventKind::ClaimReconstruction
+        | FlowEventKind::Join
         | FlowEventKind::Snapshot
         | FlowEventKind::PostconditionEntryImageInvalidation
         | FlowEventKind::PostconditionCallConsume
@@ -93,7 +94,7 @@ const fn event_source(kind: FlowEventKind) -> Option<u8> {
     }
 }
 
-const FLOW_EVENT_KINDS: [FlowEventKind; 17] = [
+const FLOW_EVENT_KINDS: [FlowEventKind; 18] = [
     FlowEventKind::S1,
     FlowEventKind::S3,
     FlowEventKind::S4,
@@ -103,6 +104,7 @@ const FLOW_EVENT_KINDS: [FlowEventKind; 17] = [
     FlowEventKind::S9,
     FlowEventKind::S10,
     FlowEventKind::S11,
+    FlowEventKind::ClaimReconstruction,
     FlowEventKind::Join,
     FlowEventKind::Snapshot,
     FlowEventKind::PostconditionEntryImageInvalidation,
@@ -174,7 +176,7 @@ fn the_ent3_sub_rules_and_the_compilers_flow_events_name_the_same_sources() {
             .into_iter()
             .filter(|kind| event_source(*kind).is_none())
             .count(),
-        8
+        9
     );
 }
 

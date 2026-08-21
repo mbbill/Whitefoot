@@ -228,6 +228,10 @@ command fn main() -> status: own ExitStatus pure {
 fn full_only_check_and_claim_calls_differ_from_an_unasserted_branch_call() {
     let source = br#"const count: u64 = 4_u64;
 
+fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
 fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure contract {
   define room = len(values);
   requires ilt(position, room);
@@ -236,15 +240,17 @@ fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure 
 }
 
 fn from_check(values: own array<u8, count>, position: own u64) -> result: own u8 traps {
+  let bounded = clamp_three(value: position);
   let room = len(values);
-  claim checked: ilt(position, room) because "checked";
-  return read(values: move values, position: position);
+  claim checked: ilt(bounded, room) because "premises: values has length count=4 and bounded is returned by clamp_three, whose body computes imin(position, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded, room) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following read requirement needs bounded below room";
+  return read(values: move values, position: bounded);
 }
 
 fn from_claim(values: own array<u8, count>, position: own u64) -> result: own u8 traps {
+  let bounded = clamp_three(value: position);
   let room = len(values);
-  claim bounded: ilt(position, room) because "claimed";
-  return read(values: move values, position: position);
+  claim bounded_claim: ilt(bounded, room) because "premises: values has length count=4 and bounded is returned by clamp_three, whose body computes imin(position, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded, room) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following read requirement needs bounded below room";
+  return read(values: move values, position: bounded);
 }
 
 fn from_branch(values: own array<u8, count>, position: own u64) -> result: own u8 pure {
@@ -301,13 +307,20 @@ command fn main() -> status: own ExitStatus pure {
         );
         assert!(call.upstream_requirement.is_none());
 
-        assert_eq!(metadata.call_argument_dispositions.len(), 6);
+        assert_eq!(metadata.call_argument_dispositions.len(), 8);
         assert!(metadata.call_argument_dispositions.iter().all(|argument| {
             argument.disposition == CallArgumentProvenanceDisposition::NoEvent
-                && matches!(argument.complete, ProvenanceGoalObservation::Evaluated(_))
+        }));
+        let observed = metadata
+            .call_argument_dispositions
+            .iter()
+            .filter(|argument| {
+                matches!(argument.complete, ProvenanceGoalObservation::Evaluated(_))
                 && matches!(argument.unasserted, ProvenanceGoalObservation::Evaluated(_))
                 && matches!(argument.s4_blinded, ProvenanceGoalObservation::Evaluated(_))
-        }));
+            })
+            .count();
+        assert_eq!(observed, 6);
     });
 }
 
@@ -445,7 +458,7 @@ fn an_external_system_result_cannot_use_a_claim_to_authorize_a_local_subscript()
   region 'a {
     let position = args_count<'a>(args: &'a args);
     let room = len(values);
-    claim bounded: ilt(position, room) because "claimed external bound";
+    claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
     let selected = values[position];
   }
   return exit_status(code: 0_u8);
@@ -453,6 +466,31 @@ fn an_external_system_result_cannot_use_a_claim_to_authorize_a_local_subscript()
 "#;
 
     assert_provenance_rule_at(source, "PRV-3", b"[position]");
+}
+
+#[test]
+fn an_uninstantiated_generic_schema_cannot_use_a_claim_to_launder_external_provenance() {
+    let source = br#"fn unused<T>(args: own Args, values: own array<u8, 4>) -> result: own u8 traps {
+  region 'a {
+    let position = args_count<'a>(args: &'a args);
+    let room = len(values);
+    claim bounded: ilt(position, room) because "premises: no premise bounds the external args_count result in this negative fixture\nderivation: there is no valid derivation; PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the bound so the protected provenance gate is reached\nconsumers: the following values[position] subscript is the protected terminal root";
+    return values[position];
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+
+    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+            panic!("expected structured schema PRV-3 detail: {kind:?}");
+        };
+        assert_eq!(detail.targets[0].protected_function, "unused");
+        assert!(!format!("{detail:?}").contains("$instance$"));
+    });
 }
 
 #[test]
@@ -472,7 +510,7 @@ fn an_external_nested_give_reaches_the_outer_value_binding_and_is_rejected() {
       give 0_u64;
     }
     let room = len(values);
-    claim bounded: ilt(derived, room) because "claimed external bound";
+    claim bounded: ilt(derived, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
     let selected = values[derived];
   }
   return exit_status(code: 0_u8);
@@ -486,7 +524,7 @@ fn an_external_nested_give_reaches_the_outer_value_binding_and_is_rejected() {
 fn a_direct_parameter_demand_rejects_the_external_actual_at_its_argument() {
     let source = br#"fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
   let room = len(values);
-  claim bounded: ilt(position, room) because "claimed parameter bound";
+  claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
   return values[position];
 }
 
@@ -558,7 +596,7 @@ fn a_bridge_converts_to_direct_and_crosses_a_requirement_free_call() {
 
 fn wrapper(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
   let room = len(values);
-  claim wrapper_assertion: ilt(position, room) because "wrapper assertion";
+  claim wrapper_assertion: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
   return leaf(values: move values, position: position);
 }
 
@@ -671,7 +709,7 @@ fn a_recursive_direct_route_uses_complete_state_identity_and_stays_finite() {
     return rotate(values: move values, current: future, future: current, again: stop);
   } else {
     let room = len(values);
-    claim bounded: ilt(current, room) because "recursive direct leaf";
+    claim bounded: ilt(current, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
     return values[current];
   }
 }
@@ -725,7 +763,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
   let values = array_new<u8, 4>(0_u8);
   let position = count_arguments(args: move args);
   let room = len(values);
-  claim bounded: ilt(position, room) because "cross-function result";
+  claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
   let selected = values[position];
   return exit_status(code: selected);
 }
@@ -792,7 +830,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus alloca
   let raw = bytes[0_u64];
   let position = cvt<u8, u64>(raw);
   let room = len(bytes);
-  claim bounded: ilt(position, room) because "cross-function write";
+  claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
   let selected = bytes[position];
   return exit_status(code: selected);
 }
@@ -862,7 +900,7 @@ fn an_alias_whole_place_write_taints_the_resolved_owner_and_retains_its_set_carr
       set deref(holder) = external_value;
     }
     let room = len(values);
-    claim bounded: ilt(position, room) because "borrowed whole write";
+    claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
     let selected = values[position];
     return exit_status(code: selected);
   }
@@ -899,7 +937,7 @@ fn a_simple_borrow_holder_route_keeps_the_holder_let_and_borrow_atom() {
       let position = deref(holder);
       let values = array_new<u8, 4>(0_u8);
       let room = len(values);
-      claim bounded: ilt(position, room) because "borrowed scalar";
+      claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
       let selected = values[position];
       return exit_status(code: selected);
     }
@@ -945,7 +983,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
           let index = deref(selected);
           let values = array_new<u8, 4>(0_u8);
           let room = len(values);
-          claim bounded: ilt(index, room) because "borrowed payload";
+          claim bounded: ilt(index, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
           let value = values[index];
           return exit_status(code: value);
         }
@@ -991,7 +1029,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
         let position = payload[0_u64];
         let output = array_new<u8, count>(0_u8);
         let room = len(output);
-        claim bounded: ilt(position, room) because "value-match payload";
+        claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
         let value = output[position];
         give value;
       }
@@ -1032,7 +1070,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
     let outside = args_count<'a>(args: &'a args);
     let position = relay(value: outside);
     let room = len(values);
-    claim bounded: ilt(position, room) because "user result carrier";
+    claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
     let selected = values[position];
     return exit_status(code: selected);
   }
@@ -1085,7 +1123,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
   }
   let position = saved;
   let room = len(values);
-  claim bounded: ilt(position, room) because "user write carrier";
+  claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
   let selected = values[position];
   return exit_status(code: selected);
 }
@@ -1151,7 +1189,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
       First(value: selected) => {
         let values = array_new<u8, 4>(0_u8);
         let room = len(values);
-        claim bounded: ilt(selected, room) because "selected sibling only";
+        claim bounded: ilt(selected, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
         let value = values[selected];
         return exit_status(code: value);
       }
@@ -1206,7 +1244,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
       Present(value: selected) => {
         let values = array_new<u8, 4>(0_u8);
         let room = len(values);
-        claim bounded: ilt(selected, room) because "payload carrier";
+        claim bounded: ilt(selected, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following protected subscript or requirement is the terminal root";
         let value = values[selected];
         return exit_status(code: value);
       }
@@ -1659,19 +1697,21 @@ command fn main() -> status: own ExitStatus pure {
 fn a_counterfactual_call_goal_keeps_actual_obligation_failure_separate() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure contract {
-  define room = len(values);
-  requires ilt(position, room);
-} {
-  return values[position];
+fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
 }
 
-fn counterfactual(values: own array<u8, count>, positions: own array<u64, count>, selector: own u64) -> result: own u8 traps {
-  let below = ilt(selector, 1_u64);
-  let above = ige(selector, 2_u64);
-  let impossible = band(below, above);
-  claim unreachable_call: impossible because "unreachable call";
-  return read(values: move values, position: positions[selector]);
+fn read(position: own u8, selector: own u64) -> result: own u8 pure contract {
+  requires ilt(selector, count);
+} {
+  return position;
+}
+
+fn counterfactual(positions: own array<u8, count>, selector: own u64) -> result: own u8 traps {
+  let bounded_selector = clamp_three(value: selector);
+  let selector_inside = ilt(bounded_selector, count);
+  claim selector_in_range: selector_inside because "premises: positions has length count=4 and bounded_selector is returned by clamp_three, whose body computes imin(selector, 3_u64)\nderivation: bounded_selector is at most 3_u64 and therefore strictly less than count\nconclusion: ilt(bounded_selector, count) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following positions[bounded_selector] actual expression and read requirement both need this bound";
+  return read(position: positions[bounded_selector], selector: bounded_selector);
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -1681,20 +1721,32 @@ command fn main() -> status: own ExitStatus pure {
 
     checked(source, |program| {
         let caller = function(program, "counterfactual");
-        let call = program
+        let arguments = program
             .provenance
-            .calls
+            .call_argument_dispositions
             .iter()
-            .find(|call| call.caller == caller)
-            .expect("accepted full-state call link");
-        assert!(call.full.actual_obligations_ok);
-        assert!(!call.unasserted.actual_obligations_ok);
-        assert!(!call.s4_blinded.actual_obligations_ok);
-        assert_ne!(
-            call.unasserted.goal_disposition,
-            CallGoalDisposition::Discharged
-        );
-        assert!(call.upstream_requirement.is_none());
+            .filter(|argument| {
+                argument.caller == caller
+                    && matches!(argument.complete, ProvenanceGoalObservation::Evaluated(_))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(arguments.len(), 2);
+        for argument in arguments {
+            let ProvenanceGoalObservation::Evaluated(full) = &argument.complete else {
+                unreachable!()
+            };
+            let ProvenanceGoalObservation::Evaluated(unasserted) = &argument.unasserted else {
+                panic!("the unasserted view must retain the failed call observation")
+            };
+            let ProvenanceGoalObservation::Evaluated(s4_blinded) = &argument.s4_blinded else {
+                panic!("the S4-blinded view must retain the failed call observation")
+            };
+            assert!(full.actual_obligations_ok);
+            assert!(!unasserted.actual_obligations_ok);
+            assert!(!s4_blinded.actual_obligations_ok);
+            assert_ne!(unasserted.goal_disposition, CallGoalDisposition::Discharged);
+        }
+        assert!(program.provenance.calls.is_empty());
     });
 }
 

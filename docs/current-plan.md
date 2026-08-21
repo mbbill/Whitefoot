@@ -7,7 +7,7 @@ branch execution exhausts the plan before that merge,
 activation and completion occur atomically at the merge and the final recorded
 status is `COMPLETE` rather than an intermediate persisted `ACTIVE` state.
 
-Derived from Direction Outline revision 46 and main at
+Derived from Direction Outline revision 47 and main at
 `4f01bab6a7bf158fff19dd54b062b748d20086d1`. Supersedes the completed
 claim-only runtime-trap plan in place; its landed history remains in batch 0073
 and git. Active language authority remains v0.33 at
@@ -36,13 +36,14 @@ incomplete checker can decide arbitrary human mathematics.
 
 ## Selected semantic boundary
 
-For one concrete inhabited claim occurrence `c`, before its own S3 fact, the
+For one FN-1-reachable concrete inhabited claim occurrence `c`, before its own S3 fact, the
 checker queries both signs of the exact typed predicate image for every admitted
 predicate shape, including its still-valid direct/expanded origin. This is not
 limited to literals, comparisons, or `.defined` goals:
 
-- if the pre-state is contradictory or the occurrence is CFG-unreachable,
-  reject it as vacuous/unreachable rather than proving it by ex-falso;
+- if the pre-state is contradictory, reject it as vacuous rather than proving
+  it by ex-falso; structurally unreachable statements are already FN-1 errors
+  and never enter this lifecycle;
 - otherwise, if the normative checker proves both signs, report a compiler
   consistency failure rather than a source classification;
 - otherwise, if the checker proves its exact predicate, reject it as redundant;
@@ -91,7 +92,7 @@ minimality and consumer authenticity remain review obligations.
 
 `Eligible` is fixed before any counterfactual: it contains exactly the
 occurrences that passed every earlier machine check—predicate shape/effects,
-reachability and exact lifecycle, canonical-component lifecycle, contribution
+   FN-1 reachability and exact lifecycle, canonical-component lifecycle, contribution
 consistency and exact-P reconstruction, and the five-field `because` schema. If
 any occurrence fails an earlier check, the unit reports that deterministic
 earlier error and never starts residuality; an invalid claim never supplies S3
@@ -157,8 +158,9 @@ source claim and reruns the checker.
   descendant survives unless an independent source rederives it. Define
   the closed terminal-root set as
   proof-required operation/allocation/bounds/system obligations, ordinary call
-  requirements, mandatory complete FN-9 postcondition proofs, and their
-  required provenance gates. Exclude observational S7/S11/S12 roots, effect
+  requirements and mandatory complete FN-9 postcondition proofs. A protected
+  root is eligible only after its ordinary provenance gate succeeds; the gate
+  is attached audit evidence, not a separate mask witness. Exclude observational S7/S11/S12 roots, effect
   exhibition, CLM-3 structure, claim lifecycle, another claim, optimizer data,
   and test oracles. A root counts only when its exact complete query state is
   non-contradictory and its c-dependent derivation ancestry contains no
@@ -174,7 +176,7 @@ source claim and reruns the checker.
 
 - **W3 — prepare the normative source candidate and ordinary falsifiers.**
   Specify the lifecycle matrix, inconsistent continuation, individual
-  necessity, closed terminal roots, generic and unreachable behavior,
+  necessity, closed terminal roots, generic schema and FN-1 reachability behavior,
   deterministic diagnostic ordering, and accepted runtime retention. Define
   the smallest proof-predicate form over compiler-known total/non-trapping
   primitives and stable observational reads, with no user/system call, write,
@@ -215,9 +217,12 @@ source claim and reruns the checker.
   U, B, claim-free, and facts-off checking, not a claim-only shortcut. Add the
   five-field `because` structure check; redundant,
   refuted, vacuous, inconsistent, and non-residual source issues; the
-  `Full-minus(c,a)` and `Full-minus(c)` candidate stage; explicit rejection of any c-dependent proof
-  ancestry containing contradiction/explosion; deterministic concrete-instance
-  claim-source, canonical-component, and terminal-root witnesses; and
+  `Full-minus(c,a)` and `Full-minus(c)` candidate stage over complete entailment
+  reruns plus the U/B/PRV-1 provenance-invariance check; explicit rejection of any c-dependent proof
+  ancestry containing contradiction/explosion; deterministic schema-first,
+  source-occurrence-then-concrete-instance claim diagnostics, stable
+  claim-source, canonical-component, terminal-root, masked-disposition, and
+  provenance witnesses with no scratch IDs; and
   failure-atomic publication. Run early shape and
   lifecycle checks during flow, ordinary OP/FN/PRV judgments next,
   non-residuality only after their candidate succeeds, CLM-3 after claim
@@ -318,7 +323,7 @@ semantically false or dishonestly explained claim can still compile as an audit
 candidate and trap at runtime; it can never enter an approved positive or
 production program.
 
-## Generic and reachability policy to falsify before freezing
+## Selected generic and reachability policy
 
 Residual use is a source-admission property, not evidence that a runtime path
 was observed from `main`. A dead nongeneric function can therefore contain a
@@ -329,16 +334,25 @@ audit judgment, while every inhabited concrete instance is additionally
 rechecked. Uninhabited instances supply neither proof by ex-falso nor evidence
 of use.
 
-The active checker is concrete-instance-centered, so W1/W2 must first prove
-that this source-schema judgment is expressible and deterministic. If it is
-not, stop for an owner decision between adding parametric proof support and a
-uniform main-reachability rule that would also reject dead nongeneric claims;
-never apply actual-instantiation reachability only to generics. Under either
-uniform policy, a shared source claim whose inhabited instances disagree on
-proved/refuted/residual status may expose a language-expressiveness problem:
-helper duplication may be the only repair. Simulate hostile and real cases
-before freezing; do not silently permit instance-local elision or an unaudited
-generic.
+The implemented candidate retains the source-canonical symbolic inventory
+formed during generic validation, installs its source-call requirements, and
+runs the same lifecycle, contribution, component/whole counterfactual, terminal
+root, non-explosion, and provenance judgments as a concrete inventory wherever
+the symbolic vocabulary is normative. Generic integer/float type parameters
+remain exact opaque Bool datums rather than invented L0 terms. Symbolic FN-9 is
+a schema terminal only when its result and relation already use concrete
+integer fragment types; generic-T FN-9 is concrete-instance-only. The stable
+schema report owns identities by source declaration and NodePath, contains no
+discarded scratch IDs or monomorph display-symbol authority, and links every
+inhabited concrete report in stable order. Entry-uninhabited concrete instances
+supply neither a report nor a witness.
+
+A shared source claim whose inhabited instances disagree on
+proved/refuted/residual status is rejected at the first stable concrete witness;
+helper duplication may be the only repair. Structurally unreachable statements
+remain FN-1 errors. A contradictory schema or concrete path is CLM-2-vacuous and
+never proves a residual by ex-falso. There is no instance-local elision,
+actual-instantiation-only reachability rule, or unaudited generic.
 
 ## Offline audit boundary
 

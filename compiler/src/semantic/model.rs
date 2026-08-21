@@ -724,6 +724,18 @@ pub(crate) struct ClaimSite {
     pub(crate) node_path: NodePath,
 }
 
+/// The structurally checked CLM-1 review record. The checker validates these
+/// five fields and retains them verbatim, but their prose establishes no fact.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimJustification {
+    pub(crate) raw: String,
+    pub(crate) premises: String,
+    pub(crate) derivation: String,
+    pub(crate) conclusion: String,
+    pub(crate) checker_gap: String,
+    pub(crate) consumers: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedTargetDomainObligation {
     RuntimeSizedAllocation,
@@ -1373,14 +1385,14 @@ pub(crate) enum CheckedStatement {
         value: CheckedExpression,
         release: crate::SystemRelease,
     },
-    /// A named runtime assertion [CLM-1]. The claim name is the DIAG-3
-    /// message; the justification STRING is compile-time review data retained
-    /// by the checked program [DIAG-2] and never reaches runtime behavior.
+    /// A named executed proof residual [CLM-1]. The claim name is the DIAG-3
+    /// message; the justification is compile-time review data retained by the
+    /// checked program [DIAG-2] and never reaches runtime behavior.
     Claim {
         name: String,
         /// Exact canonical spelling of the checked predicate expression.
         predicate: String,
-        justification: String,
+        justification: ClaimJustification,
         condition: CheckedExpression,
         site: ClaimSite,
     },
@@ -1695,6 +1707,11 @@ pub(crate) struct CheckedProgramData {
     // prefix. Later instances exist only to type-check static metadata.
     pub(crate) executable_nominal_count: usize,
     pub(crate) constants: Vec<CheckedConstant>,
+    /// Immutable structural table for every symbolic const expression named
+    /// by retained schema metadata. `DerivedConstId` is meaningful only
+    /// relative to this checked-program-owned table.
+    #[allow(dead_code)]
+    pub(crate) derived_consts: Vec<DerivedConst>,
     pub(crate) functions: Vec<CheckedFunction>,
     /// Concrete ordinary-call SCCs in deterministic callee-before-caller
     /// order, with component-atomic verified FN-9 summary publication.
@@ -1715,6 +1732,10 @@ pub(crate) struct CheckedProgramData {
     /// function inventory or executable lowering path.
     #[allow(dead_code)]
     pub(crate) generic_requirements: Vec<CheckedGenericRequirement>,
+    /// Source-schema claim admission reports for every generic declaration,
+    /// including declarations with no executable concrete instance.
+    #[allow(dead_code)]
+    pub(crate) generic_claim_schemas: Vec<super::entailment::CheckedGenericClaimSchema>,
     // Deliberately unread by ordinary lowering: FN-3/FN-4 metadata is
     // source-acceptance evidence and grants no executable authority.
     #[allow(dead_code)]
@@ -1725,22 +1746,8 @@ pub(crate) struct CheckedProgramData {
     pub(crate) law_derivations: Vec<CheckedLawDerivation>,
     pub(crate) main: FunctionId,
     pub(crate) entry: CheckedEntryForm,
-    /// The required non-rejecting [CLM-2] redundancy advisories, one per
-    /// claim whose predicate the closed fact state already derives. The
-    /// channel and encoding are implementation-owned in this version; this
-    /// list is the compiler's channel, and the CLI prints it to stderr.
-    pub(crate) claim_advisories: Vec<ClaimAdvisory>,
     /// Read-only checked-program claim report. Lowering and optimization do
     /// not consume this observational metadata.
     #[allow(dead_code)]
     pub(crate) claim_ledger: super::entailment::ClaimLedger,
-}
-
-/// One [CLM-2] redundancy advisory: non-rejecting compile-time review data.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ClaimAdvisory {
-    /// The enclosing source function IDENT.
-    pub(crate) function: String,
-    /// The claim's written name.
-    pub(crate) name: String,
 }

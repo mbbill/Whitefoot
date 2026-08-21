@@ -70,7 +70,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
       break @read_code_lengths;
     } else {
       let order_ok = ilt(code_index, 19_u64);
-      claim code_index_in_order: order_ok because "the header admits at most nineteen code lengths";
+      claim code_index_in_order: order_ok because "premises: successful read_bits with mask fifteen bounds code_count_bits by fifteen; code_count adds four; code_index starts at zero, increments once, and the equality branch exits before the body\nderivation: code_count is at most nineteen and induction gives each reached body code_index strictly below code_count and therefore below nineteen\nconclusion: order_ok is true\nchecker gap: ENT carries no code_index induction fact across the read_code_lengths loop backedge\nconsumers: code_length_order[code_index] requires this exact bound";
       let ordered_symbol_byte = code_length_order[code_index];
       let ordered_symbol = cvt<u8, u64>(ordered_symbol_byte);
       let length_bits = 0_u64;
@@ -88,7 +88,6 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
         Ok(value: length) => {
           let code_room = len(code_lengths);
           let ordered_ok = ilt(ordered_symbol, code_room);
-          claim ordered_symbol_in_lengths: ordered_ok because "every order entry stays below nineteen";
           set code_lengths[ordered_symbol] = length;
         }
         Err(error: conversion_error) => {
@@ -239,7 +238,6 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
   }
   let end_room = len(literal_lengths);
   let end_ok = ilt(256_u64, end_room);
-  claim end_symbol_in_literals: end_ok because "the literal table holds at least 257 lengths";
   let end_length = literal_lengths[256_u64];
   let missing_end = ieq(end_length, 0_u8);
   if missing_end {

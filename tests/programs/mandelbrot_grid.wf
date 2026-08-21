@@ -30,7 +30,7 @@ fn mandelbrot_escapes(cx: own f64, cy: own f64) -> result: own Bool pure {
   return escaped;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let y = 0_u32;
   let escaped_points = 0_u32;
   loop @rows {
@@ -58,6 +58,9 @@ command fn main() -> status: own ExitStatus traps {
     }
     set y = y +wrap 1_u32;
   }
-  claim mandelbrot_grid_mismatch: ieq(escaped_points, 2437_u32) because "mandelbrot grid mismatch";
+  if ieq(escaped_points, 2437_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }

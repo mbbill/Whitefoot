@@ -1,10 +1,11 @@
+use crate::lowering::lower_checked;
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::super::entailment::{CallGoalDisposition, CallGoalEvidence};
 use super::super::goal::{GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
-    CheckedConst, CheckedExpression, CheckedFlatElement, CheckedIntegerOperation, CheckedStatement,
-    CheckedType, CheckedValue, IntegerType,
+    CheckedConst, CheckedExpression, CheckedFlatElement, CheckedIntegerOperation,
+    CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue, IntegerType,
 };
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
@@ -35,9 +36,8 @@ fn plural_requires_keep_every_source_occurrence_at_the_call() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let value = 1_i32;
-  claim exact_value: ieq(value, 1_i32) because "the test establishes the call boundary";
   let observed = exact(value: value);
   return exit_status(code: 0_u8);
 }
@@ -62,9 +62,9 @@ command fn main() -> status: own ExitStatus traps {
         let CheckedStatement::Let {
             value: CheckedExpression::UserCall { requirements, .. },
             ..
-        } = &main.body[2]
+        } = &main.body[1]
         else {
-            panic!("the third statement must retain the user call");
+            panic!("the second statement must retain the user call");
         };
         assert_eq!(requirements.len(), 2);
         assert_eq!(main.entailment.call_goals.len(), 2);
@@ -84,9 +84,8 @@ fn a_later_requires_clause_is_not_dropped_after_an_earlier_success() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let value = 1_i32;
-  claim exact_value: ieq(value, 1_i32) because "the first clause is deliberately established";
   let observed = exact(value: value);
   return exit_status(code: 0_u8);
 }
@@ -139,11 +138,9 @@ fn requires_retains_one_static_goal_without_a_second_expression_tree() {
   return x;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let x = 7_i32;
-  claim caller_evidence: ige(x, 0_i32) because "caller evidence";
   let value = bounded(x: x);
-  claim result_drift: ieq(value, 7_i32) because "result drift";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -362,11 +359,9 @@ fn requires_locals_are_distinct_from_same_named_body_locals() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let x = 7_i32;
-  claim caller_evidence: ige(x, 0_i32) because "caller evidence";
   let value = increment(x: x);
-  claim result_drift: ieq(value, 8_i32) because "result drift";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -663,6 +658,88 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn a_nominal_bearing_generic_requirement_survives_the_symbolic_checkpoint_as_metadata() {
+    let source = br#"struct Pair<T: Int> {
+  left: T;
+  right: T;
+}
+
+fn need<T: Int>(length: own u64) -> result: own unit pure contract {
+  requires buffer_fits<Pair<T>>(length);
+} {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("symbolic nominal requirements must remain valid metadata: {outcome:?}");
+        };
+        assert_eq!(checked.data.generic_requirements.len(), 1);
+        let requirement = &checked.data.generic_requirements[0].requirement;
+        let GoalExpression::Operation {
+            row: GoalOperation::BufferFits { element, .. },
+            ..
+        } = &requirement.template.root
+        else {
+            panic!("the retained requirement must preserve its exact buffer_fits goal");
+        };
+        let CheckedType::Nominal(pair) = element else {
+            panic!("Pair<T> remains a symbolic nominal goal argument");
+        };
+        assert!(
+            pair.0 as usize >= checked.data.executable_nominal_count,
+            "metadata-only symbolic nominals must follow the executable prefix"
+        );
+        let CheckedNominalKind::Struct { fields } = &checked.data.nominals[pair.0 as usize].kind
+        else {
+            panic!("Pair<T> must retain its checked struct shape");
+        };
+        assert_eq!(fields.len(), 2);
+        assert!(fields.iter().all(|field| matches!(field.ty, CheckedType::GenericInt(_))));
+        lower_checked(*checked).expect("metadata-only symbolic nominals must not reach lowering");
+    });
+}
+
+#[test]
+fn a_derived_const_in_generic_requirement_has_checked_program_owned_structure() {
+    let source = br#"fn need<const n: u64>(value: own array<u8, n + 1>) -> result: own array<u8, n + 1> pure contract {
+  define size = len(value);
+  requires ieq(size, size);
+} {
+  return move value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the symbolic const requirement must be retained: {outcome:?}");
+        };
+        assert_eq!(checked.data.generic_requirements.len(), 1);
+        assert_eq!(checked.data.derived_consts.len(), 1);
+        let derived = checked.data.derived_consts[0];
+        assert!(matches!(derived.left, CheckedConst::Parameter(_)));
+        assert_eq!(derived.right, CheckedConst::Value(1));
+        let rendered = format!(
+            "{:#?}",
+            checked.data.generic_requirements[0].requirement.template.root
+        );
+        assert!(
+            rendered.contains("DerivedConstId") && rendered.contains("0,"),
+            "the retained goal must name the checked-program-owned table entry: {rendered}"
+        );
+        lower_checked(*checked)
+            .expect("metadata-only derived consts must not enter executable lowering");
+    });
+}
+
+#[test]
 fn called_generic_keeps_concrete_instances_and_one_symbolic_requirement() {
     let source = br#"fn positive<T: Int>(value: own T) -> result: own T pure contract {
   requires igt(value, 0_T);
@@ -670,12 +747,10 @@ fn called_generic_keeps_concrete_instances_and_one_symbolic_requirement() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let narrow = 1_i32;
-  claim narrow_evidence: igt(narrow, 0_i32) because "narrow evidence";
   let narrow_result = positive<i32>(value: narrow);
   let wide = 1_i64;
-  claim wide_evidence: igt(wide, 0_i64) because "wide evidence";
   let wide_result = positive<i64>(value: wide);
   return exit_status(code: 0_u8);
 }
@@ -1244,9 +1319,12 @@ command fn main() -> status: own ExitStatus pure {
         );
         assert_eq!(
             main.entailment.call_goals[1].disposition,
-            CallGoalDisposition::Unproved
+            CallGoalDisposition::Discharged
         );
-        assert!(main.entailment.call_goals[1].evidence.is_empty());
+        assert_eq!(
+            main.entailment.call_goals[1].evidence,
+            vec![CallGoalEvidence::BooleanIntroductionPositive]
+        );
     });
 }
 

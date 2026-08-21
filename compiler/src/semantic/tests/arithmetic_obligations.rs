@@ -31,7 +31,7 @@ fn named<'functions>(
 #[test]
 fn a_stronger_claim_discharges_the_literal_site() {
     let source = br#"fn bump(x: own u64) -> result: own u64 traps {
-  claim bounded_input: ilt(x, 1000_u64) because "bounded input";
+  claim bounded_input: ilt(x, 1000_u64) because "premises: fixture context: bounded input\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   let y = x + 1_u64;
   return y;
 }
@@ -137,7 +137,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_dominating_claim_discharges_the_site() {
     let source = br#"fn bump(x: own u64) -> result: own u64 traps {
-  claim small: ile(x, 100_u64) because "callers pass a byte count";
+  claim small: ile(x, 100_u64) because "premises: fixture context: callers pass a byte count\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   let y = x + 1_u64;
   return y;
 }

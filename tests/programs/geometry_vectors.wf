@@ -14,14 +14,20 @@ fn dot3<T: Float>(left: own Vector3<T>, right: own Vector3<T>) -> result: own T 
   return fadd.strict(after_y, z_product);
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let left32 = Vector3<f32>(x: 1.0_f32, y: 2.0_f32, z: 3.0_f32);
   let right32 = Vector3<f32>(x: 4.0_f32, y: 5.0_f32, z: 6.0_f32);
   let product32 = dot3<f32>(left: move left32, right: move right32);
-  claim f32_vector_dot_product: feq(product32, 32.0_f32) because "f32 vector dot product";
+  if feq(product32, 32.0_f32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let left64 = Vector3<f64>(x: -2.0_f64, y: 3.0_f64, z: 5.0_f64);
   let right64 = Vector3<f64>(x: 7.0_f64, y: 11.0_f64, z: 13.0_f64);
   let product64 = dot3<f64>(left: move left64, right: move right64);
-  claim f64_vector_dot_product: feq(product64, 84.0_f64) because "f64 vector dot product";
+  if feq(product64, 84.0_f64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }

@@ -5,11 +5,10 @@ use super::{assert_rule, assert_unsupported, with_semantics};
 
 #[test]
 fn box_creation_dereference_and_cleanup_are_explicit() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let value = 41_u64;
   let owner = box_new(value);
   let loaded = deref(owner);
-  claim box_value: ieq(loaded, 41_u64) because "box value";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -41,7 +40,7 @@ fn box_creation_dereference_and_cleanup_are_explicit() {
                 ..
             }
         ));
-        let CheckedStatement::Return { drops, .. } = &main.body[4] else {
+        let CheckedStatement::Return { drops, .. } = &main.body[3] else {
             panic!("main must end in return");
         };
         assert_eq!(drops.len(), 1);
@@ -77,7 +76,7 @@ fn box_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
   let b = box_new(4_i32);
   set deref(b) = 7_i32;
   let seen = deref(b);
-  claim box_content_set: ieq(seen, 7_i32) because "box content set";
+  claim box_content_set: ieq(seen, 7_i32) because "premises: fixture context: box content set\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   return exit_status(code: 0_u8);
 }
 "#,

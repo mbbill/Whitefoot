@@ -331,11 +331,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// throwaway preflight; any divergence here is a compiler invariant
     /// failure.
     pub(super) fn admit_postcondition_selectors(&mut self) -> Result<(), CheckStop> {
+        self.admit_postcondition_selectors_including(&[])
+    }
+
+    /// Builds selectors for the ordinary locally reachable set plus concrete
+    /// instances replayed from an uninstantiated generic source body. Those
+    /// replayed calls were already checked in the schema pass, but their final
+    /// FunctionIds are not reachable from a nongeneric concrete caller.
+    pub(super) fn admit_postcondition_selectors_including(
+        &mut self,
+        additional: &[FunctionId],
+    ) -> Result<(), CheckStop> {
         let records = self.resolved.postconditions().to_vec();
         if records.is_empty() {
             return Ok(());
         }
-        let eligible = self.eligible_postcondition_functions()?;
+        let mut eligible = self.eligible_postcondition_functions()?;
+        for function in additional {
+            if !eligible.contains(function) {
+                eligible.push(*function);
+            }
+        }
         for record in &records {
             let concrete = self
                 .signatures
@@ -367,17 +383,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         signature: &FunctionSignature,
     ) -> Result<Vec<CheckedPostconditionSelector>, CheckStop> {
-        let selectors = self
-            .postcondition_selectors
-            .iter()
-            .filter(|selector| selector.function == signature.id)
-            .cloned()
-            .collect::<Vec<_>>();
-        if !selectors.is_empty() {
-            return Ok(selectors);
-        }
         if signature.substitution.is_concrete() {
-            return Ok(Vec::new());
+            return Ok(self
+                .postcondition_selectors
+                .iter()
+                .filter(|selector| selector.function == signature.id)
+                .cloned()
+                .collect());
         }
         let function = self.tree.path(signature.node)?;
         let mut selectors = Vec::new();
@@ -656,6 +668,69 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if !function.substitution.is_concrete() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
+        self.build_checked_postcondition_inner(
+            function,
+            parameters,
+            selector,
+            relation,
+            body,
+            false,
+        )
+    }
+
+    /// Builds the source-schema FN-9 handoff only when the written relation
+    /// and selected returns are already in the ordinary concrete integer
+    /// fragment. GenericInt remains an exact symbolic goal datum, never an L0
+    /// term, so a postcondition over `T` is intentionally concrete-instance
+    /// only.
+    pub(super) fn build_checked_schema_postcondition(
+        &self,
+        function: &FunctionSignature,
+        parameters: &[CheckedParameter],
+        selector: CheckedPostconditionSelector,
+        relation: RelationTemplate,
+        body: &[CheckedStatement],
+    ) -> Result<Option<CheckedPostcondition>, CheckStop> {
+        if function.substitution.is_concrete() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        if !matches!(selector.result_type, CheckedType::Integer(_))
+            || relation
+                .operands
+                .iter()
+                .any(|operand| !matches!(operand.ty(), CheckedType::Integer(_)))
+        {
+            return Ok(None);
+        }
+        let checked = self.build_checked_postcondition_inner(
+            function,
+            parameters,
+            selector,
+            relation,
+            body,
+            true,
+        )?;
+        let fragment_returns = checked.selected_returns.iter().all(|selected| match &selected.value {
+            PostconditionReturnDatum::Place(place) => {
+                matches!(place.ty, CheckedType::Integer(_))
+            }
+            PostconditionReturnDatum::Literal { value, .. } => {
+                matches!(value.ty(), CheckedType::Integer(_))
+            }
+            PostconditionReturnDatum::Length(_) => true,
+        });
+        Ok(fragment_returns.then_some(checked))
+    }
+
+    fn build_checked_postcondition_inner(
+        &self,
+        function: &FunctionSignature,
+        parameters: &[CheckedParameter],
+        selector: CheckedPostconditionSelector,
+        relation: RelationTemplate,
+        body: &[CheckedStatement],
+        symbolic_schema: bool,
+    ) -> Result<CheckedPostcondition, CheckStop> {
         let mut type_substitutions = Vec::new();
         let mut const_substitutions = Vec::new();
         for (declaration, argument) in function.substitution.entries() {
@@ -666,6 +741,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 GenericArgument::Const(super::super::model::CheckedConst::Value(value)) => {
                     const_substitutions.push((*declaration, *value));
                 }
+                _ if symbolic_schema => {}
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             }
         }

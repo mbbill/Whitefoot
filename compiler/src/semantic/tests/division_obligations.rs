@@ -40,7 +40,7 @@ fn division_outcomes(
 #[test]
 fn a_stronger_claim_discharges_an_unsigned_site() {
     let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
-  claim positive_divisor: igt(d, 0_u64) because "positive divisor";
+  claim positive_divisor: igt(d, 0_u64) because "premises: fixture context: positive divisor\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   let q = n / d;
   return q;
 }
@@ -69,7 +69,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_canonical_claim_discharges_the_site() {
     let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
-  claim nonzero: ine(d, 0_u64) because "callers pass a nonzero stride";
+  claim nonzero: ine(d, 0_u64) because "premises: fixture context: callers pass a nonzero stride\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   let q = n / d;
   return q;
 }
@@ -197,7 +197,7 @@ fn a_constant_zero_divisor_is_rejected_everywhere() {
     let source = br#"command fn main() -> status: own ExitStatus traps {
   let x = 10_i32;
   let q = x / 0_i32;
-  claim unreachable: igt(q, 0_i32) because "unreachable";
+  claim unreachable: igt(q, 0_i32) because "premises: fixture context: unreachable\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -253,7 +253,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_bounded_dividend_over_minus_one_discharges() {
     let source = br#"fn negate(n: own i32) -> result: own i32 traps {
-  claim bounded_input: igt(n, -100_i32) because "bounded input";
+  claim bounded_input: igt(n, -100_i32) because "premises: fixture context: bounded input\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   let q = n / -1_i32;
   return q;
 }
@@ -371,7 +371,7 @@ fn the_default_checker_rejects_a_constant_zero_divisor() {
     let source = br#"command fn main() -> status: own ExitStatus traps {
   let x = 10_i32;
   let q = x / 0_i32;
-  claim unreachable: igt(q, 0_i32) because "unreachable";
+  claim unreachable: igt(q, 0_i32) because "premises: fixture context: unreachable\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -453,7 +453,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn the_signed_zero_divisor_conjunct_is_discharged_by_its_own_mechanical_fix() {
     let claimed = br#"fn ratio(d: own i32) -> result: own i32 traps {
-  claim nonzero: ine(d, 0_i32) because "callers pass a nonzero divisor";
+  claim nonzero: ine(d, 0_i32) because "premises: fixture context: callers pass a nonzero divisor\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   let q = 100_i32 / d;
   return q;
 }

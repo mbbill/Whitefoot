@@ -73,7 +73,7 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // existing one-attempt close policy on either post-open error. All operation
 // rows remain statically selected implementation version 1 under the v0.33
 // semantic-ID key.
-const REVIEWED_FOR: &str = "v0.33";
+const REVIEWED_FOR: &str = "v0.34";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectoryList`.
@@ -1264,7 +1264,7 @@ mod tests {
         let target = SystemTarget::for_triple("aarch64-apple-darwin")
             .expect("the probe target is qualified");
         assert_eq!(
-            command_entry_row(target, "v0.32"),
+            command_entry_row(target, "v0.33"),
             Err(QualificationFailure::MissingMapping(Facility::CommandEntry))
         );
         command_entry_row(target, crate::spec_identity::SPEC_VERSION)

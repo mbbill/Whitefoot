@@ -108,7 +108,7 @@ location `l`, let:
   establishes S3;
 - `Full` be the ordinary complete proof view;
 - `Eligible` be the fixed set of occurrences that have passed every
-  pre-residual machine check: proof-predicate shape/effects, reachability and
+  pre-residual machine check: proof-predicate shape/effects, FN-1 reachability and
   exact lifecycle, component lifecycle, contribution consistency and exact-P
   reconstruction, and the five-field `because` schema;
 - `Full-minus(c)` be the same flow and the same executed source, with every
@@ -118,7 +118,9 @@ location `l`, let:
   and effects retained but its S3 source event emitting the basis without
   contribution identity `a` or any of a's manifestations; ordinary closure is
   rerun from all unmasked sources, so facts depending only on a disappear and
-  independently rederived facts remain;
+  independently rederived facts remain; if no terminal root changes, U/B and
+  PRV-1 invariance require exactly the same PRV-2/PRV-3 result, so any provenance
+  delta is a compiler consistency failure rather than a residual witness;
   and
 - `AdmissionRoots` be the closed set of mandatory source-acceptance proofs.
 
@@ -126,7 +128,7 @@ The fast lifecycle matrix is:
 
 | Pre-claim result | Source result |
 |---|---|
-| `C_l` is contradictory or the occurrence is unreachable | vacuous/unreachable classification; never a proof of `P` |
+| `C_l` is contradictory | vacuous classification; never a proof of `P` |
 | non-contradictory `C_l` proves both signs | compiler consistency failure, not a source classification |
 | non-contradictory `C_l` proves `P` | hard source error: redundant claim |
 | non-contradictory `C_l` proves `not P` | hard source error: refuted claim |
@@ -166,6 +168,8 @@ the deliberately external truth review. The compiler can publish a
 structurally qualified candidate without pretending it has decided condition
 4; a human-approved Whitefoot program may contain only claims satisfying all
 six conditions. Every compiler-accepted candidate remains retained at runtime.
+Structurally unreachable statements are already FN-1 source errors and never
+enter this lifecycle.
 
 If any occurrence fails a pre-residual machine check, the unit reports the
 deterministic earlier error and does not run residuality. There is no
@@ -189,7 +193,10 @@ basis. A still-valid direct/expanded origin is one contribution identity with
 support-correct manifestations, not two independent permissions; masking the
 component masks the whole identity.
 The sequence is ordered and deduplicated by normative fact identity so claim,
-component, instance, and root witness selection is deterministic.
+component, instance, and root witness selection is deterministic. Directional
+bounds retain ordered endpoints. Disequality identity is unordered, so
+`a != b` and `b != a` deduplicate, while the first left-to-right source
+occurrence fixes rendering and component ordinal.
 
 The same finite checker closure must reconstruct exact `P` from `C_l` plus all
 components. It may introduce only exact parent trees already present in the
@@ -423,32 +430,36 @@ in the contract; importing it through prose is not a checker gap.
   need the shared source claim, the closed source is rejected at a deterministic
   concrete witness. Repair may split a helper or move the residual into a
   narrower branch; there is no instance-local check omission.
-- An uninhabited instance cannot reject a claim by ex-falso. It also cannot be
-  the sole evidence that a claim is useful.
-- Residuality is provisionally a source-body admission property rather than
-  observed reachability from `main`: a dead nongeneric function can retain a
-  claim when its body obligation needs it. By parity, absence of a concrete
-  generic instantiation is not non-residual evidence. An uninstantiated generic
-  needs a parametric body-obligation and audit judgment; the current
-  concrete-instance checker does not yet supply that judgment.
-- A claim in compiler-known unreachable code has no changed admission root and
-  is rejected as vacuous/unnecessary, not classified as a proof of any
-  predicate.
+- An entry-uninhabited concrete instance supplies neither a report nor a
+  residual witness. A contradictory local path in a schema or concrete flow is
+  vacuous and cannot prove a claim by ex-falso.
+- Residuality is a source-body admission property rather than observed
+  reachability from `main`: a dead nongeneric function can retain a claim when
+  its body obligation needs it. By parity, every generic body receives one
+  source-canonical symbolic claim-schema judgment even with zero concrete
+  instantiations, followed by each inhabited concrete recheck.
+- The schema installs source-canonical call requirements and uses GenericInt or
+  GenericFloat only as copy datums in exact opaque goals, never as invented L0
+  terms. A symbolic FN-9 consumer exists only when its result, selected return,
+  and relation already use concrete integer fragment types; generic-T FN-9 is
+  concrete-instance-only.
+- A stable schema report is owned by declaration and source NodePaths, contains
+  no scratch FunctionId/GoalId/TermId/DerivationId or monomorph display identity,
+  and links inhabited concrete reports in stable order.
+- A structurally unreachable claim is an FN-1 error and does not enter CLM-2.
 - A second claim whose predicate is established by an earlier S3 is redundant.
   Claims can depend on earlier claims in their human derivation, but cannot
   exist merely to recheck or rename an already available fact.
 - CLM-2 validity and residual necessity precede CLM-3. Only a valid retained
   claim can reach a `deny_claims` rejection.
 
-Mixed generic instances are the largest foreseeable usability risk. A source
+Mixed generic instances remain the largest foreseeable usability risk. A source
 claim may be necessary for one instance but statically redundant for another,
 and current language expressiveness may offer only helper duplication as the
-repair. That is not a safety inconsistency, but the plan must run hostile and
-real generic simulations before freezing the exact rule. It must also compare
-an uninstantiated generic with an equally dead nongeneric function. If the
-source-schema judgment is not tractable, the only coherent alternative is a
-uniform main-reachability rule for both; actual-instantiation reachability may
-not be applied to generics alone.
+repair. That is not a safety inconsistency: the selected rule rejects at the
+first stable concrete witness and never omits a runtime claim for selected
+instances. Hostile tests compare an uninstantiated generic with an equally dead
+nongeneric function and lock the same source-body admission policy for both.
 
 ## 9. Offline audit model
 
@@ -461,7 +472,8 @@ from the prose alone. A future claim packet would need at least:
 - the proof-pure predicate snapshot and relevant ownership/kill state;
 - the pre-S3 fast facts without the current claim;
 - the `because` premises, steps, conclusion, gap, and consumer;
-- every `Full-minus(c,a)` and `Full-minus(c)` admission root that changed; and
+- every `Full-minus(c,a)` and `Full-minus(c)` admission root that changed, with
+  its stable masked disposition and attached successful provenance evidence; and
 - dependencies on earlier audited claims.
 
 This is a research shape, not authority to build a generalized serialized
@@ -477,7 +489,7 @@ Suggested audit results are:
 - `CounterexampleCandidate`;
 - `RefutedAfterReplay`;
 - `Unknown`;
-- `VacuousOrUnreachable`;
+- `Vacuous`;
 - `UnsupportedEncoding`; and
 - `Stale`.
 
@@ -531,7 +543,8 @@ an accepted claim or change ordinary source acceptance.
 | checker can prove P | source error; author removes claim |
 | checker can prove not P | source error; use control flow if failure is possible |
 | literal `False()` | source error, never intentional abort |
-| contradictory context | vacuous/unreachable, never positive proof |
+| contradictory context | vacuous, never positive proof |
+| structurally unreachable statement | FN-1 rejection before claim lifecycle |
 | adding P contradicts the pre-state | inconsistent-claim source error |
 | claim fact makes a downstream root contradictory | root is ineligible; never discharge by explosion |
 | `band(known, residual)` or the same shape behind an origin | reject overlapping component; claim the residual and reconstruct parent |
@@ -553,12 +566,12 @@ an accepted claim or change ordinary source acceptance.
 | proof is stale after source/spec/checker change | re-audit exact packet |
 | certificate contains a trust step | not `CertificateVerified` |
 | generic instances disagree | reject shared shape at deterministic witness |
-| uninstantiated generic and dead nongeneric use different reachability tests | stop; select one uniform source-schema or main-reachability policy |
+| uninstantiated generic and dead nongeneric use different reachability tests | implementation defect; both use source-body admission |
 | accepted claim omitted by lowering or optimization | compiler correctness failure |
 
-## 11. Current implementation evidence
+## 11. Baseline and branch implementation evidence
 
-The existing compiler has several useful foundations:
+The v0.33 baseline compiler has several useful foundations:
 
 - lifecycle is already judged after predicate effects and before the claim's
   own S3 establishment;
@@ -570,7 +583,7 @@ The existing compiler has several useful foundations:
   provenance; and
 - accepted claims use one ordinary lowering and backend path.
 
-It also exposes the exact gaps:
+It also exposes the exact baseline gaps:
 
 - CLM-1 currently accepts any `own Bool`, including effectful or nonterminating
   predicates;
@@ -586,11 +599,13 @@ It also exposes the exact gaps:
 - the active language explicitly accepts unused claims and constructed
   `False()` claims.
 
-The correct minimal implementation is therefore not a solver. It is a bounded
-extension of the existing deterministic flow: add canonical contribution
-normalization, finite exact-parent reconstruction, claim/component blinded
-counterfactuals, a closed admission-root test, a proof-expression judgment, and
-source errors; keep every accepted-claim lowering unchanged.
+The branch candidate implements the bounded extension rather than a solver:
+canonical contribution normalization, finite exact-parent reconstruction,
+claim/component-blinded counterfactuals, a closed terminal-root test, a
+proof-expression judgment, stable concrete/schema audit evidence, and source
+errors, while keeping accepted-claim lowering unchanged. The remaining evidence
+work is corpus migration, protected before/after audit, full-gate verification,
+performance measurement, and adversarial review.
 
 ## 12. Current corpus impact
 
@@ -634,8 +649,8 @@ an exact before/after inventory in the owner merge packet.
 
 ## 13. Implementation feasibility and sequence
 
-No language/compiler execution is authorized by this research document. A
-future branch chartered by the owner direction should proceed in this order:
+This research document is not execution authority. The owner-chartered branch
+uses the Current Plan and batch 0075 to proceed in this order:
 
 1. freeze the complete 651-claim in-scope and inline-fixture inventory; record
    only the aggregate presence and explicit unchanged exclusion of the 29

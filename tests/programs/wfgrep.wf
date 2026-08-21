@@ -144,7 +144,7 @@ fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text:
   }
 }
 
-fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads('d 's), writes('d), traps {
+fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads('d 's), writes('d) {
   doc "Copies one half-open source range into the destination at one offset.";
   let source_room = len(deref(source));
   let destination_room = len(deref(destination));
@@ -156,10 +156,16 @@ fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s
       break @copy;
     }
     let read_ok = ilt(cursor, source_room);
-    claim copy_read_in_source: read_ok because "callers clamp the range to the source length";
+    if read_ok {
+    } else {
+      return target;
+    }
     let byte = deref(source)[cursor];
     let write_ok = ilt(target, destination_room);
-    claim copy_write_in_destination: write_ok because "callers leave room for the copied range";
+    if write_ok {
+    } else {
+      return target;
+    }
     set deref(destination)[target] = byte;
     set target = target +wrap 1_u64;
     set cursor = cursor +wrap 1_u64;
@@ -453,7 +459,7 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
       let trailing = igt(carry, 0_u64);
       if trailing {
         let carry_ok = ilt(carry, 4096_u64);
-        claim carry_in_input: carry_ok because "the overlong guard keeps the carry below the buffer length";
+        claim carry_in_input: carry_ok because "premises: the chunk guard establishes carry at most 4096; room is 4096 minus carry, and the overlong branch exits when room is zero\nderivation: the nonwrapping subtraction and surviving nonzero room imply carry is strictly below 4096\nconclusion: carry_ok is true\nchecker gap: ENT does not invert the wrapping subtraction and nonzero-result test into the strict operand bound\nconsumers: set input[carry] requires this exact bound";
         set input[carry] = 10_u8;
         set available = carry +wrap 1_u64;
       }
@@ -468,8 +474,6 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
         if done {
           break @walk;
         }
-        let probe_ok = ilt(probe, 4096_u64);
-        claim probe_in_input: probe_ok because "the walk stops at the available prefix of the fixed buffer";
         let byte = input[probe];
         let newline = ieq(byte, 10_u8);
         if newline {
@@ -494,8 +498,6 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
                 set same = False();
                 break @verify;
               }
-              let spot_ok = ilt(spot, 4096_u64);
-              claim spot_in_input: spot_ok because "the verify walk stays inside the available prefix";
               let candidate = input[spot];
               let stopper = ieq(candidate, 10_u8);
               if stopper {
@@ -503,7 +505,11 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
                 break @verify;
               }
               let ahead_ok = ilt(ahead, pattern_room);
-              claim ahead_in_pattern: ahead_ok because "the verify walk stays inside the copied pattern";
+              if ahead_ok {
+              } else {
+                set same = False();
+                break @verify;
+              }
               let expected = deref(pattern)[ahead];
               let equal = ieq(candidate, expected);
               if equal {
@@ -593,10 +599,10 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
       }
       let source_index = scan +wrap moved;
       let shift_read_ok = ilt(source_index, 4096_u64);
-      claim shift_read_in_input: shift_read_ok because "the tail starts inside the fixed buffer";
+      claim shift_read_in_input: shift_read_ok because "premises: read_once bounds available by 4096; scan starts at zero and advances only past a terminator below available; tail is available minus scan; moved starts at zero and continues only below tail\nderivation: induction gives scan at most available and moved below tail, so source_index is below available and therefore below 4096 without wrap\nconclusion: shift_read_ok is true\nchecker gap: ENT carries neither the outer scan invariant nor the nested shift-loop sum relation across backedges\nconsumers: input[source_index] requires this exact bound";
       let byte = input[source_index];
       let shift_write_ok = ilt(moved, 4096_u64);
-      claim shift_write_in_input: shift_write_ok because "the tail is shorter than the fixed buffer";
+      claim shift_write_in_input: shift_write_ok because "premises: available is at most 4096; scan is at most available; tail is available minus scan; moved starts at zero and continues only below tail\nderivation: tail is a nonwrapping value at most available and induction gives moved below tail, so moved is below 4096\nconclusion: shift_write_ok is true\nchecker gap: ENT carries neither the outer scan invariant nor the inner moved bound across ordinary-loop backedges\nconsumers: set input[moved] requires this exact bound";
       set input[moved] = byte;
       set moved = moved +wrap 1_u64;
     }

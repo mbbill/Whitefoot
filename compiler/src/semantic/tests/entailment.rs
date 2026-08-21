@@ -2,11 +2,10 @@
 //! including the adversarial stale-fact and fresh-binding shapes the spec
 //! text was reviewed against.
 //!
-//! Derivation tests observe the engine through the retained obligation and
-//! claim dispositions via the test-only dark checker, which skips the
-//! [OP-4]/[CLM-2] rejection so a function's complete summary stays
-//! observable. The rejection behavior itself is tested at the end of this
-//! file through the ordinary acceptance path.
+//! Derivation tests observe accepted proof roots through checked-program
+//! metadata.  Invalid claims are failure-atomic source errors and are tested
+//! directly through their ordinary diagnostics rather than a dark accepted
+//! program.
 
 use crate::{
     BindingId, CallRequirementDisposition, NodePath, SemanticCompilerFailure, SemanticIssueKind,
@@ -14,8 +13,8 @@ use crate::{
 };
 
 use super::super::entailment::{
-    CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, ClaimDisposition, ClaimLedger,
-    ClaimLifecycleKind, ClaimOutcome, ClaimSourceIdentity, ClaimUseProvenance,
+    CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, ClaimComponentFact, ClaimDisposition,
+    ClaimLedger, ClaimLifecycleKind, ClaimSourceIdentity, ClaimUseProvenance,
     CountedAtomicDerivation, CountedCaptureSide, CountedDerivationSet, CountedProofPoint,
     CountedRootAtom, DerivationId, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId,
     FlowEventKind, FunctionEntailment, GoalId, GoalSign, ImplicitBoundKind, JoinParent,
@@ -43,30 +42,6 @@ fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
             .find(|candidate| candidate.name == function)
             .unwrap_or_else(|| panic!("function {function} must exist"));
         function.entailment.obligations.clone()
-    })
-}
-
-fn claims(source: &[u8], function: &str) -> Vec<ClaimOutcome> {
-    with_semantics_dark(source, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("entailment test source must check completely: {outcome:?}");
-        };
-        let function = checked
-            .data
-            .functions
-            .iter()
-            .find(|candidate| candidate.name == function)
-            .unwrap_or_else(|| panic!("function {function} must exist"));
-        function.entailment.claims.clone()
-    })
-}
-
-fn claim_ledger(source: &[u8]) -> ClaimLedger {
-    with_semantics_dark(source, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("claim-ledger test source must check completely: {outcome:?}");
-        };
-        checked.data.claim_ledger.clone()
     })
 }
 
@@ -372,12 +347,6 @@ fn call_root(summary: &FunctionEntailment, ordinal: usize) -> DerivationId {
         .unwrap_or_else(|| panic!("call goal {ordinal} must have one exact root"))
 }
 
-fn claim_lifecycle_root(summary: &FunctionEntailment, occurrence: usize) -> DerivationId {
-    summary.claims[occurrence]
-        .lifecycle_derivation
-        .unwrap_or_else(|| panic!("claim {occurrence} must have one exact lifecycle root"))
-}
-
 fn assert_root_contains(
     summary: &FunctionEntailment,
     root: DerivationId,
@@ -454,6 +423,27 @@ fn assert_synthetic_event(
     used[id.0 as usize] = true;
     assert_eq!(event.kind, kind);
     assert!(event.node_path.is_none());
+}
+
+fn assert_materialization_event(
+    summary: &FunctionEntailment,
+    id: FlowEventId,
+    used: &mut [bool],
+) -> FlowEventKind {
+    let event = retained_event(summary, id);
+    used[id.0 as usize] = true;
+    match event.kind {
+        FlowEventKind::Snapshot => {
+            assert!(event.node_path.is_none());
+            assert!(event.claim_component.is_none());
+        }
+        FlowEventKind::ClaimReconstruction => {
+            assert!(event.node_path.is_some());
+            assert!(event.claim_component.is_none());
+        }
+        other => panic!("a materialized goal has an invalid event kind {other:?}"),
+    }
+    event.kind
 }
 
 fn assert_join_parents(
@@ -820,6 +810,13 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     sign: *sign,
                 }
             }
+            DerivationNode::BooleanLiteral { goal, sign } => {
+                assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
+                DerivationConclusion::Goal {
+                    goal: *goal,
+                    sign: *sign,
+                }
+            }
             DerivationNode::ImplicitBound {
                 left,
                 right,
@@ -962,10 +959,25 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 parent,
             } => {
                 assert_relation_terms_resolve(summary, relation);
-                assert_eq!(
-                    retained_conclusion(&conclusions, *parent),
-                    &DerivationConclusion::Relation(relation.clone())
-                );
+                let DerivationConclusion::Relation(parent_relation) =
+                    retained_conclusion(&conclusions, *parent)
+                else {
+                    panic!("a goal projection requires a relation parent");
+                };
+                match (parent_relation, relation) {
+                    (
+                        Relation::Distinct {
+                            left: parent_left,
+                            right: parent_right,
+                        },
+                        Relation::Distinct { left, right },
+                    ) => assert!(
+                        (parent_left == left && parent_right == right)
+                            || (parent_left == right && parent_right == left),
+                        "disequality parents use unordered fact identity"
+                    ),
+                    _ => assert_eq!(parent_relation, relation),
+                }
                 let retained_goal = summary
                     .inventory
                     .goals
@@ -979,7 +991,20 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     GoalSign::Positive => projection.clone(),
                     GoalSign::Negative => projection.negated(),
                 };
-                assert_eq!(*relation, expected);
+                match (relation, &expected) {
+                    (
+                        Relation::Distinct { left, right },
+                        Relation::Distinct {
+                            left: expected_left,
+                            right: expected_right,
+                        },
+                    ) => assert!(
+                        (left == expected_left && right == expected_right)
+                            || (left == expected_right && right == expected_left),
+                        "disequality identity is independent of endpoint rendering order"
+                    ),
+                    _ => assert_eq!(*relation, expected),
+                }
                 DerivationConclusion::Goal {
                     goal: *goal,
                     sign: *sign,
@@ -1048,6 +1073,24 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         retained_conclusion(&conclusions, *parent),
                         &DerivationConclusion::Relation(relation),
                     );
+                }
+                DerivationConclusion::Goal {
+                    goal: *goal,
+                    sign: *sign,
+                }
+            }
+            DerivationNode::BooleanIntroduction {
+                goal,
+                sign,
+                parents,
+            } => {
+                assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
+                assert!(!parents.is_empty());
+                for parent in parents {
+                    assert!(matches!(
+                        retained_conclusion(&conclusions, *parent),
+                        DerivationConclusion::Goal { .. }
+                    ));
                 }
                 DerivationConclusion::Goal {
                     goal: *goal,
@@ -1188,12 +1231,27 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 parent,
             } => {
                 assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
-                assert_synthetic_event(summary, *event, FlowEventKind::Snapshot, &mut used_events);
+                let kind = assert_materialization_event(summary, *event, &mut used_events);
                 let conclusion = DerivationConclusion::Goal {
                     goal: *goal,
                     sign: *sign,
                 };
-                assert_eq!(retained_conclusion(&conclusions, *parent), &conclusion);
+                match kind {
+                    FlowEventKind::Snapshot => {
+                        assert_eq!(retained_conclusion(&conclusions, *parent), &conclusion);
+                    }
+                    FlowEventKind::ClaimReconstruction => {
+                        assert_eq!(*sign, GoalSign::Positive);
+                        assert!(matches!(
+                            retained_conclusion(&conclusions, *parent),
+                            DerivationConclusion::Goal {
+                                sign: GoalSign::Positive,
+                                ..
+                            }
+                        ));
+                    }
+                    _ => unreachable!("materialization event was checked above"),
+                }
                 conclusion
             }
             DerivationNode::MaterializedContradiction { event, parent } => {
@@ -1514,7 +1572,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
     let mut seen_delivery_joins = 0u32;
     let mut seen_delivery_nodes = vec![false; summary.derivations.nodes.len()];
     let mut counted_root_order = Vec::new();
-    let mut class_counts = [0u32; 5];
+    let mut class_counts = [0u32; 6];
     for root in &summary.derivations.roots {
         let conclusion = retained_conclusion(&conclusions, root.node);
         match root.kind {
@@ -1909,6 +1967,66 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     _ => panic!("claim lifecycle root, disposition, and proof must agree"),
                 }
             }
+            DerivationRootKind::ClaimComponent {
+                occurrence,
+                component,
+            } => {
+                let claim = summary
+                    .claims
+                    .get(occurrence as usize)
+                    .expect("claim-component root occurrence must resolve");
+                let evidence = claim
+                    .proof
+                    .as_ref()
+                    .expect("retained claim component root has proof evidence")
+                    .components
+                    .get(component as usize)
+                    .expect("claim-component ordinal must resolve");
+                assert_eq!(evidence.ordinal, component);
+                assert_eq!(evidence.source, root.node);
+                match (&evidence.fact, conclusion) {
+                    (ClaimComponentFact::Relation(expected), DerivationConclusion::Relation(actual)) => {
+                        match (expected, actual) {
+                            (
+                                Relation::Distinct {
+                                    left: expected_left,
+                                    right: expected_right,
+                                },
+                                Relation::Distinct { left, right },
+                            ) => assert!(
+                                (expected_left == left && expected_right == right)
+                                    || (expected_left == right && expected_right == left),
+                                "claim disequality evidence uses unordered fact identity"
+                            ),
+                            _ => assert_eq!(expected, actual),
+                        }
+                    }
+                    (
+                        ClaimComponentFact::Goal { goal, sign },
+                        DerivationConclusion::Goal {
+                            goal: actual_goal,
+                            sign: actual_sign,
+                        },
+                    ) => {
+                        assert_eq!(goal, actual_goal);
+                        assert_eq!(sign, actual_sign);
+                    }
+                    _ => panic!("claim component evidence must conclude its exact fact"),
+                }
+            }
+            DerivationRootKind::ClaimReconstruction { occurrence, direct } => {
+                let proof = summary
+                    .claims
+                    .get(occurrence as usize)
+                    .and_then(|claim| claim.proof.as_ref())
+                    .expect("claim reconstruction root occurrence must resolve");
+                let expected = if direct {
+                    proof.reconstructions.direct
+                } else {
+                    proof.reconstructions.expanded
+                };
+                assert_eq!(expected, root.node);
+            }
             DerivationRootKind::Strict { occurrence, kind } => {
                 let occurrence = occurrence as usize;
                 let retained = summary
@@ -1945,6 +2063,12 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
 
         if matches!(root.kind, DerivationRootKind::ClaimLifecycle { .. }) {
             class_counts[4] += 1;
+        } else if matches!(
+            root.kind,
+            DerivationRootKind::ClaimComponent { .. }
+                | DerivationRootKind::ClaimReconstruction { .. }
+        ) {
+            class_counts[5] += 1;
         } else {
             match &summary.derivations.nodes[root.node.0 as usize] {
                 DerivationNode::SourceGoal { .. }
@@ -2083,6 +2207,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
             summary.derivations.metrics.projected_goal_roots,
             summary.derivations.metrics.contradiction_roots,
             summary.derivations.metrics.claim_lifecycle_roots,
+            summary.derivations.metrics.claim_evidence_roots,
         ]
     );
 }
@@ -2103,10 +2228,16 @@ fn validate_claim_ledger(program: &CheckedProgramData) {
             assert_eq!(entry.justification, claim.justification);
             assert_eq!(entry.disposition, claim.disposition);
             assert_eq!(entry.lifecycle_derivation, claim.lifecycle_derivation);
+            assert_eq!(entry.proof, claim.proof);
 
             for used in &entry.uses {
                 assert!(
-                    !matches!(used.root, DerivationRootKind::ClaimLifecycle { .. }),
+                    !matches!(
+                        used.root,
+                        DerivationRootKind::ClaimLifecycle { .. }
+                            | DerivationRootKind::ClaimComponent { .. }
+                            | DerivationRootKind::ClaimReconstruction { .. }
+                    ),
                     "a lifecycle observation is not a supported obligation"
                 );
                 assert!(
@@ -2256,7 +2387,46 @@ fn validate_claim_ledger(program: &CheckedProgramData) {
         let published_uses = entries.iter().map(|entry| entry.uses.len()).sum::<usize>();
         let mut expected_uses = 0usize;
         for root in &function.entailment.derivations.roots {
-            if matches!(root.kind, DerivationRootKind::ClaimLifecycle { .. }) {
+            let eligible = match root.kind {
+                DerivationRootKind::BoundsObligation(ordinal)
+                | DerivationRootKind::IntegerDomainObligation(ordinal) => function
+                    .entailment
+                    .obligations
+                    .get(ordinal as usize)
+                    .is_some_and(|outcome| {
+                        outcome.derivation == Some(root.node)
+                            && outcome.discharged
+                            && !outcome.contradictory
+                    }),
+                DerivationRootKind::CallGoal(ordinal) => function
+                    .entailment
+                    .call_goals
+                    .get(ordinal as usize)
+                    .is_some_and(|outcome| {
+                        outcome.derivation == Some(root.node)
+                            && outcome.disposition == CallGoalDisposition::Discharged
+                            && !outcome.evidence.contains(&CallGoalEvidence::AllDerivable)
+                    }),
+                DerivationRootKind::PostconditionAggregate {
+                    relation_ordinal,
+                    view: ProofView::Complete,
+                } => function
+                    .entailment
+                    .postconditions
+                    .get(relation_ordinal as usize)
+                    .is_some_and(|proof| {
+                        proof.relation_ordinal == relation_ordinal
+                            && proof.complete.derivation == Some(root.node)
+                            && proof.complete.discharged
+                    }),
+                _ => false,
+            };
+            if !eligible
+                || !function
+                    .entailment
+                    .derivations
+                    .is_non_explosive(root.node)
+            {
                 continue;
             }
             let mut used_claims = Vec::<NodePath>::new();
@@ -2348,14 +2518,13 @@ struct Pair {
   count: u64;
 }
 
-fn below(value: own u64) -> result: own unit traps contract {
+fn below(value: own u64) -> result: own unit pure contract {
   requires ilt(value, 4_u64);
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 traps {
+fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> result: own i32 pure {
   if ile(i, p.count) {
     if ilt(p.count, 4_u64) {
       let item = values[i];
@@ -2483,14 +2652,13 @@ fn a_projected_bool_scrutinee_retains_its_exact_s1_carrier() {
   ready: Bool;
 }
 
-fn need_ready(value: own Bool) -> result: own unit traps contract {
+fn need_ready(value: own Bool) -> result: own unit pure contract {
   requires value;
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn caller(flags: own Flags) -> result: own unit traps {
+fn caller(flags: own Flags) -> result: own unit pure {
   if flags.ready {
     need_ready(value: flags.ready);
   } else {
@@ -2537,21 +2705,19 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn s1_true_and_false_edges_retain_their_exact_comparison_roots() {
-    let source = br#"fn need_below(value: own u64) -> result: own unit traps contract {
+    let source = br#"fn need_below(value: own u64) -> result: own unit pure contract {
   requires ilt(value, 4_u64);
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn need_at_least(value: own u64) -> result: own unit traps contract {
+fn need_at_least(value: own u64) -> result: own unit pure contract {
   requires ige(value, 4_u64);
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn caller(value: own u64) -> result: own unit traps {
+fn caller(value: own u64) -> result: own unit pure {
   if ilt(value, 4_u64) {
     need_below(value: value);
   } else {
@@ -2764,21 +2930,26 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn equality_retains_both_directed_parents_and_reflexive_implicit_support() {
     let source =
-        br#"fn need_equal(left: own u64, right: own u64) -> result: own unit traps contract {
+        br#"fn need_equal(left: own u64, right: own u64) -> result: own unit pure contract {
   requires ieq(left, right);
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn directed(left: own u64, right: own u64) -> result: own unit traps {
-  claim forward: ile(left, right) because "forward";
-  claim reverse: ile(right, left) because "reverse";
+fn hidden_identity(value: own u64) -> result: own u64 pure {
+  return value;
+}
+
+fn directed(value: own u64) -> result: own unit traps {
+  let left = hidden_identity(value: value);
+  let right = value;
+  claim forward: ile(left, right) because "premises: left is returned by hidden_identity called with right\nderivation: hidden_identity returns its argument unchanged, so left equals right and left is at most right\nconclusion: left is at most right\nchecker gap: ENT does not publish equality for an uncontracted user-call result\nconsumers: need_equal requires this directed half of left equals right";
+  claim reverse: ile(right, left) because "premises: left is returned by hidden_identity called with right\nderivation: hidden_identity returns its argument unchanged, so right equals left and right is at most left\nconclusion: right is at most left\nchecker gap: ENT does not publish equality for an uncontracted user-call result\nconsumers: need_equal requires this directed half of left equals right";
   need_equal(left: left, right: right);
   return unit;
 }
 
-fn reflexive(value: own u64) -> result: own unit traps {
+fn reflexive(value: own u64) -> result: own unit pure {
   need_equal(left: value, right: value);
   return unit;
 }
@@ -3102,11 +3273,15 @@ fn need_right_below_left(left: own u64, right: own u64) -> result: own unit pure
   return unit;
 }
 
-fn caller(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
+fn caller(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    claim left_below_right: ilt(left, right) because "left below right";
+    if ilt(left, right) {
+    } else {
+      return unit;
+    }
+  } else if ilt(right, left) {
   } else {
-    claim right_below_left: ilt(right, left) because "right below left";
+    return unit;
   }
   need_distinct(left: left, right: right);
   need_left_below_right(left: left, right: right);
@@ -3159,13 +3334,20 @@ fn a_joined_derived_disequality_strengthens_a_later_weak_bound() {
   return unit;
 }
 
-fn caller(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
+fn caller(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    claim left_below_right: ilt(left, right) because "left below right";
+    if ilt(left, right) {
+    } else {
+      return unit;
+    }
+  } else if ilt(right, left) {
   } else {
-    claim right_below_left: ilt(right, left) because "right below left";
+    return unit;
   }
-  claim later_weak_bound: ile(left, right) because "later weak bound";
+  if ile(left, right) {
+  } else {
+    return unit;
+  }
   need_left_below_right(left: left, right: right);
   return unit;
 }
@@ -3185,13 +3367,22 @@ command fn main() -> status: own ExitStatus pure {
         "the joined disequality and later weak bound strengthen to the strict requirement"
     );
     let parent = projected_call_parent(&summary, 0);
-    let DerivationNode::StrengthenedBound { distinct, .. } =
-        &summary.derivations.nodes[parent.0 as usize]
-    else {
-        panic!("post-join weak bound must be strengthened by the joined disequality");
+    let parent_node = &summary.derivations.nodes[parent.0 as usize];
+    let distinct = match parent_node {
+        DerivationNode::StrengthenedBound { distinct, .. } => *distinct,
+        DerivationNode::JoinBound { parents, .. } if parents.len() == 1 => {
+            let nested = &summary.derivations.nodes[parents[0].parent.0 as usize];
+            let DerivationNode::StrengthenedBound { distinct, .. } = nested else {
+                panic!("single-edge continuation must retain the strengthened bound: {nested:?}");
+            };
+            *distinct
+        }
+        _ => panic!(
+            "post-join weak bound must be strengthened by the joined disequality: {parent_node:?}"
+        ),
     };
     let mut counts = DistinctGroundCounts::default();
-    collect_distinct_grounds(&summary, *distinct, &mut counts);
+    collect_distinct_grounds(&summary, distinct, &mut counts);
     assert_eq!(counts.strict, 2);
     assert_eq!(counts.joins, 1);
     assert_eq!(counts.join_edges, 2);
@@ -3206,21 +3397,29 @@ fn a_write_kills_a_disequality_materialized_by_a_join() {
   return unit;
 }
 
-fn kept(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
+fn kept(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    claim left_below_right: ilt(left, right) because "left below right";
+    if ilt(left, right) {
+    } else {
+      return unit;
+    }
+  } else if ilt(right, left) {
   } else {
-    claim right_below_left: ilt(right, left) because "right below left";
+    return unit;
   }
   need_distinct(left: left, right: right);
   return unit;
 }
 
-fn killed(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
+fn killed(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    claim left_below_right: ilt(left, right) because "left below right";
+    if ilt(left, right) {
+    } else {
+      return unit;
+    }
+  } else if ilt(right, left) {
   } else {
-    claim right_below_left: ilt(right, left) because "right below left";
+    return unit;
   }
   set left = left +wrap 1_u64;
   need_distinct(left: left, right: right);
@@ -3266,31 +3465,43 @@ fn joins_keep_disequality_across_same_strict_explicit_and_mixed_grounds() {
   return unit;
 }
 
-fn same_strict(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
+fn same_strict(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    claim first_strict: ilt(left, right) because "first strict";
+    if ilt(left, right) {
+    } else {
+      return unit;
+    }
+  } else if ilt(left, right) {
   } else {
-    claim second_strict: ilt(left, right) because "second strict";
+    return unit;
   }
   need_distinct(left: left, right: right);
   return unit;
 }
 
-fn both_explicit(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
+fn both_explicit(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    claim first_distinct: ine(left, right) because "first distinct";
+    if ine(left, right) {
+    } else {
+      return unit;
+    }
+  } else if ine(right, left) {
   } else {
-    claim second_distinct: ine(right, left) because "second distinct";
+    return unit;
   }
   need_distinct(left: left, right: right);
   return unit;
 }
 
-fn mixed(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
+fn mixed(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    claim explicit: ine(left, right) because "explicit";
+    if ine(left, right) {
+    } else {
+      return unit;
+    }
+  } else if ilt(right, left) {
   } else {
-    claim strict: ilt(right, left) because "strict";
+    return unit;
   }
   need_distinct(left: left, right: right);
   return unit;
@@ -3323,9 +3534,9 @@ command fn main() -> status: own ExitStatus pure {
                 DistinctGroundCounts {
                     source: 1,
                     strict: 1,
-                    joins: 1,
-                    join_edges: 2,
-                    join_parent_counts: vec![2],
+                    joins: 2,
+                    join_edges: 3,
+                    join_parent_counts: vec![2, 1],
                     ..DistinctGroundCounts::default()
                 },
                 "the mixed join names its explicit and strict-derived predecessor roots"
@@ -3342,15 +3553,25 @@ fn a_many_way_join_keeps_mixed_disequality_and_ignores_a_contradictory_input() {
   return unit;
 }
 
-fn caller(left: own u64, right: own u64, first: own Bool, second: own Bool, third: own Bool) -> result: own unit traps {
+fn caller(left: own u64, right: own u64, first: own Bool, second: own Bool, third: own Bool) -> result: own unit pure {
   if first {
-    claim left_below_right: ilt(left, right) because "left below right";
+    if ilt(left, right) {
+    } else {
+      return unit;
+    }
   } else if second {
-    claim explicit_distinct: ine(left, right) because "explicit distinct";
+    if ine(left, right) {
+    } else {
+      return unit;
+    }
   } else if third {
-    claim right_below_left: ilt(right, left) because "right below left";
+    if ilt(right, left) {
+    } else {
+      return unit;
+    }
+  } else if ilt(0_u64, 0_u64) {
   } else {
-    claim contradictory_input: ilt(0_u64, 0_u64) because "contradictory input";
+    return unit;
   }
   need_distinct(left: left, right: right);
   return unit;
@@ -3374,12 +3595,12 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(counts.source, 1);
     assert_eq!(counts.strict, 2);
     assert_eq!(counts.contradiction, 1);
-    assert_eq!(counts.joins, 3);
+    assert_eq!(counts.joins, 4);
     counts.join_parent_counts.sort_unstable();
-    assert_eq!(counts.join_parent_counts, vec![2, 2, 2]);
+    assert_eq!(counts.join_parent_counts, vec![1, 2, 2, 2]);
     assert_eq!(
-        counts.join_edges, 6,
-        "the three binary joins transitively name all four reaching inputs"
+        counts.join_edges, 7,
+        "the guarded inputs retain all four reaching grounds through the nested joins"
     );
 }
 
@@ -3392,32 +3613,41 @@ fn equality_missing_relation_and_a_kill_each_prevent_disequality_survival() {
   return unit;
 }
 
-fn equality_input(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
+fn equality_input(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    claim strict: ilt(left, right) because "strict";
+    if ilt(left, right) {
+    } else {
+      return unit;
+    }
+  } else if ieq(left, right) {
   } else {
-    claim equal: ieq(left, right) because "equal";
+    return unit;
   }
   need_distinct(left: left, right: right);
   return unit;
 }
 
-fn missing_input(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
+fn missing_input(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    claim strict: ilt(left, right) because "strict";
-  } else {
-    claim no_relation: True() because "no relation";
+    if ilt(left, right) {
+    } else {
+      return unit;
+    }
   }
   need_distinct(left: left, right: right);
   return unit;
 }
 
-fn killed_input(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
+fn killed_input(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    claim strict_then_killed: ilt(left, right) because "strict then killed";
+    if ilt(left, right) {
+    } else {
+      return unit;
+    }
     set left = left +wrap 1_u64;
+  } else if ilt(right, left) {
   } else {
-    claim other_strict: ilt(right, left) because "other strict";
+    return unit;
   }
   need_distinct(left: left, right: right);
   return unit;
@@ -3449,34 +3679,53 @@ fn derived_disequality_closure_preserves_contradiction_and_no_loop_induction() {
   return unit;
 }
 
-fn reverse_weak_transitivity_control(left: own u64, right: own u64) -> result: own unit traps {
-  claim weak: ile(left, right) because "weak";
-  claim strict_reverse: ilt(right, left) because "strict reverse";
-  impossible();
-  return unit;
-}
-
-fn both_strict(left: own u64, right: own u64) -> result: own unit traps {
-  claim first_strict: ilt(left, right) because "first strict";
-  claim second_strict: ilt(right, left) because "second strict";
-  impossible();
-  return unit;
-}
-
-fn all_contradictory(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
-  if choose {
-    claim left_contradiction: ilt(left, left) because "left contradiction";
+fn reverse_weak_transitivity_control(left: own u64, right: own u64) -> result: own unit pure {
+  if ile(left, right) {
   } else {
-    claim right_contradiction: ilt(right, right) because "right contradiction";
+    return unit;
+  }
+  if ilt(right, left) {
+  } else {
+    return unit;
   }
   impossible();
   return unit;
 }
 
-fn no_induction(left: own u64, right: own u64, leave: own Bool) -> result: own unit traps {
+fn both_strict(left: own u64, right: own u64) -> result: own unit pure {
+  if ilt(left, right) {
+  } else {
+    return unit;
+  }
+  if ilt(right, left) {
+  } else {
+    return unit;
+  }
+  impossible();
+  return unit;
+}
+
+fn all_contradictory(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
+  if choose {
+    if ilt(left, left) {
+    } else {
+      return unit;
+    }
+  } else if ilt(right, right) {
+  } else {
+    return unit;
+  }
+  impossible();
+  return unit;
+}
+
+fn no_induction(left: own u64, right: own u64, leave: own Bool) -> result: own unit pure {
   loop @again {
     need_distinct(left: left, right: right);
-    claim inside_only: ilt(left, right) because "inside only";
+    if ilt(left, right) {
+    } else {
+      return unit;
+    }
     if leave {
       break @again;
     }
@@ -3730,13 +3979,17 @@ fn value_if_delivery_joins_unequal_bounds_through_direct_edge_parents() {
   return unit;
 }
 
-fn choose(value: own i32, narrow: own Bool) -> result: own unit traps {
+fn choose(value: own i32, narrow: own Bool) -> result: own unit pure {
   let picked = if narrow {
-    claim narrow: ilt(value, 8_i32) because "narrow";
+    if ilt(value, 8_i32) {
+      give value;
+    } else {
+      return unit;
+    }
+  } else if ilt(value, 128_i32) {
     give value;
   } else {
-    claim wide: ilt(value, 128_i32) because "wide";
-    give value;
+    return unit;
   }
   guard(value: picked);
   return unit;
@@ -3783,8 +4036,11 @@ command fn main() -> status: own ExitStatus pure {
             .derivations
             .nodes
             .iter()
-            .filter(|node| matches!(
-                node,
+            .enumerate()
+            .filter(|(index, node)| {
+                summary.derivations.node_views[*index] == ProofView::Complete
+                    && matches!(
+                *node,
                 DerivationNode::PostconditionGive {
                     relation: Relation::Bound {
                         right: ZERO,
@@ -3793,7 +4049,7 @@ command fn main() -> status: own ExitStatus pure {
                     },
                     ..
                 }
-            ))
+            )})
             .count(),
         2,
         "the target bound retains exactly its two selected edge facts"
@@ -3803,7 +4059,9 @@ command fn main() -> status: own ExitStatus pure {
             .derivations
             .roots
             .iter()
-            .filter(|root| matches!(
+            .filter(|root| {
+                summary.derivations.node_views[root.node.0 as usize] == ProofView::Complete
+                    && matches!(
                 &summary.derivations.nodes[root.node.0 as usize],
                 DerivationNode::PostconditionGive {
                     relation: Relation::Bound {
@@ -3820,7 +4078,7 @@ command fn main() -> status: own ExitStatus pure {
                     },
                     ..
                 }
-            ))
+            )})
             .count(),
         3,
         "the target has two direct Give roots and one joined root"
@@ -3871,25 +4129,34 @@ fn missing_value_if_evidence_and_value_match_create_no_delivery_roots() {
   Wide();
 }
 
-fn missing(value: own i32, narrow: own Bool) -> result: own i32 traps {
+fn missing(value: own i32, narrow: own Bool) -> result: own i32 pure {
   let picked = if narrow {
-    claim narrow: ilt(value, 8_i32) because "narrow";
-    give value;
+    if ilt(value, 8_i32) {
+      give value;
+    } else {
+      return value;
+    }
   } else {
     give value;
   }
   return picked;
 }
 
-fn matched(value: own i32, choice: own Choice) -> result: own i32 traps {
+fn matched(value: own i32, choice: own Choice) -> result: own i32 pure {
   let picked = match choice {
     Narrow() => {
-      claim narrow: ilt(value, 8_i32) because "narrow";
-      give value;
+      if ilt(value, 8_i32) {
+        give value;
+      } else {
+        return value;
+      }
     }
     Wide() => {
-      claim wide: ilt(value, 128_i32) because "wide";
-      give value;
+      if ilt(value, 128_i32) {
+        give value;
+      } else {
+        return value;
+      }
     }
   }
   return picked;
@@ -3924,26 +4191,36 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn nonbare_carriers_and_branch_local_support_create_no_delivery_roots() {
-    let source = br#"fn computed(value: own i32, narrow: own Bool) -> result: own i32 traps {
+    let source = br#"fn computed(value: own i32, narrow: own Bool) -> result: own i32 pure {
   let picked = if narrow {
-    claim narrow: ilt(value, 8_i32) because "narrow";
+    if ilt(value, 8_i32) {
+      give value +wrap 0_i32;
+    } else {
+      return value;
+    }
+  } else if ilt(value, 128_i32) {
     give value +wrap 0_i32;
   } else {
-    claim wide: ilt(value, 128_i32) because "wide";
-    give value +wrap 0_i32;
+    return value;
   }
   return picked;
 }
 
-fn scoped(value: own i32, narrow: own Bool) -> result: own i32 traps {
+fn scoped(value: own i32, narrow: own Bool) -> result: own i32 pure {
   let picked = if narrow {
     let limit = ixor(value, 1_i32);
-    claim narrow: ine(value, limit) because "narrow";
-    give value;
+    if ine(value, limit) {
+      give value;
+    } else {
+      return value;
+    }
   } else {
     let limit = ixor(value, 2_i32);
-    claim wide: ine(value, limit) because "wide";
-    give value;
+    if ine(value, limit) {
+      give value;
+    } else {
+      return value;
+    }
   }
   return picked;
 }
@@ -3977,13 +4254,17 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_contradictory_first_delivery_edge_cannot_launder_the_fresh_receiver() {
-    let source = br#"fn choose(value: own i32, impossible: own Bool) -> result: own i32 traps {
+    let source = br#"fn choose(value: own i32, impossible: own Bool) -> result: own i32 pure {
   let picked = if impossible {
-    claim contradiction: ilt(value, value) because "contradiction";
+    if ilt(value, value) {
+      give value;
+    } else {
+      return value;
+    }
+  } else if ilt(value, 128_i32) {
     give value;
   } else {
-    claim bound: ilt(value, 128_i32) because "bound";
-    give value;
+    return value;
   }
   return picked;
 }
@@ -3998,7 +4279,12 @@ command fn main() -> status: own ExitStatus pure {
         .derivations
         .nodes
         .iter()
+        .enumerate()
         .filter_map(|node| {
+            let (index, node) = node;
+            if summary.derivations.node_views[index] != ProofView::Complete {
+                return None;
+            }
             let DerivationNode::PostconditionDeliveryJoin {
                 relation:
                     Relation::Bound {
@@ -4123,17 +4409,21 @@ fn a_prv_event_discards_a_no_ensures_value_if_delivery_batch() {
   }
 }
 
-fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
-  let room = len(values);
-  claim bounded: ilt(position, room) because "claimed parameter bound";
+fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
+fn read(values: own array<u8, 4>, raw_position: own u64) -> result: own u8 traps {
+  let position = clamp_three(value: raw_position);
+  claim bounded: ilt(position, 4_u64) because "premises: position is returned by clamp_three\nderivation: clamp_three returns at most three, so position is below four\nconclusion: position is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript consumes this bound";
   return values[position];
 }
 
 command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
-    let position = args_count<'a>(args: &'a args);
-    let selected = read(values: move values, position: position);
+    let raw_position = args_count<'a>(args: &'a args);
+    let selected = read(values: move values, raw_position: raw_position);
   }
   return exit_status(code: 0_u8);
 }
@@ -4805,11 +5095,15 @@ command fn main() -> status: own ExitStatus pure {
 fn counted_roots_cover_contradictory_preheaders_and_neutral_join_predecessors() {
     let source = br#"const count: u64 = 1_u64;
 
-fn contradictory(left: own u64, right: own u64, choose: own Bool) -> result: own unit traps {
+fn contradictory(left: own u64, right: own u64, choose: own Bool) -> result: own unit pure {
   if choose {
-    claim left_contradiction: ilt(left, left) because "left contradiction";
+    if ilt(left, left) {
+    } else {
+      return unit;
+    }
+  } else if ilt(right, right) {
   } else {
-    claim right_contradiction: ilt(right, right) because "right contradiction";
+    return unit;
   }
   for @impossible i in 0_u64..1_u64 {
   }
@@ -5488,17 +5782,21 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_passed_claim_establishes_its_comparison_on_the_continuation() {
-    let source = br#"const count: u64 = 4_u64;
-
-fn direct(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
-  claim i_must_be_in_range: ilt(i, 4_u64) because "i must be in range";
-  return values[i];
+    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
 }
 
-fn through_origin(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
-  let ok = ilt(i, 4_u64);
-  claim i_must_be_in_range: ok because "i must be in range";
-  return values[i];
+fn direct(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
+  let bounded = clamp_three(value: input);
+  claim i_must_be_in_range: ilt(bounded, 4_u64) because "premises: bounded is returned by clamp_three\nderivation: clamp_three returns at most three, so bounded is below four\nconclusion: bounded is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript consumes this bound";
+  return values[bounded];
+}
+
+fn through_origin(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
+  let bounded = clamp_three(value: input);
+  let ok = ilt(bounded, 4_u64);
+  claim i_must_be_in_range: ok because "premises: bounded is returned by clamp_three and ok is bounded below four\nderivation: clamp_three returns at most three, so ok is true\nconclusion: bounded is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript consumes the comparison origin of ok";
+  return values[bounded];
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -5515,24 +5813,29 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_claim_on_a_band_establishes_its_conjuncts_not_a_whole_tree_relation() {
-    // `band` itself has no comparison projection [ENT-3], so the whole tree
-    // delivers no L0 relation of its own; its passed claim instead
-    // establishes the signed decomposition members, and `ilt(i, 4)`'s
-    // projection is what discharges the subscript.
-    let source = br#"const count: u64 = 4_u64;
+    // Both conjuncts are genuine checker residuals and each is consumed by a
+    // distinct bounds obligation.  A checker-known unsigned lower bound would
+    // overlap the claim and must therefore not be used as the second member.
+    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
 
-fn read(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
-  let low = ilt(i, 4_u64);
-  let high = ige(i, 0_u64);
-  claim i_must_be_in_range: band(low, high) because "i must be in range";
-  return values[i];
+fn read(left_values: own array<i32, 4>, right_values: own array<i32, 4>, left_raw: own u64, right_raw: own u64) -> result: own i32 traps {
+  let left = clamp_three(value: left_raw);
+  let right = clamp_three(value: right_raw);
+  let left_inside = ilt(left, 4_u64);
+  let right_inside = ilt(right, 4_u64);
+  claim both_inside: band(left_inside, right_inside) because "premises: left and right are returned by clamp_three\nderivation: each result is at most three and is therefore below four\nconclusion: both left and right are below four\nchecker gap: ENT does not publish result bounds for the uncontracted clamp_three calls\nconsumers: the two array subscripts consume the left and right bounds respectively";
+  let first = left_values[left];
+  let second = right_values[right];
+  return first +wrap second;
 }
 
 command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_eq!(discharge_flags(source, "read"), vec![true]);
+    assert_eq!(discharge_flags(source, "read"), vec![true, true]);
 }
 
 // ---------------------------------------------------------------------
@@ -6849,11 +7152,15 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
 
 #[test]
 fn a_passed_claim_establishes_its_fact_on_the_continuation() {
-    let source = br#"fn read(values: own buffer<i32>, i: own u64) -> result: own i32 traps {
-  let n = len(values);
-  let inside = ilt(i, n);
-  claim in_range: inside because "the caller walks 0..len";
-  return values[i];
+    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
+fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
+  let bounded = clamp_three(value: input);
+  let inside = ilt(bounded, 4_u64);
+  claim in_range: inside because "premises: bounded is returned by clamp_three\nderivation: clamp_three returns at most three, so bounded is below four\nconclusion: bounded is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript consumes this bound";
+  return values[bounded];
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -6879,11 +7186,15 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn the_claim_ledger_reports_exact_source_text_used_proof_and_provenance() {
-    let source = br#"fn read(values: own buffer<i32>, i: own u64) -> result: own i32 traps {
-  let n = len(values);
-  let inside = ilt(i, n);
-  claim in_range: inside because "the caller walks 0..len";
-  return values[i];
+    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
+fn read(values: own array<i32, 4>, i: own u64) -> result: own i32 traps {
+  let bounded = clamp_three(value: i);
+  let inside = ilt(bounded, 4_u64);
+  claim in_range: inside because "premises: bounded is returned by clamp_three called with i\nderivation: clamp_three returns imin(i, 3), which is at most three and below four\nconclusion: bounded is below four\nchecker gap: ENT does not publish result bounds for an uncontracted user call\nconsumers: the array subscript values[bounded] requires this bound";
+  return values[bounded];
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -6901,14 +7212,38 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(entry.source.coordinate.source().ordinal(), 0);
         assert_eq!(entry.name, "in_range");
         assert_eq!(entry.predicate, "inside");
-        assert_eq!(entry.justification, "the caller walks 0..len");
+        assert_eq!(
+            entry.justification.raw,
+            "premises: bounded is returned by clamp_three called with i\n\
+derivation: clamp_three returns imin(i, 3), which is at most three and below four\n\
+conclusion: bounded is below four\n\
+checker gap: ENT does not publish result bounds for an uncontracted user call\n\
+consumers: the array subscript values[bounded] requires this bound"
+        );
+        assert_eq!(
+            entry.justification.premises,
+            "bounded is returned by clamp_three called with i"
+        );
+        assert_eq!(
+            entry.justification.derivation,
+            "clamp_three returns imin(i, 3), which is at most three and below four"
+        );
+        assert_eq!(entry.justification.conclusion, "bounded is below four");
+        assert_eq!(
+            entry.justification.checker_gap,
+            "ENT does not publish result bounds for an uncontracted user call"
+        );
+        assert_eq!(
+            entry.justification.consumers,
+            "the array subscript values[bounded] requires this bound"
+        );
         assert_eq!(entry.disposition, ClaimDisposition::Retained);
         assert_eq!(entry.lifecycle_derivation, None);
         let start = entry.source.coordinate.start().value() as usize;
         let end = entry.source.coordinate.end().value() as usize;
         assert_eq!(
             &source[start..end],
-            br#"claim in_range: inside because "the caller walks 0..len";"#
+            br#"claim in_range: inside because "premises: bounded is returned by clamp_three called with i\nderivation: clamp_three returns imin(i, 3), which is at most three and below four\nconclusion: bounded is below four\nchecker gap: ENT does not publish result bounds for an uncontracted user call\nconsumers: the array subscript values[bounded] requires this bound";"#
         );
 
         assert_eq!(entry.uses.len(), 1);
@@ -6932,6 +7267,7 @@ command fn main() -> status: own ExitStatus pure {
                 &FlowEvent {
                     kind: FlowEventKind::S3,
                     node_path: Some(entry.source.node_path.clone()),
+                    claim_component: Some(0),
                 }
             );
         }
@@ -6986,29 +7322,16 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn the_claim_ledger_links_only_live_canonical_s3_premises() {
-    let source = br#"fn first_wins(values: own buffer<i32>, i: own u64) -> result: own i32 traps {
-  let n = len(values);
-  let inside = ilt(i, n);
-  claim first: inside because "first proof";
-  claim second: inside because "duplicate proof";
-  return values[i];
+    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
 }
 
-fn killed(values: own buffer<i32>, i: own u64, replacement: own u64) -> result: own i32 traps {
-  let offset = i;
-  let n = len(values);
-  let inside = ilt(offset, n);
-  claim stale: inside because "killed before use";
-  set offset = replacement;
-  return values[offset];
-}
-
-fn joined(values: own buffer<i32>, i: own u64, choose: own Bool) -> result: own i32 traps {
-  let n = len(values);
+fn joined(values: own array<i32, 4>, input: own u64, choose: own Bool) -> result: own i32 traps {
+  let i = clamp_three(value: input);
   if choose {
-    claim left: ilt(i, n) because "left edge";
+    claim left: ilt(i, 4_u64) because "premises: i is returned by clamp_three\nderivation: clamp_three returns at most three, so i is below four\nconclusion: i is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the array subscript after the join consumes this true-arm proof";
   } else {
-    claim right: ilt(i, n) because "right edge";
+    claim right: ilt(i, 4_u64) because "premises: i is returned by clamp_three\nderivation: clamp_three returns at most three, so i is below four\nconclusion: i is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the array subscript after the join consumes this false-arm proof";
   }
   return values[i];
 }
@@ -7017,9 +7340,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_dark(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
-            panic!("dark claim-ledger source must remain observable: {outcome:?}");
+            panic!("the two genuine branch claims must be accepted: {outcome:?}");
         };
         validate_claim_ledger(&program.data);
         let entry = |name: &str| {
@@ -7031,18 +7354,6 @@ command fn main() -> status: own ExitStatus pure {
                 .find(|entry| entry.name == name)
                 .unwrap_or_else(|| panic!("claim {name} must be reported"))
         };
-
-        assert_eq!(entry("first").uses.len(), 1);
-        assert_eq!(entry("second").disposition, ClaimDisposition::Redundant);
-        assert!(entry("second").lifecycle_derivation.is_some());
-        assert!(
-            entry("second").uses.is_empty(),
-            "the later redundant S3 is not the canonical premise"
-        );
-        assert!(
-            entry("stale").uses.is_empty(),
-            "a killed S3 fact cannot support the undischarged leaf"
-        );
 
         let left = entry("left");
         let right = entry("right");
@@ -7056,27 +7367,85 @@ command fn main() -> status: own ExitStatus pure {
             "the join retains each exact reaching S3 parent"
         );
     });
+
+    let duplicate = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
+fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
+  let i = clamp_three(value: input);
+  let inside = ilt(i, 4_u64);
+  claim first: inside because "premises: i is returned by clamp_three\nderivation: clamp_three returns at most three, so i is below four\nconclusion: i is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript consumes this bound";
+  claim second: inside because "premises: the earlier claim already establishes inside\nderivation: no residual remains for a second occurrence\nconclusion: inside is already checker-known at this point\nchecker gap: none; this negative fixture must be rejected as redundant\nconsumers: no consumer may receive duplicate claim authority";
+  return values[i];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(duplicate, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("the duplicate claim must reject: {outcome:?}");
+        };
+        let SemanticIssueKind::InvalidClaim(detail) = issue.kind() else {
+            panic!("expected duplicate-claim detail: {:?}", issue.kind());
+        };
+        assert_eq!(detail.name, "second");
+        assert_eq!(detail.classification, "redundant");
+    });
+
+    let killed = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
+fn read(values: own array<i32, 4>, input: own u64) -> result: own unit traps {
+  let i = clamp_three(value: input);
+  claim stale: ilt(i, 4_u64) because "premises: i is returned by clamp_three\nderivation: clamp_three returns at most three, so i is below four\nconclusion: i is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: no terminal consumer remains after i is overwritten, so this negative fixture must reject";
+  set i = 0_u64;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(killed, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("the killed claim must reject as non-residual: {outcome:?}");
+        };
+        let SemanticIssueKind::InvalidClaim(detail) = issue.kind() else {
+            panic!("expected non-residual detail: {:?}", issue.kind());
+        };
+        assert_eq!(detail.name, "stale");
+        assert_eq!(detail.classification, "non-residual");
+    });
 }
 
 #[test]
 fn one_claim_can_support_multiple_bounds_and_a_call_goal() {
-    let source = br#"fn need(index: own u64) -> result: own unit pure contract {
+    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
+fn need(index: own u64) -> result: own unit pure contract {
   requires ilt(index, 4_u64);
 } {
   return unit;
 }
 
-fn read(values: own buffer<i32>, i: own u64) -> result: own i32 traps {
-  let n = len(values);
-  let inside = ilt(i, n);
-  claim bounded: inside because "one proof, two reads";
+fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
+  let i = clamp_three(value: input);
+  let inside = ilt(i, 4_u64);
+  claim bounded: inside because "premises: i is returned by clamp_three\nderivation: clamp_three returns at most three, so i is below four\nconclusion: i is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: both following array subscripts consume the same bound";
   let first = values[i];
   let second = values[i];
   return first;
 }
 
-fn caller(i: own u64) -> result: own unit traps {
-  claim small: ilt(i, 4_u64) because "the call is guarded";
+fn caller(input: own u64) -> result: own unit traps {
+  let i = clamp_three(value: input);
+  claim small: ilt(i, 4_u64) because "premises: i is returned by clamp_three\nderivation: clamp_three returns at most three, so i is below four\nconclusion: i is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: need requires this exact bound for its index argument";
   need(index: i);
   return unit;
 }
@@ -7155,7 +7524,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_zero_argument_call_goal_retains_an_empty_dense_provenance_inventory() {
+fn a_zero_argument_call_goal_has_no_claim_or_argument_provenance() {
     let source = br#"fn need() -> result: own unit pure contract {
   define first = ilt(0_u64, 1_u64);
   define second = ilt(1_u64, 2_u64);
@@ -7165,11 +7534,7 @@ fn a_zero_argument_call_goal_retains_an_empty_dense_provenance_inventory() {
   return unit;
 }
 
-fn caller() -> result: own unit traps {
-  let first = ilt(0_u64, 1_u64);
-  let second = ilt(1_u64, 2_u64);
-  let complete = band(first, second);
-  claim ready: complete because "same closed goal";
+fn caller() -> result: own unit pure {
   need();
   return unit;
 }
@@ -7180,39 +7545,47 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
-            panic!("zero-argument claim call must be accepted: {outcome:?}");
+            panic!("zero-argument call must be accepted: {outcome:?}");
         };
         validate_claim_ledger(&program.data);
-        let entry = program
+        assert!(program.data.claim_ledger.entries.is_empty());
+        let caller = program
             .data
-            .claim_ledger
-            .entries
+            .functions
             .iter()
-            .find(|entry| entry.name == "ready")
-            .expect("ready claim");
-        assert_eq!(entry.uses.len(), 1);
-        assert_eq!(entry.uses[0].root, DerivationRootKind::CallGoal(0));
-        let ClaimUseProvenance::Call { arguments, bridges } = &entry.uses[0].provenance else {
-            panic!("the zero-argument call must retain call provenance");
-        };
-        assert!(arguments.is_empty());
-        assert!(bridges.is_empty());
-        let caller = &program.data.functions[entry.source.function.0 as usize];
+            .find(|function| function.name == "caller")
+            .expect("caller function");
+        assert_eq!(caller.entailment.call_goals.len(), 1);
         assert_eq!(caller.entailment.call_goals[0].argument_count, 0);
+        assert_eq!(
+            caller.entailment.call_goals[0].disposition,
+            CallGoalDisposition::Discharged
+        );
+        assert!(program
+            .data
+            .provenance
+            .call_argument_dispositions
+            .iter()
+            .all(|argument| argument.caller != caller.id));
     });
 }
 
 #[test]
 fn postcondition_routes_retain_claim_premises_through_complete_a0_parents() {
-    let source = br#"fn normalized(value: own i32) -> result: own i32 pure contract {
+    let source = br#"fn hidden_one() -> result: own i32 pure {
+  return 1_i32;
+}
+
+fn normalized(value: own i32) -> result: own i32 pure contract {
   requires ieq(value, 1_i32);
   ensures ieq(result, 1_i32);
 } {
   return 1_i32;
 }
 
-fn caller(value: own i32) -> result: own unit traps {
-  claim normalized_input: ieq(value, 1_i32) because "the call is guarded";
+fn caller() -> result: own unit traps {
+  let value = hidden_one();
+  claim normalized_input: ieq(value, 1_i32) because "premises: value is returned by hidden_one\nderivation: hidden_one returns the integer one, so value equals one\nconclusion: value equals one\nchecker gap: ENT does not publish result equalities for uncontracted calls\nconsumers: normalized requires value equal to one";
   let called = normalized(value: value);
   return unit;
 }
@@ -7234,23 +7607,27 @@ command fn main() -> status: own ExitStatus pure {
             .find(|entry| entry.name == "normalized_input")
             .expect("normalized_input claim");
         let caller = &program.data.functions[entry.source.function.0 as usize];
-        let direct_uses = entry
-            .uses
+        assert_eq!(entry.uses.len(), 1);
+        assert_eq!(entry.uses[0].root, DerivationRootKind::CallGoal(0));
+        let direct_roots = caller
+            .entailment
+            .derivations
+            .roots
             .iter()
-            .filter(|used| {
+            .filter(|root| {
                 matches!(
-                    used.root,
+                    root.kind,
                     DerivationRootKind::PostconditionDirectResult { .. }
                 )
             })
             .collect::<Vec<_>>();
-        assert_eq!(direct_uses.len(), 3, "one retained route per proof view");
+        assert_eq!(direct_roots.len(), 3, "one retained route per proof view");
         let call_goal = caller.entailment.call_goals[0]
             .derivation
             .expect("the complete call goal is discharged");
-        for used in direct_uses {
+        for root in direct_roots {
             let DerivationNode::PostconditionDirectResult { parent, .. } =
-                &caller.entailment.derivations.nodes[used.root_derivation.0 as usize]
+                &caller.entailment.derivations.nodes[root.node.0 as usize]
             else {
                 panic!("the route root names its direct-result node");
             };
@@ -7260,7 +7637,6 @@ command fn main() -> status: own ExitStatus pure {
                 panic!("the direct-result parent is the instantiated call summary");
             };
             assert!(a0_parents.contains(&call_goal));
-            assert!(!used.premise_derivations.is_empty());
         }
     });
 }
@@ -7268,28 +7644,32 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_loop_body_claim_links_only_the_obligation_it_reaches() {
     let source =
-        br#"fn read(values: own buffer<i32>, i: own u64, leave: own Bool) -> result: own i32 traps {
+        br#"fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
+fn read(values: own array<i32, 4>, input: own u64, leave: own Bool) -> result: own i32 traps {
   loop @again {
-    let n = len(values);
-    let inside = ilt(i, n);
-    claim loop_bound: inside because "this iteration checked the index";
-    let value = values[i];
+    let bounded = clamp_three(value: input);
+    let inside = ilt(bounded, 4_u64);
+    claim loop_bound: inside because "premises: bounded is returned by clamp_three in this iteration\nderivation: clamp_three returns at most three, so bounded is below four\nconclusion: bounded is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the array subscript in this iteration consumes this bound";
+    let value = values[bounded];
     if leave {
       return value;
     } else {
       break @again;
     }
   }
-  return values[i];
+  return values[0_u64];
 }
 
 command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    with_semantics_dark(source, |outcome| {
+    with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
-            panic!("dark loop ledger must remain observable: {outcome:?}");
+            panic!("the loop-local residual claim must be accepted: {outcome:?}");
         };
         validate_claim_ledger(&program.data);
         let entry = program
@@ -7304,15 +7684,27 @@ command fn main() -> status: own ExitStatus pure {
         let function = &program.data.functions[entry.source.function.0 as usize];
         assert_eq!(function.entailment.obligations.len(), 2);
         assert!(function.entailment.obligations[0].discharged);
-        assert!(!function.entailment.obligations[1].discharged);
+        assert!(function.entailment.obligations[1].discharged);
     });
 }
 
 #[test]
 fn concrete_generic_claims_keep_distinct_checked_program_identities() {
-    let source = br#"fn identity<T: Int>(value: own T) -> result: own T traps {
-  claim reflexive: ieq(value, value) because "identity";
+    let source = br#"fn hidden_identity<T: Int>(value: own T) -> result: own T pure {
   return value;
+}
+
+fn need_equal<T: Int>(left: own T, right: own T) -> result: own unit pure contract {
+  requires ieq(left, right);
+} {
+  return unit;
+}
+
+fn identity<T: Int>(value: own T) -> result: own T traps {
+  let echoed = hidden_identity<T>(value: value);
+  claim echo_preserved: ieq(echoed, value) because "premises: echoed is the result of hidden_identity applied to value\nderivation: hidden_identity returns its argument unchanged, so echoed equals value\nconclusion: echoed equals value\nchecker gap: ENT does not publish result equalities for uncontracted generic calls\nconsumers: need_equal requires the same equality for its two arguments";
+  need_equal<T>(left: echoed, right: value);
+  return echoed;
 }
 
 command fn main() -> status: own ExitStatus traps {
@@ -7331,7 +7723,7 @@ command fn main() -> status: own ExitStatus traps {
             .claim_ledger
             .entries
             .iter()
-            .filter(|entry| entry.name == "reflexive")
+            .filter(|entry| entry.name == "echo_preserved")
             .collect::<Vec<_>>();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].source.node_path, entries[1].source.node_path);
@@ -7345,18 +7737,29 @@ command fn main() -> status: own ExitStatus traps {
             entries[1].source.function_symbol
         );
         assert!(entries.iter().all(|entry| {
-            entry.disposition == ClaimDisposition::Redundant
-                && entry.lifecycle_derivation.is_some()
-                && entry.uses.is_empty()
+            entry.disposition == ClaimDisposition::Retained
+                && entry.lifecycle_derivation.is_none()
+                && entry.uses.len() == 1
         }));
     });
 }
 
 #[test]
-fn a_claim_without_comparison_origin_is_retained_and_never_judged() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
-  let flag = True();
-  claim held: flag because "constructed";
+fn an_opaque_bool_residual_is_retained_without_a_comparison_origin() {
+    let source = br#"fn hidden_true() -> result: own Bool pure {
+  return True();
+}
+
+fn need_true(flag: own Bool) -> result: own unit pure contract {
+  requires flag;
+} {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus traps {
+  let flag = hidden_true();
+  claim held: flag because "premises: flag is the result of hidden_true\nderivation: hidden_true returns True, so flag is true\nconclusion: flag is true\nchecker gap: ENT does not publish result predicates for uncontracted calls\nconsumers: need_true requires the exact opaque Bool flag";
+  need_true(flag: flag);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7366,6 +7769,8 @@ fn a_claim_without_comparison_origin_is_retained_and_never_judged() {
     assert_eq!(summary.claims[0].disposition, ClaimDisposition::Retained);
     assert_eq!(summary.claims[0].lifecycle_derivation, None);
     assert_eq!(summary.derivations.metrics.claim_lifecycle_roots, 0);
+    assert_eq!(summary.call_goals.len(), 1);
+    assert_eq!(summary.call_goals[0].disposition, CallGoalDisposition::Discharged);
 }
 
 // ---------------------------------------------------------------------
@@ -7373,12 +7778,12 @@ fn a_claim_without_comparison_origin_is_retained_and_never_judged() {
 // ---------------------------------------------------------------------
 
 #[test]
-fn a_derivable_claim_is_redundant_and_reports_the_advisory_without_rejecting() {
+fn a_derivable_claim_is_a_redundant_source_error() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
   if ilt(i, 4_u64) {
-    claim proven: ilt(i, 4_u64) because "already branched";
+    claim proven: ilt(i, 4_u64) because "premises: the branch establishes the bound\nderivation: the predicate is the branch condition\nconclusion: i is below four\nchecker gap: none because the checker already knows it\nconsumers: the following subscript";
     return values[i];
   } else {
     return 0_i32;
@@ -7390,28 +7795,15 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(program) = outcome else {
-            panic!("a redundant claim must not reject, got {outcome:?}");
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("a redundant claim must reject, got {outcome:?}");
         };
-        assert_eq!(program.data.claim_advisories.len(), 1);
-        assert_eq!(program.data.claim_advisories[0].function, "read");
-        assert_eq!(program.data.claim_advisories[0].name, "proven");
-        let summary = &program
-            .data
-            .functions
-            .iter()
-            .find(|function| function.name == "read")
-            .expect("read must exist")
-            .entailment;
-        validate_derivations(summary);
-        assert_eq!(summary.claims.len(), 1);
-        assert_eq!(summary.claims[0].disposition, ClaimDisposition::Redundant);
-        assert_eq!(summary.derivations.metrics.claim_lifecycle_roots, 1);
-        assert!(root_contains(
-            summary,
-            claim_lifecycle_root(summary, 0),
-            |node| matches!(node, DerivationNode::SourceBound { .. }),
-        ));
+        assert_eq!(issue.rule(), SemanticRule::Clm2);
+        let SemanticIssueKind::InvalidClaim(detail) = issue.kind() else {
+            panic!("expected redundant claim detail, got {:?}", issue.kind());
+        };
+        assert_eq!(detail.name, "proven");
+        assert_eq!(detail.classification, "redundant");
     });
 }
 
@@ -7421,7 +7813,7 @@ fn a_refuted_claim_is_a_clm2_rejection_with_predicate_and_negation() {
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
   if ige(i, 4_u64) {
-    claim in_range: ilt(i, 4_u64) because "refuted by the branch";
+    claim in_range: ilt(i, 4_u64) because "premises: the branch establishes i is at least four\nderivation: no valid derivation exists; this negative fixture asks CLM-2 to expose the contradiction\nconclusion: i is below four is intentionally refuted\nchecker gap: none; the checker must reject this source\nconsumers: the following subscript would consume the false bound if the claim were admitted";
     return values[i];
   } else {
     return 0_i32;
@@ -7442,24 +7834,12 @@ command fn main() -> status: own ExitStatus pure {
         };
         assert_eq!(detail.name, "in_range");
     });
-    let summary = entailment(source, "read");
-    validate_derivations(&summary);
-    assert!(matches!(
-        summary.claims[0].disposition,
-        ClaimDisposition::Refuted { .. }
-    ));
-    assert_eq!(summary.derivations.metrics.claim_lifecycle_roots, 1);
-    assert!(root_contains(
-        &summary,
-        claim_lifecycle_root(&summary, 0),
-        |node| matches!(node, DerivationNode::SourceBound { .. }),
-    ));
 }
 
 #[test]
 fn integer_domain_normalization_drives_positive_and_negative_claim_lifecycle() {
     let positive = br#"fn probe() -> result: own unit traps {
-  claim obvious: ishl.defined(1_u8, 1_u32) because "one is below eight";
+  claim obvious: ishl.defined(1_u8, 1_u32) because "premises: one is below eight\nderivation: the shift amount lies in the domain\nconclusion: the shift is defined\nchecker gap: none because normalization proves it\nconsumers: no valid residual consumer";
   return unit;
 }
 
@@ -7468,34 +7848,13 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     with_semantics(positive, |outcome| {
-        let SemanticOutcome::Complete(program) = outcome else {
-            panic!("a normalization-proved claim must remain accepted: {outcome:?}");
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("a normalization-proved claim must reject: {outcome:?}");
         };
-        assert_eq!(program.data.claim_advisories.len(), 1);
-        let summary = &program
-            .data
-            .functions
-            .iter()
-            .find(|function| function.name == "probe")
-            .expect("probe function")
-            .entailment;
-        validate_derivations(summary);
-        assert_eq!(summary.claims[0].disposition, ClaimDisposition::Redundant);
-        assert!(root_contains(
-            summary,
-            claim_lifecycle_root(summary, 0),
-            |node| matches!(
-                node,
-                DerivationNode::GoalNormalization {
-                    sign: GoalSign::Positive,
-                    ..
-                }
-            ),
-        ));
+        assert_eq!(issue.rule(), SemanticRule::Clm2);
     });
-
     let negative = br#"fn probe() -> result: own unit traps {
-  claim impossible: ishl.defined(1_u8, 8_u32) because "eight is outside the u8 shift domain";
+  claim impossible: ishl.defined(1_u8, 8_u32) because "premises: a u8 shift amount must be below eight\nderivation: no valid derivation exists because the written amount is eight\nconclusion: the shift-defined predicate is intentionally refuted\nchecker gap: none; normalization must reject this source\nconsumers: no consumer may receive this false domain fact";
   return unit;
 }
 
@@ -7513,36 +7872,15 @@ command fn main() -> status: own ExitStatus pure {
         };
         assert_eq!(detail.name, "impossible");
     });
-    let summary = entailment(negative, "probe");
-    validate_derivations(&summary);
-    assert!(matches!(
-        summary.claims[0].disposition,
-        ClaimDisposition::Refuted { .. }
-    ));
-    assert!(root_contains(
-        &summary,
-        claim_lifecycle_root(&summary, 0),
-        |node| matches!(
-            node,
-            DerivationNode::GoalNormalization {
-                sign: GoalSign::Negative,
-                ..
-            }
-        ),
-    ));
 }
 
 #[test]
-fn a_contradictory_state_never_refutes_a_claim() {
-    // [ENT-4]: after a loop with no break the continuation state is
-    // contradictory; every relation is derivable there, so the claim is
-    // redundant, never rejected. The loop must terminate for the checker's
-    // reachability rules, so it returns from inside.
+fn a_contradictory_state_rejects_a_claim_as_vacuous_before_refutation() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
   if ilt(i, 0_u64) {
-    claim absurd: ilt(i, 4_u64) because "under a false branch";
+    claim absurd: ilt(i, 4_u64) because "premises: the u64 branch condition i below zero is impossible\nderivation: no theorem may be admitted from an unreachable contradictory path\nconclusion: this claim is intentionally vacuous\nchecker gap: none; contradiction-first lifecycle must reject it\nconsumers: the following subscript is unreachable and is not an eligible consumer";
     return values[i];
   } else {
     return 0_i32;
@@ -7553,36 +7891,27 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    // i < 0 is unsatisfiable for u64: the True arm's state is contradictory,
-    // so the claim is redundant there and the subscript discharges.
-    let summary = entailment(source, "read");
-    validate_derivations(&summary);
-    assert_eq!(summary.claims.len(), 1);
-    assert_eq!(summary.claims[0].disposition, ClaimDisposition::Redundant);
-    assert!(root_contains(
-        &summary,
-        claim_lifecycle_root(&summary, 0),
-        |node| matches!(
-            node,
-            DerivationNode::L0Contradiction { .. }
-                | DerivationNode::JoinContradiction { .. }
-                | DerivationNode::MaterializedContradiction { .. }
-        ),
-    ));
-    assert_eq!(discharge_flags(source, "read"), vec![true]);
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("a vacuous claim must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Clm2);
+        let SemanticIssueKind::InvalidClaim(detail) = issue.kind() else {
+            panic!("expected vacuous claim detail, got {:?}", issue.kind());
+        };
+        assert_eq!(detail.name, "absurd");
+        assert_eq!(detail.classification, "vacuous");
+        assert_eq!(detail.reason, "the pre-claim state is contradictory");
+    });
 }
 
 #[test]
-fn claim_lifecycle_roots_and_dense_ids_are_stable_across_repeated_analysis() {
-    let source = br#"fn inspect(values: own buffer<i32>, i: own u64) -> result: own unit traps {
+fn claim_lifecycle_rejection_is_stable_across_repeated_analysis() {
+    let source = br#"fn inspect(i: own u64) -> result: own unit traps {
   if ilt(i, 4_u64) {
-    claim redundant: ilt(i, 4_u64) because "the branch established it";
-    let n = len(values);
-    claim retained: ilt(i, n) because "the caller checked the buffer";
-    let observed = values[i];
+    claim redundant: ilt(i, 4_u64) because "premises: the branch establishes i below four\nderivation: the predicate is exactly the active branch condition\nconclusion: i is below four\nchecker gap: none; this negative fixture must be rejected as redundant\nconsumers: no consumer may receive authority from a redundant claim";
     return unit;
   } else {
-    claim refuted: ilt(i, 4_u64) because "the branch established its negation";
     return unit;
   }
 }
@@ -7591,57 +7920,20 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let expected = entailment(source, "inspect");
-    let expected_ledger = claim_ledger(source);
-    validate_derivations(&expected);
-    assert_eq!(expected.claims.len(), 3);
-    assert_eq!(
-        expected
-            .derivations
-            .roots
-            .iter()
-            .filter_map(|root| match root.kind {
-                DerivationRootKind::ClaimLifecycle { occurrence, kind } => {
-                    Some((occurrence, kind, root.node))
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>(),
-        vec![
-            (
-                0,
-                ClaimLifecycleKind::Redundant,
-                claim_lifecycle_root(&expected, 0),
-            ),
-            (
-                2,
-                ClaimLifecycleKind::Refuted,
-                claim_lifecycle_root(&expected, 2),
-            ),
-        ]
-    );
-    assert_eq!(expected.claims[1].lifecycle_derivation, None);
-    let retained = expected_ledger
-        .entries
-        .iter()
-        .find(|entry| entry.name == "retained")
-        .expect("retained claim ledger entry");
-    assert_eq!(retained.uses.len(), 1);
-    assert!(!retained.uses[0].premise_derivations.is_empty());
-    let ClaimUseProvenance::ProtectedLeaf { direct_demands, .. } = &retained.uses[0].provenance
-    else {
-        panic!("the repeated ledger must retain exact protected provenance");
+    let render_issue = || {
+        let mut rendered = None;
+        with_semantics(source, |outcome| {
+            let SemanticOutcome::SourceIssue { issue } = outcome else {
+                panic!("the redundant claim must reject: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Clm2);
+            rendered = Some(format!("{issue:#?}"));
+        });
+        rendered.expect("one deterministic issue")
     };
-    assert!(!direct_demands.is_empty());
-    // Exactly two re-analyses, and no more. The first proves the summary and
-    // the ledger are reproducible at all; the second proves that first
-    // re-analysis did not merely replay state warmed by the analysis above,
-    // and gives per-run ordering nondeterminism a second independent chance
-    // to show itself. A third re-analysis can only repeat the evidence the
-    // second one already carries, so the test-economy rule forbids it.
+    let expected = render_issue();
     for _ in 0..2 {
-        assert_eq!(entailment(source, "inspect"), expected);
-        assert_eq!(claim_ledger(source), expected_ledger);
+        assert_eq!(render_issue(), expected);
     }
 }
 
@@ -7850,7 +8142,7 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
         crate::Inventory::OpenByName,
     ];
     for ((inputs, expected_claims), inventory) in
-        bundles.into_iter().zip([10, 12, 8]).zip(inventories)
+        bundles.into_iter().zip([2, 1, 3]).zip(inventories)
     {
         super::with_semantics_inputs_for(inputs, inventory, |outcome| {
             let SemanticOutcome::Complete(program) = outcome else {
@@ -7872,7 +8164,7 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
                     assert_eq!(entry.source.function_symbol, function.symbol);
                     assert!(!entry.name.is_empty());
                     assert!(!entry.predicate.is_empty());
-                    assert!(!entry.justification.is_empty());
+                    assert!(!entry.justification.raw.is_empty());
                     assert!(!entry.source.node_path.components().is_empty());
                     (entry.source.function.0, entry.source.node_path.components())
                 })
@@ -8414,9 +8706,8 @@ fn counted_range_reads_a_dereferenced_projected_endpoint_as_an_s11_term() {
   value: box<u64>;
 }
 
-fn probe(holder: own Holder) -> result: own unit traps {
+fn probe(holder: own Holder) -> result: own unit pure {
   for @items i in deref(holder.value)..1_u64 {
-    claim impossible: ine(i, 0_u64) because "the true edge fixes i to zero";
   }
   return unit;
 }
@@ -8442,12 +8733,7 @@ command fn main() -> status: own ExitStatus pure {
         endpoint.projections,
         vec![PlaceProjection::Field(0), PlaceProjection::Deref]
     );
-    let outcomes = &summary.claims;
-    assert_eq!(outcomes.len(), 1);
-    assert!(matches!(
-        outcomes[0].disposition,
-        ClaimDisposition::Refuted { .. }
-    ));
+    assert!(summary.claims.is_empty());
 }
 
 #[test]
@@ -8456,12 +8742,18 @@ fn counted_range_kills_a_borrowed_projected_endpoint_after_a_write() {
   upper: u64;
 }
 
-fn probe(limit: own Limit) -> result: own unit traps {
+fn need(index: own u64, upper: own u64) -> result: own unit pure contract {
+  requires ilt(index, upper);
+} {
+  return unit;
+}
+
+fn probe(limit: own Limit) -> result: own unit pure {
   region 'r {
     let holder = &uniq 'r limit;
     for @items i in 0_u64..deref(holder).upper {
       set deref(holder).upper = 0_u64;
-      claim safe: ige(i, deref(holder).upper) because "the reread is not the captured endpoint";
+      need(index: i, upper: deref(holder).upper);
     }
   }
   return unit;
@@ -8471,19 +8763,22 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let summary = entailment(source, "probe");
-    validate_derivations(&summary);
-    assert_eq!(summary.counted_derivations.len(), 1);
-    let outcomes = &summary.claims;
-    assert_eq!(outcomes.len(), 1);
-    assert_eq!(outcomes[0].disposition, ClaimDisposition::Retained);
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("the written endpoint must be reread and refute the call: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn8);
+        let SemanticIssueKind::UndischargedCallRequirement(detail) = issue.kind() else {
+            panic!("expected FN-8 detail, got {:?}", issue.kind());
+        };
+        assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
+    });
 }
 
 #[test]
 fn counted_range_preserves_multiple_deref_projections_in_one_endpoint_term() {
-    let source = br#"fn probe(holder: own box<box<u64>>) -> result: own unit traps {
+    let source = br#"fn probe(holder: own box<box<u64>>) -> result: own unit pure {
   for @items i in deref(deref(holder))..1_u64 {
-    claim impossible: ine(i, 0_u64) because "the true edge fixes i to zero";
   }
   return unit;
 }
@@ -8495,19 +8790,26 @@ command fn main() -> status: own ExitStatus pure {
     let summary = entailment(source, "probe");
     validate_derivations(&summary);
     assert_eq!(summary.counted_derivations.len(), 1);
-    let outcomes = &summary.claims;
-    assert_eq!(outcomes.len(), 1);
-    assert!(matches!(
-        outcomes[0].disposition,
-        ClaimDisposition::Refuted { .. }
-    ));
+    let Relation::Equal { right, .. } = summary.counted_derivations[0]
+        .lower_capture_eq_endpoint
+        .relation
+    else {
+        panic!("the lower capture identity must be an equality");
+    };
+    let TermKind::ProjectedPlace(endpoint, IntegerType::U64) = retained_term(&summary, right)
+    else {
+        panic!("the nested box endpoint must remain a projected place");
+    };
+    assert_eq!(
+        endpoint.projections,
+        vec![PlaceProjection::Deref, PlaceProjection::Deref]
+    );
 }
 
 #[test]
 fn counted_range_restores_a_borrow_holder_deref_before_nested_box_derefs() {
-    let source = br#"fn probe['r](holder: &'r box<box<u64>>) -> result: own unit reads('r), traps {
+    let source = br#"fn probe['r](holder: &'r box<box<u64>>) -> result: own unit reads('r) {
   for @items i in deref(deref(deref(holder)))..1_u64 {
-    claim impossible: igt(deref(deref(deref(holder))), i) because "the header proves the opposite";
   }
   return unit;
 }
@@ -8516,27 +8818,31 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let outcomes = claims(source, "probe");
-    assert_eq!(outcomes.len(), 1);
-    let ClaimDisposition::Refuted {
-        predicate,
-        negation,
-    } = &outcomes[0].disposition
+    let summary = entailment(source, "probe");
+    let Relation::Equal { right, .. } = summary.counted_derivations[0]
+        .lower_capture_eq_endpoint
+        .relation
     else {
-        panic!(
-            "the opposite of the counted guard must be refuted: {:?}",
-            outcomes[0].disposition
-        );
+        panic!("the lower capture identity must be an equality");
     };
-    assert!(predicate.contains("deref(deref(deref(holder)))"));
-    assert!(negation.contains("deref(deref(deref(holder)))"));
+    let TermKind::ProjectedPlace(endpoint, IntegerType::U64) = retained_term(&summary, right)
+    else {
+        panic!("the borrowed nested endpoint must remain a projected place");
+    };
+    assert_eq!(
+        endpoint.projections,
+        vec![
+            PlaceProjection::Deref,
+            PlaceProjection::Deref,
+            PlaceProjection::Deref,
+        ]
+    );
 }
 
 #[test]
 fn counted_range_does_not_treat_a_read_only_box_deref_as_a_consume() {
-    let source = br#"fn probe(holder: own box<u64>) -> result: own unit traps {
+    let source = br#"fn probe(holder: own box<u64>) -> result: own unit pure {
   for @items i in deref(holder)..1_u64 {
-    claim impossible: igt(deref(holder), i) because "the captured lower endpoint cannot exceed the binder";
   }
   return unit;
 }
@@ -8545,20 +8851,25 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let outcomes = claims(source, "probe");
-    assert_eq!(outcomes.len(), 1);
-    assert!(matches!(
-        outcomes[0].disposition,
-        ClaimDisposition::Refuted { .. }
-    ));
+    let summary = entailment(source, "probe");
+    let Relation::Equal { right, .. } = summary.counted_derivations[0]
+        .lower_capture_eq_endpoint
+        .relation
+    else {
+        panic!("the lower capture identity must be an equality");
+    };
+    let TermKind::ProjectedPlace(endpoint, IntegerType::U64) = retained_term(&summary, right)
+    else {
+        panic!("the read-only box endpoint must remain a projected place");
+    };
+    assert_eq!(endpoint.projections, vec![PlaceProjection::Deref]);
 }
 
 #[test]
 fn counted_range_does_not_duplicate_the_deref_of_a_let_bound_owning_box() {
-    let source = br#"fn probe() -> result: own unit allocates(heap), traps {
+    let source = br#"fn probe() -> result: own unit allocates(heap) {
   let holder = box_new(0_u64);
   for @items i in deref(holder)..1_u64 {
-    claim impossible: igt(deref(holder), i) because "the captured lower endpoint cannot exceed the binder";
   }
   return unit;
 }
@@ -8567,13 +8878,18 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let outcomes = claims(source, "probe");
-    assert_eq!(outcomes.len(), 1);
-    let ClaimDisposition::Refuted { predicate, .. } = &outcomes[0].disposition else {
-        panic!("the opposite of the counted lower bound must be refuted");
+    let summary = entailment(source, "probe");
+    let Relation::Equal { right, .. } = summary.counted_derivations[0]
+        .lower_capture_eq_endpoint
+        .relation
+    else {
+        panic!("the lower capture identity must be an equality");
     };
-    assert!(predicate.contains("deref(holder)"));
-    assert!(!predicate.contains("deref(deref(holder))"));
+    let TermKind::ProjectedPlace(endpoint, IntegerType::U64) = retained_term(&summary, right)
+    else {
+        panic!("the owning box endpoint must remain a projected place");
+    };
+    assert_eq!(endpoint.projections, vec![PlaceProjection::Deref]);
 }
 
 // ---------------------------------------------------------------------
@@ -8732,18 +9048,17 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn whole_goal_sources_discharge_atomically_while_children_do_not() {
-    let source = br#"fn guarded(value: own u64) -> result: own unit traps contract {
+fn whole_goal_sources_and_boolean_introduction_discharge_exact_parents() {
+    let source = br#"fn guarded(value: own u64) -> result: own unit pure contract {
   define positive = igt(value, 0_u64);
   define small = ilt(value, 10_u64);
   define complete = band(positive, small);
   requires complete;
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn from_branch(value: own u64) -> result: own unit traps {
+fn from_branch(value: own u64) -> result: own unit pure {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -8755,7 +9070,7 @@ fn from_branch(value: own u64) -> result: own unit traps {
   return unit;
 }
 
-fn from_requirement(value: own u64) -> result: own unit traps contract {
+fn from_requirement(value: own u64) -> result: own unit pure contract {
   define positive = igt(value, 0_u64);
   define small = ilt(value, 10_u64);
   define complete = band(positive, small);
@@ -8765,16 +9080,7 @@ fn from_requirement(value: own u64) -> result: own unit traps contract {
   return unit;
 }
 
-fn from_claim(value: own u64) -> result: own unit traps {
-  let positive = igt(value, 0_u64);
-  let small = ilt(value, 10_u64);
-  let complete = band(positive, small);
-  claim established: complete because "complete";
-  guarded(value: value);
-  return unit;
-}
-
-fn from_children(value: own u64) -> result: own unit traps {
+fn from_children(value: own u64) -> result: own unit pure {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   if positive {
@@ -8789,7 +9095,7 @@ fn from_children(value: own u64) -> result: own unit traps {
   return unit;
 }
 
-fn from_false(value: own u64) -> result: own unit traps {
+fn from_false(value: own u64) -> result: own unit pure {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -8806,21 +9112,25 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
 
-    for function in ["from_branch", "from_requirement", "from_claim"] {
+    for (function, evidence) in [
+        (
+            "from_branch",
+            vec![CallGoalEvidence::OpaquePositive],
+        ),
+        (
+            "from_requirement",
+            vec![CallGoalEvidence::OpaquePositive],
+        ),
+        (
+            "from_children",
+            vec![CallGoalEvidence::BooleanIntroductionPositive],
+        ),
+    ] {
         let outcomes = call_goals(source, function);
         assert_eq!(outcomes.len(), 1);
         assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
-        assert_eq!(outcomes[0].evidence, vec![CallGoalEvidence::OpaquePositive]);
+        assert_eq!(outcomes[0].evidence, evidence);
     }
-    assert_eq!(
-        claims(source, "from_claim")[0].disposition,
-        ClaimDisposition::Retained,
-        "CLM-2 remains comparison-origin-only even though S3 establishes +G"
-    );
-
-    let children = call_goals(source, "from_children");
-    assert_eq!(children[0].disposition, CallGoalDisposition::Unproved);
-    assert!(children[0].evidence.is_empty());
 
     let negative = call_goals(source, "from_false");
     assert_eq!(negative[0].disposition, CallGoalDisposition::Refuted);
@@ -8829,14 +9139,13 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_exact_comparison_call_retains_every_positive_derivation_ground() {
-    let source = br#"fn below(value: own u64) -> result: own unit traps contract {
+    let source = br#"fn below(value: own u64) -> result: own unit pure contract {
   requires ilt(value, 10_u64);
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn exact(value: own u64) -> result: own unit traps {
+fn exact(value: own u64) -> result: own unit pure {
   let small = ilt(value, 10_u64);
   if small {
     below(value: value);
@@ -8846,7 +9155,7 @@ fn exact(value: own u64) -> result: own unit traps {
   return unit;
 }
 
-fn projected(value: own u64) -> result: own unit traps {
+fn projected(value: own u64) -> result: own unit pure {
   let at_most_nine = ile(value, 9_u64);
   if at_most_nine {
     below(value: value);
@@ -8895,37 +9204,41 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn joined_whole_goals_require_the_same_sign_on_every_reachable_input() {
-    let source = br#"fn guarded(value: own u64) -> result: own unit traps contract {
+    let source = br#"fn guarded(value: own u64) -> result: own unit pure contract {
   define positive = igt(value, 0_u64);
   define small = ilt(value, 10_u64);
   define complete = band(positive, small);
   requires complete;
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn both(value: own u64, choose: own Bool) -> result: own unit traps {
+fn both(value: own u64, choose: own Bool) -> result: own unit pure {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
   if choose {
-    claim left: complete because "left";
+    if complete {
+    } else {
+      return unit;
+    }
+  } else if complete {
   } else {
-    claim right: complete because "right";
+    return unit;
   }
   guarded(value: value);
   return unit;
 }
 
-fn one(value: own u64, choose: own Bool) -> result: own unit traps {
+fn one(value: own u64, choose: own Bool) -> result: own unit pure {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
   if choose {
-    claim left: complete because "left";
-  } else {
-    claim other: True() because "other";
+    if complete {
+    } else {
+      return unit;
+    }
   }
   guarded(value: value);
   return unit;
@@ -8956,21 +9269,19 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_computed_bool_truth_survives_an_origin_write_but_its_expansion_does_not() {
-    let source = br#"fn need_true(value: own Bool) -> result: own unit traps contract {
+    let source = br#"fn need_true(value: own Bool) -> result: own unit pure contract {
   requires value;
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn below(value: own u64) -> result: own unit traps contract {
+fn below(value: own u64) -> result: own unit pure contract {
   requires ilt(value, 10_u64);
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn probe(value: own u64) -> result: own unit traps {
+fn probe(value: own u64) -> result: own unit pure {
   let small = ilt(value, 10_u64);
   if small {
     set value = 20_u64;
@@ -8996,18 +9307,17 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_copy_referent_read_through_an_affine_box_is_an_exact_goal_origin() {
     let source =
-        br#"fn observe['r](value: &'r box<i32>) -> result: own unit reads('r), traps contract {
+        br#"fn observe['r](value: &'r box<i32>) -> result: own unit reads('r) contract {
   define positive = igt(deref(deref(value)), 0_i32);
   define small = ilt(deref(deref(value)), 10_i32);
   define complete = band(positive, small);
   requires complete;
 } {
   let seen = deref(deref(value));
-  claim body: True() because "body";
   return unit;
 }
 
-fn caller() -> result: own unit allocates(heap), traps {
+fn caller() -> result: own unit allocates(heap) {
   let owner = box_new(5_i32);
   let positive = igt(deref(owner), 0_i32);
   let small = ilt(deref(owner), 10_i32);
@@ -9042,14 +9352,13 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn setting_an_intermediate_bool_binding_stops_later_origin_expansion() {
-    let source = br#"fn guarded(value: own u64) -> result: own unit traps contract {
+    let source = br#"fn guarded(value: own u64) -> result: own unit pure contract {
   requires igt(value, 0_u64);
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn caller(value: own u64) -> result: own unit traps {
+fn caller(value: own u64) -> result: own unit pure {
   let positive = igt(value, 0_u64);
   let alias = positive;
   set positive = False();
@@ -9073,13 +9382,10 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn resolved_writes_stop_future_expansion_of_the_written_origin_binding() {
-    let source = br#"fn need() -> result: own unit traps contract {
-  define first = ilt(0_u64, 1_u64);
-  define second = ilt(1_u64, 2_u64);
+    let source = br#"fn need(first: own Bool, second: own Bool) -> result: own unit pure contract {
   define complete = band(first, second);
   requires complete;
 } {
-  claim body: True() because "body";
   return unit;
 }
 
@@ -9088,9 +9394,7 @@ fn mutate['r](value: &uniq 'r Bool) -> result: own unit writes('r) {
   return unit;
 }
 
-fn through_holder() -> result: own unit traps {
-  let first = ilt(0_u64, 1_u64);
-  let second = ilt(1_u64, 2_u64);
+fn through_holder(first: own Bool, second: own Bool) -> result: own unit pure {
   let source = band(first, second);
   region 'r {
     let holder = &uniq 'r source;
@@ -9098,23 +9402,21 @@ fn through_holder() -> result: own unit traps {
   }
   let alias = source;
   if alias {
-    need();
+    need(first: first, second: second);
   } else {
     return unit;
   }
   return unit;
 }
 
-fn through_call() -> result: own unit traps {
-  let first = ilt(0_u64, 1_u64);
-  let second = ilt(1_u64, 2_u64);
+fn through_call(first: own Bool, second: own Bool) -> result: own unit pure {
   let source = band(first, second);
   region 'r {
     mutate<'r>(value: &uniq 'r source);
   }
   let alias = source;
   if alias {
-    need();
+    need(first: first, second: second);
   } else {
     return unit;
   }
@@ -9135,36 +9437,41 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn combined_contradiction_is_absorbing_before_goal_and_l0_support_kills() {
-    let source = br#"fn guarded(value: own u64) -> result: own unit traps contract {
+    let source = br#"fn guarded(value: own u64) -> result: own unit pure contract {
   define positive = igt(value, 0_u64);
   define small = ilt(value, 10_u64);
   define complete = band(positive, small);
   requires complete;
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn signed(value: own u64) -> result: own unit traps {
+fn signed(value: own u64) -> result: own unit pure {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
-  claim first: complete because "first";
   if complete {
-    return unit;
+    if complete {
+      return unit;
+    } else {
+      guarded(value: value);
+    }
   } else {
-    set value = 20_u64;
-    guarded(value: value);
-    claim unreachable: ilt(value, 1_u64) because "combined contradiction";
+    return unit;
   }
   return unit;
 }
 
-fn l0(value: own u64) -> result: own unit traps {
-  claim low: ilt(value, 5_u64) because "low";
-  claim high: ige(value, 5_u64) because "high";
-  set value = 20_u64;
-  guarded(value: value);
+fn l0(value: own u64) -> result: own unit pure {
+  if ilt(value, 5_u64) {
+    if ige(value, 5_u64) {
+      guarded(value: value);
+    } else {
+      return unit;
+    }
+  } else {
+    return unit;
+  }
   return unit;
 }
 
@@ -9194,25 +9501,20 @@ command fn main() -> status: own ExitStatus pure {
             "{function} must retain its exact contradiction class: {root:#?}"
         );
     }
-    assert!(!matches!(
-        claims(source, "signed")[0].disposition,
-        ClaimDisposition::Refuted { .. }
-    ));
 }
 
 #[test]
 fn a_discharged_whole_goal_is_accepted_on_the_ordinary_path() {
-    let source = br#"fn guarded(value: own u64) -> result: own unit traps contract {
+    let source = br#"fn guarded(value: own u64) -> result: own unit pure contract {
   define positive = igt(value, 0_u64);
   define small = ilt(value, 10_u64);
   define complete = band(positive, small);
   requires complete;
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn caller(value: own u64) -> result: own unit traps {
+fn caller(value: own u64) -> result: own unit pure {
   let positive = igt(value, 0_u64);
   let small = ilt(value, 10_u64);
   let complete = band(positive, small);
@@ -9248,17 +9550,16 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn fn8_call_rejection_carries_the_complete_deterministic_payload() {
-    let source = br#"fn guarded(value: own u64) -> result: own unit traps contract {
+    let source = br#"fn guarded(value: own u64) -> result: own unit pure contract {
   define positive = igt(value, 0_u64);
   define small = ilt(value, 10_u64);
   define complete = band(positive, small);
   requires complete;
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn caller(value: own u64) -> result: own unit traps {
+fn caller(value: own u64) -> result: own unit pure {
   guarded(value: value);
   return unit;
 }
@@ -9298,14 +9599,13 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn actual_obligations_precede_fn8_and_ephemeral_goals_use_the_stronger_fix() {
-    let admitted_actual = br#"fn positive(value: own u8) -> result: own unit traps contract {
+    let admitted_actual = br#"fn positive(value: own u8) -> result: own unit pure contract {
   requires ilt(value, 10_u8);
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn caller() -> result: own unit traps {
+fn caller() -> result: own unit pure {
   let values = array_new<u8, 2>(3_u8);
   positive(value: values[0_u64]);
   return unit;
@@ -9363,14 +9663,13 @@ command fn main() -> status: own ExitStatus pure {
     );
     assert!(admitted.call_goals[0].derivation.is_none());
 
-    let failed_actual = br#"fn positive(value: own u8) -> result: own unit traps contract {
+    let failed_actual = br#"fn positive(value: own u8) -> result: own unit pure contract {
   requires ilt(value, 10_u8);
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn caller() -> result: own unit traps {
+fn caller() -> result: own unit pure {
   let values = array_new<u8, 2>(3_u8);
   positive(value: values[9_u64]);
   return unit;
@@ -9404,16 +9703,15 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_call_is_judged_before_its_callee_write_and_that_write_kills_the_second_call() {
     let source =
-        br#"fn update['r](value: &uniq 'r u64) -> result: own unit reads('r), writes('r), traps contract {
+        br#"fn update['r](value: &uniq 'r u64) -> result: own unit reads('r), writes('r) contract {
   requires ilt(deref(value), 10_u64);
 } {
   let old = deref(value);
   set deref(value) = old;
-  claim body: True() because "body";
   return unit;
 }
 
-fn caller(value: own u64) -> result: own unit traps {
+fn caller(value: own u64) -> result: own unit pure {
   let small = ilt(value, 10_u64);
   if small {
     region 'first {
@@ -9456,15 +9754,14 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn s4_discharges_the_body_call_until_a_body_write_kills_it() {
-    let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads('r), traps contract {
+    let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads('r) contract {
   requires ilt(deref(value), 10_u64);
 } {
   let seen = deref(value);
-  claim body: True() because "body";
   return unit;
 }
 
-fn update['r](value: &uniq 'r u64) -> result: own unit reads('r), writes('r), traps contract {
+fn update['r](value: &uniq 'r u64) -> result: own unit reads('r), writes('r) contract {
   requires ilt(deref(value), 10_u64);
 } {
   region 'first {
@@ -9475,7 +9772,6 @@ fn update['r](value: &uniq 'r u64) -> result: own unit reads('r), writes('r), tr
   region 'second {
     observe<'second>(value: &'second deref(value));
   }
-  claim body: True() because "body";
   return unit;
 }
 
@@ -9498,17 +9794,16 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_element_write_keeps_a_whole_goal_supported_only_by_length() {
-    let source = br#"fn sized(values: own array<u8, 2>) -> result: own unit traps contract {
+    let source = br#"fn sized(values: own array<u8, 2>) -> result: own unit pure contract {
   define size = len(values);
   define exact = ieq(size, 2_u64);
   define complete = band(exact, exact);
   requires complete;
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn caller(values: own array<u8, 2>) -> result: own unit traps {
+fn caller(values: own array<u8, 2>) -> result: own unit pure {
   let size = len(values);
   let exact = ieq(size, 2_u64);
   let complete = band(exact, exact);
@@ -9539,14 +9834,13 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn array_fill_participates_only_in_body_origin_expansion() {
-    let source = br#"fn need_true(value: own Bool) -> result: own unit traps contract {
+    let source = br#"fn need_true(value: own Bool) -> result: own unit pure contract {
   requires value;
 } {
-  claim body: True() because "body";
   return unit;
 }
 
-fn probe() -> result: own unit traps {
+fn probe() -> result: own unit pure {
   let values = array_new<u8, 4>(0_u8);
   let first_size = len(values);
   let first_exact = ieq(first_size, 4_u64);
@@ -9579,19 +9873,17 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn s4_is_independent_of_forward_and_mutually_recursive_traversal_order() {
-    let source = br#"fn first(value: own u64) -> result: own unit traps contract {
+    let source = br#"fn first(value: own u64) -> result: own unit pure contract {
   requires ilt(value, 10_u64);
 } {
   second(value: value);
-  claim body: True() because "body";
   return unit;
 }
 
-fn second(value: own u64) -> result: own unit traps contract {
+fn second(value: own u64) -> result: own unit pure contract {
   requires ilt(value, 10_u64);
 } {
   first(value: value);
-  claim body: True() because "body";
   return unit;
 }
 
@@ -9624,7 +9916,7 @@ fn a_forward_concrete_generic_call_uses_its_substituted_goal() {
   return exit_status(code: 0_u8);
 }
 
-fn caller(value: own i32) -> result: own unit traps {
+fn caller(value: own i32) -> result: own unit pure {
   let positive = igt(value, 0_i32);
   if positive {
     let result = guarded<i32>(value: value);
@@ -9634,10 +9926,9 @@ fn caller(value: own i32) -> result: own unit traps {
   return unit;
 }
 
-fn guarded<T: Int>(value: own T) -> result: own T traps contract {
+fn guarded<T: Int>(value: own T) -> result: own T pure contract {
   requires igt(value, 0_T);
 } {
-  claim body: True() because "body";
   return value;
 }
 "#;

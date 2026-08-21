@@ -9,6 +9,7 @@ mod boxes;
 mod buffers;
 mod check_dissolution;
 mod checked_division;
+mod claim_residuals;
 mod conditionals;
 mod const_eval;
 mod contracts;
@@ -343,21 +344,27 @@ fn assert_unsupported(source: &[u8], feature: UnsupportedSemanticFeature) {
 }
 
 #[test]
-fn a_claim_statement_is_an_accepted_named_runtime_check() {
-    // CLM-1: a conforming claim is accepted and always retained. A
-    // constructed `True()` predicate has no comparison origin, so it is
-    // neither redundant nor refutable [CLM-2].
-    let source = br#"command fn main() -> status: own ExitStatus traps {
-  let flag = True();
-  claim held: flag because "constructed true";
+fn a_residual_claim_statement_is_an_accepted_named_runtime_check() {
+    let source = br#"fn clamp_seven(value: own u64) -> result: own u64 pure {
+  return imin(value, 7_u64);
+}
+
+fn read(values: own array<i32, 8>, i: own u64) -> result: own i32 traps {
+  let size = len(values);
+  let bounded = clamp_seven(value: i);
+  let inside = ilt(bounded, size);
+  claim held: inside because "premises: values has length 8 and bounded is returned by clamp_seven, whose body computes imin(i, 7_u64)\nderivation: bounded is at most 7_u64 and therefore strictly less than size\nconclusion: inside is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following values[bounded] bounds obligation";
+  return values[bounded];
+}
+
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(program) = outcome else {
+        let SemanticOutcome::Complete(_) = outcome else {
             panic!("expected acceptance, got {outcome:?}");
         };
-        assert!(program.data.claim_advisories.is_empty());
     });
 }
 
@@ -365,8 +372,8 @@ fn a_claim_statement_is_an_accepted_named_runtime_check() {
 fn a_repeated_claim_name_is_a_clm1_rejection_at_the_later_claim() {
     let source = br#"command fn main() -> status: own ExitStatus traps {
   let flag = True();
-  claim held: flag because "first";
-  claim held: flag because "second";
+  claim held: flag because "premises: fixture context: first\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
+  claim held: flag because "premises: fixture context: second\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -383,7 +390,7 @@ fn a_repeated_claim_name_is_a_clm1_rejection_at_the_later_claim() {
 fn a_non_bool_claim_condition_is_a_clm1_rejection() {
     let source = br#"command fn main() -> status: own ExitStatus traps {
   let value = 3_u64;
-  claim held: value because "not a Bool";
+  claim held: value because "premises: fixture context: not a Bool\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -402,9 +409,8 @@ fn add(x: own i32, y: own i32) -> result: own i32 pure {
   return x +wrap y;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let result = add(x: base, y: 2_i32);
-  claim wrong_answer: ieq(result, 42_i32) because "wrong answer";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -435,7 +441,7 @@ fn semantic_rule_owners_remain_distinct() {
         SemanticIssueKind::InvalidPredicateCondition,
     );
     assert_rule(
-        b"fn helper() -> result: own unit pure {\n  claim bad: True() because \"bad\";\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn helper() -> result: own unit pure {\n  claim bad: True() because \"premises: this negative fixture has no approved theorem premise\\nderivation: the effect-row check must reject before claim lifecycle classification\\nconclusion: this source must not publish a checked program\\nchecker gap: this review record only exposes the EFF-2 ordering under test\\nconsumers: no approved program consumes this negative fixture\";\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
@@ -635,8 +641,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
 
 #[test]
 fn effect_mismatch_is_located_at_the_written_effect_row() {
-    let source =
-        b"command fn main() -> status: own ExitStatus pure {\n  claim bad: True() because \"bad\";\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"command fn main() -> status: own ExitStatus pure {\n  claim bad: True() because \"premises: this negative fixture has no approved theorem premise\\nderivation: the effect-row check must reject before claim lifecycle classification\\nconclusion: this source must not publish a checked program\\nchecker gap: this review record only exposes the EFF-2 ordering under test\\nconsumers: no approved program consumes this negative fixture\";\n  return exit_status(code: 0_u8);\n}\n";
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("expected EFF-2 mismatch, got {outcome:?}");
@@ -741,7 +746,7 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // control exists to demonstrate — set a struct field, read it back — is
     // unaffected.
     with_semantics(
-        b"struct Counter {\n  n: i32;\n}\n\ncommand fn main() -> status: own ExitStatus traps {\n  let c = Counter(n: 1_i32);\n  set c.n = 41_i32;\n  let v = c.n;\n  claim set_field_drift: ieq(v, 41_i32) because \"set field drift\";\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Counter {\n  n: i32;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let c = Counter(n: 1_i32);\n  set c.n = 41_i32;\n  let v = c.n;\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     // Borrow-mode parameters and `let` borrows of scalars and enums, and the
@@ -754,7 +759,7 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // borrow-matched through `&'r` whose scrutinee stays live for a second
     // read, with each derived binder explicitly dereferenced.
     with_semantics(
-        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\ncommand fn main() -> status: own ExitStatus traps {\n  let c = Full(v: 20_i32);\n  region 'r {\n    let p = &'r c;\n    let a = match deref(p) {\n      Full(v: x) => {\n        give deref(x);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    let q = &'r c;\n    let b = match deref(q) {\n      Full(v: y) => {\n        give deref(y);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    claim borrow_payload_drift: ieq(a, 20_i32) because \"borrow payload drift\";\n    claim second_read_drift: ieq(b, 20_i32) because \"second read drift\";\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let c = Full(v: 20_i32);\n  region 'r {\n    let p = &'r c;\n    let a = match deref(p) {\n      Full(v: x) => {\n        give deref(x);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n    let q = &'r c;\n    let b = match deref(q) {\n      Full(v: y) => {\n        give deref(y);\n      }\n      Void() => {\n        give 0_i32;\n      }\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_unsupported(

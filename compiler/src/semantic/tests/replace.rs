@@ -23,13 +23,12 @@ fn with_holder(rest: &[u8]) -> Vec<u8> {
 #[test]
 fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let second = buffer_new(2_u64, 9_u8);
   let old = replace holder.payload = move second;
   let size = len(old);
-  claim previous_buffer_length: ieq(size, 4_u64) because "previous buffer length";
   return exit_status(code: 0_u8);
 }
 "#,
@@ -58,7 +57,7 @@ fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
 #[test]
 fn replace_of_a_copy_place_rejects_citing_set2() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(1_u64, 0_u8);
   let holder = Holder(payload: move first, count: 3_u64);
   let old = replace holder.count = 4_u64;
@@ -104,14 +103,16 @@ fn replace_kills_the_stale_length_fact_at_the_commit() {
     // discharge the post-replace subscript over the two-element buffer and
     // the accepted program would write out of bounds.
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len(holder.payload);
-  claim allocated_length: ieq(size, 4_u64) because "allocated length";
-  let second = buffer_new(2_u64, 9_u8);
-  let old = replace holder.payload = move second;
-  set holder.payload[3_u64] = 5_u8;
+  let allocated_length = ieq(size, 4_u64);
+  if allocated_length {
+    let second = buffer_new(2_u64, 9_u8);
+    let old = replace holder.payload = move second;
+    set holder.payload[3_u64] = 5_u8;
+  }
   return exit_status(code: 0_u8);
 }
 "#,
@@ -129,12 +130,14 @@ fn the_same_subscript_discharges_without_the_replace() {
     // The control for the kill test: identical program minus the commit.
     // Rejection above plus acceptance here attributes the kill to SET-2.
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len(holder.payload);
-  claim allocated_length: ieq(size, 4_u64) because "allocated length";
-  set holder.payload[3_u64] = 5_u8;
+  let allocated_length = ieq(size, 4_u64);
+  if allocated_length {
+    set holder.payload[3_u64] = 5_u8;
+  }
   return exit_status(code: 0_u8);
 }
 "#,
@@ -156,14 +159,13 @@ fn replace_leaves_the_target_root_live() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(2_u64, 1_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let second = buffer_new(3_u64, 2_u8);
   let old = replace holder.payload = move second;
   set holder.count = 1_u64;
   let observed = holder.count;
-  claim root_stays_live: ieq(observed, 1_u64) because "root stays live";
   let done = consume(h: move holder);
   return exit_status(code: 0_u8);
 }
@@ -275,17 +277,18 @@ fn element_position_replace_through_a_unique_holder_accepts() {
   fill: u64;
 }
 
-fn push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads('a), writes('a), traps {
+fn push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads('a), writes('a) {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
   let has_room = ilt(count, cap);
-  claim capacity_exhausted: has_room because "capacity exhausted";
-  let filled = Some<u32>(value: x);
-  let vacant = replace deref(v).buf[count] = move filled;
+  if has_room {
+    let filled = Some<u32>(value: x);
+    let vacant = replace deref(v).buf[count] = move filled;
+  }
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let empty = buffer_vacant<u32>(2_u64);
   let v = OptVec(buf: move empty, fill: 0_u64);
   region 'p {

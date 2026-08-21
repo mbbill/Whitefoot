@@ -105,9 +105,12 @@ fn sha256_abc_word_zero() -> result: own u32 pure {
   return a +wrap 1779033703_u32;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let direct_digest_word = sha256_abc_word_zero();
-  claim sha256_abc_digest_word_zero: ieq(direct_digest_word, 3128432319_u32) because "sha256 abc digest word zero";
+  if ieq(direct_digest_word, 3128432319_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let iteration = 0_u64;
   let accumulated = 0_u32;
   loop @sustained_hashing {
@@ -119,6 +122,9 @@ command fn main() -> status: own ExitStatus traps {
     set accumulated = accumulated +wrap digest_word;
     set iteration = iteration +wrap 1_u64;
   }
-  claim sha256_sustained_workload: ieq(accumulated, 3764059136_u32) because "sha256 sustained workload";
+  if ieq(accumulated, 3764059136_u32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }

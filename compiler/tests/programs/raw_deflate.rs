@@ -122,7 +122,7 @@ fn stored_fixed_and_dynamic_blocks_execute_with_data_failures() {
     assert!(!fixed.contains("call void @wf_trap"));
     let table = emitted_function(&llvm, "build_huffman_table");
     assert!(table.contains("call ptr @malloc"));
-    assert!(table.contains("call void @wf_trap"));
+    assert!(!table.contains("call void @wf_trap"));
     let dynamic = emitted_function(&llvm, "decode_dynamic");
     assert!(dynamic.contains("call void @free"));
 

@@ -49,12 +49,15 @@ deny_claims fn bs_byte['a](s: &'a ByteString, index: own u64) -> result: own Opt
   return None<u8>();
 }
 
-fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads('a), writes('a), allocates(heap), traps {
+fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads('a), writes('a), allocates(heap) {
   doc "Appends one byte, growing the backing buffer by one step when it is full.";
   let count = deref(s).fill;
   let capacity = len(deref(s).buf);
   let headroom = ilt(capacity, 18446744073709551608_u64);
-  claim capacity_has_headroom: headroom because "a byte string capacity leaves room for one growth step";
+  if headroom {
+  } else {
+    return unit;
+  }
   let full = ige(count, capacity);
   if full {
     let grown = capacity + 8_u64;
@@ -74,7 +77,7 @@ fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(
   return unit;
 }
 
-fn bs_append_slice['d, 'm](s: &uniq 'd ByteString, text: own slice<'m, u8>) -> result: own unit reads('d 'm), writes('d), allocates(heap), traps {
+fn bs_append_slice['d, 'm](s: &uniq 'd ByteString, text: own slice<'m, u8>) -> result: own unit reads('d 'm), writes('d), allocates(heap) {
   doc "Appends every byte of one static message, growing the destination as needed.";
   let count = len(text);
   for @append at in 0_u64..count {
@@ -86,7 +89,7 @@ fn bs_append_slice['d, 'm](s: &uniq 'd ByteString, text: own slice<'m, u8>) -> r
   return unit;
 }
 
-fn bs_concat['d, 's](destination: &uniq 'd ByteString, source: &'s ByteString) -> result: own unit reads('d 's), writes('d), allocates(heap), traps {
+fn bs_concat['d, 's](destination: &uniq 'd ByteString, source: &'s ByteString) -> result: own unit reads('d 's), writes('d), allocates(heap) {
   doc "Appends every byte of one byte string to another.";
   let count = 0_u64;
   region 'measure {
@@ -164,7 +167,7 @@ deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString)
   return None<u64>();
 }
 
-fn bs_push_decimal['a](s: &uniq 'a ByteString, value: own u64) -> result: own unit reads('a), writes('a), allocates(heap), traps {
+fn bs_push_decimal['a](s: &uniq 'a ByteString, value: own u64) -> result: own unit reads('a), writes('a), allocates(heap) {
   doc "Appends the decimal spelling of one unsigned value, least significant digit extracted first.";
   let scratch = buffer_new(20_u64, 48_u8);
   let written = 0_u64;
@@ -260,21 +263,27 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
   region 'measure {
     set total = bs_len<'measure>(s: &'measure subject);
   }
-  claim concatenated_byte_string_length: ieq(total, 43_u64) because "concatenated byte string length";
+  if ieq(total, 43_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   region 'probe_head {
     match bs_byte<'probe_head>(s: &'probe_head subject, index: 10_u64) {
       Some(value: observed) => {
-        claim byte_at_the_needle_position: ieq(observed, 98_u8) because "byte at the needle position";
+        if ieq(observed, 98_u8) {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
       None() => {
-        claim missing_byte_at_the_needle_position: False() because "missing byte at the needle position";
+        return exit_status(code: 1_u8);
       }
     }
   }
   region 'probe_past {
     match bs_byte<'probe_past>(s: &'probe_past subject, index: 43_u64) {
       Some(value: observed) => {
-        claim byte_beyond_the_stored_length: False() because "byte beyond the stored length";
+        return exit_status(code: 1_u8);
       }
       None() => {
       }
@@ -306,8 +315,14 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
       }
     }
   }
-  claim present_needle_must_be_found: ieq(present_found, 1_u8) because "present needle must be found";
-  claim present_needle_position: ieq(present_at, 10_u64) because "present needle position";
+  if ieq(present_found, 1_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(present_at, 10_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let absent_found = 0_u8;
   region 'search_absent {
     match bs_find<'search_absent, 'search_absent>(haystack: &'search_absent subject, needle: &'search_absent absent) {
@@ -318,7 +333,10 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
       }
     }
   }
-  claim absent_needle_must_not_be_found: ieq(absent_found, 0_u8) because "absent needle must not be found";
+  if ieq(absent_found, 0_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let report = bs_new();
   region 'length_view {
     let view = slice_of(&'length_view label_length);
@@ -366,9 +384,12 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
   region 'report_measure {
     set published = bs_len<'report_measure>(s: &'report_measure report);
   }
-  claim report_length: ieq(published, 28_u64) because "report length";
+  if ieq(published, 28_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let report_capacity = len(report.buf);
-  claim report_within_capacity: ile(published, report_capacity) because "the measured report length is within its backing buffer";
+  claim report_within_capacity: ile(published, report_capacity) because "premises: report starts with fill zero and every mutation uses bs_push, which grows before raising fill when full and otherwise writes only while fill is below capacity; bs_len returns fill\nderivation: induction over successful pushes preserves report.fill at most len(report.buf), so published is at most report_capacity\nconclusion: published is at most report_capacity\nchecker gap: ENT does not publish this nominal representation invariant through uncontracted user calls\nconsumers: publish_all requires its length argument to be at most len(report.buf)";
   region 'publish {
     match publish_all<'publish, 'publish>(output: &uniq 'publish out, source: &'publish report.buf, length: published) {
       Ok(value: done) => {

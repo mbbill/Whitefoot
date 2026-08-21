@@ -102,43 +102,32 @@ fn copy_distance['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits: own u32, allow_single: own Bool, allow_empty: own Bool) -> result: own Result<HuffmanTable, InflateError> allocates(heap), traps contract {
+fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits: own u32, allow_single: own Bool, allow_empty: own Bool) -> result: own Result<HuffmanTable, InflateError> allocates(heap) contract {
+  define lengths_room = len(lengths);
   requires buffer_fits<u64>(symbol_count);
+  requires ile(symbol_count, lengths_room);
 } {
   let count_slots_word = cvt<u32, u64>(max_bits);
   let count_slots = count_slots_word +wrap 1_u64;
   let counts = buffer_new(count_slots, 0_u64);
   let symbols = buffer_new(symbol_count, 0_u64);
-  let symbol = 0_u64;
   let nonzero = 0_u64;
   let sole_length = 0_u32;
-  loop @count_lengths {
-    let counted = ieq(symbol, symbol_count);
-    if counted {
-      break @count_lengths;
-    } else {
-      let count_lengths_room = len(lengths);
-      let count_symbol_ok = ilt(symbol, count_lengths_room);
-      claim count_symbol_in_lengths: count_symbol_ok because "callers pass symbol_count lengths";
-      let length_byte = lengths[symbol];
-      let length = cvt<u8, u32>(length_byte);
-      let too_long = igt(length, max_bits);
-      if too_long {
-        let error = InvalidHuffmanTree();
-        return Err<HuffmanTable, InflateError>(error: error);
-      }
-      let present = igt(length, 0_u32);
-      if present {
-        let count_index = cvt<u32, u64>(length);
-        let counts_room = len(counts);
-        let count_slot_ok = ilt(count_index, counts_room);
-        claim count_slot_in_counts: count_slot_ok because "the guard keeps every length at most max_bits";
-        let previous_count = counts[count_index];
-        set counts[count_index] = previous_count +wrap 1_u64;
-        set nonzero = nonzero +wrap 1_u64;
-        set sole_length = length;
-      }
-      set symbol = symbol +wrap 1_u64;
+  for @count_lengths symbol in 0_u64..symbol_count {
+    let length_byte = lengths[symbol];
+    let length = cvt<u8, u32>(length_byte);
+    let too_long = igt(length, max_bits);
+    if too_long {
+      let error = InvalidHuffmanTree();
+      return Err<HuffmanTable, InflateError>(error: error);
+    }
+    let present = igt(length, 0_u32);
+    if present {
+      let count_index = cvt<u32, u64>(length);
+      let previous_count = counts[count_index];
+      set counts[count_index] = previous_count +wrap 1_u64;
+      set nonzero = nonzero +wrap 1_u64;
+      set sole_length = length;
     }
   }
   let left = 1_u64;
@@ -150,9 +139,6 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
     } else {
       set left = ishl.wrap(left, 1_u32);
       let count_index = cvt<u32, u64>(length);
-      let validate_room = len(counts);
-      let validate_slot_ok = ilt(count_index, validate_room);
-      claim validate_slot_in_counts: validate_slot_ok because "the walk stops after max_bits lengths";
       let count = counts[count_index];
       let oversubscribed = igt(count, left);
       if oversubscribed {
@@ -189,58 +175,42 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
       break @build_offsets;
     } else {
       let count_index = cvt<u32, u64>(length);
-      let offsets_room = len(offsets);
-      let offsets_slot_ok = ilt(count_index, offsets_room);
-      claim offsets_slot_in_offsets: offsets_slot_ok because "the walk stops after max_bits lengths";
       set offsets[count_index] = offset;
-      let counts_read_room = len(counts);
-      let counts_read_ok = ilt(count_index, counts_read_room);
-      claim offsets_slot_in_counts: counts_read_ok because "both tables hold max_bits plus one slots";
       let count = counts[count_index];
       set offset = offset +wrap count;
       set length = length +wrap 1_u32;
     }
   }
-  set symbol = 0_u64;
-  loop @order_symbols {
-    let ordered = ieq(symbol, symbol_count);
-    if ordered {
-      break @order_symbols;
-    } else {
-      let order_lengths_room = len(lengths);
-      let order_symbol_ok = ilt(symbol, order_lengths_room);
-      claim order_symbol_in_lengths: order_symbol_ok because "callers pass symbol_count lengths";
-      let length_byte = lengths[symbol];
-      let symbol_length = cvt<u8, u32>(length_byte);
-      let present = igt(symbol_length, 0_u32);
-      if present {
-        let count_index = cvt<u32, u64>(symbol_length);
-        let order_offsets_room = len(offsets);
-        let order_slot_ok = ilt(count_index, order_offsets_room);
-        if order_slot_ok {
-        } else {
-          let error = InvalidHuffmanTree();
-          return Err<HuffmanTable, InflateError>(error: error);
-        }
-        let destination = offsets[count_index];
-        let order_symbols_room = len(symbols);
-        let destination_ok = ilt(destination, order_symbols_room);
-        if destination_ok {
-        } else {
-          let error = InvalidHuffmanTree();
-          return Err<HuffmanTable, InflateError>(error: error);
-        }
-        set symbols[destination] = symbol;
-        set offsets[count_index] = destination +wrap 1_u64;
+  for @order_symbols symbol in 0_u64..symbol_count {
+    let length_byte = lengths[symbol];
+    let symbol_length = cvt<u8, u32>(length_byte);
+    let present = igt(symbol_length, 0_u32);
+    if present {
+      let count_index = cvt<u32, u64>(symbol_length);
+      let order_offsets_room = len(offsets);
+      let order_slot_ok = ilt(count_index, order_offsets_room);
+      if order_slot_ok {
+      } else {
+        let error = InvalidHuffmanTree();
+        return Err<HuffmanTable, InflateError>(error: error);
       }
-      set symbol = symbol +wrap 1_u64;
+      let destination = offsets[count_index];
+      let order_symbols_room = len(symbols);
+      let destination_ok = ilt(destination, order_symbols_room);
+      if destination_ok {
+      } else {
+        let error = InvalidHuffmanTree();
+        return Err<HuffmanTable, InflateError>(error: error);
+      }
+      set symbols[destination] = symbol;
+      set offsets[count_index] = destination +wrap 1_u64;
     }
   }
   let table = HuffmanTable(counts: move counts, symbols: move symbols, max_bits: max_bits, used_symbols: nonzero);
   return Ok<HuffmanTable, InflateError>(value: move table);
 }
 
-fn decode_table_symbol['s, 'i, 't](state: &uniq 's InflateState, input: &'i buffer<u8>, table: &'t HuffmanTable) -> result: own Result<u64, InflateError> reads('s 'i 't), writes('s), traps {
+fn decode_table_symbol['s, 'i, 't](state: &uniq 's InflateState, input: &'i buffer<u8>, table: &'t HuffmanTable) -> result: own Result<u64, InflateError> reads('s 'i 't), writes('s) {
   let empty = ieq(deref(table).used_symbols, 0_u64);
   if empty {
     let error = InvalidHuffmanCode();
@@ -267,7 +237,11 @@ fn decode_table_symbol['s, 'i, 't](state: &uniq 's InflateState, input: &'i buff
     let count_index = cvt<u32, u64>(bit_length);
     let table_counts_room = len(deref(table).counts);
     let table_count_ok = ilt(count_index, table_counts_room);
-    claim walk_length_in_counts: table_count_ok because "the walk errors before bit_length passes max_bits";
+    if table_count_ok {
+    } else {
+      let error = InvalidHuffmanTree();
+      return Err<u64, InflateError>(error: error);
+    }
     let count = deref(table).counts[count_index];
     let first_after_count = first +wrap count;
     let at_or_after_first = ige(code, first);
