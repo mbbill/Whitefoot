@@ -37,10 +37,13 @@ fn const_arrays_are_immutable_globals_and_execute_through_index_and_len() {
         "@.wf_const.0 = private unnamed_addr constant [4 x i8] [i8 10, i8 20, i8 30, i8 40]"
     ));
     let main = emitted_function(&llvm, "main");
-    // The constant lookup is discharged [OP-4]: no bounds compare remains;
-    // the retained wf_trap calls belong to explicit claims.
+    // The constant lookup is discharged [OP-4]: no bounds compare remains.
+    // The source's two terminal result checks are ordinary control flow, not
+    // claims, so all three outcomes return an ExitStatus without a trap edge.
     assert!(!main.contains("icmp ult i64"));
-    assert!(main.contains("call void @wf_trap"));
+    assert_eq!(main.matches("icmp eq").count(), 2);
+    assert_eq!(main.matches("call i8 @wf.sys.exit_status.v1").count(), 3);
+    assert!(!main.contains("call void @wf_trap"));
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
     assert!(output.stdout.is_empty());

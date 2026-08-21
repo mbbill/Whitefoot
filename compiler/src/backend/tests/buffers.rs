@@ -191,7 +191,14 @@ fn borrowed_columns_cross_helpers_without_transferring_ownership() {
     assert!(fold.contains("load i64"));
     assert!(!fill.contains("call void @free"));
     assert!(!fold.contains("call void @free"));
-    assert_eq!(main.matches("call void @free").count(), 2);
+    // Each helper retains one range claim per borrowed column. The terminal
+    // checksum comparison is ordinary control flow, and both its failure and
+    // success exits must release both buffers.
+    assert_eq!(fill.matches("call void @wf_trap").count(), 2);
+    assert_eq!(fold.matches("call void @wf_trap").count(), 2);
+    assert!(!main.contains("call void @wf_trap"));
+    assert_eq!(main.matches("call i8 @wf.sys.exit_status.v1").count(), 2);
+    assert_eq!(main.matches("call void @free").count(), 4);
     assert!(main.contains("call i8 @wf_fill"));
     assert!(main.contains("call i64 @wf_fold"));
 
@@ -283,7 +290,14 @@ fn compiler_independent_borrowed_pool_tree_executes() {
     assert!(checksum.contains(", i64 "));
     assert!(!build.contains("call void @free"));
     assert!(!checksum.contains("call void @free"));
-    assert_eq!(main.matches("call void @free").count(), 2);
+    // Build retains seven domain/range claims and checksum retains four. The
+    // two terminal result checks are ordinary control flow, so each of their
+    // failure exits and the success exit release both pool buffers.
+    assert_eq!(build.matches("call void @wf_trap").count(), 7);
+    assert_eq!(checksum.matches("call void @wf_trap").count(), 4);
+    assert!(!main.contains("call void @wf_trap"));
+    assert_eq!(main.matches("call i8 @wf.sys.exit_status.v1").count(), 3);
+    assert_eq!(main.matches("call void @free").count(), 6);
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
