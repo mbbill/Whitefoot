@@ -3,9 +3,11 @@
 Status: ACTIVE ON BRANCH under the recorded owner direction below. The core
 compiler and specification candidate are complete; protected migration is
 partially materialized, with 88 source cases still blocked by an external
-protected-change reviewer pending renewed explicit user approval. The branch
-is therefore not yet ready for merge. Final integration remains the single
-owner merge boundary.
+protected-change reviewer pending renewed explicit user approval. Exact after
+bytes do not yet exist for those 88 cases: A79 has only a reviewed semantic
+ledger, and six of the nine B9 scratch rewrites are not yet human-ready. The
+branch is therefore not yet ready for merge. Final integration remains the
+single owner merge boundary.
 
 Owner: lead. Workspace: `codex/claim-residual-plan` in the isolated
 `/Users/bytedance/do_not_scan/whitefoot-claim-residual-plan` worktree. Base:
@@ -242,12 +244,22 @@ The protected partitions are now:
   claims to 58, retain all `run(0)` verdicts, introduce no effect-row delta,
   and all 31 compile through the ordinary LLVM path.
 
-Two externally blocked sets remain unmaterialized:
+Two externally blocked current-byte sets remain unmaterialized:
 
 - 79 run-oracle sources still contain 146 claims. Their audited target removes
   all 146 in favor of ordinary branch/match/nonzero-status control and removes
   80 trap-bearing effect occurrences, producing 76 `pure` and four
-  `allocates(heap)` rows.
+  `allocates(heap)` rows. No after-source candidate exists. The current A79
+  source audit stream, defined by ID-sorted lines of each source-byte digest
+  and path, is SHA-256
+  `62e3c9e080981ad41ff994f0164bac88031e107b0fb399d568669cabd8eef704`;
+  the direct concatenation of those 79 source files is 53,506 bytes and hashes
+  to `924e8a3b20d5bd418d4da4737631ba24fd46ea93883e0fdccc8d3bb336b0bbbf`;
+  and the ID-sorted current raw manifest-row stream is 27,487 bytes and hashes to
+  `bb30b7b960a6efcd1e8d9f805f9febdda86663b29e37f4d2663544bbf3277c7b`.
+  These values identify only the before state. An exhaustive worktree,
+  reachable/unreachable-commit, and scratch-artifact audit found no reusable
+  complete after source or patch.
 - Nine run-residual sources still contain 73 claims and target 28:
   `run-sysfile-multichunk`, `x-base64-rfc-vectors-run`,
   `x-enum-stmt-payload-check`, `x-option-byte-scanner-run`,
@@ -255,12 +267,46 @@ Two externally blocked sets remain unmaterialized:
   `eff1-pos-pure-and-traps-rows`, `eff2-pos-declared-traps-exhibited`, and
   `x-nominal-multifield-payload-run`.
 
+The 28-claim B9 figure is a semantic count target, not a frozen after-byte
+candidate. Existing scratch rewrites are exploratory audit inputs only.
+Independent review accepts `run-sysfile-multichunk`,
+`eff1-pos-pure-and-traps-rows`, and `eff2-pos-declared-traps-exhibited` as
+human-ready. `clm3-pos-upward-near-miss` has a true residual and exact
+arithmetic consumer but fails to observe the returned result in `main`.
+The base64, enum-statement, option-scanner, and result-buffer scratch rewrites
+retain 24 five-field records whose every value is the placeholder `audit`
+while deleting source-result observations. The nominal-payload scratch rewrite
+does not observe `right_value` or `ready_value`. The selected exploratory B9
+scratch-file hash stream is
+`46cf4f5003b9c3321b9e64c206f816fa006e5ab1ecb91cdfd77bab50b3c7019c`,
+and its current-to-scratch diff stream is
+`0ebfc4aed27aedc0e848f38e7eb3f6cd6ef9fa359d1f6ac4f5b5a970ed1c1fe8`.
+Both hashes identify a rejected exploratory set and are not approval
+identities. No complete nine-file after-byte candidate exists.
+
+The corrected B9 semantic ledger has nevertheless been completed read-only.
+Base64 retains 18 universal loop/tail range residuals, removes nine
+checker-known six-bit alphabet bounds, and restores 15 RFC length/byte checks
+as ordinary status control. Enum retains two payload-domain components and
+restores its numeric-result and unexpected-variant controls. Option retains one
+loop-range residual and restores its three Some/None observations. Result
+retains three input/returned-buffer range residuals, removes the overlapping
+output bound, and restores five success/failure observations. Nominal retains
+one left-payload domain residual and observes the other two fields ordinarily.
+CLM-3 retains its ordinary-caller residual and must observe `value == 5_u64` in
+`main`. Each proposed residual has a true universal derivation and an immediate
+admission consumer; every removed oracle becomes an ordinary nonzero-status
+edge. This ledger is sufficient to construct new candidates after approval,
+but is not itself an after-byte identity.
+
 Repository governance authorizes both sets on this work branch without an
 owner wait. The execution environment's protected-change reviewer nevertheless
-refused their exact writes and requires renewed explicit user approval; the
-branch did not circumvent that boundary.
+refused further protected writes and requires renewed explicit user approval;
+the branch did not circumvent that boundary. Consequently there is no complete
+protected after-byte identity to present for merge approval yet.
 
-The exact final 40-case claim-count matrix remains:
+The 40-case semantic count ledger remains; right-hand values are targets, not
+frozen after-byte identities:
 
 - `clm1-pos-passing-claim-establishes-fact` 1 to 1;
   `ent3-pos-band-check-decomposition` 2 to 1;
@@ -299,14 +345,16 @@ The exact final 40-case claim-count matrix remains:
   `x-struct-of-buffers-checksum-run` 5 to 4; and
   `x-struct-set-field` 2 to 1.
 - `clm3-pos-upward-near-miss`, `eff1-pos-pure-and-traps-rows`, and
-  `eff2-pos-declared-traps-exhibited` each replace one invalid predicate with
-  one uncontracted-call result-bound residual; and
-  `x-nominal-multifield-payload-run` replaces four claims with one exact
-  payload-addition upper-bound residual.
+  `eff2-pos-declared-traps-exhibited` are each planned to replace one invalid
+  predicate with one uncontracted-call result-bound residual; and
+  `x-nominal-multifield-payload-run` is planned to replace four claims with one
+  exact payload-addition upper-bound residual while preserving the other field
+  observations through ordinary control.
 
 The right-hand count is already materialized for 31 entries. The nine blocked
 entries listed above remain at their left-hand count: 73 current claims versus
-28 audited target claims.
+a 28-claim semantic target. No complete nine-file after-byte set currently
+satisfies both that count and preservation of the original observations.
 
 All 40 verdicts and IDs remain `run(0)`. The 31 integrated cases have no
 effect-row delta. The sole planned effect-row delta in this partition remains
@@ -317,9 +365,10 @@ Across all partitions, the materialized branch currently has 319 claims in 157
 protected files. Completing the remaining 79 run-oracle cases removes 146
 claims and all 79 claim-bearing files; completing the nine run-residual cases
 moves 73 claims in nine files to 28 claims in eight files. The exact final
-target is therefore 128 claims in 77 protected files. The earlier 79-file
-figure was an audit error caused by counting the reject result as 26 files
-rather than its materialized 24.
+semantic count target is therefore 128 claims in 77 protected files; it is
+not yet a realized or frozen protected candidate identity. The earlier
+79-file figure was an audit error caused by counting the reject result as 26
+files rather than its materialized 24.
 
 All eleven baseline source-level trap verdicts are now reclassified: nine
 become ordinary `run(0)` evidence and the two directly false predicates become
@@ -409,14 +458,18 @@ every required Full-minus run fresh and whole-program; no Full proof, cached U
 view, selected proof DAG, or provenance result is reused as acceptance
 authority.
 
-No unresolved core semantic or specification-alignment blocker remains. The
-only branch-completion blocker is exact protected source materialization: 79
-run-oracle files and nine run-residual files remain because the external
-protected-change reviewer requires renewed explicit user approval. Until those
-88 files, their synchronized manifest account, and the resulting branch-tip
-gates are present, the branch cannot honestly be described as ready to merge.
-The subsequent owner decision remains the single approval for merging the
-exact completed tip and activating v0.34.
+No unresolved core semantic or specification-alignment blocker remains.
+Protected closure is not yet a mechanical materialization of an audited
+after-state: A79 has no after candidate, and independent review rejects six of
+the nine B9 scratch rewrites for lost observations, placeholder `because`
+records, or an unobserved manufactured consumer. Those scratch bytes and their
+hashes are rejected audit inputs, not approval candidates. Further protected
+writes are also held by the execution environment pending renewed explicit
+user approval. Until corrected after bytes for all 88 files, their synchronized
+manifest account, independent review, and resulting branch-tip gates are
+present, the branch cannot honestly be described as ready to merge. The
+subsequent owner decision remains the single approval for merging the exact
+completed tip and activating v0.34.
 
 ## Integration boundary
 
@@ -425,14 +478,19 @@ specification or protected evidence enters this branch; both classes are
 already partially materialized here. Owner approval applies only to merging the
 exact reviewed branch tip to `main`.
 
-To complete the branch, obtain the explicit renewed approval required by the
-execution environment for the remaining 79 run-oracle and nine run-residual
-source transformations, materialize only their audited forms, synchronize the
-manifest, reproduce all protected and full gates, record the final protected
-tree and manifest identities, and rebase and re-audit against then-current
-`main`. The resulting exact spec/protected/plan packet can then be presented
-for owner merge approval. After that approval, the predetermined activation
-step archives active v0.33, activates v0.34, records the approval chain, moves
-this record unchanged in number to `docs/done/`, and fast-forwards `main`.
-Until those steps complete, this record remains in `docs/ongoing/` and the
-candidate is neither merge-ready nor activated.
+To complete the branch, obtain the renewed approval required by the execution
+environment to create the remaining protected after bytes. Construct A79 from
+its semantic ledger. Construct corrected B9 rewrites rather than copying the
+scratch set: preserve the CLM-3 result observation; replace all 24 `audit`
+placeholders with genuine five-field residual records; restore all RFC,
+enum, option, and Result observations as ordinary nonzero-status control; and
+observe both remaining nominal fields. Independently re-audit those bytes
+before freezing any after-source identity, then synchronize the manifest,
+reproduce all protected and full gates, record the final protected tree and
+manifest identities, and rebase and re-audit against then-current `main`. The
+resulting exact spec/protected/plan packet can then be presented for owner
+merge approval. After that approval, the predetermined activation step
+archives active v0.33, activates v0.34, records the approval chain, moves this
+record unchanged in number to `docs/done/`, and fast-forwards `main`. Until
+those steps complete, this record remains in `docs/ongoing/` and the candidate
+is neither merge-ready nor activated.

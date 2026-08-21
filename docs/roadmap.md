@@ -499,11 +499,13 @@ creating writer trust or weakening the checked safety envelope.
   migrated, typed-IR fault injection carries runtime-failure evidence, and the
   project-law, writer-law, and paired MCTS updates are present on the branch.
   They remain candidate evidence, not active language.
-- **Missing / next:** complete the remaining 79 run-oracle and nine
-  run-residual protected migrations plus their synchronized manifest account;
-  finish the exact protected differential and branch-tip gates; then rebase,
-  re-audit, and present the exact candidate for owner merge approval. The
-  frozen candidate specification identity remains part of that packet, which
+- **Missing / next:** construct, independently review, and materialize the
+  remaining 79 run-oracle and nine run-residual protected migrations plus their
+  synchronized manifest account; no complete after-byte set exists for those
+  88 cases yet. Finish the exact protected differential and branch-tip gates;
+  then rebase, re-audit, and present the exact candidate for owner merge
+  approval. The frozen candidate specification identity remains part of that
+  packet, which
   presents its digest, diffs, gates, batch audit, and frozen prospective
   activation/closure transformation. The approved mechanical activation is
   the only route to `main`. Acceptance requires a reviewed derivation and at
