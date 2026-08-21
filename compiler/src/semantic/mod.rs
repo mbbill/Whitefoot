@@ -10,6 +10,8 @@ mod claim_locality;
 mod entailment;
 mod goal;
 mod model;
+mod permission;
+mod places;
 mod postcondition;
 mod provenance;
 mod tree;

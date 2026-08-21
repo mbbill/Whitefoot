@@ -1750,4 +1750,54 @@ pub(crate) struct CheckedProgramData {
     /// not consume this observational metadata.
     #[allow(dead_code)]
     pub(crate) claim_ledger: super::entailment::ClaimLedger,
+    /// Read-only [PAR-1 candidate] permission table: which sibling call pairs
+    /// may be overlapped, and which of those are actualizable. Acceptance
+    /// never reads it, and it is identical facts-on and facts-off. The
+    /// permission ledger and the overlap lowering are its consumers.
+    #[allow(dead_code)]
+    pub(crate) permission: super::permission::PermissionMetadata,
+}
+
+/// Every direct subexpression, for uniform recursion.
+pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&CheckedExpression> {
+    match expression {
+        CheckedExpression::Constant(_)
+        | CheckedExpression::NamedConstant { .. }
+        | CheckedExpression::Binding { .. }
+        | CheckedExpression::ArrayLength { .. }
+        | CheckedExpression::BufferLength { .. }
+        | CheckedExpression::SliceLength { .. }
+        | CheckedExpression::SliceOf { .. }
+        | CheckedExpression::BorrowBuffer { .. }
+        | CheckedExpression::BorrowAddressed { .. }
+        | CheckedExpression::BorrowBox { .. }
+        | CheckedExpression::BorrowSystemResource { .. }
+        | CheckedExpression::ReborrowAddressed { .. }
+        | CheckedExpression::DerefAddressed { .. }
+        | CheckedExpression::Project { .. } => Vec::new(),
+        CheckedExpression::UserCall { arguments, .. }
+        | CheckedExpression::SystemCall { arguments, .. }
+        | CheckedExpression::IntegerOperation { arguments, .. }
+        | CheckedExpression::FloatOperation { arguments, .. }
+        | CheckedExpression::BooleanOperation { arguments, .. }
+        | CheckedExpression::EnumEquality { arguments, .. } => arguments.iter().collect(),
+        CheckedExpression::NumericConversion { value, .. }
+        | CheckedExpression::Reinterpret { value, .. }
+        | CheckedExpression::ArrayFill { value, .. }
+        | CheckedExpression::BoxNew { value, .. }
+        | CheckedExpression::BoxDeref { value, .. }
+        | CheckedExpression::ArenaNew { value, .. }
+        | CheckedExpression::ArenaDeref { value, .. }
+        | CheckedExpression::ProjectValue { value, .. } => vec![value.as_ref()],
+        CheckedExpression::ArrayIndex { offset, .. } => vec![offset.as_ref()],
+        CheckedExpression::BufferFill { length, value, .. } => {
+            vec![length.as_ref(), value.as_ref()]
+        }
+        CheckedExpression::BufferVacant { length, .. }
+        | CheckedExpression::BufferFits { length, .. } => vec![length.as_ref()],
+        CheckedExpression::BufferIndex { offset, .. }
+        | CheckedExpression::SliceIndex { offset, .. } => vec![offset.as_ref()],
+        CheckedExpression::ConstructStruct { fields, .. }
+        | CheckedExpression::ConstructEnum { fields, .. } => fields.iter().collect(),
+    }
 }

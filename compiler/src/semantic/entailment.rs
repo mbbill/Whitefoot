@@ -1920,7 +1920,10 @@ pub(crate) fn postcondition_schedule<'function>(
     })
 }
 
-fn collect_statement_calls(
+/// Collects every concrete ordinary call occurrence inside one body, in
+/// source order. This is call-graph shape only: no fact, disposition, or
+/// derivation is read, so consumers outside the entailment engine may use it.
+pub(super) fn collect_statement_calls(
     caller: FunctionId,
     statements: &[CheckedStatement],
     calls: &mut Vec<ConcreteCallOccurrence>,
@@ -1991,7 +1994,7 @@ fn collect_expression_calls(
             callee: *function,
         });
     }
-    for child in flow::expression_children(expression) {
+    for child in super::model::expression_children(expression) {
         collect_expression_calls(caller, child, calls);
     }
 }

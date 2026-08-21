@@ -21,6 +21,7 @@ use super::super::claim_locality::BoundaryWitness;
 use super::super::goal::{
     CheckedRequirement, ConcreteGoal, GoalDatum, GoalExpression, GoalOperation, GoalProjection,
 };
+use super::super::model::expression_children;
 use super::super::model::{
     BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedConst, CheckedConstructor,
     CheckedEnumType, CheckedExpression, CheckedFloatOperation, CheckedFunction,
@@ -28,6 +29,7 @@ use super::super::model::{
     CheckedNominalKind, CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, IntegerType,
     ValueInitializerKind,
 };
+use super::super::places::{BindingSummary, PlaceMap, ResolvedPlace};
 use super::super::postcondition::{
     CheckedPostcondition, NormalizedRelation, PostconditionPlaceRoot, PostconditionReturnDatum,
     PostconditionReturnPlace, PostconditionReturnPlaceRoot, RelationDatum, RelationTemplate,
@@ -54,21 +56,6 @@ use super::{
     fragment_type, overflow_conjuncts_for_values,
 };
 use crate::{SYSTEM_OPERATIONS, SystemParameterMode};
-
-/// One [OWN-5] resolved place, for the [OWN-7] overlap relation kills use.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct ResolvedPlace {
-    root: PlaceRoot,
-    fields: Vec<u32>,
-}
-
-impl ResolvedPlace {
-    /// [OWN-7]: places overlap when one's path is a prefix of the other's.
-    fn overlaps(&self, other: &Self) -> bool {
-        self.root == other.root
-            && (self.fields.starts_with(&other.fields) || other.fields.starts_with(&self.fields))
-    }
-}
 
 /// One [ENT-5] kill event gathered from a statement or expression.
 #[derive(Clone, Debug)]
@@ -121,34 +108,6 @@ struct EntryImageRecord {
     datum: PostconditionEntryImage,
     place: ResolvedPlace,
     holders: Vec<BindingId>,
-}
-
-/// What one binding reads through by `deref`, for place resolution.
-#[derive(Clone, Debug)]
-enum HolderReferent {
-    /// A borrow of a known local place.
-    Place {
-        binding: BindingId,
-        fields: Vec<u32>,
-    },
-    /// A reborrow: reads through another holder.
-    Holder(BindingId),
-    /// A parameter or match-binder borrow, or an owning box: the referent has
-    /// no caller-visible local place, so the binding itself anchors identity.
-    Opaque,
-}
-
-#[derive(Clone, Debug, Default)]
-struct BindingSummary {
-    ty: Option<CheckedType>,
-    holder: Option<HolderReferent>,
-    /// The checked expression for a read through a borrow holder may retain
-    /// only the referent value. Reconstructing its [ENT-2] source spelling
-    /// must restore that explicit `deref`; an owning box already retains a
-    /// `BoxDeref` node and therefore does not use this flag.
-    implicit_deref: bool,
-    /// Exact [GIVE-1] source class admitted as a bounded-delivery carrier.
-    delivery_carrier: bool,
 }
 
 /// A `loop` frame collecting break-edge states for the continuation join.
@@ -553,7 +512,7 @@ fn run(
         context,
         function,
         claim_mask,
-        bindings: Vec::new(),
+        places: PlaceMap::default(),
         terms: TermTable::new(),
         goals: GoalTable::default(),
         derivations: DerivationLedger::default(),
@@ -849,8 +808,8 @@ struct Analyzer<'check, 'unit> {
     context: &'check EntailmentContext<'unit>,
     function: &'check CheckedFunction,
     claim_mask: Option<&'check ClaimMask>,
-    /// Dense per-binding summaries indexed by [`BindingId`].
-    bindings: Vec<BindingSummary>,
+    /// Structural [OWN-5] place resolution for this function.
+    places: PlaceMap,
     terms: TermTable,
     goals: GoalTable,
     derivations: DerivationLedger,
@@ -2646,34 +2605,12 @@ impl Analyzer<'_, '_> {
     // Binding prepass
     // ------------------------------------------------------------------
 
-    fn summary_mut(&mut self, binding: BindingId) -> &mut BindingSummary {
-        let index = binding.0 as usize;
-        if self.bindings.len() <= index {
-            self.bindings.resize(index + 1, BindingSummary::default());
-        }
-        &mut self.bindings[index]
-    }
-
     fn summary(&self, binding: BindingId) -> Option<&BindingSummary> {
-        self.bindings.get(binding.0 as usize)
+        self.places.summary(binding)
     }
 
     fn collect_bindings(&mut self) {
-        let function = self.function;
-        for parameter in &function.parameters {
-            let (holder, implicit_deref) = match parameter.mode {
-                CheckedMode::Own => (None, false),
-                CheckedMode::Shared(_) | CheckedMode::Unique(_) => {
-                    (Some(HolderReferent::Opaque), true)
-                }
-            };
-            let summary = self.summary_mut(parameter.binding);
-            summary.ty = Some(parameter.ty);
-            summary.holder = holder;
-            summary.implicit_deref = implicit_deref;
-            summary.delivery_carrier = matches!(parameter.mode, CheckedMode::Own);
-        }
-        self.collect_block_bindings(&function.body);
+        self.places = PlaceMap::for_function(self.function);
     }
 
     fn collect_postcondition_entry_images(&mut self) {
@@ -2745,94 +2682,13 @@ impl Analyzer<'_, '_> {
         self.postcondition_entry_images = relation_images;
     }
 
-    fn collect_block_bindings(&mut self, statements: &[CheckedStatement]) {
-        for statement in statements {
-            match statement {
-                CheckedStatement::Let { binding, value, .. } => {
-                    let (holder, implicit_deref) = match value {
-                        CheckedExpression::Binding {
-                            binding: source, ..
-                        } if self.is_holder(*source) => {
-                            (Some(HolderReferent::Holder(*source)), true)
-                        }
-                        _ => (holder_from_value(value), value_has_implicit_deref(value)),
-                    };
-                    let summary = self.summary_mut(*binding);
-                    summary.ty = Some(value.ty());
-                    summary.holder = holder;
-                    summary.implicit_deref = implicit_deref;
-                    summary.delivery_carrier = summary.holder.is_none();
-                }
-                CheckedStatement::PropagateLet {
-                    binding, ok_type, ..
-                } => {
-                    let summary = self.summary_mut(*binding);
-                    summary.ty = Some(*ok_type);
-                    summary.delivery_carrier = true;
-                }
-                CheckedStatement::Replace {
-                    binding, target, ..
-                } => {
-                    let summary = self.summary_mut(*binding);
-                    summary.ty = Some(target.ty());
-                    summary.delivery_carrier = true;
-                }
-                CheckedStatement::ValueMatchLet {
-                    binding,
-                    result_type,
-                    arms,
-                    ..
-                } => {
-                    let summary = self.summary_mut(*binding);
-                    summary.ty = Some(*result_type);
-                    summary.delivery_carrier = true;
-                    for arm in arms {
-                        self.collect_arm_bindings(arm);
-                    }
-                }
-                CheckedStatement::Match { arms, .. } => {
-                    for arm in arms {
-                        self.collect_arm_bindings(arm);
-                    }
-                }
-                CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
-                    self.collect_block_bindings(body);
-                }
-                CheckedStatement::CountedRange { binder, body, .. } => {
-                    let summary = self.summary_mut(*binder);
-                    summary.ty = Some(CheckedType::Integer(IntegerType::U64));
-                    summary.delivery_carrier = true;
-                    self.collect_block_bindings(body);
-                }
-                _ => {}
-            }
-        }
-    }
-
-    fn collect_arm_bindings(&mut self, arm: &CheckedMatchArm) {
-        for binder in &arm.binders {
-            let (holder, implicit_deref) = match binder.mode {
-                CheckedMode::Own => (None, false),
-                CheckedMode::Shared(_) | CheckedMode::Unique(_) => {
-                    (Some(HolderReferent::Opaque), true)
-                }
-            };
-            let summary = self.summary_mut(binder.binding);
-            summary.ty = Some(binder.ty);
-            summary.holder = holder;
-            summary.implicit_deref = implicit_deref;
-            summary.delivery_carrier = matches!(binder.mode, CheckedMode::Own);
-        }
-        self.collect_block_bindings(&arm.body);
-    }
-
     fn is_holder(&self, binding: BindingId) -> bool {
-        self.summary(binding)
-            .is_some_and(|summary| summary.holder.is_some())
+        self.places.is_holder(binding)
     }
 
     fn needs_implicit_deref(&self, binding: BindingId) -> bool {
-        self.summary(binding)
+        self.places
+            .summary(binding)
             .is_some_and(|summary| summary.implicit_deref)
     }
 
@@ -2840,80 +2696,12 @@ impl Analyzer<'_, '_> {
     // Place resolution and support
     // ------------------------------------------------------------------
 
-    /// Resolves a spelled place to its [OWN-5] resolved place, reading
-    /// through let-bound borrows; opaque holders anchor at themselves.
     fn resolve(&self, place: &PlaceTerm) -> ResolvedPlace {
-        match place.root {
-            PlaceRoot::Constant(id) => ResolvedPlace {
-                root: PlaceRoot::Constant(id),
-                fields: place.fields.clone(),
-            },
-            PlaceRoot::Binding(binding) => {
-                let mut resolved = if place.deref {
-                    self.resolve_deref(binding, 0)
-                } else {
-                    ResolvedPlace {
-                        root: PlaceRoot::Binding(binding),
-                        fields: Vec::new(),
-                    }
-                };
-                resolved.fields.extend_from_slice(&place.fields);
-                resolved
-            }
-        }
+        self.places.resolve(place)
     }
 
-    /// Resolves an exact interleaved field/deref spelling for [ENT-5] kills.
-    /// A deref of a direct holder follows the existing holder summary. A
-    /// deref after a field remains anchored at that selected storage path;
-    /// replacing any prefix therefore conservatively kills the fact.
     fn resolve_projected(&self, place: &ProjectedPlaceTerm) -> ResolvedPlace {
-        let mut resolved = ResolvedPlace {
-            root: place.root,
-            fields: Vec::new(),
-        };
-        for projection in &place.projections {
-            match projection {
-                PlaceProjection::Field(field) => resolved.fields.push(*field),
-                PlaceProjection::Deref => {
-                    if resolved.fields.is_empty()
-                        && let PlaceRoot::Binding(binding) = resolved.root
-                    {
-                        resolved = self.resolve_deref(binding, 0);
-                    }
-                }
-            }
-        }
-        resolved
-    }
-
-    fn resolve_deref(&self, holder: BindingId, depth: usize) -> ResolvedPlace {
-        let anchored = ResolvedPlace {
-            root: PlaceRoot::Binding(holder),
-            fields: Vec::new(),
-        };
-        if depth > 32 {
-            return anchored;
-        }
-        match self
-            .summary(holder)
-            .and_then(|summary| summary.holder.as_ref())
-        {
-            Some(HolderReferent::Place { binding, fields }) => {
-                let mut resolved = if self.is_holder(*binding) {
-                    self.resolve_deref(*binding, depth + 1)
-                } else {
-                    ResolvedPlace {
-                        root: PlaceRoot::Binding(*binding),
-                        fields: Vec::new(),
-                    }
-                };
-                resolved.fields.extend_from_slice(fields);
-                resolved
-            }
-            Some(HolderReferent::Holder(next)) => self.resolve_deref(*next, depth + 1),
-            Some(HolderReferent::Opaque) | None => anchored,
-        }
+        self.places.resolve_projected(place)
     }
 
     /// Whether a kill event kills a fact supported by `term` [ENT-5].
@@ -3032,35 +2820,8 @@ impl Analyzer<'_, '_> {
         depth: usize,
         holders: &mut Vec<BindingId>,
     ) -> ResolvedPlace {
-        holders.push(holder);
-        let anchored = ResolvedPlace {
-            root: PlaceRoot::Binding(holder),
-            fields: Vec::new(),
-        };
-        if depth > 32 {
-            return anchored;
-        }
-        match self
-            .summary(holder)
-            .and_then(|summary| summary.holder.as_ref())
-        {
-            Some(HolderReferent::Place { binding, fields }) => {
-                let mut resolved = if self.is_holder(*binding) {
-                    self.resolve_deref_with_holders(*binding, depth + 1, holders)
-                } else {
-                    ResolvedPlace {
-                        root: PlaceRoot::Binding(*binding),
-                        fields: Vec::new(),
-                    }
-                };
-                resolved.fields.extend_from_slice(fields);
-                resolved
-            }
-            Some(HolderReferent::Holder(next)) => {
-                self.resolve_deref_with_holders(*next, depth + 1, holders)
-            }
-            Some(HolderReferent::Opaque) | None => anchored,
-        }
+        self.places
+            .resolve_deref_with_holders(holder, depth, holders)
     }
 
     fn event_kills_goal(&self, goal: GoalId, event: &KillEvent) -> bool {
@@ -4751,41 +4512,11 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// The resolved place a borrow-shaped call argument reads through, and
-    /// whether a callee write through it is an element write.
     fn argument_referent(
         &self,
         argument: &CheckedExpression,
     ) -> Option<(ResolvedPlace, bool, bool)> {
-        match argument {
-            CheckedExpression::BorrowBuffer { root, .. } => {
-                let place = PlaceTerm {
-                    root: PlaceRoot::Binding(root.binding),
-                    deref: self.is_holder(root.binding),
-                    fields: root.fields.clone(),
-                };
-                Some((self.resolve(&place), true, false))
-            }
-            CheckedExpression::BorrowAddressed { binding, .. }
-            | CheckedExpression::BorrowBox { binding, .. }
-            | CheckedExpression::BorrowSystemResource { binding, .. } => {
-                let place = PlaceTerm {
-                    root: PlaceRoot::Binding(*binding),
-                    deref: self.is_holder(*binding),
-                    fields: Vec::new(),
-                };
-                Some((self.resolve(&place), false, false))
-            }
-            CheckedExpression::ReborrowAddressed { binding, .. } => {
-                Some((self.resolve_deref(*binding, 0), false, false))
-            }
-            CheckedExpression::Binding { binding, ty, .. } if self.is_holder(*binding) => Some((
-                self.resolve_deref(*binding, 0),
-                matches!(ty, CheckedType::Buffer { .. } | CheckedType::Slice { .. }),
-                true,
-            )),
-            _ => None,
-        }
+        self.places.argument_referent(argument)
     }
 
     /// Collects [ENT-5] kill events (b) and (c) from one expression tree.
@@ -8601,38 +8332,6 @@ fn invalidate_goal_origin_for_set(state: &mut FactState, target: &CheckedSetTarg
     state.ambiguous_goal_origins.remove(&target.binding());
 }
 
-fn holder_from_value(value: &CheckedExpression) -> Option<HolderReferent> {
-    match value {
-        CheckedExpression::BorrowAddressed { binding, .. }
-        | CheckedExpression::BorrowBox { binding, .. }
-        | CheckedExpression::BorrowSystemResource { binding, .. } => Some(HolderReferent::Place {
-            binding: *binding,
-            fields: Vec::new(),
-        }),
-        CheckedExpression::BorrowBuffer { root, .. } => Some(HolderReferent::Place {
-            binding: root.binding,
-            fields: root.fields.clone(),
-        }),
-        CheckedExpression::ReborrowAddressed { binding, .. } => {
-            Some(HolderReferent::Holder(*binding))
-        }
-        // A bound borrow-mode call result reads and writes through the
-        // provenance-candidate actual's storage, so a write through it must
-        // kill exactly the facts on that storage [ENT-5, OWN-6].
-        CheckedExpression::UserCall {
-            result_borrow: Some(result_borrow),
-            ..
-        } => Some(HolderReferent::Place {
-            binding: result_borrow.binding,
-            fields: result_borrow.fields.clone(),
-        }),
-        CheckedExpression::BoxNew { .. } | CheckedExpression::ArenaNew { .. } => {
-            Some(HolderReferent::Opaque)
-        }
-        _ => None,
-    }
-}
-
 /// Uses the compact legacy term shape exactly when the complete projection
 /// order is zero-or-one leading deref followed only by fields.
 fn legacy_place(path: &ProjectedPlaceTerm) -> Option<PlaceTerm> {
@@ -8652,65 +8351,6 @@ fn legacy_place(path: &ProjectedPlaceTerm) -> Option<PlaceTerm> {
         deref,
         fields,
     })
-}
-
-const fn value_has_implicit_deref(value: &CheckedExpression) -> bool {
-    matches!(
-        value,
-        CheckedExpression::BorrowAddressed { .. }
-            | CheckedExpression::BorrowBuffer { .. }
-            | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::BorrowSystemResource { .. }
-            | CheckedExpression::ReborrowAddressed { .. }
-            | CheckedExpression::UserCall {
-                result_borrow: Some(_),
-                ..
-            }
-    )
-}
-
-/// Every direct subexpression, for uniform recursion.
-pub(super) fn expression_children(expression: &CheckedExpression) -> Vec<&CheckedExpression> {
-    match expression {
-        CheckedExpression::Constant(_)
-        | CheckedExpression::NamedConstant { .. }
-        | CheckedExpression::Binding { .. }
-        | CheckedExpression::ArrayLength { .. }
-        | CheckedExpression::BufferLength { .. }
-        | CheckedExpression::SliceLength { .. }
-        | CheckedExpression::SliceOf { .. }
-        | CheckedExpression::BorrowBuffer { .. }
-        | CheckedExpression::BorrowAddressed { .. }
-        | CheckedExpression::BorrowBox { .. }
-        | CheckedExpression::BorrowSystemResource { .. }
-        | CheckedExpression::ReborrowAddressed { .. }
-        | CheckedExpression::DerefAddressed { .. }
-        | CheckedExpression::Project { .. } => Vec::new(),
-        CheckedExpression::UserCall { arguments, .. }
-        | CheckedExpression::SystemCall { arguments, .. }
-        | CheckedExpression::IntegerOperation { arguments, .. }
-        | CheckedExpression::FloatOperation { arguments, .. }
-        | CheckedExpression::BooleanOperation { arguments, .. }
-        | CheckedExpression::EnumEquality { arguments, .. } => arguments.iter().collect(),
-        CheckedExpression::NumericConversion { value, .. }
-        | CheckedExpression::Reinterpret { value, .. }
-        | CheckedExpression::ArrayFill { value, .. }
-        | CheckedExpression::BoxNew { value, .. }
-        | CheckedExpression::BoxDeref { value, .. }
-        | CheckedExpression::ArenaNew { value, .. }
-        | CheckedExpression::ArenaDeref { value, .. }
-        | CheckedExpression::ProjectValue { value, .. } => vec![value.as_ref()],
-        CheckedExpression::ArrayIndex { offset, .. } => vec![offset.as_ref()],
-        CheckedExpression::BufferFill { length, value, .. } => {
-            vec![length.as_ref(), value.as_ref()]
-        }
-        CheckedExpression::BufferVacant { length, .. }
-        | CheckedExpression::BufferFits { length, .. } => vec![length.as_ref()],
-        CheckedExpression::BufferIndex { offset, .. }
-        | CheckedExpression::SliceIndex { offset, .. } => vec![offset.as_ref()],
-        CheckedExpression::ConstructStruct { fields, .. }
-        | CheckedExpression::ConstructEnum { fields, .. } => fields.iter().collect(),
-    }
 }
 
 const fn integer_type_name(ty: IntegerType) -> &'static str {

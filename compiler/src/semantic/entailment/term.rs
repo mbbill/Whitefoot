@@ -13,7 +13,8 @@
 
 use std::collections::HashMap;
 
-use super::super::model::{BindingId, CheckedConstantId, IntegerType};
+use super::super::model::IntegerType;
+pub(crate) use super::super::places::{PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm};
 use crate::DeclarationId;
 
 /// Which once-captured endpoint one private counted-range term denotes.
@@ -21,46 +22,6 @@ use crate::DeclarationId;
 pub(crate) enum CountedCaptureSide {
     Lower,
     Upper,
-}
-
-/// Root of a tracked place: a function-local binding (parameters, `let`
-/// bindings of every right-hand form, and match binders share the dense
-/// [`BindingId`] space) or a named const [CONST-2].
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum PlaceRoot {
-    Binding(BindingId),
-    Constant(CheckedConstantId),
-}
-
-/// One tracked place [ENT-2](a): a root, an optional `deref` reading through
-/// a borrow or box holder, and field selections — never an index segment.
-///
-/// This compact form represents no deref or one leading deref followed by
-/// fields. Interleaved or repeated derefs use [`ProjectedPlaceTerm`].
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct PlaceTerm {
-    pub(crate) root: PlaceRoot,
-    pub(crate) deref: bool,
-    pub(crate) fields: Vec<u32>,
-}
-
-/// One source-order projection in a tracked place whose spelling cannot be
-/// represented by [`PlaceTerm`]'s legacy "one leading deref, then fields"
-/// shape. Keeping the order makes `deref(h.value)` distinct from
-/// `deref(h).value`, as [ENT-2] requires.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum PlaceProjection {
-    Field(u32),
-    Deref,
-}
-
-/// The exact source-order path of a tracked place with interleaved field and
-/// deref projections. The root remains declaration-anchored; projections are
-/// finite because the checked expression tree is finite.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct ProjectedPlaceTerm {
-    pub(crate) root: PlaceRoot,
-    pub(crate) projections: Vec<PlaceProjection>,
 }
 
 /// One [ENT-2] term.

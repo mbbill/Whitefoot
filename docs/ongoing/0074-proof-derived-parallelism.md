@@ -42,6 +42,24 @@ policy; reduce-clause regrouping.
 (One line per stage at completion; blockers recorded here honestly with
 reproduction, never worked around.)
 
+- E1 (permission judgment P): landed `semantic/permission.rs` (four
+  conditions, claim-free eligibility, per-function pair/chain table on
+  `CheckedProgramData`) plus `semantic/places.rs`, which lifts the [OWN-7]
+  overlap relation, the holder/place prepass, and the [EFF-2] actual-side
+  projection out of `entailment/flow.rs` so P reuses them instead of copying
+  them; `expression_children` moved to `model.rs` for the same reason. Nine
+  in-crate tests: three grants, one chain-stops control, four per-condition
+  denials, one not-actualizable. `make -C compiler check` green (995 lib
+  tests, +9, no other count moved). Three deviations from DESIGN §3, all
+  fail-closed widenings, none narrowing the deliverable: (a) an
+  `allocates(arena 'r)` row contributes the caller region as a written
+  footprint element under condition 2, because two overlapped calls would
+  both mutate one allocation list — untestable today, the arena runtime is
+  an unsupported capability before a checked program exists; (b) an actual
+  whose caller place P cannot resolve while its row projects an access denies
+  the pair under condition 2; (c) P resolves a direct slice value's source
+  place on its own side only, leaving [ENT-5] kill behavior byte-identical.
+
 ## Outcome
 
 (Filled at closure: landed commits, verification results, measurements,

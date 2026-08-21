@@ -45,6 +45,7 @@ use super::model::{
     CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId,
     NominalId, ValueInitializerKind, evaluate_const_operation,
 };
+use super::permission::{PermissionSignature, analyze_permission};
 use super::postcondition::CheckedPostconditionSelector;
 use super::provenance::{
     DatumSelector, FrozenProvenanceDependencies, ProvenanceContext,
@@ -1126,6 +1127,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
         }
+        // [PAR-1 candidate] permission is a read-only legality table over the
+        // completed checked program: callable-boundary rows, resolved places,
+        // statement exit edges, and the concrete call graph. It reads no
+        // entailment fact state, so it is identical facts-on and facts-off.
+        let permission_signatures = self
+            .signatures
+            .iter()
+            .map(|signature| PermissionSignature {
+                region_parameters: signature.region_parameters.clone(),
+                reads: signature.declared_effects.reads.clone(),
+                writes: signature.declared_effects.writes.clone(),
+                allocates_arenas: signature.declared_effects.allocates_arenas.clone(),
+                external: signature.declared_effects.external,
+                blocks: signature.declared_effects.blocks,
+            })
+            .collect::<Vec<_>>();
+        let permission = analyze_permission(&functions, &permission_signatures);
+
         Ok(CheckedProgramData {
             nominals: self.nominals.clone(),
             executable_nominal_count,
@@ -1147,6 +1166,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             main,
             entry,
             claim_ledger,
+            permission,
         })
     }
 
