@@ -1854,7 +1854,7 @@ An excluded caller route, including a named or pending outcome, is not itself a 
 Claim diagnostics use this fixed semantic schedule.
 FN-1 first rejects every structurally unreachable statement; only a claim occurrence with a structurally reachable normal entry enters the CLM-1/CLM-2 schedule below.
 CLM-1 predicate type, proof-predicate shape, and five-field structure are checked first.
-The complete inventory then records contradiction-first exact lifecycle, canonical contributions, component lifecycle, consistency, and exact-P reconstruction for every source schema and concrete instance; the first invalid claim in source occurrence then stable instance order rejects before any counterfactual run.
+The complete inventory then records contradiction-first D/S/F exact lifecycle, canonical contributions, component lifecycle, consistency, and S-to-D reconstruction for every source schema and concrete instance; the first invalid claim in source occurrence then stable instance order rejects before any counterfactual run.
 Complete OP-2/OP-4/OP-9/SYS-8, FN-8, FN-9, PRV-2, and PRV-3 judgments then select their ordinary errors.
 Only an otherwise-successful unit freezes Eligible and runs CLM-2 component and whole-occurrence residuality; the first non-residual occurrence owns that rejection, component failures precede a whole-occurrence failure, and component failures use the least component ordinal.
 This schedule prevents an invalid candidate from supplying another candidate's baseline and prevents a premature unused-claim error from hiding an ordinary proof or provenance defect.
@@ -1886,9 +1886,9 @@ A rejecting PRV-2 target set or PRV-3 witness exists only in failure-atomic diag
 Target lowering must discharge each target-domain obligation from the selected target plus already-checked layout, allocation, and bounds facts, or materialize its exact non-continuing guard before the governed allocation or address operation.
 Every writer-reachable source-language runtime check is one [CLM-1] claim with disposition `retained`.
 No accepted proof-required operation carries an implicit runtime check or elimination disposition: a subscript, exact integer operation, buffer allocation, or system range is `discharged` at its owning source node, and the checked program retains its exact [ENT-4] or [ENT-6] derivation there.
-Every accepted [CLM-1] claim is `retained`; the checked program retains its source occurrence and concrete-instance identities, name, exact direct and expanded predicate images, five parsed justification fields, ordered structured `Contrib(P)`, each component S3 source derivation, the expanded and direct exact-P reconstruction derivations, every successful component and whole counterfactual witness, the closed terminal-root inventory, and each witness's non-contradictory and non-explosive ancestry disposition.
+Every accepted [CLM-1] claim is `retained`; the checked program retains its source occurrence and concrete-instance identities, name, exact D, S, and F predicate images, five parsed justification fields, ordered structured `Contrib(P)`, each component S3 source derivation, the retained S reconstruction and D materialization derivations, every successful component and whole counterfactual witness, the closed terminal-root inventory, and each witness's non-contradictory and non-explosive ancestry disposition.
 A concrete terminal-root identity uses the owning function instance plus the operation NodePath/family/conjunct, the call NodePath/callee/requirement NodePath, or the complete-postcondition block/relation ordinal; display symbols are never identity.
-A generic source occurrence additionally retains one source-stable schema report owned by its declaration, with structural predicate images, ordered contribution descriptions, reconstruction success, stable counterfactual witness summaries, and ordered inhabited concrete-instance report links.
+A generic source occurrence additionally retains one source-stable schema report owned by its declaration, with rendered D, S, and F predicate images, ordered contribution descriptions, S-to-D reconstruction success, stable counterfactual witness summaries, and ordered inhabited concrete-instance report links.
 The schema report contains no monomorphized display symbol or symbolic-scratch `FunctionId`, `GoalId`, `TermId`, or `DerivationId`; only concrete reports may retain finalized function-local proof identifiers.
 Redundant, refuted, vacuous, overlapping, inconsistent, reconstruction-failed, or non-residual candidates publish no claim metadata or checked program.
 A `requires_clause` is represented only by its GoalTemplate, call-site derivations, and S4 source; an `ensures_clause` only by its verified RelationTemplate, selected-exit judgments, and derivations.
@@ -2650,10 +2650,18 @@ A claim is legal in exactly the statement positions [GRAM-4] admits; a `contract
 Operand provenance does not by itself prove a claim true: [PRV-2] and [PRV-3] still reject claim-only authorization of an unconditionally external constrained subject, while [CLM-2] independently requires a genuine admission consumer.
 
 [CLM-2] One FN-1-reachable concrete claim occurrence c is judged after evaluating its predicate but before its own S3 source.
-If its pre-S3 state is contradictory, c is vacuous and rejects; contradiction is tested before either predicate sign and ex-falso never proves claim truth.
-Otherwise query both signs of every still-valid exact predicate image in deterministic direct-then-expanded order.
-Deriving both signs is a compiler consistency failure, not a source classification.
-Deriving the positive sign rejects c as redundant; deriving the negative sign rejects it as refuted.
+At that point let `D(P)`, `S(P)`, and `F(P)` be three exact typed goal images of predicate P.
+`D(P)` is the direct GoalExpression of the evaluated written predicate.
+`F(P)` is the unique complete still-valid ordinary-let origin expansion of `D(P)` under the ordinary goal-origin rule below.
+`S(P)` is the support-canonical snapshot-frontier expansion: starting from `D(P)`, perform the same unique still-valid ordinary-let replacement as `F(P)`, except that when the current subtree already has an exact L0 projection or one fixed normalization, retain that subtree unchanged and do not expand any datum below it; expansion continues everywhere else.
+Thus S preserves the support of each checker fact the claim actually reads, while F records the fully structural origin.
+The ordered exact-image inventory keeps the first occurrence of each distinct identity in D, S, F order; equal images collapse and do not create duplicate queries.
+
+If the pre-S3 combined state is contradictory, c is vacuous and rejects; contradiction is tested before origin formation or either predicate sign and ex-falso never proves claim truth.
+Otherwise query both signs of every image in that ordered inventory.
+Both signs at one image are a compiler consistency failure, not a source classification.
+A positive sign at one image and a negative sign at a distinct image, with no one image deriving both, make the source vacuous because its support-correct exact images conflict.
+Otherwise deriving any positive sign rejects c as redundant and deriving any negative sign rejects it as refuted.
 Thus `claim True()` is redundant and `claim False()` is refuted on every reachable path.
 Checker strengthening may and must turn a formerly unknown claim into this source-upgrade error; the author removes or restructures the source and recompiles, and no compiler or optimizer silently elides the written check.
 
@@ -2663,20 +2671,31 @@ Difference-bound identities retain ordered endpoints; disequality identities are
 Positive `band`, negative `bor`, and either sign of `bnot` recursively contribute their sound signed conjuncts.
 Positive `bor` and negative `band`, whose truth is disjunctive, remain one exact signed-goal component.
 An integer inequality contributes its one normalized bound; positive integer equality contributes its two directed zero bounds, negative equality its disequality, with `ine` dual; a representable positive `.defined` or allocation-fit predicate contributes the relations of its one fixed conjunction normalization.
-A direct ordinary-let Bool and its one still-valid complete origin expansion are one contribution identity: normalization is taken from the expansion, while the direct binding image is a support-correct manifestation reconstructed from the complete contribution.
+`Contrib(P)` is constructed from positive S only.
+D is a reconstruction target, not a contribution basis; F is a lifecycle image, not an S3 contribution or reconstruction target.
 An otherwise proof-pure exact goal for which the checker has no finer conjunctive fact vocabulary is one opaque component.
-`bxor`, Boolean equivalence, a normalization with alternative positive clauses such as signed division/remainder, an ambiguous origin, or any shape for which normalization, support, component negation, or exact-P reconstruction is not unique is not an admitted claim predicate in this version.
+`bxor`, Boolean equivalence, a normalization with alternative positive clauses such as signed division/remainder, an ambiguous origin, or any shape for which normalization, support, component negation, S reconstruction, or D materialization is not unique is not an admitted claim predicate in this version.
 
-Every component must be unknown on both signs in the non-contradictory pre-S3 state.
-A pre-proved component rejects c for overlap even when exact P was not derivable; a pre-refuted component rejects it as inconsistent.
-Tentatively adding every component must remain non-contradictory and must reconstruct every exact P image through [ENT-4]'s retained ordinary derivation.
-S3 then establishes the contribution components directly, not P followed by a decomposition; a direct binding manifestation is materialized only from the reconstructed origin proof.
+Component lifecycle walks S and F in lockstep through the same signed conjunctive Boolean structure.
+At one S snapshot-frontier leaf, the ordered components extracted from S are the contribution identities.
+When F has the same ordered component cardinality, the corresponding F component is an equivalent manifestation of the S component.
+When the S leaf contributes exactly one component, the exact signed F leaf is also an equivalent manifestation.
+When the S leaf contributes more than one component, positive proof of the exact signed F leaf is a positive-only manifestation of each component: it proves every conjunct, but the opposite sign of the whole F leaf refutes no particular conjunct.
+For one component, either sign of an equivalent manifestation participates in lifecycle classification, while a positive-only manifestation participates only positively.
+Both signs at one manifestation are a compiler consistency failure; positive and negative results obtained only across distinct equivalent manifestations make the source vacuous.
+Every component must otherwise be unknown on both signs in the non-contradictory pre-S3 state.
+A pre-proved component rejects c for overlap even when no complete predicate image was derivable; a pre-refuted component rejects it as inconsistent.
+Tentatively adding every component must remain non-contradictory, derive positive S, and not derive negative S through [ENT-4]'s retained ordinary derivation.
+Retain that positive S proof; when D differs from S, materialize positive D from it under D's own ordinary support and require the resulting trial to remain non-contradictory.
+CLM-2 neither requires nor performs reconstruction of F.
+S3 establishes the contribution components directly, not P followed by a decomposition.
 
 Let `Eligible` be the fixed source-ordered set of concrete occurrences that passed FN-1 reachability, CLM-1, exact lifecycle, component lifecycle, consistency, reconstruction, and the five-field structure check.
 If any occurrence fails one of those earlier judgments, the unit reports the deterministic earlier error and residuality does not run; an invalid occurrence never supplies another candidate's baseline S3.
-For each c and each component a, `Full-minus(c,a)` repeats the same whole-program proof analysis with every other Eligible S3 source and c's other components unchanged, while c still evaluates, exhibits the same effects, and retains its runtime statement, but a and all manifestations carrying that contribution identity are withheld.
+For each c and each component a, `Full-minus(c,a)` repeats the same whole-program proof analysis with every other Eligible S3 source and c's other components unchanged, while c still evaluates, exhibits the same effects, and retains its runtime statement, but a's one component-specific S3 source event is withheld.
 Closure is recomputed from unmasked sources, so every fact depending only on a disappears and an independently rederived identical fact remains.
 `Full-minus(c)` analogously withholds all of c's S3 contribution.
+When `Contrib(P)` has exactly one component, `Full-minus(c,a)` and `Full-minus(c)` suppress the identical one-event source set and are definitionally the same fresh analysis; an implementation performs that analysis once and records the same stable result under both the component and whole-occurrence evidence roles.
 
 The terminal admission roots are exactly the four proof-required operation families [ENT-6], ordinary [FN-8] call requirements, and mandatory complete [FN-9] selected-return aggregate proofs.
 A protected operation or call root is eligible only after its attached ordinary provenance gate succeeds in Full; that gate is retained audit data, not an independent counterfactual root.
@@ -2727,9 +2746,12 @@ No source postcondition is trusted: FN-9 proves every selected exit, requires a 
 The fragment is the deterministic checker derivation of [OP-4], [FN-8], [FN-9], and [DIAG-2] for the judgments this version attaches; a solver result never participates, and no implementation may strengthen, weaken, time-bound, or randomize the derivable set.
 Two conforming implementations derive the same complete, unasserted, and S4-blinded fact states at every applicable point; the same FN-9 selected exits, aggregate dispositions, concrete-SCC order, and S12 establishment set; the same [PRV-1] class and symbolic dependency for every component; the same [PRV-2] result, write, demand, target, and event sets; and the same disposition for every obligation, claim, call goal, postcondition relation, local leaf, and call argument.
 Every nongeneric source body receives this judgment whether or not `main` reaches it.
-Every generic source body additionally receives one claim-schema judgment under the one source-canonical symbolic substitution formed during generic-body validation, even when it has no concrete instantiation.
+Every generic source body additionally receives one source-schema judgment under the one source-canonical symbolic substitution formed during generic-body validation, even when it has no concrete instantiation.
 That symbolic inventory includes the declaration's complete source body and recursively installed source-canonical call requirements.
-It freezes its own schema-Eligible set after the same CLM-1, contradiction-first lifecycle, component lifecycle, consistency, and reconstruction judgments, then runs the same simultaneous `Full-minus(c,a)` and `Full-minus(c)` analysis against source-schema terminal roots expressible in that symbolic goal vocabulary, with the same component ordering, ancestry, non-explosion, provenance-invariance, and individual-necessity requirements as a concrete inventory.
+Before residuality, it performs every ordinary OP-2/OP-4/OP-9/SYS-8, FN-8, and expressible FN-9 admission judgment that the schema vocabulary can represent; an unproved ordinary source-body operation is not accepted merely because no concrete instance is reachable from `main`.
+It constructs and deduplicates D, S, and F by the same rules, queries them in the same D-S-F order, derives `Contrib(P)` only from S, applies the same equivalent and positive-only F manifestation rules, and reconstructs S then D exactly as a concrete inventory does.
+It freezes its own schema-Eligible set after the same CLM-1, contradiction-first lifecycle, component lifecycle, consistency, reconstruction, ordinary-admission, and provenance judgments, then runs the same simultaneous `Full-minus(c,a)` and `Full-minus(c)` analysis against source-schema terminal roots expressible in that symbolic goal vocabulary, with the same component ordering, ancestry, non-explosion, provenance-invariance, and individual-necessity requirements as a concrete inventory.
+Its only vocabulary differences are the explicitly specified symbolic datum restrictions; it may not collapse the three-image judgment, use F as contribution authority, approximate an unavailable symbolic relation, or omit an ordinary judgment that its vocabulary can form.
 Generic integer and float type parameters are copy datums only for exact opaque goals in this schema; they are not [ENT-2] L0 fragment types, while a const-generic parameter whose written type is one concrete integer fragment remains the symbolic constant term fixed below.
 An FN-8 source-call requirement over those exact datums is a schema terminal root.
 An FN-9 source-schema terminal root exists only when its result datum, selected return, and normalized relation are already expressible over concrete integer fragment types; a postcondition whose result or relation depends on a generic integer or float type parameter is rechecked only in inhabited concrete instances and is not silently approximated by an opaque schema root.
@@ -2775,17 +2797,17 @@ A concrete goal is one finite typed expression tree with exact result `own Bool`
 A concrete place datum retains the resolved root declaration event and its ordered field and `deref` projections; an actual substituted for a borrow formal uses the resolved referent datum, while an own actual uses its pre-transfer datum.
 Named consts and typed literals retain the identities FN-8 fixes.
 The compiler-owned ephemeral actual-value datum of FN-8 may occur only in the instantiated goal of its one ordinary call.
-It has the finite structural identity fixed there, is neither a place nor an L0 term, has no direct or expanded source goal origin, and therefore cannot be established by naming the original subscript again.
+It has the finite structural identity fixed there, is neither a place nor an L0 term, has no direct or complete ordinary source goal origin, and therefore cannot be established by naming the original subscript again.
 Goal equality is exact tree equality and therefore may hold across two requirement occurrences or concrete callee instances only when their substituted typed trees are identical.
 The finite goal universe of one concrete function is exactly the goals formed from its written Bool conditions, claims, requirement S4 sources, proof-required operation obligations, ordinary-call requirements, and every canonical CLM-2 contribution child and reconstruction parent after the finite expansions [ENT-3] admits.
-Contribution construction may intern only subexpressions, exact signed disjunctive roots already present in a claim predicate, and direct/expanded origin manifestations; it synthesizes no arbitrary formula or unbounded algebraic search.
+Contribution construction may intern only subexpressions, exact signed disjunctive roots already present in a claim predicate, and the claim's D/S/F origin images and manifestations; it synthesizes no arbitrary formula or unbounded algebraic search.
 
 A signed opaque fact is exactly `+G` or `-G` for one concrete goal G, meaning that exact whole expression evaluated respectively true or false.
 It carries no child facts merely by existing; [ENT-3] fact sources establish their selected signed contribution and [ENT-4] alone performs the finite parent reconstruction below.
 If G's complete root is exactly one comparison origin relation R under [ENT-3], `+G` has the exact L0 projection R and `-G` has R's exact negation; a non-comparison root has no L0 projection.
 The signed fact and its projection are distinct manifestations in one combined state and have the supports [ENT-5] fixes.
-For CLM-2, all manifestations produced from one canonical component share one `(claim occurrence, component ordinal)` contribution identity.
-Masking that identity suppresses every such manifestation but never an independently established equal relation or goal.
+For CLM-2, all lifecycle manifestations mapped to one canonical S-derived component share one `(claim occurrence, component ordinal)` contribution identity for evidence and ancestry.
+Only the component's S3 source event is maskable; F is never sourced, and masking never suppresses an independently established equal relation or goal.
 
 An atomic fact is one difference bound `t1 - t2 <= c` (t1, t2 terms, c a mathematical integer) or one disequality `t1 != t2`.
 Difference-bound identity preserves the ordered term pair; disequality identity is the unordered endpoint pair, although the first source-normalization encounter preserves its written orientation for rendering and component order.
@@ -2822,11 +2844,11 @@ Every admitted member whose root has an exact comparison projection also establi
 Each member has its own [ENT-5] support, kills, joins, and loop treatment.
 This is a finite structural walk with no algebraic rewrite.
 
-CLM-2's `Contrib(P)` uses the same signed walk but is a source-admission basis rather than an automatic parent establishment.
+CLM-2's `Contrib(P)` applies the same signed walk to S, but is a source-admission basis rather than an automatic parent establishment.
 It replaces a projected positive equality with its two directed bounds and a projected negative equality with its disequality; it similarly expands one available fixed positive conjunction normalization into its ordered relations.
 An exact disjunctive or otherwise opaque residual remains one signed-goal component only when CLM-2 admits that root class.
 S3 establishes these components directly under separate contribution identities.
-ENT-4 can reconstruct exact parents from their components, so ordinary proof consumers receive no claim-specific shortcut.
+ENT-4 reconstructs S from its components and then materializes D when distinct; F remains lifecycle-only, so ordinary proof consumers receive no claim-specific shortcut.
 
 The sources are:
 
@@ -2838,8 +2860,9 @@ L0 negation is exact over mathematical integers: the negation of `a - b <= c` is
 [ENT-3.S3]
 - S3 (claim facts).
 After one CLM-2-retained `claim n: e because "…";` evaluates true [CLM-1], establish each ordered component of `Contrib(e)` directly on the normal continuation, with its exact signed-goal or L0 relation manifestation and one component-specific S3 event.
-Do not establish an exact parent before its components.
-After all components are established, close under [ENT-4]; when the complete expanded origin is reconstructed, materialize the direct Bool-binding image from that retained proof under the direct image's own support.
+Do not establish D, S, or F before the components.
+After all components are established, close under [ENT-4], retain the reconstructed positive S proof, and when D differs from S materialize positive D from that proof under D's own support.
+F remains lifecycle-only and receives no S3 source or reconstruction event.
 No S3 source exists for an early-invalid or non-residual claim.
 [ENT-3.S4]
 - S4 (requires facts).
@@ -2933,13 +2956,13 @@ An ephemeral actual-value datum adds no support: it denotes an already evaluated
 Every borrow or box/arena holder used by a goal's resolved place is also a support member.
 The two signs of one goal have identical support.
 
-One CLM-2 contribution component has the ordinary support of its exact signed goal or relation.
-All direct/expanded manifestations in one contribution identity retain their own ordinary support and kill behavior: the expanded relation or goal depends on the values it read, while a direct Bool-binding snapshot depends on that binding after reconstruction.
+One CLM-2 contribution component has the ordinary support of its exact S-derived signed goal or relation.
+An F manifestation is queried with its own fully structural support but is never established by S3; a materialized D snapshot has D's direct support.
 `Full-minus(c,a)` and `Full-minus(c)` change no evaluation, effect, ownership, cleanup, scope, join, loop, or runtime statement.
 They suppress only the selected component-specific S3 source event or all S3 source events of c, then rerun the same source, kill, join, closure, and FN-9 publication from scratch.
-No parent, descendant, direct manifestation, or cached proof depending solely on a masked source survives; an independent source with the same normalized fact remains available.
+No descendant, S reconstruction, D materialization, or cached proof depending solely on a masked source survives; an independently established equal D, S, F, relation, or goal remains available.
 U already suppresses every S3 source, B differs from U only by suppressing S4, and claims change no PRV-1 value or storage flow.
-Therefore, when no terminal entailment root changes, a Full-minus run must produce exactly the same provenance failures as Full; any new or removed PRV-2/PRV-3 event is a compiler consistency failure, never a residual witness.
+Therefore every Full-minus run must produce exactly the same provenance-failure set as Full, independently of whether a terminal entailment root changes; any new or removed PRV-2/PRV-3 event is a compiler consistency failure, never a residual witness.
 
 An S12 relation, a narrow-receiver relation, and a relation transported through `value_if` have exactly the ordinary L0 support of their terms after the route's stated substitutions.
 The callee summary reference, proof view, call or delivery edge, pre-transfer substitution record, and a result or payload binder already replaced by its receiver are checked metadata, not additional support.

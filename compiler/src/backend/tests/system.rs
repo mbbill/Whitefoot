@@ -31,7 +31,7 @@ pub(super) fn with_ir<ResultValue>(
     with_ir_for(source, crate::Inventory::ACTIVE, run)
 }
 
-fn with_mutated_ir<ResultValue>(
+pub(super) fn with_mutated_ir<ResultValue>(
     source: &[u8],
     run: impl for<'classified, 'lexed, 'source> FnOnce(
         &mut IrProgram<'classified, 'lexed, 'source>,

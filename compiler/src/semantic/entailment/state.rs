@@ -2149,6 +2149,17 @@ impl FactState {
         self.view
     }
 
+    fn selected_relations_depend_on_postcondition_call(
+        &self,
+        ledger: &DerivationLedger,
+    ) -> bool {
+        let mut memo = HashMap::new();
+        self.bound_proofs
+            .values()
+            .chain(self.distinct_proofs.values())
+            .any(|proof| ledger.depends_on_postcondition_call(*proof, &mut memo))
+    }
+
     fn add_bound(
         &mut self,
         left: TermId,
@@ -2363,6 +2374,17 @@ pub(crate) struct ClosedState {
 }
 
 impl ClosedState {
+    fn selected_relations_depend_on_postcondition_call(
+        &self,
+        ledger: &DerivationLedger,
+    ) -> bool {
+        let mut memo = HashMap::new();
+        self.bound_proofs
+            .values()
+            .chain(self.distinct_proofs.values())
+            .any(|proof| ledger.depends_on_postcondition_call(*proof, &mut memo))
+    }
+
     /// `left - right <= bound` is derivable.
     pub(crate) fn derives_bound(&self, left: TermId, right: TermId, bound: i128) -> bool {
         if self.all_derivable {
@@ -3561,6 +3583,8 @@ pub(crate) fn materialize_closure_at(
             ..FactState::for_view(state.view)
         };
     }
+    let needs_ordinary_fallback =
+        closed.selected_relations_depend_on_postcondition_call(ledger);
     let mut bound_proofs = HashMap::new();
     let mut bound_keys: Vec<_> = closed.bounds.keys().copied().collect();
     bound_keys.sort_unstable();
@@ -3638,6 +3662,10 @@ pub(crate) fn materialize_closure_at(
         ambiguous_goal_origins: state.ambiguous_goal_origins.clone(),
     };
 
+    if !needs_ordinary_fallback {
+        return materialized;
+    }
+
     // Preserve the ordinary fallback when the canonical closure happened to
     // select an S12 proof. The second closure is not another flow walk: it is
     // the same snapshot over the same live state with S12 candidates removed,
@@ -3713,6 +3741,9 @@ pub(crate) fn join_at(
 ) -> FactState {
     let mut joined = join_at_once(states, terms, goals, ledger, view, event);
     if joined.all_derivable {
+        return joined;
+    }
+    if !joined.selected_relations_depend_on_postcondition_call(ledger) {
         return joined;
     }
     let mut ordinary_states = states.to_vec();

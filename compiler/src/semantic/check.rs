@@ -1833,6 +1833,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     {
                         break 'claims;
                     }
+                    if component_count == 1 {
+                        let mut whole = full[*function_index].function.entailment.claims
+                            [claim_index]
+                            .residual_witnesses
+                            .first()
+                            .cloned()
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                        whole.component = None;
+                        full[*function_index].function.entailment.claims[claim_index]
+                            .residual_witnesses
+                            .push(whole);
+                        continue;
+                    }
                     let mask = ClaimMask {
                         function: full[*function_index].function.id,
                         node_path,
@@ -2561,6 +2574,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             functions[function_index].entailment.claims[claim_index].clone(),
                         )));
                     }
+                }
+
+                if component_count == 1 {
+                    let mut whole = witnesses
+                        .first()
+                        .cloned()
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    whole.component = None;
+                    witnesses.push(whole);
+                    functions[function_index].entailment.claims[claim_index]
+                        .residual_witnesses = witnesses;
+                    continue;
                 }
 
                 let mask = ClaimMask {

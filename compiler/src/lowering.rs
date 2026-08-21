@@ -1129,6 +1129,55 @@ impl IrProgram<'_, '_, '_> {
         self.main
     }
 
+    /// Test-only fault injection for runtime-claim evidence.
+    ///
+    /// The source must first pass the complete claim judgment with a genuine
+    /// residual and must define an ordinary `False()` value in the same
+    /// function before that claim. This mutator changes only the lowered
+    /// claim operand selected by the stable source function/name identity; it
+    /// does not create a writer-visible escape or participate in checking.
+    #[cfg(test)]
+    pub(crate) fn force_claim_false_for_test(
+        &mut self,
+        function_name: &str,
+        claim_name: &str,
+    ) -> bool {
+        let Some(function) = self
+            .functions
+            .iter_mut()
+            .find(|function| function.name == function_name)
+        else {
+            return false;
+        };
+        let Some(false_value) = function.blocks.iter().find_map(|block| {
+            block.instructions.iter().find_map(|instruction| {
+                let IrInstruction::Define {
+                    result,
+                    operation: IrOperation::Constant(IrConstant::Bool(false)),
+                    ..
+                } = instruction
+                else {
+                    return None;
+                };
+                Some(*result)
+            })
+        }) else {
+            return false;
+        };
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let IrInstruction::Claim { condition, site } = instruction else {
+                    continue;
+                };
+                if site.message == claim_name {
+                    *condition = false_value;
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Test-only malformed-IR probe: retypes one command parameter while
     /// keeping the function's local value table internally consistent.
     #[cfg(test)]

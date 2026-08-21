@@ -37,15 +37,19 @@ incomplete checker can decide arbitrary human mathematics.
 ## Selected semantic boundary
 
 For one FN-1-reachable concrete inhabited claim occurrence `c`, before its own S3 fact, the
-checker queries both signs of the exact typed predicate image for every admitted
-predicate shape, including its still-valid direct/expanded origin. This is not
+checker forms three exact typed images for every admitted predicate shape:
+`D(P)`, the direct evaluated snapshot; `S(P)`, the support-canonical expansion
+that stops below an exact projection or fixed normalization; and `F(P)`, the
+fully structural still-valid ordinary-let expansion. It queries the unique
+images in D-S-F order. This is not
 limited to literals, comparisons, or `.defined` goals:
 
 - if the pre-state is contradictory, reject it as vacuous rather than proving
   it by ex-falso; structurally unreachable statements are already FN-1 errors
   and never enter this lifecycle;
-- otherwise, if the normative checker proves both signs, report a compiler
-  consistency failure rather than a source classification;
+- otherwise, if one image has both signs, report a compiler consistency
+  failure; if distinct equivalent images have opposite signs, reject the
+  vacuous path rather than misreporting an internal failure;
 - otherwise, if the checker proves its exact predicate, reject it as redundant;
 - otherwise, if the checker proves its exact negation, reject it as refuted;
 - if tentatively adding the predicate contradicts the established pre-state,
@@ -65,9 +69,10 @@ Rule 3 is the separate approval condition:
    is no stronger than the missing lemma and its consumers are authentic, and
    rules out the current claim, later facts, unstated environment promises, or
    circular proof;
-4. every component `a` in `Contrib(P)` is unknown on both signs before S3;
-   adding the whole contribution is consistent and reconstructs exact `P` with
-   a retained normative derivation;
+4. `Contrib(P)` is derived only from S; every component `a` and its sound F
+   lifecycle manifestations are unknown on both signs before S3; adding the
+   whole contribution is consistent, reconstructs S, and materializes D with
+   retained normative derivations, while F remains lifecycle-only;
 5. for every component `a`, at least one closed-list source-admission root
    succeeds in the complete view and fails in `Full-minus(c,a)`, which suppresses
    only that component while retaining c's other components and every other
@@ -82,6 +87,9 @@ Rule 3 is the separate approval condition:
    the c-dependent lineage rather than every mutually exclusive route.
 
 The fifth rule is the normative component- and occurrence-necessity judgment.
+For a one-component claim the component and whole masks remove the identical
+single S3 event, so one fresh counterfactual supplies both separately labelled
+evidence roles without changing the judgment.
 The existing all-claims-blinded U view plus one canonical
 derivation is insufficient because another claim may be an unretained
 alternative proof. Residuality is a simultaneous one-shot classification over
@@ -92,8 +100,8 @@ minimality and consumer authenticity remain review obligations.
 
 `Eligible` is fixed before any counterfactual: it contains exactly the
 occurrences that passed every earlier machine check—predicate shape/effects,
-   FN-1 reachability and exact lifecycle, canonical-component lifecycle, contribution
-consistency and exact-P reconstruction, and the five-field `because` schema. If
+   FN-1 reachability and D/S/F exact lifecycle, canonical-component lifecycle,
+contribution consistency and S-to-D reconstruction, and the five-field `because` schema. If
 any occurrence fails an earlier check, the unit reports that deterministic
 earlier error and never starts residuality; an invalid claim never supplies S3
 to another claim's baseline.
@@ -104,9 +112,9 @@ Sound conjunctive information such as positive `band`, negative `bor`, and
 does not imply either child remains one exact root component. Every admitted
 Bool operator needs an operator-specific canonical conjunctive basis: xor and
 equivalence may not default to singleton merely because the implementation
-lacks their partial-known rules. Direct/expanded
-aliases are one contribution identity with support-correct manifestations, not
-independent permissions. Comparisons, equality, and `.defined` follow a fixed
+lacks their partial-known rules. S supplies the canonical component identities;
+F supplies only equivalent or positive-only lifecycle manifestations, and D is
+materialized only after S reconstruction. Comparisons, equality, and `.defined` follow a fixed
 normative basis. The checker candidate adds finite, deterministic
 truth-functional introduction over exact parent goals already present in the
 goal universe. Thus known `A` plus residual `B` can reconstruct an exact
@@ -184,7 +192,7 @@ source claim and reruns the checker.
   or hidden partial operation. Define `Contrib(P)` for every permitted shape:
   operator-specific sound signed conjunctive decomposition, justified singleton
   roots such as positive disjunction, and support-correct ordinary-let
-  direct/expanded manifestations, equality, `.defined`, and `bnot`. Define the
+  D/S/F lifecycle and manifestation mapping, equality, `.defined`, and `bnot`. Define the
   finite truth-functional introduction needed
   to reconstruct exact compound consumers from checker facts plus contributions
   without synthesizing new formulas. Keep
@@ -199,7 +207,7 @@ source claim and reruns the checker.
   `known + residual`, positive-disjunction roots, partial-known xor/equivalence,
   per-component masks that remove solely dependent parents/descendants while
   preserving independent rederivation, claim-root versus child consumers,
-  hidden compound origins, direct-versus-expanded identity,
+  hidden compound origins and distinct D/S/F identity,
   equality and multi-condition `.defined`, an over-strong predicate, a
   manufactured dead consumer, OP/FN-8/FN-9 consumers, provenance, runtime
   oracles, parent-child-parent proof cycles, complete/U/B/claim-free/facts-off
@@ -210,7 +218,7 @@ source claim and reruns the checker.
   checking; exact positive and negative lifecycle queries for every admitted
   canonical predicate/origin image rather than only literals or the current
   relation subset; canonical contribution construction, per-component
-  lifecycle and S3 masking, exact-P reconstruction, and the bounded
+  D/S/F lifecycle and S3 masking, S reconstruction and D materialization, and the bounded
   truth-functional parent closure with deterministic non-cyclic ancestry. The
   claim event establishes the contribution basis directly—never parent then
   children—and parent introduction is one ordinary ENT rule shared by complete,
@@ -218,7 +226,7 @@ source claim and reruns the checker.
   five-field `because` structure check; redundant,
   refuted, vacuous, inconsistent, and non-residual source issues; the
   `Full-minus(c,a)` and `Full-minus(c)` candidate stage over complete entailment
-  reruns plus the U/B/PRV-1 provenance-invariance check; explicit rejection of any c-dependent proof
+  reruns plus an unconditional U/B/PRV-1 provenance-invariance check; explicit rejection of any c-dependent proof
   ancestry containing contradiction/explosion; deterministic schema-first,
   source-occurrence-then-concrete-instance claim diagnostics, stable
   claim-source, canonical-component, terminal-root, masked-disposition, and
@@ -238,8 +246,8 @@ source claim and reruns the checker.
   observation. Remove checker-proved and non-load-bearing claims. Restructure
   mixed generic instances rather than omitting checks per instance. For every
   genuine residual, rewrite `because` with premises, steps, exact conclusion,
-  checker gap, the derivation of every canonical contribution and exact-P
-  reconstruction, and terminal consumers, then perform and record human review. Recheck each
+  checker gap, the derivation of every canonical contribution, S reconstruction,
+  D materialization, and terminal consumers, then perform and record human review. Recheck each
   whole compilation unit and repair the removed condition effects plus `traps`
   and reverse callers to a fixed point. Preserve intended non-claim values,
   observations, evaluation order, cleanup, and ownership; inventory every
@@ -301,12 +309,13 @@ The selected ordering is part of correctness:
 
 1. resolve and type-check the proof predicate;
 2. enforce proof-predicate shape/ownership and the five-field `because` schema;
-3. in a contradiction-first guard, query both signs of every admitted exact
-   canonical predicate/origin image and
+3. in a contradiction-first guard, query both signs of every unique D/S/F
+   exact image in order and
    classify pre-S3 redundancy, refutation, pre-state contradiction, and
    post-S3 inconsistency in ordinary failure scratch;
-4. construct `Contrib(P)`, classify both signs of every component, and verify
-   contribution consistency plus retained exact-P reconstruction;
+4. construct `Contrib(P)` from S, classify each component through its S/F
+   manifestations, and verify contribution consistency plus retained S
+   reconstruction and D materialization;
 5. complete ordinary operation, call, postcondition, effect, and provenance
    judgments;
 6. on an otherwise successful fixed `Eligible` set, run simultaneous component
@@ -374,7 +383,7 @@ offline outcomes changes ordinary compilation or runtime execution.
 
 - Every successful checked-program claim is structurally a residual candidate:
   proof-predicate-valid; every member of its canonical `Contrib(P)` unknown and
-  consistent pre-S3; exact P reconstructible; every component individually
+  consistent pre-S3; S reconstructible and D materializable; every component individually
   necessary under `Full-minus(c,a)`; the occurrence necessary under
   `Full-minus(c)`; backed by non-explosive exact derivation ancestry; and
   retained at runtime.
@@ -433,8 +442,8 @@ offline outcomes changes ordinary compilation or runtime execution.
 - The implementation uses all-claims U plus a selected derivation as proof of
   individual necessity, or an unsat core as proof of minimality.
 - A claim contribution includes a checker-proved, refuted, or non-load-bearing
-  component; canonical direct/expanded, comparison, `bnot`, or `.defined`
-  normalization is ambiguous; exact P cannot be reconstructed; the bounded
+  component; canonical D/S/F, comparison, `bnot`, or `.defined`
+  normalization is ambiguous; S cannot be reconstructed or D materialized; the bounded
   parent closure creates cyclic/explosive ancestry; or `Full-minus(c)` is
   represented as proof that a proposition is globally weakest or uniquely
   canonical.

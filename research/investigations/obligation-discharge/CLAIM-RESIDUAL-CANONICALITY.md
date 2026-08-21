@@ -103,33 +103,42 @@ For one concrete inhabited function instance and one claim occurrence `c` at
 location `l`, let:
 
 - `P` be the exact typed predicate;
-- `Contrib(P)` be its versioned, ordered canonical contribution normal form;
+- `D(P)` be its direct evaluated GoalExpression snapshot, `S(P)` its
+  support-canonical snapshot-frontier expansion, and `F(P)` its fully
+  structural still-valid ordinary-let expansion;
+- `Contrib(P)` be the versioned, ordered canonical contribution normal form
+  derived only from S;
 - `C_l` be the normative state after safe evaluation of `P`, but before `c`
   establishes S3;
 - `Full` be the ordinary complete proof view;
 - `Eligible` be the fixed set of occurrences that have passed every
   pre-residual machine check: proof-predicate shape/effects, FN-1 reachability and
-  exact lifecycle, component lifecycle, contribution consistency and exact-P
-  reconstruction, and the five-field `because` schema;
+  D/S/F exact lifecycle, component lifecycle, contribution consistency, S
+  reconstruction and D materialization, and the five-field `because` schema;
 - `Full-minus(c)` be the same flow and the same executed source, with every
   other occurrence in `Eligible` contributing S3 and only `c`'s S3
   establishment suppressed;
 - `Full-minus(c,a)` additionally mean the same flow with c's runtime predicate
   and effects retained but its S3 source event emitting the basis without
-  contribution identity `a` or any of a's manifestations; ordinary closure is
+  component-specific source event `a`; ordinary closure is
   rerun from all unmasked sources, so facts depending only on a disappear and
-  independently rederived facts remain; if no terminal root changes, U/B and
-  PRV-1 invariance require exactly the same PRV-2/PRV-3 result, so any provenance
+  independently rederived facts remain; every run, whether or not a terminal
+  root changes, requires exactly the same PRV-2/PRV-3 failure set, so any provenance
   delta is a compiler consistency failure rather than a residual witness;
   and
 - `AdmissionRoots` be the closed set of mandatory source-acceptance proofs.
+
+For a one-component claim, the component and whole masks suppress the same
+single S3 event. They are therefore one definitionally identical fresh run with
+two evidence roles, not two semantically distinct worlds.
 
 The fast lifecycle matrix is:
 
 | Pre-claim result | Source result |
 |---|---|
 | `C_l` is contradictory | vacuous classification; never a proof of `P` |
-| non-contradictory `C_l` proves both signs | compiler consistency failure, not a source classification |
+| one exact D/S/F image proves both signs | compiler consistency failure, not a source classification |
+| distinct equivalent D/S/F images prove opposite signs | vacuous source classification |
 | non-contradictory `C_l` proves `P` | hard source error: redundant claim |
 | non-contradictory `C_l` proves `not P` | hard source error: refuted claim |
 | neither sign is derivable | `Unknown`; necessary but not sufficient for admission |
@@ -139,9 +148,10 @@ conditions 1, 2, 3, 5, and 6 hold; condition 4 is the additional approval rule:
 
 1. `P` passes the proof-expression judgment in section 6 and has one unique
    `Contrib(P)` under the rules below.
-2. Every signed component in `Contrib(P)` is unknown on both signs in `C_l`;
-   adding all components is consistent and reconstructs exact `P` through a
-   retained normative derivation.
+2. Every signed component in `Contrib(P)` and its sound S/F lifecycle
+   manifestations is unknown on both signs in `C_l`; adding all components is
+   consistent, reconstructs S, and materializes D through retained normative
+   derivations, while F remains lifecycle-only.
 3. `because` has exactly the five labelled, nonempty fields specified in
    section 7; this is a structural machine check only.
 4. The author asserts, and offline review accepts, a derivation of `P` from
@@ -189,26 +199,27 @@ exact root component. Every admitted Bool operator needs an operator-specific
 canonical conjunctive basis: xor and equivalence cannot default to singleton
 merely because the implementation lacks their partial-known rules.
 Comparison/equality and `.defined` use one specified normative relation/domain
-basis. A still-valid direct/expanded origin is one contribution identity with
-support-correct manifestations, not two independent permissions; masking the
-component masks the whole identity.
+basis. S supplies the support-correct contribution identities; F supplies only
+equivalent or positive-only lifecycle manifestations, and D is a reconstruction
+target rather than another permission. Masking suppresses only the selected S3
+source event, after which dependent reconstructions disappear naturally.
 The sequence is ordered and deduplicated by normative fact identity so claim,
 component, instance, and root witness selection is deterministic. Directional
 bounds retain ordered endpoints. Disequality identity is unordered, so
 `a != b` and `b != a` deduplicate, while the first left-to-right source
 occurrence fixes rendering and component ordinal.
 
-The same finite checker closure must reconstruct exact `P` from `C_l` plus all
-components. It may introduce only exact parent trees already present in the
+The same finite checker closure must reconstruct S from `C_l` plus all
+components and materialize D from that proof. It may introduce only exact parent trees already present in the
 finite goal universe, using fixed rule rank and minimum non-cyclic derivation
 depth. It does not synthesize arbitrary formulas. If normalization is ambiguous,
-support/kill cannot be preserved, or exact P cannot be reconstructed, that
+support/kill cannot be preserved, S cannot be reconstructed, or D cannot be materialized, that
 predicate shape is not yet admissible for claim; the compiler may not fall back
 to publishing an unchecked bundle.
 
-The runtime-success S3 event establishes the canonical contribution basis
-directly; it does not first establish parent P and then decompose it. Exact-P
-introduction is an ordinary normative ENT closure rule used identically in
+The runtime-success S3 event establishes the canonical S-derived contribution basis
+directly; it does not first establish parent P and then decompose it. S
+reconstruction and D materialization are ordinary normative ENT closure rules used identically in
 complete, U, B, claim-free, and facts-off checking. This avoids a claim-specific
 proof authority and prevents a retained parent-to-child-to-parent ancestry
 cycle.
@@ -283,8 +294,8 @@ mandatory audit duties.
 
 ### 4.3 Judgment order
 
-Pre-S3 shape, `because` structure, contradiction-first exact lifecycle,
-canonical-component lifecycle, consistency, and exact-P reconstruction can be
+Pre-S3 shape, `because` structure, contradiction-first D/S/F exact lifecycle,
+canonical-component lifecycle, consistency, S reconstruction, and D materialization can be
 recorded while walking the function. Non-residuality cannot own a diagnostic
 until the ordinary OP/FN judgments and provenance gates have produced an
 otherwise successful candidate: only then is the terminal-root population complete.
@@ -467,7 +478,7 @@ An audit input should be derived from canonical checked source, not assembled
 from the prose alone. A future claim packet would need at least:
 
 - exact source, specification, checker, and packet hashes;
-- claim identity, concrete instance, path, and typed predicate;
+- claim identity, concrete instance, path, typed predicate, and exact D/S/F images;
 - the versioned `Contrib(P)` identities and their support/kill manifestations;
 - the proof-pure predicate snapshot and relevant ownership/kill state;
 - the pre-S3 fast facts without the current claim;
@@ -668,8 +679,8 @@ uses the Current Plan and batch 0075 to proceed in this order:
    consumers, per-component parent/descendant invalidation versus independent
    rederivation, and generic instances;
 4. define and census the smallest proof-expression judgment and versioned
-   `Contrib(P)` normal form; prove direct/expanded support identity, equality and
-   `.defined` treatment, finite non-cyclic parent reconstruction,
+   `Contrib(P)` normal form; prove D/S/F support and manifestation mapping, equality and
+   `.defined` treatment, finite non-cyclic S reconstruction and D materialization,
    `band(known, residual)`, positive-disjunction singleton, and partial-known
    xor/equivalence cases;
 5. produce the exact specification and ordinary-test candidate for the

@@ -454,12 +454,14 @@ creating writer trust or weakening the checked safety envelope.
   AI-assisted, or offline-prover review owns theorem truth, proposition
   minimality, and consumer authenticity. The compiler checks a deterministic
   five-field `because` shape but does not pretend to validate its English.
-  Exact positive and negative lifecycle queries cover every admitted canonical
-  predicate/origin image. `Contrib(P)` uses an operator-specific sound signed
+  Exact positive and negative lifecycle queries cover the unique D/S/F images:
+  direct snapshot D, support-canonical contribution frontier S, and fully
+  structural lifecycle image F. `Contrib(P)` is derived only from S and uses an operator-specific sound signed
   conjunctive basis and leaves only justified roots such as positive
   disjunction as singletons; xor/equivalence may not default to singleton;
-  finite deterministic parent introduction must reconstruct exact P from
-  checker facts plus its contributions through one shared, non-cyclic ENT rule
+  finite deterministic parent introduction must reconstruct S and then
+  materialize D from checker facts plus its contributions through one shared,
+  non-cyclic ENT rule; F is never an S3 source or reconstruction target
   in every proof view. Proved, refuted, contradictory,
   inconsistent, overlapping, and
   non-load-bearing candidates are source errors. `claim True()` is redundant
@@ -490,7 +492,7 @@ creating writer trust or weakening the checked safety envelope.
   in-scope claim and justification requires review. The relevant MCTS-Mem nodes
   retain the old defensive/advisory choice and require paired redecision. Batch
   0075 now carries the v0.34 candidate: proof-predicate admission, five-field
-  review records, component normal form and reconstruction, simultaneous
+  review records, D/S/F lifecycle, S-derived component normal form and S-to-D reconstruction, simultaneous
   component/occurrence masks, stable terminal evidence, and generic
   source-schema plus inhabited-instance rechecks are implemented on the branch
   and under hostile ordinary tests; they remain candidate evidence, not active

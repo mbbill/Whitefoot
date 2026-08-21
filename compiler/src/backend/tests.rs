@@ -436,15 +436,21 @@ fn emitted_drop_ids(function: &str) -> Vec<u32> {
 
 #[test]
 fn emitted_module_retains_claims_without_an_integer_runtime_guard() {
-    let source = br#"fn add(x: own i32, y: own i32) -> result: own i32 pure contract {
-  requires x +defined y;
+    let source = br#"fn hidden_answer() -> result: own i32 pure {
+  return 42_i32;
+}
+
+fn need_answer(value: own i32) -> result: own unit pure contract {
+  requires ieq(value, 42_i32);
 } {
-  return x + y;
+  return unit;
 }
 
 command fn main() -> status: own ExitStatus traps {
-  let answer = add(x: 40_i32, y: 2_i32);
-  claim wrong_answer: ieq(answer, 42_i32) because "wrong answer";
+  let answer = hidden_answer();
+  let expected = ieq(answer, 42_i32);
+  claim reviewed_answer: expected because "premises: answer is returned by hidden_answer, whose body returns 42_i32\nderivation: substituting the function body's returned literal gives answer equal to 42_i32\nconclusion: expected is true\nchecker gap: ENT does not publish an uncontracted user-function result equality\nconsumers: need_answer requires this exact equality";
+  need_answer(value: answer);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1107,9 +1113,27 @@ command fn main() -> status: own ExitStatus pure {
 /// than its `because` justification.
 #[test]
 fn a_failing_claim_emits_the_exact_mandatory_record_shape() {
-    let source =
-        b"command fn main() -> status: own ExitStatus traps {\n  claim bad_quote_line: False() because \"bad \\\"quote\\\"\\nline\";\n  return exit_status(code: 0_u8);\n}\n";
-    let output = compile_and_run(&compile(source));
+    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
+command fn main() -> status: own ExitStatus traps {
+  let values = array_new<u8, 4>(0_u8);
+  let bounded = clamp_three(value: 99_u64);
+  let in_range = ilt(bounded, 4_u64);
+  let injected_false = False();
+  claim bad_quote_line: in_range because "premises: bounded is returned by clamp_three\nderivation: clamp_three returns the minimum of its input and 3_u64, which is below 4_u64\nconclusion: in_range is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: values[bounded] requires this exact bound";
+  let ignored = values[bounded];
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = system::with_mutated_ir(source, |program| {
+        assert!(program.force_claim_false_for_test("main", "bad_quote_line"));
+        emit_llvm(program)
+            .expect("fault-injected checked IR must emit")
+            .into_string()
+    });
+    let output = compile_and_run(&llvm);
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
     assert!(
