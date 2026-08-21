@@ -26,13 +26,19 @@ fn named<'functions>(
         .expect("named function is checked")
 }
 
-/// A stronger claimed bound discharges the literal-operand site: the program
-/// is accepted and both overflow conjuncts are proved.
+/// A reviewed residual theorem about an uncontracted clamp discharges the
+/// literal-operand site: the program is accepted and both overflow conjuncts
+/// are proved.
 #[test]
 fn a_stronger_claim_discharges_the_literal_site() {
-    let source = br#"fn bump(x: own u64) -> result: own u64 traps {
-  claim bounded_input: ilt(x, 1000_u64) because "premises: fixture context: bounded input\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
-  let y = x + 1_u64;
+    let source = br#"fn clamp_below_thousand(value: own u64) -> result: own u64 pure {
+  return imin(value, 999_u64);
+}
+
+fn bump(x: own u64) -> result: own u64 traps {
+  let bounded = clamp_below_thousand(value: x);
+  claim bounded_input: ilt(bounded, 1000_u64) because "premises: bounded is returned by clamp_below_thousand, whose body computes imin(x, 999_u64)\nderivation: imin(x, 999_u64) is at most 999_u64, and 999_u64 is strictly less than 1000_u64\nconclusion: ilt(bounded, 1000_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
+  let y = bounded + 1_u64;
   return y;
 }
 
@@ -132,13 +138,19 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// A dominating claim establishes the residual and discharges the exact-site
-/// obligation. The claim itself remains the function's `traps` effect source.
+/// A reviewed residual theorem about an uncontracted clamp discharges the
+/// exact-site obligation. The claim itself remains the function's `traps`
+/// effect source.
 #[test]
 fn a_dominating_claim_discharges_the_site() {
-    let source = br#"fn bump(x: own u64) -> result: own u64 traps {
-  claim small: ile(x, 100_u64) because "premises: fixture context: callers pass a byte count\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
-  let y = x + 1_u64;
+    let source = br#"fn clamp_hundred(value: own u64) -> result: own u64 pure {
+  return imin(value, 100_u64);
+}
+
+fn bump(x: own u64) -> result: own u64 traps {
+  let bounded = clamp_hundred(value: x);
+  claim small: ile(bounded, 100_u64) because "premises: bounded is returned by clamp_hundred, whose body computes imin(x, 100_u64)\nderivation: imin(x, 100_u64) is at most 100_u64\nconclusion: ile(bounded, 100_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
+  let y = bounded + 1_u64;
   return y;
 }
 

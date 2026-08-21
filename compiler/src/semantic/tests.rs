@@ -353,7 +353,7 @@ fn read(values: own array<i32, 8>, i: own u64) -> result: own i32 traps {
   let size = len(values);
   let bounded = clamp_seven(value: i);
   let inside = ilt(bounded, size);
-  claim held: inside because "premises: values has length 8 and bounded is returned by clamp_seven, whose body computes imin(i, 7_u64)\nderivation: bounded is at most 7_u64 and therefore strictly less than size\nconclusion: inside is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following values[bounded] bounds obligation";
+  claim held: inside because "premises: values has length 8 and bounded is returned by clamp_seven, whose body computes imin(i, 7_u64)\nderivation: bounded is at most 7_u64 and therefore strictly less than size\nconclusion: inside is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following values[bounded] subscript requires this bound for its OP-4 obligation";
   return values[bounded];
 }
 
@@ -372,8 +372,8 @@ command fn main() -> status: own ExitStatus pure {
 fn a_repeated_claim_name_is_a_clm1_rejection_at_the_later_claim() {
     let source = br#"command fn main() -> status: own ExitStatus traps {
   let flag = True();
-  claim held: flag because "premises: fixture context: first\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
-  claim held: flag because "premises: fixture context: second\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
+  claim held: flag because "premises: this negative fixture has no approved residual theorem premise\nderivation: CLM-1 must reject the repeated name before claim lifecycle classification\nconclusion: this source must not publish a checked program\nchecker gap: this review record only exposes the CLM-1 ordering under test\nconsumers: no approved program consumes this negative fixture";
+  claim held: flag because "premises: this negative fixture has no approved residual theorem premise\nderivation: CLM-1 must reject this second occurrence because held is already defined in the function\nconclusion: this source must not publish a checked program\nchecker gap: this review record only exposes the CLM-1 duplicate-name rejection under test\nconsumers: no approved program consumes this negative fixture";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -390,7 +390,7 @@ fn a_repeated_claim_name_is_a_clm1_rejection_at_the_later_claim() {
 fn a_non_bool_claim_condition_is_a_clm1_rejection() {
     let source = br#"command fn main() -> status: own ExitStatus traps {
   let value = 3_u64;
-  claim held: value because "premises: fixture context: not a Bool\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
+  claim held: value because "premises: this negative fixture supplies a u64 rather than a Bool condition\nderivation: CLM-1 must reject value before claim lifecycle classification\nconclusion: this source must not publish a checked program\nchecker gap: this review record only exposes the CLM-1 predicate-type rejection under test\nconsumers: no approved program consumes this negative fixture";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -436,7 +436,7 @@ fn semantic_rule_owners_remain_distinct() {
         SemanticIssueKind::ReturnMismatch,
     );
     assert_rule(
-        b"command fn main() -> status: own ExitStatus traps {\n  claim bad: 1_i32 because \"bad\";\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus traps {\n  claim bad: 1_i32 because \"premises: this negative fixture supplies an i32 rather than a Bool condition\\nderivation: CLM-1 must reject the condition before claim lifecycle classification\\nconclusion: this source must not publish a checked program\\nchecker gap: this review record only exposes the CLM-1 predicate-type rejection under test\\nconsumers: no approved program consumes this negative fixture\";\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Clm1,
         SemanticIssueKind::InvalidPredicateCondition,
     );

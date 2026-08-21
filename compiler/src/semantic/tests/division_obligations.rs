@@ -35,13 +35,19 @@ fn division_outcomes(
         .collect()
 }
 
-/// A stronger claimed bound discharges the zero-divisor conjunct of an
-/// unsigned site: the program is accepted and both conjuncts are proved.
+/// A reviewed residual theorem about an uncontracted normalizer discharges
+/// the zero-divisor conjunct of an unsigned site: the program is accepted and
+/// both conjuncts are proved.
 #[test]
 fn a_stronger_claim_discharges_an_unsigned_site() {
-    let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
-  claim positive_divisor: igt(d, 0_u64) because "premises: fixture context: positive divisor\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
-  let q = n / d;
+    let source = br#"fn reviewed_positive(value: own u64) -> result: own u64 pure {
+  return imax(value, 1_u64);
+}
+
+fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
+  let divisor = reviewed_positive(value: d);
+  claim positive_divisor: igt(divisor, 0_u64) because "premises: divisor is returned by reviewed_positive, whose body computes imax(d, 1_u64)\nderivation: imax(d, 1_u64) is at least 1_u64, which is strictly greater than 0_u64\nconclusion: igt(divisor, 0_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following n / divisor exact division requires a nonzero divisor for its OP-2 domain obligation";
+  let q = n / divisor;
   return q;
 }
 
@@ -59,18 +65,24 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(division[0].components.len(), 2);
         assert!(
             division.iter().all(|outcome| outcome.discharged),
-            "the claim derives `d != 0` and the unsigned overflow conjunct is ground true",
+            "the claim derives `divisor != 0` and the unsigned overflow conjunct is ground true",
         );
     });
 }
 
-/// A claim spelling the canonical disequality discharges the obligation. The
-/// claim itself remains the function's `traps` effect source.
+/// A reviewed residual theorem spells the selected normalized divisor's
+/// canonical disequality and discharges the obligation. The claim itself
+/// remains the function's `traps` effect source.
 #[test]
 fn a_canonical_claim_discharges_the_site() {
-    let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
-  claim nonzero: ine(d, 0_u64) because "premises: fixture context: callers pass a nonzero stride\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
-  let q = n / d;
+    let source = br#"fn reviewed_nonzero(value: own u64) -> result: own u64 pure {
+  return imax(value, 1_u64);
+}
+
+fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
+  let divisor = reviewed_nonzero(value: d);
+  claim nonzero: ine(divisor, 0_u64) because "premises: divisor is returned by reviewed_nonzero, whose body computes imax(d, 1_u64)\nderivation: imax(d, 1_u64) is at least 1_u64 and therefore cannot equal 0_u64\nconclusion: ine(divisor, 0_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result disequality\nconsumers: the following n / divisor exact division requires this disequality for its OP-2 domain obligation";
+  let q = n / divisor;
   return q;
 }
 
@@ -194,10 +206,9 @@ command fn main() -> status: own ExitStatus pure {
 /// conjunct and is therefore rejected at every non-contradictory point.
 #[test]
 fn a_constant_zero_divisor_is_rejected_everywhere() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let x = 10_i32;
   let q = x / 0_i32;
-  claim unreachable: igt(q, 0_i32) because "premises: fixture context: unreachable\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -248,13 +259,18 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// The same site with the dividend bounded away from the type minimum
-/// discharges both conjuncts.
+/// The same site with a reviewed, uncontracted clamp that bounds the dividend
+/// away from the type minimum discharges both conjuncts.
 #[test]
 fn a_bounded_dividend_over_minus_one_discharges() {
-    let source = br#"fn negate(n: own i32) -> result: own i32 traps {
-  claim bounded_input: igt(n, -100_i32) because "premises: fixture context: bounded input\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
-  let q = n / -1_i32;
+    let source = br#"fn clamp_above_minus_hundred(value: own i32) -> result: own i32 pure {
+  return imax(value, -99_i32);
+}
+
+fn negate(n: own i32) -> result: own i32 traps {
+  let bounded = clamp_above_minus_hundred(value: n);
+  claim bounded_input: igt(bounded, -100_i32) because "premises: bounded is returned by clamp_above_minus_hundred, whose body computes imax(n, -99_i32)\nderivation: imax(n, -99_i32) is at least -99_i32, which is strictly greater than -100_i32\nconclusion: igt(bounded, -100_i32) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following bounded / -1_i32 exact division requires exclusion of i32::MIN for its OP-2 domain obligation";
+  let q = bounded / -1_i32;
   return q;
 }
 
@@ -368,10 +384,9 @@ command fn main() -> status: own ExitStatus pure {
 /// the obligation-focused test entry.
 #[test]
 fn the_default_checker_rejects_a_constant_zero_divisor() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let x = 10_i32;
   let q = x / 0_i32;
-  claim unreachable: igt(q, 0_i32) because "premises: fixture context: unreachable\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   return exit_status(code: 0_u8);
 }
 "#;
@@ -443,18 +458,24 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// [OP-2]'s own mechanical fix must be writable at a signed type: the
-/// residual `d != 0` is discharged by the claim that spells it, and by the
-/// dominating branch that establishes it. Both routes state the divisor's
-/// disequality against a written `0_i32`, which is the same mathematical
-/// value as the zero term the conjunct is stated against and therefore the
-/// same [ENT-2] term; the unsigned routes, which reach the same conjunct
-/// through the type's own lower bound, are unchanged.
+/// [OP-2]'s own mechanical fix must be writable at a signed type. The claim
+/// route first obtains a genuinely nonzero divisor from an uncontracted
+/// normalizer, then states the selected operand's residual disequality; the
+/// branch route establishes the original divisor's disequality directly.
+/// Both routes compare the selected divisor against a written `0_i32`, which
+/// is the same mathematical value as the zero term the conjunct is stated
+/// against and therefore the same [ENT-2] term; the unsigned routes, which
+/// reach the same conjunct through the type's own lower bound, are unchanged.
 #[test]
 fn the_signed_zero_divisor_conjunct_is_discharged_by_its_own_mechanical_fix() {
-    let claimed = br#"fn ratio(d: own i32) -> result: own i32 traps {
-  claim nonzero: ine(d, 0_i32) because "premises: fixture context: callers pass a nonzero divisor\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
-  let q = 100_i32 / d;
+    let claimed = br#"fn reviewed_nonzero(value: own i32) -> result: own i32 pure {
+  return imax(value, 1_i32);
+}
+
+fn ratio(d: own i32) -> result: own i32 traps {
+  let divisor = reviewed_nonzero(value: d);
+  claim nonzero: ine(divisor, 0_i32) because "premises: divisor is returned by reviewed_nonzero, whose body computes imax(d, 1_i32)\nderivation: imax(d, 1_i32) is at least 1_i32 and therefore cannot equal 0_i32\nconclusion: ine(divisor, 0_i32) is true\nchecker gap: ENT does not publish an uncontracted user-call result disequality\nconsumers: the following 100_i32 / divisor exact division requires this disequality for its OP-2 domain obligation";
+  let q = 100_i32 / divisor;
   return q;
 }
 

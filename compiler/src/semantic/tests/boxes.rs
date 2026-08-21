@@ -72,11 +72,9 @@ fn affine_box_referent_move_stays_an_explicit_capability_boundary() {
 #[test]
 fn box_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
     assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let b = box_new(4_i32);
   set deref(b) = 7_i32;
-  let seen = deref(b);
-  claim box_content_set: ieq(seen, 7_i32) because "premises: fixture context: box content set\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
   return exit_status(code: 0_u8);
 }
 "#,

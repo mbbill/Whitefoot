@@ -298,11 +298,16 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn body_claims_and_s4_are_routed_to_the_fixed_postcondition_views() {
-    let body_claim = br#"fn guarded(value: own i32) -> result: own i32 traps contract {
+    let body_claim = br#"fn reviewed_one() -> result: own i32 pure {
+  return 1_i32;
+}
+
+fn guarded(value: own i32) -> result: own i32 traps contract {
   ensures ieq(result, 1_i32);
 } {
-  claim body: ieq(value, 1_i32) because "premises: fixture context: body\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
-  return value;
+  let reviewed = reviewed_one();
+  claim body: ieq(reviewed, 1_i32) because "premises: reviewed is returned by reviewed_one, whose body returns the literal 1_i32\nderivation: substituting the helper body's return value for reviewed yields ieq(1_i32, 1_i32)\nconclusion: ieq(reviewed, 1_i32) is true\nchecker gap: ENT does not publish an uncontracted user-call result equality\nconsumers: guarded's FN-9 postcondition requires this equality at the following return reviewed";
+  return reviewed;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -950,7 +955,7 @@ fn caller() -> result: own unit allocates(heap), traps {
   let expected = deref(owner);
   let observed = observe(value: deref(owner));
   let fallback = opaque_identity(value: expected);
-  claim ordinary_fallback: ieq(fallback, expected) because "premises: fallback is returned by opaque_identity, whose body returns its value parameter unchanged\nderivation: the call argument is expected, so fallback equals expected\nconclusion: ieq(fallback, expected) is true\nchecker gap: ENT does not publish an uncontracted user-call result equality\nconsumers: guard requires this equality after the neighboring S12 owner-supported candidate is killed";
+  claim ordinary_fallback: ieq(fallback, expected) because "premises: fallback is returned by opaque_identity, whose body returns its value parameter unchanged\nderivation: the call argument is expected, so fallback equals expected\nconclusion: ieq(fallback, expected) is true\nchecker gap: ENT does not publish an uncontracted user-call result equality\nconsumers: the following guard call's FN-8 requirement needs this equality after the neighboring S12 owner-supported candidate is killed";
   sink(owner: move owner);
   guard(left: fallback, right: expected);
   return unit;
@@ -2467,7 +2472,7 @@ fn relay(value: own i32) -> result: own i32 pure contract {
 
 fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
   let room = len(values);
-  claim bounded: ilt(position, room) because "premises: fixture context: claimed parameter bound\nderivation: the fixture supplies the written predicate to exercise the selected checker path\nconclusion: the written predicate holds in the intended fixture state\nchecker gap: the fixture models a proof fact outside the selected checker rules\nconsumers: the following source operation or call is the test subject";
+  claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following values[position] subscript is the protected terminal root";
   return values[position];
 }
 
