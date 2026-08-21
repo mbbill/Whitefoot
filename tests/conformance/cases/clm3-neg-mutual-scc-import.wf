@@ -1,8 +1,15 @@
+fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
 fn mutual_left(remaining: own u64) -> result: own u64 traps {
   let done = ieq(remaining, 0_u64);
   if done {
-    let asserted = True();
-    claim scc_claim: asserted because "one member seeds the component's may-claim summary";
+    let values = array_new<u8, 4>(0_u8);
+    let bounded = clamp_three(value: remaining);
+    let inside = ilt(bounded, 4_u64);
+    claim scc_claim: inside because "premises: bounded is returned by clamp_three, whose body computes imin(remaining, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following values[bounded] subscript requires this exact bound";
+    let selected = values[bounded];
     return 0_u64;
   } else {
     let next = remaining -wrap 1_u64;

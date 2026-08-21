@@ -1,12 +1,10 @@
 fn f (x: own i32) -> function_result: own i32 pure, traps {
   doc "pure combined with traps [EFF-1]; pure is the empty row.";
-  claim x: ieq<i32>(x, x) because "x";
   return x;
 }
 
 command fn main () -> status: own ExitStatus traps {
   doc "Driver.";
   let a: own i32 = f(x: 7_i32);
-  claim x: ieq<i32>(a, 7_i32) because "x";
   return exit_status(code: 0_u8);
 }

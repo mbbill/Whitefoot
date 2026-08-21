@@ -1,7 +1,14 @@
+fn reviewed_small(value: own i32) -> result: own i32 pure {
+  let lower = imax(value, -10_i32);
+  return imin(lower, 10_i32);
+}
+
 fn risky_checked(x: own i32) -> result: own Result<i32, Overflow> traps {
   doc "A claim behind a Result surface; the row declares traps.";
-  claim admitted: True() because "the callee retains the claim-only runtime trap capability";
-  let bumped = x +wrap 1_i32;
+  let bounded = reviewed_small(value: x);
+  let addition_defined = bounded +defined 1_i32;
+  claim admitted: addition_defined because "premises: bounded is returned by reviewed_small, whose body clamps x to the closed interval -10_i32 through 10_i32\nderivation: adding 1_i32 produces a value in -9_i32 through 11_i32, which is representable by i32\nconclusion: bounded +defined 1_i32 is true\nchecker gap: ENT does not publish the range of an uncontracted user-call result\nconsumers: the following exact addition requires both signed sum bounds";
+  let bumped = bounded + 1_i32;
   return Ok<i32, Overflow>(value: bumped);
 }
 

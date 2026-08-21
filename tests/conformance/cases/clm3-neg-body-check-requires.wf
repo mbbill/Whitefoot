@@ -5,10 +5,15 @@ fn required(value: own u64, limit: own u64) -> result: own unit pure contract {
   return unit;
 }
 
+fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
 deny_claims fn checked_forward(value: own u64, limit: own u64) -> result: own unit traps {
-  let allowed = ilt(value, limit);
-  claim caller_check: allowed because "caller check";
-  required(value: value, limit: limit);
+  let bounded = clamp_three(value: value);
+  let allowed = ilt(bounded, 4_u64);
+  claim caller_check: allowed because "premises: bounded is returned by clamp_three, whose body computes imin(value, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following required call needs this exact bound";
+  required(value: bounded, limit: 4_u64);
   return unit;
 }
 

@@ -9,14 +9,22 @@ fn guard(value: own i32) -> result: own unit pure contract {
   return unit;
 }
 
-fn matched(value: own i32, choice: own Choice) -> result: own i32 traps {
+fn matched(value: own i32, choice: own Choice) -> result: own i32 pure {
   let picked = match choice {
     Narrow() => {
-      claim narrow_bound: ilt(value, 8_i32) because "narrow bound";
+      let narrow_bound = ilt(value, 8_i32);
+      if narrow_bound {
+      } else {
+        return value;
+      }
       give value;
     }
     Wide() => {
-      claim wide_bound: ilt(value, 128_i32) because "wide bound";
+      let wide_bound = ilt(value, 128_i32);
+      if wide_bound {
+      } else {
+        return value;
+      }
       give value;
     }
   }

@@ -6,11 +6,14 @@ fn read_strict(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pu
   return bytes[index];
 }
 
-fn call_with_nonstrict_goal(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 traps {
-  doc "A non-strict claim is not the callee's exact strict goal; full-state FN-8 rejection runs before any PRV-2 target is formed.";
+fn call_with_nonstrict_goal(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure {
+  doc "A non-strict branch fact is not the callee's exact strict goal; full-state FN-8 rejection runs before any PRV-2 target is formed.";
   let room = len(bytes);
   let maybe_inside = ile(index, room);
-  claim index_may_equal_the_length: maybe_inside because "index may equal the length";
+  if maybe_inside {
+  } else {
+    return 0_u8;
+  }
   let value = read_strict(bytes: move bytes, index: index);
   return value;
 }

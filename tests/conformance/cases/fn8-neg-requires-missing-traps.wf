@@ -5,14 +5,21 @@ fn bounded(x: own i32) -> result: own i32 pure contract {
   return x;
 }
 
+fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
 fn missing_effect() -> result: own unit pure {
   doc "The caller's explicit claim exhibits traps even though the callee requirement is an erased proof goal [EFF-2/FN-8].";
-  let x = 7_i32;
-  let permitted = ige(x, 0_i32);
-  claim caller_evidence: permitted because "caller evidence";
-  let value = bounded(x: x);
-  let same = ieq(value, 7_i32);
-  claim expected: same because "the helper returns its input";
+  let values = array_new<u8, 4>(0_u8);
+  let left = clamp_three(value: 8_u64);
+  let left_inside = ilt(left, 4_u64);
+  claim caller_evidence: left_inside because "premises: values has length 4 and left is returned by clamp_three, whose body computes imin(8_u64, 3_u64)\nderivation: left is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: ilt(left, 4_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following values[left] subscript requires this exact bound";
+  let first = values[left];
+  let right = clamp_three(value: 9_u64);
+  let right_inside = ilt(right, 4_u64);
+  claim expected: right_inside because "premises: values has length 4 and right is returned by clamp_three, whose body computes imin(9_u64, 3_u64)\nderivation: right is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: ilt(right, 4_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following values[right] subscript requires this exact bound";
+  let second = values[right];
   return unit;
 }
 

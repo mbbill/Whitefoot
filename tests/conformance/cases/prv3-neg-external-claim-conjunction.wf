@@ -1,7 +1,12 @@
+fn clamp_three(value: own u64) -> return_value: own u64 pure {
+  return imin(value, 3_u64);
+}
+
 command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
-  doc "Assertion evidence laundered through signed Boolean decomposition is still assertion evidence. One claim over a `band` of two bounds establishes both members in the complete state [ENT-3], but the S3-blinded state removes the establishment and its decomposition together, so PRV-3 still rejects the first protected subscript whose constrained subject is the external args_count result.";
+  doc "A true reviewed residual cannot authorize an externally derived constrained subject. One claim over a `band` of two bounds establishes both members in the complete state [ENT-3], but the S3-blinded provenance judgment removes the establishment and its decomposition together, so PRV-3 still rejects the first protected subscript whose constrained subject derives from args_count.";
   region 'a {
-    let index = args_count<'a>(args: &'a args);
+    let raw_index = args_count<'a>(args: &'a args);
+    let index = clamp_three(value: raw_index);
     let bytes = buffer_new(4_u64, 0_u8);
     let other = buffer_new(4_u64, 0_u8);
     let room = len(bytes);
@@ -9,7 +14,7 @@ command fn main(command.args as args: own Args) -> return_value: own ExitStatus 
     let inside = ilt(index, room);
     let also_inside = ilt(index, other_room);
     let both = band(inside, also_inside);
-    claim index_within_both_buffers: both because "the conjunction is deliberately not proof";
+    claim index_within_both_buffers: both because "premises: index is returned by clamp_three, whose body computes imin(raw_index, 3_u64), and both buffers have length 4\nderivation: index is at most 3_u64 and therefore strictly less than both room and other_room\nconclusion: band(inside, also_inside) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the two following subscripts require the respective conjunction components";
     let value = bytes[index];
     let other_value = other[index];
     return exit_status(code: 0_u8);

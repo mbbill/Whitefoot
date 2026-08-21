@@ -2,10 +2,22 @@ fn clean_identity<T: Int>(value: own T) -> result: own T pure {
   return value;
 }
 
+fn clamp_one<T: Int>(value: own T) -> result: own T pure {
+  return imin(value, 1_T);
+}
+
+fn need_at_most_one<T: Int>(value: own T) -> result: own unit pure contract {
+  requires ile(value, 1_T);
+} {
+  return unit;
+}
+
 fn claimed_identity<T: Int>(value: own T) -> result: own T traps {
-  let asserted = True();
-  claim generic_claim: asserted because "the concrete callee retains one direct claim";
-  return value;
+  let bounded = clamp_one<T>(value: value);
+  let inside = ile(bounded, 1_T);
+  claim generic_claim: inside because "premises: bounded is returned by generic clamp_one, whose body computes imin(value, 1_T)\nderivation: imin returns an operand no greater than 1_T for every integer type T\nconclusion: ile(bounded, 1_T) is true\nchecker gap: schema ENT does not publish an uncontracted generic user-call result bound\nconsumers: the following generic FN-8 requirement needs bounded at most 1_T";
+  need_at_most_one<T>(value: bounded);
+  return bounded;
 }
 
 fn claimed_relay<T: Int>(value: own T) -> result: own T traps {

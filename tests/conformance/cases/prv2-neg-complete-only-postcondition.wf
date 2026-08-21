@@ -1,8 +1,14 @@
+fn clamp_three(value: own u64) -> return_value: own u64 pure {
+  return imin(value, 3_u64);
+}
+
 fn bounded(value: own u64) -> return_value: own u64 traps contract {
   ensures ilt(return_value, 4_u64);
 } {
-  claim body_assertion: ilt(value, 4_u64) because "body assertion";
-  return value;
+  let normalized = clamp_three(value: value);
+  let inside = ilt(normalized, 4_u64);
+  claim body_bound: inside because "premises: normalized is returned by clamp_three, whose body computes imin(value, 3_u64)\nderivation: normalized is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: ilt(normalized, 4_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the selected normal return must prove the exact result-below-four postcondition";
+  return normalized;
 }
 
 fn protected_read(values: own array<u8, 4>, index: own u64) -> return_value: own u8 pure contract {

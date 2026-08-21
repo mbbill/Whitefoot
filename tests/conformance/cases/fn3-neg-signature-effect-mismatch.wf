@@ -2,8 +2,16 @@ contract PureMember {
   fn apply(x: own i32) -> result: own i32 pure;
 }
 
+fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
 fn trapping_apply(x: own i32) -> result: own i32 traps {
-  claim retained_explicit_claim: ieq(x, x) because "retained explicit claim";
+  let values = array_new<u8, 4>(0_u8);
+  let bounded = clamp_three(value: 9_u64);
+  let inside = ilt(bounded, 4_u64);
+  claim retained_explicit_claim: inside because "premises: values has length 4 and bounded is returned by clamp_three, whose body computes imin(9_u64, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following values[bounded] subscript requires this exact bound";
+  let selected = values[bounded];
   return x;
 }
 

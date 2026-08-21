@@ -1,6 +1,20 @@
+fn reviewed_small(value: own i32) -> function_result: own i32 pure {
+  let lower = imax(value, -10_i32);
+  return imin(lower, 10_i32);
+}
+
+fn need_seven(value: own i32) -> function_result: own unit pure contract {
+  requires ieq(value, 7_i32);
+} {
+  return unit;
+}
+
 fn guarded(x: own i32) -> function_result: own i32 traps {
   doc "Declares traps and exhibits a claim.";
-  claim range: ilt(x, 100_i32) because "range";
+  let bounded = reviewed_small(value: x);
+  let product_defined = bounded *defined 2_i32;
+  claim range: product_defined because "premises: bounded is returned by reviewed_small, whose body clamps x to the closed interval -10_i32 through 10_i32\nderivation: multiplying by 2_i32 produces a value in -20_i32 through 20_i32, which is representable by i32\nconclusion: bounded *defined 2_i32 is true\nchecker gap: ENT does not publish the range of an uncontracted user-call result\nconsumers: the following exact multiplication requires both signed product bounds";
+  let doubled = bounded * 2_i32;
   return x;
 }
 
@@ -13,6 +27,8 @@ fn f(x: own i32) -> function_result: own i32 pure {
 command fn main() -> status: own ExitStatus traps {
   doc "Driver.";
   let a = f(x: 7_i32);
-  claim x: ieq(a, 7_i32) because "x";
+  let expected = ieq(a, 7_i32);
+  claim x: expected because "premises: f calls guarded and both functions return their input unchanged\nderivation: the call f(x: 7_i32) therefore returns 7_i32\nconclusion: ieq(a, 7_i32) is true\nchecker gap: ENT does not publish an uncontracted user-function result equality\nconsumers: the following need_seven call requires this exact equality";
+  need_seven(value: a);
   return exit_status(code: 0_u8);
 }

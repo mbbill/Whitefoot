@@ -9,6 +9,5 @@ command fn main() -> status: own ExitStatus traps {
       give 0_i32;
     }
   }
-  claim x: ieq(v, 42_i32) because "x";
   return exit_status(code: 0_u8);
 }
