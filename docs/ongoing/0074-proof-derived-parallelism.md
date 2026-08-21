@@ -238,6 +238,62 @@ reproduction, never worked around.)
   check` stops at conformance coverage because [PAR-1] is a 136th rule with no
   annotation, and the annotation is protected evidence this batch may not land.
 
+- E5 (demo workload, measurement, durable evidence): landed
+  `tests/programs/par_layout.wf`, one box-tree layout pass folded twice over one
+  tree — once with a measure bounded by the metric table's own length, whose
+  closure is claim-free, and once with a measure bounded by a caller-supplied
+  band, whose closure carries one claim. Nothing else differs between the two
+  folds, so the program isolates exactly what a claim costs: the ledger reports
+  `pair(layout, layout) eligible` and `pair(layout_banded, layout_banded)
+  not-actualizable: 1 claim site via measure_band`, and the emitted module shows
+  the thunk, offer, and join in `@wf_layout` and no part of the runtime in
+  `@wf_layout_banded`. Three integration cases in
+  `compiler/tests/programs/parallel.rs` pin that split and byte-compare the
+  published output at WF_WORKERS unset, 2, and 4; `CompiledProgram` gained
+  `run_with_workers` and the harness gained `program_permission_ledger` so a
+  corpus case reads the compiler's own ledger lines rather than re-deriving
+  them. `make -C compiler check` green (1005 lib tests unchanged, integration
+  programs 48 to 51); full `make check` still stops at the E4 conformance
+  coverage BLOCKER above and nowhere else.
+
+  Measured on Apple M4 (4 performance + 6 efficiency cores), interleaved
+  rotation across worker counts, N=9, byte-comparing every run:
+  whole program 715.5 / 491.4 / 398.8 / 400.5 ms minima at WF_WORKERS
+  1 / 2 / 4 / 8, that is 1.46x, 1.79x, 1.79x. The same module linked with no
+  runtime at all runs at 715.8 ms, statistically identical to WF_WORKERS=1, so
+  the default-off path costs nothing measurable. Phase decomposition: the
+  eligible fold alone scales 1.89x / 2.98x / 3.00x while the claim-bearing fold
+  alone stays flat within 5% at every count, and the observed Amdahl share
+  (66.1% eligible) composes with the eligible phase's own scaling to predict the
+  whole-program figure to within 1% at every worker count. Grant counts read
+  from the pool's own counter: 0 / 801 / 2529 / 8031 of 50,463 offers, so the
+  lane-budget policy refuses 95% or more of all offers and the wins come from
+  the few lanes near the root. All 109 runs published identical bytes.
+
+  Three things the audit should look at directly. (a) The grain hazard is
+  recorded as a measurement, not a caveat: an earlier draft of this same program
+  with a 16-entry table and a depth-12 tree measured 0.08 s sequential and 0.17 s
+  at four workers, a 2.1x slowdown, because the fork is offered at every branch
+  node regardless of subtree size. That number is in RESULTS.md section 8 as the
+  concrete case for the deferred heartbeat policy. (b) The integration case does
+  not read the grant counter, so on its own it could pass against a pool that
+  granted nothing; that mode is closed by E3's in-crate test, which does read the
+  counter, and the doc comment says so rather than leaving the gap implicit.
+  (c) `probes/README.md` records that two probes the design cites,
+  `g2_propagate.wf` and `g3_dep.wf`, produce no ledger line at all, because the
+  judgment analyzes ordered pairs of *adjacent* `let x = f(...)` statements and
+  neither hazard is such a pair. They established requirements; the denials
+  themselves are pinned by the compiler tests. The README states that rather
+  than letting the files read as denial witnesses they are not.
+
+  Also landed: `research/investigations/proof-derived-parallelism/RESULTS.md`
+  (protocol, machine facts, the tables above, and eight stated limitations),
+  ten deciding probes in `probes/` with a README naming what each settles, and
+  the two roadmap Facts links E4 could not add because RESULTS.md did not exist
+  yet. The roadmap `Revision` is deliberately left at 46: adding an evidence
+  link changes no item's goal, current state, next gate, or disposition, and the
+  PROPOSED plan's derivation from revision 46 stays true.
+
 ## Outcome
 
 (Filled at closure: landed commits, verification results, measurements,

@@ -690,6 +690,8 @@ and failure semantics survive the runtime implementation.
   batch record asks for; then the I/O concurrency lane, which is where the
   measured profit is, ahead of the `pal` marker and any permission widening.
 - **Facts:** [design contract](../research/investigations/proof-derived-parallelism/DESIGN.md) ·
+  [measured results](../research/investigations/proof-derived-parallelism/RESULTS.md) ·
+  [deciding probes](../research/investigations/proof-derived-parallelism/probes/README.md) ·
   [permission and layer model](../research/investigations/proof-derived-parallelism/PAL.md) ·
   [batch record 0074](ongoing/0074-proof-derived-parallelism.md) ·
   [auto-parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md).
@@ -738,7 +740,8 @@ and failure semantics survive the runtime implementation.
   absolute wall time on a workload that is not the compute demo, and settle
   the completion-based runtime the I/O lane needs; any OWN-11 change needs
   hostile soundness review.
-- **Facts:** [dynamic fan-out placement](../research/archive-promotion-audit.md#3-dynamic-fan-out-retained-as-a-parallel-design-witness).
+- **Facts:** [dynamic fan-out placement](../research/archive-promotion-audit.md#3-dynamic-fan-out-retained-as-a-parallel-design-witness) ·
+  [measured lane grants and wall time](../research/investigations/proof-derived-parallelism/RESULTS.md).
 
 ## Boundaries, targets, and deployment
 

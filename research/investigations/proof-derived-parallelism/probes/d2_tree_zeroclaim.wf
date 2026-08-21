@@ -1,0 +1,53 @@
+enum Tree {
+  Leaf();
+  Branch(left: box<Tree>, right: box<Tree>);
+}
+
+fn boxed_leaf() -> result: own box<Tree> allocates(heap) {
+  let leaf = Leaf();
+  return box_new(move leaf);
+}
+
+fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tree> allocates(heap) {
+  let branch = Branch(left: move left, right: move right);
+  return box_new(move branch);
+}
+
+fn count['r](tree: &'r box<Tree>) -> result: own u64 reads('r) {
+  match deref(deref(tree)) {
+    Leaf() => {
+      return 1_u64;
+    }
+    Branch(left: l, right: r) => {
+      let left_count = count<'r>(tree: l);
+      let right_count = count<'r>(tree: r);
+      let children_defined = left_count +defined right_count;
+      if children_defined {
+        let children = left_count + right_count;
+        let branch_defined = children +defined 1_u64;
+        if branch_defined {
+          return children + 1_u64;
+        } else {
+          return 18446744073709551615_u64;
+        }
+      } else {
+        return 18446744073709551615_u64;
+      }
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus allocates(heap), traps {
+  let leaf0 = boxed_leaf();
+  let leaf1 = boxed_leaf();
+  let leaf2 = boxed_leaf();
+  let leaf3 = boxed_leaf();
+  let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
+  let branch1 = boxed_branch(left: move leaf2, right: move leaf3);
+  let root = boxed_branch(left: move branch0, right: move branch1);
+  region 'tree {
+    let nodes = count<'tree>(tree: &'tree root);
+    claim recursive_tree_count: ieq(nodes, 7_u64) because "recursive tree count";
+  }
+  return exit_status(code: 0_u8);
+}

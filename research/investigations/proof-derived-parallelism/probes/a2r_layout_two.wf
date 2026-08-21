@@ -1,0 +1,131 @@
+enum LNode {
+  Leaf(w: f64, h: f64, out: f64);
+  Branch(left: box<LNode>, right: box<LNode>, w: f64, h: f64, out: f64);
+}
+
+fn boxed_leaf(w: own f64) -> result: own box<LNode> allocates(heap) {
+  let leaf = Leaf(w: w, h: 0.5_f64, out: 0.0_f64);
+  return box_new(move leaf);
+}
+
+fn build(depth: own u64, w: own f64) -> result: own box<LNode> allocates(heap), traps {
+  let done = ieq(depth, 0_u64);
+  if done {
+    return boxed_leaf(w: w);
+  }
+  let next = depth -wrap 1_u64;
+  let wl = fmul.strict(w, 1.0009765625_f64);
+  let wr = fmul.strict(w, 0.9990234375_f64);
+  let l = build(depth: next, w: wl);
+  let r = build(depth: next, w: wr);
+  let branch = Branch(left: move l, right: move r, w: w, h: 0.25_f64, out: 0.0_f64);
+  return box_new(move branch);
+}
+
+fn measure_words['w, 'k](words: &'w buffer<f64>, kern: &'k buffer<f64>, count: own u64, font: own f64) -> result: own f64 reads('w 'k), traps {
+  let min_width = 0.0_f64;
+  let max_width = 0.0_f64;
+  let k = 0_u64;
+  let room = len(deref(words));
+  let kroom = len(deref(kern));
+  loop @scan {
+    let done = ieq(k, count);
+    if done {
+      break @scan;
+    }
+    let in_range = ilt(k, room);
+    claim word_index_in_range: in_range because "the caller passes a count no larger than the word buffer";
+    let raw = deref(words)[k];
+    let kin_range = ilt(k, kroom);
+    claim kern_index_in_range: kin_range because "the caller passes a count no larger than the kerning buffer";
+    let kv = deref(kern)[k];
+    let adjusted = fadd.strict(raw, kv);
+    let scaled = fmul.strict(adjusted, font);
+    let above = fgt(scaled, max_width);
+    if above {
+      set max_width = scaled;
+    }
+    set min_width = fadd.strict(min_width, scaled);
+    set k = k +wrap 1_u64;
+  }
+  return fadd.strict(min_width, max_width);
+}
+
+fn cascade(inh: own f64, w: own f64, h: own f64) -> result: own f64 pure {
+  let pad_l = fmul.strict(w, 0.0625_f64);
+  let pad_r = fmul.strict(w, 0.03125_f64);
+  let border = fmul.strict(h, 0.125_f64);
+  let lr = fadd.strict(pad_l, pad_r);
+  let lrb = ffma.strict(border, 2.0_f64, lr);
+  let content = fsub.strict(w, lrb);
+  let clamped_lo = fmax(content, 0.0_f64);
+  let font = ffma.strict(inh, 0.5_f64, 8.0_f64);
+  let line = fmul.strict(font, 1.25_f64);
+  let words = fdiv.strict(clamped_lo, font);
+  let lines_raw = fdiv.strict(words, 16.0_f64);
+  let lines = fceil(lines_raw);
+  let height = fmul.strict(lines, line);
+  let margin = fmul.strict(h, 0.5_f64);
+  let outer = fadd.strict(height, margin);
+  let scaled = ffma.strict(outer, 1.0625_f64, border);
+  let abs_scaled = fabs(scaled);
+  let root = fsqrt.strict(abs_scaled);
+  let mixed = ffma.strict(root, 3.25_f64, clamped_lo);
+  let capped = fmin(mixed, 4096.0_f64);
+  let floored = fmax(capped, 0.0625_f64);
+  let rounded = ffloor(floored);
+  let frac = fsub.strict(floored, rounded);
+  let adj = ffma.strict(frac, 0.5_f64, rounded);
+  let final_h = fadd.strict(adj, lrb);
+  return final_h;
+}
+
+fn layout['b, 'w, 'k](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, kern: &'k buffer<f64>, count: own u64, inh: own f64) -> result: own f64 reads('b 'w 'k), writes('b), traps {
+  match deref(deref(node)) {
+    Leaf(w: lw, h: lh, out: lslot) => {
+      let v = cascade(inh: inh, w: deref(lw), h: deref(lh));
+      let m = measure_words<'w, 'k>(words: words, kern: kern, count: count, font: v);
+      let total = fadd.strict(v, m);
+      set deref(lslot) = total;
+      return total;
+    }
+    Branch(left: l, right: r, w: bw, h: bh, out: bslot) => {
+      let own_h = cascade(inh: inh, w: deref(bw), h: deref(bh));
+      let m = measure_words<'w, 'k>(words: words, kern: kern, count: count, font: own_h);
+      let child_inh = fmul.strict(own_h, 0.5_f64);
+      let a = layout<'b, 'w, 'k>(node: move l, words: words, kern: kern, count: count, inh: child_inh);
+      let b = layout<'b, 'w, 'k>(node: move r, words: words, kern: kern, count: count, inh: child_inh);
+      let kids = fadd.strict(a, b);
+      let mine = fadd.strict(own_h, m);
+      let total = fadd.strict(kids, mine);
+      set deref(bslot) = total;
+      return total;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus allocates(heap), traps {
+  let tree = build(depth: 10_u64, w: 512.0_f64);
+  let words = buffer_new(64_u64, 0.25_f64);
+  let kern = buffer_new(64_u64, 0.125_f64);
+  let i = 0_u64;
+  let last = 0.0_f64;
+  let seed = 16.0_f64;
+  loop @reps {
+    let done = ieq(i, 20000_u64);
+    if done {
+      break @reps;
+    }
+    region 'tree {
+      region 'words {
+        let total = layout<'tree, 'words, 'words>(node: &uniq 'tree tree, words: &'words words, kern: &'words kern, count: 64_u64, inh: seed);
+        set last = total;
+      }
+    }
+    set seed = fadd.strict(seed, 0.0625_f64);
+    set i = i +wrap 1_u64;
+  }
+  let positive = fgt(last, 0.0_f64);
+  claim layout_positive: positive because "a layout pass over a nonempty tree yields positive height";
+  return exit_status(code: 0_u8);
+}
