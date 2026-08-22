@@ -1708,3 +1708,35 @@ command fn main() -> status: own ExitStatus pure {{
         assert_eq!(detail.classification, "unsupported canonical formation");
     });
 }
+
+#[test]
+fn a_claim_function_resolves_fields_through_an_opaque_unique_struct_parameter() {
+    let source = format!(
+        r#"struct Pool {{
+  values: buffer<u64>;
+  count: u64;
+}}
+
+fn write['r](pool: &uniq 'r Pool, seed: own u64, witnesses: own array<u64, 4>) -> result: own u64 reads('r), writes('r), traps {{
+  let slot = deref(pool).count;
+  let room = len(deref(pool).values);
+  let bounded = seed % 4_u64;
+  let reviewed = ilt(bounded, 4_u64);
+  claim local_buffer_field_walk: reviewed because "{LOCAL_REVIEW}";
+  let observed = witnesses[bounded];
+  let slot_in_room = ilt(slot, room);
+  if slot_in_room {{
+    set deref(pool).values[slot] = observed;
+  }} else {{
+    let unchanged = observed;
+  }}
+  return observed;
+}}
+
+command fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+    );
+    assert_complete(source.as_bytes());
+}

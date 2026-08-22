@@ -1336,8 +1336,8 @@ impl AuthorityPass<'_> {
             | CheckedExpression::BorrowBox { .. }
             | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::ReborrowAddressed { .. } => AuthorityValue::local(expression.ty()),
-            CheckedExpression::DerefAddressed { binding, ty, .. } => {
-                self.read_deref(*binding, &[], *ty, state)?
+            CheckedExpression::DerefAddressed { binding, .. } => {
+                self.read_deref(*binding, &[], state)?
             }
             CheckedExpression::ConstructStruct {
                 nominal, fields, ..
@@ -1481,8 +1481,7 @@ impl AuthorityPass<'_> {
             .and_then(Option::as_ref)
             .is_some()
         {
-            let ty = state.raw_binding(binding)?.ty;
-            return self.read_deref(binding, fields, ty, state);
+            return self.read_deref(binding, fields, state);
         }
         state.raw_binding(binding)?.selected_path(
             &fields
@@ -1498,7 +1497,6 @@ impl AuthorityPass<'_> {
         &self,
         binding: BindingId,
         fields: &[u32],
-        expected: CheckedType,
         state: &AuthorityState,
     ) -> LocalityResult<AuthorityValue> {
         let marker = self.holder_chain_marker(binding, state)?;
@@ -1508,9 +1506,6 @@ impl AuthorityPass<'_> {
             .raw_binding(root)?
             .selected_path(&path, self.nominals)?;
         value.union_uniform(marker.as_ref());
-        if value.ty != expected {
-            value = AuthorityValue::uniform(expected, value.aggregate());
-        }
         Ok(value)
     }
 
@@ -1600,7 +1595,7 @@ impl AuthorityPass<'_> {
                     .and_then(Option::as_ref)
                     .is_some() =>
             {
-                self.read_deref(place.binding, &place.fields, place.ty, state)
+                self.read_deref(place.binding, &place.fields, state)
             }
             CheckedSetTarget::Place(place) => self.read_place(place.binding, &place.fields, state),
             CheckedSetTarget::ArrayIndex(target) => self
