@@ -117,6 +117,20 @@ re-sequenced accordingly.
   counterexamples are denied under the right condition, the oracle is
   unchanged where no widening applies, and outputs stay byte-identical.
 
+- **Dig 10 — compile-time attribution and fix.** Added by owner direction,
+  quoted verbatim (2026-08-22): "一个44k的程序编译46秒。这已经是非常极端的慢
+  了。优化性能要提上日程了。不然以后测试没法搞了" — a 44 KB program takes 46
+  seconds to compile, which is extreme, so compile performance joins the
+  agenda because it gates all future testing. Dig 7 recorded the symptom and
+  correctly declined to own it. Attribute the cost before fixing anything:
+  control for Defender real-time scanning, split the phases, and fit the
+  scaling law. Then fix the attributed dominant cost with normal collections,
+  leaving every emitted byte identical; if the only effective fix moves
+  emitted bytes, stop and report options. Acceptance: an attribution table
+  with the named hot function, `wfgrep` at or under 5 s in both modes or an
+  irreducible-remainder report, byte-identical output everywhere, and the
+  gate green with its wall time reported before and after.
+
 ## Approval classes
 
 - Spec bytes: none planned (scheduler policy and codegen are implementation
@@ -1047,6 +1061,70 @@ reproduction, never worked around.)
   compliance evidence, no new repository root entry. `make check` still exits
   at the conformance step on the pre-existing `PAR-1` coverage blocker Dig 3
   recorded (135/136); nothing here touches it.
+- Dig 10 (attribution landed; fix in progress): **the 46 seconds are ours,
+  and they are one cubic loop.** Recorded before the fix so the measurement
+  stands on its own.
+  **Step 0, Defender: negative, and controlled rather than assumed.** The
+  worktree is outside the `do_not_scan` exclusion and Defender had been seen
+  at 320% CPU, so nothing was believed until the exposure was varied. Full
+  `wfgrep` compiles: source and output in the worktree with the default
+  `TMPDIR`, 45.686 s; output and `TMPDIR` moved into the excluded directory,
+  46.102 s; source, output and `TMPDIR` all moved there, 45.671 s. Three
+  configurations, one number. Real-time scanning accounts for none of it and
+  the fix is algorithmic, not operational.
+  **The cost is inside our compiler, not the host toolchain.** `--emit-llvm`,
+  which stops before `clang`, takes 45.074 s; the full compile takes 45.754 s;
+  `clang -O2` run alone on the emitted module takes 0.267 s. So **98.5% of the
+  wall time is whitefootc's own frontend, and the backend is 0.6%**. The
+  emitted module is 9 935 lines / 414 727 bytes, which is nothing for LLVM.
+  (Note for the next reader: `--par-ledger` does *not* isolate the frontend —
+  it runs the same full pipeline including the link. `--emit-llvm` is the
+  instrument.)
+  **Program size does not predict compile time; terms per function do.**
+  Frontend seconds against source bytes across `tests/programs/`:
+  `raw_deflate_vectors.wf` 31 884 B → 0.008 s, `dir_walk.wf` 18 010 B →
+  4.198 s, `utf8parse.wf` 9 511 B → 5.515 s, `wfgrep.wf` 44 367 B → 45.961 s.
+  Four programs, a 4x byte range and a 5 700x time range: bytes are the wrong
+  variable. Two synthetic families at matched call counts separate the right
+  one — `wide` puts N calls in one function, `narrow` spreads the same N over
+  N/4 four-call functions. `wide` measures 0.036 s / 0.096 s / 0.224 s /
+  0.793 s / 1.963 s / 3.925 s at 40/60/80/120/160/200 calls, a clean
+  **exponent of 3.13** (80→160 and 120→200 both fit it); `narrow` measures
+  0.009 s at 40 and 0.014 s at 80, essentially linear. **The cost is cubic in
+  the terms of a single function and linear in the number of functions**,
+  which is why `wfgrep` — one 435-line `walk` — costs 46 s while a 31 KB
+  program of small functions costs 8 ms.
+  **The named hot function.** `sample` on a `wfgrep` compile puts effectively
+  every stack in `semantic::entailment::state`. The dominant leaves are
+  SipHash over `(TermId, TermId)` keys, then `insert_closed_candidate`,
+  `close_with_excluded_term`, and `DerivationLedger::depends_on_postcondition_call`.
+  The loop is the [ENT-4] closure at
+  `compiler/src/semantic/entailment/state.rs:2429`, whose transitivity fixed
+  point at `state.rs:2526-2556` is a Floyd–Warshall over difference bounds
+  held in a `HashMap` keyed by term pairs:
+
+      for middle in &ids { for left in &ids {
+          bounds.get(&(*left, *middle));          // T^2 probes
+          for right in &ids { bounds.get(&(*middle, *right)); ... } } }
+
+  The `(middle, right)` probe is invariant in `left` and is re-hashed for
+  every `left`, so a hub term — `ZERO`, which nearly every bound mentions —
+  is probed T times per predecessor instead of once. `bounds` and
+  `bound_proofs` are two maps under the same key, so each logical read hashes
+  twice.
+  **Regression answer: none. This is a standing defect on `main`.** The branch
+  never touched `state.rs` (`git diff` over the file across all nine branch
+  commits is empty; the branch's only entailment change *removed* 375 lines
+  from `flow.rs`). Built at the fork point 4f01bab6 in a detached worktree with
+  the same release profile, `wfgrep` takes **46.347 s** against **45.074 s** at
+  branch HEAD 974d5513 — the branch is marginally faster, not slower. There is
+  no guilty commit to bisect.
+  **Gate baseline.** `make -C compiler check` green at 974d5513 in **348.44 s**
+  wall (1030 lib + 52 program tests). The suite compiles `wfgrep` afresh in
+  each of its 12 `programs::wfgrep` tests with no shared build, and those tests
+  each exceed 60 s, so the gate carries this defect twelve times over. That is
+  the concrete sense in which the cost "gates all future testing".
+
 - **Dig 0 deviation, recorded not hidden.** Dig 0 was specified as one
   cohesive commit and initially landed as two with byte-identical subject
   lines: two sessions were writing through one worktree and one shared git
