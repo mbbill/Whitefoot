@@ -69,7 +69,10 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
       break @copy_header;
     }
     let copy_ok = ilt(offset, 20_u64);
-    claim copy_in_header: copy_ok because "premises: offset starts at zero and the copy loop exits when offset equals twenty\nderivation: each continuing iteration increments offset once, so a continuing offset is one of zero through nineteen\nconclusion: offset is below twenty\nchecker gap: ENT does not derive this ordinary-loop induction invariant\nconsumers: the following static-header read and runtime-header write both use offset";
+    if copy_ok {
+    } else {
+      return exit_status(code: 2_u8);
+    }
     let byte = ipv4_header[offset];
     set runtime_header[offset] = byte;
     set offset = offset +wrap 1_u64;

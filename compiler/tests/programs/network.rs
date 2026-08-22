@@ -11,7 +11,7 @@ fn ipv4_checksum_uses_one_slice_consumer_for_static_and_runtime_storage() {
     assert!(!checksum.contains("call void @free"));
     assert_eq!(main.matches("call i16 @wf_ipv4_checksum").count(), 2);
     // Each explicit validation-failure return owns its ordinary cleanup path;
-    // no claim abort bypasses cleanup anymore.
+    // no caller-side copy claim can bypass that cleanup anymore.
     assert!(main.matches("call void @free").count() >= 1);
 
     let output = compile_and_run(&llvm);

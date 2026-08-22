@@ -9,7 +9,7 @@ fn grayscale_value(red: own u8, green: own u8, blue: own u8) -> result: own Resu
   return cvt<f32, u8>(rounded);
 }
 
-fn grayscale['i, 'o](input: &'i buffer<u8>, output: &uniq 'o buffer<u8>) -> result: own Result<unit, NarrowError> reads('i 'o), writes('o), traps contract {
+fn grayscale['i, 'o](input: &'i buffer<u8>, output: &uniq 'o buffer<u8>) -> result: own Result<unit, NarrowError> reads('i 'o), writes('o) contract {
   define input_length = len(deref(input));
   define output_length = len(deref(output));
   requires ige(input_length, 24_u64);
@@ -26,25 +26,41 @@ fn grayscale['i, 'o](input: &'i buffer<u8>, output: &uniq 'o buffer<u8>) -> resu
     let blue_offset = base +wrap 2_u64;
     let input_room = len(deref(input));
     let red_ok = ilt(base, input_room);
-    claim red_in_input: red_ok because "premises: input has at least twenty-four bytes and pixel walks from zero until eight\nderivation: for a continuing pixel below eight, three times pixel is at most twenty-one and therefore below the input length\nconclusion: base is below input_room\nchecker gap: ENT does not derive the multiplicative ordinary-loop invariant\nconsumers: the following input subscript uses base";
+    if red_ok {
+    } else {
+      let error = NarrowError();
+      return Err<unit, NarrowError>(error: error);
+    }
     let red = deref(input)[base];
     let green_ok = ilt(green_offset, input_room);
-    claim green_in_input: green_ok because "premises: input has at least twenty-four bytes and a continuing pixel is below eight\nderivation: three times pixel plus one is at most twenty-two and therefore below the input length\nconclusion: green_offset is below input_room\nchecker gap: ENT does not derive the multiplicative ordinary-loop invariant\nconsumers: the following input subscript uses green_offset";
+    if green_ok {
+    } else {
+      let error = NarrowError();
+      return Err<unit, NarrowError>(error: error);
+    }
     let green = deref(input)[green_offset];
     let blue_ok = ilt(blue_offset, input_room);
-    claim blue_in_input: blue_ok because "premises: input has at least twenty-four bytes and a continuing pixel is below eight\nderivation: three times pixel plus two is at most twenty-three and therefore below the input length\nconclusion: blue_offset is below input_room\nchecker gap: ENT does not derive the multiplicative ordinary-loop invariant\nconsumers: the following input subscript uses blue_offset";
+    if blue_ok {
+    } else {
+      let error = NarrowError();
+      return Err<unit, NarrowError>(error: error);
+    }
     let blue = deref(input)[blue_offset];
     let value = propagate grayscale_value(red: red, green: green, blue: blue);
     let output_room = len(deref(output));
     let pixel_ok = ilt(pixel, output_room);
-    claim pixel_in_output: pixel_ok because "premises: output has at least eight bytes and pixel starts at zero and exits at eight\nderivation: each continuing iteration increments pixel once, so a continuing pixel is one of zero through seven\nconclusion: pixel is below output_room\nchecker gap: ENT does not derive this ordinary-loop induction invariant\nconsumers: the following output subscript uses pixel";
+    if pixel_ok {
+    } else {
+      let error = NarrowError();
+      return Err<unit, NarrowError>(error: error);
+    }
     set deref(output)[pixel] = value;
     set pixel = pixel +wrap 1_u64;
   }
   return Ok<unit, NarrowError>(value: unit);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let input = buffer_new(24_u64, 0_u8);
   set input[3_u64] = 255_u8;
   set input[4_u64] = 255_u8;
