@@ -9,6 +9,7 @@ mod boxes;
 mod buffers;
 mod check_dissolution;
 mod checked_division;
+mod claim_locality;
 mod claim_residuals;
 mod conditionals;
 mod const_eval;

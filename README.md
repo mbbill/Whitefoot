@@ -37,7 +37,7 @@ On `main`, Kernel specification v0.33, SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`,
 remains active. This work branch carries the v0.34 `CANDIDATE` at the stable
 [specification path](spec/kernel-spec.md), SHA-256
-`b9284417e12f41a9c4c78728bf684c088aadd2d1fcfd10d305c0ef24c448d27a`;
+`936197e24fff2a6ed7e5b3fc271df51f1a6cadf71e45a1d5fa7b8745a011108e`;
 it has no language authority until it is merged into `main`. Exact v0.8
 through v0.32 remain immutable flat archives.
 

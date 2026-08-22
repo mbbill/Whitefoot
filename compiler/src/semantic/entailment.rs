@@ -45,6 +45,7 @@ pub(crate) use term::{
 
 use std::collections::{BTreeSet, HashMap};
 
+use super::claim_locality::{BoundaryWitness, ClaimAuthorityAnalysis};
 use super::goal::{ConcreteGoal, GoalExpression};
 use super::model::{
     BindingId, CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFunction,
@@ -107,6 +108,11 @@ pub(crate) struct EntailmentContext<'check> {
     /// Binding names in dense [`super::model::BindingId`] order, for the
     /// [ENT-6] canonical residual rendering.
     pub(crate) binding_names: &'check [String],
+    /// One program-point-sensitive CLM-1 authority analysis of this checked
+    /// function.  It is independent of S3, S12, lifecycle closure, and every
+    /// Full-minus mask; entailment only asks it after a canonical contribution
+    /// has formed in the unmasked baseline.
+    pub(crate) claim_authority: &'check ClaimAuthorityAnalysis,
 }
 
 /// One scratch-only CLM-2 counterfactual. `component == None` withholds the
@@ -672,9 +678,6 @@ pub(crate) enum ClaimDisposition {
     ComponentRedundant { component: u32 },
     /// One canonical contribution component's negation was derivable.
     ComponentRefuted { component: u32 },
-    /// The admitted first-version fact vocabulary cannot give this predicate
-    /// a unique support-correct contribution normal form.
-    UnsupportedContribution,
     /// The contribution failed consistency or exact-P reconstruction.
     InconsistentContribution,
     /// A component or the whole occurrence changed no eligible admission
@@ -768,6 +771,29 @@ pub(crate) struct ClaimOutcome {
     /// successful component mask followed by the whole-occurrence mask.
     /// Masked derivation IDs never escape their scratch analysis.
     pub(crate) residual_witnesses: Vec<ClaimCounterfactualWitness>,
+}
+
+/// One CLM-1 canonical-formation rejection found before component authority,
+/// claim truth, lifecycle, or residuality is queried. An offending occurrence
+/// is deliberately absent from [`FunctionEntailment::claims`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimFormationFailure {
+    pub(crate) node_path: NodePath,
+    pub(crate) name: String,
+    pub(crate) predicate: String,
+}
+
+/// One CLM-1 rejection found after canonical contribution formation and
+/// before any claim fact, lifecycle query, or counterfactual is admitted.
+/// Function and system identities remain private checked identities here;
+/// `check` stabilizes them before a source diagnostic crosses a checkpoint.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimLocalityFailure {
+    pub(crate) node_path: NodePath,
+    pub(crate) name: String,
+    pub(crate) component: u32,
+    pub(crate) carrier: String,
+    pub(crate) boundary: BoundaryWitness,
 }
 
 /// A source-stable terminal root whose successful complete proof disappears
@@ -1160,6 +1186,13 @@ pub(crate) struct FunctionEntailment {
     pub(crate) obligations: Vec<ObligationOutcome>,
     /// Claim lifecycle outcomes in deterministic source walk order.
     pub(crate) claims: Vec<ClaimOutcome>,
+    /// CLM-1 canonical-formation failures in deterministic source walk order.
+    /// These are selected globally before any locality or lifecycle failure.
+    pub(crate) claim_formation_failures: Vec<ClaimFormationFailure>,
+    /// CLM-1 locality failures in deterministic source walk order.  An
+    /// offending occurrence is absent from `claims`: it never establishes S3
+    /// and never enters lifecycle, ledger, strict, or residual judgments.
+    pub(crate) claim_locality_failures: Vec<ClaimLocalityFailure>,
     /// Ordinary call-goal judgments in deterministic checked-tree walk order.
     pub(crate) call_goals: Vec<CallGoalOutcome>,
     /// S3-disabled judgments with body-entry S4 retained.

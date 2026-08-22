@@ -5,6 +5,7 @@
 //! bridges without feeding either result back into provenance classification.
 
 use std::cmp::Ordering;
+use std::sync::Arc;
 
 use super::entailment::{
     CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome,
@@ -377,7 +378,7 @@ pub(crate) struct LocalLeafDisposition {
 /// checked program. Lowering and optimization do not read this table.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProvenanceMetadata {
-    pub(crate) functions: Vec<FunctionDependencies>,
+    pub(crate) functions: Arc<[FunctionDependencies]>,
     /// S3-disabled view with the body-entry S4 goal retained.
     pub(crate) unasserted: Vec<super::entailment::FunctionEntailmentView>,
     /// The same view with S4 and its exact L0 projection omitted.
@@ -408,11 +409,12 @@ pub(crate) struct ProvenanceAnalysis {
     pub(crate) failures: ProvenanceFailures,
 }
 
-/// The converged PRV-1 component pairs frozen before optimistic S12 facts are
-/// formed. The second provenance stratum consumes this value without
+/// The converged PRV-1 component pairs computed from the saved phase-A
+/// inventory. The second provenance stratum consumes this value without
 /// recomputing the component fixed point from candidate entailment metadata.
 pub(crate) struct FrozenProvenanceDependencies {
-    functions: Vec<FunctionDependencies>,
+    functions: Arc<[FunctionDependencies]>,
+    external_entry: Option<FunctionId>,
 }
 
 impl ProvenanceAnalysis {
@@ -4955,41 +4957,39 @@ fn build_call_links(
     Ok(links)
 }
 
-/// Computes both frozen PRV strata, failure-atomic gate scratch, and explicit
-/// success dispositions. The checker consumes failures for source acceptance;
-/// only the success metadata enters the checked program, and lowering does not
-/// read it.
+/// Freezes the PRV-1 dependency fixed point from one phase-A inventory.
 pub(crate) fn freeze_program_provenance(
     functions: &[CheckedFunction],
     context: &ProvenanceContext<'_>,
 ) -> ProvenanceResult<FrozenProvenanceDependencies> {
     Ok(FrozenProvenanceDependencies {
-        functions: dependency_fixed_point(functions, context.nominals, context.external_entry)?,
+        functions: dependency_fixed_point(functions, context.nominals, context.external_entry)?
+            .into(),
+        external_entry: context.external_entry,
     })
 }
 
-/// Runs both provenance strata on an ordinary unit. FN-9 units instead freeze
-/// PRV-1 before their optimistic entailment batch and call
-/// [`analyze_program_provenance_with_frozen`].
-pub(crate) fn analyze_program_provenance(
-    functions: &[CheckedFunction],
-    context: &ProvenanceContext<'_>,
-) -> ProvenanceResult<ProvenanceAnalysis> {
-    let dependencies = freeze_program_provenance(functions, context)?;
-    analyze_program_provenance_with_frozen(functions, context, dependencies)
-}
-
 /// Finalizes PRV-2/3 from the already-frozen ordinary component pairs and the
-/// fixed optimistic complete/U/B fact batch.
+/// fixed complete/U/B fact batch. Baseline and Full-minus runs share the same
+/// PRV-1 dependency fixed point because claims alter no value or storage flow.
 pub(crate) fn analyze_program_provenance_with_frozen(
     functions: &[CheckedFunction],
     context: &ProvenanceContext<'_>,
-    frozen: FrozenProvenanceDependencies,
+    frozen: &FrozenProvenanceDependencies,
 ) -> ProvenanceResult<ProvenanceAnalysis> {
-    let dependencies = frozen.functions;
+    let dependencies = frozen.functions.as_ref();
+    if frozen.external_entry != context.external_entry
+        || functions.len() != dependencies.len()
+        || functions
+            .iter()
+            .zip(dependencies)
+            .any(|(function, dependency)| function.id != dependency.function)
+    {
+        return Err(SemanticCompilerFailure::InvalidResolution);
+    }
     let reconstructor = CarrierReconstructor {
         functions,
-        summaries: &dependencies,
+        summaries: dependencies,
         nominals: context.nominals,
         external_entry: context.external_entry,
     };
@@ -5004,14 +5004,14 @@ pub(crate) fn analyze_program_provenance_with_frozen(
 
     let (local_structural, local_subjects) = local_bridge_seeds(
         functions,
-        &dependencies,
+        dependencies,
         &unasserted,
         &blinded,
         context.nominals,
     )?;
     let calls = build_call_inventory(
         functions,
-        &dependencies,
+        dependencies,
         &unasserted,
         &blinded,
         context.nominals,
@@ -5024,10 +5024,10 @@ pub(crate) fn analyze_program_provenance_with_frozen(
     )?;
     let subject_routes =
         reconstruct_subject_routes(&subjects, &local_subjects, &calls, context.external_entry)?;
-    let direct_calls = build_direct_call_inventory(functions, &dependencies, context.nominals)?;
+    let direct_calls = build_direct_call_inventory(functions, dependencies, context.nominals)?;
     let (local_direct, local_rejections, local_leaf_dispositions) = local_gate_seeds(
         functions,
-        &dependencies,
+        dependencies,
         &unasserted,
         &blinded,
         context.nominals,
@@ -5064,7 +5064,7 @@ pub(crate) fn analyze_program_provenance_with_frozen(
 
     Ok(ProvenanceAnalysis {
         metadata: ProvenanceMetadata {
-            functions: dependencies,
+            functions: Arc::clone(&frozen.functions),
             unasserted,
             s4_blinded: blinded,
             structural_bridges,

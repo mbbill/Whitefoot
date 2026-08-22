@@ -470,24 +470,35 @@ unreachable; the current seeded catalog has not yet established that claim.
 There is one legal spelling per construct and one legal byte-level formatting, covering indentation, spacing, and blank lines. The toolchain rejects non-canonical input; it never reformats. Flat integer infix has no precedence or nesting; composition uses `let`. There are no comments; documentation lives in a structured `doc` field. `if` handles `Bool`, `match` handles enums, and the iteration forms are `loop` and one ascending half-open `for`. Arithmetic semantics are explicit at each site:
 
 ```
+fn clamp_hundred(value: own u64) -> result: own u64 pure contract {
+  ensures ile(result, 100_u64);
+} {
+  return imin(value, 100_u64);
+}
+```
+
+The helper owns and proves that normal-result promise. Its caller consumes the
+verified relation directly:
+
+```
 let wrapped = a +wrap b;
 let bounded = clamp_hundred(value: a);
-claim sum_defined: bounded +defined 1_u64 because "premises: bounded is returned by clamp_hundred, whose body computes imin(a, 100_u64)\nderivation: bounded is at most 100_u64, so bounded plus 1_u64 is at most 101_u64 and cannot overflow u64\nconclusion: bounded +defined 1_u64 is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following exact addition bounded + 1_u64 requires this exact domain";
 let exact = bounded + 1_u64;
 let checked = a +checked b;
 let saturated = a +sat b;
 ```
 
 The wrapping, checked, and saturating forms are total value operations. The
-bare exact addition has one matching static domain obligation. Here
-`clamp_hundred` really returns a value at most one hundred, but the normative
-checker deliberately publishes no theorem about an uncontracted user-call
-result. The named claim records that complete offline derivation and is
-load-bearing for the exact addition. It is not a guess that the input will be
-small, an assertion, or a replacement for `if`: a potentially false condition
-uses the checked row or an ordinary branch and value outcome. The retained
-claim still executes, so a violated approved theorem produces the language's
-one runtime trap. There is no arithmetic-specific trap mode.
+bare exact addition has one matching static domain obligation. FN-9 proves
+`clamp_hundred`'s relation at each normal return, S12 publishes it after the
+call, and that machine fact discharges the addition without a caller claim or a
+`traps` effect. If the body stops satisfying the promise, the callee fails FN-9;
+if the promise is weakened, the ordinary caller operation fails at its own
+proof obligation. A caller may not inspect the body and manufacture a hidden
+postcondition with a claim, even after copying, converting, wrapping,
+projecting, or storing the result. A potentially false condition still uses the
+checked row or an ordinary branch and value outcome. There is no
+arithmetic-specific trap mode.
 
 Why an expert should care rather than wince:
 
@@ -531,7 +542,7 @@ Node links in a tree or graph are handles into the pool, not pointers or referen
 
 - **Performance:** contiguous storage, no per-node allocation, no headers, no refcount traffic, and indices that survive relocation. High-performance C adopts this layout by hand in entity systems and arena-indexed ASTs; in Whitefoot it is the default, and it composes with § 5's disjoint-column facts.
 - **The writer's burden:** most code holds no loans at all, so the borrow rules bite only at the few sites that point into something. The self-referential-struct wall that pushes real Rust projects through `Pin`, `unsafe`, or index-arena workarounds does not exist, because structs store values, not borrows. The problematic program is not painful to write; it is impossible to state.
-- **Safety of stale handles:** a future recyclable pool would pair each slot with a generation and expose mismatch as a typed lookup outcome. If a caller promotes a stronger invariant, it may write an explicit `claim`; there is no dedicated hidden handle trap. Check-free schemes (loans that freeze reuse for a scope, affine owned handles, proof-discharged repeat checks) remain an active research track.
+- **Safety of stale handles:** a future recyclable pool would pair each slot with a generation and expose mismatch as a typed lookup outcome. A property of that lookup result must be a machine-verified interface relation where the contract language can express it; otherwise the caller branches on the typed outcome. A caller claim may cover only its own local state evolution, never an unstated property of the returned lookup value. There is no dedicated hidden handle trap. Check-free schemes (loans that freeze reuse for a scope, affine owned handles, proof-discharged repeat checks) remain an active research track.
 
 A Rust engineer will recognize this as "just use indices into a `Vec`," the arena
 idiom Rust folklore already recommends for escaping its own borrow checker at
@@ -623,8 +634,10 @@ obligations, never through human review or a writer assertion. The active
 specification defines no such proof or privilege today.
 
 One doctrine runs at every scale. A bounds or exact-operation obligation is
-proved (§ 3), backed by an explicit retained claim, or rejected; it never turns
-into an implicit operation-specific trap. A reassociation happens under separately authorized checked evidence
+proved (§ 3), backed by an explicit retained current-function-local claim, or
+rejected; it never turns into an implicit operation-specific trap. A
+cross-function result fact comes only from a machine-verified callable
+boundary, not from a caller reading a callee body. A reassociation happens under separately authorized checked evidence
 (§ 6) or it does not. Under the long-term D17 lane, a privileged representation
 enters checked code only through verified invariants; an unproved project
 kernel, if a future specification admits one, remains an explicit trusted
@@ -642,7 +655,7 @@ Claims earn belief by naming their edges. The current honest ledger:
 - **The frequency question is open.** The fact channels win on kernels that exercise them. How often those patterns dominate real medium-to-large codebases is not established yet, and an early survey attempt was directional at best. This is the biggest honest unknown in the performance story.
 - **The sealed-kernel numbers are shape validations, not shipped-product benchmarks.** The catalog dry runs were C implementations of the specified kernel shapes against mature Rust baselines on one Apple development machine: sequence push-then-sum about 1.5x over `Vec`, table iteration about 1.4x over hashbrown, steady-state insert modestly behind, 4 of 5 workloads inside the preregistered band; the queue beats `rtrb` by about 20% on round-trip latency while `rtrb` leads by about 25% on batched-32 throughput, both far above the band's floor. None of this is whitefoot-emitted code yet, and magnitudes will be re-established on the deploy target.
 - **Single-shot writability is not solved.** The current clean baseline for one research kernel is roughly a quarter of programs correct on the first attempt, with the failure modes catalogued and fixes staged. The design answer has always been the diagnostic feedback loop (§ 11), and the loop's measured effect is the next experiment, not a completed one.
-- **Several announced mechanisms are deferred designs, not shipped features.** The ten-kernel catalog is a historical candidate whose exact storage mechanism is deferred; D17's user representation-proof lane is recorded as long-term project law but has no current proof language or production path. This document describes the design and the evidence gathered so far; the Direction Outline and language-change gates block production claims.
+- **Several announced mechanisms are deferred designs, not shipped features.** The ten-kernel catalog is a historical candidate whose exact storage mechanism is deferred; D17's user representation-proof lane is recorded as long-term project law but has no current proof language or production path. This document describes the design and the evidence gathered so far; only the active specification defines current language capability, while the Direction Outline records direction and evidence status.
 
 ---
 

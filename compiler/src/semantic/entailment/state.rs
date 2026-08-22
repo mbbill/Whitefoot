@@ -786,6 +786,10 @@ pub(crate) struct DerivationLedger {
     pub(crate) node_views: Vec<ProofView>,
     pub(crate) roots: Vec<DerivationRoot>,
     depths: Vec<u32>,
+    /// Parallel to `nodes`: whether the same-view parent ancestry reaches an
+    /// S12 call relation. Parent IDs precede children, so this is computed
+    /// once at interning rather than rediscovered by every kill/join query.
+    postcondition_call_ancestry: Vec<bool>,
     interned: HashMap<(ProofView, DerivationNode), DerivationId>,
     pub(crate) metrics: DerivationMetrics,
 }
@@ -857,9 +861,18 @@ impl DerivationLedger {
         let depth = node
             .maximum_parent_depth(&self.depths)
             .map_or(0, |maximum| maximum.saturating_add(1));
+        let mut postcondition_call_ancestry =
+            matches!(node, DerivationNode::PostconditionCall { .. });
+        if !postcondition_call_ancestry {
+            node.for_each_parent(|parent| {
+                postcondition_call_ancestry |= self.postcondition_call_ancestry[parent.0 as usize];
+            });
+        }
         self.nodes.push(node.clone());
         self.node_views.push(view);
         self.depths.push(depth);
+        self.postcondition_call_ancestry
+            .push(postcondition_call_ancestry);
         self.interned.insert((view, node), id);
         id
     }
@@ -997,23 +1010,8 @@ impl DerivationLedger {
     /// Whether this proof's same-view derivation ancestry consumes an S12
     /// call relation. Complete-view A0 references are execution premises, not
     /// live value support, and therefore are deliberately not traversed.
-    pub(crate) fn depends_on_postcondition_call(
-        &self,
-        id: DerivationId,
-        memo: &mut HashMap<DerivationId, bool>,
-    ) -> bool {
-        if let Some(depends) = memo.get(&id) {
-            return *depends;
-        }
-        let node = &self.nodes[id.0 as usize];
-        let mut depends = matches!(node, DerivationNode::PostconditionCall { .. });
-        if !depends {
-            node.for_each_parent(|parent| {
-                depends |= self.depends_on_postcondition_call(parent, memo);
-            });
-        }
-        memo.insert(id, depends);
-        depends
+    pub(crate) fn depends_on_postcondition_call(&self, id: DerivationId) -> bool {
+        self.postcondition_call_ancestry[id.0 as usize]
     }
 
     /// Whether a closed L0 proof depends on one established relation rather
@@ -1122,13 +1120,22 @@ impl DerivationLedger {
         self.nodes = nodes;
         self.node_views = node_views;
         let mut depths = Vec::with_capacity(self.nodes.len());
+        let mut postcondition_call_ancestry = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
             let depth = node
                 .maximum_parent_depth(&depths)
                 .map_or(0, |maximum| maximum.saturating_add(1));
             depths.push(depth);
+            let mut depends = matches!(node, DerivationNode::PostconditionCall { .. });
+            if !depends {
+                node.for_each_parent(|parent| {
+                    depends |= postcondition_call_ancestry[parent.0 as usize];
+                });
+            }
+            postcondition_call_ancestry.push(depends);
         }
         self.depths = depths;
+        self.postcondition_call_ancestry = postcondition_call_ancestry;
         self.interned.clear();
         self.interned.shrink_to_fit();
         let event_remap = self.prune_events(event_roots);
@@ -1142,6 +1149,7 @@ impl DerivationLedger {
 
     fn validate_view_integrity(&self) {
         assert_eq!(self.node_views.len(), self.nodes.len());
+        assert_eq!(self.postcondition_call_ancestry.len(), self.nodes.len());
         for (index, node) in self.nodes.iter().enumerate() {
             let view = self.node_views[index];
             node.for_each_parent(|parent| {
@@ -1226,6 +1234,7 @@ impl DerivationLedger {
             + self.events.capacity() * size_of::<FlowEvent>()
             + self.roots.capacity() * size_of::<DerivationRoot>()
             + self.depths.capacity() * size_of::<u32>()
+            + self.postcondition_call_ancestry.capacity() * size_of::<bool>()
             + self
                 .nodes
                 .iter()
@@ -2144,11 +2153,10 @@ impl FactState {
     }
 
     fn selected_relations_depend_on_postcondition_call(&self, ledger: &DerivationLedger) -> bool {
-        let mut memo = HashMap::new();
         self.bound_proofs
             .values()
             .chain(self.distinct_proofs.values())
-            .any(|proof| ledger.depends_on_postcondition_call(*proof, &mut memo))
+            .any(|proof| ledger.depends_on_postcondition_call(*proof))
     }
 
     fn add_bound(
@@ -2303,9 +2311,8 @@ impl FactState {
     }
 
     fn retain_non_postcondition_candidates(&mut self, ledger: &DerivationLedger) -> bool {
-        let mut memo = HashMap::new();
         self.kill_proof_candidates(ledger, |_, _, proof| {
-            ledger.depends_on_postcondition_call(proof, &mut memo)
+            ledger.depends_on_postcondition_call(proof)
         })
     }
 
@@ -2366,11 +2373,10 @@ pub(crate) struct ClosedState {
 
 impl ClosedState {
     fn selected_relations_depend_on_postcondition_call(&self, ledger: &DerivationLedger) -> bool {
-        let mut memo = HashMap::new();
         self.bound_proofs
             .values()
             .chain(self.distinct_proofs.values())
-            .any(|proof| ledger.depends_on_postcondition_call(*proof, &mut memo))
+            .any(|proof| ledger.depends_on_postcondition_call(*proof))
     }
 
     /// `left - right <= bound` is derivable.
@@ -4131,6 +4137,8 @@ mod tests {
         let source_event = ledger.event(FlowEventKind::S3, None);
         let mut state = FactState::for_view(ProofView::Complete);
         state.establish(&ordinary, &mut ledger, source_event);
+        let ordinary_proof = state.bound_proofs[&pair];
+        assert!(!ledger.depends_on_postcondition_call(ordinary_proof));
         let call = ledger.intern_for(
             ProofView::Complete,
             DerivationNode::PostconditionCall {
@@ -4155,6 +4163,7 @@ mod tests {
                 view_parents: Vec::new(),
             },
         );
+        assert!(ledger.depends_on_postcondition_call(call));
         state.establish_from_proof(&s12, call, &ledger);
         assert_eq!(state.bounds[&pair], -1);
 
@@ -4180,5 +4189,13 @@ mod tests {
         );
         joined.retain_non_postcondition_candidates(&ledger);
         assert_eq!(joined.bounds[&pair], 0);
+
+        ledger.add_root(DerivationRootKind::BoundsObligation(0), ordinary_proof);
+        ledger.add_root(DerivationRootKind::BoundsObligation(1), call);
+        let remap = ledger.finish();
+        let ordinary_proof = remap[ordinary_proof.0 as usize].expect("ordinary proof retained");
+        let call = remap[call.0 as usize].expect("S12 proof retained");
+        assert!(!ledger.depends_on_postcondition_call(ordinary_proof));
+        assert!(ledger.depends_on_postcondition_call(call));
     }
 }

@@ -24,13 +24,15 @@ use crate::{
     StaticObligationDisposition, UnsupportedSemanticFeature,
 };
 
+use super::claim_locality::{BoundaryResultKind, ClaimAuthorityAnalysis};
 use super::entailment::{
-    CallGoalDisposition, CheckedGenericClaimSchema, ClaimCounterfactualWitness, ClaimMask,
-    ClaimMaskedDisposition, ClaimSchemaProofEvidence, ClaimSourceIdentity, ClaimTerminalOwner,
-    ClaimTerminalRoot, DerivationRootKind, EntailmentCallee, EntailmentContext,
-    PostconditionSchedule, VerifiedPostconditionSummary, analyze_function,
-    analyze_function_candidate, analyze_function_candidate_masked, analyze_function_masked,
-    build_claim_ledger, finalize_function_entailment, postcondition_schedule,
+    CallGoalDisposition, CheckedGenericClaimSchema, ClaimCounterfactualWitness,
+    ClaimFormationFailure, ClaimLocalityFailure, ClaimMask, ClaimMaskedDisposition,
+    ClaimSchemaProofEvidence, ClaimSourceIdentity, ClaimTerminalOwner, ClaimTerminalRoot,
+    DerivationRootKind, EntailmentCallee, EntailmentContext, PostconditionSchedule,
+    VerifiedPostconditionSummary, analyze_function, analyze_function_candidate,
+    analyze_function_candidate_masked, analyze_function_masked, build_claim_ledger,
+    finalize_function_entailment, postcondition_schedule,
 };
 use super::goal::{
     CheckedCallRequirement, CheckedRequirement, ConcreteGoal, GoalDatum, GoalExpression,
@@ -45,9 +47,9 @@ use super::model::{
 };
 use super::postcondition::CheckedPostconditionSelector;
 use super::provenance::{
-    DatumSelector, ProvenanceContext, ProvenanceDemandKind as InternalDemandKind,
-    ProvenanceFailures, ProvenanceMetadata, ProvenanceTarget, analyze_program_provenance,
-    analyze_program_provenance_with_frozen, freeze_program_provenance,
+    DatumSelector, FrozenProvenanceDependencies, ProvenanceContext,
+    ProvenanceDemandKind as InternalDemandKind, ProvenanceFailures, ProvenanceMetadata,
+    ProvenanceTarget, analyze_program_provenance_with_frozen, freeze_program_provenance,
 };
 use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
@@ -98,6 +100,13 @@ struct PostconditionCheckContext {
 struct CheckedFunctionInventory {
     function: CheckedFunction,
     binding_names: Vec<String>,
+    claim_authority: ClaimAuthorityAnalysis,
+}
+
+struct ResidualProvenanceContext<'a> {
+    failures: &'a ProvenanceFailures,
+    frozen: &'a FrozenProvenanceDependencies,
+    main: FunctionId,
 }
 
 fn derive_slice_return_ceiling(
@@ -538,6 +547,14 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     pending_generic_requirements: Vec<PendingGenericRequirement>,
     generic_requirements: Vec<CheckedGenericRequirement>,
     generic_claim_schemas: Vec<CheckedGenericClaimSchema>,
+    /// Owned CLM-1 canonical-formation failure from the symbolic generic
+    /// source-schema batch. Formation precedes locality globally.
+    generic_claim_schema_formation_issue: Option<SemanticIssue>,
+    /// Owned CLM-1 failure from the symbolic generic source-schema batch.
+    /// Claim-locality is judged before lifecycle, ordinary entailment, PRV,
+    /// and residuality, so the checkpoint retains this source-stable issue
+    /// independently of the later schema judgments.
+    generic_claim_schema_locality_issue: Option<SemanticIssue>,
     /// First ordinary OP/FN source issue owned by a canonical symbolic
     /// generic body. It survives the symbolic checkpoint as source-stable
     /// diagnostic data and competes with concrete ordinary issues only after
@@ -770,6 +787,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             pending_generic_requirements: Vec::new(),
             generic_requirements: Vec::new(),
             generic_claim_schemas: Vec::new(),
+            generic_claim_schema_formation_issue: None,
+            generic_claim_schema_locality_issue: None,
             generic_claim_schema_entailment_issue: None,
             generic_claim_schema_provenance_issue: None,
             postcondition_selectors: Vec::new(),
@@ -861,24 +880,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 || Self::statements_contain_value_if(&checked.function.body)
         }) || !strict_markers.is_empty();
 
-        // [PRV-1] depends only on the phase-A checked program. Freeze it before
-        // any optimistic S12/receiver facts enter the shared entailment batch;
-        // PRV-2/3 below consumes this exact component inventory once.
-        let frozen_provenance = if !optimistic_batch {
-            None
-        } else {
-            let phase_a_functions = function_inventory
-                .iter()
-                .map(|checked| checked.function.clone())
-                .collect::<Vec<_>>();
-            Some(freeze_program_provenance(
-                &phase_a_functions,
-                &ProvenanceContext {
-                    nominals: &self.nominals,
-                    external_entry: Some(main),
-                },
-            )?)
-        };
         let postcondition_schedule = self.analyze_function_inventory_with_mask(
             &mut function_inventory,
             &callees,
@@ -889,6 +890,68 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .map(|checked| checked.function.clone())
             .collect::<Vec<_>>();
+        let mut formation_rejections = Vec::new();
+        if let Some(issue) = self.generic_claim_schema_formation_issue.take() {
+            let path = Self::source_issue_path(&issue)?.clone();
+            formation_rejections.push((path, 0, issue));
+        }
+        for function in &baseline_functions {
+            let rank = self.concrete_claim_instance_rank(function)?;
+            let instance = self.concrete_claim_instance_name(function)?;
+            for failure in &function.entailment.claim_formation_failures {
+                formation_rejections.push((
+                    failure.node_path.clone(),
+                    rank,
+                    self.claim_formation_issue(failure, instance.clone())?,
+                ));
+            }
+        }
+        formation_rejections.sort_by(|left, right| {
+            left.0
+                .components()
+                .cmp(right.0.components())
+                .then(left.1.cmp(&right.1))
+        });
+        if let Some((_, _, issue)) = formation_rejections.into_iter().next() {
+            return Err(CheckStop::source_issue(issue));
+        }
+        let mut locality_rejections = Vec::new();
+        if let Some(issue) = self.generic_claim_schema_locality_issue.take() {
+            let path = Self::source_issue_path(&issue)?.clone();
+            let SemanticIssueKind::NonLocalClaim(detail) = &issue.kind else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            locality_rejections.push((
+                path,
+                0,
+                detail.component,
+                detail.boundary_call.clone(),
+                issue,
+            ));
+        }
+        for function in &baseline_functions {
+            let rank = self.concrete_claim_instance_rank(function)?;
+            for failure in &function.entailment.claim_locality_failures {
+                locality_rejections.push((
+                    failure.node_path.clone(),
+                    rank,
+                    failure.component,
+                    failure.boundary.call.clone(),
+                    self.claim_locality_issue(failure)?,
+                ));
+            }
+        }
+        locality_rejections.sort_by(|left, right| {
+            left.0
+                .components()
+                .cmp(right.0.components())
+                .then(left.1.cmp(&right.1))
+                .then(left.2.cmp(&right.2))
+                .then_with(|| left.3.components().cmp(right.3.components()))
+        });
+        if let Some((_, _, _, _, issue)) = locality_rejections.into_iter().next() {
+            return Err(CheckStop::source_issue(issue));
+        }
         self.claim_lifecycle_rejection_global(&baseline_functions)?;
         if self.reject_entailment {
             let mut rejections = Vec::new();
@@ -922,6 +985,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Err(CheckStop::Issue(issue));
             }
         }
+        // [PRV-1] depends only on the immutable phase-A value/storage flow,
+        // never on S3. Delay its one fixed point until the earlier CLM/ENT
+        // gates pass, then freeze from the saved phase-A inventory and reuse
+        // it for the baseline and every Full-minus mask. Each run still
+        // recomputes the complete PRV-2/3 gate over its fresh proof views.
+        let phase_a_functions = claim_counterfactual_inventory
+            .iter()
+            .map(|checked| checked.function.clone())
+            .collect::<Vec<_>>();
+        let frozen_provenance = freeze_program_provenance(
+            &phase_a_functions,
+            &ProvenanceContext {
+                nominals: &self.nominals,
+                external_entry: Some(main),
+            },
+        )?;
         let mut functions = function_inventory
             .into_iter()
             .map(|checked| checked.function)
@@ -930,12 +1009,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             nominals: &self.nominals,
             external_entry: Some(main),
         };
-        let mut provenance_analysis = match frozen_provenance {
-            Some(frozen) => {
-                analyze_program_provenance_with_frozen(&functions, &provenance_context, frozen)?
-            }
-            None => analyze_program_provenance(&functions, &provenance_context)?,
-        };
+        let mut provenance_analysis = analyze_program_provenance_with_frozen(
+            &functions,
+            &provenance_context,
+            &frozen_provenance,
+        )?;
         let concrete_provenance_issue = self.provenance_rejection(
             &functions,
             &provenance_analysis.metadata,
@@ -963,13 +1041,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if let Some(issue) = selected_provenance_issue {
             return Err(CheckStop::source_issue(issue));
         }
+        let residual_provenance = ResidualProvenanceContext {
+            failures: &provenance_analysis.failures,
+            frozen: &frozen_provenance,
+            main,
+        };
         let concrete_residual = self.claim_residuality_outcome(
             &mut functions,
             &claim_counterfactual_inventory,
             &callees,
             optimistic_batch,
-            &provenance_analysis.failures,
-            main,
+            &residual_provenance,
         )?;
         self.reject_first_residual_outcome(&functions, concrete_residual.as_ref())?;
         self.remove_uninhabited_generic_claim_reports(&mut functions)?;
@@ -1614,9 +1696,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             body_disposition: super::model::CheckedBodyDisposition::Inhabited,
             entailment: super::entailment::FunctionEntailment::default(),
         };
+        let claim_authority = ClaimAuthorityAnalysis::analyze(&function, &self.nominals)?;
         Ok(CheckedFunctionInventory {
             function,
             binding_names,
+            claim_authority,
         })
     }
 
@@ -1681,16 +1765,76 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         });
         let mut full = phase_a.to_vec();
         self.analyze_function_inventory_with_mask(&mut full, callees, optimistic_batch, None)?;
+        let mut formation_failures = canonical
+            .iter()
+            .flat_map(|(index, declaration)| {
+                full.get(*index)
+                    .filter(|checked| checked.function.declaration == *declaration)
+                    .into_iter()
+                    .flat_map(|checked| &checked.function.entailment.claim_formation_failures)
+            })
+            .collect::<Vec<_>>();
+        formation_failures.sort_by(|left, right| {
+            left.node_path
+                .components()
+                .cmp(right.node_path.components())
+        });
+        self.generic_claim_schema_formation_issue = formation_failures
+            .first()
+            .map(|failure| self.claim_formation_issue(failure, None))
+            .transpose()?;
+        if self.generic_claim_schema_formation_issue.is_some() {
+            self.generic_claim_schema_locality_issue = None;
+            self.generic_claim_schema_entailment_issue = None;
+            self.generic_claim_schema_provenance_issue = None;
+            self.generic_claim_schemas.clear();
+            return Ok(());
+        }
+        let mut locality_failures = canonical
+            .iter()
+            .flat_map(|(index, declaration)| {
+                full.get(*index)
+                    .filter(|checked| checked.function.declaration == *declaration)
+                    .into_iter()
+                    .flat_map(|checked| &checked.function.entailment.claim_locality_failures)
+            })
+            .collect::<Vec<_>>();
+        locality_failures.sort_by(|left, right| {
+            left.node_path
+                .components()
+                .cmp(right.node_path.components())
+                .then(left.component.cmp(&right.component))
+                .then_with(|| {
+                    left.boundary
+                        .call
+                        .components()
+                        .cmp(right.boundary.call.components())
+                })
+        });
+        self.generic_claim_schema_locality_issue = locality_failures
+            .first()
+            .map(|failure| self.claim_locality_issue(failure))
+            .transpose()?;
+        if self.generic_claim_schema_locality_issue.is_some() {
+            self.generic_claim_schema_entailment_issue = None;
+            self.generic_claim_schema_provenance_issue = None;
+            self.generic_claim_schemas.clear();
+            return Ok(());
+        }
         let full_schema_functions = full
             .iter()
             .map(|checked| checked.function.clone())
             .collect::<Vec<_>>();
-        let full_schema_provenance = analyze_program_provenance(
+        let schema_provenance_context = ProvenanceContext {
+            nominals: &self.nominals,
+            external_entry: None,
+        };
+        let frozen_schema_provenance =
+            freeze_program_provenance(&full_schema_functions, &schema_provenance_context)?;
+        let full_schema_provenance = analyze_program_provenance_with_frozen(
             &full_schema_functions,
-            &ProvenanceContext {
-                nominals: &self.nominals,
-                external_entry: None,
-            },
+            &schema_provenance_context,
+            &frozen_schema_provenance,
         )?;
 
         let has_lifecycle_failure =
@@ -1819,6 +1963,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             &scratch,
                             &mask,
                             &full_schema_provenance.failures,
+                            &frozen_schema_provenance,
                             None,
                         )?
                         else {
@@ -1870,6 +2015,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         &scratch,
                         &mask,
                         &full_schema_provenance.failures,
+                        &frozen_schema_provenance,
                         None,
                     )?
                     else {
@@ -2109,6 +2255,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     verified_postconditions: &[],
                     verified_postcondition_proofs: &[],
                     binding_names: &checked.binding_names,
+                    claim_authority: &checked.claim_authority,
                 };
                 checked.function.entailment = match (optimistic_batch, mask) {
                     (true, Some(mask)) => {
@@ -2175,6 +2322,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         verified_postconditions: &verified_postconditions,
                         verified_postcondition_proofs: &verified_postcondition_proofs,
                         binding_names: &checked.binding_names,
+                        claim_authority: &checked.claim_authority,
                     };
                     let entailment = match mask {
                         Some(mask) => {
@@ -2729,8 +2877,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         phase_a: &[CheckedFunctionInventory],
         callees: &[EntailmentCallee],
         optimistic_batch: bool,
-        full_provenance_failures: &ProvenanceFailures,
-        main: FunctionId,
+        provenance: &ResidualProvenanceContext<'_>,
     ) -> Result<Option<(FunctionId, super::entailment::ClaimOutcome)>, CheckStop> {
         let mut candidates = Vec::new();
         for (function_index, function) in functions.iter().enumerate() {
@@ -2776,8 +2923,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     functions,
                     &scratch,
                     &mask,
-                    full_provenance_failures,
-                    Some(main),
+                    provenance.failures,
+                    provenance.frozen,
+                    Some(provenance.main),
                 )? {
                     witnesses.push(witness);
                 } else {
@@ -2815,8 +2963,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 functions,
                 &scratch,
                 &mask,
-                full_provenance_failures,
-                Some(main),
+                provenance.failures,
+                provenance.frozen,
+                Some(provenance.main),
             )? {
                 witnesses.push(witness);
             } else {
@@ -2838,6 +2987,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         masked: &[CheckedFunctionInventory],
         mask: &ClaimMask,
         full_provenance_failures: &ProvenanceFailures,
+        frozen_provenance: &FrozenProvenanceDependencies,
         external_entry: Option<FunctionId>,
     ) -> Result<Option<ClaimCounterfactualWitness>, CheckStop> {
         let terminal_witness = Self::masked_terminal_witness(full, masked, mask)?;
@@ -2845,12 +2995,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .map(|checked| checked.function.clone())
             .collect::<Vec<_>>();
-        let masked_provenance = analyze_program_provenance(
+        let masked_provenance = analyze_program_provenance_with_frozen(
             &masked_functions,
             &ProvenanceContext {
                 nominals: &self.nominals,
                 external_entry,
             },
+            frozen_provenance,
         )?;
         // S3 is absent from U by definition, B only removes S4 from U, and
         // claims do not alter PRV-1 data flow. If no admission root changed,
@@ -3853,6 +4004,85 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    fn claim_formation_issue(
+        &self,
+        failure: &ClaimFormationFailure,
+        instance: Option<String>,
+    ) -> Result<SemanticIssue, CheckStop> {
+        let node = self
+            .tree
+            .node_with_path(&failure.node_path)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Ok(SemanticIssue {
+            rule: SemanticRule::Clm1,
+            location: SemanticLocation::SourceNode(
+                failure.node_path.clone(),
+                self.tree.coordinate(node)?,
+            ),
+            kind: SemanticIssueKind::InvalidClaim(Box::new(crate::InvalidClaimDetail {
+                name: failure.name.clone(),
+                predicate: failure.predicate.clone(),
+                classification: "unsupported canonical formation",
+                component: None,
+                reason: "the predicate has no unique supported contribution normal form",
+                instance,
+            })),
+        })
+    }
+
+    fn claim_locality_issue(
+        &self,
+        failure: &ClaimLocalityFailure,
+    ) -> Result<SemanticIssue, CheckStop> {
+        let node = self
+            .tree
+            .node_with_path(&failure.node_path)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let (boundary, mechanical_fix) = match failure.boundary.kind {
+            BoundaryResultKind::UserCall(function) => {
+                let signature = self
+                    .signatures
+                    .get(function.0 as usize)
+                    .filter(|signature| signature.id == function)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                (
+                    crate::ClaimBoundaryResultDetail::UserCall {
+                        declaration: signature.declaration,
+                        callee: signature.name.clone(),
+                    },
+                    "publish the required cross-function relation as an exact verified ensures clause on the callee and remove this caller claim",
+                )
+            }
+            BoundaryResultKind::SystemCall(declaration_ordinal) => {
+                let operation = crate::SYSTEM_OPERATIONS
+                    .get(usize::from(declaration_ordinal))
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                (
+                    crate::ClaimBoundaryResultDetail::SystemCall {
+                        declaration_ordinal,
+                        operation: operation.spelling.to_owned(),
+                    },
+                    "use the system operation's specified fact or typed outcome, or branch on the returned value; do not claim an unstated system-result property",
+                )
+            }
+        };
+        Ok(SemanticIssue {
+            rule: SemanticRule::Clm1,
+            location: SemanticLocation::SourceNode(
+                failure.node_path.clone(),
+                self.tree.coordinate(node)?,
+            ),
+            kind: SemanticIssueKind::NonLocalClaim(Box::new(crate::NonLocalClaimDetail {
+                name: failure.name.clone(),
+                component: failure.component,
+                carrier: failure.carrier.clone(),
+                boundary_call: failure.boundary.call.clone(),
+                boundary,
+                mechanical_fix,
+            })),
+        })
+    }
+
     /// Applies PRV-2/PRV-3 only after every OP-4/FN-8 base judgment has
     /// succeeded.  Events are already coalesced and deterministically ordered
     /// by the two-stratum provenance analysis.
@@ -4075,11 +4305,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 "component refuted",
                 Some(component),
                 "the checker derives this contribution component's negation",
-            ),
-            super::entailment::ClaimDisposition::UnsupportedContribution => (
-                "unsupported contribution",
-                None,
-                "the predicate has no unique supported contribution normal form",
             ),
             super::entailment::ClaimDisposition::InconsistentContribution => (
                 "inconsistent contribution",

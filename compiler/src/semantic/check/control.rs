@@ -1071,8 +1071,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ..
             } => {
                 if *operation == CheckedBooleanOperation::ExclusiveOr {
-                    // Evaluation is a valid proof expression; CLM-2 may later
-                    // reject its unsupported contribution normal form.
+                    // Evaluation is a valid proof expression; CLM-1 later
+                    // rejects its unsupported canonical contribution form.
                 }
                 recurse(self, arguments)?
             }

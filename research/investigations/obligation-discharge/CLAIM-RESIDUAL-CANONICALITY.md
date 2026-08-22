@@ -5,7 +5,7 @@ the feasibility argument, the implemented branch candidate, corpus evidence,
 and the remaining owner boundary. It is not a specification and authorizes no
 merge by itself. On `main` the active language remains v0.33; this work branch
 carries the v0.34 `CANDIDATE` at `spec/kernel-spec.md`, SHA-256
-`b9284417e12f41a9c4c78728bf684c088aadd2d1fcfd10d305c0ef24c448d27a`.
+`936197e24fff2a6ed7e5b3fc271df51f1a6cadf71e45a1d5fa7b8745a011108e`.
 
 ## 1. Conclusion
 

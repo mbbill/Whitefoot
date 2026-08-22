@@ -1080,11 +1080,11 @@ command fn main() -> status: own ExitStatus pure {{
 }}
 "#
     );
-    assert_source_rule(source.as_bytes(), SemanticRule::Clm2);
+    assert_source_rule(source.as_bytes(), SemanticRule::Clm1);
 }
 
 #[test]
-fn contradiction_precedes_ambiguous_origin_classification() {
+fn ambiguous_origin_formation_precedes_contradiction_classification() {
     let source = format!(
         r#"fn probe(left: own Bool, right: own Bool, choose_left: own Bool) -> result: own unit traps {{
   if False() {{
@@ -1105,15 +1105,21 @@ command fn main() -> status: own ExitStatus pure {{
     );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("a contradictory claim path must be rejected as vacuous: {outcome:?}");
+            panic!("ambiguous claim formation must be rejected: {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Clm2);
+        assert_eq!(issue.rule(), SemanticRule::Clm1);
         let SemanticIssueKind::InvalidClaim(detail) = issue.kind() else {
-            panic!("expected a vacuous claim diagnostic: {:?}", issue.kind());
+            panic!(
+                "expected a canonical-formation diagnostic: {:?}",
+                issue.kind()
+            );
         };
-        assert_eq!(detail.classification, "vacuous");
+        assert_eq!(detail.classification, "unsupported canonical formation");
         assert_eq!(detail.component, None);
-        assert_eq!(detail.reason, "the pre-claim state is contradictory");
+        assert_eq!(
+            detail.reason,
+            "the predicate has no unique supported contribution normal form"
+        );
     });
 }
 

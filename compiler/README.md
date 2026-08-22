@@ -27,7 +27,7 @@ On `main`, the frontend targets the exact v0.33 bytes, SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
 This work branch instead carries the v0.34 `CANDIDATE` at
 `../spec/kernel-spec.md`, SHA-256
-`b9284417e12f41a9c4c78728bf684c088aadd2d1fcfd10d305c0ef24c448d27a`;
+`936197e24fff2a6ed7e5b3fc271df51f1a6cadf71e45a1d5fa7b8745a011108e`;
 it becomes active only in the owner-approved atomic merge.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same

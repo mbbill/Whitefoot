@@ -176,7 +176,7 @@ commit is available to rebase.
 
 The branch-only stable path contains `CANDIDATE v0.34`, 3,347 lines and 416,020
 bytes, SHA-256
-`b9284417e12f41a9c4c78728bf684c088aadd2d1fcfd10d305c0ef24c448d27a`.
+`936197e24fff2a6ed7e5b3fc271df51f1a6cadf71e45a1d5fa7b8745a011108e`.
 Relative to active v0.33 it is 194 inserted and 51 deleted lines. It preserves
 all 74 grammar productions, 93 decisions, 105 terminal predicates, and the
 135-rule inventory; the accepted-set delta is the claim doctrine and its

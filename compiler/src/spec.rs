@@ -91,7 +91,7 @@ mod tests {
     fn computed_identity_is_the_independently_measured_digest() {
         assert_eq!(
             computed_active_spec_hash().to_string(),
-            "b9284417e12f41a9c4c78728bf684c088aadd2d1fcfd10d305c0ef24c448d27a"
+            "936197e24fff2a6ed7e5b3fc271df51f1a6cadf71e45a1d5fa7b8745a011108e"
         );
     }
 

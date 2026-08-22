@@ -6,6 +6,7 @@
 //! capability, never as a source-language rejection.
 
 mod check;
+mod claim_locality;
 mod entailment;
 mod goal;
 mod model;
@@ -16,7 +17,10 @@ mod tree;
 #[cfg(test)]
 mod tests;
 
-use crate::{BundleSourceExtent, NodePath, ResolutionIssue, ResolvedSyntaxUnit, SyntaxCoordinate};
+use crate::{
+    BundleSourceExtent, DeclarationId, NodePath, ResolutionIssue, ResolvedSyntaxUnit,
+    SyntaxCoordinate,
+};
 
 pub use check::check_semantics;
 #[cfg(test)]
@@ -384,8 +388,8 @@ pub struct RefutedClaimDetail {
     pub instance: Option<String>,
 }
 
-/// One CLM-2 source-upgrade or residual-canonicality rejection other than an
-/// exact refutation.
+/// One CLM-1 canonical-formation or CLM-2 lifecycle/residual-canonicality
+/// rejection other than an exact refutation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InvalidClaimDetail {
     pub name: String,
@@ -396,6 +400,46 @@ pub struct InvalidClaimDetail {
     /// Stable concrete generic instance spelling, or `None` for a source
     /// schema or nongeneric occurrence.
     pub instance: Option<String>,
+}
+
+/// The call boundary whose result reached a non-local claim component
+/// [CLM-1].  Every published identity is source-stable: a user call names its
+/// declaration, while a system call names its catalog spelling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ClaimBoundaryResultDetail {
+    /// An ordinary user-call result.
+    UserCall {
+        /// Source declaration identity of the called function.
+        declaration: DeclarationId,
+        /// Source function spelling, never a concrete-instance symbol.
+        callee: String,
+    },
+    /// A system-call result.
+    SystemCall {
+        /// Zero-based [SYS-2] system declaration ordinal.
+        declaration_ordinal: u8,
+        /// Stable system-operation spelling.
+        operation: String,
+    },
+}
+
+/// A CLM-1 claim-locality rejection.  The component is the least canonical
+/// contribution component that reads a value descended from a call result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NonLocalClaimDetail {
+    /// The claim's written name.
+    pub name: String,
+    /// Least non-local canonical contribution component ordinal.
+    pub component: u32,
+    /// Source rendering of the first canonical support that observes the
+    /// selected earliest boundary witness.
+    pub carrier: String,
+    /// Earliest source call occurrence that introduced the boundary result.
+    pub boundary_call: NodePath,
+    /// Stable kind and callee identity of that boundary.
+    pub boundary: ClaimBoundaryResultDetail,
+    /// Exact mechanical repair selected by CLM-1.
+    pub mechanical_fix: &'static str,
 }
 
 /// One non-discharged static source obligation disposition [ENT-6].
@@ -776,6 +820,9 @@ pub enum SemanticIssueKind {
     /// A decoded claim justification is not the exact five-field CLM-1
     /// review record.
     InvalidClaimJustification { expected: &'static str },
+    /// A canonical claim component reads a user-call or system-call result,
+    /// or a value transitively derived from one [CLM-1].
+    NonLocalClaim(Box<NonLocalClaimDetail>),
     /// A conditional was written in a form GRAM-6 does not admit for its
     /// class: a Bool-scrutinee `match`, an empty `else`, or an `else` block
     /// holding exactly one `if`.

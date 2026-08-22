@@ -829,7 +829,7 @@ sequencing amendment selecting atomic activation.
 | ENT-3 | Fact sources S1–S10: branch/match, check, claim, requires substitution, copy/cvt equalities, lengths, constant-offset arithmetic, midpoint family, const-array ranges, boundary counts | ✅ derived | Every source names an executed check, a declared allocation/type/operation contract, or a constant, preserving the W3 keystone (no assume anywhere), and each entered on measured evidence: dominating branch/match facts, allocation-length equality, const-array element ranges, and ±-constant arithmetic are exactly SIMULATION.md's validated L0 inventory on three real programs; S10's boundary count bounds are PROBE-TAINT.md's load-bearing finding (one structural claim in 723 wfgrep lines only because the read_once/host_copy count bounds hold) made normative through the SYS-8/SYS-9 postconditions and carried in the same [QUAL-1] contract trust class as S6's buffer_new length; the comparison-origin single-`let` cut is owner-ruled (2026-08-07) with its measured consequence recorded (the sha256 bucket restatement, review F8). | S4 requires-substitution is fail-closed on any non-comparison substituted shape; the S8 midpoint family is closed-shape and its unsigned arithmetic was verified sound in the adversarial review's surviving-attack record. |
 | ENT-4 | Closure: least fixed point over difference-bound transitivity, disequality strengthening, subsumption; contradiction discharges everything | ✅ derived | Analytic, theorem-backed (the OP-2 div/rem class): given ENT-2's fact language the least closure exists, is unique and finite up to subsumption, and fixes every derivability answer, so the W3 two-implementation law holds by construction; the one-definition form with the reflexive implicit bound is review-forced (F7 removed a second, inequivalent shortest-path definition); contradiction-as-unreachable (every obligation discharged, no claim refuted) keeps CLM-2 refutation meaningful exactly where code is reachable in truth. | The contradictory-state disposition is owner-ruled (2026-08-07); a dedicated unreachable-code diagnostic remains open later work. |
 | ENT-5 | Fact stability: kills by resolved-place overlap and effect-row projection, edge-ordered scope exits, joins, no-induction loop rule | ✅ derived | The kill architecture is the design's central derivation: exact bidirectionally-checked effect rows make the call kill a signature lookup (DOSSIER §2.6 — the analysis that drowns in aliasing elsewhere is modular here), reusing OWN-5/OWN-7 resolved-place overlap and EFF-2 boundary projection rather than inventing alias machinery (R1); the form is adversarially established — review F2 forced scope-exit kills to be edge events ordered before joins, and the surviving-attack record (buffer reassignment, element writes versus length facts, borrow aliasing, writes hidden from rows) is retained in CANDIDATE-REVIEW.md; the no-induction loop rule is the version-pinned L0 floor whose upgrade value SIMULATION.md priced (loop induction discharges ~11 of 13 structural claims), monotone under ENT-1. | TYPE-2's allocation-fixed lengths are what exempt length terms from element-write kills; the empty-join disposition for a break-less loop follows ENT-4's unreachability posture and is flagged for confirmation at the approval sitting. |
-| ENT-6 | Obligations, discharge, residual: index bounds prove-or-reject with a printed one-line residual | ✅ derived | R4 shift-left is the rule itself: an unproven bound becomes a compile-time rejection carrying a rule citation and a pasteable residual instead of a runtime trap, and PROBE-W1 rounds 1–2 measured exactly this loop steering 16/16 writers to honest shapes (the checker-as-teacher argument, DOSSIER §3); P0 through the OP-4 lineage: 'proof means a deterministic checker derivation' was already OP-4 law, and discharge deletes the checked-site cost the simulation quantified (sha256's hottest loop at 5 checks per iteration consolidates under claims; PROBE-CODEGEN.md: the claim shape equals today's fused check shape by construction); the zero-skill fallback — rebind, then claim the printed residual — closes every site by construction after review F5 widened the term roots. | The residual rendering schema (whole obligation, fixed bytes) is owner-ruled (2026-08-07) over the reduced-frontier alternative without a comparative test — this row's one untested residue. |
+| ENT-6 | Obligations, discharge, residual: index bounds prove-or-reject with a printed one-line residual | ✅ derived | R4 shift-left is the rule itself: an unproven bound becomes a compile-time rejection carrying a rule citation and a pasteable residual instead of a runtime trap, and PROBE-W1 rounds 1–2 measured exactly this loop steering 16/16 writers to honest shapes (the checker-as-teacher argument, DOSSIER §3); P0 through the OP-4 lineage: 'proof means a deterministic checker derivation' was already OP-4 law, and discharge deletes the checked-site cost the simulation quantified (sha256's hottest loop at 5 checks per iteration consolidates under claims; PROBE-CODEGEN.md: the claim shape equals today's fused check shape by construction); for a current-function-local theorem, the zero-skill fallback — rebind, then claim the printed residual — closes the writable site after review F5 widened the term roots. The v0.34 amendment excludes every user-call and system-call result from that fallback. | The residual rendering schema (whole obligation, fixed bytes) is owner-ruled (2026-08-07) over the reduced-frontier alternative without a comparative test — this row's one untested residue. |
 
 The current total is **80 derived · 48 existence-only · 0 underived** across
 128 rules (120 active v0.20 rules plus the eight v0.21-candidate additions).
@@ -1256,3 +1256,90 @@ SHA-256 `024a7752a88daf8799f637d95401fb73e25e257b118b3b78d4733b397c3db3c2`;
 the installed active specification is
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`,
 and the activation chain ends at v0.33.
+
+## v0.34 amendment — residual-only local claim authority (branch candidate 2026-08-22)
+
+Specification binding: the branch candidate at `spec/kernel-spec.md`, headed
+v0.34 and carrying v0.33's exact predecessor identity. Its exact candidate
+SHA-256 is intentionally not asserted while the branch bytes remain under
+construction; the frozen merge revision supplies that identity. The outgoing
+v0.33 authority remains the immutable active bytes at SHA-256
+`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
+
+v0.34 adds and removes no numbered rule. It modifies exactly these fifteen
+existing rules: CLM-1, CLM-2, CLM-3, DIAG-1, DIAG-2, ENT-1, ENT-2, ENT-3,
+ENT-4, ENT-5, ENT-6, EX-1, OP-4, PRV-3, and SCOPE-2. The groups below are
+disjoint and their union is that complete archive-to-candidate rule set:
+
+| Move | Exact changed rules | Continuing derivation |
+|---|---|---|
+| Residual-only claim contract | SCOPE-2, CLM-1, CLM-2 | W3 permits no writer-stated fact without machine proof or one executed reviewed boundary, while R4 makes a provably false or avoidable runtime failure a source error. A five-field proof record, fact-free canonical formation, contradiction-before-lifecycle-signs, exact/component unknownness, reconstruction, and fixed-set component/occurrence necessity make the surviving check a genuine checker residual rather than an assertion, oracle, deliberate abort, redundant check, or unused theorem. Runtime retention is unchanged. |
+| Deterministic evidence and diagnostics | DIAG-1, DIAG-2 | W3 review requires stable source identity and exact proof ancestry, and R4 requires the earliest owning rejection rather than a later runtime symptom. Source-schema-before-instance ordering, component ordinals, failure-atomic scratch, stable terminal witnesses, and the ban on scratch identities are the finite evidence form of that requirement. |
+| Finite proof, authority, and consumer judgment | ENT-1, ENT-2, ENT-3, ENT-4, ENT-5, ENT-6, OP-4, PRV-3 | The existing deterministic L0/opaque-goal state supplies the unique D/S/F and contribution vocabulary. W3 forbids a component proved, refuted, externally assertion-authorized, or unsupported by an authentic admission root from entering S3; fresh Full-minus runs over one fixed Eligible set prove exactly that each retained component and occurrence is checker-relative load-bearing without claiming mathematical minimality. The same finite support and normal-control graph carries the independent claim-authority observation described below. |
+| Strict and canonical-example follow-through | CLM-3, EX-1 | A strict closure may inspect only claims that survived the ordinary admission judgment, and the canonical complete example must not use a claim as an output oracle. Reusing the retained-claim set preserves CLM-3's existing SCC boundary, and ordinary value control preserves EX-1's behavior without manufacturing a theorem. |
+
+The claim-locality correction follows directly from FN-1's modular callable
+boundary and W3's no-hidden-trust premise. An ordinary caller is allowed to
+consult verified requirement and normal-result summaries and never a callee
+body. Therefore a caller claim about a user-call result would be an unwritten
+postcondition: changing the callee body without changing its boundary could
+invalidate distant prose while the runtime trap merely delays the defect. The
+trap still protects the immediate partial operation, but it cannot supply the
+missing proof authority. A user result property crosses the boundary only as an
+FN-9-verified S12 relation; a system result property crosses only as a
+specification-fixed fact or typed outcome.
+
+The strict `BoundaryResult` transfer is the smallest closed rule that makes
+that boundary non-bypassable. Every user and system result component is seeded
+regardless of PRV externality or an existing `ensures`; all explicit value,
+holder, storage, and control paths preserve or join the seed. Copy,
+conversion, `imin`, `+wrap 0`, aggregate wrapping, payload extraction, selecting
+constants on boundary-controlled arms, and storage round trips are therefore
+not ad hoc forbidden spellings but instances of one exhaustive transfer. An
+`ensures` proves its exact relation and no more, so treating it as whole-value
+declassification would recreate the stronger-hidden-postcondition hole.
+PRV-1 remains an explicit external-dataflow judgment; claim authority is an
+independent proof-ownership judgment and its control dependence changes no PRV
+class.
+
+Component sensitivity and strong replacement prevent the conservative rule
+from inventing a different prohibition. A local aggregate sibling remains
+local when an exact other field is boundary-derived. An unconditional exact
+whole-value or exact-field write replaces the current value and may clear an
+old marker, while a boundary-controlled write, shared element summary,
+possible-overlap write, or control-flow join cannot. This is the ordinary
+reaching-value distinction between replacement and join, not writer-directed
+declassification. A returned aggregate is different: the call boundary seeds
+all its components before any projection.
+
+Ordinary and command-entry parameters are not call-result events, so this
+amendment does not seed them; PRV and claim truth/residuality continue to judge
+their uses. Likewise, a callee write through `&uniq` storage is not silently
+added to this return-result correction. That neighboring accepted-set question
+requires its own amendment; explicit writes of already boundary-derived values
+continue to propagate normally. These exclusions prevent a return-authority
+repair from becoming an unreviewed general information-flow policy.
+
+ENT-1 applies the same formation and locality admission to every nongeneric
+body, every generic source schema including an uninstantiated one, and every
+inhabited concrete replay. The authority tree uses resolved source components,
+not the restricted generic L0 term vocabulary. DIAG-1's source occurrence,
+least component, earliest boundary call, and first same-witness support-carrier
+order makes the result invariant under dense IDs, unrelated instances, and
+traversal order.
+The authority observation is independent of S3 and is computed once before U,
+B, Eligible, or any counterfactual mask.
+
+This amendment supersedes the original ENT-6 fallback sentence for non-local
+values: rebinding closes a claim site only when the residual is a true theorem
+over current-function-local authority. Rebinding,
+converting, or otherwise renaming a user-call or system-call result never makes
+it local. A cross-function fact instead comes from FN-9/S12, a
+specification-fixed system fact, or ordinary typed control; when the current
+contract language cannot express the needed result relation, that program is
+not repaired by a caller claim.
+
+No existing derivation status changes. CLM-1 retains its independent historical
+writer-form debt; locality adds no spelling, fact source, operation, effect,
+runtime check, trap family, grammar production, or unsafe authority. Totals
+remain **84 derived · 51 existence-only · 0 underived** across 135 rules.

@@ -3,8 +3,8 @@
 Status: CANDIDATE v0.34 supersedes v0.33 fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +0/-0 (135 remain); grammar productions +0/-0 (74 remain); unique fixed lowercase grammar atoms +0/-0; writer operation spellings +0/-0; runtime-trap families +0/-0; accepted source is tightened so a claim is legal only as a total observational, checker-unknown, component- and occurrence-necessary proof residual with one structured five-field derivation record; redundant, refuted, vacuous, inconsistent, overlapping, malformed, and non-residual claims become hard source errors; every accepted claim remains an executed runtime check and the claim grammar, effect, lowering, trap identity, and failure behavior are unchanged.
-Selection ground: the 2026-08-21 owner-selected claim doctrine, the complete 651-occurrence real/protected corpus census, the existing v0.33 entailment and ClaimLedger evidence, and the bounded residual-canonicality investigation recorded by Direction Outline revision 47 and batch 0075.
+META-5 delta declaration: numbered rules +0/-0 (135 remain); grammar productions +0/-0 (74 remain); unique fixed lowercase grammar atoms +0/-0; writer operation spellings +0/-0; runtime-trap families +0/-0; accepted source is tightened so a claim is legal only as a current-function-local, total observational, checker-unknown, component- and occurrence-necessary proof residual with one structured five-field derivation record; any claim whose component reads a user-call or system-call result, directly or through value, control, holder, or storage flow, becomes a hard source error, as does every redundant, refuted, vacuous, inconsistent, overlapping, malformed, or non-residual claim; every accepted claim remains an executed runtime check and the claim grammar, effect, lowering, trap identity, and failure behavior are unchanged.
+Selection ground: the 2026-08-21 owner-selected residual-only claim doctrine, the 2026-08-22 owner claim-locality correction, the complete initial 651-occurrence real/protected corpus census, the existing v0.33 entailment and ClaimLedger evidence, and the bounded residual-canonicality investigation recorded by Direction Outline revision 48 and batch 0075.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
 
@@ -17,7 +17,7 @@ The gated family's members (unsafe regions, FFI extern frames, trusted primitive
 
 [SCOPE-2] A program is checker-accepted iff it parses under the canonical grammar and satisfies every machine judgment in this document.
 An owner-approved program additionally has every retained claim's review record validated under [CLM-1]; that approval status is an external review judgment over the exact checker-accepted source and claim inventory, not another compiler fact source or a way to admit checker-rejected source.
-Every proof-required hazardous operation is statically discharged by the deterministic checker before lowering; a writer may establish a missing fact with executed control flow or with one retained named claim, but no operation receives an implicit runtime fallback.
+Every proof-required hazardous operation is statically discharged by the deterministic checker before lowering; a writer may establish a missing fact with executed control flow or with one retained named [CLM-1]-local claim, but no operation receives an implicit runtime fallback.
 There is no writer-emittable unchecked state: nothing writer-stated is trusted without either machine derivation or the executed claim boundary.
 The sole trusted-assertion class is toolchain-gated ledger entries (§14), which the writer cannot author or edit.
 
@@ -1853,13 +1853,18 @@ An excluded caller route, including a named or pending outcome, is not itself a 
 
 Claim diagnostics use this fixed semantic schedule.
 FN-1 first rejects every structurally unreachable statement; only a claim occurrence with a structurally reachable normal entry enters the CLM-1/CLM-2 schedule below.
-CLM-1 predicate type, proof-predicate shape, and five-field structure are checked first.
-The complete inventory then records contradiction-first D/S/F exact lifecycle, canonical contributions, component lifecycle, consistency, and S-to-D reconstruction for every source schema and concrete instance; the first invalid claim in source occurrence then stable instance order rejects before any counterfactual run.
+CLM-1 predicate type, proof-predicate shape, per-function name uniqueness, and five-field structure are checked first.
+CLM-1 next performs fact-free D/S/F and `Contrib(P)` formation; an ambiguous or unsupported origin, normalization, support, component negation, reconstruction, or materialization reports its existing formation error before locality, and no component ordinal is fabricated when formation fails.
+For every successfully formed source schema and concrete instance, CLM-1 then checks component authority in source-occurrence then stable-instance order; source-schema reports precede reports from the same occurrence's concrete instances, and the least non-local component ordinal wins.
+Only the resulting admitted inventory records contradiction-first D/S/F exact lifecycle, component lifecycle, consistency, and S-to-D reconstruction; the first invalid claim in source occurrence then stable instance order rejects before any counterfactual run.
 Complete OP-2/OP-4/OP-9/SYS-8, FN-8, FN-9, PRV-2, and PRV-3 judgments then select their ordinary errors.
 Only an otherwise-successful unit freezes Eligible and runs CLM-2 component and whole-occurrence residuality; the first non-residual occurrence owns that rejection, component failures precede a whole-occurrence failure, and component failures use the least component ordinal.
 This schedule prevents an invalid candidate from supplying another candidate's baseline and prevents a premature unused-claim error from hiding an ordinary proof or provenance defect.
-All claim source errors cite CLM-1 for predicate/justification formation and CLM-2 for vacuous, redundant, refuted, overlapping, inconsistent, reconstruction, or non-residual lifecycle, using `SourceNode` at the `claim_stmt` and its complete extent unless CLM-1 already selects its `expr`.
+All claim source errors cite CLM-1 for predicate, justification, canonical, or locality admission and CLM-2 for vacuous, redundant, refuted, overlapping, inconsistent, reconstruction, or non-residual lifecycle, using `SourceNode` at the `claim_stmt` and its complete extent unless CLM-1 already selects its `expr`.
 Their payload retains name, exact predicate, classification, and the deterministic concrete instance, component when applicable, and terminal-root witness when one exists; a whole-occurrence failure has no component ordinal.
+One locality payload instead retains the claim name and NodePath, least failing component ordinal, earliest boundary-call NodePath, boundary kind, the first source-ordered support carrier that observes that same earliest witness with its canonical source spelling, and the callee's stable identity: source declaration origin and source name for a user call, or [SYS-2]'s `system_declaration_ordinal` and operation spelling for a system call.
+It never publishes a scratch `FunctionId`, `NominalId`, dense instance number, `$instance$N` spelling, or traversal-order identity.
+For a user result its restructuring is `publish the required cross-function relation as an exact verified ensures clause on the callee and remove this caller claim`; for a system result it is `use the system operation's specified fact or typed outcome, or branch on the returned value; do not claim an unstated system-result property`.
 The both-sign case, an unavailable required source-schema judgment, or an inconsistent counterfactual result is a compiler failure or explicit unsupported capability rather than a guessed source rejection.
 
 The [CLM-3] stage begins only after every ordinary source, provenance, and CLM-2 residual judgment has succeeded.
@@ -1888,9 +1893,9 @@ Every writer-reachable source-language runtime check is one [CLM-1] claim with d
 No accepted proof-required operation carries an implicit runtime check or elimination disposition: a subscript, exact integer operation, buffer allocation, or system range is `discharged` at its owning source node, and the checked program retains its exact [ENT-4] or [ENT-6] derivation there.
 Every accepted [CLM-1] claim is `retained`; the checked program retains its source occurrence and concrete-instance identities, name, exact D, S, and F predicate images, five parsed justification fields, ordered structured `Contrib(P)`, each component S3 source derivation, the retained S reconstruction and D materialization derivations, every successful component and whole counterfactual witness, the closed terminal-root inventory, and each witness's non-contradictory and non-explosive ancestry disposition.
 A concrete terminal-root identity uses the owning function instance plus the operation NodePath/family/conjunct, the call NodePath/callee/requirement NodePath, or the complete-postcondition block/relation ordinal; display symbols are never identity.
-A generic source occurrence additionally retains one source-stable schema report owned by its declaration, with rendered D, S, and F predicate images, ordered contribution descriptions, S-to-D reconstruction success, stable counterfactual witness summaries, and ordered inhabited concrete-instance report links.
+A generic source occurrence additionally retains one source-stable schema report owned by its declaration, with rendered D, S, and F predicate images, ordered contribution descriptions, local-authority success, S-to-D reconstruction success, stable counterfactual witness summaries, and ordered inhabited concrete-instance report links.
 The schema report contains no monomorphized display symbol or symbolic-scratch `FunctionId`, `GoalId`, `TermId`, or `DerivationId`; only concrete reports may retain finalized function-local proof identifiers.
-Redundant, refuted, vacuous, overlapping, inconsistent, reconstruction-failed, or non-residual candidates publish no claim metadata or checked program.
+Malformed, non-local, redundant, refuted, vacuous, overlapping, inconsistent, reconstruction-failed, or non-residual candidates publish no claim metadata or checked program.
 A `requires_clause` is represented only by its GoalTemplate, call-site derivations, and S4 source; an `ensures_clause` only by its verified RelationTemplate, selected-exit judgments, and derivations.
 Neither contract clause has executable checked-program form.
 In facts-off compilation every claim remains `retained`, and all [ENT-1] source-acceptance and call-goal judgments are identical in facts-on and facts-off compilation.
@@ -2635,8 +2640,33 @@ consumers: nonempty text
 Each fixed label and following ASCII space is exact and each value remains nonempty after removing leading and trailing ASCII spaces.
 The five fields are retained review data [DIAG-2].
 This structural check does not prove their prose true: owner approval of the checker-accepted source requires human, AI-assisted, or offline-proof review to validate the stated premises, derivation, exact conclusion, checker gap, and one or more authentic terminal consumers.
-Such review may use only facts valid before this claim, including explicitly named earlier reviewed claims; it may not use this claim's own successful execution, a later fact, an unstated caller or environment promise, or a circular occurrence of the same dynamic claim.
+Such review may use only facts valid before this claim, including explicitly named earlier reviewed claims; it may not use this claim's own successful execution, a later fact, an unstated caller or environment promise, a user callee's body or unstated system behavior in place of a verified or specification-fixed callable-boundary fact, or a circular occurrence of the same dynamic claim.
 An optional solver result never changes ordinary source acceptance or runtime execution [ENT-1].
+
+After its type, proof-shape, per-function name, and five-field formation judgments succeed, CLM-1 performs one fact-free canonical-formation subjudgment before any claim truth, contradiction, provenance, or residuality query.
+Let `D(P)`, `S(P)`, and `F(P)` be three exact typed goal images of predicate P.
+`D(P)` is the direct GoalExpression of the evaluated written predicate.
+`F(P)` is the unique complete still-valid ordinary-let origin expansion of `D(P)` under the ordinary goal-origin rule below.
+`S(P)` is the support-canonical snapshot-frontier expansion: starting from `D(P)`, perform the same unique still-valid ordinary-let replacement as `F(P)`, except that when the current subtree already has an exact L0 projection or one fixed normalization, retain that subtree unchanged and do not expand any datum below it; expansion continues everywhere else.
+Thus S preserves the support of each checker fact the claim actually reads, while F records the fully structural origin.
+The ordered exact-image inventory keeps the first occurrence of each distinct identity in D, S, F order; equal images collapse and do not create duplicate queries.
+
+Canonical formation constructs the unique ordered `Contrib(P)` from positive S in the finite [ENT-2] fact vocabulary.
+The recursive walk visits operation arguments left to right, fixed normalizations visit components in their rule-defined order, and the result keeps only the first occurrence of each exact signed-goal or normalized-relation identity; duplicate identities never create duplicate component ordinals.
+Difference-bound identities retain ordered endpoints; disequality identities are unordered, so `a != b` and `b != a` deduplicate, while the first left-to-right source occurrence fixes the retained rendering and ordinal.
+Positive `band`, negative `bor`, and either sign of `bnot` recursively contribute their sound signed conjuncts.
+Positive `bor` and negative `band`, whose truth is disjunctive, remain one exact signed-goal component.
+An integer inequality contributes its one normalized bound; positive integer equality contributes its two directed zero bounds, negative equality its disequality, with `ine` dual; a representable positive `.defined` or allocation-fit predicate contributes the relations of its one fixed conjunction normalization.
+D is a reconstruction target, not a contribution basis; F is a lifecycle image, not an S3 contribution or reconstruction target.
+An otherwise proof-pure exact goal for which the checker has no finer conjunctive fact vocabulary is one opaque component.
+`bxor`, Boolean equivalence, a normalization with alternative positive clauses such as signed division/remainder, an ambiguous origin, or any shape for which normalization, support, component negation, S reconstruction, or D materialization is not unique is not an admitted claim predicate in this version and rejects under CLM-1 before a component ordinal is published.
+Formation alone assigns the finite component ordinals; it establishes no fact and makes no lifecycle classification.
+
+At the claim point, CLM-1 then queries every component's ordinary S-derived support [ENT-5] in component-ordinal order against [ENT-6]'s frozen claim-authority state.
+Every runtime value component and holder read by that support must be `Local` to the current function.
+If any support member is `BoundaryResult`, the whole claim is non-local and rejects under CLM-1 using [DIAG-1]'s least component, earliest boundary witness, and first canonical support carrier that observes that witness; no S3 source, lifecycle query, `Eligible` member, counterfactual run, ClaimLedger record, or lowering authority is formed for that occurrence.
+A verified `ensures` and its S12 publication never make the returned value local: the caller consumes the verified relation directly and cannot restate or strengthen it with a claim.
+This authority admission is independent of truth and of [PRV-1] provenance; a `Local` component is not thereby true or internal, and a PRV-internal call result is still `BoundaryResult`.
 
 Every claim accepted by [CLM-2] is retained as one runtime check in every build mode, is never elided, and evaluates `e` exactly once at every dynamic reach.
 False evaluation emits the required record [DIAG-3] and aborts [SCOPE-4, EFF-4] before S3 can authorize a later operation; true evaluation continues and establishes only [ENT-3]'s canonical claim contribution.
@@ -2647,17 +2677,10 @@ Because the name is outside the reservation inventory, a claim may be named `len
 Within one `fn_decl` every claim name is unique; a repeated spelling is a hard error citing CLM-1 at the later `claim_stmt` node.
 The required labels and nonempty values select source formation, but the fields are absent from runtime behavior and their prose truth establishes no checker fact.
 A claim is legal in exactly the statement positions [GRAM-4] admits; a `contract_block` contains only `contract_define`, `requires_clause`, and `ensures_clause` productions, so no claim or other statement can appear there.
-Operand provenance does not by itself prove a claim true: [PRV-2] and [PRV-3] still reject claim-only authorization of an unconditionally external constrained subject, while [CLM-2] independently requires a genuine admission consumer.
+Operand provenance does not by itself prove a claim true: [PRV-2] and [PRV-3] still reject claim-only authorization of an unconditionally external constrained subject, while CLM-1 independently requires local authority and [CLM-2] independently requires a genuine admission consumer.
 
-[CLM-2] One FN-1-reachable concrete claim occurrence c is judged after evaluating its predicate but before its own S3 source.
-At that point let `D(P)`, `S(P)`, and `F(P)` be three exact typed goal images of predicate P.
-`D(P)` is the direct GoalExpression of the evaluated written predicate.
-`F(P)` is the unique complete still-valid ordinary-let origin expansion of `D(P)` under the ordinary goal-origin rule below.
-`S(P)` is the support-canonical snapshot-frontier expansion: starting from `D(P)`, perform the same unique still-valid ordinary-let replacement as `F(P)`, except that when the current subtree already has an exact L0 projection or one fixed normalization, retain that subtree unchanged and do not expand any datum below it; expansion continues everywhere else.
-Thus S preserves the support of each checker fact the claim actually reads, while F records the fully structural origin.
-The ordered exact-image inventory keeps the first occurrence of each distinct identity in D, S, F order; equal images collapse and do not create duplicate queries.
-
-If the pre-S3 combined state is contradictory, c is vacuous and rejects; contradiction is tested before origin formation or either predicate sign and ex-falso never proves claim truth.
+[CLM-2] One FN-1-reachable concrete claim occurrence c is judged only after CLM-1 has admitted its predicate, canonical D/S/F images, ordered `Contrib(P)`, and local authority, and after evaluating its predicate but before its own S3 source.
+If the pre-S3 combined state is contradictory, c is vacuous and rejects; contradiction is tested first among lifecycle truth queries, after CLM-1 admission and before either predicate sign, and ex-falso never proves claim truth or erases a locality failure.
 Otherwise query both signs of every image in that ordered inventory.
 Both signs at one image are a compiler consistency failure, not a source classification.
 A positive sign at one image and a negative sign at a distinct image, with no one image deriving both, make the source vacuous because its support-correct exact images conflict.
@@ -2665,18 +2688,7 @@ Otherwise deriving any positive sign rejects c as redundant and deriving any neg
 Thus `claim True()` is redundant and `claim False()` is refuted on every reachable path.
 Checker strengthening may and must turn a formerly unknown claim into this source-upgrade error; the author removes or restructures the source and recompiles, and no compiler or optimizer silently elides the written check.
 
-For a remaining unknown predicate P, the checker constructs its unique ordered `Contrib(P)` in the finite [ENT-2] fact vocabulary.
-The recursive walk visits operation arguments left to right, fixed normalizations visit components in their rule-defined order, and the result keeps only the first occurrence of each exact signed-goal or normalized-relation identity; duplicate identities never create duplicate component ordinals.
-Difference-bound identities retain ordered endpoints; disequality identities are unordered, so `a != b` and `b != a` deduplicate, while the first left-to-right source occurrence fixes the retained rendering and ordinal.
-Positive `band`, negative `bor`, and either sign of `bnot` recursively contribute their sound signed conjuncts.
-Positive `bor` and negative `band`, whose truth is disjunctive, remain one exact signed-goal component.
-An integer inequality contributes its one normalized bound; positive integer equality contributes its two directed zero bounds, negative equality its disequality, with `ine` dual; a representable positive `.defined` or allocation-fit predicate contributes the relations of its one fixed conjunction normalization.
-`Contrib(P)` is constructed from positive S only.
-D is a reconstruction target, not a contribution basis; F is a lifecycle image, not an S3 contribution or reconstruction target.
-An otherwise proof-pure exact goal for which the checker has no finer conjunctive fact vocabulary is one opaque component.
-`bxor`, Boolean equivalence, a normalization with alternative positive clauses such as signed division/remainder, an ambiguous origin, or any shape for which normalization, support, component negation, S reconstruction, or D materialization is not unique is not an admitted claim predicate in this version.
-
-Component lifecycle walks S and F in lockstep through the same signed conjunctive Boolean structure.
+For a remaining unknown predicate P, component lifecycle consumes CLM-1's already formed `Contrib(P)` and walks S and F in lockstep through the same signed conjunctive Boolean structure.
 At one S snapshot-frontier leaf, the ordered components extracted from S are the contribution identities.
 When F has the same ordered component cardinality, the corresponding F component is an equivalent manifestation of the S component.
 When the S leaf contributes exactly one component, the exact signed F leaf is also an equivalent manifestation.
@@ -2690,7 +2702,7 @@ Retain that positive S proof; when D differs from S, materialize positive D from
 CLM-2 neither requires nor performs reconstruction of F.
 S3 establishes the contribution components directly, not P followed by a decomposition.
 
-Let `Eligible` be the fixed source-ordered set of concrete occurrences that passed FN-1 reachability, CLM-1, exact lifecycle, component lifecycle, consistency, reconstruction, and the five-field structure check.
+Let `Eligible` be the fixed source-ordered set of concrete occurrences that passed FN-1 reachability, every CLM-1 formation and locality judgment, exact lifecycle, component lifecycle, consistency, and reconstruction.
 If any occurrence fails one of those earlier judgments, the unit reports the deterministic earlier error and residuality does not run; an invalid occurrence never supplies another candidate's baseline S3.
 For each c and each component a, `Full-minus(c,a)` repeats the same whole-program proof analysis with every other Eligible S3 source and c's other components unchanged, while c still evaluates, exhibits the same effects, and retains its runtime statement, but a's one component-specific S3 source event is withheld.
 Closure is recomputed from unmasked sources, so every fact depending only on a disappears and an independently rederived identical fact remains.
@@ -2741,30 +2753,30 @@ Strict acceptance reads valid retained claim occurrences and call metadata direc
 
 [ENT-1] The entailment fragment is a closed, deterministic, search-free derivation system fixed completely by this specification.
 Its state is the L0 relation state plus [ENT-2]'s finite signed opaque goals.
-The fixed judgments in this section are source-acceptance judgments: complete-state obligation discharge [ENT-6], claim proof-predicate admission, exact and component lifecycle, contribution reconstruction and individual residuality [CLM-1, CLM-2], ordinary-call requirement discharge [FN-8], verified normal-return proof and view classification [FN-9], provenance classification [PRV-1], the call-argument gate [PRV-2], and the local constrained-subject gate [PRV-3] are post-resolution semantic judgments under [DIAG-1], identical in facts-on and facts-off compilation, and are not an optional optimizer-fact family. [SCOPE-2] is unchanged: every fact source [ENT-3] is an executed control condition, an executed retained residual claim, a requirement statically proved by every ordinary caller before S4 admits it to a body, a declared allocation or type property, a constant, S11's compiler-owned structural consequence, or S12's machine-verified normal-result publication.
+The fixed judgments in this section are source-acceptance judgments: complete-state obligation discharge [ENT-6], claim proof-predicate and canonical formation, claim-authority admission, exact and component lifecycle, contribution reconstruction, and individual residuality [CLM-1, CLM-2], ordinary-call requirement discharge [FN-8], verified normal-return proof and view classification [FN-9], provenance classification [PRV-1], the call-argument gate [PRV-2], and the local constrained-subject gate [PRV-3] are post-resolution semantic judgments under [DIAG-1], identical in facts-on and facts-off compilation, and are not an optional optimizer-fact family. [SCOPE-2] is unchanged: every fact source [ENT-3] is an executed control condition, an executed retained residual claim, a requirement statically proved by every ordinary caller before S4 admits it to a body, a declared allocation or type property, a constant, S11's compiler-owned structural consequence, or S12's machine-verified normal-result publication.
 No source postcondition is trusted: FN-9 proves every selected exit, requires a nonempty selected-exit set, withholds same-SCC summaries, and subjects every candidate caller fact to the ordinary FN-8 and PRV gates before atomic publication.
 The fragment is the deterministic checker derivation of [OP-4], [FN-8], [FN-9], and [DIAG-2] for the judgments this version attaches; a solver result never participates, and no implementation may strengthen, weaken, time-bound, or randomize the derivable set.
-Two conforming implementations derive the same complete, unasserted, and S4-blinded fact states at every applicable point; the same FN-9 selected exits, aggregate dispositions, concrete-SCC order, and S12 establishment set; the same [PRV-1] class and symbolic dependency for every component; the same [PRV-2] result, write, demand, target, and event sets; and the same disposition for every obligation, claim, call goal, postcondition relation, local leaf, and call argument.
+Two conforming implementations derive the same complete, unasserted, and S4-blinded fact states at every applicable point; the same FN-9 selected exits, aggregate dispositions, concrete-SCC order, and S12 establishment set; the same claim-authority component tree, reaching state, support carrier, and boundary witness at every claim; the same [PRV-1] class and symbolic dependency for every component; the same [PRV-2] result, write, demand, target, and event sets; and the same disposition for every obligation, claim, call goal, postcondition relation, local leaf, and call argument.
 Every nongeneric source body receives this judgment whether or not `main` reaches it.
 Every generic source body additionally receives one source-schema judgment under the one source-canonical symbolic substitution formed during generic-body validation, even when it has no concrete instantiation.
 That symbolic inventory includes the declaration's complete source body and recursively installed source-canonical call requirements.
 Before residuality, it performs every ordinary OP-2/OP-4/OP-9/SYS-8, FN-8, and expressible FN-9 admission judgment that the schema vocabulary can represent; an unproved ordinary source-body operation is not accepted merely because no concrete instance is reachable from `main`.
-It constructs and deduplicates D, S, and F by the same rules, queries them in the same D-S-F order, derives `Contrib(P)` only from S, applies the same equivalent and positive-only F manifestation rules, and reconstructs S then D exactly as a concrete inventory does.
-It freezes its own schema-Eligible set after the same CLM-1, contradiction-first lifecycle, component lifecycle, consistency, reconstruction, ordinary-admission, and provenance judgments, then runs the same simultaneous `Full-minus(c,a)` and `Full-minus(c)` analysis against source-schema terminal roots expressible in that symbolic goal vocabulary, with the same component ordering, ancestry, non-explosion, provenance-invariance, and individual-necessity requirements as a concrete inventory.
-Its only vocabulary differences are the explicitly specified symbolic datum restrictions; it may not collapse the three-image judgment, use F as contribution authority, approximate an unavailable symbolic relation, or omit an ordinary judgment that its vocabulary can form.
+It constructs and deduplicates D, S, and F by the same rules, derives `Contrib(P)` only from S, and performs the same component-authority admission before it queries either predicate sign; only an admitted schema then queries D-S-F in order, applies the same equivalent and positive-only F manifestation rules, and reconstructs S then D exactly as a concrete inventory does.
+It freezes its own schema-Eligible set after the same CLM-1 formation and locality, contradiction-first lifecycle, component lifecycle, consistency, reconstruction, ordinary-admission, and provenance judgments, then runs the same simultaneous `Full-minus(c,a)` and `Full-minus(c)` analysis against source-schema terminal roots expressible in that symbolic goal vocabulary, with the same component ordering, ancestry, non-explosion, provenance-invariance, and individual-necessity requirements as a concrete inventory.
+Its only vocabulary differences are the explicitly specified symbolic datum restrictions; claim authority uses resolved source components and therefore has no generic L0-type exception, and the schema may not collapse the three-image judgment, use F as contribution authority, approximate an unavailable symbolic relation, omit locality, or omit an ordinary judgment that its vocabulary can form.
 Generic integer and float type parameters are copy datums only for exact opaque goals in this schema; they are not [ENT-2] L0 fragment types, while a const-generic parameter whose written type is one concrete integer fragment remains the symbolic constant term fixed below.
 An FN-8 source-call requirement over those exact datums is a schema terminal root.
 An FN-9 source-schema terminal root exists only when its result datum, selected return, and normalized relation are already expressible over concrete integer fragment types; a postcondition whose result or relation depends on a generic integer or float type parameter is rechecked only in inhabited concrete instances and is not silently approximated by an opaque schema root.
-The schema judgment publishes no executable function, ordinary summary, or lowering authority, and its stable report is ordered before the same source occurrence's inhabited concrete reports.
-Every inhabited concrete [FN-2] instance is then rechecked independently after substitution; an entry-uninhabited concrete instance produces no residual report or witness.
-A contradictory local path in either schema or concrete flow never supplies a residual witness.
+The schema judgment publishes no executable function, ordinary summary, or lowering authority, and its stable source-only report is ordered before the same source occurrence's inhabited concrete reports and contains no generated instance, scratch function, or scratch nominal identity.
+Every inhabited concrete [FN-2] instance is then rechecked independently after substitution; an entry-uninhabited concrete instance still performs CLM-1 formation and locality but produces no CLM-2 residual report or terminal witness.
+A contradictory local path in either schema or concrete flow never supplies a residual witness and never bypasses CLM-1 locality.
 If concrete instances disagree, the first invalid concrete instance in stable instance order rejects the shared source occurrence; no instance-specific claim elision exists.
 A type or const generic in an ordinary requirement or postcondition is otherwise substituted as its owning rules require, and concrete const-generic terms retain their concrete values.
 The fragment joins the trusted computing base exactly as the type and ownership checkers do [SCOPE-3]; a wrong derivation is a compiler defect class, owned by testing, not a language hedge.
 Version monotonicity of fact-source and closure strengthening preserves every already-discharged operation, call goal, or selected-return relation, but claims deliberately sit at the proof frontier.
 A later normative checker may newly derive a claim predicate, its negation, or one contribution component, or may make its S3 contribution unnecessary; CLM-2 must then reject that source as redundant, refuted, overlapping, or non-residual so the author removes or restructures it.
 This is an explicit source-upgrade rule, never authority for compiler or optimizer elision.
-Activating [PRV-2] or [PRV-3] for an already attached protected family, attaching a new protected family, changing a [SYS-2] component from internal to external, or adding a callable publication surface is an amendment-level accepted-set change, not implementation strengthening.
+Activating [PRV-2] or [PRV-3] for an already attached protected family, attaching a new protected family, changing a [SYS-2] component from internal to external, adding or removing a `BoundaryResult` seed or declassification, or adding a callable publication surface is an amendment-level accepted-set change, not implementation strengthening.
 Beyond those classes, this specification adds only FN-9/S12, the two stated unsigned S7 relations, [ENT-6]'s exact integer-domain, allocation-fit, subscript-bounds, and system-range obligation families, and [ENT-5]'s value-if-only delivery, and retains the provenance gate.
 No implementation may activate, expand, or reclassify any such judgment independently, and apart from an explicit specification amendment of those kinds no other entailment-fragment judgment may tighten acceptance across versions.
 
@@ -2844,9 +2856,9 @@ Every admitted member whose root has an exact comparison projection also establi
 Each member has its own [ENT-5] support, kills, joins, and loop treatment.
 This is a finite structural walk with no algebraic rewrite.
 
-CLM-2's `Contrib(P)` applies the same signed walk to S, but is a source-admission basis rather than an automatic parent establishment.
+CLM-1's `Contrib(P)` formation applies the same signed walk to S, but is a source-admission basis rather than an automatic parent establishment.
 It replaces a projected positive equality with its two directed bounds and a projected negative equality with its disequality; it similarly expands one available fixed positive conjunction normalization into its ordered relations.
-An exact disjunctive or otherwise opaque residual remains one signed-goal component only when CLM-2 admits that root class.
+An exact disjunctive or otherwise opaque residual remains one signed-goal component only when CLM-1 admits that root class.
 S3 establishes these components directly under separate contribution identities.
 ENT-4 reconstructs S from its components and then materializes D when distinct; F remains lifecycle-only, so ordinary proof consumers receive no claim-specific shortcut.
 
@@ -3077,10 +3089,11 @@ Each goal may discharge through its exact positive signed fact or its canonical 
 Both complete-state goals must succeed before their protected-subject judgments [PRV-2, PRV-3].
 The first refuted or unproved goal is a SYS-8 rejection and creates no host call, runtime condition, effect, or trap.
 Failure of the first family's base judgment is the [OP-4] rejection, forms no provenance demand or event, and publishes no checked program; its diagnostic renders the residual as exactly: the offset atom's canonical source bytes, then ` < len(`, then the base place's canonical source bytes, then `)`.
-The mechanical fix for any unproved family is one dominating branch establishing its canonical goal, or a CLM-2-admissible residual claim when the predicate is a universally true theorem the normative checker cannot derive — for a subscript in canonical ANF, one `let` binding `len(P)` followed by one such claim on, or `if` over, the admitted comparison [CLM-1, ENT-3].
+The mechanical fix for any unproved family is one dominating branch establishing its canonical goal, or a CLM-2-admissible residual claim only when the predicate is a universally true current-function-local theorem the normative checker cannot derive — for a subscript in canonical ANF, one `let` binding `len(P)` followed by one such local claim on, or `if` over, the admitted comparison [CLM-1, ENT-3].
 After complete-state success for a protected family, a [PRV-2] or [PRV-3] rejection makes the assertion-only route unavailable: the writer uses a dominating value branch whose false edge takes the domain outcome, or restructures so the external value no longer occupies the constrained-subject position.
 For an offset atom that is itself a subscripted place — legal under [GRAM-5]'s place grammar but no term under [ENT-2] — the base fix first rebinds that inner read through one ordinary `let` (and, where the element type is narrower than u64, one total `cvt` [OP-6], both S5-tracked), making the offset a term whose own inner obligation is discharged the same way.
-With at most that one rebinding step per nested offset, the fallback makes the goal writable, at a per-site cost from zero where facts already prove the bound to one retained claim where none do; it does not by itself satisfy the provenance gate.
+With at most that one rebinding step per nested offset, the fallback makes the goal writable, at a per-site cost from zero where facts already prove the bound to one retained claim where the missing theorem is CLM-1-local; rebinding a user-call or system-call result never makes it local, and cross-function behavior instead requires a verified FN-9/S12 relation or ordinary control.
+The fallback does not by itself satisfy the provenance gate.
 
 For checked metadata, each concrete obligation has identity `(concrete function instance, exact obligation-occurrence NodePath, family ordinal)`.
 SubscriptBounds, IntegerDomain, and AllocationFit each use family ordinal zero; SystemRange uses zero for `start <= end` and one for `end <= len(buffer)`.
@@ -3121,6 +3134,37 @@ Storage, result, write, and user-call component propagation are solved first to 
 Recursion and mutual recursion in this component stratum therefore use that fixed point, not traversal order or a stored witness path.
 Only after the component pairs freeze does the direct-demand and requirement-bridge stratum below inspect them; that second stratum never feeds a bit or datum back into a component pair.
 The ephemeral actual-value datum of FN-8 is separate from this dependency judgment: its originating checked actual still carries the ordinary root, offset, and operand dependencies defined here.
+
+For CLM-1 only, ENT-6 also computes one independent finite forward **claim-authority** state over the structural normal-control graph.
+Claim authority is not an entailment fact, optimizer fact, callee summary, or [PRV-1] provenance pair, and it grants no operation authority.
+Each component is `Local` or `BoundaryResult(witness)`; component join retains `BoundaryResult` when either input has it and retains the earliest witness in stable source order.
+The component tree is structural and finite: a scalar or opaque value has one plain component; a struct has its recursively selected declaration-order fields; an enum has its tag and recursively selected declaration-order payload fields; an array, slice, or buffer has its length and one conservative all-elements component; and a box, arena, or borrow holder retains both the holder path and every selected dereference path used by a claim support.
+A uniform authority on a whole value applies to every existing or later-materialized descendant.
+Construction and projection are component-sensitive: a boundary field or payload does not taint an independent local sibling, while reading or operating on the whole aggregate joins all selected components.
+
+Every source parameter component, command-entry parameter component, literal, named const, and otherwise untainted local initializer begins `Local`; this judgment does not classify external input provenance.
+Every result component of every ordinary user call and every system call begins `BoundaryResult`, including a scalar, tag, payload, aggregate field, length, element, box or arena content, borrow holder, and value read through that returned holder.
+This seed is unconditional: it does not inspect or substitute the callee body, arguments, effect row, [PRV-1] class, a system component's external/internal/dependent class, or an FN-9/S12 relation.
+An `ensures` relation remains an independently verified fact for direct caller consumption and never declassifies any component of its returned value.
+
+Ordinary copy or move, conversion, reinterpretation, arithmetic, float, Boolean and enum operations, `imin`, wrapping identity operations, allocation-fit operations, and every other total value operation join the authority of the value components they read into the result components they produce.
+Struct, enum, array, buffer, slice, box, and arena construction transfers each operand to its exact component where that component is known; projection, matching, propagation, `give`, return delivery, and dereference preserve the selected component, and an aggregate-to-unresolved-payload transfer conservatively joins the aggregate into every possible direct payload.
+A place read obtains the reaching authority of its selected storage component and joins the authority of any value used to select a conservative element; an explicit `set` or `replace` transfers its right-hand side and selector authority into the written component.
+An unconditional explicit write to one statically exact whole value or exact field component is a strong replacement and may clear an older boundary marker when its right-hand side is Local; an element write, partial write, possible-overlap write, or other write represented by a shared conservative component joins and never clears.
+Control-flow joins combine corresponding components and never subtract a boundary witness.
+
+Claim authority deliberately includes control dependence although [PRV-1] provenance does not.
+When a `BoundaryResult` condition, match scrutinee or tag, counted endpoint, or other selector chooses an edge, its witness joins every binder, delivered value, or storage write whose reaching definition is selected by that edge, including `value_if`, `value_match`, ordinary match, `give`, loop-carried updates, and post-join state.
+Thus selecting constants on the two arms, selecting the same local value on both arms, or writing a local constant only under boundary-selected control does not declassify the resulting value or storage.
+
+A call's result seed is the only call event added by this first locality version.
+A user or system call's possible write through an `&uniq` actual does not by itself change claim authority for that caller storage; ordinary effect, kill, provenance, and obligation judgments remain unchanged, and an explicit later write of a boundary-derived right-hand side still transfers normally.
+Extending locality to call-written storage is an amendment-level accepted-set change rather than an implementation choice.
+
+One boundary witness contains the introducing call's NodePath and kind, plus the user callee's source declaration origin and source name or the system operation's `system_declaration_ordinal` and spelling.
+When more than one witness reaches a component, the least call NodePath wins, with boundary kind and the stable callee identity used only as a deterministic tie-break at one path; no scratch or dense identity is publishable.
+The authority analysis is computed once before S3, U, B, `Eligible`, or any `Full-minus` mask and is reused unchanged by every claim component query.
+For one component, CLM-1 queries exactly [ENT-5]'s ordinary S-derived relation or opaque-goal support, including each root and holder; canonical normalization may add a fact identity but never subtract authority support read by the retained S expression.
 
 The protected families and constrained subjects are closed.
 For SubscriptBounds the sole subject is offset i in `i < len(P)`.

@@ -137,10 +137,13 @@ leaf may block a `willreturn` proof for the call tower and inhibit
 transformations. Pattern status: DEFERRED as a totality/optimization pattern.
 The current language has no termination checker, `pure` does not promise
 return, the compiler never emits `willreturn`, and no `--totality` report
-exists. It remains valid ordinary design advice to establish an invariant at a
-boundary and keep its auditable claim outside the hot loop when the same fact
-dominates every use. Use `.wrap` only where modular behavior is the intended
-semantics; it must never evade an exact operation's static domain obligation.
+exists. It remains valid ordinary design advice to establish a current-function
+invariant at one local control or state boundary and keep its auditable claim
+outside the hot loop when the same fact dominates every use. A fact about a
+callee result belongs in that callee's verified `ensures` and reaches the caller
+through S12; moving a caller claim away from the call does not make that fact
+local. Use `.wrap` only where modular behavior is the intended semantics; it
+must never evade an exact operation's static domain obligation.
 Historical speed evidence: the retired wc line-count experiment found that a
 trap-per-increment form produced no vector operations while the semantically
 valid wrapping-counter form reached full SIMD and roughly 2x throughput. A
@@ -282,11 +285,22 @@ caller-side workaround of binding a result the language cannot root.
 
 Problem: a partial operation needs a theorem that is true for every execution,
 but the normative checker intentionally does not derive it—for example, an
-ordinary loop invariant or the range of an uncontracted helper result. Write a
-claim only when the proposition has a complete offline derivation and a later
-source-admission root would fail without that exact occurrence. The five
-`because` fields state the available premises, every inference step, the exact
-conclusion, the exact checker limitation, and the exact terminal consumers.
+ordinary loop invariant or a relation maintained by the current function's
+local state machine. Write a claim only when the proposition has a complete
+offline derivation, every runtime value component it reads is local to the
+current function, and a later source-admission root would fail without that
+exact occurrence. The five `because` fields state the available premises,
+every inference step, the exact conclusion, the exact checker limitation, and
+the exact terminal consumers.
+
+Never use a claim to supply an omitted postcondition for a user or system call.
+A returned scalar, tag, payload, aggregate, length, element, or borrow remains a
+boundary result through copy, conversion, operation, construction, projection,
+control selection, join, storage, and dereference. Put an expressible
+cross-function relation in the callee's verified `ensures` and consume S12
+directly; otherwise use a typed outcome or ordinary control. An `ensures` does
+not make the returned value claim-local, so a caller cannot restate or
+strengthen it with another claim.
 
 Do not use a claim for a condition that can legitimately be false, an output
 comparison, an impossible-arm sentinel, a test oracle, a deliberate abort, or
@@ -298,11 +312,11 @@ restructure both until each surviving occurrence is independently necessary.
 Human, AI, SMT, or certificate review may approve the prose proof, but it never
 changes compiler acceptance and never removes the retained runtime check.
 
-Current value: CLM-1 checks the proof-predicate shape and exact five-field
-record; CLM-2 rejects proved, refuted, ambiguous, unsupported, overlapping,
-vacuous, and non-residual occurrences before publishing a checked program.
-Accepted claims execute through the ordinary IR/backend path in every build
-mode.
+Current value: CLM-1 checks the proof-predicate shape, exact five-field record,
+canonical contribution formation, and current-function authority; CLM-2 then
+rejects proved, refuted, overlapping, vacuous, and non-residual occurrences
+before publishing a checked program. Accepted claims execute through the
+ordinary IR/backend path in every build mode.
 
 Replaces: `assert`, debug-only checks, `unreachable`, intentional aborts,
 "trust me" comments, and claims written merely to silence a partial-operation
