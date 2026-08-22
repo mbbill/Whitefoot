@@ -1,5 +1,8 @@
-command fn main() -> status: own ExitStatus traps {
-  doc "Exactly one command main with a named ExitStatus result and an admitted command effect row [FN-7].";
-  claim unreachable: ieq(2_i32, 2_i32) because "unreachable";
+command fn main() -> status: own ExitStatus pure {
+  doc "Exactly one command main with a named ExitStatus result [FN-7].";
+  if ieq(2_i32, 2_i32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }

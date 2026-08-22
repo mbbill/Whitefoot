@@ -1,14 +1,20 @@
-command fn main() -> return_value: own ExitStatus traps {
+command fn main() -> return_value: own ExitStatus pure {
   doc "OWN-2: the three modes own / shared / uniq borrow are always written.";
   let a = 5_i32;
   region 'r {
     let s = &'r a;
-    claim read: ieq(deref(s), 5_i32) because "read";
+    if ieq(deref(s), 5_i32) {
+    } else {
+      return exit_status(code: 1_u8);
+    }
   }
   region 'q {
     let u = &uniq 'q a;
     set deref(u) = 9_i32;
   }
-  claim write: ieq(a, 9_i32) because "write";
+  if ieq(a, 9_i32) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   return exit_status(code: 0_u8);
 }

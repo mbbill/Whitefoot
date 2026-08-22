@@ -1,10 +1,13 @@
-command fn main() -> return_value: own ExitStatus traps {
+command fn main() -> return_value: own ExitStatus pure {
   doc "OWN-11: a borrow naming a region introduced inside the loop body is allowed.";
   let a = 0_i32;
   loop @l {
     region 's {
       let p = &'s a;
-      claim p: ieq(deref(p), 0_i32) because "p";
+      if ieq(deref(p), 0_i32) {
+      } else {
+        return exit_status(code: 1_u8);
+      }
     }
     break @l;
   }

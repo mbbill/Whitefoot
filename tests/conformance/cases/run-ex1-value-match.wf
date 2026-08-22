@@ -15,7 +15,7 @@ fn sign_of(x: own i32) -> function_result: own Sign pure {
   }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "let-initializer match with give, named construction, named user-fn call.";
   let a = 40_i32;
   region 'r {
@@ -25,20 +25,26 @@ command fn main() -> status: own ExitStatus traps {
         give w;
       }
       Err(error: e) => {
-        return exit_status(code: 0_u8);
+        return exit_status(code: 1_u8);
       }
     }
-    claim arithmetic_drift: ieq(v, 42_i32) because "arithmetic drift";
+    if ieq(v, 42_i32) {
+    } else {
+      return exit_status(code: 2_u8);
+    }
     let sg = sign_of(x: v);
     match sg {
       Neg() => {
-        return exit_status(code: 0_u8);
+        return exit_status(code: 3_u8);
       }
       Zero() => {
-        return exit_status(code: 0_u8);
+        return exit_status(code: 4_u8);
       }
       Pos() => {
-        claim sign_drift: ieq(v, 42_i32) because "sign drift";
+        if ieq(v, 42_i32) {
+        } else {
+          return exit_status(code: 5_u8);
+        }
       }
     }
   }

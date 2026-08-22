@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "Overflow via `.checked` is classified recoverable: delivered as a value (Err), not a trap [ERR-4].";
   let v = match 2147483647_i32 +checked 1_i32 {
     Ok(value: w) => {
@@ -8,6 +8,9 @@ command fn main() -> status: own ExitStatus traps {
       give 0_i32;
     }
   }
-  claim x: ieq(v, 0_i32) because "x";
+  if ieq(v, 0_i32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
