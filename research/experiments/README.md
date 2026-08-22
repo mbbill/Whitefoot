@@ -9,10 +9,10 @@ not a current compiler gate. Historical chronology and decisions are indexed
 by `../../archive/governance/decision-log.md`; current design decisions live in
 `../../mcts_mem/`, current direction status in `../../docs/roadmap.md`, current
 execution proposal and status in `../../docs/current-plan.md`, and
-implementation detail in `../../compiler/README.md`. Only an `ACTIVE` plan
-sequences work.
+implementation detail in `../../compiler/README.md`. The current plan records
+high-level sequencing; plans do not grant or withhold branch permission.
 
-## Active current-plan experiment
+## Current flagship experiment evidence
 
 - `wfgrep-baseline/` — the PERF-1 zero-change baseline of the frozen
   sequential wfgrep against the pinned system `grep -h -F`, preregistered
@@ -57,9 +57,9 @@ sequences work.
 ## Historical fact-channel benchmarks
 
 These results used the now-archived democ implementation. They remain measured
-evidence and may become current-compiler regression requirements only when an
-`ACTIVE` plan selects the fact family. Their harnesses are not active compiler
-gates in the current foundation.
+evidence rather than current-compiler benchmark requirements. Historical
+benchmark runners are not active compiler gates; maintained unit tests that
+still execute against HEAD are included by the root `make check` target.
 
 - `effect-attrs-channel/` — channel 2: effect rows -> LLVM fn attributes.
   O(n)->O(1) at opaque boundaries; ties fat LTO at per-file build cost.
@@ -75,8 +75,8 @@ gates in the current foundation.
 
 - `data-layout-owning-sequence/` — historical E0.1 research and rejected
   isolated-prototype evidence. D11 leaves all work paused before bounded G0-Core
-  and a later exact dense-family Lock A; neither is yet authorized, and the old
-  protocol does not restart automatically. The evidence separates fixed SoA/AoS
+  and a later exact dense-family Lock A; neither is currently selected. The
+  evidence separates fixed SoA/AoS
   layout from initialized-prefix ownership and growth, protects the compiler's
   current SoA as the zero-tax baseline, and forbids feature-flagged dual
   semantics.
@@ -113,9 +113,9 @@ gates in the current foundation.
 ## Preserved code-generation fixtures
 
 - `codegen-vs-rust-c/` — the splitmix scalar-backend-parity evidence. Its old
-  democ runner is dormant. Before it can regain gate authority, a selected
-  project must need the comparison and a Rust harness adapter must bind the
-  fixture to the current compiler.
+  democ runner is dormant and has no current compiler adapter. Making it a
+  maintained test would require a Rust harness that binds the fixture to the
+  current compiler.
 
 ## Earlier corpus-era studies
 Moved to `../../archive/experiments/` (scatter residual, guarded-plan

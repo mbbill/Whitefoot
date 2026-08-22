@@ -1,14 +1,11 @@
 # Current Plan — claim residual canonicality
 
-Status: PROPOSED (branch execution chartered by the 2026-08-21 owner direction
-quoted in batch 0075). This plan does not itself expand that direction, and only
-an owner-approved merge can make it authoritative on `main`. If chartered
-branch execution exhausts the plan before that merge,
-activation and completion occur atomically at the merge and the final recorded
-status is `COMPLETE` rather than an intermediate persisted `ACTIVE` state.
+Status: IN PROGRESS on `codex/claim-residual-plan`. This document records the
+current technical plan; it neither grants nor withholds permission to work on
+the branch. The complete branch and `main` boundary is in `docs/WORKFLOW.md`.
 
-Derived from Direction Outline revision 47 and main at
-`4f01bab6a7bf158fff19dd54b062b748d20086d1`. Supersedes the completed
+Derived from Direction Outline revision 48 and main at
+`0728d7c66e45832d132ae499066a0da8c6865896`. Supersedes the completed
 claim-only runtime-trap plan in place; its landed history remains in batch 0073
 and git. Active language authority: v0.33 on `main`, SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.

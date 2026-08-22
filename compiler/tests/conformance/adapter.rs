@@ -20,14 +20,14 @@
 //! redirection, and the process's own exit status or abort is the verdict.
 //! Nothing about a case's identity, name, or family selects a path here.
 //!
-//! The corpus-wide run is `#[ignore]`d for cost, not for a blocker: it drives
-//! every case through compilation, linking, and execution, so it is kept out
-//! of the default `cargo test` run and invoked by `make conformance-run` with
-//! `--ignored` — that wiring and the attribute are one unit. See the
-//! `#[ignore]` reason on the test itself for the current tally and the
-//! resolved former blocker. The adapter excludes no case, weakens no
-//! expectation, and skips nothing the manifest does not itself mark
-//! `pending`; running it prints the complete tally.
+//! The corpus-wide run is `#[ignore]`d for cost, not for a blocker: it obtains
+//! the actual compiler verdict for every non-pending case and links and runs
+//! every run/trap case. It is kept out of the default `cargo test` run and
+//! invoked by `make conformance-run` with `--ignored`; root `make check`
+//! includes that focused target. The wiring and the attribute are one unit.
+//! The adapter excludes no case, weakens no expectation, and skips nothing the
+//! manifest does not itself mark `pending`; running it prints the complete
+//! tally.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -253,16 +253,10 @@ fn outcome(case: &Case, reached: &Verdict) -> Outcome {
 }
 
 #[test]
-#[ignore = "Cost, not a blocker: the corpus is green (Pass=489 Skip=1 Fail=0 at the \
-            v0.32 activation), and this drives every case through compilation, linking, \
-            and execution, so it costs roughly 200s and is kept out of the default \
-            `cargo test` run. `make conformance-run` invokes it with `--ignored`; that \
-            wiring and this attribute are one unit, so removing the attribute without \
-            dropping `--ignored` from the Makefile target would leave the target \
-            selecting no test and reporting success. The former blocker recorded here \
-            (own3-pos-outlives-store stopping as Unsupported(RegionsAndBorrows)) is \
-            resolved: the outer-region borrow fix landed and the case now reaches \
-            run exit 0."]
+#[ignore = "Cost, not a blocker: this obtains every non-pending case's compiler verdict \
+            and links and runs every run/trap case, so it stays out of default `cargo test`. \
+            `make conformance-run` invokes it with `--ignored`, and root `make check` includes \
+            that target; removing the attribute without dropping `--ignored` would select no test."]
 fn the_corpus_reaches_its_declared_verdict_through_the_ordinary_compiler_path() {
     let cases = corpus::load();
     assert!(

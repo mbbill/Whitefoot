@@ -289,8 +289,8 @@ enum SpecStatus<'a> {
     /// `Status: ACTIVE vN ...` — the installed authority.
     Active { version: &'a str },
     /// `Status: CANDIDATE vM supersedes vN <sha256-of-vN> ...` — a declared
-    /// pre-approval candidate for the next activation. Text after the digest
-    /// token is free prose, as on active status lines.
+    /// work-branch candidate for the next active identity. Text after the
+    /// digest token is free prose, as on active status lines.
     Candidate {
         version: &'a str,
         supersedes_version: &'a str,
@@ -409,13 +409,13 @@ fn validate_activation_chain(
                 ));
             }
         }
-        // A declared pre-approval candidate: its own digest is deliberately
+        // A declared work-branch candidate: its own digest is deliberately
         // not in the chain yet, so tail equality is replaced by the declared
         // supersedes lineage — the supersedes digest must be the chain tail
         // and the candidate version must be the tail's successor. Every
         // self-consistency requirement stays. Green on a candidate means
-        // lineage and self-consistency only; the owner's exact-byte approval
-        // of the candidate content is still pending by definition.
+        // lineage and self-consistency only; canonical `make check` separately
+        // requires an installed ACTIVE identity before a merge.
         Ok(SpecStatus::Candidate {
             version: candidate,
             supersedes_version,

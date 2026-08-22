@@ -2,10 +2,9 @@
 
 Status: DATED, NON-AUTHORITATIVE SYNTHESIS. The living
 [`Direction Outline`](roadmap.md) owns current status and candidate placement;
-an `ACTIVE` [`current-plan.md`](current-plan.md) owns execution sequencing.
-Status words and
+[`current-plan.md`](current-plan.md) records the latest high-level plan. Status words and
 phase references below describe the ledger when compiled and must not be used
-as current authorization. Compiled 2026-07-28 from the founding directives,
+as current instructions. Compiled 2026-07-28 from the founding directives,
 the round-2/3/4 design debates, the headline brainstorms, the research backlog,
 the capability-research era, the live docs, and one fresh brainstorm. §8 (the
 ML direction) and §9 (the embedded direction) added 2026-07-31, each after an
@@ -54,8 +53,8 @@ spends or saves.
   license reassociation. *Delta:* 3.3x over the obvious fold, ties expert Rust
   — and the false law (signed saturating add) is a compile error where Rust
   silently miscompiles the hand-written idiom. No surveyed language machine-
-  checks the law. *Status:* MEASURED (democ era); optimizer consumption needs a
-  separately approved fact family; zero opportunity in the current corpus.
+  checks the law. *Status:* MEASURED (democ era); optimizer consumption needs an
+  independently verified fact family; zero opportunity in the current corpus.
 - **Static call contracts → proof-based check elimination.** Every ordinary
   caller proves every `requires` clause before transfer; the callee receives
   those facts without an executable prologue, and the sole command entry has
@@ -490,7 +489,7 @@ the 2026 frontier is Rust-vs-Rust SIMD work); kernel-layer safety demand
 4. **Kernels and GPU, last** — after the language survives 1-3, and entered
    through the tinygrad-style delegation pattern, not raw PTX codegen.
 
-**The probe ladder (all cheap, none roadmap-authorized):** make the Phase 10
+**The probe ladder (all cheap, none currently selected):** make the Phase 10
 high-intensity kernel a GEMM or quantized attention block (already permitted
 by the completion set — the first ML probe is free); a shape-contract MLP
 forward pass exercising const generics + `requires` as tensor types; the
@@ -635,7 +634,7 @@ choices, and it belongs to the whole ledger, not just this section.
 4. **Certified verticals** — a decade-scale horizon entered, if ever, through
    the TCL1/DO-330 independent-verification argument, never head-on.
 
-**The probe ladder (none roadmap-authorized):** a bare-metal blinky spike
+**The probe ladder (none currently selected):** a bare-metal blinky spike
 (thumbv7em triple, linker script, static-allocation runtime, trap-to-UART) to
 measure the real toolchain cost; a monomorphization size measurement of the
 existing corpus at `-Oz`/gc-sections (cheap, uses current programs, answers

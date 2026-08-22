@@ -7,7 +7,7 @@ exercises and the expected verdict. Cases are driven through a named toolchain
 adapter. The active adapter is native, not Python: `compiler/tests/conformance.rs`
 compiles each case through the ordinary compiler path, realizes the ARRANGE
 below as a real invocation, and reduces the outcome to one verdict below
-(`make conformance-run`). This file stays on the other side of that boundary —
+(`make conformance-run`, included by root `make check`). This file stays on the other side of that boundary —
 identity, corpus structure, declared rule coverage, and schema validity — so
 the corpus keeps outliving any one compiler and no compiler behaviour is
 reimplemented here. `ADAPTER` below is the hook for a future non-native
@@ -79,7 +79,7 @@ MANIFEST = HERE / "manifest.jsonl"
 ACTIVE_SPEC = Path("spec/kernel-spec.md")
 APPROVALS = Path("governance/APPROVALS.md")
 # The named native adapter is compiler/tests/conformance.rs, reached through
-# `make conformance-run`; this hook stays open for a future non-native
+# `make conformance-run` and therefore root `make check`; this hook stays open for a future non-native
 # toolchain. Keeping it explicit prevents a missing compiler, crash, or broad
 # exception from becoming `Unsupported`.
 ADAPTER = None
@@ -111,8 +111,7 @@ def load_manifest():
 def run_cases(cases):
     if ADAPTER is None:
         raise RuntimeError(
-            "no active compiler adapter; use `coverage` until an entrance-gated "
-            "integration installs one"
+            "no active compiler adapter; use `coverage` until an adapter is installed"
         )
     results = []
     for c in cases:
@@ -134,8 +133,9 @@ def run_cases(cases):
 
 
 def activation_chain_tail(root=ROOT):
-    """(version, digest) of the last `ACTIVE-SPEC:` record in the approval
-    ledger — the sole authority for the active specification's identity.
+    """(version, digest) of the last `ACTIVE-SPEC:` identity record.
+
+    The chain tail is the sole authority for the active specification's identity.
     Reading the pin from the chain replaced a hardcoded digest constant here,
     turning one hand edit per activation forever into none."""
     tail = None
@@ -400,13 +400,11 @@ def manifest_at(revision):
 
 
 def verdict_diff(revision):
-    """Reports every declared verdict that moved or vanished since `revision`.
+    """Reports every declared verdict added, moved, or removed since `revision`.
 
     This is the one population the adapter cannot see. The adapter compares
     each case's ACTUAL verdict against its DECLARED one, so a verdict that
-    moves while its manifest row is edited to follow leaves the adapter green
-    — which `CLAUDE.md` names a governance breach precisely because nothing
-    mechanical stops it.
+    moves while its manifest row is edited to follow leaves the adapter green.
 
     THE SCOPE, because "the migration damaged a case" is three classes and
     this check owns exactly one of them:
@@ -429,9 +427,9 @@ def verdict_diff(revision):
     nothing here to compare. A verdict is the wrong instrument for a question
     about a case's subject, and this check does not answer one.
 
-    A hit is not a defect. Restating a citation is legitimate with owner
-    agreement and a ledger entry; the point is that it becomes visible instead
-    of silent, so each hit is read against `governance/APPROVALS.md`.
+    A hit is not necessarily a defect. The report makes changed declarations
+    visible and supplies one input to rule 4's exact conformance-content record.
+    It does not replace the complete source-and-manifest diff that rule needs.
     """
     before, after = declared_verdicts(manifest_at(revision)), declared_verdicts(
         MANIFEST.read_text()
@@ -483,16 +481,15 @@ def main():
             print(f"  MOVED   {case:38} {before[case]} -> {after[case]}")
         for case in gone:
             print(f"  REMOVED {case:38} {before[case]}")
-        if verbose:
-            for case in added:
-                print(f"  added   {case:38} {after[case]}")
+        for case in added:
+            print(f"  ADDED   {case:38} {after[case]}")
         print(
             f"declared verdicts vs {revision}: {len(moved)} moved, {len(gone)} removed, "
             f"{len(added)} added, {len(after)} total"
         )
-        # An addition is free under CLAUDE.md; a move or a removal is protected
-        # material changing and is what this exists to surface.
-        sys.exit(1 if moved or gone else 0)
+        # Any declared-set change is relevant to rule 4. Exit nonzero so an
+        # unexamined addition is no quieter than a move or removal.
+        sys.exit(1 if moved or gone or added else 0)
     if cmd in ("coverage", "all"):
         rules, spec_name, covered, by_case, annotated, pos, neg, uncovered = coverage(cases, annots)
         print(f"coverage ({spec_name}): {len(covered)}/{len(rules)} rules covered "

@@ -1754,7 +1754,7 @@ fn prelude_collision_payload_keeps_both_ordered_struct_domains() {
 }
 
 #[test]
-fn approved_duplicate_main_conformance_case_is_type6() {
+fn duplicate_main_conformance_case_is_type6() {
     let source = include_bytes!("../../../tests/conformance/cases/fn7-neg-two-mains.wf");
     with_one_resolution(source, |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {

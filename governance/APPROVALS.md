@@ -1,9 +1,13 @@
-# Protected approval record
+# Specification and conformance approval record
 
-This file contains the append-only approval record. It is not a workflow guide;
-the sole live governance procedure is [`docs/WORKFLOW.md`](../docs/WORKFLOW.md). Entries through
-the hash-baseline era remain unchanged historical records, followed by the
-newer exact-artifact and protected-change approvals.
+This append-only file records historical approvals and exact specification or
+conformance content approved under rule 4 of
+[`docs/WORKFLOW.md`](../docs/WORKFLOW.md). It is not a workflow guide. Every
+earlier plan, batch, packet, staged-approval, or protected-change procedure
+described below is historical and superseded; none imposes a current approval
+or work requirement. Ordinary merges still require owner approval under rule 2
+but need no entry here unless they also change specification or conformance
+content.
 
 ## 2026-07-18 — approval
 - owner: approved in session
@@ -1342,3 +1346,36 @@ ACTIVE-SPEC: v0.32 5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6
   main only after the post-activation gate is green. The generic-container
   direction, batch 0074, and any new plan are explicitly outside this act.
 ACTIVE-SPEC: v0.33 fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f 5ea3927aef20d08e1c9c80a50242628f2c469974261b68c696ee2db3934e6bf5
+
+## 2026-08-22 — merge-time approval content: four-rule governance and conformance wiring
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That one exact-revision
+  approval is both rule 2's merge approval and rule 4's approval of the content
+  below; this record creates no separate approval step.
+- SPECIFICATION: `spec/kernel-spec.md` is byte-identical to `main`, SHA-256
+  `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
+- CONFORMANCE BOUNDARY: five existing files are modified; no conformance file
+  is added, deleted, or renamed, and no case source, expected verdict, runnable
+  status, rule assignment, or program-case documentation changes.
+  - `Makefile`:
+    `6b821cded2c9f4dad4e187e06ed95d8b195684f1077ff2e59b50b8d5086735c4`
+    -> `d75a8f4c0e04cd51871fcd71aa966730af6716158dbfb4123e9fd3d63ed008e9`.
+  - `compiler/tests/conformance/adapter.rs`:
+    `e0539b329fcd1f1d9aee1c995fe420101b26de8f3f390b1a1ffcb418dd12d270`
+    -> `e4c2447d15ffd39f1a73b5267ef8e2a024dffd2afca445931a13de7de5e305c1`.
+  - `tests/conformance/manifest.jsonl`:
+    `f6b7cda7d523837c5ae1ddf3115ac82afabc1d13d9a4e7ddff4a24591b85c609`
+    -> `4728c7da805223043f120898354ec172d083680c7e7db29e27784a11bb8340ff`.
+  - `tests/conformance/runner.py`:
+    `3e6ee1913de54d14db7e1c5f26ac61cd22e55991fe4fb8584f8ae09596ee909e`
+    -> `368a341ac0c57fdb12ca597545f1cb1a8628b92a1caac28ebc44f0111b4b6bfa`.
+  - `tests/conformance/test_runner.py`:
+    `71560dbb81bdcdc43317bc9c4996b64b742ad50f8489bdab2de14554274545ac`
+    -> `42bc4a0ad2908c59693fa85107466f5856987ad21c9f2fc2e054ddcac38d3890`.
+- CONTENT: root `make check` now invokes the complete native adapter and every
+  maintained executable test; the adapter's ignored-test contract documents
+  that wiring; manifest annotations describe machine-checkable coverage
+  without adding a review workflow; the verdict-diff command reports additions
+  as well as moves and removals; and its new regression proves an addition exits
+  nonzero and is printed. The exact revision's successful `make check` result
+  is the rule 3 evidence for this same boundary.

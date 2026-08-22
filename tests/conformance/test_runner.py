@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Tests for compiler-independent conformance coverage plumbing."""
 
+import contextlib
 import hashlib
+import io
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -431,6 +434,31 @@ class DeclaredVerdictDiffTests(unittest.TestCase):
         before_map = runner.declared_verdicts(self.BEFORE)
         after_map = runner.declared_verdicts(after)
         self.assertNotEqual(before_map["b"], after_map["b"])
+
+    def test_an_added_case_makes_the_verdict_command_fail_loudly(self):
+        before = runner.declared_verdicts(self.BEFORE)
+        after = dict(before)
+        after["new"] = {"kind": "accept"}
+        original_argv = sys.argv
+        original_verdict_diff = runner.verdict_diff
+        try:
+            sys.argv = ["runner.py", "verdicts", "base"]
+            runner.verdict_diff = lambda _revision: (
+                before,
+                after,
+                [],
+                [],
+                ["new"],
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as exit:
+                runner.main()
+        finally:
+            sys.argv = original_argv
+            runner.verdict_diff = original_verdict_diff
+        self.assertEqual(exit.exception.code, 1)
+        self.assertIn("ADDED", output.getvalue())
+        self.assertIn("new", output.getvalue())
 
     def test_an_emptied_case_is_invisible_here_and_that_is_the_limit(self):
         # `b` keeps `run 0` whatever happens to its source. This check compares

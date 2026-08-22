@@ -1,18 +1,17 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 47 (claim-residual branch execution chartered in batch 0075)
+Revision: 48 (claim-locality correction and four-rule branch/main boundary)
 
 The active language authority is v0.33 on `main`, SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
 This work branch carries a v0.34 CANDIDATE at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
 `b9284417e12f41a9c4c78728bf684c088aadd2d1fcfd10d305c0ef24c448d27a`;
-it is not active authority until the exact owner-approved activation merge.
+it is not active authority until it is merged into `main`.
 Exact v0.8 through v0.32 are immutable flat archives. The execution plan at
-[`docs/current-plan.md`](current-plan.md) is PROPOSED (claim residual
-canonicality) on the work branch; only an owner-approved merge makes it
-authoritative on `main`.
+[`docs/current-plan.md`](current-plan.md) records the in-progress claim-residual
+canonicality work and does not grant or withhold branch permission.
 Project law is the
 [`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
@@ -26,12 +25,10 @@ This file is the owner-facing map of Whitefoot's live directions. It answers:
 - what evidence exists and whether it is current or historical; and
 - what is missing before a direction can advance.
 
-It does **not** choose the current execution order. Candidate projects determine
-when a direction matters. `current-plan.md` contains the only high-level
-execution proposal or approved plan; after owner selection, it may coordinate
-several workstreams and many planned, ongoing, and done tasks inside one
-approved undertaking. A project can expose a missing capability, but cannot by
-itself change the language or justify a project-shaped compiler special case.
+It does **not** choose or authorize the current execution order.
+`current-plan.md` may record a high-level technical plan. A project can expose
+a missing capability, but cannot by itself change the language or justify a
+project-shaped compiler special case.
 
 Each item has one canonical home. Other directions link to its ID instead of
 copying its status. Tags are scanning aids. The `Current` sentence is this

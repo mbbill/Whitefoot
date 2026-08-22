@@ -188,11 +188,9 @@ command fn main() -> status: own ExitStatus pure {
         TermKind::Constant(4)
     );
     assert_eq!(*bound, 0);
-    // The ruled flip, now live: this is the shape the owner's 2026-08-09
-    // ruling (2) disposed. The protected corpus case
-    // `ent3-neg-bor-no-comparison-origin.wf` still declares the v0.30
-    // rejection and needs its owner-approved rewrite before the coverage
-    // gate agrees with this verdict.
+    // The ruled flip, now live: this is the shape the 2026-08-09 decision
+    // disposed. The protected corpus case records the corresponding current
+    // expectation independently.
     with_semantics(source, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),

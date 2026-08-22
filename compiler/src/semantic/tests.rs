@@ -741,8 +741,8 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // `x-struct-set-field.wf`: that case's `c.n + 1_i32` is a v0.31
     // constant-operand-class site whose overflow obligation nothing
     // discharges, so the case now rejects on OP-2 with residual
-    // `c.n <= 2147483646` and needs the owner-approved corpus migration the
-    // arith delta assigns to the activation packet. The capability this
+    // `c.n <= 2147483646`; keep that independent corpus result out of this
+    // capability control. The capability this
     // control exists to demonstrate — set a struct field, read it back — is
     // unaffected.
     with_semantics(
@@ -754,8 +754,8 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // Also written inline rather than read from
     // `x-enum-borrow-payload-live.wf` for the same reason: that case's
     // `deref(x) + 1_i32` is an undischarged v0.31 class site (residual
-    // `deref(x) <= 2147483646`), so it too awaits the owner-approved corpus
-    // migration. The shape kept here is the one under test — a payload enum
+    // `deref(x) <= 2147483646`), so it too stays outside this capability
+    // control. The shape kept here is the one under test — a payload enum
     // borrow-matched through `&'r` whose scrutinee stays live for a second
     // read, with each derived binder explicitly dereferenced.
     with_semantics(

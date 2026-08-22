@@ -5,8 +5,6 @@ Status: NON-AUTHORITATIVE DETAIL.
 The living [`Direction Outline`](roadmap.md) owns each idea's current state,
 next evidence gate, and candidate-project links. This file preserves longer
 mechanism sketches and possible first experiments; it does not order work.
-Only an `ACTIVE` [`current-plan.md`](current-plan.md) sequences an owner-selected
-milestone.
 An entry here does not change the language, compiler, runtime, or deployment
 contract.
 
