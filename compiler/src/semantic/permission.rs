@@ -6,11 +6,33 @@
 //! site, whether overlapping the two statements is permitted and whether the
 //! permitted overlap is actualizable.
 //!
-//! For an ordered pair (s1, s2) of adjacent `let x = f(...);` statements in
-//! one block, both binding the result of one named-function call, P(s1, s2)
-//! holds exactly when all four conditions hold:
+//! # The window
 //!
-//! 1. **No dataflow.** No argument of s2 mentions a binding s1 defines.
+//! The judged unit is a *window*: an ordered pair (s1, s2) of `let x = f(...);`
+//! statements in one block, both binding the result of one named-function
+//! call, together with every statement of that block strictly between them.
+//! [PAR-1] says "s1 **precedes** s2 in one block", not that it immediately
+//! precedes it, and permission may not turn on accidental statement adjacency
+//! — one builtin written between two calls must not decide whether they may
+//! overlap, when the same operation wrapped in a pure function would leave
+//! them adjacent. Every condition below therefore quantifies over the
+//! interposed statements as well as over the two calls, and an interposed
+//! statement this analysis cannot account for **denies with a report** rather
+//! than silently ending the enumeration.
+//!
+//! P(s1, s2) holds exactly when all four conditions hold. Writing T for an
+//! interposed statement, D(u) for the binding u defines, U(u) for the bindings
+//! its operands mention, and W/R/O(u) for u's written, read, and caller-side
+//! operand-read footprints:
+//!
+//! 1. **No dataflow.** No argument of s2 mentions a binding s1 defines; no
+//!    interposed statement's operands mention a binding s1 defines; and no
+//!    argument of s2 mentions a binding an interposed statement defines. The
+//!    two added clauses are the two schedules speaking: where s1 is handed
+//!    out, its value does not exist until the join, so no T may read it; where
+//!    s2 is handed out, its operands are evaluated before T1…Tk run, so s2 may
+//!    not read what they define. T1…Tk keep their mutual order on the calling
+//!    thread under both schedules, so there is no clause between them.
 //! 2. **Disjoint footprints.** Projecting each callee's declared `reads` and
 //!    `writes` regions onto its argument resolved places — the same [EFF-2]
 //!    boundary projection [ENT-5] kills use — gives W(s) and R(s). P requires
@@ -29,11 +51,37 @@
 //!    judged because which member's operands move is the implementation's
 //!    choice of which member takes the lane, which permission may not depend
 //!    on.
-//! 3. **Row gate.** Neither callee's row carries `external` or `blocks`.
-//!    Rows gate; places prove. No disjointness is ever derived from a row.
-//! 4. **No skipping exit.** No exit edge of s1 bypasses s2: s1's only
-//!    continuation is s2. A `propagate` right-hand side has an `Err` edge to
-//!    the function-return sink [ERR-3], so it is never a first member.
+//!
+//!    Each interposed T carries the same obligations against both members,
+//!    with **one asymmetry that must not be lost**: T is judged against s2
+//!    exactly as an ordinary earlier member is — including `W(T)` against
+//!    `O(s2)`, because the schedule that hands s2 out hoists its operand
+//!    evaluation above T — while against s1 the mirror obligation `W(T)`
+//!    against `O(s1)` does **not** arise, because the schedule that hands s1
+//!    out evaluates its operands before the fork and the schedule that hands
+//!    s2 out has already completed s1. The operand half is one-sided for s1
+//!    and two-sided for s2. Getting this wrong conservatively costs only
+//!    denials; getting it wrong permissively is a race.
+//! 3. **Row gate.** Neither callee's row carries `external` or `blocks`, and
+//!    neither does the row of any call written between them. Rows gate; places
+//!    prove. No disjointness is ever derived from a row.
+//! 4. **No skipping exit.** No exit edge of s1 bypasses s2, and no statement
+//!    between them carries an exit edge at all: s1's only continuation is s2.
+//!    A `propagate` right-hand side has an `Err` edge to the function-return
+//!    sink [ERR-3], so it is never a first member and never an interposed one;
+//!    a `claim` has a trap edge to the [DIAG-3] sink, which the eligibility
+//!    closure below cannot see because it inspects callees and not the
+//!    caller's own block. This is not merely a condition about differing
+//!    observables: under either schedule a hand-out is outstanding at every
+//!    interposed statement, so an exit taken there abandons an unjoined lane
+//!    still reading the caller's frame.
+//!
+//! Two schedules are realizable for one window — hand s1 to a lane and run
+//! T1…Tk then s2 on the calling thread, or run s1 then hoist s2's operands,
+//! hand s2 out, and run T1…Tk — and [PAR-1] forbids stating any rule in terms
+//! of the schedule. The conditions above are therefore the **intersection** of
+//! what the two admit, never the weaker set the current backend alone would
+//! survive.
 //!
 //! Actualization additionally requires eligibility: the transitive call
 //! closure of both callees reaches zero `claim` sites. Claims are the only
@@ -53,7 +101,7 @@ use std::collections::VecDeque;
 
 use super::entailment::collect_statement_calls;
 use super::model::{
-    BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedMode,
+    BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedMode, CheckedSetTarget,
     CheckedSliceSource, CheckedStatement, CheckedType, FunctionId, expression_children,
 };
 use super::places::{PlaceMap, PlaceRoot, PlaceTerm, ResolvedPlace};
@@ -72,20 +120,31 @@ pub(crate) struct PermissionSignature {
     pub(crate) blocks: bool,
 }
 
-/// Which member of an analyzed pair a denial cites.
+/// Which statement of an analyzed window a denial cites: one of the two
+/// judged calls, or one of the statements written between them.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PairSide {
     First,
     Second,
+    /// The interposed statement at this zero-based position in the window.
+    Between(usize),
 }
 
-/// One exit edge of a candidate statement that does not reach the statement's
+/// One exit edge of a window statement that does not reach the statement's
 /// ordinary successor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ExitKind {
     /// A `propagate` right-hand side's `Err` edge to the function-return
     /// sink [ERR-3].
     PropagateError,
+    /// A `claim`'s trap edge to the [DIAG-3] sink [CLM-1]. Eligibility cannot
+    /// stand in for this one: `claim_closure` walks *callees*, so a claim the
+    /// writer put in the caller's own block between the two calls is invisible
+    /// to it.
+    ClaimTrap,
+    /// A `return`, `give`, or `break` edge, which leaves the enclosing block
+    /// or function without reaching s2.
+    BlockExit,
 }
 
 /// One footprint element: a resolved caller place, or one arena region whose
@@ -135,59 +194,86 @@ impl Access {
 /// Which two footprint halves a condition-2 conflict joins. The ledger states
 /// it, so a denial names the access it actually found rather than calling
 /// every conflict a write/write one.
+///
+/// The halves are named from the *earlier* and *later* statement of the two
+/// the conflict joins, which the denial carries alongside as a [`PairSide`]
+/// each: for the judged pair those are s1 and s2, and for an interposed
+/// statement they are that statement and whichever member it was judged
+/// against.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ConflictKind {
-    /// s1 writes and s2 writes.
+    /// Both statements write.
     WriteWrite,
-    /// s1 writes and s2's callee reads through an actual.
+    /// The earlier writes and the later's callee reads through an actual.
     WriteRead,
-    /// s1 reads and s2 writes.
+    /// The earlier reads and the later writes.
     ReadWrite,
-    /// s1 writes and s2 reads the same storage on the calling thread while
-    /// evaluating its own operands.
+    /// The earlier writes and the later reads the same storage on the calling
+    /// thread while evaluating its own operands.
     WriteOperandRead,
-    /// s1 reads storage on the calling thread while evaluating its own
-    /// operands, and s2 writes it.
+    /// The earlier reads storage on the calling thread while evaluating its
+    /// own operands, and the later writes it.
     OperandReadWrite,
 }
 
 impl ConflictKind {
-    /// How the ledger words the conflict, with `{left}` the s1 access and
-    /// `{right}` the s2 access.
-    pub(crate) const fn phrase(self) -> &'static str {
+    /// The two footprint halves this conflict joins, earlier first, as the
+    /// ledger names them.
+    pub(crate) const fn halves(self) -> (&'static str, &'static str) {
         match self {
-            Self::WriteWrite => "writes overlap at",
-            Self::WriteRead => "the write of s1 overlaps the read of s2 at",
-            Self::ReadWrite => "the read of s1 overlaps the write of s2 at",
-            Self::WriteOperandRead => "the write of s1 overlaps the operand read of s2 at",
-            Self::OperandReadWrite => "the operand read of s1 overlaps the write of s2 at",
+            Self::WriteWrite => ("write", "write"),
+            Self::WriteRead => ("write", "read"),
+            Self::ReadWrite => ("read", "write"),
+            Self::WriteOperandRead => ("write", "operand read"),
+            Self::OperandReadWrite => ("operand read", "write"),
         }
     }
 }
 
-/// Why P does not hold for one analyzed pair. Each variant names exactly one
+/// Why P does not hold for one analyzed window. Each variant names exactly one
 /// condition of the judgment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Denial {
-    /// Condition 1: an argument of s2 mentions a binding s1 defines.
-    Dataflow { binding: BindingId },
-    /// Condition 2: two accesses of the two footprints conflict.
+    /// Condition 1: the operands of one window statement read a binding an
+    /// earlier one defines.
+    Dataflow {
+        binding: BindingId,
+        /// The statement that defines the binding.
+        definer: PairSide,
+        /// The statement whose operands read it.
+        reader: PairSide,
+    },
+    /// Condition 2: two accesses of two window footprints conflict.
     Footprint {
         kind: ConflictKind,
         left: Access,
         right: Access,
+        /// The two statements the accesses belong to, earlier first.
+        sides: (PairSide, PairSide),
     },
     /// Condition 2, fail-closed: the row projects an access through an actual
-    /// whose caller place this analysis cannot resolve.
+    /// whose caller place this analysis cannot resolve, or an operand reads
+    /// storage it cannot resolve.
     UnresolvedFootprint { side: PairSide, argument: NodePath },
+    /// Condition 2, fail-closed: a statement written between s1 and s2 has a
+    /// form whose footprint this analysis does not compute. [PAR-1] says an
+    /// unresolved element overlaps every place, so such a statement denies
+    /// rather than ending the enumeration silently — which is the whole point
+    /// of judging a window instead of an adjacent pair.
+    InterposedForm {
+        side: PairSide,
+        /// The form, as the ledger names it to the writer.
+        form: &'static str,
+    },
     /// Condition 3: a callee row carries `external` or `blocks`.
     Row {
         side: PairSide,
         external: bool,
         blocks: bool,
     },
-    /// Condition 4: an exit edge of s1 does not reach s2.
-    SkippingExit { kind: ExitKind },
+    /// Condition 4: an exit edge of s1, or of a statement between the two,
+    /// does not reach s2.
+    SkippingExit { side: PairSide, kind: ExitKind },
 }
 
 impl Denial {
@@ -196,7 +282,9 @@ impl Denial {
     pub(crate) const fn condition(&self) -> u8 {
         match self {
             Self::Dataflow { .. } => 1,
-            Self::Footprint { .. } | Self::UnresolvedFootprint { .. } => 2,
+            Self::Footprint { .. }
+            | Self::UnresolvedFootprint { .. }
+            | Self::InterposedForm { .. } => 2,
             Self::Row { .. } => 3,
             Self::SkippingExit { .. } => 4,
         }
@@ -318,18 +406,21 @@ pub(crate) fn analyze_permission(
     functions: &[CheckedFunction],
     signatures: &[PermissionSignature],
 ) -> PermissionMetadata {
+    let callees = direct_callees(functions);
+    let claims = functions
+        .iter()
+        .map(|function| {
+            let mut sites = Vec::new();
+            collect_claim_sites(&function.body, &mut sites);
+            sites
+        })
+        .collect::<Vec<_>>();
     let program = Program {
         functions,
         signatures,
-        callees: direct_callees(functions),
-        claims: functions
-            .iter()
-            .map(|function| {
-                let mut sites = Vec::new();
-                collect_claim_sites(&function.body, &mut sites);
-                sites
-            })
-            .collect(),
+        reaches_claim: claim_reachability(&claims, &callees),
+        callees,
+        claims,
     };
     PermissionMetadata {
         functions: functions
@@ -352,12 +443,59 @@ struct Program<'check> {
     callees: Vec<Vec<FunctionId>>,
     /// `claim` statements per function, in source order.
     claims: Vec<Vec<ClaimRecord>>,
+    /// Whether some function reachable from each function carries a `claim`,
+    /// dense by [`FunctionId`]. Eligibility asks this of every judged window,
+    /// and a chain of m calls is judged over O(m²) ordered pairs, so answering
+    /// it by a whole-program search each time made the search the dominant
+    /// cost of the analysis. One reverse walk answers it for every function.
+    reaches_claim: Vec<bool>,
+}
+
+/// Whether a `claim` is reachable from each function, by one walk of the call
+/// graph backwards from the functions that carry one.
+///
+/// This is exactly `claim_closure(&[f]).is_some()` for every f, computed
+/// together. It decides only *whether* to search; the count and the witness
+/// still come from the forward search, so nothing a ledger or a test reads is
+/// derived from here.
+fn claim_reachability(claims: &[Vec<ClaimRecord>], callees: &[Vec<FunctionId>]) -> Vec<bool> {
+    let mut callers: Vec<Vec<usize>> = vec![Vec::new(); claims.len()];
+    for (caller, called) in callees.iter().enumerate() {
+        for callee in called {
+            if let Some(entry) = callers.get_mut(callee.0 as usize) {
+                entry.push(caller);
+            }
+        }
+    }
+    let mut reaches = vec![false; claims.len()];
+    let mut pending = claims
+        .iter()
+        .enumerate()
+        .filter(|(_, sites)| !sites.is_empty())
+        .map(|(ordinal, _)| ordinal)
+        .collect::<Vec<_>>();
+    while let Some(ordinal) = pending.pop() {
+        let Some(seen) = reaches.get_mut(ordinal) else {
+            continue;
+        };
+        if *seen {
+            continue;
+        }
+        *seen = true;
+        if let Some(calling) = callers.get(ordinal) {
+            pending.extend(calling.iter().copied());
+        }
+    }
+    reaches
 }
 
 /// One candidate statement: a `let` whose right-hand side is exactly one
 /// named-function call.
 struct Candidate<'check> {
     statement: NodePath,
+    /// Position of this statement in its own block. Two candidates and the
+    /// statements between their positions are one judged window.
+    index: usize,
     /// The binding the statement defines.
     binding: BindingId,
     call: NodePath,
@@ -367,6 +505,48 @@ struct Candidate<'check> {
     regions: &'check [DeclarationId],
     /// An exit edge of this statement that does not reach its successor.
     exit: Option<ExitKind>,
+}
+
+/// One statement written between the two judged calls, reduced to what the
+/// window rule asks of it.
+struct Interposed {
+    /// The binding it defines, when it defines one.
+    defines: Option<BindingId>,
+    /// Every binding its own operands mention.
+    uses: Vec<BindingId>,
+    footprint: Footprint,
+    /// Its callee, when the statement is one call. A call between the two
+    /// members faces the same row gate they do and joins the eligibility
+    /// roots.
+    callee: Option<FunctionId>,
+}
+
+/// Why one interposed statement cannot be judged as written.
+enum InterposedRefusal {
+    /// It carries an exit edge — condition 4.
+    Exit(ExitKind),
+    /// Its footprint is not computed for this form — condition 2.
+    Form(&'static str),
+}
+
+/// One block, prepared once for every window judged inside it.
+///
+/// Every statement is classified and every candidate's footprint projected a
+/// single time per block, not once per judged window. A block with m calls
+/// among n statements is judged over O(m²) ordered pairs by [`collect_runs`],
+/// and each window spans up to n statements, so classifying inside `judge`
+/// made the analysis O(m²·n) in place resolution and allocation. On the
+/// frozen real-source fixtures — whose entry blocks carry tens of calls — that
+/// was the difference between a suite that finishes and one that does not.
+struct BlockWindows<'check> {
+    /// Every statement of the block, in source order, classified as an
+    /// interposed member. Candidate statements are classified too: they are
+    /// interposed members of the non-adjacent windows [`collect_runs`] judges.
+    statements: Vec<Result<Interposed, InterposedRefusal>>,
+    /// The call candidates of the block, in source order.
+    candidates: Vec<Candidate<'check>>,
+    /// Each candidate's [EFF-2] projection, positionally with `candidates`.
+    footprints: Vec<Footprint>,
 }
 
 impl<'check> Program<'check> {
@@ -399,51 +579,70 @@ impl<'check> Program<'check> {
         permissions
     }
 
+    /// Judges every adjacent pair of *calls* in one block, each over the
+    /// window of statements written between them.
+    ///
+    /// The enumeration is over call candidates rather than over runs of
+    /// adjacent candidate statements. A statement of any other form no longer
+    /// ends the enumeration; it becomes an interposed member of the window and
+    /// is judged, so a pair separated by one builtin gets a verdict and a
+    /// ledger line where it previously got neither. The reported pairs stay
+    /// adjacent-call pairs, so the ledger's volume is unchanged.
     fn analyze_block(
         &self,
         places: &PlaceMap,
         block: &'check [CheckedStatement],
         permissions: &mut FunctionPermissions,
     ) {
-        let mut index = 0;
-        while index < block.len() {
-            let mut group = Vec::new();
-            while let Some(candidate) = block.get(index).and_then(candidate_of) {
-                group.push(candidate);
-                index += 1;
-            }
-            if group.is_empty() {
-                index += 1;
-                continue;
-            }
-            for window in group.windows(2) {
-                let verdict = self.judge(places, &window[0], &window[1]);
-                permissions.pairs.push(PermissionPair {
-                    first: self.site(&window[0]),
-                    second: self.site(&window[1]),
-                    verdict,
-                });
-            }
-            self.collect_runs(places, &group, permissions);
+        let candidates = block
+            .iter()
+            .enumerate()
+            .filter_map(|(index, statement)| candidate_of(index, statement))
+            .collect::<Vec<_>>();
+        if candidates.len() < 2 {
+            return;
         }
+        let windows = BlockWindows {
+            statements: block
+                .iter()
+                .enumerate()
+                .map(|(index, statement)| self.interposed_of(places, index, statement))
+                .collect(),
+            footprints: candidates
+                .iter()
+                .map(|candidate| self.footprint(places, candidate))
+                .collect(),
+            candidates,
+        };
+        for ordinal in 0..windows.candidates.len() - 1 {
+            let verdict = self.judge(&windows, ordinal, ordinal + 1);
+            permissions.pairs.push(PermissionPair {
+                first: self.site(&windows.candidates[ordinal]),
+                second: self.site(&windows.candidates[ordinal + 1]),
+                verdict,
+            });
+        }
+        self.collect_runs(&windows, permissions);
     }
 
     /// Grows maximal chains whose every ordered pair is permitted and
     /// eligible.
-    fn collect_runs(
-        &self,
-        places: &PlaceMap,
-        group: &[Candidate<'check>],
-        permissions: &mut FunctionPermissions,
-    ) {
+    ///
+    /// Every ordered pair is judged over its own window, so a statement
+    /// between two chain members is judged against every member of the chain:
+    /// for members mi and mj bracketing an interposed T, the pair (mi, mj)
+    /// covers T against both of them, and for any further member mk the pair
+    /// that brackets both T and mk covers T against mk. A chain requires all
+    /// its ordered pairs, so nothing in the window escapes judgment — which is
+    /// [PAR-1]'s "permission for a chain is exactly permission for every
+    /// ordered pair it contains", read over windows.
+    fn collect_runs(&self, windows: &BlockWindows<'check>, permissions: &mut FunctionPermissions) {
+        let group = &windows.candidates;
         let mut start = 0;
         while start + 1 < group.len() {
             let mut end = start;
             while end + 1 < group.len()
-                && (start..=end).all(|earlier| {
-                    self.judge(places, &group[earlier], &group[end + 1])
-                        .is_eligible()
-                })
+                && (start..=end).all(|earlier| self.judge(windows, earlier, end + 1).is_eligible())
             {
                 end += 1;
             }
@@ -475,14 +674,45 @@ impl<'check> Program<'check> {
         }
     }
 
-    /// The four conditions in their numbered order, then eligibility.
+    /// The four conditions in their numbered order, then eligibility, over the
+    /// window (s1, T1…Tk, s2).
+    ///
+    /// An interposed statement is classified before any condition is
+    /// evaluated, because a form whose footprint this analysis does not
+    /// compute has no condition-1 or condition-2 answer to give: it denies on
+    /// the spot, citing the condition its form violates. A window with several
+    /// defects therefore reports the interposed form ahead of a lower-numbered
+    /// defect elsewhere, which is the honest report — nothing else about that
+    /// statement is known.
     fn judge(
         &self,
-        places: &PlaceMap,
-        first: &Candidate<'check>,
-        second: &Candidate<'check>,
+        windows: &BlockWindows<'check>,
+        first_ordinal: usize,
+        second_ordinal: usize,
     ) -> PermissionVerdict {
-        // Condition 1: ordinary def-use.
+        let first = &windows.candidates[first_ordinal];
+        let second = &windows.candidates[second_ordinal];
+        let mut interposed = Vec::with_capacity(second.index - first.index);
+        for (offset, classified) in windows
+            .statements
+            .get(first.index + 1..second.index)
+            .unwrap_or_default()
+            .iter()
+            .enumerate()
+        {
+            let side = PairSide::Between(offset);
+            match classified {
+                Ok(record) => interposed.push(record),
+                Err(InterposedRefusal::Exit(kind)) => {
+                    return PermissionVerdict::Denied(Denial::SkippingExit { side, kind: *kind });
+                }
+                Err(InterposedRefusal::Form(form)) => {
+                    return PermissionVerdict::Denied(Denial::InterposedForm { side, form });
+                }
+            }
+        }
+
+        // Condition 1: ordinary def-use, over the whole window.
         let mut used = Vec::new();
         for argument in second.arguments {
             collect_used_bindings(argument, &mut used);
@@ -490,91 +720,101 @@ impl<'check> Program<'check> {
         if used.contains(&first.binding) {
             return PermissionVerdict::Denied(Denial::Dataflow {
                 binding: first.binding,
+                definer: PairSide::First,
+                reader: PairSide::Second,
             });
+        }
+        for (offset, record) in interposed.iter().enumerate() {
+            // Where s1 takes the lane its value does not exist until the join,
+            // so nothing between them may read it.
+            if record.uses.contains(&first.binding) {
+                return PermissionVerdict::Denied(Denial::Dataflow {
+                    binding: first.binding,
+                    definer: PairSide::First,
+                    reader: PairSide::Between(offset),
+                });
+            }
+            // Where s2 takes the lane its operands are evaluated before the
+            // interposed statements run, so it may not read what they define.
+            if let Some(defined) = record.defines
+                && used.contains(&defined)
+            {
+                return PermissionVerdict::Denied(Denial::Dataflow {
+                    binding: defined,
+                    definer: PairSide::Between(offset),
+                    reader: PairSide::Second,
+                });
+            }
         }
 
         // Condition 2: disjoint footprints under OWN-7, fail closed.
-        let left = self.footprint(places, first);
-        let right = self.footprint(places, second);
-        if let Some(argument) = left.unresolved {
-            return PermissionVerdict::Denied(Denial::UnresolvedFootprint {
-                side: PairSide::First,
-                argument,
-            });
-        }
-        if let Some(argument) = right.unresolved {
-            return PermissionVerdict::Denied(Denial::UnresolvedFootprint {
-                side: PairSide::Second,
-                argument,
-            });
-        }
-        // Operand evaluation is part of the statement, so an overlap moves it
-        // too. Which member's operands move depends on which member takes the
-        // lane, so both directions are judged and an unresolved operand read
-        // on either side denies.
-        if let Some(argument) = left.operand_unresolved {
-            return PermissionVerdict::Denied(Denial::UnresolvedFootprint {
-                side: PairSide::First,
-                argument,
-            });
-        }
-        if let Some(argument) = right.operand_unresolved {
-            return PermissionVerdict::Denied(Denial::UnresolvedFootprint {
-                side: PairSide::Second,
-                argument,
-            });
-        }
-        for write in &left.writes {
-            for (kind, access) in right
-                .writes
-                .iter()
-                .map(|access| (ConflictKind::WriteWrite, access))
-                .chain(
-                    right
-                        .reads
-                        .iter()
-                        .map(|access| (ConflictKind::WriteRead, access)),
-                )
-                .chain(
-                    right
-                        .operand_reads
-                        .iter()
-                        .map(|access| (ConflictKind::WriteOperandRead, access)),
-                )
+        let left = &windows.footprints[first_ordinal];
+        let right = &windows.footprints[second_ordinal];
+        for (side, footprint) in [(PairSide::First, left), (PairSide::Second, right)]
+            .into_iter()
+            .chain(
+                interposed
+                    .iter()
+                    .enumerate()
+                    .map(|(offset, record)| (PairSide::Between(offset), &record.footprint)),
+            )
+        {
+            // Operand evaluation is part of the statement, so an overlap moves
+            // it too. Which statement's operands move depends on which member
+            // takes the lane, so an unresolved operand read anywhere in the
+            // window denies just as an unresolved row projection does.
+            if let Some(argument) = footprint
+                .unresolved
+                .clone()
+                .or_else(|| footprint.operand_unresolved.clone())
             {
-                if write.conflicts(access) {
-                    return PermissionVerdict::Denied(Denial::Footprint {
-                        kind,
-                        left: write.clone(),
-                        right: access.clone(),
-                    });
-                }
+                return PermissionVerdict::Denied(Denial::UnresolvedFootprint { side, argument });
             }
         }
-        for write in &right.writes {
-            for (kind, read) in left
-                .reads
-                .iter()
-                .map(|access| (ConflictKind::ReadWrite, access))
-                .chain(
-                    left.operand_reads
-                        .iter()
-                        .map(|access| (ConflictKind::OperandReadWrite, access)),
-                )
+        if let Some(denial) =
+            footprint_conflict(left, PairSide::First, right, PairSide::Second, true)
+        {
+            return PermissionVerdict::Denied(denial);
+        }
+        for (offset, record) in interposed.iter().enumerate() {
+            let side = PairSide::Between(offset);
+            // Against s1 the mirror operand obligation is dropped: the
+            // schedule that hands s1 out evaluates O(s1) before the fork, and
+            // the schedule that hands s2 out has already completed s1, so no
+            // interposed write can reach O(s1). The operand half is one-sided
+            // for s1 and two-sided for s2, and that asymmetry is the whole
+            // difference between this rule and judging T as an ordinary member.
+            if let Some(denial) =
+                footprint_conflict(left, PairSide::First, &record.footprint, side, false)
             {
-                if write.conflicts(read) {
-                    return PermissionVerdict::Denied(Denial::Footprint {
-                        kind,
-                        left: read.clone(),
-                        right: write.clone(),
-                    });
-                }
+                return PermissionVerdict::Denied(denial);
+            }
+            if let Some(denial) =
+                footprint_conflict(&record.footprint, side, right, PairSide::Second, true)
+            {
+                return PermissionVerdict::Denied(denial);
             }
         }
 
-        // Condition 3: the row gate.
-        for (side, candidate) in [(PairSide::First, first), (PairSide::Second, second)] {
-            let Some(signature) = self.signatures.get(candidate.callee.0 as usize) else {
+        // Condition 3: the row gate, over both members and every call between
+        // them. A row that gates the members gates a call written between them
+        // for the same reason: nothing about its reach is proved by places.
+        for (side, callee) in [
+            (PairSide::First, first.callee),
+            (PairSide::Second, second.callee),
+        ]
+        .into_iter()
+        .chain(
+            interposed
+                .iter()
+                .enumerate()
+                .filter_map(|(offset, record)| {
+                    record
+                        .callee
+                        .map(|callee| (PairSide::Between(offset), callee))
+                }),
+        ) {
+            let Some(signature) = self.signatures.get(callee.0 as usize) else {
                 return PermissionVerdict::Denied(Denial::Row {
                     side,
                     external: true,
@@ -590,18 +830,152 @@ impl<'check> Program<'check> {
             }
         }
 
-        // Condition 4: no exit edge of s1 bypasses s2.
+        // Condition 4: no exit edge of s1 bypasses s2. An exit between them
+        // denied during classification above.
         if let Some(kind) = first.exit {
-            return PermissionVerdict::Denied(Denial::SkippingExit { kind });
+            return PermissionVerdict::Denied(Denial::SkippingExit {
+                side: PairSide::First,
+                kind,
+            });
         }
 
-        // Eligibility: both call closures reach zero claim sites.
-        match self.claim_closure(&[first.callee, second.callee]) {
+        // Eligibility: every call closure of the window reaches zero claim
+        // sites. A call between the members can be actualized only alongside
+        // them, so its claims count exactly as a member's do.
+        let mut roots = vec![first.callee, second.callee];
+        roots.extend(interposed.iter().filter_map(|record| record.callee));
+        // The precomputed reachability answers the common case — every root
+        // claim-free — without walking the call graph at all. Only a root that
+        // does reach a claim pays for the search, which exists to produce the
+        // count and the witness.
+        if roots.iter().all(|root| {
+            !self
+                .reaches_claim
+                .get(root.0 as usize)
+                .copied()
+                .unwrap_or(true)
+        }) {
+            return PermissionVerdict::PermittedEligible;
+        }
+        match self.claim_closure(&roots) {
             Some((claim_sites, witness)) => PermissionVerdict::PermittedNotActualizable {
                 claim_sites,
                 witness,
             },
             None => PermissionVerdict::PermittedEligible,
+        }
+    }
+
+    /// One statement between the two members, reduced to what the window rule
+    /// judges, or the reason it cannot be.
+    ///
+    /// The match is exhaustive on purpose, for the same reason
+    /// [`collect_claim_sites`] is: a statement form this analysis does not
+    /// classify would otherwise contribute an empty footprint and *widen*
+    /// permission, which is the one direction the judgment must never fail in.
+    /// Every form is either given a footprint here or refused here.
+    fn interposed_of(
+        &self,
+        places: &PlaceMap,
+        index: usize,
+        statement: &'check CheckedStatement,
+    ) -> Result<Interposed, InterposedRefusal> {
+        match statement {
+            CheckedStatement::Let {
+                node_path,
+                binding,
+                value,
+            } => {
+                // A call between the members is judged exactly as a member is,
+                // with its full [EFF-2] projection rather than the operand
+                // reads of an ordinary value.
+                if let Some(candidate) = candidate_of(index, statement) {
+                    let mut uses = Vec::new();
+                    for argument in candidate.arguments {
+                        collect_used_bindings(argument, &mut uses);
+                    }
+                    return Ok(Interposed {
+                        defines: Some(*binding),
+                        uses,
+                        footprint: self.footprint(places, &candidate),
+                        callee: Some(candidate.callee),
+                    });
+                }
+                let mut uses = Vec::new();
+                collect_used_bindings(value, &mut uses);
+                Ok(Interposed {
+                    defines: Some(*binding),
+                    uses,
+                    footprint: value_footprint(places, value, node_path),
+                    callee: None,
+                })
+            }
+            CheckedStatement::Set {
+                node_path,
+                target,
+                value,
+            } => {
+                let mut footprint = value_footprint(places, value, node_path);
+                set_target_place(places, target, node_path, &mut footprint, false);
+                let mut uses = Vec::new();
+                collect_used_bindings(value, &mut uses);
+                collect_set_target_bindings(target, &mut uses);
+                Ok(Interposed {
+                    defines: None,
+                    uses,
+                    footprint,
+                    callee: None,
+                })
+            }
+            // [SET-2]: one read of the previous value into the fresh binding
+            // and one write of the replacement into the target, so the target
+            // place is both halves of the footprint.
+            CheckedStatement::Replace {
+                node_path,
+                binding,
+                target,
+                value,
+            } => {
+                let mut footprint = value_footprint(places, value, node_path);
+                set_target_place(places, target, node_path, &mut footprint, true);
+                let mut uses = Vec::new();
+                collect_used_bindings(value, &mut uses);
+                collect_set_target_bindings(target, &mut uses);
+                Ok(Interposed {
+                    defines: Some(*binding),
+                    uses,
+                    footprint,
+                    callee: None,
+                })
+            }
+            // Exit-bearing forms: condition 4.
+            CheckedStatement::PropagateLet { .. } => {
+                Err(InterposedRefusal::Exit(ExitKind::PropagateError))
+            }
+            CheckedStatement::Claim { .. } => Err(InterposedRefusal::Exit(ExitKind::ClaimTrap)),
+            CheckedStatement::Return { .. }
+            | CheckedStatement::Give { .. }
+            | CheckedStatement::Break { .. } => Err(InterposedRefusal::Exit(ExitKind::BlockExit)),
+            // An expression statement is a call [GRAM-4], which may be a
+            // system call whose reach no row projects, and a discarded one
+            // carries its own [STOR-3] release. Admitting these needs that
+            // release classified first, so today they deny.
+            CheckedStatement::Evaluate(_) => {
+                Err(InterposedRefusal::Form("an expression statement"))
+            }
+            CheckedStatement::DropExpression { .. } => {
+                Err(InterposedRefusal::Form("a discarded expression statement"))
+            }
+            // Forms carrying their own control flow and their own drops. The
+            // lowering already refuses them by splitting the block, so the
+            // checker refusing them keeps the two in agreement.
+            CheckedStatement::Match { .. } => Err(InterposedRefusal::Form("a match statement")),
+            CheckedStatement::ValueMatchLet { .. } => {
+                Err(InterposedRefusal::Form("a value match or value if"))
+            }
+            CheckedStatement::Loop { .. } => Err(InterposedRefusal::Form("a loop")),
+            CheckedStatement::CountedRange { .. } => Err(InterposedRefusal::Form("a for loop")),
+            CheckedStatement::Region { .. } => Err(InterposedRefusal::Form("a region")),
         }
     }
 
@@ -782,19 +1156,189 @@ struct Footprint {
     writes: Vec<Access>,
     reads: Vec<Access>,
     /// Storage this statement's own operand expressions read on the calling
-    /// thread, before the call. Only the second member's copy is judged: the
-    /// overlap moves exactly its evaluation across the first member's call.
+    /// thread, before the call. An overlap moves some statement's operand
+    /// evaluation across another's call, and which one moves is the
+    /// implementation's choice of lane, so this half is judged in both
+    /// directions for the pair — and, for a statement between the two, against
+    /// s2's writes in both directions but against s1's writes only one way.
+    /// The module doc derives that asymmetry.
     operand_reads: Vec<Access>,
     /// Set when the row projects an access this analysis cannot resolve to a
-    /// caller place. Every such call is denied.
+    /// caller place. Every such statement is denied.
     unresolved: Option<NodePath>,
     /// Set when an operand expression reads storage this analysis cannot
-    /// resolve to a caller place. Denies whenever this statement is s2.
+    /// resolve to a caller place. Denies wherever this statement sits in the
+    /// window.
     operand_unresolved: Option<NodePath>,
 }
 
+/// The condition-2 obligations of one ordered pair of window footprints.
+///
+/// The earlier statement's writes are judged against every half of the later
+/// one — its callee's reads and writes and its caller-side operand reads —
+/// and the later one's writes against the earlier one's reads.
+///
+/// `earlier_operands` selects whether the later statement's writes are also
+/// judged against the earlier one's *operand* reads. It holds for the judged
+/// pair and for an interposed statement against s2, whose operand evaluation
+/// the hand-out hoists above it. It does not hold for s1 against an interposed
+/// statement: under the schedule that hands s1 out, O(s1) is evaluated before
+/// the fork, and under the schedule that hands s2 out, s1 has already
+/// completed — so nothing written between them can reach it. Dropping the
+/// obligation there is the one place this rule is weaker than judging every
+/// window statement as an ordinary member, and it is derived, not assumed.
+fn footprint_conflict(
+    earlier: &Footprint,
+    earlier_side: PairSide,
+    later: &Footprint,
+    later_side: PairSide,
+    earlier_operands: bool,
+) -> Option<Denial> {
+    for write in &earlier.writes {
+        for (kind, access) in later
+            .writes
+            .iter()
+            .map(|access| (ConflictKind::WriteWrite, access))
+            .chain(
+                later
+                    .reads
+                    .iter()
+                    .map(|access| (ConflictKind::WriteRead, access)),
+            )
+            .chain(
+                later
+                    .operand_reads
+                    .iter()
+                    .map(|access| (ConflictKind::WriteOperandRead, access)),
+            )
+        {
+            if write.conflicts(access) {
+                return Some(Denial::Footprint {
+                    kind,
+                    left: write.clone(),
+                    right: access.clone(),
+                    sides: (earlier_side, later_side),
+                });
+            }
+        }
+    }
+    for write in &later.writes {
+        for (kind, read) in earlier
+            .reads
+            .iter()
+            .map(|access| (ConflictKind::ReadWrite, access))
+            .chain(
+                earlier_operands
+                    .then(|| {
+                        earlier
+                            .operand_reads
+                            .iter()
+                            .map(|access| (ConflictKind::OperandReadWrite, access))
+                    })
+                    .into_iter()
+                    .flatten(),
+            )
+        {
+            if write.conflicts(read) {
+                return Some(Denial::Footprint {
+                    kind,
+                    left: read.clone(),
+                    right: write.clone(),
+                    sides: (earlier_side, later_side),
+                });
+            }
+        }
+    }
+    None
+}
+
+/// The footprint of a window statement that is not a call: the places its
+/// consumed `own` operands transfer away, and the places its operands read.
+fn value_footprint(places: &PlaceMap, value: &CheckedExpression, node: &NodePath) -> Footprint {
+    let mut footprint = Footprint::default();
+    collect_consumed_places(places, value, node, &mut footprint);
+    collect_operand_reads(places, value, node, &mut footprint);
+    footprint
+}
+
+/// Records the storage a `set` or `replace` target names, and the operands its
+/// subscript reads. A `replace` also reads the target, which `reads_target`
+/// selects [SET-2].
+///
+/// An element target resolves to the whole collection, because a resolved
+/// place carries no index segment [ENT-2]. That is the fail-closed direction:
+/// one element write conflicts with any access to the collection.
+fn set_target_place(
+    places: &PlaceMap,
+    target: &CheckedSetTarget,
+    node: &NodePath,
+    footprint: &mut Footprint,
+    reads_target: bool,
+) {
+    let place = match target {
+        CheckedSetTarget::Place(target) => rooted_place(places, target.binding, &target.fields),
+        CheckedSetTarget::ArrayIndex(target) => {
+            collect_operand_reads(places, &target.offset, node, footprint);
+            rooted_place(places, target.binding, &target.fields)
+        }
+        CheckedSetTarget::BufferIndex(target) => {
+            collect_operand_reads(places, &target.offset, node, footprint);
+            rooted_place(places, target.root.binding, &target.root.fields)
+        }
+    };
+    if reads_target {
+        footprint.reads.push(Access::Place {
+            place: place.clone(),
+            argument: node.clone(),
+        });
+    }
+    footprint.writes.push(Access::Place {
+        place,
+        argument: node.clone(),
+    });
+}
+
+/// Every binding a `set` or `replace` target mentions: the root it writes
+/// through, whose value the calling thread reads to reach the storage, and any
+/// binding its subscript reads.
+fn collect_set_target_bindings(target: &CheckedSetTarget, out: &mut Vec<BindingId>) {
+    let root = target.binding();
+    if !out.contains(&root) {
+        out.push(root);
+    }
+    match target {
+        CheckedSetTarget::Place(_) => {}
+        CheckedSetTarget::ArrayIndex(target) => collect_used_bindings(&target.offset, out),
+        CheckedSetTarget::BufferIndex(target) => collect_used_bindings(&target.offset, out),
+    }
+}
+
+/// Every caller place one expression transfers away by consuming an `own`
+/// value.
+///
+/// A move is recorded as a *write* of the storage it empties, for the reason
+/// the call-boundary projection records a consumed actual that way: the affine
+/// discipline already forbids a second consumer, and the footprint states it
+/// rather than assuming it.
+fn collect_consumed_places(
+    places: &PlaceMap,
+    expression: &CheckedExpression,
+    node: &NodePath,
+    footprint: &mut Footprint,
+) {
+    if let Some(place) = consumed_place(places, expression) {
+        footprint.writes.push(Access::Place {
+            place,
+            argument: node.clone(),
+        });
+    }
+    for child in expression_children(expression) {
+        collect_consumed_places(places, child, node, footprint);
+    }
+}
+
 /// One candidate statement, or `None` for every other statement shape.
-fn candidate_of(statement: &CheckedStatement) -> Option<Candidate<'_>> {
+fn candidate_of(index: usize, statement: &CheckedStatement) -> Option<Candidate<'_>> {
     let (node_path, binding, value, exit) = match statement {
         CheckedStatement::Let {
             node_path,
@@ -827,6 +1371,7 @@ fn candidate_of(statement: &CheckedStatement) -> Option<Candidate<'_>> {
     };
     Some(Candidate {
         statement: node_path.clone(),
+        index,
         binding: *binding,
         call: call.clone(),
         callee: *function,

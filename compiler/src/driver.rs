@@ -586,6 +586,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
             ledger[0],
             "PAR permitted   fold.wf:22  pair(fold, fold)  eligible"
         );
+        // The chain the pair composes into, reported beside it. Pairs alone
+        // cannot tell one three-member run from three separate two-member
+        // ones, and those are completely different work, so the chain is
+        // stated rather than left to be inferred.
+        assert_eq!(
+            ledger[1],
+            "PAR chain       fold.wf:22  run(fold, fold)  2 members through line 23"
+        );
 
         // The same tree fold with one claim in the recursive closure. P still
         // holds; the line reports why the overlap is not actualized.
@@ -625,19 +633,28 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {{
             "PAR permitted   bubble.wf:22  pair(bubble, bubble)  not-actualizable: 1 claim site via bubble"
         );
 
+        // `bubble` is not actualizable, so its permitted pair composes into no
+        // chain and gets no `run` line — which is exactly the distinction the
+        // chain lines exist to make visible.
+        //
         // Both programs end with main's own two leaf allocations, which are
-        // eligible, and then the branch call that consumes them, which is
-        // denied by condition 1. The ledger is in source order, so those two
-        // lines follow the recursive one and the file is fully reported.
+        // eligible and do form a chain, and then the branch call that consumes
+        // them, which is denied by condition 1. The ledger is in source order,
+        // so those lines follow the recursive one and the file is fully
+        // reported.
         assert_eq!(
             ledger[1],
             "PAR permitted   bubble.wf:34  pair(boxed_leaf, boxed_leaf)  eligible"
         );
         assert_eq!(
             ledger[2],
-            "PAR denied      bubble.wf:35  pair(boxed_leaf, boxed_branch)  condition 1: an argument of s2 uses the result of s1"
+            "PAR chain       bubble.wf:34  run(boxed_leaf, boxed_leaf)  2 members through line 35"
         );
-        assert_eq!(ledger.len(), 3);
+        assert_eq!(
+            ledger[3],
+            "PAR denied      bubble.wf:35  pair(boxed_leaf, boxed_branch)  condition 1: the operands of s2 read what s1 defines"
+        );
+        assert_eq!(ledger.len(), 4);
     }
 
     /// One denial line per numbered condition, each citing that condition and
@@ -667,7 +684,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("bump.wf", overlapping),
             vec![
-                "PAR denied      bump.wf:10  pair(bump, bump)  condition 2: writes overlap at &uniq 'r cell vs &uniq 'r cell"
+                "PAR denied      bump.wf:10  pair(bump, bump)  condition 2: the write of s1 overlaps the write of s2 at &uniq 'r cell vs &uniq 'r cell"
                     .to_owned()
             ]
         );
@@ -722,7 +739,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("propagate.wf", propagating),
             vec![
-                "PAR denied      propagate.wf:11  pair(narrow, stamp)  condition 4: Err edge of s1 skips s2"
+                "PAR denied      propagate.wf:11  pair(narrow, stamp)  condition 4: the Err edge of s1 skips s2"
                     .to_owned()
             ]
         );

@@ -1238,3 +1238,78 @@ fn function_body<'module>(module: &'module str, symbol: &str) -> &'module str {
         .expect("a definition must close");
     &module[start..end]
 }
+
+/// The fixture above with one pure builtin written *between* the two recursive
+/// calls, which is the shape the adjacency window admits.
+///
+/// It is produced by editing the one arm rather than by copying the whole
+/// program, so the two sources differ in exactly the statement under test and
+/// nothing else can drift between them. The interposed statement reads the
+/// node's own `w` slot — a place neither child call reaches, since each reaches
+/// only its own `&uniq` payload binder — and defines a binding neither call
+/// reads, so the window is permitted.
+fn windowed_fold() -> Vec<u8> {
+    let source = std::str::from_utf8(OVERLAPPING_FOLD).expect("the fixture is UTF-8");
+    let original = "      let a = fold<'b>(node: move l);\n      let b = fold<'b>(node: move r);\n      let mixed = mix(a: a, b: b);\n";
+    let windowed = "      let a = fold<'b>(node: move l);\n      let seed = irotl(deref(slot), 3_u32);\n      let b = fold<'b>(node: move r);\n      let blended = mix(a: a, b: b);\n      let mixed = ixor(blended, seed);\n";
+    assert!(
+        source.contains(original),
+        "the windowed fixture must be an edit of the adjacent one"
+    );
+    source.replace(original, windowed).into_bytes()
+}
+
+/// The window's differential: a fold whose two recursive calls are separated by
+/// a builtin still hands work out, and still produces the bytes its own
+/// sequential lowering produces at every worker count.
+///
+/// This is the case the checker's widening made reachable, and it is the one
+/// the widening could break. The checker now hands the backend a group whose
+/// members are not adjacent statements, so the fork, the interposed
+/// instructions, and the join share one straight-line edge for the first time.
+/// The reference is the default compilation of the same source — a lowering
+/// with no hand-out at all — so a moved read or a misplaced join shows up as a
+/// byte difference rather than being present identically on both sides.
+#[test]
+fn a_fold_whose_calls_are_separated_by_a_builtin_hands_out_and_agrees() {
+    let source = windowed_fold();
+    let overlapped_module = emit_with_overlap(&source);
+    assert!(
+        overlapped_module.contains("call void @wf__par_publish(ptr ")
+            && overlapped_module.contains(", ptr @wf__par_thunk_"),
+        "the windowed fold must still hand work out, or this test is vacuous:\n{overlapped_module}"
+    );
+
+    let sequential_module = emit(&source);
+    assert!(
+        !module_requires_parallel_runtime(&sequential_module),
+        "the reference module must contain no hand-out at all"
+    );
+
+    let directory = test_directory();
+    let reference = Command::new(build_executable(&sequential_module, &directory))
+        .output()
+        .expect("run the module that hands nothing out");
+    assert_eq!(reference.status.code(), Some(0));
+    assert_eq!(
+        reference.stdout.len(),
+        8,
+        "the fold must report eight bytes"
+    );
+
+    let overlapped = build_executable(&overlapped_module, &directory);
+    let mut runs = vec![("no overlap lowering".to_owned(), reference.stdout)];
+    for workers in ["1", "2", "4", "8"] {
+        for _ in 0..3 {
+            let output = Command::new(&overlapped)
+                .env("WF_WORKERS", workers)
+                .output()
+                .expect("run the overlapped program");
+            assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
+            runs.push((format!("WF_WORKERS={workers}"), output.stdout));
+        }
+    }
+    identical(&runs).expect("a statement between the two calls must not move one byte");
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}

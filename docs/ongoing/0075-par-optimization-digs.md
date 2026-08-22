@@ -101,12 +101,30 @@ re-sequenced accordingly.
   rotation, byte identity at every worker count, and the code size the second
   world costs measured and recorded.
 
+- **Dig 8 — the adjacency window (F3).** Added by lead direction after Dig 7,
+  under this batch's chartering direction. One builtin statement written
+  between two calls makes the pair silently unjudged, so the same operation
+  wrapped in a pure function keeps a parallel chain while the builtin version
+  keeps none: two programs with byte-identical output differ 1.41x in wall
+  time. Permission must follow grammar and semantic rule, never accidental
+  statement adjacency. Widen the judgment from an adjacent pair to a window
+  (s1, the statements between, s2), with every condition quantified over the
+  interposed statements and every form the analysis cannot account for denying
+  **with a report** rather than ending the enumeration. Soundness first: the
+  rule is the intersection of what the two realizable schedules admit, not
+  what the current backend alone would survive. Acceptance: the builtin
+  version and the wrapped version get the same verdict, the dossier's
+  counterexamples are denied under the right condition, the oracle is
+  unchanged where no widening applies, and outputs stay byte-identical.
+
 ## Approval classes
 
 - Spec bytes: none planned (scheduler policy and codegen are implementation
   liberty under the CANDIDATE [PAR-1] rule, which states permission, not
   policy). If any dig turns out to need rule text, it stops and records the
-  boundary.
+  boundary. Dig 8 examined this and needed none; it did find that the rule as
+  written is *over*-permissive, and recorded that boundary rather than editing
+  the file. See its log entry.
 - Protected conformance/compliance: no changes.
 - Repository root: no new entries.
 
@@ -755,6 +773,280 @@ reproduction, never worked around.)
   conformance step on the pre-existing `PAR-1` coverage blocker Dig 3 recorded
   (135/136); nothing here touches it. Approval classes touched: no spec bytes,
   no conformance or compliance evidence, no new repository root entry.
+- Dig 8 (done; F3, the finding that one builtin between two calls makes the
+  pair silently unjudged, is fixed at its named cause; the oracle's compiled
+  code is byte-identical before and after; and one spec-soundness boundary is
+  recorded rather than crossed).
+  **What the judgment used to do, and why it lost the pair.** The permission
+  judgment walked each block collecting *consecutive* call statements into a
+  group, and any statement of another form ended the group. Two calls with one
+  ordinary statement between them therefore never formed a pair at all: no
+  verdict, no ledger line, nothing to explain the missing parallelism. In
+  `probes/p1a.wf` the two recursive `layout` calls sit at lines 116 and 118
+  with `let gap = fmul.strict(child_inh, 1.5_f64);` at 117, and the whole fold
+  ran sequentially because of that one line.
+  **What landed: the judged unit is now a window.** A window is the ordered
+  pair (s1, s2) of call statements together with every statement of the block
+  written between them, and every condition is quantified over those
+  interposed statements as well as the two calls. The rule is derived as the
+  **intersection of the two schedules a conforming implementation may pick**,
+  hand s1 to a lane and run the rest on the calling thread, or run s1 and hand
+  s2 out with its operands evaluated at the hand-out point, because permission
+  may not be stated in terms of a schedule. That derivation is what produces
+  the two new dataflow clauses (nothing between them may read what s1 defines,
+  because under the first schedule that value does not exist until the join;
+  and s2 may not read what they define, because under the second its operands
+  were evaluated before they ran) and the footprint clauses. It also produces
+  **one deliberate asymmetry**: an interposed write is judged against s2's
+  caller-side operand reads but *not* against s1's, because under the first
+  schedule s1's operands are read before the fork and under the second s1 has
+  already completed. The two mistakes are not symmetric: **adding** the missing
+  obligation on s1's side is merely over-conservative and costs a few grants
+  (it is what would refuse the shape the grant fixture pins), while
+  **dropping** the obligation on s2's side admits a real race, because that is
+  the side where a hand-out genuinely hoists the operand read above the
+  interposed write. It is stated in the module doc in those terms and pinned
+  from both sides: a denial fixture for s2's side and a grant fixture for
+  s1's, so either error fails a test rather than passing silently.
+  **Fail-closed, and reported.** Every interposed form is classified by an
+  exhaustive match, so a statement form nobody classified cannot contribute an
+  empty footprint and quietly widen permission. A `let`, `set`, or `replace`
+  gets a footprint: the place it assigns plus the places its consumed `own`
+  operands name count as writes, and what its operands read counts as reads.
+  A form that can leave the block without reaching s2 denies under **condition
+  4, the no-skipping-exit condition**; that covers `return`, `give`, `break`,
+  a `propagate` whose error edge returns from the function, and a `claim`,
+  whose trap edge to the diagnostic sink is an exit like any other. The
+  `claim` case closes a hole the eligibility check structurally cannot see: it
+  walks *callees* looking for reachable claims, so a `claim` the writer put in
+  the caller's own block between the two calls was invisible to it, and the
+  window would have read permitted and eligible. Every remaining form (a
+  match, a loop, a region, an expression statement) denies under **condition
+  2, the disjoint-footprints condition**, as an unresolved footprint, on the
+  rule's own principle that an element whose place is not resolved overlaps
+  every place. Whether those forms stay refused is a later question: computing
+  a real footprint for a `match` or a loop body is possible and would widen the
+  admitted set again, and nothing here forecloses it. The point is that these
+  now **deny with a line** instead of silently ending the enumeration, which is
+  the disclosure half of F3 and the half a verdict-only test suite is blind to.
+  **Eligibility delta, measured over all 17 probes and all 12 oracle sources
+  by running both compilers.** `p1a` is the target and it moves: eligible pairs
+  1 to 2, and the new one is exactly `pair(layout, layout) eligible` with
+  `run(layout, layout) 2 members` at line 116. `zero_elig` goes from reporting
+  **nothing at all** to one eligible pair and chain. Every oracle source gains
+  one reported (denied) pair and two chain lines and **no** eligibility, which
+  is why the oracle cannot move. Across all 29 sources no previously reported
+  pair changed its verdict; the additions are new denials for windows that were
+  silent, plus the chain lines described below.
+  **The F3 headline closes. Interleaved min-of-9, all eleven cells in one
+  rotation, machine checked quiet first.** Every cell of every program
+  published the same `2c4d496258ec3e06`, `p1b`'s included, so the claim that
+  these two programs emit the same bytes is measured here rather than assumed
+  from their sources. `p1a` sequential 0.7677 s. `p1a` `--par` **before**:
+  0.7685 / 0.7573 / 0.7619 / 0.7601 s at 1/2/4/8 workers, flat, no speedup at
+  any worker count, which is what a program whose fold was never judged looks
+  like. **After**: 0.7658 / 0.5132 / 0.3984 / 0.3749 s. That is **1.91x at four
+  workers and 2.03x at eight against the same program compiled before this
+  commit**, and 1.93x/2.05x against its own sequential build. The dossier
+  predicted "1.00x to about 1.96x at W=4" and the measurement lands inside it.
+  Spreads (max over min within the rotation) are 5.2% to 7.2% on every
+  multi-worker cell, so those readings are tight; the one-worker and sequential
+  cells ran 42% to 64%, which is machine noise on the slowest cells and is why
+  only the minima are read.
+  Against `p1b`, the wrapped-function twin that kept its chain all along,
+  `p1a` now reads 0.3984 against 0.4049 at four workers and 0.3749 against
+  0.3808 at eight: **parity, from a gap that was 1.9x between two programs
+  whose output bytes are identical.** The 1.6% edge is in the predicted
+  direction (`p1b` pays a second hand-out for a trivial `scale_up`) but is
+  inside the band and is **not** claimed as a win; the four-worker `p1b` cell
+  in particular spread 81.6%, so the eight-worker comparison, whose `p1b` cell
+  spread 1.2%, is the one to read. The opt-in tax did not move: one worker
+  0.7685 to 0.7658, 0.4%.
+  **Is the shape realistic?** `p1a` is the paired browser-layout fold this
+  batch adopted as its oracle, not a probe built to display the bug, and the
+  twelve oracle sources are the same `layout` shape. They escaped the defect
+  only because their generator happens to emit the two child calls adjacent,
+  while `p1a` writes one arithmetic line between them, which is the accident
+  the whole finding is about.
+  **What is untouched on the oracle, stated precisely, because the oracle did
+  change in one respect.** Its *diagnostic* output changed: every one of the
+  twelve sources gains one denied line and two chain lines, as the delta above
+  says. Its *compiled code* did not, and that is the load-bearing claim: the 12
+  oracle `--par` modules the compiler emits are **byte-identical** before and
+  after, and all **24 oracle binaries rebuilt with the new compiler are
+  byte-identical** to the ones sitting in `bench/bin` from Dig 7. Identical
+  machine code cannot time differently or print differently, so no rotation
+  could have found a regression there; one was run anyway as an end-to-end
+  check: `./rerun.zsh 1`, 144 cells, every run byte-identical within and across
+  both languages, mean cell spread 0%, `skew_d16_w192` publishing
+  `420229e929506cdd`, the same bytes Digs 3 and 7 recorded. The **default**
+  compilation is untouched too: 0 of 28 emitted modules differ across every
+  probe and oracle source. (Linked executables *do* differ byte for byte when
+  the output filename differs, which briefly looked like a defect; the control
+  is that one compiler compiling one source to two different output names also
+  produces two different binaries, and the 24 same-path rebuilds above are
+  identical. The module comparison is the real evidence.)
+  **No protected evidence is involved, and the file-level check says so.** The
+  oracle is research measurement under `research/investigations/`, not
+  conformance or compliance evidence, and none of it was edited: the recorded
+  snapshot in `bench/baseline/` is unmodified, and the regenerated ledger,
+  binary, and output directories are all gitignored. `git status` at commit
+  time shows exactly six modified files, five compiler sources and this record,
+  and no additions anywhere. The changed diagnostic lines live in the
+  compiler's developer channel, which participates in no verdict and no
+  mandatory record.
+  **Code size, the cost of widening the clone set.** Dig 7's second world
+  covers every function from which a hand-out is reachable, and that set is
+  derived from the judgment, so admitting `layout`'s pair widens it: `p1a`'s
+  clone set goes from `{build}` to `{build, layout}`, hand-out sites 1 to 2,
+  thunks 1 to 2. The derivation needed no change because it is computed from
+  the emitted call graph rather than cached. Price on `p1a`: machine code
+  (`__text`) 12 560 to 13 272 bytes, **+5.7%**; linked file 52 848 to 52 928,
+  +0.15%. `p1b`, whose judgment did not change, is unchanged in both, which is
+  the control. Both figures sit inside Dig 7's recorded 7.0% to 14.2% range for
+  what the second world costs.
+  **Ledger truthfulness (F4), the contained half.** The ledger now emits a
+  `chain` line per eligible run beside its pairs, because three permitted pairs
+  and one three-member run read identically as pairs and are completely
+  different work. `p1a` now shows `run(layout, layout) 2 members through line
+  118` where before it showed nothing. **The uncontained half is recorded as a
+  follow-up rather than attempted**: what the *backend* keeps is narrower than
+  what the judgment permits (one call definition per site, all members in one
+  block, no addressed binding but the last), and that narrowing happens in
+  lowering, after the checker has rendered this ledger, so reporting it needs
+  the ledger moved or the narrowing surfaced back. A `chain` line therefore
+  states what the judgment permits, not what the emitter actualizes, and its
+  doc comment says so.
+  **SPEC BOUNDARY, examined and recorded, no spec byte touched.** The
+  chartering rule for this batch is that a dig needing rule text stops. This
+  dig does not need any, and the reason is worth the owner's attention. The
+  CANDIDATE rule says permission holds for the ordered pair where "s1
+  **precedes** s2 in one block", not where it immediately precedes it, and the
+  word "adjacent" appears nowhere in the rule (it appears twice in the whole
+  specification, both about terminal leaves in the trivia rules). So the
+  specification already permitted this widening and the compiler was, and after
+  this commit still is, **strictly narrower** than it. Every window this
+  compiler now permits satisfies every condition the rule lists; the new
+  clauses only remove permission. **But the rule as written is
+  over-permissive, and that is a real defect independent of this dig.** Its
+  conditions quantify over "the two calls" only, and the sentence is a
+  biconditional ("exactly when all of the following hold"), so a window whose
+  interposed statement writes the storage s2's callee reads satisfies every
+  listed condition and therefore *has* permission, while the rule's own next
+  paragraph promises that a permitted overlap produces exactly the source-order
+  observables, which that overlap does not. The rule grants permission and then
+  makes a false guarantee about it. The smallest witness is three statements:
+  read a cell through one call, write that cell with a plain `set`, read it
+  again through a second call. The two *calls* touch different storage on the
+  first read and the same storage on the second, every listed condition holds,
+  so the rule grants permission, and yet overlapping them lets the second call
+  read the value from before the `set`. That exact program is now one of the
+  denial fixtures in the compiler
+  (`an_interposed_write_into_the_second_callees_read_is_denied_by_condition_two`),
+  which is why nothing is at risk today: the compiler refuses what the rule
+  would allow.
+  Closing it in the rule needs roughly three sentences quantifying the
+  footprint and dataflow conditions over the interposed statements, plus
+  widening the exit clause from "no edge out of s1" to "no edge out of s1 or of
+  any statement between them". **Recorded for the owner, not written**: it
+  changes the language rule, nothing this dig ships needs it, and the compiler
+  is fail-closed against it. **Recommendation, since a paragraph in a batch
+  record is a poor place for a soundness defect to live**: it should become its
+  own item with the specification-change workflow, not a note inside a
+  performance batch. It is not urgent (no accepted program can exploit it,
+  because no implementation in the tree takes the permission the rule
+  over-grants) but it is exactly the class of thing that gets forgotten.
+  **Tests: eleven added, five existing ones strengthened, none weakened.** Nine
+  window fixtures in the judgment suite: the F3 grant and its chain; the
+  interposed write into s2's callee read, over s1's callee write, and under
+  s2's operand read (the last is the obligation no pair rule has, and its
+  callees carry no relevant row at all, so it is the schedule and nothing else
+  that refuses it); the two dataflow clauses; the interposed `propagate` and
+  the interposed `claim`; and the interposed `match`, which asserts the denial
+  is **reported** rather than merely absent. One grant fixture pins the
+  asymmetry that must not be tidied away. One backend fixture,
+  `a_fold_whose_calls_are_separated_by_a_builtin_hands_out_and_agrees`, is the
+  differential the checker change made reachable: the same fold with a builtin
+  between its two recursive calls still hands work out, and its bytes match its
+  own default compilation (which contains no hand-out at all) at every worker
+  count, so a moved read or a misplaced join cannot hide by being present on
+  both sides. It is produced by editing the existing adjacent fixture in one
+  place rather than by copying it, so the two sources cannot drift. Five
+  existing cases gained assertions on the new fields (which window statement a
+  denial cites) rather than ignoring them; two ledger cases were updated for
+  real text changes (a conflict line now names both sides, since it may now
+  cite an interposed statement) and one gained the chain-line assertion. No
+  test was deleted, relaxed, or given a weaker expectation.
+  **Cost, found and paid.** The widening enlarged the candidate group from
+  "consecutive call statements" to "every call in the block", and the chain
+  search judges every ordered pair, so classifying the window inside the
+  judgment made it quadratic in calls times linear in statements. Each block is
+  now classified and projected **once**, and whether a claim is reachable from
+  each function is answered by one reverse walk of the call graph at startup
+  instead of a whole-program search per judged pair. With that in place there
+  is no measurable cost: the gate's own suite runs **167.80 s after against
+  167.92 s before**, and compiling the largest real program in the tree
+  (`tests/programs/wfgrep.wf`, 1 269 lines), interleaved min-of-6, reads
+  44.81 s before and 45.70 s after, 1.02x inside a 12% spread. (An earlier gate
+  run read 176 s, and the programs suite 206 s against 154 s; both were
+  measured while this executor was running builds and timings beside them, and
+  the quiet re-run above is the reading to keep. Recorded because the inflated
+  numbers were nearly written down as a cost.)
+  **What `--par` costs at compile time, measured at lead request and handed
+  forward rather than dug into.** Interleaved min-of-6 on the same 1 269-line
+  program, one compiler, both modes compiled all the way to a linked binary:
+  **default 45.43 s, `--par` 46.15 s, a ratio of 1.016x**, the `--par` column
+  spreading 6.2% and the default column 21.5% on one outlier round.
+  **Load caveat, and it applies to every wall-clock number in this entry**:
+  this machine was not quiet. Microsoft Defender was observed at 320% CPU, the
+  worktree is not excluded from its real-time scanning, and a peer session's
+  Whitefoot processes were running beside these compiles. The *ratio* survives
+  that, since both columns take the same interference and the minimum of six
+  rounds is the statistic least exposed to it, but the **absolute** seconds are
+  informational and should be re-measured by the chartered compile-time dig
+  under proper controls. Nothing about this dig's acceptance rests on them: the
+  load-independent evidence is the byte identity recorded above, which
+  contention cannot fake. So Dig 7's
+  second world, which really is emitted for this program (`wfgrep` carries
+  three eligible pairs, three hand-out sites, three thunks and three sequential
+  clones), costs **essentially nothing in compile wall time**, far below the
+  1.3x that would have made it a finding. What it costs is *size*: linked file
+  51 776 bytes default against 71 032 with `--par`, machine code 16 528 against
+  24 440, which is +37% and +48%. That pair of figures is **not** comparable to
+  Dig 7's recorded 7.0% to 14.2%, and conflating them would overstate the
+  clone: Dig 7 measured the clone's own incremental cost by comparing `--par`
+  before its change against `--par` after, while this compares the default
+  build against `--par` and therefore also counts the runtime, the thunks and
+  the hand-out edges. The number worth carrying out of this is the one neither
+  column explains: **a 1 269-line program takes about 46 seconds to compile in
+  either mode**, so whatever dominates that is in the path both modes share and
+  not in anything `--par` adds. That is a standing compile-speed problem, it is
+  not this dig's, and nothing measured here causes it.
+  **Deviation, recorded.** Roughly an hour was lost to a "regression" that was
+  an instrument error: `cargo test` uses the default unoptimized profile while
+  the gate uses `--profile gate`, and the suite's real-program tests run about
+  16x slower there, which `compiler/Makefile` states plainly and this executor
+  had not read. Two hypotheses were built and one fix written before a profile
+  of the actually-slow test showed 100% of samples inside the entailment engine
+  and none in the permission judgment, and before stashing the change showed
+  the identical timeout at the parent commit. The precomputation described
+  above was kept because it removes genuinely redundant work that this
+  widening introduced, not because it fixed the phantom.
+  **Incidental finding, reported, not fixed.** A `let` selecting `propagate` is
+  admitted as a *candidate*, so it can be s2 of a permitted pair, while the
+  rule's first condition admits only a `let` selecting an ordinary right-hand
+  side. This is pre-existing, harmless today (the lowering refuses such a
+  member outright, and both schedules are sound for it), and keeping it a
+  candidate is what makes the propagate-as-s1 denial reportable rather than
+  silent. Narrowing it needs a decision about which condition would cite it,
+  which is not an executor's to take inside an F3 dig.
+  **Verification.** `make -C compiler check` exit 0 before (1019 lib + 52
+  program tests) and after (1030 lib + 52), with the two ledger cases and the
+  new window and backend cases green. Approval classes touched: **no spec
+  bytes** (the boundary above is recorded, not crossed), no conformance or
+  compliance evidence, no new repository root entry. `make check` still exits
+  at the conformance step on the pre-existing `PAR-1` coverage blocker Dig 3
+  recorded (135/136); nothing here touches it.
 - **Dig 0 deviation, recorded not hidden.** Dig 0 was specified as one
   cohesive commit and initially landed as two with byte-identical subject
   lines: two sessions were writing through one worktree and one shared git

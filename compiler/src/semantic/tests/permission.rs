@@ -4,6 +4,14 @@
 //! violates exactly one numbered condition and asserts *that* condition, so a
 //! denial arriving for the wrong reason fails the test. Design:
 //! `research/investigations/proof-derived-parallelism/DESIGN.md` section 3.
+//!
+//! The window fixtures at the end put statements *between* the two calls. They
+//! are deliberately weighted toward denials: widening the judged set is the
+//! easy half, and the whole risk of the widening is a window that should have
+//! been refused and was not. Each of those names the clause that refuses it,
+//! and one grant fixture pins the single obligation the rule deliberately does
+//! *not* carry, so making the rule symmetric would fail a test rather than
+//! pass silently.
 
 use crate::SemanticOutcome;
 
@@ -252,10 +260,20 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "fold");
-    let Denial::Dataflow { binding } = denial(pair, 1) else {
+    let Denial::Dataflow {
+        binding,
+        definer,
+        reader,
+    } = denial(pair, 1)
+    else {
         panic!("expected a dataflow denial, got {:?}", pair.verdict);
     };
     assert_eq!(*binding, pair.first.binding, "cited the wrong binding");
+    assert_eq!(
+        (*definer, *reader),
+        (PairSide::First, PairSide::Second),
+        "the link runs from s1 to s2, with nothing between them"
+    );
 }
 
 /// Condition 2. Two `&uniq` actuals resolve to one and the same place, so the
@@ -280,13 +298,24 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "main");
-    let Denial::Footprint { kind, left, right } = denial(pair, 2) else {
+    let Denial::Footprint {
+        kind,
+        left,
+        right,
+        sides,
+    } = denial(pair, 2)
+    else {
         panic!("expected a footprint denial, got {:?}", pair.verdict);
     };
     assert_eq!(
         *kind,
         ConflictKind::WriteWrite,
         "both actuals are written through"
+    );
+    assert_eq!(
+        *sides,
+        (PairSide::First, PairSide::Second),
+        "the conflict is between the two members, not with anything between them"
     );
     let (Access::Place { place: left, .. }, Access::Place { place: right, .. }) = (left, right)
     else {
@@ -324,10 +353,17 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "main");
-    let Denial::Footprint { kind, left, right } = denial(pair, 2) else {
+    let Denial::Footprint {
+        kind,
+        left,
+        right,
+        sides,
+    } = denial(pair, 2)
+    else {
         panic!("expected a footprint denial, got {:?}", pair.verdict);
     };
     assert_eq!(*kind, ConflictKind::WriteOperandRead);
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
     let (Access::Place { place: left, .. }, Access::Place { place: right, .. }) = (left, right)
     else {
         panic!("expected two conflicting places, got {left:?} and {right:?}");
@@ -437,7 +473,13 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "main");
-    let Denial::Footprint { kind, left, right } = denial(pair, 2) else {
+    let Denial::Footprint {
+        kind,
+        left,
+        right,
+        sides,
+    } = denial(pair, 2)
+    else {
         panic!("expected a footprint denial, got {:?}", pair.verdict);
     };
     assert_eq!(
@@ -445,6 +487,7 @@ command fn main() -> status: own ExitStatus pure {
         ConflictKind::ReadWrite,
         "s1 reads and s2 writes, which is not two writes"
     );
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
     let (Access::Place { place: left, .. }, Access::Place { place: right, .. }) = (left, right)
     else {
         panic!("expected two conflicting places, got {left:?} and {right:?}");
@@ -512,10 +555,15 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "probe");
-    let Denial::SkippingExit { kind } = denial(pair, 4) else {
+    let Denial::SkippingExit { side, kind } = denial(pair, 4) else {
         panic!("expected a skipping-exit denial, got {:?}", pair.verdict);
     };
     assert_eq!(*kind, ExitKind::PropagateError);
+    assert_eq!(
+        *side,
+        PairSide::First,
+        "the propagating statement is s1 itself, not one between the two"
+    );
 }
 
 // ----------------------------------------------------------------------
@@ -600,4 +648,413 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     assert_eq!(outer.pairs.len(), 2);
     assert_eq!(outer.pairs[0].verdict, PermissionVerdict::PermittedEligible);
     assert_eq!(outer.pairs[1].verdict.denied_condition(), Some(1));
+}
+
+// ----------------------------------------------------------------------
+// The window: statements written between the two calls
+// ----------------------------------------------------------------------
+
+/// The F3 shape. One pure builtin between the two recursive calls, reading a
+/// local the calls do not reach and defining a binding neither of them reads.
+/// Before the window rule this ended the enumeration: no pair, no verdict, no
+/// ledger line — so the same fold with the operation wrapped in a function
+/// kept a parallel chain and this one silently did not.
+#[test]
+fn a_pure_builtin_between_two_calls_keeps_the_pair() {
+    let source = br#"enum BoxNode {
+  Leaf(w: u64);
+  Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
+}
+
+fn fold['b](node: &uniq 'b box<BoxNode>, seed: own u64) -> result: own u64 reads('b), writes('b) {
+  match deref(deref(node)) {
+    Leaf(w: leaf_w) => {
+      return deref(leaf_w);
+    }
+    Branch(left: l, right: r, w: slot) => {
+      let a = fold<'b>(node: move l, seed: seed);
+      let gap = seed +wrap 1_u64;
+      let b = fold<'b>(node: move r, seed: seed);
+      let kids = imax(a, b);
+      let total = imax(kids, gap);
+      set deref(slot) = total;
+      return total;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "fold");
+    assert_eq!(pair.first.callee_name, "fold");
+    assert_eq!(pair.second.callee_name, "fold");
+    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
+    let runs = &function_table(&table, "fold").runs;
+    assert_eq!(
+        runs.len(),
+        1,
+        "the two calls form one chain across the builtin"
+    );
+    assert_eq!(runs[0].sites.len(), 2);
+}
+
+/// Condition 2, clause 2c. The interposed `set` writes the storage s2's callee
+/// reads through its actual. Under the schedule that hands s2 to a lane, that
+/// read races the store and takes the pre-`set` value where source order
+/// requires the post-`set` one.
+#[test]
+fn an_interposed_write_into_the_second_callees_read_is_denied_by_condition_two() {
+    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+  return deref(v);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 1_u64;
+  let other = 2_u64;
+  region 'r {
+    let a = peek<'r>(v: &'r other);
+    set cell = 5_u64;
+    let b = peek<'r>(v: &'r cell);
+    let total = imax(a, b);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 2) else {
+        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(*kind, ConflictKind::WriteRead);
+    assert_eq!(
+        *sides,
+        (PairSide::Between(0), PairSide::Second),
+        "the interposed write, not s1, is what conflicts with s2"
+    );
+}
+
+/// Condition 2, clause 2a. The interposed `set` writes the storage s1's callee
+/// writes through its actual. Under the schedule that hands s1 out this is a
+/// live store/store race between the lane and the calling thread.
+#[test]
+fn an_interposed_write_over_the_first_callees_write_is_denied_by_condition_two() {
+    let source = br#"fn bump['r](slot: &uniq 'r u64) -> result: own u64 writes('r) {
+  set deref(slot) = 7_u64;
+  return 1_u64;
+}
+
+fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+  return deref(v);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 1_u64;
+  let other = 2_u64;
+  region 'r {
+    let a = bump<'r>(slot: &uniq 'r cell);
+    set cell = 5_u64;
+    let b = peek<'r>(v: &'r other);
+    let total = imax(a, b);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 2) else {
+        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(*kind, ConflictKind::WriteWrite);
+    assert_eq!(
+        *sides,
+        (PairSide::First, PairSide::Between(0)),
+        "the conflict is s1 against the interposed write"
+    );
+}
+
+/// Condition 2, clause 2c's operand half — the obligation the window adds that
+/// no pair rule has. `take`'s row is `pure` and reaches no caller storage at
+/// all, but the schedule that hands s2 to a lane evaluates its operands at the
+/// hand-out point, above the interposed `set`, so it reads 1 where source
+/// order gives 15. No callee row is involved on either side.
+#[test]
+fn an_interposed_write_under_the_second_calls_operand_read_is_denied_by_condition_two() {
+    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+  return deref(v);
+}
+
+fn take(v: own u64) -> result: own u64 pure {
+  return v;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 1_u64;
+  let other = 2_u64;
+  region 'r {
+    let a = peek<'r>(v: &'r other);
+    set cell = 15_u64;
+    let b = take(v: cell);
+    let total = imax(a, b);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::Footprint { kind, sides, .. } = denial(pair, 2) else {
+        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(*kind, ConflictKind::WriteOperandRead);
+    assert_eq!(*sides, (PairSide::Between(0), PairSide::Second));
+}
+
+/// The mirror of the fixture above, and the one obligation the window rule
+/// deliberately does **not** carry: an interposed write over *s1's* operand
+/// read is permitted.
+///
+/// Both realizable schedules agree. Where s1 takes the lane, its operands are
+/// evaluated before the fork, so the lane already holds the value 1 and the
+/// later store cannot reach it. Where s2 takes the lane, s1 has run to
+/// completion before the interposed statement executes at all. Neither
+/// schedule lets the store move above the read, so the operand half is
+/// one-sided for s1 and two-sided for s2.
+///
+/// This fixture exists to fail if that asymmetry is ever "tidied" into a
+/// symmetric rule: the widening would still be sound, but it would silently
+/// stop admitting the shape the asymmetry was derived to admit.
+#[test]
+fn an_interposed_write_over_the_first_calls_operand_read_is_permitted() {
+    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+  return deref(v);
+}
+
+fn take(v: own u64) -> result: own u64 pure {
+  return v;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 1_u64;
+  let other = 2_u64;
+  region 'r {
+    let a = take(v: cell);
+    set cell = 15_u64;
+    let b = peek<'r>(v: &'r other);
+    let total = imax(a, b);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
+}
+
+/// Condition 1, clause 1b. The interposed statement reads the binding s1
+/// defines. Under the schedule that hands s1 out that value does not exist
+/// until the join, which is after every interposed statement has run.
+#[test]
+fn an_interposed_read_of_the_first_calls_result_is_denied_by_condition_one() {
+    let source = br#"enum BoxNode {
+  Leaf(w: u64);
+  Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
+}
+
+fn fold['b](node: &uniq 'b box<BoxNode>, seed: own u64) -> result: own u64 reads('b), writes('b) {
+  match deref(deref(node)) {
+    Leaf(w: leaf_w) => {
+      return deref(leaf_w);
+    }
+    Branch(left: l, right: r, w: slot) => {
+      let a = fold<'b>(node: move l, seed: seed);
+      let gap = a +wrap 1_u64;
+      let b = fold<'b>(node: move r, seed: seed);
+      let kids = imax(a, b);
+      let total = imax(kids, gap);
+      set deref(slot) = total;
+      return total;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "fold");
+    let Denial::Dataflow {
+        binding,
+        definer,
+        reader,
+    } = denial(pair, 1)
+    else {
+        panic!("expected a dataflow denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(*binding, pair.first.binding, "s1's own result is the link");
+    assert_eq!((*definer, *reader), (PairSide::First, PairSide::Between(0)));
+}
+
+/// Condition 1, clause 1c, and the one real cost of taking the
+/// schedule-independent rule: s2 reads a binding an interposed statement
+/// defines. Under the schedule that hands s2 out, its operands are evaluated
+/// before that statement runs, so the value it would read does not exist yet.
+/// The backend's current schedule would survive this window; the rule may not
+/// be stated in terms of a schedule, so it denies.
+#[test]
+fn a_second_call_reading_an_interposed_binding_is_denied_by_condition_one() {
+    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+  return deref(v);
+}
+
+fn take(v: own u64) -> result: own u64 pure {
+  return v;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let other = 2_u64;
+  region 'r {
+    let a = peek<'r>(v: &'r other);
+    let seed = 7_u64;
+    let b = take(v: seed);
+    let total = imax(a, b);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::Dataflow {
+        definer, reader, ..
+    } = denial(pair, 1)
+    else {
+        panic!("expected a dataflow denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(
+        (*definer, *reader),
+        (PairSide::Between(0), PairSide::Second)
+    );
+}
+
+/// Condition 4 through the window. The interposed `propagate` has an `Err`
+/// edge to the function-return sink [ERR-3], so on that edge s2 never runs and
+/// the function returns while s1's lane is still executing against a frame the
+/// return is about to destroy. That is a use-after-return, not a value
+/// difference, and before the window rule it was not even reported.
+#[test]
+fn an_interposed_propagate_is_denied_by_condition_four() {
+    let source = br#"fn peek['o](slot: &'o u8) -> result: own u64 reads('o) {
+  return cvt<u8, u64>(deref(slot));
+}
+
+fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes('o) {
+  set deref(slot) = 9_u8;
+  return 1_u64;
+}
+
+fn probe['o](outcome: own Result<u8, NarrowError>, a: &uniq 'o u8, b: &'o u8) -> result: own Result<unit, NarrowError> reads('o), writes('o) {
+  let seen = peek<'o>(slot: b);
+  let narrowed = propagate outcome;
+  let stamped = stamp<'o>(slot: move a);
+  return Ok<unit, NarrowError>(value: unit);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "probe");
+    let Denial::SkippingExit { side, kind } = denial(pair, 4) else {
+        panic!("expected a skipping-exit denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(*kind, ExitKind::PropagateError);
+    assert_eq!(*side, PairSide::Between(0));
+}
+
+/// Condition 4, the case eligibility structurally cannot reach. Both callees
+/// are claim-free, so the eligibility closure — which walks *callees* — sees
+/// nothing and would report this window permitted and eligible. The claim is
+/// in the caller's own block, between the two calls, with a trap edge to the
+/// [DIAG-3] sink: source order completes s1's writes before that trap, and an
+/// overlap does not.
+#[test]
+fn an_interposed_claim_is_denied_by_condition_four() {
+    let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+  return deref(v);
+}
+
+command fn main() -> status: own ExitStatus traps {
+  let cell = 1_u64;
+  let other = 2_u64;
+  let ok = ige(cell, 0_u64);
+  region 'r {
+    let a = peek<'r>(v: &'r other);
+    claim cell_is_initialized: ok because "cell is bound to a literal above";
+    let b = peek<'r>(v: &'r cell);
+    let total = imax(a, b);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::SkippingExit { side, kind } = denial(pair, 4) else {
+        panic!(
+            "a claim between the calls must deny, not fall through to eligibility: {:?}",
+            pair.verdict
+        );
+    };
+    assert_eq!(*kind, ExitKind::ClaimTrap);
+    assert_eq!(*side, PairSide::Between(0));
+}
+
+/// A form the window rule does not account for is refused **with a report**.
+/// This is the half of F3 that a verdict-only suite is blind to: before the
+/// window rule this program produced no pair at all, so nothing was wrong with
+/// any verdict — there was no verdict. Fail-closed and silent are different
+/// defects, and only the second one is fixed by denying.
+#[test]
+fn an_interposed_match_is_denied_by_condition_two() {
+    let source = br#"enum Choice {
+  Low(w: u64);
+  High(w: u64);
+}
+
+fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
+  return deref(v);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 1_u64;
+  let other = 2_u64;
+  let which = Low(w: 3_u64);
+  region 'r {
+    let a = peek<'r>(v: &'r other);
+    match which {
+      Low(w: lw) => {
+        let seen = lw;
+      }
+      High(w: hw) => {
+        let seen = hw;
+      }
+    }
+    let b = peek<'r>(v: &'r cell);
+    let total = imax(a, b);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::InterposedForm { side, form } = denial(pair, 2) else {
+        panic!(
+            "a match between the calls must be reported, not silently unjudged: {:?}",
+            pair.verdict
+        );
+    };
+    assert_eq!(*side, PairSide::Between(0));
+    assert_eq!(*form, "a match statement");
 }
