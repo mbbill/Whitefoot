@@ -1,15 +1,19 @@
-fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
 fn mutual_left(remaining: own u64) -> result: own u64 traps {
   let done = ieq(remaining, 0_u64);
   if done {
     let values = array_new<u8, 4>(0_u8);
-    let bounded = clamp_three(value: remaining);
-    let inside = ilt(bounded, 4_u64);
-    claim scc_claim: inside because "premises: bounded is returned by clamp_three, whose body computes imin(remaining, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following values[bounded] subscript requires this exact bound";
-    let selected = values[bounded];
+    let cursor = 0_u64;
+    loop @scan {
+      let inside = ilt(cursor, 4_u64);
+      claim scc_claim: inside because "premises: cursor starts at 0_u64, every continuing scan iteration increments it by one, and the iteration at 2_u64 returns\nderivation: induction over reached scan bodies limits cursor to 0_u64 through 2_u64, all strictly below 4_u64\nconclusion: ilt(cursor, 4_u64) is true\nchecker gap: ENT does not derive this ordinary-loop induction across the backedge\nconsumers: the following values[cursor] subscript requires this exact bound";
+      let selected = values[cursor];
+      let finished = ieq(cursor, 2_u64);
+      if finished {
+        break @scan;
+      } else {
+        set cursor = cursor +wrap 1_u64;
+      }
+    }
     return 0_u64;
   } else {
     let next = remaining -wrap 1_u64;

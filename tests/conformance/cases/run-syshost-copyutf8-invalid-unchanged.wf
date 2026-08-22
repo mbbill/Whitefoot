@@ -1,3 +1,25 @@
+fn sentinel_status['b](bytes: &'b buffer<u8>, failure: own u8) -> result: own u8 reads('b), traps {
+  let offset = 0_u64;
+  let room = len(deref(bytes));
+  loop @sentinel {
+    let done = ieq(offset, room);
+    if done {
+      break @sentinel;
+    } else {
+      let scan_ok = ilt(offset, room);
+      claim offset_in_bytes: scan_ok because "premises: offset starts at zero, room is the byte-buffer length, the loop exits when offset equals room, and every continuing iteration increments offset by one\nderivation: the recurrence enumerates exactly the offsets from zero through room minus one before the equality exit\nconclusion: scan_ok is true\nchecker gap: ENT does not derive this strict loop range from the equality exit and one-step recurrence\nconsumers: the following sentinel-buffer subscript needs this upper Range component";
+      let byte = deref(bytes)[offset];
+      let intact = ieq(byte, 90_u8);
+      if intact {
+      } else {
+        return failure;
+      }
+      set offset = offset +wrap 1_u64;
+    }
+  }
+  return 0_u8;
+}
+
 command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
   doc "SYS-8: host_copy_utf8 validates and measures the encoding first and returns Utf8CopyInvalid without writing any byte. The destination is large enough, so only the validation can have refused the transfer, and the sentinel prefill witnesses that no partial encoding was written [HOST-2].";
   let bytes = buffer_new(8_u64, 90_u8);
@@ -22,22 +44,12 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus alloca
             }
           }
         }
-        let offset = 0_u64;
-        loop @sentinel {
-          let done = ieq(offset, 8_u64);
-          if done {
-            break @sentinel;
+        region 's {
+          let observed = sentinel_status<'s>(bytes: &'s bytes, failure: 12_u8);
+          let intact = ieq(observed, 0_u8);
+          if intact {
           } else {
-            let room = len(bytes);
-            let scan_ok = ilt(offset, room);
-            claim offset_in_bytes: scan_ok because "premises: the sentinel loop starts at zero, advances by one, and exits when offset reaches the eight-byte buffer length\nderivation: every body reach therefore has offset strictly below the eight-byte buffer length recorded by scan_ok\nconclusion: scan_ok is true\nchecker gap: ENT does not derive the strict loop range from the equality exit and recurrence\nconsumers: the following sentinel-buffer subscript needs this upper Range component";
-            let byte = bytes[offset];
-            let intact = ieq(byte, 90_u8);
-            if intact {
-            } else {
-              return exit_status(code: 12_u8);
-            }
-            set offset = offset +wrap 1_u64;
+            return exit_status(code: observed);
           }
         }
         return exit_status(code: 0_u8);

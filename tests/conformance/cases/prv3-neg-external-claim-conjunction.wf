@@ -1,22 +1,47 @@
-fn clamp_three(value: own u64) -> return_value: own u64 pure {
-  return imin(value, 3_u64);
+fn copy_host['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>) -> return_value: own u64 reads('v 'd), writes('d) contract {
+  define capacity = len(deref(destination));
+  requires ile(4_u64, capacity);
+} {
+  region 'c {
+    match host_copy_bytes<'v, 'c>(value: value, destination: &uniq 'c deref(destination), start: 0_u64, end: 4_u64) {
+      Ok(value: copied) => {
+        return copied;
+      }
+      Err(error: problem) => {
+        return 0_u64;
+      }
+    }
+  }
 }
 
 command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
-  doc "A true reviewed residual cannot authorize an externally derived constrained subject. One claim over a `band` of two bounds establishes both members in the complete state [ENT-3], but the S3-blinded provenance judgment removes the establishment and its decomposition together, so PRV-3 still rejects the first protected subscript whose constrained subject derives from args_count.";
+  doc "A true reviewed residual cannot authorize an externally derived constrained subject. One claim over a `band` of two bounds establishes both members in the complete state [ENT-3], but the S3-blinded provenance judgment removes the establishment and its decomposition together, so PRV-3 still rejects the first protected subscript whose constrained subject derives from a system write.";
+  let source = buffer_new(4_u64, 0_u8);
   region 'a {
-    let raw_index = args_count<'a>(args: &'a args);
-    let index = clamp_three(value: raw_index);
-    let bytes = buffer_new(4_u64, 0_u8);
-    let other = buffer_new(4_u64, 0_u8);
-    let room = len(bytes);
-    let other_room = len(other);
-    let inside = ilt(index, room);
-    let also_inside = ilt(index, other_room);
-    let both = band(inside, also_inside);
-    claim index_within_both_buffers: both because "premises: index is returned by clamp_three, whose body computes imin(raw_index, 3_u64), and both buffers have length 4\nderivation: index is at most 3_u64 and therefore strictly less than both room and other_room\nconclusion: band(inside, also_inside) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the two following subscripts require the respective conjunction components";
-    let value = bytes[index];
-    let other_value = other[index];
-    return exit_status(code: 0_u8);
+    match arg_get<'a>(args: &'a args, position: 0_u64) {
+      Ok(value: text) => {
+        region 'v {
+          region 'd {
+            let copied = copy_host<'v, 'd>(value: &'v text, destination: &uniq 'd source);
+          }
+        }
+      }
+      Err(error: absent) => {
+      }
+    }
   }
+  let raw = source[0_u64];
+  let widened = cvt<u8, u64>(raw);
+  let index = widened % 4_u64;
+  let bytes = buffer_new(4_u64, 0_u8);
+  let other = buffer_new(4_u64, 0_u8);
+  let room = len(bytes);
+  let other_room = len(other);
+  let inside = ilt(index, room);
+  let also_inside = ilt(index, other_room);
+  let both = band(inside, also_inside);
+  claim index_within_both_buffers: both because "premises: index is the widened first source byte remainder 4_u64 in this function and both target buffers have length 4\nderivation: unsigned remainder by 4_u64 is at most 3_u64 and therefore strictly less than both room and other_room\nconclusion: band(inside, also_inside) is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the two following subscripts require the respective conjunction components";
+  let value = bytes[index];
+  let other_value = other[index];
+  return exit_status(code: value);
 }

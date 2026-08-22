@@ -1,14 +1,10 @@
 const values: array<i32, 4> =[10_i32, 20_i32, 30_i32, 40_i32];
 
-fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
 fn get(i: own u64) -> result: own i32 traps {
   doc "The first claim is a genuine reviewed residual. The second repeats the same fact after the first claim establishes it, so CLM-2 rejects the source instead of issuing an advisory or silently retaining an assertion.";
-  let bounded = clamp_three(value: i);
+  let bounded = i % 4_u64;
   let inside = ilt(bounded, 4_u64);
-  claim offset_in_bounds: inside because "premises: values has length four and bounded is returned by clamp_three, whose body computes imin(i, 3_u64)\nderivation: imin is no greater than 3_u64, which is strictly less than 4_u64\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: the following values[bounded] subscript requires this exact bound";
+  claim offset_in_bounds: inside because "premises: bounded is the remainder of the current function parameter i divided by the positive constant 4_u64\nderivation: unsigned remainder by four is one of 0_u64 through 3_u64 and is therefore strictly less than 4_u64\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following values[bounded] subscript requires this exact bound";
   claim offset_still_in_bounds: inside because "premises: the preceding reviewed claim has already established inside on this continuation\nderivation: the second occurrence is exactly the same predicate and adds no proof fact\nconclusion: ilt(bounded, 4_u64) is already checker-known here\nchecker gap: there is no checker gap for this repeated occurrence\nconsumers: no terminal consumer needs the repeated occurrence independently";
   return values[bounded];
 }

@@ -6,15 +6,11 @@ deny_claims fn guarded(value: own u64, limit: own u64) -> result: own unit pure 
   return unit;
 }
 
-fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
 fn ordinary(value: own u64, limit: own u64) -> result: own unit traps {
   doc "An outside caller is not inside the marked root's outgoing closure, so its own claim stays ordinary and CLM-3 imports nothing from it. The call is a demanded strict component all the same, and the requirement is proved here only by that claim, which the unasserted view does not carry: [FN-8] rejects the call in the unasserted view, the one strict-in-U path an ordinary caller reaches.";
-  let bounded = clamp_three(value: value);
+  let bounded = value % 4_u64;
   let allowed = ilt(bounded, 4_u64);
-  claim ordinary_authorization: allowed because "premises: bounded is returned by clamp_three, whose body computes imin(value, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following guarded call requires this exact bound";
+  claim ordinary_authorization: allowed because "premises: bounded is value remainder 4_u64 computed in this function\nderivation: unsigned remainder by 4_u64 is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following guarded call requires this exact bound";
   guarded(value: bounded, limit: 4_u64);
   return unit;
 }
