@@ -95,6 +95,40 @@ battery reports.)
   grant none, and all four publish identical bytes. It was checked against a
   reverted runtime and fails there, so it is not vacuous.
 
+- **L2a — the index-split row in the oracle.** The bench grows a second
+  workload family, `grid`: a Mandelbrot escape count over a 2^21-point index
+  range at an orbit cap of 256, split by recursive halving, one row
+  (`grid_d21_w256`). Its point is that the ordinary data-parallel shape — a
+  counted loop over a range with an accumulator, which the judgment gives
+  nothing — is eligible today when written as a recursion, with no compiler
+  change: `whitefootc --par-ledger` reports `pair(tile, tile)  eligible`. The
+  four parameters keep their meanings across both families, so `gen_wf.sh`,
+  `build_wf.sh`, `run_bench.zsh`, `compare_outputs.zsh`, and `make_tables.zsh`
+  carry it as one more row and every future rotation includes it. The twelve
+  layout sources regenerate byte-identically after the generator change
+  (checked by `cmp`, twelve of twelve).
+  **Measurement** (interleaved min-of-7, load average 3.49 before and 3.39
+  after, corporate agents active): Whitefoot sequential 0.5241 s; `--par` at
+  1/2/4/8 lanes 0.5249 / 0.2747 / 0.1516 / 0.0927 s, that is 1.91x / 3.46x /
+  5.65x of its own sequential build, and 0.0861 s (6.09x) at the new default.
+  Rust sequential 0.4980 s; `rayon::join` at every split 0.2666 / 0.1500 /
+  0.0954 s; the depth-5 cutoff 0.2574 / 0.1564 / 0.1050 s. Whitefoot against
+  rayon at matched lanes reads 1.03x, 1.01x, 0.97x and best-against-best 0.90x
+  — every one of them inside the protocol's 0.83x-1.20x band, so the honest
+  statement is that **rayon resolves no win on this row**, not that Whitefoot
+  wins it. Sequential parity 1.05x, also unresolved. All thirteen cells of the
+  row published one byte sequence, `000000000033517d`, across both languages
+  and every worker count.
+  **Wiring verified end to end** by a three-round rotation of the whole grid:
+  `compare_outputs.zsh` reports every run of every configuration identical in
+  both languages and across them, and the grid row appears in
+  `t_inventory`, `t_seq_parity`, `t_wf_par`, `t_rayon`, `t_rayoncut`, and
+  `t_headline`. The authoritative N=18 rotation is Phase C's.
+  **Not done, and named:** the rotation's twelve implementation cells still
+  name every worker count explicitly, so the shipped default that L1 introduced
+  is in no table. Adding a `wf_par/default` cell changes the protocol and the
+  table shapes, which is a measurement-protocol decision rather than a landing.
+
 ## Outcome
 
 (Filled at closure.)

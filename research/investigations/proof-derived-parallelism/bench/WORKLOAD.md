@@ -5,6 +5,12 @@ in Whitefoot and once in Rust. Everything that is not the language is held
 fixed, so a difference in the numbers is a difference in the two toolchains and
 their two schedulers rather than a difference in what was computed.
 
+There are two workload families. The layout fold (`bal`, `skew`) is the
+original one and is described first; the index split (`grid`) is described at
+the end and exists because the layout fold answers only for parallelism that
+comes out of a data structure. Everything about the pairing — the operation
+mapping, the byte comparison, the rotation — is shared.
+
 ## Data structure
 
 ```
@@ -95,3 +101,54 @@ Both sides publish the final fold value as the sixteen lowercase hexadecimal
 digits of its f64 bit pattern, most significant first, followed by a newline.
 That makes the result comparable across languages, worker counts, and runs by
 `cmp` on the bytes rather than by a tolerance.
+
+## The second family: a recursive index split (`grid`)
+
+Everything above is parallelism that comes out of a *data structure* — the two
+child calls of a tree fold. That leaves the most ordinary data-parallel shape
+in the world unanswered: a counted loop over an index range with an accumulator.
+`mandelbrot_grid.wf` in the corpus is exactly that shape and the permission
+judgment gives it nothing, because the judged unit is a pair of adjacent
+statements and two iterations of one statement are never a pair.
+
+The `grid` configuration is the same computation written as a recursion instead
+of a loop, and that alone makes it eligible with no change to the compiler:
+
+```
+fn tile(lo: own u32, hi: own u32, phase: own f64) -> result: own u32 pure {
+  let width = hi -wrap lo;
+  if ieq(width, 1_u32) { return point_escapes(index: lo, phase: phase); }
+  if ieq(width, 0_u32) { return 0_u32; }
+  let mid = lo +wrap ishr.wrap(width, 1_u32);
+  let a = tile(lo: lo, hi: mid, phase: phase);
+  let b = tile(lo: mid, hi: hi, phase: phase);
+  return a +wrap b;
+}
+```
+
+Two adjacent `let`-bound calls of a declared function; `pure`, so there is no
+shared writable place at all; claim-free, so the closure is actualizable; no
+dataflow from the first to the second; no exit edge between them. The ledger
+reports `pair(tile, tile)  eligible`.
+
+The leaf work is one Mandelbrot orbit to a fixed iteration cap over a
+1024-column grid. The grid width is a power of two on purpose: the row and
+column of a linear index come out with a mask and a shift, so the decode needs
+no division and therefore no `claim`, and the whole closure stays claim-free.
+The complex plane is fixed at x in `[-2, 1.2)` and y in `[-1.2, 1.2)`, and the
+repetition loop steps a `phase` into `cy` so that no repetition is a copy of
+the last.
+
+**The combine is `+wrap`, and that is load-bearing rather than incidental.**
+`+wrap` on `u32` is exactly associative, so regrouping the sum across a
+different schedule cannot move a bit — which is what lets the two halves run in
+either order, or at the same time, and still publish the same bytes. A float
+accumulator would not have that property, and a writer who rewrote a float fold
+this way would get a different answer at a different worker count. The
+compiler's own hint for this shape (`--par-ledger`, one line per counted loop
+that a recursive split would make eligible) is emitted only for the exactly
+associative integer operations for the same reason.
+
+The Rust twin mirrors it call for call: the same split, the same
+`wrapping_add`, `rayon::join` at every split for `rs_rayon` and above a depth
+cutoff for `rs_cut`, and the same published bytes.

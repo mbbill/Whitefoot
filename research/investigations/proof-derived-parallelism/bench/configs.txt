@@ -1,5 +1,12 @@
 # shape depth words reps
 # reps chosen from a measured cost model so each config's sequential run is ~0.6 s.
+#
+# bal and skew are the box-tree layout fold; depth is the tree depth and words
+# is the shared metric table's length. grid is the Mandelbrot escape count over
+# a 2^depth index range split by recursive halving; words is the orbit
+# iteration cap. The two families share the parameter names because the
+# parameters mean the same things: how deep the recursive pair descends, how
+# much arithmetic one leaf does, how many times the measurement repeats.
 bal 8 16 100000
 bal 8 64 32000
 bal 8 192 11500
@@ -12,3 +19,4 @@ bal 12 192 700
 skew 16 16 14000
 skew 16 64 4500
 skew 16 192 1600
+grid 21 256 2

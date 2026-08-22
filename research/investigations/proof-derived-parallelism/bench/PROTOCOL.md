@@ -15,11 +15,21 @@
 
 ## Grid
 
-Four tree shapes — balanced depth 8, 10, 12 and one deterministically skewed
-depth-16 shape — crossed with three metric-table lengths, 16, 64, and 192
-words per node. Twelve configurations. The repetition count of each
-configuration was fitted from a measured cost model so that its sequential run
-lands inside the required 0.3-3 s band.
+The layout family: four tree shapes — balanced depth 8, 10, 12 and one
+deterministically skewed depth-16 shape — crossed with three metric-table
+lengths, 16, 64, and 192 words per node. Twelve configurations.
+
+The index-split family: one configuration, `grid_d21_w256` — a Mandelbrot
+escape count over a 2^21-point index range at an orbit cap of 256, split by
+recursive halving. It is one row rather than a sweep because it carries a
+different question from the twelve — whether a workload whose parallelism comes
+from an index range rather than from a data structure scales the same way — and
+a sweep over its own parameters would be a second grid measuring the same
+mechanism.
+
+Thirteen configurations in all. The repetition count of each was fitted from a
+measured cost model so that its sequential run lands inside the required
+0.3-3 s band.
 
 ## Implementations, twelve cells per configuration
 
@@ -29,7 +39,7 @@ lands inside the required 0.3-3 s band.
 | `wf_par/1` | `whitefootc --par`, `WF_WORKERS=1`: outlined and offered, but the pool never starts. The opt-in cost control. |
 | `wf_par/2` `wf_par/4` `wf_par/8` | the same binary at 2, 4, 8 lanes |
 | `rs_seq` | plain recursive Rust |
-| `rs_rayon/2` `/4` `/8` | `rayon::join` at every `Branch`, pool sized 2, 4, 8 |
+| `rs_rayon/2` `/4` `/8` | `rayon::join` at every `Branch` (at every split, for `grid`), pool sized 2, 4, 8 |
 | `rs_cut/2` `/4` `/8` | `rayon::join` only above depth 5, plain sequential fold below it |
 
 `WF_WORKERS=N` means N threads of execution in total, because the calling
@@ -40,11 +50,12 @@ same number.
 
 ## Rotation
 
-Every one of the 12 x 12 = 144 (configuration, implementation) cells is visited
+Every one of the 13 x 12 = 156 (configuration, implementation) cells is visited
 exactly once per round, in a fixed rotation, and the rounds repeat N = 9 times.
 No cell is ever run twice in a row and no configuration is run as a block, so
 thermal drift and background activity are spread across all cells rather than
-concentrated in one. 1,296 runs in total.
+concentrated in one. 1,404 runs in total. (The 2026-08-21 baseline predates the
+`grid` row and is 144 cells.)
 
 Each run's stdout goes to its own file in `out/`; its exit status is read
 directly from the process, never through a pipeline; its wall time is taken

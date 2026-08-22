@@ -1,12 +1,25 @@
-# The paired browser-layout benchmark
+# The paired benchmark
 
 This is the standing oracle for the proof-derived parallelism investigation.
-One algorithm — a bottom-up browser-layout fold over a heap-boxed binary tree —
-is written twice, once in Whitefoot and once in Rust, statement for statement,
-and every Whitefoot binary is compiled both with and without `--par`. Both
-sides publish the final fold value as sixteen hexadecimal digits of its f64 bit
-pattern, so `cmp` on the bytes, not a tolerance, decides whether the two
-languages and every worker count computed the same thing.
+One algorithm is written twice, once in Whitefoot and once in Rust, statement
+for statement, and every Whitefoot binary is compiled both with and without
+`--par`. Both sides publish their result as sixteen hexadecimal digits, so
+`cmp` on the bytes, not a tolerance, decides whether the two languages and
+every worker count computed the same thing.
+
+Two workload families share the grid, the harness, and the reporting rule:
+
+- **the layout fold** (`bal`, `skew`) — a bottom-up browser-layout fold over a
+  heap-boxed binary tree, where the eligible pair is the two child calls. This
+  is the original workload and everything called "the baseline" below is it.
+- **the index split** (`grid`) — a Mandelbrot escape count over a linear index
+  range, halved recursively, where the eligible pair is the two halves of the
+  split and no data structure is involved at all. It is here because the
+  layout fold answers only for parallelism that falls out of a tree, and the
+  ordinary data-parallel shape — a counted loop over a range with an
+  accumulator — is the one the permission judgment gives nothing to. Written
+  as a recursion instead of a loop, that same computation is eligible with no
+  change to the compiler; this row is what that is worth.
 
 What it is for: an optimization dig in this investigation states its before and
 after against this grid, at this protocol. It measures four things at once —
@@ -14,7 +27,7 @@ Whitefoot sequential codegen against Rust sequential codegen, the `--par`
 opt-in cost at one worker, `--par` lane scaling against Whitefoot sequential,
 and Whitefoot's best against `rayon`'s best.
 
-`WORKLOAD.md` describes the program, the two builders, the layout pass, and the
+`WORKLOAD.md` describes both families, the builders, the passes, and the
 Whitefoot-to-Rust operation mapping including its one inexact cell.
 `PROTOCOL.md` describes the machine, the grid, the twelve implementation cells,
 the rotation, the reporting rule, and the byte comparison. Read both before
@@ -23,8 +36,8 @@ quoting a number from here.
 ## What is checked in
 
 The generator (`gen_wf.sh`, `configs.txt`) and the Rust twin (`rust/`) are the
-sources. The twelve `.wf` files are not checked in: `build_wf.sh` regenerates
-them deterministically from the generator on every build, and a second checked-in
+sources. The `.wf` files are not checked in: `build_wf.sh` regenerates them
+deterministically from the generator on every build, and a second checked-in
 copy would go stale beside it. `baseline/` holds the 2026-08-21 measurement
 snapshot. `wf/`, `bin/`, `out/`, `logs/`, and `rust/target/` are generated and
 ignored.
@@ -35,7 +48,7 @@ From this directory, with the release compiler already built
 (`cargo build --release --manifest-path ../../../../compiler/Cargo.toml`):
 
 ```
-./build_wf.sh                                        # generate + compile 12 configs, seq and --par
+./build_wf.sh                                        # generate + compile every config, seq and --par
 cargo build --release --manifest-path rust/Cargo.toml # the Rust twin
 ./rerun.zsh 9                                        # measure, byte-compare, rebuild the tables
 ```
@@ -52,9 +65,9 @@ grid measured against a different thermal state is not comparable.
 `timeit.zsh N label=WORKERS:binary ...` is the same protocol for a smaller
 question: an interleaved min-of-N timer over an arbitrary set of binaries,
 reporting min, max, spread, failure count, and an output digest per cell. It is
-what a probe outside the twelve-configuration grid — a depth sweep, a single
-shape at one worker count — is measured with, so a probe number and a grid
-number are produced by the same rotation and minimum rule.
+what a probe outside the configuration grid — a depth sweep, a single shape at
+one worker count — is measured with, so a probe number and a grid number are
+produced by the same rotation and minimum rule.
 
 ## Reading rule
 
@@ -71,6 +84,11 @@ N = 18 repetitions per cell, 144 cells, Apple M4 (4P + 6E). Byte comparison:
 every run of every configuration published identical bytes, in both languages
 and across them (`baseline/byte_comparison.txt`). Full snapshot in
 `baseline/results.tsv` and `baseline/cells.tsv`.
+
+This snapshot is the twelve layout configurations only; the `grid` family was
+added afterwards and is not in it. Its first recorded numbers are in batch
+0076's record, and the next authoritative rotation replaces this section with
+all thirteen.
 
 ### Configuration inventory
 

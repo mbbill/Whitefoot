@@ -17,9 +17,17 @@
 //!   reinterpret<f64, u64>                                 -> f64::to_bits
 //!   +wrap / -wrap on u64                                  -> wrapping_add / wrapping_sub
 //!
+//! The second workload family, `grid`, is the same exercise for a recursive
+//! *index* split rather than a walk over a data structure: a Mandelbrot escape
+//! count over a linear index range, halved down to single points. Its Whitefoot
+//! twin's two recursive calls are the eligible pair, so the parallelism comes
+//! from the range rather than from the shape of a tree. The operation sequence
+//! maps the same way, and the combine is `wrapping_add` on both sides, which is
+//! exactly associative, so no schedule can move a bit.
+//!
 //! usage: paired-layout MODE SHAPE DEPTH WORDS REPS [THREADS]
 //!   MODE   seq | rayon | rayoncut | nodes
-//!   SHAPE  bal | skew
+//!   SHAPE  bal | skew | grid
 
 use std::env;
 
@@ -246,6 +254,149 @@ fn layout_rayon_cutoff(node: &mut LNode, words: &[f64], inh: f64, depth: u32) ->
     }
 }
 
+/// The `grid` family's fixed geometry: 1024 columns, so a linear index splits
+/// into row and column with a mask and a shift. The Whitefoot twin needs that
+/// because a division would carry a claim and a claim would take the pair out
+/// of reach; here it is simply the same arithmetic.
+const GRID_COLUMNS_MASK: u32 = 1023;
+const GRID_COLUMN_SHIFT: u32 = 10;
+const GRID_X_SCALE: f64 = 0.003125;
+
+/// The vertical scale for a `2^depth`-point grid. Dividing by a power of two is
+/// exact, so this is the same bit pattern the generated Whitefoot source spells
+/// as a literal.
+fn grid_y_scale(depth: u32) -> f64 {
+    2.4 / ((1u64 << (depth - GRID_COLUMN_SHIFT)) as f64)
+}
+
+/// One orbit of the quadratic map to a fixed iteration cap, statement for
+/// statement as in the generated Whitefoot source.
+fn mandelbrot_escapes(cx: f64, cy: f64, cap: u32) -> bool {
+    let mut real = 0.0f64;
+    let mut imaginary = 0.0f64;
+    let mut iteration = 0u32;
+    let mut escaped = false;
+    loop {
+        if iteration == cap {
+            break;
+        }
+        let real_squared = real * real;
+        let imaginary_squared = imaginary * imaginary;
+        let difference = real_squared - imaginary_squared;
+        let next_real = difference + cx;
+        let product = real * imaginary;
+        let doubled_product = 2.0 * product;
+        let next_imaginary = doubled_product + cy;
+        real = next_real;
+        imaginary = next_imaginary;
+        let next_real_squared = real * real;
+        let next_imaginary_squared = imaginary * imaginary;
+        let magnitude_squared = next_real_squared + next_imaginary_squared;
+        if magnitude_squared > 4.0 {
+            escaped = true;
+            break;
+        }
+        iteration = iteration.wrapping_add(1);
+    }
+    escaped
+}
+
+/// One grid point: decode the linear index, then one orbit.
+fn point_escapes(index: u32, phase: f64, y_scale: f64, cap: u32) -> u32 {
+    let column = index & GRID_COLUMNS_MASK;
+    let row = index >> GRID_COLUMN_SHIFT;
+    let column_float = column as f64;
+    let row_float = row as f64;
+    let scaled_x = column_float * GRID_X_SCALE;
+    let scaled_y = row_float * y_scale;
+    let cx = scaled_x - 2.0;
+    let shifted_y = scaled_y - 1.2;
+    let cy = shifted_y + phase;
+    if mandelbrot_escapes(cx, cy, cap) {
+        1
+    } else {
+        0
+    }
+}
+
+/// The recursive index split, sequential.
+fn tile(lo: u32, hi: u32, phase: f64, y_scale: f64, cap: u32) -> u32 {
+    let width = hi.wrapping_sub(lo);
+    if width == 1 {
+        return point_escapes(lo, phase, y_scale, cap);
+    }
+    if width == 0 {
+        return 0;
+    }
+    let mid = lo.wrapping_add(width >> 1);
+    let a = tile(lo, mid, phase, y_scale, cap);
+    let b = tile(mid, hi, phase, y_scale, cap);
+    a.wrapping_add(b)
+}
+
+/// Idiomatic rayon: fork at every split and let work stealing handle grain.
+fn tile_rayon(lo: u32, hi: u32, phase: f64, y_scale: f64, cap: u32) -> u32 {
+    let width = hi.wrapping_sub(lo);
+    if width == 1 {
+        return point_escapes(lo, phase, y_scale, cap);
+    }
+    if width == 0 {
+        return 0;
+    }
+    let mid = lo.wrapping_add(width >> 1);
+    let (a, b) = rayon::join(
+        || tile_rayon(lo, mid, phase, y_scale, cap),
+        || tile_rayon(mid, hi, phase, y_scale, cap),
+    );
+    a.wrapping_add(b)
+}
+
+/// Depth-cutoff rayon: fork only above depth `CUTOFF`, run the plain
+/// sequential split below it.
+fn tile_rayon_cutoff(lo: u32, hi: u32, phase: f64, y_scale: f64, cap: u32, depth: u32) -> u32 {
+    if depth >= CUTOFF {
+        return tile(lo, hi, phase, y_scale, cap);
+    }
+    let width = hi.wrapping_sub(lo);
+    if width == 1 {
+        return point_escapes(lo, phase, y_scale, cap);
+    }
+    if width == 0 {
+        return 0;
+    }
+    let mid = lo.wrapping_add(width >> 1);
+    let (a, b) = rayon::join(
+        || tile_rayon_cutoff(lo, mid, phase, y_scale, cap, depth + 1),
+        || tile_rayon_cutoff(mid, hi, phase, y_scale, cap, depth + 1),
+    );
+    a.wrapping_add(b)
+}
+
+/// The whole `grid` measurement: the split once per repetition, the phase
+/// stepped between them so no repetition is a copy of the last.
+fn run_grid(mode: &str, depth: u32, cap: u32, reps: u64) -> u32 {
+    let points = 1u32 << depth;
+    let y_scale = grid_y_scale(depth);
+    let mut total = 0u32;
+    let mut phase = 0.0f64;
+    let mut i = 0u64;
+    while i != reps {
+        let escaped = match mode {
+            "seq" => tile(0, points, phase, y_scale, cap),
+            "rayon" => tile_rayon(0, points, phase, y_scale, cap),
+            "rayoncut" => tile_rayon_cutoff(0, points, phase, y_scale, cap, 0),
+            other => {
+                eprintln!("unknown mode {other}");
+                std::process::exit(2);
+            }
+        };
+        total = total.wrapping_add(escaped);
+        phase += 0.0625;
+        i = i.wrapping_add(1);
+    }
+    total
+}
+
 fn count(node: &LNode) -> (u64, u64) {
     match node {
         LNode::Leaf { .. } => (1, 1),
@@ -288,6 +439,34 @@ fn main() {
     } else {
         1
     };
+
+    if shape == "grid" {
+        let depth = depth as u32;
+        let cap = words_n as u32;
+        if mode == "nodes" {
+            // Every activation of the split is a node and every single point
+            // is a leaf, so a 2^depth-point range is a perfect binary tree.
+            let leaves = 1u64 << depth;
+            println!(
+                "nodes={} leaves={} branches={}",
+                2 * leaves - 1,
+                leaves,
+                leaves - 1
+            );
+            return;
+        }
+        let total = if mode == "seq" {
+            run_grid(&mode, depth, cap, reps)
+        } else {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .expect("rayon pool");
+            pool.install(|| run_grid(&mode, depth, cap, reps))
+        };
+        println!("{:016x}", total as u64);
+        return;
+    }
 
     let mut tree = if shape == "bal" {
         build(depth, 512.0)

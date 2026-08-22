@@ -8,9 +8,11 @@ R=rust/target/release/paired-layout
 
 awk -f cells.awk logs/results.tsv > logs/cells.tsv
 
-# Configuration inventory with node counts.
+# Configuration inventory with node counts. "leaf work" is the per-leaf
+# arithmetic each family varies: metric-table words for the layout shapes, the
+# orbit iteration cap for the index-split grid.
 {
-  print "| config | shape | tree nodes | leaves | words/node | reps |"
+  print "| config | shape | nodes | leaves | leaf work | reps |"
   print "|---|---|---:|---:|---:|---:|"
   while read -r shape depth words reps; do
     case "$shape" in ''|\#*) continue ;; esac
