@@ -680,8 +680,10 @@ and failure semantics survive the runtime implementation.
   packet. The compiler judges sibling call pairs against four conditions read
   off resolved places, effect rows, the [OWN-7] overlap relation, the [EFF-2]
   projection, and the call graph; `--par-ledger` prints the verdict for every
-  analyzed site; a default-off pthread lane pool actualizes eligible chains
-  when `WF_WORKERS` is at least 2. Spec CANDIDATE v0.34 states the law as one
+  analyzed site, and one hint line per counted loop a recursive index split
+  would make eligible; a pthread lane pool actualizes eligible chains, sized by
+  `WF_WORKERS`, which on the branch defaults to the machine's logical CPUs and
+  is opted out of with `0` or `1`. Spec CANDIDATE v0.34 states the law as one
   rule, [PAR-1]. The direction that stays rejected is unchanged and worth
   keeping straight: the compiler decides *legality* from proofs and never
   guesses *profitability*, which a runtime lane budget decides at the moment of

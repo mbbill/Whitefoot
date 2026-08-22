@@ -1,5 +1,6 @@
 //! The non-normative permission ledger: one developer-channel line per
-//! analyzed sibling-call pair, and one per eligible chain.
+//! analyzed sibling-call pair, one per eligible chain, and one per counted
+//! loop a recursive index split would make eligible.
 //!
 //! The ledger is the visible half of the permission judgment. It states, for
 //! every pair the judgment looked at, whether overlap is permitted, whether a
@@ -16,6 +17,14 @@
 //! definition per site, all members in one block, no addressed binding but the
 //! last — and that narrowing happens after this ledger is rendered, so a `run`
 //! line states what the judgment permits and not what the emitter actualizes.
+//!
+//! A `hint` line is the one line here that is about a statement the judgment
+//! never had a verdict for. A counted loop is not a pair and can never become
+//! one, so it is otherwise reported by silence, which reads the same as "no
+//! parallelism here" when the truth is "not in this spelling". The hint says
+//! which spelling would work and names the combining operation that makes the
+//! rewrite safe. See [`super::loop_hint`] for what is admitted and why no
+//! float operation ever is.
 //!
 //! Nothing here participates in acceptance, in lowering, or in any mandatory
 //! [DIAG-3] record. It reads the finished permission table and the source
@@ -58,6 +67,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
     // writer reads them in.
     const PAIR: u8 = 0;
     const CHAIN: u8 = 1;
+    const HINT: u8 = 2;
     let mut entries = Vec::new();
     for permissions in &metadata.functions {
         for pair in &permissions.pairs {
@@ -95,6 +105,18 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 format!(
                     "PAR chain       {logical_path}:{line}  run({members})  {} members through line {last_line}",
                     run.sites.len()
+                ),
+            ));
+        }
+        for hint in &permissions.hints {
+            let (logical_path, line) = source.location(&hint.statement)?;
+            entries.push((
+                logical_path.clone(),
+                line,
+                HINT,
+                format!(
+                    "PAR hint        {logical_path}:{line}  loop  no eligible pair; a recursive split over its index range would be eligible, combining under {}",
+                    hint.combines.join(", ")
                 ),
             ));
         }

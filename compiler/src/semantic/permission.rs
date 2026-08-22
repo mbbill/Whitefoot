@@ -100,6 +100,7 @@
 use std::collections::VecDeque;
 
 use super::entailment::collect_statement_calls;
+use super::loop_hint::LoopSplitHint;
 use super::model::{
     BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedMode, CheckedSetTarget,
     CheckedSliceSource, CheckedStatement, CheckedType, FunctionId, expression_children,
@@ -371,6 +372,10 @@ pub(crate) struct FunctionPermissions {
     pub(crate) function: String,
     pub(crate) pairs: Vec<PermissionPair>,
     pub(crate) runs: Vec<PermissionRun>,
+    /// Counted loops a recursive index split would make eligible. These are
+    /// not verdicts: nothing here is permitted, denied, or lowered, and the
+    /// judgment above is computed exactly as it was before they existed.
+    pub(crate) hints: Vec<LoopSplitHint>,
 }
 
 /// The whole-program permission table, dense by [`FunctionId`].
@@ -556,6 +561,7 @@ impl<'check> Program<'check> {
             function: function.name.clone(),
             pairs: Vec::new(),
             runs: Vec::new(),
+            hints: Vec::new(),
         };
         let mut blocks = vec![function.body.as_slice()];
         while let Some(block) = blocks.pop() {
@@ -576,6 +582,22 @@ impl<'check> Program<'check> {
                 .components()
                 .cmp(right.sites[0].statement.components())
         });
+        // The hint runs last and reads the finished verdicts, so a loop that
+        // already holds an eligible pair is never told to become one.
+        let eligible = permissions
+            .pairs
+            .iter()
+            .filter(|pair| pair.verdict.is_eligible())
+            .map(|pair| pair.first.statement.clone())
+            .collect::<Vec<_>>();
+        permissions.hints = super::loop_hint::split_hints(
+            function,
+            super::loop_hint::CalleeFacts {
+                reaches_claim: &self.reaches_claim,
+                signatures: self.signatures,
+            },
+            &eligible,
+        );
         permissions
     }
 
@@ -1464,11 +1486,24 @@ fn direct_callees(functions: &[CheckedFunction]) -> Vec<Vec<FunctionId>> {
 
 /// Every binding one expression tree mentions, for the ordinary def-use test.
 fn collect_used_bindings(expression: &CheckedExpression, out: &mut Vec<BindingId>) {
-    let mut note = |binding: BindingId| {
+    visit_read_bindings(expression, &mut |binding| {
         if !out.contains(&binding) {
             out.push(binding);
         }
-    };
+    });
+}
+
+/// Calls `note` once per binding occurrence one expression tree reads.
+///
+/// The dedup belongs to the caller, because a caller that has to tell one
+/// occurrence of a binding from two — the loop-split hint asks exactly that of
+/// an accumulator — cannot recover the count from a deduplicated list. Which
+/// expression form reads which binding is classified here, beside the other
+/// exhaustive matches that keep this analysis from missing a read.
+pub(crate) fn visit_read_bindings(
+    expression: &CheckedExpression,
+    note: &mut impl FnMut(BindingId),
+) {
     match expression {
         CheckedExpression::Binding { binding, .. }
         | CheckedExpression::Project { binding, .. }
@@ -1501,7 +1536,7 @@ fn collect_used_bindings(expression: &CheckedExpression, out: &mut Vec<BindingId
         _ => {}
     }
     for child in expression_children(expression) {
-        collect_used_bindings(child, out);
+        visit_read_bindings(child, note);
     }
 }
 

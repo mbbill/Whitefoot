@@ -745,6 +745,122 @@ command fn main() -> status: own ExitStatus pure {
         );
     }
 
+    /// A counted loop that reduces under an exactly-associative integer
+    /// operation gets the split hint, naming the operation that makes the
+    /// rewrite safe.
+    ///
+    /// This is the shape the judgment can never reach: two iterations of one
+    /// statement are not a pair, so without this line the compiler reports the
+    /// most parallel loop in a program by saying nothing about it. The callee
+    /// is a real `pure`, claim-free function with a loop of its own, so the
+    /// case is about the writer's loop rather than about a body small enough
+    /// to be uninteresting.
+    #[test]
+    fn a_counted_loop_reducing_under_an_associative_operation_is_told_to_split() {
+        let source = b"fn interesting(index: own u64) -> result: own Bool pure {
+  let low = iand(index, 7_u64);
+  let seen = 0_u64;
+  loop @spin {
+    let done = ieq(seen, 4_u64);
+    if done {
+      break @spin;
+    }
+    set seen = seen +wrap 1_u64;
+  }
+  return ieq(low, 3_u64);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let hits = 0_u64;
+  for @scan i in 0_u64..4096_u64 {
+    let escaped = interesting(index: i);
+    if escaped {
+      set hits = hits +wrap 1_u64;
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+";
+        assert_eq!(
+            ledger_of("counting.wf", source),
+            vec![
+                "PAR hint        counting.wf:16  loop  no eligible pair; a recursive split over \
+                 its index range would be eligible, combining under +wrap"
+                    .to_owned()
+            ]
+        );
+    }
+
+    /// The float denial: the same loop with a float accumulator gets no line
+    /// at all.
+    ///
+    /// `fadd.strict` is not associative, so a writer who split this range
+    /// would publish different bytes at a different worker count — the one
+    /// failure the whole permission path exists to make impossible. The hint
+    /// admits an enumerated set of exactly-associative integer and boolean
+    /// operations and no float is in it, which is what this pins: not that the
+    /// advice is hedged for floats, that there is none.
+    #[test]
+    fn a_counted_loop_reducing_under_a_float_operation_is_told_nothing() {
+        let source = b"command fn main() -> status: own ExitStatus pure {
+  let total = 0.0_f64;
+  let step = 0.5_f64;
+  for @sum i in 0_u64..1024_u64 {
+    set total = fadd.strict(total, step);
+  }
+  return exit_status(code: 0_u8);
+}
+";
+        assert_eq!(
+            ledger_of("folding.wf", source),
+            Vec::<String>::new(),
+            "a float accumulator must produce no split advice"
+        );
+
+        // The identical loop over an integer accumulator does get the line, so
+        // the silence above is about the operation and not about the loop.
+        let integral = b"command fn main() -> status: own ExitStatus pure {
+  let total = 0_u64;
+  let step = 5_u64;
+  for @sum i in 0_u64..1024_u64 {
+    set total = total +wrap step;
+  }
+  return exit_status(code: 0_u8);
+}
+";
+        assert_eq!(
+            ledger_of("folding.wf", integral),
+            vec![
+                "PAR hint        folding.wf:4  loop  no eligible pair; a recursive split over \
+                 its index range would be eligible, combining under +wrap"
+                    .to_owned()
+            ]
+        );
+    }
+
+    /// A counted loop that writes into a buffer gets no line either.
+    ///
+    /// The split of a parallel *map* writes two index ranges of one buffer,
+    /// and condition 2 reads those as one place, so the rewrite this hint
+    /// advises would be denied. Advising it would send a writer to a rewrite
+    /// the judgment then refuses, which is worse than silence.
+    #[test]
+    fn a_counted_loop_writing_into_a_buffer_is_told_nothing() {
+        let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+  let out = buffer_new(64_u64, 0_u64);
+  for @fill i in 0_u64..64_u64 {
+    set out[i] = i *wrap i;
+  }
+  return exit_status(code: 0_u8);
+}
+";
+        assert_eq!(
+            ledger_of("mapping.wf", source),
+            Vec::<String>::new(),
+            "a write into enclosing storage must produce no split advice"
+        );
+    }
+
     /// A program with no analyzed pair reports nothing, and the ledger never
     /// reaches the module: the same compilation with and without it emits the
     /// same bytes.

@@ -1168,7 +1168,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let permission_ledger = if permission
             .functions
             .iter()
-            .any(|permissions| !permissions.pairs.is_empty())
+            .any(|permissions| !permissions.pairs.is_empty() || !permissions.hints.is_empty())
         {
             render_ledger(&permission, &PermissionLedgerSource { tree: &self.tree })?
         } else {

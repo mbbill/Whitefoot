@@ -129,6 +129,56 @@ battery reports.)
   is in no table. Adding a `wf_par/default` cell changes the protocol and the
   table shapes, which is a measurement-protocol decision rather than a landing.
 
+- **L2b — the counted-loop split hint.** `--par-ledger` gains a third line
+  form, `PAR hint`, in a new `semantic/loop_hint.rs`. It reports one line per
+  counted loop whose body is claim-free, calls nothing whose row carries
+  `external` or `blocks`, takes no exit that leaves the loop, and carries
+  nothing across its iterations except accumulators combined under an
+  exactly-associative operation: `+wrap`, `*wrap`, `iand`, `ior`, `ixor`,
+  `imin`, `imax`, and boolean `and`/`or`/`xor`. The line names the operation,
+  because that is what makes the advised rewrite safe to take.
+  **No float operation is admitted, and that is the point.** `fadd.strict` is
+  not associative, so a writer who split a float fold would publish different
+  bytes at a different worker count. Denial fixture
+  `a_counted_loop_reducing_under_a_float_operation_is_told_nothing` in
+  `driver.rs` pins it, and pins the identical loop over an integer accumulator
+  getting the line, so the silence is attributable to the operation. A second
+  denial fixture pins a counted loop that writes into a buffer: the split of a
+  parallel map writes two index ranges of one buffer, condition 2 reads those
+  as one place, and advising a rewrite the judgment then refuses is worse than
+  silence.
+  **Zero semantic change, verified rather than asserted.** The ledger of all
+  **698** sources of the Dig 9 sweep corpus (`tests/programs`,
+  `tests/conformance/cases`, `tests/codegen`, all of `research/`) was taken
+  with the pre-hint binary and with this one: with the `PAR hint` lines
+  filtered out, every ledger is byte-identical — no verdict changed anywhere.
+  The gate is green before and after.
+  **Where it fires, reported honestly.** Two lines, both in one conformance
+  case, `ent3-pos-s11-counted-range-run.wf`, on its two `+wrap` reduction
+  loops; its third loop carries a `break` and is correctly refused. **Zero
+  lines in all 25 `tests/programs/` sources and all 13 bench sources.** That is
+  a finding, not a defect: every counted loop in the corpus is either a map
+  into a buffer (`byte_string`, `growable_vec`, `dir_walk`, `wfgrep`,
+  `raw_deflate_boundary`), a loop whose callee traps (`bs_push`, `vec_push`),
+  or a sequential recurrence whose accumulator is read several times per
+  iteration (`sha256_abc`'s compression rounds). Each is correctly refused for
+  its own reason, and together they say that the loop-carried blocker is not
+  only the judgment's statement-pair shape but what real counted loops do.
+  **Boundary, deliberate:** only the `for` form is considered. A bare `loop`
+  has no index range, so the advice would not mean anything about one, and
+  reading a range out of a hand-written counter would be exactly the
+  source-shape keying this project forbids. It is also unreachable in practice:
+  a manual counter is itself carried state that is read several times per
+  iteration, so the carried-state rule refuses every such loop anyway —
+  including both of `mandelbrot_grid.wf`'s. A writer who wants the advice
+  writes the counted form, which is the form that carries the fact.
+  **Two smaller things a reviewer will notice.** The ledger used to be
+  suppressed entirely when no function had an analyzed pair, so a program of
+  nothing but loops produced no output at all; that gate now also asks for
+  hints. And a provably zero-trip range (`for @empty i in 4_u64..4_u64`) still
+  gets a line — noise, not error, and suppressing it would mean reading
+  constants for no safety gain.
+
 ## Outcome
 
 (Filled at closure.)
