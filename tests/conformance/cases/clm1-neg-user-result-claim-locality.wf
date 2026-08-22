@@ -1,0 +1,14 @@
+fn clamp_three(value: own u64) -> result: own u64 pure {
+  return imin(value, 3_u64);
+}
+
+fn read(values: own array<u8, 4>, input: own u64) -> result: own u8 traps {
+  let bounded = clamp_three(value: input);
+  let inside = ilt(bounded, 4_u64);
+  claim reviewed_bound: inside because "premises: bounded is the result of calling clamp_three from this caller\nderivation: the callee body happens to return a value no greater than 3_u64\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: a caller claim has no authority to substitute an unverified callee body for a published boundary fact\nconsumers: the following values[bounded] subscript would otherwise consume this caller assertion";
+  return values[bounded];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

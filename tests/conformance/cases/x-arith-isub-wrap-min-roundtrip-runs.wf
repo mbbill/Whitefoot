@@ -1,5 +1,5 @@
 command fn main() -> status: own ExitStatus pure {
-  doc "-wrap underflow round-trips [OP-1]: wrapping i32::MAX + 1 yields i32::MIN, and i32::MIN -wrap 1 wraps back to i32::MAX, confirmed by an equality claim [CLM-1].";
+  doc "-wrap underflow round-trips [OP-1]: wrapping i32::MAX + 1 yields i32::MIN, and i32::MIN -wrap 1 returns i32::MAX; ordinary equality control maps a mismatch to a nonzero status.";
   let hi = 2147483647_i32;
   let lo = hi +wrap 1_i32;
   let back = lo -wrap 1_i32;

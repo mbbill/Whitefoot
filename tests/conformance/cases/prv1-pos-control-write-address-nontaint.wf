@@ -1,5 +1,5 @@
-command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
-  doc "External control and a write target address add no provenance edge: only the internal right-hand side reaches storage, so a later internally selected value may protect a subscript by claim.";
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap) {
+  doc "External control and a write target address add no provenance edge: only the internal right-hand side reaches storage, and an ordinary bounds branch admits the later subscript without claiming a system-controlled value.";
   region 'a {
     let external_offset = args_count<'a>(args: &'a args);
     let offsets = buffer_new(8_u64, 0_u64);
@@ -11,9 +11,12 @@ command fn main(command.args as args: own Args) -> return_value: own ExitStatus 
       let bytes = buffer_new(1_u64, 0_u8);
       let room = len(bytes);
       let inside = ilt(internal_offset, room);
-      claim internal_index_in_bytes: inside because "premises: offsets is initialized entirely to 0_u64, the only possible write also stores 0_u64, internal_offset reads offsets[0_u64], and bytes has length 1_u64\nderivation: external control may choose whether and where the idempotent zero write occurs, but offsets[0_u64] remains 0_u64 and is therefore below 1_u64\nconclusion: ilt(internal_offset, room) is true\nchecker gap: ENT does not track buffer element values through an external-control write and later read\nconsumers: the following bytes[internal_offset] subscript requires this exact bound";
-      let value = bytes[internal_offset];
-      return exit_status(code: 0_u8);
+      if inside {
+        let value = bytes[internal_offset];
+        return exit_status(code: 0_u8);
+      } else {
+        return exit_status(code: 1_u8);
+      }
     } else {
       return exit_status(code: 0_u8);
     }

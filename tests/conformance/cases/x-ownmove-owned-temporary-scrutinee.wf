@@ -5,7 +5,7 @@ enum Sign {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "OWN-13 owned temporary: a non-place scrutinee (a construction) is an owned temporary moved into the match. The two arms no execution takes carry a constructed-Bool claim, which CLM-2 neither proves nor refutes, so the tripwire survives compilation and would trap if its arm ran.";
+  doc "OWN-13 owned temporary: a non-place scrutinee construction is moved into the match. The two unexpected arms return distinct nonzero statuses, while the Pos arm reaches the final zero status.";
   match Pos() {
     Neg() => {
       return exit_status(code: 1_u8);

@@ -16,7 +16,7 @@ fn flip(s: own ScanState) -> function_result: own ScanState pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "A 2-variant tag-only enum is Bool-isomorphic: copy semantics, matched twice, loop-carried and set-mutated; lowers as i1. The arm no execution takes carries a constructed-Bool claim, which CLM-2 neither proves nor refutes, so the tripwire survives compilation.";
+  doc "A 2-variant tag-only enum is Bool-isomorphic: copy semantics, matched twice, loop-carried and set-mutated; lowers as i1. The unexpected final arm returns a nonzero status, making the runtime observation explicit without a claim.";
   let st = InSpace();
   let i = 0_u64;
   loop @l {
