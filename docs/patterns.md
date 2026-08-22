@@ -8,6 +8,8 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
+This document carries active v0.34 guidance.
+
 Capability boundary: the current backend emits no effect-derived attributes or
 alias metadata, performs no proof-driven check elision, has no termination
 checker or `willreturn` derivation, and does not implement arenas. The speed
@@ -249,7 +251,7 @@ one back, but the callable boundary cannot say which one it chose.
 `fn pick['r](a: &uniq 'r Node, b: &uniq 'r Node) -> selected: &uniq 'r Node` is rejected
 at its own `rtype` [FN-1]: two parameters share the result's region and kind,
 so no caller can root the returned claim, and a result no caller can bind is
-the declaration's error rather than the caller's. Pattern status: active v0.33 guidance.
+the declaration's error rather than the caller's. Pattern status: active v0.34 guidance.
 
 Decide which fix applies by asking why there are two sources. If the sources
 are structurally distinct — a node and its scratch buffer, a subject and its

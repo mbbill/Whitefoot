@@ -1,11 +1,13 @@
 # Claim residual canonicality
 
-Status: BRANCH EVIDENCE. This document records the 2026-08-21 owner direction,
-the feasibility argument, the implemented branch candidate, corpus evidence,
-and the remaining owner boundary. It is not a specification and authorizes no
-merge by itself. On `main` the active language remains v0.33; this work branch
-carries the v0.34 `CANDIDATE` at `spec/kernel-spec.md`, SHA-256
-`936197e24fff2a6ed7e5b3fc271df51f1a6cadf71e45a1d5fa7b8745a011108e`.
+Status: HISTORICAL INVESTIGATION SNAPSHOT. This document preserves the
+2026-08-21 feasibility argument and then-current candidate state; its corpus
+counts, remaining-work list, approval-packet language, and candidate identity
+below do not describe the completed tree or impose a workflow. The implemented
+active v0.34 specification is `spec/kernel-spec.md`, SHA-256
+`cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`.
+Current status lives in `docs/roadmap.md`, `docs/current-plan.md`, and
+`docs/ongoing/0075-claim-residual-canonicality.md`.
 
 ## 1. Conclusion
 
@@ -581,7 +583,7 @@ an accepted claim or change ordinary source acceptance.
 | uninstantiated generic and dead nongeneric use different reachability tests | implementation defect; both use source-body admission |
 | accepted claim omitted by lowering or optimization | compiler correctness failure |
 
-## 11. Baseline and branch implementation evidence
+## 11. Historical baseline and branch implementation evidence
 
 The v0.33 baseline compiler has several useful foundations:
 
@@ -623,7 +625,7 @@ the MCTS decision is paired, and current-tip frozen real bundles completed in
 manifest synchronization, final specification identity, rebase, complete gates,
 and the owner merge review.
 
-## 12. Current corpus impact
+## 12. Historical pre-migration corpus impact
 
 The strengthened doctrine is much larger than the old seven/36 redundancy
 advisory migration.
@@ -671,7 +673,7 @@ rewrite matrix, the 47 reject cases have an exact first-diagnostic matrix, and
 the 26 accept/trap cases have a separately verified candidate commit. Those
 three protected groups are packet evidence, not yet integrated authority.
 
-## 13. Implementation sequence and branch disposition
+## 13. Historical implementation sequence and branch disposition
 
 This research document is not execution authority. The owner-chartered branch
 uses the Current Plan and batch 0075 to proceed in this order:

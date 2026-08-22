@@ -2,8 +2,8 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
-the active v0.33 authority at SHA-256
-`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f` at
+the active v0.34 authority at SHA-256
+`cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03` at
 `spec/kernel-spec.md`; released versioned files retain the superseded
 authorities. Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
@@ -13,7 +13,7 @@ exist; this form is minimality-selected and awaits its experiment),
 
 **Statistics: 84 derived · 51 existence-only · 0 underived**
 (135 rules: v0.28's 132 plus the v0.29 CLM-3, v0.31 SET-2, and v0.32 SYS-14
-additions; v0.33 adds no numbered rule and changes no status).
+additions; v0.33 and v0.34 add no numbered rule and change no status).
 
 ## Re-grounding priority queue (weakest chains)
 
@@ -1074,7 +1074,8 @@ selects the specification semantics above.
 
 ## v0.29 amendment — opt-in strict no-claim partition (activated 2026-08-15)
 
-Specification binding: active `spec/kernel-spec.md`, headed v0.33, at SHA-256
+At the v0.33 closure that carried this amendment forward, the then-active
+`spec/kernel-spec.md`, headed v0.33, had SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
 The superseded v0.28 bytes are immutable at
 `spec/kernel-spec-v0.28.md`, SHA-256
@@ -1209,7 +1210,8 @@ rules.
 
 ## v0.33 amendment — claim-only runtime trap surface (activated 2026-08-20)
 
-Specification binding: active `spec/kernel-spec.md`, headed v0.33, at SHA-256
+Specification binding at v0.33 activation: the then-active
+`spec/kernel-spec.md`, headed v0.33, had SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
 The exact owner-approved candidate was SHA-256
 `024a7752a88daf8799f637d95401fb73e25e257b118b3b78d4733b397c3db3c2`;
@@ -1253,23 +1255,22 @@ bare exact infix spellings remain. The protected corpus contains 499 source
 cases in exact manifest bijection, covers 135/135 rules, and the canonical
 adapter reports `Pass=498 Skip=1 Fail=0`. The owner-approved candidate was
 SHA-256 `024a7752a88daf8799f637d95401fb73e25e257b118b3b78d4733b397c3db3c2`;
-the installed active specification is
+the installed v0.33 active specification was
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`,
-and the activation chain ends at v0.33.
+and the activation chain then ended at v0.33.
 
-## v0.34 amendment — residual-only local claim authority (branch candidate 2026-08-22)
+## v0.34 amendment — residual-only local claim authority (active 2026-08-22)
 
-Specification binding: the branch candidate at `spec/kernel-spec.md`, headed
-v0.34 and carrying v0.33's exact predecessor identity. Its exact candidate
-SHA-256 is intentionally not asserted while the branch bytes remain under
-construction; the frozen merge revision supplies that identity. The outgoing
-v0.33 authority remains the immutable active bytes at SHA-256
+Specification binding: the active v0.34 bytes at `spec/kernel-spec.md` have
+SHA-256 `cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`
+and carry v0.33's exact predecessor identity. The outgoing v0.33 authority is
+preserved as the immutable `spec/kernel-spec-v0.33.md` archive at SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
 
 v0.34 adds and removes no numbered rule. It modifies exactly these fifteen
 existing rules: CLM-1, CLM-2, CLM-3, DIAG-1, DIAG-2, ENT-1, ENT-2, ENT-3,
 ENT-4, ENT-5, ENT-6, EX-1, OP-4, PRV-3, and SCOPE-2. The groups below are
-disjoint and their union is that complete archive-to-candidate rule set:
+disjoint and their union is that complete archive-to-active rule set:
 
 | Move | Exact changed rules | Continuing derivation |
 |---|---|---|

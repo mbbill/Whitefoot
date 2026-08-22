@@ -1379,3 +1379,56 @@ ACTIVE-SPEC: v0.33 fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d
   as well as moves and removals; and its new regression proves an addition exits
   nonzero and is printed. The exact revision's successful `make check` result
   is the rule 3 evidence for this same boundary.
+
+## 2026-08-22 — merge-time approval content: v0.34 claim locality
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That one exact-revision
+  approval is both rule 2's merge approval and rule 4's approval of the content
+  recorded here; this record creates no separate approval step.
+- SPECIFICATION: activate Whitefoot v0.34 at exact SHA-256
+  `cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`.
+  It supersedes active v0.33 at SHA-256
+  `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.33.md`.
+- CONFORMANCE BOUNDARY: relative to merge base
+  `0728d7c66e45832d132ae499066a0da8c6865896`, the exact
+  `tests/conformance` Git tree changes from
+  `d1fa24b618eb7296e62c0d9b59818839bf9cc277` to
+  `a481fb614a26dd12cb87e5056e0a6bff5d959937`. The no-renames
+  name/status stream has SHA-256
+  `5f453a0270fe0b58f4120bcce1a3a59184efc8b3562ca504a78bbef6f6c740f9`:
+  198 existing case sources and the manifest are modified, two case sources
+  are added, and nothing is deleted or renamed.
+  - The cases tree changes from `576ef3f77d397630bb8a7acb8667bf84906120af`
+    to `152918ce85c50f58b83b17f73224def0213d4b71`; the manifest SHA-256
+    changes from `4728c7da805223043f120898354ec172d083680c7e7db29e27784a11bb8340ff`
+    to `8170ce7a90da9172040a0ccfb86859eb912d532c45be60f67335b2c330a3ec0d`.
+  - Added `clm1-neg-system-result-claim-locality.wf` at SHA-256
+    `d106b2a730418655f318efe608f42e98327d70e4157886d7648792282bf98c7a`
+    and `clm1-neg-user-result-claim-locality.wf` at SHA-256
+    `9b3708aa992817209be909b472e745e41fd9e0a6594500304d87e07e10a23278`;
+    both reject at CLM-1.
+  - Fourteen declared verdicts move: `accept-sysname-near-lookalike` and
+    `ent1-pos-instantiation-judged-at-value` from accept to run 0;
+    `clm1-trap-false-claim-aborts` and
+    `clm1-trap-false-claim-not-refutable` from trap to reject CLM-2;
+    `clm2-pos-redundant-claim-advisory` from accept to reject CLM-2; and
+    `clm1-trap-runtime-violation`, `eff4-pos-trap-aborts`,
+    `err4-trap-claim-domain-violation`, `scope4-pos-claim-traps`,
+    `x-arith-claim-catches-wrapped-overflow-traps`,
+    `x-arith-idiv-trap-signed-two-variable-traps`,
+    `x-arith-loop-multiply-defined-claim-traps`,
+    `x-form-form7-overflow-trap-canonical`, and
+    `x-integ-loop-product-overflow-traps` from trap to run 0. No declared
+    verdict is removed.
+- CONFORMANCE CONTENT: parser-shaped claim statements change from 410 in 197
+  files to 95 in 74 files. Runtime oracles become ordinary control or typed
+  outcomes; false, redundant, and non-local claims become source errors or are
+  replaced by true same-function residuals; all 62 claims in accepted/runnable
+  sources have exact five-field records and real static consumers. The corpus
+  grows from 499 to 501 cases and the native adapter's expected complete result
+  is 500 passes, one intentional skip, and no failure. The exact revision's
+  successful canonical `make check` is the rule 3 evidence for this same
+  boundary.
+ACTIVE-SPEC: v0.34 cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03 fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f

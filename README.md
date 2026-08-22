@@ -33,13 +33,13 @@ priorities and repository discipline.
 
 ## Current state
 
-On `main`, Kernel specification v0.33, SHA-256
-`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`,
-remains active. This work branch carries the v0.34 `CANDIDATE` at the stable
+Kernel specification v0.34 at the stable
 [specification path](spec/kernel-spec.md), SHA-256
-`936197e24fff2a6ed7e5b3fc271df51f1a6cadf71e45a1d5fa7b8745a011108e`;
-it has no language authority until it is merged into `main`. Exact v0.8
-through v0.32 remain immutable flat archives.
+`cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`,
+is active in this exact revision. It supersedes v0.33, whose exact bytes at
+SHA-256 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`
+are preserved as an immutable flat archive. `main` remains on v0.33 until this
+exact revision is approved and merged.
 
 The safe-Rust compiler currently implements one ordinary path:
 
