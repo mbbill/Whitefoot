@@ -223,6 +223,22 @@ battery reports.)
   keep the observer off the join — poll a flag, or put the observer at the same
   QoS.
 
+- **Verification at the branch tip, over all four landings.**
+  `make -C compiler check` exit 0 at the tip and before the first landing.
+  **No emitted code moved for the diagnostic**: the 66 modules the corpus and
+  the bench emit under both the default and `--par` compilations are
+  byte-identical between the pre-hint binary and the tip (10 corpus sources are
+  not standalone-compilable and emit nothing on either side). **Byte identity
+  across the whole grid at the tip**: a three-round rotation of all thirteen
+  configurations, 195 Whitefoot outputs and 273 Rust outputs compared by `cmp`,
+  reports every run of every configuration identical within each language and
+  across them. **rayon resolves no win on any cell**: every best-Whitefoot
+  against best-Rust ratio in `t_headline` is inside the 0.83x-1.20x band and
+  marked unresolved, on the twelve layout configurations and on the new grid
+  row alike (load average 3.46, corporate agents active). No spec bytes, no
+  protected conformance or compliance change, and no new repository root entry
+  in any of the four commits.
+
 ## Outcome
 
 (Filled at closure.)
