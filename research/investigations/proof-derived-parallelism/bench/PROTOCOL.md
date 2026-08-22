@@ -36,7 +36,7 @@ measured cost model so that its sequential run lands inside the required
 | cell | what it is |
 |---|---|
 | `wf_seq` | `whitefootc` with no `--par`: the default compilation, no outlining, no runtime linked |
-| `wf_par/1` | `whitefootc --par`, `WF_WORKERS=1`: outlined and offered, but the pool never starts. The opt-in cost control. |
+| `wf_par/1` | `whitefootc --par`, `WF_WORKERS=1`: the same binary running its sequential world. Since batch 0075's Dig 7 a `--par` module carries both worlds and the bootstrap chooses at entry — below two lanes `wf__par_pool_active()` is 0, the sequential clone runs, and nothing is offered at all. The opt-in cost control: what the option costs a program that never gets a lane. |
 | `wf_par/2` `wf_par/4` `wf_par/8` | the same binary at 2, 4, 8 lanes |
 | `wf_par/default` | the same binary with `WF_WORKERS` genuinely unset: the shipped default, which asks for this machine's logical CPUs, 10 here |
 | `rs_seq` | plain recursive Rust |

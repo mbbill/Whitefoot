@@ -272,7 +272,16 @@ reproduction, never worked around.)
   stack, first failing depth 22 000 pool-off — unchanged — and 22 500 at
   W=4/W=8, i.e. the pool-on ceiling is at or *above* the pool-off ceiling,
   because the slot bound stops the reclaim path after the first 64 levels and
-  handed-out work runs on 8 MB worker stacks. **The spin bound is measured,
+  handed-out work runs on 8 MB worker stacks.
+  **Corrected 2026-08-22 by the 0075/0076 batch audit: this comparison is a
+  race and the stated ordering does not hold.** Whether the deep side is
+  stolen onto an 8 MB worker stack decides the outcome, so at a 1024 KB limit
+  the same binary and input give both answers. A refuter measured depth 22 000
+  at the tip: pool-off 20/20 exit 0, pool-on **13/20 SIGSEGV**. The bisection
+  above found the stolen branch. At an ordinary 8 MB stack, where the race
+  cannot decide it, the pool-on ceiling is roughly a third of the pool-off
+  ceiling; that is the figure batch 0076's Approval-classes entry now carries,
+  and `the_shipped_default_keeps_a_deep_recursion` pins a floor under it. **The spin bound is measured,
   not chosen**: a park and its wake cost 2 097-2 514 ns here, so a thread that
   looks for work for less than that sleeps to save less than the sleep costs;
   the spin phase is set to a few multiples of that round trip.
@@ -623,6 +632,20 @@ reproduction, never worked around.)
   count 7, maximum 20, mean 13.2.** The assertion cleared its bound by 7 in the
   worst run of a thousand, which is stronger than Dig 2's "0 failures in 1000"
   and is the number the merge packet should carry.
+  **Withdrawn 2026-08-22 by the 0075/0076 batch audit — this margin is a
+  property of one idle sample, not of the artifact, and must not reach the
+  owner as stated.** Two refuters reproduced the experiment. The mean holds
+  (13.20), but the minimum does not: one measured **min 3**, and a separate
+  idle 300-run batch produced **one run with `grants == 0`**. Under load the
+  assertion fails outright — matched A/B at 8 spinners, the same load band this
+  campaign records for its own bench rounds: base `8a41dbf5` 0/40 failures,
+  tip `b87d20bb` **17-20/40**, and `make test` goes red there. A second case
+  added by 0076, `an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not`,
+  is worse: it reports `grants == 0` in 21/200 runs on an *idle* machine, and
+  its opt-out half admits a live injected defect 25-30% of the time under load,
+  because `granted == 0` is also the honest report of a running pool that
+  stole nothing. Both cases are gate-integrity material and neither is repaired
+  here; see the audit summary in `docs/ongoing/0076-night-par-ceiling.md`.
   **The grid at HEAD, full protocol rotation, N=9, 144 cells, 1296 runs, every
   run byte-identical within and across both languages and all exit 0.** Against
   rayon's absolute wall time: **12 cells Whitefoot wins outright, 24 parity,
@@ -723,7 +746,15 @@ reproduction, never worked around.)
   invariant to read is that rayon still wins nothing. The 12 default builds are
   **text-identical** to Dig 6's, so the rotation's sequential column is the same
   code.
-  **The opt-in column, and what it cost as well as what it bought.** `--par` at
+  **The opt-in column, and what it cost as well as what it bought.**
+  **Superseded 2026-08-22 by the 0075/0076 batch audit:** the "1.00x-1.01x on
+  all twelve" result below did not survive batch 0076. L1 (`62e30831`)
+  re-rolled the link layout of every `--par` binary and nine of the twelve
+  configurations now read 1.10x-1.30x, three of them outside the 1.20x band.
+  The mechanism is the one this same dig measures two paragraphs down —
+  placement, not runtime work. The account, the three breaching cells, and the
+  standing-item disposition are in `docs/ongoing/0076-night-par-ceiling.md`.
+  As measured on 2026-08-21: `--par` at
   one worker over its own sequential build now reads **1.00x-1.01x on all twelve
   configurations**, where Dig 6 read 0.68x-1.02x. The sub-1.00x readings were
   not a win being lost lightly: on the skew shape the outlined lowering was

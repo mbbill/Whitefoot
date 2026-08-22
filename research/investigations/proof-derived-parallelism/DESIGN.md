@@ -6,6 +6,17 @@ synthesizes PAL.md (same directory), the three research rounds
 (`do_not_scan/wf-parallelism-research/`), and the owner's rulings of
 2026-08-20/21. Nothing here is approved until the branch merges.
 
+> **Superseded in two places by later landings on this branch, and corrected in
+> place on 2026-08-22 after the 0075/0076 batch audit.** The runtime protocol
+> named in section 5 (`wf_par_try_fork` / `wf_par_join`) was replaced during
+> batch 0075 by `wf__par_claim` / `wf__par_publish` / `wf__par_join` /
+> `wf__par_release`, and the `WF_WORKERS` semantics changed during batch 0076:
+> an unset variable now asks for one lane per logical CPU instead of meaning
+> "no pool". Both corrections are made at the paragraphs that stated them. Read
+> the rest as the design contract it is — the current behavior of anything it
+> describes lives in `docs/ongoing/0075-par-optimization-digs.md` and
+> `docs/ongoing/0076-night-par-ceiling.md`.
+
 ## 0. Charter
 
 Owner direction (2026-08-21, verbatim, chartering this branch under the
@@ -125,22 +136,39 @@ salvage), the AI writer's gradient, and the measurement instrument.
 ## 5. Runtime and lowering
 
 - **Default off, at compile time.** Actualization happens only when the
-  compilation asked for it (`whitefootc --par`) *and* `WF_WORKERS` is set to
-  an integer ≥ 2. Without `--par` the backend reads no permission group at
+  compilation asked for it (`whitefootc --par`). **Corrected 2026-08-22:** this
+  paragraph also required `WF_WORKERS` set to an integer ≥ 2, and batch 0076's
+  L1 landing (`62e30831`) made an unset or empty setting ask for one lane per
+  logical CPU instead. `WF_WORKERS=0`, `=1`, and any unparsable value keep the
+  original meaning and start no pool, so opting out is still one setting away —
+  but it is now an opt-out and not an opt-in. The compile-time half below is
+  unchanged and is what keeps a build that did not ask byte-identical.
+  Without `--par` the backend reads no permission group at
   all: no thunk is outlined, no module names a runtime symbol, and the
   emitted module is byte-identical to a compiler that has no overlap
   lowering. **Amended after the batch audit** (2026-08-21), which made
   `WF_WORKERS` the only switch and was falsified by measurement: the outlining
   alone, with no runtime linked and no worker requested, cost about 1.2x on the
   layout demo and 2.1x on `fib(38)`, so a byte-identical default has to be a
-  compile-time choice rather than a runtime one. `WF_WORKERS` is unchanged and
-  remains the runtime knob for a build that asked. All existing tests
-  unaffected.
+  compile-time choice rather than a runtime one. (Both of those numbers were
+  themselves superseded by Dig 7 of batch 0075, which re-measured the outlining
+  tax at 1.00x once the sequential clone landed; the conclusion — that the
+  switch is a compile-time one — stands on the stronger ground that a build
+  which did not ask now emits no overlap lowering at all.) `WF_WORKERS` remains
+  the runtime knob for a build that asked, with the sense of its absent value
+  changed as noted above.
 - **Runtime:** one small C file (pthreads), linked only when the module
   contains at least one eligible site: lazy pool init on first fork
   (`WF_WORKERS` capped at a sane max), `wf_par_try_fork(fn, arg) ->
   handle|0` (forks only if an idle worker is available — the lane-budget
   policy; else returns 0 and the caller inlines), `wf_par_join(handle)`.
+  **Corrected 2026-08-22:** that two-call protocol was replaced during batch
+  0075 (`b251382f`, `826cea41`) by a four-call one — `wf__par_claim`,
+  `wf__par_publish`, `wf__par_join`, `wf__par_release`, with
+  `wf__par_pool_active` selecting the world at the bootstrap. The lane-budget
+  intent survives in `wf__par_claim`, which still refuses rather than queueing;
+  what changed is that the claim precedes the publish, so a refused hand-out
+  builds nothing. `wf_par_try_fork` appears nowhere under `compiler/`.
   No global visible to WF source; the pool is TCB like malloc's internals.
   Policy rationale recorded: lane-budget is the only measured policy that
   is never catastrophic (worst 0.69x on tiny trees, wins on heavy bodies;
@@ -150,7 +178,8 @@ salvage), the AI writer's gradient, and the measurement instrument.
 - **Lowering:** for an eligible pair, the backend outlines s1's call into
   an internal thunk `void @wf_par_thunk_N(ptr)` over an args+result frame
   (IR-level function pointers are backend-internal; the language still has
-  none), emits `try_fork`; s2 runs inline; `join` (or inline fallback call)
+  none), emits `try_fork` (today: `claim` then `publish`); s2 runs inline;
+  `join` (or inline fallback call)
   completes before the first use of s1's result. Join precedes any exit.
   Worker stacks: request ≥ the main thread's stack size at pool creation
   (the 512KB-default hazard, g2 revive item 4).
@@ -196,8 +225,13 @@ Protected gates and wiring: untouched.
   (cond 3), claim-bearing closure (eligibility). Negative controls follow
   the m/n discipline: each denial asserts the cited condition, not just
   "denied".
-- **Codegen:** eligible site emits thunk+try_fork/join; WF_WORKERS unset ⇒
-  no runtime linked/no behavior change; ineligible sites emit today's code.
+- **Codegen:** eligible site emits thunk+try_fork/join; ineligible sites emit
+  today's code. **Corrected 2026-08-22:** this line also said "WF_WORKERS unset
+  ⇒ no runtime linked/no behavior change", which is false in both halves at the
+  tip. What is linked is decided at compile time by `--par`, not by the
+  variable, and an unset variable now starts a pool rather than suppressing
+  one. The acceptance criterion that survives is the compile-time one: a build
+  without `--par` links no runtime and is byte-identical.
 - **Determinism (in-crate, non-protected):** run the demo N times at
   WF_WORKERS ∈ {1,2,4,8}, byte-compare full stdout; deliberately break the
   lowering in one direction (skip join) in a negative control to prove the

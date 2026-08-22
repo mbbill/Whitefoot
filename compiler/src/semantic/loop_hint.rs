@@ -33,6 +33,14 @@
 //! admitted set is enumerated and contains no float", which is why a float
 //! accumulator produces no line at all rather than a hedged one.
 //!
+//! The same obligation reaches through a call. A callee that writes caller
+//! storage carries state across iterations exactly as a `set` in the body
+//! does, and the combine is whatever its own body performs — which can be a
+//! float fold one frame away, invisible to a survey that reads statements. So
+//! a call whose row writes anything at all refuses the line. The enumerated
+//! set has to govern all of the loop's carried state, not only the part
+//! written where the survey can see it.
+//!
 //! There is a pleasing agreement here that is worth naming: the integer
 //! operations that carry no proof obligation — the `wrap` family and the
 //! bitwise and ordering operations — are exactly the ones that are exactly
@@ -81,7 +89,19 @@ pub(crate) struct CalleeFacts<'check> {
 
 impl CalleeFacts<'_> {
     /// Whether a call to this function keeps the loop splittable: no reachable
-    /// claim, and a row carrying neither `external` nor `blocks`.
+    /// claim, an empty `writes` row, and a row carrying neither `external` nor
+    /// `blocks`.
+    ///
+    /// The `writes` row is what makes carried state reachable through a call.
+    /// [`Survey`] classifies only the `set` statements written in the loop
+    /// body, so storage a callee writes through a `&uniq` parameter is state
+    /// carried across iterations that no survey sees — and the line would name
+    /// the combine of some *other*, admitted accumulator as though it were the
+    /// loop's only one. A row that writes anything therefore refuses, rather
+    /// than this analysis guessing which of the caller's places the row
+    /// projects onto. The storage may well be the iteration's own, but
+    /// deciding that needs the resolved places the judgment holds and a
+    /// diagnostic has no business rebuilding.
     ///
     /// An unknown callee answers `false`, so a call this analysis cannot place
     /// suppresses the hint rather than being advised around.
@@ -91,6 +111,7 @@ impl CalleeFacts<'_> {
             return false;
         };
         !self.reaches_claim.get(index).copied().unwrap_or(true)
+            && signature.writes.is_empty()
             && !signature.external
             && !signature.blocks
     }

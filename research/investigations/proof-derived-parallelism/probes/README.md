@@ -14,7 +14,15 @@ they are not held to the canonical-form or must-compile rules that
 settles is superseded.
 
 Every verdict quoted below is what the in-tree compiler's
-`whitefootc --par-ledger` reports for that file today.
+`whitefootc --par-ledger` reports for that file today, except where a file is a
+template that must be instantiated first — those say so and quote the
+instantiated source. **Refreshed 2026-08-22 after the 0075/0076 batch audit**,
+which found the warranty unmet on four entries: batch 0075's Dig 8 replaced the
+adjacency rule and rewrote the denial wording, and Dig 9 widened the discharge,
+so several probes now report verdicts their paragraphs described as impossible.
+Where an entry changed, the paragraph states today's verdict and then what it
+used to say, because the superseded reading is often the finding the probe was
+landed to record.
 
 ## The design-round probes
 
@@ -44,14 +52,21 @@ established the requirement; the per-condition denial is pinned by the compiler
 tests, not by this file.
 
 **The dependence conditions.** `g3_dep.wf` is `a2_bubble.wf` with the fold's
-second child argument computed from the first child's result. The ledger goes
-silent on that child pair — the intervening statements mean the two calls are
-no longer adjacent, so no pair exists to judge — while it still reports the two
-pairs in `main`: `pair(boxed_leaf, boxed_leaf) eligible` and
-`pair(boxed_leaf, boxed_branch) condition 1: an argument of s2 uses the result
-of s1`. Together those fix both halves of the dataflow question: what a genuine
-def-use denial reads like, and that a dependence broken across statements
-simply removes the candidate rather than denying it. (A third file, `g3_base.wf`,
+second child argument computed from the first child's result. Today the ledger
+judges that child pair and denies it —
+`g3_dep.wf:29 pair(bubble, bubble_shift) condition 4: the trap edge of
+interposed statement 2 skips s2` — and it reports the two pairs in `main`:
+`pair(boxed_leaf, boxed_leaf) eligible` with a two-member chain, and
+`pair(boxed_leaf, boxed_branch) condition 1: the operands of s2 read what s1
+defines`. That fixes what a genuine def-use denial reads like. *What this probe
+originally settled, and what changed:* until Dig 8 of batch 0075 (`974d5513`)
+the child pair produced **no line at all**, because the judgment grew a
+candidate group only from consecutive `let x = f(...)` statements, and the probe
+was the evidence that a dependence broken across statements removed the
+candidate rather than denying it. Dig 8 replaced that with a window: an
+interposed statement is now judged rather than ending the enumeration, so the
+pair gets a verdict and a reason. The denial wording changed in the same
+commit. (A third file, `g3_base.wf`,
 was landed alongside these and was a byte-identical copy of `a2_bubble.wf`; the
 batch audit found it and it was deleted rather than kept under a second name.)
 
@@ -99,12 +114,19 @@ instantiate the placeholder first.
 
 **F1, the hand-out frame's stack tax.** `min_stack.wf` is the minimal carrier:
 one deep `spine` recursion whose single eligible pair is `pair(spine, leafval)`.
-Its `DEPTH` placeholder is substituted to sweep the recursion ceiling
-(`sed 's/DEPTH/140000/' min_stack.wf > ms.wf`). It settles the finding in its
-purest form — the sequential module contains no alloca at all, `--par` adds one
-hand-out frame per function with a pair, the arm64 prologue grows from 16 to 64
-bytes plus two FP spills, and the ceiling falls roughly fourfold *with the pool
-off*, so no worker-stack policy can be the cause. `bt_skew.tmpl` carries the
+It is a **template and does not compile as it stands** — the bare `DEPTH`
+placeholder is a `FORM-1 UnexpectedByte` — so substitute first
+(`sed 's/DEPTH/140000/' min_stack.wf > ms.wf`), and the instantiated source
+reports `pair(spine, leafval) eligible` with a two-member chain. It settles the
+finding in its purest form: the sequential module contains no alloca at all,
+`--par` adds one hand-out frame per function with a pair, and the arm64
+prologue grows from 16 to 64 bytes plus two FP spills. *The fourfold ceiling
+loss this paragraph reported with the pool off was fixed by Dig 1 of batch
+0075*, which moved the frame to the lane; the pool-*off* ceiling now matches the
+sequential build's. The probe still sweeps a ceiling, but the ceiling it finds
+today is the pool-**on** one, which at an ordinary 8 MB stack is roughly a
+third of the sequential build's — see the flagged default-behavior entry in
+`docs/ongoing/0076-night-par-ceiling.md`. `bt_skew.tmpl` carries the
 same finding on a realistic left-spine `BNode` fold (placeholder `SKEWDEPTH`);
 it is what shows the loss is 23%, not 4x, on a real tree, and it produces the
 case that crashes pool-off and survives with a lane.
@@ -113,19 +135,29 @@ case that crashes pool-off and survives with a lane.
 that makes the finding undeniable, because they are the same program twice.
 `p1a.wf` puts one `fmul.strict` builtin between the two recursive `layout`
 calls; `p1b.wf` puts the identical arithmetic there wrapped in a `pure` user
-function. The ledgers are the evidence: `p1a.wf` reports **no `layout` pair at
-all** — the candidate is not denied, it ceases to exist, because
-`analyze_block` grows a group only from consecutive `let x = f(...)`
-statements — while `p1b.wf` reports `pair(layout, scale_up) eligible` and
-`pair(scale_up, layout) eligible`. The two binaries emit identical bytes and
-are 1.41x apart at four lanes. Both files also carry the `layout_banded`
+function. **Dig 8 of batch 0075 (`974d5513`) closed the gap these two were
+landed to demonstrate, and their ledgers now agree.** Today `p1a.wf` reports
+`p1a.wf:116 pair(layout, layout) eligible` with a two-member chain through line
+118, and `p1b.wf` reports `pair(layout, scale_up) eligible`,
+`pair(scale_up, layout) eligible`, and a three-member chain. Dig 8 measured them
+at parity (0.3984 s against 0.4049 s). *What the finding was:* until that
+commit `p1a.wf` reported **no `layout` pair at all** — the candidate was not
+denied, it ceased to exist, because `analyze_block` grew a group only from
+consecutive `let x = f(...)` statements — while `p1b.wf` reported both pairs, so
+the same program was 1.41x apart at four lanes on nothing but where the writer
+put one line. That is the brittleness the judgment's window rule removed; the
+pair is kept because the fix is only legible beside the shape that motivated it.
+Both files also carry the `layout_banded`
 contrast (`not-actualizable: 1 claim site via measure_band`) that ties this
 probe back to the claim line the first group establishes.
 
-**F2, grain.** `q4.wf` is the quad tree that produces the fine-grain
+**F2, grain.** `q4.wf` is the quad tree that produced the fine-grain
 catastrophe: six eligible pairs, three adjacent in `build4` and three in
-`qfold`, about 65.5M offers, and a fall to 48.6x slower than one lane at 64
-workers, non-monotone in between. It is also the N-ary carrier — a run of four
+`qfold`, and about 65.5M offers. As landed it fell to **48.6x slower** than one
+lane at 64 workers, non-monotone in between. *Dig 2 of batch 0075 dissolved
+that*: the same cell now runs **1.99x faster** than one lane (0.2530 s against
+0.5026 s), so the catastrophe is history and the probe is kept as the carrier of
+the shape, not of the number. It is also the N-ary carrier — a run of four
 adjacent calls handing out N−1 — and therefore the file behind F4a, the ledger
 printing three unrelated-looking pairs where the checker built one run of four.
 
@@ -159,12 +191,20 @@ not compile. It settles that the natural shape of a per-node style-resolve phase
 is permitted and permanently out of reach in v1 — a design boundary, not a bug.
 
 **Linkage.** `zero_elig.wf` is `min_stack.wf` with its one pair broken by an
-interposed builtin. It settles that zero eligible sites really means zero cost:
-no `wf__par` symbol at all in the IR — the check is on that reserved prefix
-rather than on any one entry point's spelling, which has changed since — no
-undefined `pthread` symbol in the binary, and a byte size identical to the
-sequential build. It is also the control for F4c — an empty ledger exiting 0 is
-indistinguishable from a flag that silently did nothing.
+interposed builtin. **It no longer has zero eligible sites, and the linkage
+result it settled has to be read from a different file now.** Today it reports
+`zero_elig.wf:12 pair(spine, leafval) eligible` with a two-member chain, and
+`--par --emit-llvm` on it contains 16 `wf__par` references — Dig 8's window rule
+judges the interposed builtin instead of ending the enumeration, so breaking a
+pair by interposition is no longer something a source can do. *What it
+settled:* that zero eligible sites really means zero cost — no `wf__par` symbol
+at all in the IR (the check is on that reserved prefix rather than on any one
+entry point's spelling), no undefined `pthread` symbol in the binary, and a byte
+size identical to the sequential build — and it was the control for F4c, since
+an empty ledger exiting 0 is indistinguishable from a flag that silently did
+nothing. That control is now vacant: no probe here produces an empty ledger,
+and re-establishing it needs a source with no adjacent call pair at all rather
+than one whose pair is interposed.
 
 ## The band/derived-index probes
 

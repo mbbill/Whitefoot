@@ -19,15 +19,21 @@ Machine: Apple M4, 10 cores (4P+6E), macOS 26.5.2, main stack 8176 KB. A neighbo
 
 ## Verdict summary
 
-| # | Finding | Severity | Verdict |
-|---|---|---|---|
-| F1 | `--par` shrinks max recursion depth ~4x; overflow is a bare SIGSEGV/SIGBUS | **CRITICAL** | BUG |
-| F2 | Hand-out is unconditional; no grain control; fine folds up to 48.6x slower | **CRITICAL** (perf) | GAP |
-| F3 | Adjacency is brittle and its loss is silent | HIGH | GAP |
-| F6 | Dynamically sized per-node allocation can never actualize | HIGH (design limit) | WORKS-AS-DESIGNED |
-| F4 | Ledger reports pairs, never runs, never what was handed out | MEDIUM | GAP |
-| F5 | Allocation-heavy lanes cost ~3x more per hand-out than compute lanes | MEDIUM | GAP |
-| F7 | Ledger cites a filename that does not exist | LOW | BUG |
+The verdicts below are the hunt's own, taken at the close of batch 0074. The
+right-hand column was added on 2026-08-22 by the 0075/0076 batch audit, which
+found the table still reading as present tense after batch 0075 had worked
+through most of it. Where a disposition names a batch record, that record
+carries the evidence and nothing here restates it.
+
+| # | Finding | Severity | Verdict (0074) | Disposition (2026-08-22) |
+|---|---|---|---|---|
+| F1 | `--par` shrinks max recursion depth ~4x; overflow is a bare SIGSEGV/SIGBUS | **CRITICAL** | BUG | **Partly closed**, 0075 Dig 1: the frame moved to the lane and the pool-*off* ceiling matches the sequential build. The pool-on ceiling is still roughly a third of it, and since 0076's L1 the pool is on by default — see that record's flagged default-behavior entry. |
+| F2 | Hand-out is unconditional; no grain control; fine folds up to 48.6x slower | **CRITICAL** (perf) | GAP | **Partly closed**, 0075 Dig 2 stage 1: work stealing turned the 48.6x cell into 1.99x *faster* than one lane. Stage 2 (C6) was built and measured and did **not** land. |
+| F3 | Adjacency is brittle and its loss is silent | HIGH | GAP | **Closed**, 0075 Dig 8 (`974d5513`): an interposed statement is judged inside a window instead of ending the enumeration. |
+| F6 | Dynamically sized per-node allocation can never actualize | HIGH (design limit) | WORKS-AS-DESIGNED | Unchanged. |
+| F4 | Ledger reports pairs, never runs, never what was handed out | MEDIUM | GAP | Partly addressed — Dig 8 added `PAR chain` lines for runs — but no batch dispositioned it, so read it as open. |
+| F5 | Allocation-heavy lanes cost ~3x more per hand-out than compute lanes | MEDIUM | GAP | **Dissolved** per 0075 Dig 3/4. |
+| F7 | Ledger cites a filename that does not exist | LOW | BUG | **Open, untouched.** Re-verified at the branch tip on 2026-08-22: a bare relative path reports correctly, while `./p1b.wf` and any absolute path both report `input0.wf`. No commit in 0075 or 0076 touched `logical_path`. |
 
 **Correctness never broke.** Across 12 probe programs and worker counts 1, 2, 4, 8, 64, 65 plus every malformed setting, output was byte-identical to the sequential build in every run. No deadlock, no livelock, no wrong bytes, no hang. Every finding is a resource, performance, or reporting defect.
 

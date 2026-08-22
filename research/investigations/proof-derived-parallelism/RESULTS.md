@@ -14,8 +14,11 @@ them. Section 4's own measurement is why: the outlining alone, with no runtime
 linked and no worker requested, cost about 1.2x on this demo and 2.1x on
 `fib(38)`, which contradicted the design's stated default of byte-identical
 behavior. Every table below therefore names which compilation it measured.
-`WF_WORKERS` is unchanged and remains the runtime knob for a program that was
-built with `--par`.
+`WF_WORKERS` remains the runtime knob for a program that was built with
+`--par`, but it is no longer *unchanged*: batch 0076's L1 (`62e30831`) made an
+unset or empty setting ask for one lane per logical CPU, where it previously
+meant no pool. Rows below that name an unset `WF_WORKERS` were taken under the
+old sense and reproduce today with `WF_WORKERS=1`.
 
 ## 1. The program under measurement
 
@@ -35,15 +38,23 @@ same kind of per-node slot, and read the same shared table. The program then
 publishes the exact bits of both fold results as hexadecimal, so a divergence
 anywhere in either tree is a divergence in the published bytes.
 
-The compiler's own account of the two folds, from `whitefootc --par-ledger`:
+The compiler's own account of the two folds, from `whitefootc --par-ledger`,
+retaken at the branch tip on 2026-08-22. Batch 0075's Dig 8 (`974d5513`)
+replaced the adjacency rule with a judged window, which added the `PAR chain`
+lines and the interposed-statement denials and reworded the condition-1 reason;
+the transcript this document carried was the pre-Dig-8 one.
 
 ```
 PAR permitted   tests/programs/par_layout.wf:19  pair(build, build)  eligible
-PAR denied      tests/programs/par_layout.wf:106  pair(cascade, measure_words)  condition 1: an argument of s2 uses the result of s1
-PAR denied      tests/programs/par_layout.wf:113  pair(cascade, measure_words)  condition 1: an argument of s2 uses the result of s1
+PAR chain       tests/programs/par_layout.wf:19  run(build, build)  2 members through line 20
+PAR denied      tests/programs/par_layout.wf:106  pair(cascade, measure_words)  condition 1: the operands of s2 read what s1 defines
+PAR denied      tests/programs/par_layout.wf:113  pair(cascade, measure_words)  condition 1: the operands of s2 read what s1 defines
+PAR denied      tests/programs/par_layout.wf:114  pair(measure_words, layout)  condition 1: the operands of s2 read what interposed statement 1 defines
 PAR permitted   tests/programs/par_layout.wf:116  pair(layout, layout)  eligible
-PAR denied      tests/programs/par_layout.wf:131  pair(cascade, measure_band)  condition 1: an argument of s2 uses the result of s1
-PAR denied      tests/programs/par_layout.wf:138  pair(cascade, measure_band)  condition 1: an argument of s2 uses the result of s1
+PAR chain       tests/programs/par_layout.wf:116  run(layout, layout)  2 members through line 117
+PAR denied      tests/programs/par_layout.wf:131  pair(cascade, measure_band)  condition 1: the operands of s2 read what s1 defines
+PAR denied      tests/programs/par_layout.wf:138  pair(cascade, measure_band)  condition 1: the operands of s2 read what s1 defines
+PAR denied      tests/programs/par_layout.wf:139  pair(measure_band, layout_banded)  condition 1: the operands of s2 read what interposed statement 1 defines
 PAR permitted   tests/programs/par_layout.wf:141  pair(layout_banded, layout_banded)  not-actualizable: 1 claim site via measure_band
 ```
 
@@ -338,6 +349,15 @@ The batch audit added three more, each measured rather than argued.
    > four workers and 0.91x at eight, i.e. faster than the default build. The
    > opt-in tax itself (2.6x) survives, because this program's grain is a
    > handful of instructions per call and the frame cannot amortise.
+   >
+   > **Superseded again, 2026-08-22:** the 2.6x opt-in tax did not survive
+   > either. Dig 7 landed the sequential clone, so a `--par` build that is not
+   > granted lanes runs the sequential code, and `fib(38)` re-measured at
+   > **1.00x** (0.2349 s -> 0.0791 s). Note also that "`--par` unset" in the row
+   > above means the pool-off execution, which is what an unset `WF_WORKERS`
+   > meant when the row was taken; batch 0076's L1 (`62e30831`) changed an unset
+   > setting to mean one lane per logical CPU, so reproducing that row today
+   > needs `WF_WORKERS=1`.
 9. **Switching lanes on for a fine-grained program is a large loss, not a small
    one.** `wfgrep e compiler` over this repository's own source tree — the
    branch tip through `git archive`, so no build directory — interleaved,

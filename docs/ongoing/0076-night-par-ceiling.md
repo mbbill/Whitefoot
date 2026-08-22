@@ -38,6 +38,13 @@ untouched.
 No spec bytes planned. No protected conformance/compliance changes. No new
 repository root entries.
 
+**Repository gate at tip:** `make check` exits nonzero at the conformance step,
+135/136 rules, the uncovered rule being CANDIDATE [PAR-1] itself. Disposition
+(lead): the one-line protected conformance annotation prepared in the 0074
+record (exact bytes recorded there) closes coverage; it is protected-class
+material presented for owner approval at merge, and this branch requests merge
+WITH that line in the packet rather than presenting a green repository gate.
+
 **Flagged default-behavior change, landed — the merge packet must present
 it.** An unset (or empty) `WF_WORKERS` in a `--par` binary now asks for one
 lane per logical CPU instead of silently meaning sequential. The count is the
@@ -45,9 +52,25 @@ machine's logical CPUs, not the performance-core count this record first
 proposed: probe A1 found the coarse configurations improve monotonically past
 the four performance cores, and the measurement below shows no oracle cell
 falls below its own sequential build at ten. `WF_WORKERS=0`, `=1`, and any
-unparsable value keep today's meaning and start no pool. No observable
-changes: [PAR-1] makes the worker count unobservable and every cell published
-identical bytes.
+unparsable value keep today's meaning and start no pool.
+
+**What changes and what does not — corrected after the batch audit.** No
+*published bytes* change: [PAR-1] makes the worker count unobservable and every
+cell published identical bytes at every count. But this record originally said
+"no observable changes" flatly, and that is too wide. A program that runs
+unconfigured now runs in the overlapped world, and that world reaches roughly a
+third of the sequential build's recursion depth: on the checked-in `min_stack`
+probe at an ordinary 8 MB stack the default build passes 400 000 frames while
+the pool-on run fails by 185 000, and the death is a bare SIGSEGV. So a deep
+recursion that completed at the old default can abort at the new one with no
+source change and no configuration, and the owner is approving that. Two facts
+bound it, both re-derived by the audit's refuters: [PAR-1]'s own text places
+exhaustion of the resources an implementation spends on overlapping under
+[SCOPE-3] and outside the rule's observables, and the default build already
+dies the same way at its own higher ceiling — so the change moves a threshold
+and introduces no new failure class. The blind spot found beside it, that no
+test measured depth at the shipped default, is closed in the audit-repair entry
+below.
 
 ## Executor log
 
@@ -80,7 +103,7 @@ battery reports.)
   so the default is a choice between two known mistakes; ten keeps the floor at
   or above sequential everywhere and takes the coarse win. A focused min-of-11
   on the marginal cell (spreads 3.9%/6.7%/1.0%) reads `bal_d8_w16` sequential
-  0.5677 s, default 0.5053 s, `WF_WORKERS=1` 0.6477 s — the default is 1.26x of
+  0.5677 s, default 0.5053 s, `WF_WORKERS=1` 0.6477 s — the default is 1.28x of
   the same binary's own opt-out, so the floor holds in both framings.
   **Test expectations changed, with the reason.** `run_with_stack` now names
   `WF_WORKERS=1` instead of removing the variable: absent is the default and
@@ -223,12 +246,13 @@ battery reports.)
   keep the observer off the join — poll a flag, or put the observer at the same
   QoS.
 
-- **Verification at the branch tip, over all four landings.**
+- **Verification over the four compiler-affecting landings.**
   `make -C compiler check` exit 0 at the tip and before the first landing.
   **No emitted code moved for the diagnostic**: the 66 modules the corpus and
   the bench emit under both the default and `--par` compilations are
-  byte-identical between the pre-hint binary and the tip (10 corpus sources are
-  not standalone-compilable and emit nothing on either side). **Byte identity
+  byte-identical between the pre-hint binary and the tip (5 of the 38 sources
+  are not standalone-compilable and emit nothing in either mode, so the count
+  is 33 sources x 2 modes). **Byte identity
   across the whole grid at the tip**: a three-round rotation of all thirteen
   configurations, 195 Whitefoot outputs and 273 Rust outputs compared by `cmp`,
   reports every run of every configuration identical within each language and
@@ -237,7 +261,11 @@ battery reports.)
   marked unresolved, on the twelve layout configurations and on the new grid
   row alike (load average 3.46, corporate agents active). No spec bytes, no
   protected conformance or compliance change, and no new repository root entry
-  in any of the four commits.
+  in any of the four commits. This section was written at `1e103492`;
+  `b87d20bb` landed afterwards as a fifth change and touches no `compiler/`
+  path, so it moves none of the results above. The audit-repair commit that
+  follows it does touch `compiler/`, and carries its own verification in the
+  audit-repair entry below.
 
 - **Protocol amendment and the campaign's authoritative rotation (lead
   decision, C1).** The measured grid gains a `default` worker cell for both
@@ -277,7 +305,7 @@ battery reports.)
   `grid_d21_w256`/default 0.0788 s, 6.57x, against rayon's default 0.0775 s —
   1.02x, parity, so the index-split family scales like the data-structure
   families and neither language wins it. `wf_par/default` is the best Whitefoot
-  cell on 7 of 13 configurations. In `t_headline`, best-WF against best-Rust is
+  cell on 8 of 13 configurations. In `t_headline`, best-WF against best-Rust is
   unresolved on 12 of 13 and resolves only on `bal_d8_w64` (0.83x, WF faster);
   **there is still no configuration where Rust's best resolves faster than
   Whitefoot's best.**
@@ -290,9 +318,23 @@ battery reports.)
   0.5934) while `w1` rose (0.6077 -> 0.7634, +26%), so it is the `--par` build's
   pool-off path that got slower, not the machine. A clean monotone dependence on
   a workload parameter across three tree depths is not what contention produces.
-  Not bisected here and no cause is claimed; the words-monotone shape points at
-  the measure loop and so at the counted-loop landing (`36963401`) as the first
-  thing to check. **Consequence for the recorded per-fork number:** 0075's
+  Not bisected when this paragraph was written. **It has since been bisected by
+  the batch audit and the cause is named: L1 (`62e30831`), not the counted-loop
+  landing this paragraph first pointed at.** `36963401` is excluded by byte
+  identity — the 66 modules above are identical across it, and the `--par`
+  executables of `bal_d12_w192`, `bal_d8_w16` and `skew_d16_w192` link
+  byte-identically between `165f8b5e` and the tip once the output basename is
+  held equal (`clang` derives `LC_UUID` from it). Between Dig 7 (`d4e674c3`)
+  and the tip the twelve oracle sources emit 24/24 byte-identical modules and
+  the only change to `par_runtime.c` is `62e30831`. The mechanism is the
+  code-placement sensitivity Dig 3 attributed and Dig 7 measured at 1.19x on a
+  layout program: one LLVM module linked with the *pre-L1* runtime reads
+  0.5994 s, with the tip runtime 0.7769 s, and with the pre-L1 runtime and the
+  two `clang` inputs reversed 0.7773 s. So it is where the linker put the code
+  and not work the runtime does — at `WF_WORKERS=1` the new
+  `wf__par_default_lanes` is never reached, and the binaries differ by 144
+  bytes. See the invariant-breach entry below.
+  **Consequence for the recorded per-fork number:** 0075's
   formula takes `w1/4` as the ideal, and an inflated `w1` makes that ideal
   unreachable — at `bal_d12_w192`/4 it now yields **-9.44 ns/fork**, which
   measures the regression rather than fork cost. Against `wf_seq/4`, the
@@ -301,6 +343,101 @@ battery reports.)
   the fork path itself did not regress.
   No spec bytes, no protected conformance or compliance change, and no new
   repository root entry.
+
+- **The `w1` regression is a breach of this batch's own standing invariant,
+  and is recorded as one.** "No cell regresses outside the band" is stated at
+  the head of this record for every landing, and the night plan states it
+  again; L1 broke it on three cells. `wf_par/1` minima, `bench/baseline/`
+  against `bench/baseline-20260822/`: `bal_d8_w192` 0.6133 -> 0.7768 s
+  (**1.267x**), `bal_d10_w192` 0.6286 -> 0.7787 s (**1.239x**), `bal_d12_w192`
+  0.6077 -> 0.7634 s (**1.256x**). The other six `bal` cells run 1.099x-1.199x,
+  inside the band; `skew` is 0.93x-1.01x and `grid` is 1.00x. The attribution is
+  the one stated above: L1's runtime edit re-rolled the link layout of every
+  `--par` binary, and byte-identity sweeps exclude every other commit in range.
+  **What the breach does not touch.** Every `W >= 2` cell and every
+  cross-language comparison are unaffected. The `wf_seq` minima barely moved,
+  the matched-worker and default win counts above stand, and rayon still
+  resolves faster on no cell. The breach is confined to the opt-out path of a
+  `--par` build at one worker.
+  **Why the landing's own evidence could not see it.** L1's no-pessimization
+  check compares the new default against the *same tip's* sequential build and
+  against four lanes. It takes no before/after on any cell, so a placement
+  regression introduced by that same commit was invisible to it by
+  construction. A landing that changes the size of a `--par` binary needs a
+  before/after on the opt-out cells, and this one did not take one.
+  **Standing item, unlocated — no code fix attempted.** The cause is link
+  layout, which Dig 7 established re-rolls on any size change to a `--par`
+  binary and which nothing in the tree locates or pins. It stays open as this
+  campaign's one unlocated stall. It also supersedes Dig 7's headline —
+  "`--par` at one worker now reads 1.00x-1.01x on all twelve configurations"
+  (`0075:727`) — which nine of twelve configurations no longer meet.
+
+- **Adversarial batch audit of 0075 and 0076, and the repairs it produced
+  (2026-08-22).** Six finder lenses — hygiene and drift, protected classes and
+  the approval surface, relevance and attribution, soundness of the semantic
+  changes, record-against-tree truthfulness, and gate and test integrity —
+  raised 57 findings over the range `8a41dbf5..b87d20bb`. Six refuter passes
+  re-derived every one of them independently, in their own clones and with
+  their own builds.
+  **What the refuters did to them.** Three findings were refuted outright: that
+  both records are defective for carrying an unfilled `## Outcome` (that is the
+  expected state of a live record, and this audit is a precondition of filling
+  it); that `spec-digest-sync` will fail after the rebase (a refuter three-way
+  merged the branch with `main` and ran the real target — exit 0); and that a
+  Dig 10 status line is stale (it labels its own log entry correctly). A fourth
+  was refuted as stated and re-scoped:
+  `handing_calls_out_keeps_the_sequential_recursion_depth` is not "a tautology
+  under its own name", since keeping the sequential depth is exactly what it
+  still asserts — what survives is its 2.82 s cost. Several sub-claims fell
+  too, the load-bearing one being the assertion that gap-hunt F7 had healed; it
+  has not, and it is recorded as open below. Four findings raised as CRITICAL
+  were downgraded to MAJOR on evidence, and one — the `probes/README.md` drift
+  — was *upgraded*, the finder having reported one stale string where four
+  load-bearing paragraphs were false. One CRITICAL survived refutation, and it
+  is not this batch's: the branch's CANDIDATE spec is numbered v0.34 while
+  `main` has since ACTIVATED its own v0.34, which a refuter reproduced against
+  the archive-integrity target itself.
+  **Repaired in this commit.** The invariant breach and its attribution above,
+  with 0075's superseded Dig 7 headline corrected in place; the false safety
+  claim in the counted-loop hint, where `CalleeFacts::admits` ignored the
+  callee's `writes` row so a `fadd.strict` fold one call frame away could be
+  reported as a `+wrap` reduction — one root cause closing three findings, now
+  refused and pinned by
+  `a_counted_loop_whose_callee_writes_carried_state_is_told_nothing`; the
+  recursion-depth blind spot at the shipped default, closed by
+  `the_shipped_default_keeps_a_deep_recursion`; this record's over-wide "no
+  observable changes"; four stale durable documents (`probes/README.md`,
+  `DESIGN.md`, `RESULTS.md` including its pre-Dig-8 ledger transcript,
+  `bench/PROTOCOL.md`) superseded in place; the gap-hunt verdict table given
+  dispositions; and the number corrections — 7 of 13 to 8, 1.26x to 1.28x, "10
+  corpus sources" to 5 sources over 10 emissions, and the four-landings
+  phrasing.
+  **Verification of the repair.** `make -C compiler check` exit 0 before and
+  after. The hint change is diagnostic-only and moves nothing: a sweep of all
+  698 `.wf` sources outside `archive/` under `--par-ledger --par --emit-llvm`
+  is **byte-identical before and after** — every module hash, every exit
+  status, and every ledger line, including the two `PAR hint` lines the corpus
+  emits. The new fixture was confirmed non-vacuous by removing the guard and
+  watching it fail with exactly the defective line. The new depth case was
+  sized from measurement rather than guessed: at an 8 MB limit the default
+  reaches past 160 000 frames and fails by 180 000, and 60 000 passed 20 runs
+  of 20.
+  **Confirmed by refuters and NOT repaired here, so the packet must carry
+  them.** (1) The spec version collision, which needs the candidate renumbered
+  to v0.35 and re-derived on `main`'s v0.34 bytes; it is spec-class work and it
+  moves the 0074 amendment recipe's digest, its META-5 delta and the rule
+  count. (2) Two gate-integrity tests that are nondeterministic under load
+  because `wf__par_grants` now counts steals rather than lane grants —
+  `the_runtime_replaces_the_modules_weak_refusal` and
+  `an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not`,
+  the second flaky even on an idle machine and admitting an injected live
+  defect a quarter of the time under load. Both are protected gate-integrity
+  material, and 0075's recorded margin for the first is withdrawn there. (3)
+  `docs/current-plan.md`, still `PROPOSED` and contradicted by L1; the lead
+  authors it separately. (4) gap-hunt F7 — open, low, untouched in range. (5)
+  The proportionality objection to `loop_hint` itself: 565 lines of permanent
+  compiler surface for two advisory lines across 537 sources. That is an owner
+  call rather than a defect, and it is carried here rather than argued away.
 
 ## Outcome
 

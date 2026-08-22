@@ -442,6 +442,58 @@ fn handing_calls_out_keeps_the_sequential_recursion_depth() {
     std::fs::remove_dir_all(&overlapped_directory).expect("remove the test directory");
 }
 
+/// The world an unconfigured `--par` binary runs in reaches a deep recursion
+/// too.
+///
+/// [`handing_calls_out_keeps_the_sequential_recursion_depth`] measures the
+/// pool-*off* world: it names `WF_WORKERS=1`, which sends the bootstrap into
+/// the sequential clone. Nothing else in the tree sets a stack limit, so
+/// without this case no test measures depth in the world a binary reaches with
+/// no configuration at all — and that is the world the original defect lived
+/// in. A per-activation frame slot cost about four times the stack there and
+/// died as a bare SIGSEGV: a recursion that ran without `--par` and did not
+/// run with it.
+///
+/// What is pinned is a floor and not a parity, because an overlapped
+/// activation is genuinely not free. Measured on this fixture at this limit,
+/// the default reaches past 160 000 frames and fails by 180 000, where the
+/// sequential build still reaches past 200 000. The depth asked for is 60 000
+/// — about 2.7x clear of the ceiling the default has, and far below the
+/// ~45 000 a fourfold frame regression would leave it, so the case fails on
+/// the defect it watches for rather than on ordinary drift.
+///
+/// The limit is 8 MB rather than the 1 MB its sibling uses, and that is what
+/// takes the steal race out of the result: a stolen descent runs on a worker
+/// stack of the larger of `RLIMIT_STACK` and 8 MB, so at this limit both sides
+/// of the race have exactly the same room and which one takes the deep call
+/// cannot decide the outcome.
+#[test]
+fn the_shipped_default_keeps_a_deep_recursion() {
+    const STACK_KILOBYTES: u32 = 8192;
+    const DEPTH: u32 = 60_000;
+
+    let source = DEEP_RECURSION
+        .replace("DEPTH", &DEPTH.to_string())
+        .into_bytes();
+    let overlapped_module = emit_with_overlap(&source);
+    assert!(
+        module_requires_parallel_runtime(&overlapped_module),
+        "the fixture must hand work out, or this case is vacuous"
+    );
+
+    let directory = test_directory();
+    let overlapped = build_executable(&overlapped_module, &directory);
+    let status = run_at_shipped_default_with_stack(&overlapped, STACK_KILOBYTES);
+    assert!(
+        status < 2,
+        "a --par binary with no worker setting did not survive depth {DEPTH} on \
+         a {STACK_KILOBYTES} KB stack (exit {status}), so the world it runs in \
+         unconfigured is taxing activations the sequential lowering does not"
+    );
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
 /// Runs one executable with a stack limit of its own and no pool, and reports
 /// its exit status. A stack overflow arrives here as the shell's report of the
 /// signal, which is no exit status the program itself can produce.
@@ -452,13 +504,27 @@ fn handing_calls_out_keeps_the_sequential_recursion_depth() {
 /// where the limit this case sets means nothing and the comparison would pass
 /// without measuring anything.
 fn run_with_stack(executable: &Path, kilobytes: u32) -> i32 {
-    let output = Command::new("/bin/sh")
+    run_under_stack_limit(executable, kilobytes, Some("1"))
+}
+
+/// The same run with the setting genuinely absent, which is what a program
+/// gets when nobody configures it. The variable is removed rather than left
+/// alone, so the result does not depend on the environment the suite runs in.
+fn run_at_shipped_default_with_stack(executable: &Path, kilobytes: u32) -> i32 {
+    run_under_stack_limit(executable, kilobytes, None)
+}
+
+fn run_under_stack_limit(executable: &Path, kilobytes: u32, workers: Option<&str>) -> i32 {
+    let mut command = Command::new("/bin/sh");
+    command
         .arg("-c")
         .arg(format!("ulimit -s {kilobytes}; exec \"$0\""))
-        .arg(executable)
-        .env("WF_WORKERS", "1")
-        .output()
-        .expect("run under a stack limit");
+        .arg(executable);
+    match workers {
+        Some(lanes) => command.env("WF_WORKERS", lanes),
+        None => command.env_remove("WF_WORKERS"),
+    };
+    let output = command.output().expect("run under a stack limit");
     output.status.code().unwrap_or(-1)
 }
 

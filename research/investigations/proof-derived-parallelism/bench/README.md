@@ -76,9 +76,10 @@ produced by the same rotation and minimum rule.
 Ratios are min-of-N. **Any ratio between 0.83x and 1.20x is unresolved** and
 the tables mark it `unres.`; this instrument does not separate those two
 numbers, and no claim may be made about a cell so marked. Per-cell spreads are
-large — mean 126%, worst 570% — because the machine is a shared laptop with
-efficiency cores; that is exactly why the minimum, not the mean, is the
-statistic, and why sub-20% differences are not conclusions.
+large — mean 112%, worst 411%, over the current reference snapshot's 182 cells
+— because the machine is a shared laptop with efficiency cores; that is exactly
+why the minimum, not the mean, is the statistic, and why sub-20% differences are
+not conclusions.
 
 ## Baseline, 2026-08-21
 
@@ -88,9 +89,15 @@ and across them (`baseline/byte_comparison.txt`). Full snapshot in
 `baseline/results.tsv` and `baseline/cells.tsv`.
 
 This snapshot is the twelve layout configurations only; the `grid` family was
-added afterwards and is not in it. Its first recorded numbers are in batch
-0076's record, and the next authoritative rotation replaces this section with
-all thirteen.
+added afterwards and is not in it. **This section is superseded and kept as the
+dated 2026-08-21 record.** It once promised that the next authoritative rotation
+would replace it with all thirteen; that rotation landed as
+`baseline-20260822/`, which ships its own README and ten generated tables, and
+this section was left in place instead of being rewritten. Read the tables below
+as history — their headline WF/Rust column reports 1.56x-3.29x with `wf_par/1`
+as the best Whitefoot cell, where the current snapshot reports 0.83x-1.05x,
+unresolved on twelve of thirteen. The `baseline/` pointers in this section are
+correct for this section.
 
 ### Configuration inventory
 

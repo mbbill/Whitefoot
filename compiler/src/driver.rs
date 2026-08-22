@@ -861,6 +861,71 @@ command fn main() -> status: own ExitStatus pure {
         );
     }
 
+    /// A counted loop whose carried state is written by a callee gets no line
+    /// either, however associative the accumulator in view is.
+    ///
+    /// The survey classifies the `set` statements of the loop body, so a
+    /// callee writing caller storage through a `&uniq` parameter carries state
+    /// across iterations that no `set` records. The loop below folds a float
+    /// total that way, beside an ordinary `+wrap` counter — and the counter is
+    /// what a line would name, advising the split of a range whose real
+    /// carried state is a `fadd.strict` fold. The callee's `writes` row is the
+    /// fact that refuses it, so the enumerated combine set governs all of the
+    /// loop's carried state and not only the part written in view.
+    #[test]
+    fn a_counted_loop_whose_callee_writes_carried_state_is_told_nothing() {
+        let source =
+            b"fn accum['s](slot: &uniq 's f64, x: own f64) -> result: own u64 reads('s), writes('s) {
+  set deref(slot) = fadd.strict(deref(slot), x);
+  let bits = reinterpret<f64, u64>(deref(slot));
+  return iand(bits, 1_u64);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let total = 0.0_f64;
+  let count = 0_u64;
+  for @sum i in 0_u64..8_u64 {
+    region 'acc {
+      let one = accum<'acc>(slot: &uniq 'acc total, x: 0.5_f64);
+      set count = count +wrap one;
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+";
+        assert_eq!(
+            ledger_of("carrying.wf", source),
+            Vec::<String>::new(),
+            "carried state written by a callee must produce no split advice"
+        );
+
+        // The same loop over a callee that writes nothing does get the line,
+        // so the silence above is about the row and not about the shape.
+        let reading = b"fn weigh(x: own f64) -> result: own u64 pure {
+  let bits = reinterpret<f64, u64>(x);
+  return iand(bits, 1_u64);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let total = 0.0_f64;
+  let count = 0_u64;
+  for @sum i in 0_u64..8_u64 {
+    let one = weigh(x: total);
+    set count = count +wrap one;
+  }
+  return exit_status(code: 0_u8);
+}
+";
+        assert_eq!(
+            ledger_of("carrying.wf", reading),
+            vec![
+                "PAR hint        carrying.wf:9  loop  no eligible pair; a recursive split over \
+                 its index range would be eligible, combining under +wrap"
+                    .to_owned()
+            ]
+        );
+    }
+
     /// A program with no analyzed pair reports nothing, and the ledger never
     /// reaches the module: the same compilation with and without it emits the
     /// same bytes.
