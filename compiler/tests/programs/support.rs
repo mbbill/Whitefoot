@@ -235,9 +235,14 @@ impl CompiledProgram {
     ///
     /// `workers` is `None` for the shipped default — the variable unset, which
     /// is every other case in this corpus — and `Some(count)` for a run that
-    /// offers lanes. A case that compares the two needs both spellings from one
-    /// built executable, because the difference under test is the execution and
-    /// not the program.
+    /// names a count. A case that compares the two needs both spellings from
+    /// one built executable, because the difference under test is the execution
+    /// and not the program.
+    ///
+    /// In a `--par` build the default is a pool sized to the machine, so
+    /// `None` is a parallel execution and `Some("1")` is the sequential one. In
+    /// a default build no runtime is linked and neither spelling reaches
+    /// anything.
     pub fn run_with_workers(&self, workers: Option<&str>) -> Output {
         let mut command = Command::new(&self.executable);
         command.current_dir(&self.directory);

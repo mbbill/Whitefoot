@@ -71,16 +71,23 @@
  *
  * The pool is process-lifetime trusted computing base, like malloc's
  * internals: no Whitefoot construct names it, no Whitefoot value reaches it,
- * and it writes nothing to any output. WF_WORKERS selects the thread count;
- * unset, unparsable, or below two leaves the pool unstarted, so every claim
- * returns NULL and every program runs exactly the sequential schedule it runs
- * today — and, since the module can ask, exactly the sequential code as well.
+ * and it writes nothing to any output. WF_WORKERS selects the thread count.
+ * Unset — the shape a `--par` binary is actually handed to somebody in — asks
+ * for this machine's logical CPUs, so a program that was built for overlap
+ * overlaps. An explicit `0`, `1`, or anything that does not parse leaves the
+ * pool unstarted, so every claim returns NULL and every program runs exactly
+ * the sequential schedule it runs today — and, since the module can ask,
+ * exactly the sequential code as well.
  */
 
 #include <pthread.h>
 #include <sched.h>
 #include <stdlib.h>
 #include <sys/resource.h>
+#include <unistd.h>
+#if defined(__APPLE__)
+#include <sys/sysctl.h>
+#endif
 
 /* An upper bound on threads of execution, so a hostile WF_WORKERS cannot ask
  * for unbounded threads. It is a resource ceiling, not a language constant. */
@@ -517,12 +524,44 @@ static void wf__par_prepare(struct wf__par_lane *lane, int index) {
     lane->free_head = 0;
 }
 
+/* What an unset WF_WORKERS asks for: this machine's logical CPUs, clamped to
+ * the lane ceiling above.
+ *
+ * `hw.logicalcpu` is the Darwin spelling and reports the cores this process may
+ * be scheduled on right now, which is the number the pool wants; the portable
+ * `_SC_NPROCESSORS_ONLN` answers on a host that has no such name. A machine
+ * that reports fewer than two gets 0, which is what an explicit opt-out gets,
+ * because one thread of execution is the sequential world either way.
+ *
+ * Naming every core rather than only the performance ones is a measured
+ * choice, not an assumption: on the 4P+6E machine this was built on, the coarse
+ * oracle configurations improve monotonically from 4 lanes to 10 (bal_d12_w192
+ * 4.71x at 8 lanes to 5.16x at 10), and the fine ones do not fall below their
+ * own sequential build there. An efficiency core that runs a stolen subtree at
+ * a fraction of a performance core's rate still finishes it sooner than not
+ * starting it. */
+static int wf__par_default_lanes(void) {
+    long online;
+#if defined(__APPLE__)
+    int logical = 0;
+    size_t width = sizeof(logical);
+    if (sysctlbyname("hw.logicalcpu", &logical, &width, NULL, 0) == 0 && logical >= 2) {
+        return (logical > WF_PAR_MAX_LANES) ? WF_PAR_MAX_LANES : logical;
+    }
+#endif
+    online = sysconf(_SC_NPROCESSORS_ONLN);
+    if (online < 2) {
+        return 0;
+    }
+    return (online > WF_PAR_MAX_LANES) ? WF_PAR_MAX_LANES : (int)online;
+}
+
 static int wf__par_requested_lanes(void) {
     const char *setting = getenv("WF_WORKERS");
     char *end = NULL;
     long requested;
     if (setting == NULL || setting[0] == '\0') {
-        return 0;
+        return wf__par_default_lanes();
     }
     requested = strtol(setting, &end, 10);
     if (end == setting || *end != '\0' || requested < 2) {
@@ -729,9 +768,10 @@ void wf__par_release(void *frame) {
  * a `--par` run that never reaches a hand-out creates no threads at all.
  *
  * The answer is fixed for the life of the process: the environment is the
- * process's own, `wf__par_start` reads the same setting through the same
- * function, and neither a pool that started nor one that did not ever
- * changes. That is what makes it safe to keep forever, which is what the
+ * process's own, the core count it falls back to when the setting is absent is
+ * the machine's, `wf__par_start` reads both through the same function, and
+ * neither a pool that started nor one that did not ever changes. That is what
+ * makes it safe to keep forever, which is what the
  * caller does — it asks at the entry and never again — and what distinguishes
  * it from a demand signal: nothing here measures what the pool is *doing*, so
  * no thread ever writes a word another reads on account of it.

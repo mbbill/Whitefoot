@@ -155,14 +155,16 @@ struct Options {
     /// through a phi that can foreclose a transform the sequential build gets.
     /// What that costs before any worker runs depends entirely on grain: on a
     /// heavy recursive fold it was already nothing, while `fib(38)` measured
-    /// 0.0790 s default against 0.2337 s `--par` with `WF_WORKERS` unset, or
-    /// 2.96x, almost all of it one foreclosed tail-recursion transform. So a
-    /// `--par` build now carries the sequential lowering as well, byte for
-    /// byte, and its bootstrap selects between the two once, on whether a pool
-    /// was asked for. Re-measured the same way, `fib(38)` reads 0.0810 s with
-    /// `WF_WORKERS` unset against 0.0811 s for the default build, and the
-    /// twelve paired-layout programs read 1.00x-1.01x of their own default
-    /// builds at one worker, where before they ranged 0.68x-1.02x.
+    /// 0.0790 s default against 0.2337 s `--par` with the pool off, or 2.96x,
+    /// almost all of it one foreclosed tail-recursion transform. So a `--par`
+    /// build now carries the sequential lowering as well, byte for byte, and
+    /// its bootstrap selects between the two once, on whether a pool was asked
+    /// for. Re-measured the same way, `fib(38)` reads 0.0810 s with the pool
+    /// off against 0.0811 s for the default build, and the twelve
+    /// paired-layout programs read 1.00x-1.01x of their own default builds at
+    /// one worker, where before they ranged 0.68x-1.02x. (Both readings are
+    /// taken at `WF_WORKERS=1`. An absent setting asks for a pool sized to the
+    /// machine, so it is not the pool-off spelling.)
     ///
     /// Two prices, both real. Code size, paid only by a `--par` build: 7% to
     /// 14% more machine code, which is 0.5% to 0.6% of the linked file. And a
@@ -177,7 +179,9 @@ struct Options {
     /// The permission is never an obligation, so the default compilation takes
     /// none of it and emits exactly the module it emitted before this path
     /// existed, with one world in it. `WF_WORKERS` remains the runtime knob
-    /// for a program built this way.
+    /// for a program built this way: absent it asks for one lane per logical
+    /// CPU, which is what a binary handed to somebody gets, and `0`, `1`, or an
+    /// unparsable value is the opt-out that starts no pool at all.
     par: bool,
     /// Print the non-normative permission ledger on stdout.
     par_ledger: bool,

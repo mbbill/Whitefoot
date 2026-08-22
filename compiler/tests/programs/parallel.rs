@@ -109,17 +109,22 @@ fn the_default_compilation_of_the_demo_names_no_runtime() {
 
 /// Offering lanes moves no byte of the program's published result.
 ///
-/// The reference is the same executable with the worker setting absent, which
-/// is the shipped default and the execution every other corpus program gets.
+/// The reference is `WF_WORKERS=1` — the same executable's own sequential
+/// world, where the pool never starts and every offer is refused — so what the
+/// overlapped runs are compared against is an execution that overlapped
+/// nothing. An absent setting is now the shipped default and starts a pool, so
+/// it is one of the compared runs rather than the reference: taking it as the
+/// reference would compare parallel executions with each other and would go
+/// green on a defect present in all of them.
 #[test]
 fn the_layout_program_publishes_one_byte_sequence_at_every_worker_count() {
     let llvm = compile_program_with_overlap("par_layout.wf");
     let program = build_program(&llvm);
 
-    let reference = program.run_with_workers(None);
+    let reference = program.run_with_workers(Some("1"));
     assert!(
         reference.status.success(),
-        "the default execution must succeed: {}",
+        "the sequential execution must succeed: {}",
         String::from_utf8_lossy(&reference.stderr)
     );
     assert_eq!(
@@ -129,18 +134,19 @@ fn the_layout_program_publishes_one_byte_sequence_at_every_worker_count() {
     );
     assert!(reference.stderr.is_empty());
 
-    for workers in ["2", "4"] {
-        let overlapped = program.run_with_workers(Some(workers));
+    for workers in [None, Some("2"), Some("4")] {
+        let named = workers.unwrap_or("absent");
+        let overlapped = program.run_with_workers(workers);
         assert!(
             overlapped.status.success(),
-            "WF_WORKERS={workers} must succeed: {}",
+            "WF_WORKERS={named} must succeed: {}",
             String::from_utf8_lossy(&overlapped.stderr)
         );
         assert_eq!(
             overlapped.stdout, reference.stdout,
-            "WF_WORKERS={workers} moved a byte of the result"
+            "WF_WORKERS={named} moved a byte of the result"
         );
-        assert!(overlapped.stderr.is_empty(), "WF_WORKERS={workers}");
+        assert!(overlapped.stderr.is_empty(), "WF_WORKERS={named}");
     }
 }
 

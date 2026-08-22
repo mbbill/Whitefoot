@@ -392,8 +392,8 @@ command fn main() -> status: own ExitStatus pure {
 /// one reaches (about 21 600), roughly 15% clear of each.
 ///
 /// **What this measures changed when the module grew a second world, and it is
-/// worth saying which half it now holds.** It runs with `WF_WORKERS` removed,
-/// so the bootstrap selects the sequential clone and what descends here is the
+/// worth saying which half it now holds.** It runs at `WF_WORKERS=1`, so the
+/// bootstrap selects the sequential clone and what descends here is the
 /// clone's frames — the property under test is now that asking for overlap
 /// costs no depth *because the pool-off program runs the sequential code*,
 /// which is a stronger guarantee than the one this case was written for and a
@@ -445,12 +445,18 @@ fn handing_calls_out_keeps_the_sequential_recursion_depth() {
 /// Runs one executable with a stack limit of its own and no pool, and reports
 /// its exit status. A stack overflow arrives here as the shell's report of the
 /// signal, which is no exit status the program itself can produce.
+///
+/// The pool is refused by naming one lane rather than by leaving the setting
+/// absent, because absent is the shipped default and starts a pool. That would
+/// hand this fixture's deep side to a thief descending on an 8 MB worker stack,
+/// where the limit this case sets means nothing and the comparison would pass
+/// without measuring anything.
 fn run_with_stack(executable: &Path, kilobytes: u32) -> i32 {
     let output = Command::new("/bin/sh")
         .arg("-c")
         .arg(format!("ulimit -s {kilobytes}; exec \"$0\""))
         .arg(executable)
-        .env_remove("WF_WORKERS")
+        .env("WF_WORKERS", "1")
         .output()
         .expect("run under a stack limit");
     output.status.code().unwrap_or(-1)
@@ -872,7 +878,7 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
     // Linked with the runtime: the strong definitions win. The count is the
     // runtime's own, reported at process exit by the observer unit, so a
     // link that kept the weak refusal reports zero here and fails.
-    let (granted, parallel) = run_counting_grants(&module, &directory, "4");
+    let (granted, parallel) = run_counting_grants(&module, &directory, Some("4"));
     assert_eq!(parallel.status.code(), Some(0));
     assert_eq!(
         parallel.stdout, sequential.stdout,
@@ -883,11 +889,55 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
         "the runtime granted no lane, so nothing was overlapped"
     );
 
-    // And the runtime's own default: one lane of execution is the calling
-    // thread alone, so the pool never starts and every offer is refused.
-    let (unset, quiet) = run_counting_grants(&module, &directory, "1");
+    // And the explicit opt-out: one lane of execution is the calling thread
+    // alone, so the pool never starts and every offer is refused.
+    let (opted_out, quiet) = run_counting_grants(&module, &directory, Some("1"));
     assert_eq!(quiet.stdout, sequential.stdout);
-    assert_eq!(unset, 0, "WF_WORKERS=1 must never start the pool");
+    assert_eq!(opted_out, 0, "WF_WORKERS=1 must never start the pool");
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// The shipped default is a pool: a `--par` binary run with `WF_WORKERS`
+/// absent grants lanes, and only an explicit opt-out refuses them.
+///
+/// This is the whole of the default-behavior change, and it needs its own case
+/// because every other case here names a worker count. Before it, an unset
+/// variable meant the sequential world, so a `--par` binary handed to anybody
+/// who did not know about the variable was byte-for-byte a sequential program
+/// and the entire path was off for every real run. The grant count is the
+/// runtime's own counter, so "the pool started" is read rather than assumed.
+///
+/// The opt-outs are pinned in the same case against the same executable, so a
+/// change that turned the default on by making *every* setting start a pool
+/// fails here rather than passing as a stronger version of the same news.
+/// `abc` stands for the unparsable settings: a value that is not a number is
+/// not a request for lanes, and reading it as one would be the runtime
+/// inventing a count the caller did not ask for.
+#[test]
+fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
+    let module = emit_with_overlap(OVERLAPPING_FOLD);
+    let directory = test_directory();
+
+    let (defaulted, published) = run_counting_grants(&module, &directory, None);
+    assert_eq!(published.status.code(), Some(0));
+    assert!(
+        defaulted > 0,
+        "a --par binary with no worker setting must run in the overlapped \
+         world and be granted lanes, or the path is off for every real run"
+    );
+
+    let mut runs = vec![("WF_WORKERS absent".to_owned(), published.stdout)];
+    for setting in ["0", "1", "abc"] {
+        let (granted, output) = run_counting_grants(&module, &directory, Some(setting));
+        assert_eq!(output.status.code(), Some(0), "WF_WORKERS={setting}");
+        assert_eq!(
+            granted, 0,
+            "WF_WORKERS={setting} is an opt-out and must never start the pool"
+        );
+        runs.push((format!("WF_WORKERS={setting}"), output.stdout));
+    }
+    identical(&runs).expect("the default must not move one byte of the result");
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
@@ -1128,13 +1178,17 @@ fn build_executable_without_runtime(module: &str, directory: &Path) -> std::path
 /// Links one module against the runtime plus an observer that reports the
 /// runtime's own grant count at process exit, then runs it at `workers`.
 ///
+/// `workers` is `None` for the shipped default — the variable removed from the
+/// child's environment, which is how a `--par` binary is actually handed to
+/// somebody — and `Some(count)` for a run that names a count.
+///
 /// The observer reads `wf__par_grants`, which no Whitefoot construct can name;
 /// it exists exactly so a pool that never grants a lane cannot pass for one
 /// that does.
 fn run_counting_grants(
     module: &str,
     directory: &Path,
-    workers: &str,
+    workers: Option<&str>,
 ) -> (u64, std::process::Output) {
     let assembly = directory.join("counted.ll");
     let runtime = directory.join("counted_runtime.c");
@@ -1166,10 +1220,12 @@ fn run_counting_grants(
         "the runtime and its observer must link:\n{}",
         String::from_utf8_lossy(&linked.stderr)
     );
-    let output = Command::new(&executable)
-        .env("WF_WORKERS", workers)
-        .output()
-        .expect("run the counted program");
+    let mut command = Command::new(&executable);
+    match workers {
+        Some(count) => command.env("WF_WORKERS", count),
+        None => command.env_remove("WF_WORKERS"),
+    };
+    let output = command.output().expect("run the counted program");
     let report = String::from_utf8_lossy(&output.stderr).into_owned();
     let granted = report
         .lines()
