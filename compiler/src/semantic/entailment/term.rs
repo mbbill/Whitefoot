@@ -135,6 +135,12 @@ impl TermTable {
         &self.terms[id.0 as usize]
     }
 
+    /// One past the largest registered [`TermId`], so a caller can size a
+    /// structure indexed by term ordinal.
+    pub(crate) fn width(&self) -> usize {
+        self.terms.len()
+    }
+
     /// Every registered term, for implicit-fact materialization [ENT-4].
     pub(crate) fn ids(&self) -> impl Iterator<Item = TermId> {
         (0..self.terms.len()).map(|index| {

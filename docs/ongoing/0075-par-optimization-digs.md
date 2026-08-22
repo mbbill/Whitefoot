@@ -1125,6 +1125,65 @@ reproduction, never worked around.)
   each exceed 60 s, so the gate carries this defect twelve times over. That is
   the concrete sense in which the cost "gates all future testing".
 
+- Dig 10 (fix landed, first increment): **the closure now runs dense, and
+  `wfgrep` compiles 4.6x faster with every emitted byte unchanged.** Two
+  changes, both inside the [ENT-4] closure the attribution above convicted,
+  and neither touches what the judgment decides.
+  **The bound relation is dense, so it is now held dense.** Instrumenting the
+  fixed point settled what the profile could only suggest: on `wfgrep` the
+  inner loop runs 1.444e9 times and **all 1.444e9 of those probes find the
+  edge already present**. The relation saturates, and it was being kept in a
+  `HashMap<(TermId, TermId), i128>` beside a second `HashMap` of proofs under
+  the same key — so the innermost step hashed a term pair twice to read
+  something it always held. `TermId` is already a dense ordinal, so the
+  working relation is now one `Vec` indexed by `left * width + right` with the
+  bound and its proof in a single cell, rebuilt into the published maps once
+  per closure: linear, against a fixed point that is cubic. **45.074 s →
+  15.604 s.**
+  **The derivation node is built only when it can still win.** With the
+  hashing gone the profile's second entry was `DerivationNode` construction
+  and drop: the loop built a node for every one of those 1.444e9 candidates,
+  and nearly all of them were then rejected on the two numbers alone. A route
+  strictly weaker than the bound already held is rejected whatever its
+  derivation, so that test now runs first; the node is still built for every
+  candidate that can win, the equal-bound case `candidate_better` has to
+  inspect included. **15.604 s → 10.710 s.**
+  **Results, min of the runs stated.** `wfgrep` frontend 45.007 s → 9.782 s
+  (**4.60x**); full compile including the link 10.267 s default and 10.118 s
+  `--par`. The rest of `tests/programs/` moves with it: `utf8parse` 5.445 →
+  1.068 s (5.10x), `sha256_abc` 0.568 → 0.125 s (4.55x), `dir_walk` 4.082 →
+  1.076 s (3.80x), `percent_decode` 3.19x, `grayscale_pixels` 2.89x. Nothing
+  regressed: the three programs that read below 1.00x in the min-of-2 table
+  are all ~6 ms compiles and read 0.95x-1.07x at min-of-9, which is noise.
+  **Byte identity, the whole point.** All 25 programs in both modes — 50
+  (program, mode) pairs — produce byte-identical emitted modules, identical
+  stderr (so the [CLM-2] advisories are unmoved), and identical exit codes,
+  against a binary built at the immediately preceding commit 00b9e686. The
+  judgment's results are untouched and only the machinery is faster, which is
+  what this dig was allowed to change.
+  **Gate.** `make -C compiler check` green **before 348.44 s, after 146.85 s
+  (2.37x, 201.6 s saved)**, at the same 1030 lib + 52 program tests — nothing
+  was deleted, skipped or weakened. The program suite alone falls 172.24 s →
+  34.21 s (5.03x), which is the twelve fresh `wfgrep` compiles getting cheaper.
+  **Remaining cost, attributed and reducible — not yet at the 5 s
+  acceptance.** 9.782 s is above the brief's target and the remainder is *not*
+  irreducible; it is three named things this increment did not take on. (1)
+  `ClosedState` still publishes two pair-keyed maps, so each of the 3185
+  closures rebuilds ~8836 cells into two `HashMap`s — about 56M hashed inserts
+  that carrying the matrix through would delete outright. (2) The fixed point
+  runs 8826 rounds over 3185 closures, and the last round of every closure is
+  a pure verification pass that changes nothing; skipping a `middle` whose row
+  and column did not change in the previous round would remove it, and appears
+  exactly equivalent because bounds only ever decrease, but it needs the
+  argument checked rather than assumed. (3) The 3185 closures are themselves
+  recomputed from scratch as the flow walks, which is the deepest and least
+  contained of the three. A fourth option — semi-naive propagation from
+  changed cells — was **rejected, not deferred**: it reorders `intern_for`, so
+  it would reassign `DerivationId`s, and this dig is not allowed to move
+  emitted bytes on a hunch about what is observable.
+  **Approval classes touched:** no spec bytes, no conformance or compliance
+  evidence, no gate wiring, no new repository root entry.
+
 - **Dig 0 deviation, recorded not hidden.** Dig 0 was specified as one
   cohesive commit and initially landed as two with byte-identical subject
   lines: two sessions were writing through one worktree and one shared git
