@@ -1,16 +1,28 @@
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "Exercise every Boolean table operation through normal source compilation and host execution [OP-1, OP-8].";
   let yes = True();
   let no = False();
   let both = band(yes, no);
   let not_both = bnot(both);
-  claim band_drift: not_both because "band drift";
+  if not_both {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let either = bor(no, yes);
-  claim bor_drift: either because "bor drift";
+  if either {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   let different = bxor(yes, no);
-  claim bxor_off_diagonal_drift: different because "bxor off-diagonal drift";
+  if different {
+  } else {
+    return exit_status(code: 3_u8);
+  }
   let same = bxor(yes, yes);
   let not_same = bnot(same);
-  claim bxor_diagonal_drift: not_same because "bxor diagonal drift";
+  if not_same {
+  } else {
+    return exit_status(code: 4_u8);
+  }
   return exit_status(code: 0_u8);
 }

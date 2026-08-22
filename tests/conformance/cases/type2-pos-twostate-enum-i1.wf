@@ -15,7 +15,7 @@ fn flip(s: own ScanState) -> function_result: own ScanState pure {
   return out;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "A 2-variant tag-only enum is Bool-isomorphic: copy semantics, matched twice, loop-carried and set-mutated; lowers as i1. The arm no execution takes carries a constructed-Bool claim, which CLM-2 neither proves nor refutes, so the tripwire survives compilation.";
   let st = InSpace();
   let i = 0_u64;
@@ -29,7 +29,7 @@ command fn main() -> status: own ExitStatus traps {
   }
   match st {
     InSpace() => {
-      claim odd_flips_must_land_inword: False() because "odd flips must land InWord";
+      return exit_status(code: 1_u8);
     }
     InWord() => {
     }

@@ -1,7 +1,10 @@
 const maximum: u64 = 18446744073709551615_u64;
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let copy = maximum;
-  claim scalar_const_width_changed: ieq(copy, 18446744073709551615_u64) because "scalar const width changed";
+  if ieq(copy, 18446744073709551615_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }

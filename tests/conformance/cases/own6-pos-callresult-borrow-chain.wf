@@ -7,7 +7,7 @@ fn bump['r](n: &uniq 'r i32) -> return_value: own unit writes('r) {
   return unit;
 }
 
-command fn main() -> return_value: own ExitStatus traps {
+command fn main() -> return_value: own ExitStatus pure {
   doc "OWN-6 reborrow extension: `passthru` determines one provenance-candidate parameter, so binding its borrow-mode result makes `r` an ordinary borrow holder whose resolved place is the candidate actual's. The child fed to it in candidate position may take a caller-supplied region, and `r` is itself reborrowable, composing a grandchild chain of depth two. Creating the candidate-position child suspends `h` for the remainder of its life, so no point sees two usable uniq paths to `v`.";
   let v = 1_i32;
   region 'a {
@@ -17,6 +17,9 @@ command fn main() -> return_value: own ExitStatus traps {
       bump<'c>(n: &uniq 'c deref(r));
     }
   }
-  claim chain_write_lost: ieq(v, 42_i32) because "chain write lost";
+  if ieq(v, 42_i32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }

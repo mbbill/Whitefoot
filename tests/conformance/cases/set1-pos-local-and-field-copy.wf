@@ -7,7 +7,7 @@ struct Outer {
   other: i32;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let number = 1_i32;
   let inner = Inner(value: 2_i32);
   let outer = Outer(inner: move inner, other: 7_i32);
@@ -20,9 +20,15 @@ command fn main() -> status: own ExitStatus traps {
     set outer.inner.value = number;
   }
   let observed = outer.inner.value;
-  claim nested_set_failed: ieq(observed, 42_i32) because "nested set failed";
+  if ieq(observed, 42_i32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let preserved = outer.other;
-  claim sibling_changed: ieq(preserved, 7_i32) because "sibling changed";
+  if ieq(preserved, 7_i32) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   let selected = if flag {
     set number = 43_i32;
     give number;
@@ -30,7 +36,13 @@ command fn main() -> status: own ExitStatus traps {
     set number = 10_i32;
     give number;
   }
-  claim value_match_result_failed: ieq(selected, 43_i32) because "value match result failed";
-  claim value_match_set_failed: ieq(number, 43_i32) because "value match set failed";
+  if ieq(selected, 43_i32) {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  if ieq(number, 43_i32) {
+  } else {
+    return exit_status(code: 4_u8);
+  }
   return exit_status(code: 0_u8);
 }

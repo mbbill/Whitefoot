@@ -7,7 +7,7 @@ struct Holder {
   state: State;
 }
 
-command fn main() -> return_value: own ExitStatus allocates(heap), traps {
+command fn main() -> return_value: own ExitStatus allocates(heap) {
   doc "OWN-1: projected Copy reads do not consume their affine struct or buffer owner.";
   let state = Ready();
   let holder = Holder(state: state);
@@ -27,8 +27,14 @@ command fn main() -> return_value: own ExitStatus allocates(heap), traps {
   let items = buffer_new(2_u64, 7_u8);
   let first = items[0_u64];
   let second = items[1_u64];
-  claim first_indexed_copy: ieq(first, 7_u8) because "first indexed copy";
-  claim second_indexed_copy: ieq(second, 7_u8) because "second indexed copy";
+  if ieq(first, 7_u8) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(second, 7_u8) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   let saved_items = move items;
   return exit_status(code: 0_u8);
 }

@@ -15,7 +15,7 @@ fn sign_of(x: own i32) -> result: own Sign pure {
   }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "let-initializer match with give: a conditional value bound, then reused.";
   let a = 40_i32;
   region 'r {
@@ -29,7 +29,10 @@ command fn main() -> status: own ExitStatus traps {
         return move failed;
       }
     }
-    claim arithmetic_drift: ieq(v, 42_i32) because "arithmetic drift";
+    if ieq(v, 42_i32) {
+    } else {
+      return exit_status(code: 2_u8);
+    }
   }
   let success = exit_status(code: 0_u8);
   return move success;

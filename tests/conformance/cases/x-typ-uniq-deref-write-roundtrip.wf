@@ -1,10 +1,13 @@
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "Writing through a &uniq borrow via set deref(p) and reading the value back [TYPE-7].";
   let a = 40_i32;
   region 'r {
     let p = &uniq 'r a;
     set deref(p) = 42_i32;
   }
-  claim uniq_write_lost: ieq(a, 42_i32) because "uniq write lost";
+  if ieq(a, 42_i32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }

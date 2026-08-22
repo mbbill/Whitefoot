@@ -7,25 +7,31 @@ fn choose(b: own Bool) -> function_result: own Result<u64, u64> pure {
   return move result;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let true_atom_0001 = True();
   let first = choose(b: true_atom_0001);
   match move first {
     Ok(value: ok_value) => {
-      claim wrong_ok_payload: ieq(ok_value, 1_u64) because "wrong Ok payload";
+      if ieq(ok_value, 1_u64) {
+      } else {
+        return exit_status(code: 1_u8);
+      }
     }
     Err(error: ok_error) => {
-      claim expected_ok: False() because "expected Ok";
+      return exit_status(code: 2_u8);
     }
   }
   let false_atom_0002 = False();
   let second = choose(b: false_atom_0002);
   match move second {
     Ok(value: err_value) => {
-      claim expected_err: False() because "expected Err";
+      return exit_status(code: 3_u8);
     }
     Err(error: err_error) => {
-      claim wrong_err_payload: ieq(err_error, 2_u64) because "wrong Err payload";
+      if ieq(err_error, 2_u64) {
+      } else {
+        return exit_status(code: 4_u8);
+      }
     }
   }
   return exit_status(code: 0_u8);

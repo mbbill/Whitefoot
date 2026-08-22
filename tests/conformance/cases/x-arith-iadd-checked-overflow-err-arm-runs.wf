@@ -1,10 +1,13 @@
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "+checked returns Result<T, Overflow> [OP-1]; i32::MAX + 1 yields Err, so the Err arm runs and the Ok arm's claim would trap if overflow went undetected [CLM-1].";
   let hi = 2147483647_i32;
   match hi +checked 1_i32 {
     Ok(value: v) => {
-      claim overflow_was_not_detected: ilt(v, 0_i32) because "overflow was not detected";
-      return exit_status(code: 0_u8);
+      if ilt(v, 0_i32) {
+        return exit_status(code: 0_u8);
+      } else {
+        return exit_status(code: 1_u8);
+      }
     }
     Err(error: e) => {
       return exit_status(code: 0_u8);

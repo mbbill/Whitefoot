@@ -5,21 +5,24 @@ fn half_checked(x: own i64) -> result: own Result<i64, Overflow> pure {
   return move r;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let big = 4611686018427387904_i64;
   let a = half_checked(x: 20_i64);
   match a {
     Ok(value: v) => {
-      claim ok_path_drift: ieq(v, 41_i64) because "ok path drift";
+      if ieq(v, 41_i64) {
+      } else {
+        return exit_status(code: 1_u8);
+      }
     }
     Err(error: e) => {
-      claim unexpected_err: False() because "unexpected err";
+      return exit_status(code: 2_u8);
     }
   }
   let b = half_checked(x: big);
   match b {
     Ok(value: v) => {
-      claim expected_err: False() because "expected err";
+      return exit_status(code: 3_u8);
     }
     Err(error: e) => {
     }

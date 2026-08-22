@@ -15,60 +15,120 @@ fn empty_compile_only(left: own EmptyEq, right: own EmptyEq) -> return_value: ow
   return eeq(left, right);
 }
 
-command fn main() -> return_value: own ExitStatus traps {
+command fn main() -> return_value: own ExitStatus pure {
   let one = OneOnly();
   let one_eq = eeq(one, one);
   let one_ne = ene(one, one);
-  claim one_variant_eeq_drift: one_eq because "one-variant eeq drift";
+  if one_eq {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let not_one_ne = bnot(one_ne);
-  claim one_variant_ene_drift: not_one_ne because "one-variant ene drift";
+  if not_one_ne {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   let first = TrioFirst();
   let second = TrioSecond();
   let third = TrioThird();
   let eq00 = eeq(first, first);
   let ne00 = ene(first, first);
-  claim trio_eeq_diagonal_drift: eq00 because "trio eeq diagonal drift";
+  if eq00 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
   let not_ne00 = bnot(ne00);
-  claim trio_ene_diagonal_drift: not_ne00 because "trio ene diagonal drift";
+  if not_ne00 {
+  } else {
+    return exit_status(code: 4_u8);
+  }
   let eq01 = eeq(first, second);
   let ne01 = ene(first, second);
   let not_eq01 = bnot(eq01);
-  claim trio_eeq_off_diagonal_drift: not_eq01 because "trio eeq off-diagonal drift";
-  claim trio_ene_off_diagonal_drift: ne01 because "trio ene off-diagonal drift";
+  if not_eq01 {
+  } else {
+    return exit_status(code: 5_u8);
+  }
+  if ne01 {
+  } else {
+    return exit_status(code: 6_u8);
+  }
   let eq02 = eeq(first, third);
   let ne02 = ene(first, third);
   let not_eq02 = bnot(eq02);
-  claim trio_eeq_off_diagonal_drift_2: not_eq02 because "trio eeq off-diagonal drift";
-  claim trio_ene_off_diagonal_drift_2: ne02 because "trio ene off-diagonal drift";
+  if not_eq02 {
+  } else {
+    return exit_status(code: 7_u8);
+  }
+  if ne02 {
+  } else {
+    return exit_status(code: 8_u8);
+  }
   let eq10 = eeq(second, first);
   let ne10 = ene(second, first);
   let not_eq10 = bnot(eq10);
-  claim trio_eeq_off_diagonal_drift_3: not_eq10 because "trio eeq off-diagonal drift";
-  claim trio_ene_off_diagonal_drift_3: ne10 because "trio ene off-diagonal drift";
+  if not_eq10 {
+  } else {
+    return exit_status(code: 9_u8);
+  }
+  if ne10 {
+  } else {
+    return exit_status(code: 10_u8);
+  }
   let eq11 = eeq(second, second);
   let ne11 = ene(second, second);
-  claim trio_eeq_diagonal_drift_2: eq11 because "trio eeq diagonal drift";
+  if eq11 {
+  } else {
+    return exit_status(code: 11_u8);
+  }
   let not_ne11 = bnot(ne11);
-  claim trio_ene_diagonal_drift_2: not_ne11 because "trio ene diagonal drift";
+  if not_ne11 {
+  } else {
+    return exit_status(code: 12_u8);
+  }
   let eq12 = eeq(second, third);
   let ne12 = ene(second, third);
   let not_eq12 = bnot(eq12);
-  claim trio_eeq_off_diagonal_drift_4: not_eq12 because "trio eeq off-diagonal drift";
-  claim trio_ene_off_diagonal_drift_4: ne12 because "trio ene off-diagonal drift";
+  if not_eq12 {
+  } else {
+    return exit_status(code: 13_u8);
+  }
+  if ne12 {
+  } else {
+    return exit_status(code: 14_u8);
+  }
   let eq20 = eeq(third, first);
   let ne20 = ene(third, first);
   let not_eq20 = bnot(eq20);
-  claim trio_eeq_off_diagonal_drift_5: not_eq20 because "trio eeq off-diagonal drift";
-  claim trio_ene_off_diagonal_drift_5: ne20 because "trio ene off-diagonal drift";
+  if not_eq20 {
+  } else {
+    return exit_status(code: 15_u8);
+  }
+  if ne20 {
+  } else {
+    return exit_status(code: 16_u8);
+  }
   let eq21 = eeq(third, second);
   let ne21 = ene(third, second);
   let not_eq21 = bnot(eq21);
-  claim trio_eeq_off_diagonal_drift_6: not_eq21 because "trio eeq off-diagonal drift";
-  claim trio_ene_off_diagonal_drift_6: ne21 because "trio ene off-diagonal drift";
+  if not_eq21 {
+  } else {
+    return exit_status(code: 17_u8);
+  }
+  if ne21 {
+  } else {
+    return exit_status(code: 18_u8);
+  }
   let eq22 = eeq(third, third);
   let ne22 = ene(third, third);
-  claim trio_eeq_diagonal_drift_3: eq22 because "trio eeq diagonal drift";
+  if eq22 {
+  } else {
+    return exit_status(code: 19_u8);
+  }
   let not_ne22 = bnot(ne22);
-  claim trio_ene_diagonal_drift_3: not_ne22 because "trio ene diagonal drift";
+  if not_ne22 {
+  } else {
+    return exit_status(code: 20_u8);
+  }
   return exit_status(code: 0_u8);
 }

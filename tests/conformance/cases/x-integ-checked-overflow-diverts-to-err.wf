@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "Checked arithmetic feeding a match: an i32 overflow diverts to the Err arm (bound via give), and the recovered sentinel then feeds a second compare-match, so overflow is handled as defined behavior, never UB [OP-1, GIVE-1, OWN-13, SCOPE-3].";
   let sum = match 2000000000_i32 +checked 200000000_i32 {
     Ok(value: w) => {
@@ -13,6 +13,9 @@ command fn main() -> status: own ExitStatus traps {
   } else {
     give 0_i32;
   }
-  claim overflow_was_not_diverted_to_err: ieq(label, 0_i32) because "overflow was not diverted to Err";
+  if ieq(label, 0_i32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }

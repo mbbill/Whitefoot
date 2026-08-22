@@ -11,11 +11,14 @@ fn guarded(left: own ClauseEq, right: own ClauseEq) -> result: own unit pure con
   return unit;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let left = ClauseSecond();
   let right = ClauseSecond();
   let same = eeq(left, right);
-  claim guarded_equality: same because "the exact enum equality goal holds before the call";
-  guarded(left: left, right: right);
+  if same {
+    guarded(left: left, right: right);
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }

@@ -98,7 +98,7 @@ fn combine['r](out: &uniq 'r Summary, left: &'r Summary, right: &'r Summary) -> 
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let left_input = buffer_new(4_u64, 0_u8);
   set left_input[0_u64] = 97_u8;
   set left_input[1_u64] = 32_u8;
@@ -117,18 +117,42 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   region 'combine_region {
     combine<'combine_region>(out: &uniq 'combine_region total, left: &'combine_region left, right: &'combine_region right);
   }
-  claim line_summary_drift: ieq(total.lines, 1_u64) because "line summary drift";
-  claim word_summary_drift: ieq(total.words, 3_u64) because "word summary drift";
-  claim byte_summary_drift: ieq(total.bytes, 5_u64) because "byte summary drift";
-  claim first_space_summary_drift: ieq(total.first_space, 0_u64) because "first-space summary drift";
-  claim last_space_summary_drift: ieq(total.last_space, 0_u64) because "last-space summary drift";
+  if ieq(total.lines, 1_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if ieq(total.words, 3_u64) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  if ieq(total.bytes, 5_u64) {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  if ieq(total.first_space, 0_u64) {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  if ieq(total.last_space, 0_u64) {
+  } else {
+    return exit_status(code: 5_u8);
+  }
   let empty = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 1_u64, last_space: 1_u64);
   let copied = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
   region 'identity_region {
     combine<'identity_region>(out: &uniq 'identity_region copied, left: &'identity_region empty, right: &'identity_region total);
   }
-  claim identity_line_drift: ieq(copied.lines, 1_u64) because "identity line drift";
-  claim identity_word_drift: ieq(copied.words, 3_u64) because "identity word drift";
-  claim identity_byte_drift: ieq(copied.bytes, 5_u64) because "identity byte drift";
+  if ieq(copied.lines, 1_u64) {
+  } else {
+    return exit_status(code: 6_u8);
+  }
+  if ieq(copied.words, 3_u64) {
+  } else {
+    return exit_status(code: 7_u8);
+  }
+  if ieq(copied.bytes, 5_u64) {
+  } else {
+    return exit_status(code: 8_u8);
+  }
   return exit_status(code: 0_u8);
 }

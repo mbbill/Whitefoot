@@ -3,7 +3,7 @@ fn pick['r, 's](a: &uniq 'r i32, b: &uniq 's i32) -> result: &uniq 'r i32 pure {
   return &uniq 'r deref(a);
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let v = 1_i32;
   let w = 2_i32;
   region 'a {
@@ -12,6 +12,9 @@ command fn main() -> status: own ExitStatus traps {
       set deref(r) = 7_i32;
     }
   }
-  claim written_through: ieq(v, 7_i32) because "the result borrow writes through to v";
+  if ieq(v, 7_i32) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
