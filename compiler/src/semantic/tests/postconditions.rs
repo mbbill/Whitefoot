@@ -305,8 +305,17 @@ fn body_claims_and_s4_are_routed_to_the_fixed_postcondition_views() {
 fn guarded(value: own i32) -> result: own i32 traps contract {
   ensures ieq(result, 1_i32);
 } {
-  let reviewed = reviewed_one();
-  claim body: ieq(reviewed, 1_i32) because "premises: reviewed is returned by reviewed_one, whose body returns the literal 1_i32\nderivation: substituting the helper body's return value for reviewed yields ieq(1_i32, 1_i32)\nconclusion: ieq(reviewed, 1_i32) is true\nchecker gap: ENT does not publish an uncontracted user-call result equality\nconsumers: guarded's FN-9 postcondition requires this equality at the following return reviewed";
+  let reviewed = 1_i32;
+  let cursor = 0_u8;
+  loop @retain_one {
+    if ieq(cursor, 3_u8) {
+      break @retain_one;
+    } else {
+      set reviewed = 1_i32;
+      set cursor = cursor +wrap 1_u8;
+    }
+  }
+  claim body: ieq(reviewed, 1_i32) because "premises: reviewed starts at one and every completed local loop iteration writes one again before advancing the cursor\nderivation: induction over reached loop bodies preserves reviewed equal to one until the cursor reaches three\nconclusion: ieq(reviewed, 1_i32) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: guarded's FN-9 postcondition requires this equality at the following return reviewed";
   return reviewed;
 }
 
@@ -954,10 +963,21 @@ fn caller() -> result: own unit allocates(heap), traps {
   let owner = box_new(1_i32);
   let expected = deref(owner);
   let observed = observe(value: deref(owner));
-  let fallback = opaque_identity(value: expected);
-  claim ordinary_fallback: ieq(fallback, expected) because "premises: fallback is returned by opaque_identity, whose body returns its value parameter unchanged\nderivation: the call argument is expected, so fallback equals expected\nconclusion: ieq(fallback, expected) is true\nchecker gap: ENT does not publish an uncontracted user-call result equality\nconsumers: the following guard call's FN-8 requirement needs this equality after the neighboring S12 owner-supported candidate is killed";
+  let fallback = expected;
+  let mirror = expected;
+  let cursor = 0_u8;
+  loop @advance_pair {
+    if ieq(cursor, 3_u8) {
+      break @advance_pair;
+    } else {
+      set fallback = fallback +wrap 1_i32;
+      set mirror = mirror +wrap 1_i32;
+      set cursor = cursor +wrap 1_u8;
+    }
+  }
+  claim ordinary_fallback: ieq(fallback, mirror) because "premises: fallback and mirror start equal and every completed local loop iteration applies the same wrapping increment to both\nderivation: induction over reached loop bodies preserves their equality until the cursor reaches three\nconclusion: ieq(fallback, mirror) is true\nchecker gap: ENT carries no relational induction fact across this ordinary-loop backedge\nconsumers: the following guard call's FN-8 requirement needs this equality after the neighboring S12 owner-supported candidate is killed";
   sink(owner: move owner);
-  guard(left: fallback, right: expected);
+  guard(left: fallback, right: mirror);
   return unit;
 }
 
@@ -2471,9 +2491,10 @@ fn relay(value: own i32) -> result: own i32 pure contract {
 }
 
 fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
+  let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: the claim temporarily supplies the predicate so the protected provenance gate is reached\nconsumers: the following values[position] subscript is the protected terminal root";
-  return values[position];
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains derived from the position parameter and PRV-2 must reject its external actual";
+  return values[bounded_position];
 }
 
 command fn main(command.args as args: own Args) -> status: own ExitStatus traps {

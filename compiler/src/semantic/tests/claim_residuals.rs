@@ -12,9 +12,9 @@ use super::with_semantics;
 /// rejected before it could become an owner-approved theorem.
 const REJECTION_REVIEW: &str = "premises: this negative fixture supplies a structurally complete review record\\nderivation: the tested machine judgment rejects before external theorem approval\\nconclusion: this occurrence must not enter a checked program\\nchecker gap: this field is present only to reach the rejection under test\\nconsumers: no approved program consumes this negative fixture";
 
-const CLAMP_LT_EIGHT_REVIEW: &str = "premises: values has length 8 and bounded is returned by clamp_seven, whose body computes imin(index, 7_u64)\\nderivation: bounded is at most 7_u64 and therefore strictly less than size\\nconclusion: ilt(bounded, size) is true\\nchecker gap: ENT does not publish an uncontracted user-call result bound\\nconsumers: the following length-eight array subscript uses bounded";
+const CLAMP_LT_EIGHT_REVIEW: &str = "premises: bounded starts at zero, advances by one only on the current function's ordinary-loop backedge, and exits no later than seven; values has length eight\\nderivation: induction over reached loop bodies keeps bounded between zero and seven inclusive\\nconclusion: ilt(bounded, size) is true\\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\\nconsumers: the following length-eight array subscript uses bounded";
 
-const PAIR_CLAMP_REVIEW: &str = "premises: table has length 8, and low_bounded and high_bounded are returned by clamp_seven for their respective inputs\\nderivation: both results are at most 7_u64 and therefore strictly below size\\nconclusion: band(low_ok, high_ok) is true\\nchecker gap: ENT does not publish either uncontracted user-call result bound\\nconsumers: the two following array subscripts use the respective bounded values";
+const PAIR_CLAMP_REVIEW: &str = "premises: each bounded value starts at zero, advances by one only on its own current-function ordinary-loop backedge, and exits no later than seven; table has length eight\\nderivation: induction over both reached loop bodies keeps both values between zero and seven inclusive\\nconclusion: band(low_ok, high_ok) is true\\nchecker gap: ENT carries no induction fact across either ordinary-loop backedge\\nconsumers: the two following array subscripts use the respective bounded values";
 
 const GENERIC_MAX_NONNEGATIVE_REVIEW: &str = "premises: nonnegative is imax(value, 0_T) for an integer type T\\nderivation: imax returns an operand no smaller than 0_T\\nconclusion: ige(nonnegative, 0_T) is true\\nchecker gap: ENT does not derive the result range of imax for GenericInt\\nconsumers: the following FN-8 requirement needs nonnegative at least 0_T";
 
@@ -45,7 +45,16 @@ fn a_structured_unknown_load_bearing_claim_remains_an_executed_residual() {
 
 fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {{
   let size = len(values);
-  let bounded = clamp_seven(value: index);
+  let bounded = 0_u64;
+  loop @select_bound {{
+    if ieq(bounded, index) {{
+      break @select_bound;
+    }} else if ieq(bounded, 7_u64) {{
+      break @select_bound;
+    }} else {{
+      set bounded = bounded +wrap 1_u64;
+    }}
+  }}
   let inside = ilt(bounded, size);
   claim in_range: inside because "{CLAMP_LT_EIGHT_REVIEW}";
   return values[bounded];
@@ -114,10 +123,19 @@ fn local_array_construction_does_not_hide_a_length_relation_claim_component() {
 
 fn read(index: own u64) -> result: own u8 traps {
   let values = array_new<u8, 4>(0_u8);
-  let bounded = clamp_three(value: index);
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, index) {
+      break @select_bound;
+    } else if ieq(bounded, 3_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
   let room = len(values);
   let inside = ilt(bounded, room);
-  claim in_range: inside because "premises: values has length 4 and bounded is returned by clamp_three, whose body computes imin(index, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded, room) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following values[bounded] subscript requires this exact bound";
+  claim in_range: inside because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than three; values has length four\nderivation: induction over reached loop bodies keeps bounded between zero and three inclusive\nconclusion: ilt(bounded, room) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following values[bounded] subscript requires this exact bound";
   return values[bounded];
 }
 
@@ -136,10 +154,19 @@ fn expanding_a_conversion_origin_does_not_hide_a_load_bearing_relation_component
 
 fn read(value: own u8) -> result: own u8 traps {
   let values = array_new<u8, 4>(0_u8);
-  let small = clamp_three(value: value);
+  let small = 0_u8;
+  loop @select_bound {
+    if ieq(small, value) {
+      break @select_bound;
+    } else if ieq(small, 3_u8) {
+      break @select_bound;
+    } else {
+      set small = small +wrap 1_u8;
+    }
+  }
   let wide = cvt<u8, u64>(small);
   let inside = ilt(wide, 4_u64);
-  claim in_range: inside because "premises: small is returned by clamp_three, whose body computes imin(value, 3_u8), and cvt<u8, u64> preserves that nonnegative value\nderivation: wide is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: ilt(wide, 4_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound through conversion\nconsumers: the following values[wide] subscript requires this exact bound";
+  claim in_range: inside because "premises: small starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than three; cvt<u8, u64> preserves that value\nderivation: induction over reached loop bodies keeps wide between zero and three inclusive\nconclusion: ilt(wide, 4_u64) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge through conversion\nconsumers: the following values[wide] subscript requires this exact bound";
   return values[wide];
 }
 
@@ -166,7 +193,16 @@ fn need(flag: own Bool) -> result: own unit pure contract {{
 fn probe(small: own u8, index: own u64) -> result: own unit traps {{
   let wide = cvt<u8, u64>(small);
   let known = ilt(wide, 256_u64);
-  let bounded = clamp_three(value: index);
+  let bounded = 0_u64;
+  loop @select_bound {{
+    if ieq(bounded, index) {{
+      break @select_bound;
+    }} else if ieq(bounded, 3_u64) {{
+      break @select_bound;
+    }} else {{
+      set bounded = bounded +wrap 1_u64;
+    }}
+  }}
   let residual = ilt(bounded, 4_u64);
   let both = band(known, residual);
   claim bundled: both because "{REJECTION_REVIEW}";
@@ -189,10 +225,19 @@ fn a_claim_component_uses_the_checked_snapshot_leaf_not_a_mutated_origin() {
 }
 
 fn read(values: own array<u8, 4>, input: own u64) -> result: own u8 traps {
-  let source = clamp_three(value: input);
+  let source = 0_u64;
+  loop @select_bound {
+    if ieq(source, input) {
+      break @select_bound;
+    } else if ieq(source, 3_u64) {
+      break @select_bound;
+    } else {
+      set source = source +wrap 1_u64;
+    }
+  }
   let snapshot = source;
   let inside = ilt(snapshot, 4_u64);
-  claim in_range: inside because "premises: source is returned by clamp_three, whose body computes imin(input, 3_u64), and snapshot copies source before its later write\nderivation: snapshot is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: ilt(snapshot, 4_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following values[snapshot] subscript requires this exact snapshot bound";
+  claim in_range: inside because "premises: source starts at zero, advances by one only on the current-function ordinary-loop backedge, exits no later than three, and snapshot copies it before the later write\nderivation: induction over reached loop bodies keeps snapshot between zero and three inclusive\nconclusion: ilt(snapshot, 4_u64) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following values[snapshot] subscript requires this exact snapshot bound";
   set source = 100_u64;
   return values[snapshot];
 }
@@ -328,7 +373,7 @@ fn probe(input: own u64, other: own u64) -> result: own unit traps {{
   if first_inside {{
     let second = ixor(input, 123_u64);
     let known = ilt(second, 4_u64);
-    let bounded = clamp_three(value: other);
+    let bounded = ixor(other, 77_u64);
     let residual = ilt(bounded, 4_u64);
     let both = band(known, residual);
     claim bundled: both because "{REJECTION_REVIEW}";
@@ -364,7 +409,7 @@ fn probe(input: own i8, other: own u64) -> result: own unit traps {{
   if first_ok {{
     let second = ixor(input, 123_i8);
     let known = second *defined 2_i8;
-    let bounded = clamp_three(value: other);
+    let bounded = ixor(other, 77_u64);
     let residual = ilt(bounded, 4_u64);
     let both = band(known, residual);
     claim bundled: both because "{REJECTION_REVIEW}";
@@ -400,7 +445,7 @@ fn probe(input: own u64, target: own u64, other: own u64) -> result: own unit tr
   if first_equal {{
     let second = ixor(input, 123_u64);
     let known = ieq(second, target);
-    let bounded = clamp_three(value: other);
+    let bounded = ixor(other, 77_u64);
     let residual = ilt(bounded, 4_u64);
     let both = band(known, residual);
     claim bundled: both because "{REJECTION_REVIEW}";
@@ -438,7 +483,7 @@ fn probe(input: own u64, other: own u64) -> result: own unit traps {{
     let second_outside = ige(second, 4_u64);
     if second_outside {{
       let inside = ilt(second, 4_u64);
-      let bounded = clamp_three(value: other);
+      let bounded = ixor(other, 77_u64);
       let residual = ilt(bounded, 4_u64);
       let both = band(inside, residual);
       claim impossible_path: both because "{REJECTION_REVIEW}";
@@ -487,7 +532,7 @@ fn probe(input: own u64, other: own u64) -> result: own unit traps {{
     if second_outside {{
       let already_known = True();
       let inside = ilt(second, 4_u64);
-      let bounded = clamp_three(value: other);
+      let bounded = ixor(other, 77_u64);
       let residual = ilt(bounded, 4_u64);
       let tail = band(inside, residual);
       let all = band(already_known, tail);
@@ -523,9 +568,18 @@ fn a_defined_predicate_with_an_uncontracted_true_range_remains_a_residual() {
 }
 
 fn double(value: own i8) -> result: own i8 traps {
-  let bounded = reviewed_small(value: value);
+  let bounded = 0_i8;
+  loop @select_operand {
+    if ieq(bounded, value) {
+      break @select_operand;
+    } else if ieq(bounded, 10_i8) {
+      break @select_operand;
+    } else {
+      set bounded = bounded +wrap 1_i8;
+    }
+  }
   let safe = bounded *defined 2_i8;
-  claim product_is_defined: safe because "premises: bounded is returned by reviewed_small, whose body clamps value to the closed interval -10_i8 through 10_i8\nderivation: multiplying any integer in that interval by 2_i8 yields an i8 value in -20_i8 through 20_i8\nconclusion: bounded *defined 2_i8 is true\nchecker gap: ENT does not publish the range of an uncontracted user-call result\nconsumers: the following exact multiplication requires both signed product bounds";
+  claim product_is_defined: safe because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than ten\nderivation: induction over reached loop bodies keeps bounded between zero and ten, so doubling remains in the i8 range\nconclusion: bounded *defined 2_i8 is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following exact multiplication requires both signed product bounds";
   return bounded * 2_i8;
 }
 
@@ -673,8 +727,26 @@ fn every_unknown_conjunction_component_can_close_its_own_terminal_root() {
 
 fn read_pair(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 traps {{
   let size = len(table);
-  let low_bounded = clamp_seven(value: low);
-  let high_bounded = clamp_seven(value: high);
+  let low_bounded = 0_u64;
+  loop @select_low {{
+    if ieq(low_bounded, low) {{
+      break @select_low;
+    }} else if ieq(low_bounded, 7_u64) {{
+      break @select_low;
+    }} else {{
+      set low_bounded = low_bounded +wrap 1_u64;
+    }}
+  }}
+  let high_bounded = 0_u64;
+  loop @select_high {{
+    if ieq(high_bounded, high) {{
+      break @select_high;
+    }} else if ieq(high_bounded, 7_u64) {{
+      break @select_high;
+    }} else {{
+      set high_bounded = high_bounded +wrap 1_u64;
+    }}
+  }}
   let low_ok = ilt(low_bounded, size);
   let high_ok = ilt(high_bounded, size);
   let both = band(low_ok, high_ok);
@@ -759,10 +831,19 @@ fn duplicate_conjunction_members_have_one_normative_component_identity() {
 
 fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {
   let size = len(values);
-  let bounded = clamp_seven(value: index);
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, index) {
+      break @select_bound;
+    } else if ieq(bounded, 7_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
   let inside = ilt(bounded, size);
   let repeated = band(inside, inside);
-  claim in_range: repeated because "premises: values has length 8 and bounded is returned by clamp_seven, whose body computes imin(index, 7_u64)\nderivation: bounded is at most 7_u64, so both duplicate inside conjuncts are true\nconclusion: band(inside, inside) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following length-eight array subscript uses bounded";
+  claim in_range: repeated because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than seven; values has length eight\nderivation: induction over reached loop bodies makes both duplicate inside conjuncts true\nconclusion: band(inside, inside) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following length-eight array subscript uses bounded";
   return values[bounded];
 }
 
@@ -781,10 +862,19 @@ fn an_expanded_binding_origin_disappears_with_its_masked_component() {
 
 fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {
   let size = len(values);
-  let bounded = clamp_seven(value: index);
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, index) {
+      break @select_bound;
+    } else if ieq(bounded, 7_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
   let inside = ilt(bounded, size);
   let copied = inside;
-  claim in_range: copied because "premises: values has length 8, bounded is returned by clamp_seven, and copied is ilt(bounded, size)\nderivation: bounded is at most 7_u64 and therefore strictly below size\nconclusion: copied is true\nchecker gap: ENT expands copied but does not publish an uncontracted user-call result bound\nconsumers: the following array subscript uses bounded";
+  claim in_range: copied because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, exits no later than seven, and copied is ilt(bounded, size)\nderivation: induction over reached loop bodies keeps bounded strictly below the length-eight size\nconclusion: copied is true\nchecker gap: ENT expands copied but carries no induction fact across this ordinary-loop backedge\nconsumers: the following array subscript uses bounded";
   return values[bounded];
 }
 
@@ -804,7 +894,16 @@ fn an_independently_reproved_fact_makes_the_earlier_claim_non_residual() {
 
 fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {{
   let size = len(values);
-  let bounded = clamp_seven(value: index);
+  let bounded = 0_u64;
+  loop @select_bound {{
+    if ieq(bounded, index) {{
+      break @select_bound;
+    }} else if ieq(bounded, 7_u64) {{
+      break @select_bound;
+    }} else {{
+      set bounded = bounded +wrap 1_u64;
+    }}
+  }}
   let inside = ilt(bounded, size);
   claim premature: inside because "{CLAMP_LT_EIGHT_REVIEW}";
   if inside {{
@@ -862,9 +961,18 @@ fn need_both(known: own Bool, residual: own Bool) -> result: own unit pure contr
 fn probe(input: own u64) -> result: own unit traps {
   let known = True();
   if known {
-    let bounded = clamp_three(value: input);
+    let bounded = 0_u64;
+    loop @select_bound {
+      if ieq(bounded, input) {
+        break @select_bound;
+      } else if ieq(bounded, 3_u64) {
+        break @select_bound;
+      } else {
+        set bounded = bounded +wrap 1_u64;
+      }
+    }
     let residual = ilt(bounded, 4_u64);
-    claim bounded_result: residual because "premises: bounded is returned by clamp_three, whose body computes imin(input, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: residual is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: need_both combines this residual with the branch-established true component in its exact conjunction requirement";
+    claim bounded_result: residual because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than three\nderivation: induction over reached loop bodies keeps bounded between zero and three inclusive\nconclusion: residual is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: need_both combines this residual with the branch-established true component in its exact conjunction requirement";
     need_both(known: known, residual: residual);
   }
   return unit;
@@ -878,7 +986,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn xor_is_not_silently_treated_as_an_indivisible_residual() {
+fn xor_without_a_supported_contribution_basis_is_a_clm1_formation_error() {
     let source = format!(
         r#"fn need_mixed(left: own Bool, right: own Bool) -> result: own unit pure contract {{
   requires bxor(left, right);
@@ -898,7 +1006,26 @@ command fn main() -> status: own ExitStatus pure {{
 }}
 "#
     );
-    assert_source_rule(source.as_bytes(), SemanticRule::Clm2);
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("unsupported xor claim formation must be rejected: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Clm1);
+        let SemanticIssueKind::InvalidClaim(detail) = issue.kind() else {
+            panic!(
+                "expected a canonical-formation diagnostic: {:?}",
+                issue.kind()
+            );
+        };
+        assert_eq!(detail.name, "unsupported_basis");
+        assert_eq!(detail.predicate, "mixed");
+        assert_eq!(detail.classification, "unsupported canonical formation");
+        assert_eq!(detail.component, None);
+        assert_eq!(
+            detail.reason,
+            "the predicate has no unique supported contribution normal form"
+        );
+    });
 }
 
 #[test]
@@ -936,8 +1063,17 @@ fn a_claim_can_be_load_bearing_only_for_the_complete_fn9_postcondition() {
 fn reviewed(value: own i32) -> result: own i32 traps contract {
   ensures ieq(result, 1_i32);
 } {
-  let normalized = reviewed_one(value: value);
-  claim result_is_one: ieq(normalized, 1_i32) because "premises: normalized is returned by reviewed_one, whose body computes imax(imin(value, 1_i32), 1_i32)\nderivation: the inner minimum is at most 1_i32 and the outer maximum with 1_i32 is exactly 1_i32\nconclusion: ieq(normalized, 1_i32) is true\nchecker gap: ENT does not publish an uncontracted user-call result equality\nconsumers: the complete FN-9 selected-return proof needs result equal to 1_i32";
+  let normalized = 1_i32;
+  let cursor = 0_u8;
+  loop @retain_one {
+    if ieq(cursor, 3_u8) {
+      break @retain_one;
+    } else {
+      set normalized = 1_i32;
+      set cursor = cursor +wrap 1_u8;
+    }
+  }
+  claim result_is_one: ieq(normalized, 1_i32) because "premises: normalized starts at one and every completed local loop iteration writes one again before advancing the cursor\nderivation: induction over reached loop bodies preserves normalized equal to one until the cursor reaches three\nconclusion: ieq(normalized, 1_i32) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the complete FN-9 selected-return proof needs result equal to 1_i32";
   return normalized;
 }
 
@@ -1024,7 +1160,16 @@ fn consume(value: own u8, proof: own u8) -> result: own unit pure contract {{
 
 fn read(values: own array<u8, 8>, index: own u64) -> result: own unit traps {{
   let size = len(values);
-  let bounded = clamp_seven(value: index);
+  let bounded = 0_u64;
+  loop @select_bound {{
+    if ieq(bounded, index) {{
+      break @select_bound;
+    }} else if ieq(bounded, 7_u64) {{
+      break @select_bound;
+    }} else {{
+      set bounded = bounded +wrap 1_u64;
+    }}
+  }}
   let inside = ilt(bounded, size);
   claim in_range: inside because "{CLAMP_LT_EIGHT_REVIEW}";
   consume(value: values[bounded], proof: 0_u8);
@@ -1133,9 +1278,18 @@ fn read(values: own array<u8, 4>, input: own u64) -> result: own u8 traps {
   if False() {
     let unreachable = values[4_u64];
   }
-  let bounded = clamp_three(value: input);
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, input) {
+      break @select_bound;
+    } else if ieq(bounded, 3_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
   let inside = ilt(bounded, 4_u64);
-  claim in_range: inside because "premises: values has length 4 and bounded is returned by clamp_three, whose body computes imin(input, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the final array subscript uses bounded";
+  claim in_range: inside because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than three; values has length four\nderivation: induction over reached loop bodies keeps bounded between zero and three inclusive\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the final array subscript uses bounded";
   return values[bounded];
 }
 
@@ -1163,9 +1317,18 @@ fn prove(input: own u64) -> result: own unit traps {
   if False() {
     need(flag: impossible);
   }
-  let bounded = clamp_three(value: input);
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, input) {
+      break @select_bound;
+    } else if ieq(bounded, 3_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
   let inside = ilt(bounded, 4_u64);
-  claim in_range: inside because "premises: bounded is returned by clamp_three, whose body computes imin(input, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: inside is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the final need call requires inside";
+  claim in_range: inside because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than three\nderivation: induction over reached loop bodies keeps bounded between zero and three inclusive\nconclusion: inside is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the final need call requires inside";
   need(flag: inside);
   return unit;
 }
@@ -1194,9 +1357,18 @@ fn clamp_three(value: own u64) -> result: own u64 pure {
 }
 
 fn read(values: own array<u8, 4>, input: own u64) -> result: own u8 traps {
-  let bounded = clamp_three(value: input);
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, input) {
+      break @select_bound;
+    } else if ieq(bounded, 3_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
   let inside = ilt(bounded, 4_u64);
-  claim in_range: inside because "premises: values has length 4 and bounded is returned by clamp_three, whose body computes imin(input, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: inside is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the final array subscript uses bounded";
+  claim in_range: inside because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than three; values has length four\nderivation: induction over reached loop bodies keeps bounded between zero and three inclusive\nconclusion: inside is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the final array subscript uses bounded";
   return values[bounded];
 }
 
@@ -1219,7 +1391,16 @@ fn a_later_masked_explosive_root_is_not_hidden_by_an_earlier_counterfactual_witn
 }}
 
 fn read(five: own array<u8, 5>, ten: own array<u8, 10>, input: own u64) -> result: own u8 traps {{
-  let bounded = clamp_four(value: input);
+  let bounded = 0_u64;
+  loop @select_bound {{
+    if ieq(bounded, input) {{
+      break @select_bound;
+    }} else if ieq(bounded, 4_u64) {{
+      break @select_bound;
+    }} else {{
+      set bounded = bounded +wrap 1_u64;
+    }}
+  }}
   let weak = ilt(bounded, 10_u64);
   let always = True();
   if always {{
@@ -1228,7 +1409,7 @@ fn read(five: own array<u8, 5>, ten: own array<u8, 10>, input: own u64) -> resul
       return 0_u8;
     }}
   }}
-  claim strong: ilt(bounded, 5_u64) because "premises: bounded is returned by clamp_four, whose body computes imin(input, 4_u64)\nderivation: bounded is at most 4_u64 and therefore strictly less than 5_u64\nconclusion: bounded is below five\nchecker gap: ENT does not publish the result bound of clamp_four\nconsumers: the five-element subscript consumes the strong bound";
+  claim strong: ilt(bounded, 5_u64) because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than four\nderivation: induction over reached loop bodies keeps bounded between zero and four inclusive\nconclusion: bounded is below five\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the five-element subscript consumes the strong bound";
 {consumers}
 }}
 
@@ -1264,11 +1445,20 @@ fn clamp_four(value: own u64) -> result: own u64 pure {
 }
 
 fn probe(value: own u64) -> result: own unit traps {
-  let bounded = clamp_four(value: value);
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, value) {
+      break @select_bound;
+    } else if ieq(bounded, 4_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
   let tight = ilt(bounded, 5_u64);
   let weak = ilt(bounded, 10_u64);
   let both = band(tight, weak);
-  claim overcomplete: both because "premises: bounded is returned by clamp_four, whose body computes imin(value, 4_u64)\nderivation: bounded is at most 4_u64 and therefore strictly below both 5_u64 and 10_u64\nconclusion: band(tight, weak) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following FN-8 requirement names the exact conjunction";
+  claim overcomplete: both because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than four\nderivation: induction over reached loop bodies keeps bounded below both five and ten\nconclusion: band(tight, weak) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following FN-8 requirement names the exact conjunction";
   need(flag: both);
   return unit;
 }
@@ -1293,9 +1483,18 @@ fn need_under_ten(value: own u64) -> result: own unit pure contract {
 }
 
 fn prove(input: own u64) -> result: own unit traps {
-  let bounded = clamp_four(value: input);
-  claim under_seven: ilt(bounded, 7_u64) because "premises: bounded is returned by clamp_four, whose body computes imin(input, 4_u64)\nderivation: bounded is at most 4_u64 and therefore strictly below 7_u64\nconclusion: ilt(bounded, 7_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following FN-8 requirement can be discharged from this bound";
-  claim under_five: ilt(bounded, 5_u64) because "premises: bounded is returned by clamp_four, whose body computes imin(input, 4_u64)\nderivation: bounded is at most 4_u64 and therefore strictly below 5_u64\nconclusion: ilt(bounded, 5_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following FN-8 requirement can be discharged from this stronger bound";
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, input) {
+      break @select_bound;
+    } else if ieq(bounded, 4_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
+  claim under_seven: ilt(bounded, 7_u64) because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than four\nderivation: induction over reached loop bodies keeps bounded strictly below seven\nconclusion: ilt(bounded, 7_u64) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following FN-8 requirement can be discharged from this bound";
+  claim under_five: ilt(bounded, 5_u64) because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than four\nderivation: induction over reached loop bodies keeps bounded strictly below five\nconclusion: ilt(bounded, 5_u64) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following FN-8 requirement can be discharged from this stronger bound";
   need_under_ten(value: bounded);
   return unit;
 }
@@ -1316,7 +1515,16 @@ fn a_hidden_contradictory_join_predecessor_is_not_a_residual_witness() {
 
 fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {{
   let size = len(values);
-  let bounded = clamp_seven(value: index);
+  let bounded = 0_u64;
+  loop @select_bound {{
+    if ieq(bounded, index) {{
+      break @select_bound;
+    }} else if ieq(bounded, 7_u64) {{
+      break @select_bound;
+    }} else {{
+      set bounded = bounded +wrap 1_u64;
+    }}
+  }}
   let inside = ilt(bounded, size);
   let always = True();
   if always {{
@@ -1343,7 +1551,16 @@ fn a_claim_need_only_dominate_the_mutually_exclusive_lineage_that_consumes_it() 
 fn read(values: own array<u8, 8>, index: own u64, choose: own Bool) -> result: own u8 traps {{
   if choose {{
     let size = len(values);
-    let bounded = clamp_seven(value: index);
+    let bounded = 0_u64;
+    loop @select_bound {{
+      if ieq(bounded, index) {{
+        break @select_bound;
+      }} else if ieq(bounded, 7_u64) {{
+        break @select_bound;
+      }} else {{
+        set bounded = bounded +wrap 1_u64;
+      }}
+    }}
     let inside = ilt(bounded, size);
     claim branch_only: inside because "{CLAMP_LT_EIGHT_REVIEW}";
     return values[bounded];
@@ -1373,9 +1590,18 @@ fn clamp_seven(value: own u64) -> result: own u64 pure {
 
 fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {
   let size = len(values);
-  let bounded = clamp_seven(value: index);
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, index) {
+      break @select_bound;
+    } else if ieq(bounded, 7_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
   let inside = ilt(bounded, size);
-  claim initially_inside: inside because "premises: bounded is returned by clamp_seven, whose body computes imin(index, 7_u64), and values has length 8\nderivation: bounded is at most 7_u64 and therefore strictly below size at the claim\nconclusion: ilt(bounded, size) is true at this statement\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the later subscript would consume this fact only if no intervening write killed it";
+  claim initially_inside: inside because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, exits no later than seven, and values has length eight\nderivation: induction over reached loop bodies keeps bounded strictly below size at the claim\nconclusion: ilt(bounded, size) is true at this statement\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the later subscript would consume this fact only if no intervening write killed it";
   region 'r {
     let holder = &uniq 'r bounded;
     overwrite<'r>(target: move holder);
@@ -1404,8 +1630,19 @@ fn clamped_holder(value: own u64) -> result: own Holder allocates(heap) {
 
 fn read(values: own array<u8, 8>, index: own u64) -> result: own u8 allocates(heap), traps {
   let size = len(values);
-  let holder = clamped_holder(value: index);
-  claim projected: ilt(deref(holder.value), size) because "premises: holder is returned by clamped_holder, whose body stores imin(index, 7_u64), and values has length 8\nderivation: deref(holder.value) is at most 7_u64 and therefore strictly below size\nconclusion: ilt(deref(holder.value), size) is true\nchecker gap: ENT accepts the projected affine-holder copy read but does not publish the uncontracted call result invariant\nconsumers: the following length-eight array subscript uses deref(holder.value)";
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, index) {
+      break @select_bound;
+    } else if ieq(bounded, 7_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
+  let owner = box_new(bounded);
+  let holder = Holder(value: move owner);
+  claim projected: ilt(deref(holder.value), size) because "premises: the locally constructed holder stores bounded; bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than seven; values has length eight\nderivation: induction over reached loop bodies keeps deref(holder.value) at most seven and therefore strictly below size\nconclusion: ilt(deref(holder.value), size) is true\nchecker gap: ENT accepts the projected affine-holder copy read but carries no induction fact across the ordinary-loop backedge\nconsumers: the following length-eight array subscript uses deref(holder.value)";
   return values[deref(holder.value)];
 }
 
@@ -1417,7 +1654,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn boolean_equivalence_waits_for_a_canonical_conjunctive_basis() {
+fn boolean_equivalence_without_a_canonical_basis_is_a_clm1_formation_error() {
     let source = format!(
         r#"fn need(flag: own Bool) -> result: own unit pure contract {{
   requires flag;
@@ -1437,7 +1674,26 @@ command fn main() -> status: own ExitStatus pure {{
 }}
 "#
     );
-    assert_source_rule(source.as_bytes(), SemanticRule::Clm2);
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("unsupported equivalence claim formation must be rejected: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Clm1);
+        let SemanticIssueKind::InvalidClaim(detail) = issue.kind() else {
+            panic!(
+                "expected a canonical-formation diagnostic: {:?}",
+                issue.kind()
+            );
+        };
+        assert_eq!(detail.name, "unsupported_equivalence");
+        assert_eq!(detail.predicate, "same");
+        assert_eq!(detail.classification, "unsupported canonical formation");
+        assert_eq!(detail.component, None);
+        assert_eq!(
+            detail.reason,
+            "the predicate has no unique supported contribution normal form"
+        );
+    });
 }
 
 #[test]
@@ -1447,11 +1703,20 @@ fn symmetric_disequality_components_deduplicate_by_normative_fact_identity() {
 }
 
 fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
-  let divisor = reviewed_nonzero(value: d);
+  let divisor = 1_u64;
+  loop @select_divisor {
+    if ieq(divisor, d) {
+      break @select_divisor;
+    } else if ieq(divisor, 2_u64) {
+      break @select_divisor;
+    } else {
+      set divisor = divisor +wrap 1_u64;
+    }
+  }
   let forward = ine(divisor, 0_u64);
   let reverse = ine(0_u64, divisor);
   let repeated = band(forward, reverse);
-  claim nonzero: repeated because "premises: divisor is returned by reviewed_nonzero, whose body computes imax(d, 1_u64)\nderivation: divisor is at least 1_u64, hence nonzero in either written orientation, and their conjunction is true\nconclusion: band(forward, reverse) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound but canonicalizes symmetric disequality identity\nconsumers: the following exact unsigned division requires divisor nonzero";
+  claim nonzero: repeated because "premises: divisor starts at one, advances by one only on the current-function ordinary-loop backedge, and exits no later than two\nderivation: induction over reached loop bodies keeps divisor nonzero in either written orientation\nconclusion: band(forward, reverse) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge but canonicalizes symmetric disequality identity\nconsumers: the following exact unsigned division requires divisor nonzero";
   return n / divisor;
 }
 
@@ -1505,8 +1770,17 @@ fn an_uninstantiated_generic_schema_still_checks_ordinary_admission_roots() {
 }
 
 fn unused<T>(safe: own array<u8, 4>, unsafe_values: own array<u8, 4>, input: own u64, index: own u64) -> result: own u8 traps {
-  let bounded = clamp_three(value: input);
-  claim in_range: ilt(bounded, 4_u64) because "premises: bounded is returned by clamp_three, whose body computes imin(input, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: bounded is below four\nchecker gap: ENT does not publish the result bound of clamp_three\nconsumers: the first array subscript consumes this exact bound";
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, input) {
+      break @select_bound;
+    } else if ieq(bounded, 3_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
+  claim in_range: ilt(bounded, 4_u64) because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than three\nderivation: induction over reached loop bodies keeps bounded between zero and three inclusive\nconclusion: bounded is below four\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the first array subscript consumes this exact bound";
   let first = safe[bounded];
   return unsafe_values[index];
 }
@@ -1666,9 +1940,19 @@ fn need<T: Int>(left: own Flag<T>, right: own Flag<T>) -> result: own unit pure 
 }
 
 fn prove<T: Int>() -> result: own unit traps {
-  let left = hidden<T>();
-  let right = hidden<T>();
-  claim same: eeq(left, right) because "premises: left and right are returned by hidden<T>, whose body returns Off<T>()\nderivation: both values therefore have the same tag-only Flag<T> value\nconclusion: eeq(left, right) is true\nchecker gap: schema ENT does not publish uncontracted generic call-result equality\nconsumers: the following FN-8 requirement needs the exact Flag<T> equality";
+  let left = Off<T>();
+  let right = Off<T>();
+  let cursor = 0_u8;
+  loop @advance_pair {
+    if ieq(cursor, 3_u8) {
+      break @advance_pair;
+    } else {
+      set left = On<T>();
+      set right = On<T>();
+      set cursor = cursor +wrap 1_u8;
+    }
+  }
+  claim same: eeq(left, right) because "premises: left and right start as the same tag-only value and every completed local loop iteration writes On<T>() to both before advancing the cursor\nderivation: induction over reached loop bodies preserves their enum equality until the cursor reaches three\nconclusion: eeq(left, right) is true\nchecker gap: schema ENT carries no relational induction fact across this ordinary-loop backedge\nconsumers: the following FN-8 requirement needs the exact Flag<T> equality";
   need<T>(left: left, right: right);
   return unit;
 }
@@ -2008,8 +2292,17 @@ fn a_concrete_fragment_fn9_root_can_consume_an_uninstantiated_generic_schema_cla
 fn reviewed<T>(value: own u64) -> result: own u64 traps contract {
   ensures ieq(result, 1_u64);
 } {
-  let normalized = reviewed_one(value: value);
-  claim result_is_one: ieq(normalized, 1_u64) because "premises: normalized is returned by reviewed_one, whose body computes imax(imin(value, 1_u64), 1_u64)\nderivation: the inner minimum is at most 1_u64 and the outer maximum with 1_u64 is exactly 1_u64\nconclusion: ieq(normalized, 1_u64) is true\nchecker gap: schema ENT does not publish an uncontracted user-call result equality\nconsumers: the complete concrete-u64 FN-9 selected-return proof needs result equal to 1_u64";
+  let normalized = 1_u64;
+  let cursor = 0_u8;
+  loop @retain_one {
+    if ieq(cursor, 3_u8) {
+      break @retain_one;
+    } else {
+      set normalized = 1_u64;
+      set cursor = cursor +wrap 1_u8;
+    }
+  }
+  claim result_is_one: ieq(normalized, 1_u64) because "premises: normalized starts at one and every completed local loop iteration writes one again before advancing the cursor\nderivation: induction over reached loop bodies preserves normalized equal to one until the cursor reaches three\nconclusion: ieq(normalized, 1_u64) is true\nchecker gap: schema ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the complete concrete-u64 FN-9 selected-return proof needs result equal to 1_u64";
   return normalized;
 }
 

@@ -240,7 +240,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
   doc "Builds one byte string from literals, concatenates, searches it, and publishes the measured report.";
   let subject = bs_new();
   region 'head_view {
@@ -389,15 +389,19 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
     return exit_status(code: 1_u8);
   }
   let report_capacity = len(report.buf);
-  claim report_within_capacity: ile(published, report_capacity) because "premises: report starts with fill zero and every mutation uses bs_push, which grows before raising fill when full and otherwise writes only while fill is below capacity; bs_len returns fill\nderivation: induction over successful pushes preserves report.fill at most len(report.buf), so published is at most report_capacity\nconclusion: published is at most report_capacity\nchecker gap: ENT does not publish this nominal representation invariant through uncontracted user calls\nconsumers: publish_all requires its length argument to be at most len(report.buf)";
-  region 'publish {
-    match publish_all<'publish, 'publish>(output: &uniq 'publish out, source: &'publish report.buf, length: published) {
-      Ok(value: done) => {
-      }
-      Err(error: problem) => {
-        return exit_status(code: 2_u8);
+  let report_within_capacity = ile(published, report_capacity);
+  if report_within_capacity {
+    region 'publish {
+      match publish_all<'publish, 'publish>(output: &uniq 'publish out, source: &'publish report.buf, length: published) {
+        Ok(value: done) => {
+        }
+        Err(error: problem) => {
+          return exit_status(code: 2_u8);
+        }
       }
     }
+  } else {
+    return exit_status(code: 3_u8);
   }
   return exit_status(code: 0_u8);
 }

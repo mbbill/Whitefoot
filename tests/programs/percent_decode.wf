@@ -1,39 +1,3 @@
-fn is_hex(byte: own u8) -> result: own Bool pure {
-  let decimal_low = ige(byte, 48_u8);
-  let decimal_high = ile(byte, 57_u8);
-  let decimal = band(decimal_low, decimal_high);
-  let upper_low = ige(byte, 65_u8);
-  let upper_high = ile(byte, 70_u8);
-  let upper = band(upper_low, upper_high);
-  let lower_low = ige(byte, 97_u8);
-  let lower_high = ile(byte, 102_u8);
-  let lower = band(lower_low, lower_high);
-  let alphabetic = bor(upper, lower);
-  let result = bor(decimal, alphabetic);
-  return result;
-}
-
-fn hex_value(byte: own u8) -> result: own u8 pure {
-  let is_decimal = ile(byte, 57_u8);
-  let result = if is_decimal {
-    let value = byte -wrap 48_u8;
-    give value;
-  } else {
-    let is_upper = ile(byte, 70_u8);
-    let value = if is_upper {
-      let offset = byte -wrap 65_u8;
-      let upper_value = offset +wrap 10_u8;
-      give upper_value;
-    } else {
-      let offset = byte -wrap 97_u8;
-      let lower_value = offset +wrap 10_u8;
-      give lower_value;
-    }
-    give value;
-  }
-  return result;
-}
-
 fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 writes('r), traps contract {
   define output_length = len(deref(out));
   define source_length = len(src);
@@ -66,12 +30,60 @@ fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 
       let low_ok = ilt(last_index, source_length);
       claim low_in_source: low_ok because "premises: candidate requires at least three source bytes remaining and last_index is input_index plus two\nderivation: at least three remaining bytes place the second successor strictly before source_length\nconclusion: last_index is below source_length\nchecker gap: ENT does not normalize the remaining-length guard into this offset bound\nconsumers: the following source subscript uses last_index";
       let low_byte = src[last_index];
-      let high_valid = is_hex(byte: high_byte);
-      let low_valid = is_hex(byte: low_byte);
+      let high_decimal_low = ige(high_byte, 48_u8);
+      let high_decimal_high = ile(high_byte, 57_u8);
+      let high_decimal = band(high_decimal_low, high_decimal_high);
+      let high_upper_low = ige(high_byte, 65_u8);
+      let high_upper_high = ile(high_byte, 70_u8);
+      let high_upper = band(high_upper_low, high_upper_high);
+      let high_lower_low = ige(high_byte, 97_u8);
+      let high_lower_high = ile(high_byte, 102_u8);
+      let high_lower = band(high_lower_low, high_lower_high);
+      let high_alphabetic = bor(high_upper, high_lower);
+      let high_valid = bor(high_decimal, high_alphabetic);
+      let low_decimal_low = ige(low_byte, 48_u8);
+      let low_decimal_high = ile(low_byte, 57_u8);
+      let low_decimal = band(low_decimal_low, low_decimal_high);
+      let low_upper_low = ige(low_byte, 65_u8);
+      let low_upper_high = ile(low_byte, 70_u8);
+      let low_upper = band(low_upper_low, low_upper_high);
+      let low_lower_low = ige(low_byte, 97_u8);
+      let low_lower_high = ile(low_byte, 102_u8);
+      let low_lower = band(low_lower_low, low_lower_high);
+      let low_alphabetic = bor(low_upper, low_lower);
+      let low_valid = bor(low_decimal, low_alphabetic);
       let valid = band(high_valid, low_valid);
       if valid {
-        let high = hex_value(byte: high_byte);
-        let low = hex_value(byte: low_byte);
+        let high_is_decimal = ile(high_byte, 57_u8);
+        let high = if high_is_decimal {
+          let value = high_byte -wrap 48_u8;
+          give value;
+        } else {
+          let high_is_upper = ile(high_byte, 70_u8);
+          let value = if high_is_upper {
+            let offset = high_byte -wrap 65_u8;
+            give offset +wrap 10_u8;
+          } else {
+            let offset = high_byte -wrap 97_u8;
+            give offset +wrap 10_u8;
+          }
+          give value;
+        }
+        let low_is_decimal = ile(low_byte, 57_u8);
+        let low = if low_is_decimal {
+          let value = low_byte -wrap 48_u8;
+          give value;
+        } else {
+          let low_is_upper = ile(low_byte, 70_u8);
+          let value = if low_is_upper {
+            let offset = low_byte -wrap 65_u8;
+            give offset +wrap 10_u8;
+          } else {
+            let offset = low_byte -wrap 97_u8;
+            give offset +wrap 10_u8;
+          }
+          give value;
+        }
         let shifted = high *wrap 16_u8;
         let decoded = shifted +wrap low;
         set deref(out)[output_index] = decoded;

@@ -123,12 +123,30 @@ fn passed_band_claim_establishes_positive_conjuncts_and_discharges_both() {
 }
 
 fn read_pair(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 traps {
-  let low_bounded = clamp_seven(value: low);
-  let high_bounded = clamp_seven(value: high);
+  let low_bounded = 0_u64;
+  loop @select_low {
+    if ieq(low_bounded, low) {
+      break @select_low;
+    } else if ieq(low_bounded, 7_u64) {
+      break @select_low;
+    } else {
+      set low_bounded = low_bounded +wrap 1_u64;
+    }
+  }
+  let high_bounded = 0_u64;
+  loop @select_high {
+    if ieq(high_bounded, high) {
+      break @select_high;
+    } else if ieq(high_bounded, 7_u64) {
+      break @select_high;
+    } else {
+      set high_bounded = high_bounded +wrap 1_u64;
+    }
+  }
   let low_ok = ilt(low_bounded, 8_u64);
   let high_ok = ilt(high_bounded, 8_u64);
   let both = band(low_ok, high_ok);
-  claim pair_in_range: both because "premises: low_bounded and high_bounded are returned by clamp_seven, whose body computes imin(value, 7_u64)\nderivation: both bounded values are at most 7_u64 and therefore strictly less than 8_u64\nconclusion: both is true\nchecker gap: ENT does not publish either uncontracted user-call result bound\nconsumers: the following two table subscripts consume the respective bounds";
+  claim pair_in_range: both because "premises: each bounded value starts at zero, advances by one only on its own ordinary-loop backedge, and exits no later than seven\nderivation: induction over the two current-function loops keeps both bounded values between zero and seven inclusive\nconclusion: both is true\nchecker gap: ENT carries no induction fact across either ordinary-loop backedge\nconsumers: the following two table subscripts consume the respective bounds";
   let first = table[low_bounded];
   let second = table[high_bounded];
   return second;
@@ -314,12 +332,30 @@ fn pick(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 
 }
 
 fn caller(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 traps {
-  let low_bounded = clamp_seven(value: low);
-  let high_bounded = clamp_seven(value: high);
+  let low_bounded = 0_u64;
+  loop @select_low {
+    if ieq(low_bounded, low) {
+      break @select_low;
+    } else if ieq(low_bounded, 7_u64) {
+      break @select_low;
+    } else {
+      set low_bounded = low_bounded +wrap 1_u64;
+    }
+  }
+  let high_bounded = 0_u64;
+  loop @select_high {
+    if ieq(high_bounded, high) {
+      break @select_high;
+    } else if ieq(high_bounded, 7_u64) {
+      break @select_high;
+    } else {
+      set high_bounded = high_bounded +wrap 1_u64;
+    }
+  }
   let low_ok = ilt(low_bounded, 8_u64);
   let high_ok = ilt(high_bounded, 8_u64);
   let both = band(low_ok, high_ok);
-  claim caller_proof: both because "premises: low_bounded and high_bounded are returned by clamp_seven, whose body computes imin(value, 7_u64)\nderivation: both bounded values are at most 7_u64 and therefore strictly less than 8_u64\nconclusion: both is true\nchecker gap: ENT does not publish either uncontracted user-call result bound\nconsumers: the two following table subscripts consume the components and pick requires the reconstructed exact conjunction";
+  claim caller_proof: both because "premises: each bounded value starts at zero, advances by one only on its own ordinary-loop backedge, and exits no later than seven\nderivation: induction over the two current-function loops keeps both bounded values between zero and seven inclusive\nconclusion: both is true\nchecker gap: ENT carries no induction fact across either ordinary-loop backedge\nconsumers: the two following table subscripts consume the components and pick requires the reconstructed exact conjunction";
   let low_probe = table[low_bounded];
   let high_probe = table[high_bounded];
   let value = pick(table: move table, low: low_bounded, high: high_bounded);

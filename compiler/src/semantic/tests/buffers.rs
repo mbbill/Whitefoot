@@ -38,14 +38,19 @@ command fn main() -> status: own ExitStatus pure {
         assert!(!allocation[0].discharged);
     });
 
-    let exact = br#"fn bounded_count(n: own u64) -> result: own u64 pure {
-  return imin(n, 9223372036854775807_u64);
+    let exact = br#"fn bounded_count(n: own u64) -> result: own u64 pure contract {
+  ensures ile(result, 9223372036854775807_u64);
+} {
+  let within = ile(n, 9223372036854775807_u64);
+  if within {
+    return n;
+  } else {
+    return 9223372036854775807_u64;
+  }
 }
 
-fn allocate(n: own u64) -> result: own unit allocates(heap), traps {
+fn allocate(n: own u64) -> result: own unit allocates(heap) {
   let bounded = bounded_count(n: n);
-  let fits = buffer_fits<u16>(bounded);
-  claim reviewed_fit: fits because "premises: bounded_count returns imin(n, 9223372036854775807_u64), and a u16 buffer fits when its count is at most 9223372036854775807_u64\nderivation: imin is no greater than its second operand, so bounded is within the u16 allocation ceiling\nconclusion: buffer_fits<u16>(bounded) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following buffer_new allocation requires this exact allocation-fit fact";
   let values = buffer_new(bounded, 0_u16);
   return unit;
 }
@@ -221,11 +226,14 @@ fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
   return buffer_new(4_u64, 3_u16);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let values = make();
   let length = len(values);
   let ok = ilt(2_u64, length);
-  claim sized_by_make: ok because "premises: make returns buffer_new(4_u64, 3_u16), so length is 4_u64\nderivation: 2_u64 is strictly less than 4_u64\nconclusion: 2_u64 is strictly less than length\nchecker gap: ENT does not publish the length of an uncontracted user-call buffer result\nconsumers: the following set and read operations require this exact index bound";
+  if ok {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   set values[2_u64] = 9_u16;
   let stored = values[2_u64];
   return exit_status(code: 0_u8);
@@ -256,8 +264,11 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
         ));
 
         let main = &checked.data.functions[1];
+        assert!(main.declared_allocates_heap);
+        assert!(!main.declared_traps);
+
         let CheckedStatement::Set { target, .. } = &main.body[4] else {
-            panic!("the statement after the discharging claim must be indexed SET-1");
+            panic!("the statement after the dominating length branch must be indexed SET-1");
         };
         let CheckedSetTarget::BufferIndex(target) = target else {
             panic!("SET-1 target must retain its buffer root and OP-4 obligation");
@@ -271,6 +282,13 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
             target.target_domain,
             CheckedTargetDomainObligation::ElementAddress
         );
+        assert!(matches!(
+            &main.body[0],
+            CheckedStatement::Let {
+                value: CheckedExpression::UserCall { .. },
+                ..
+            }
+        ));
         assert!(matches!(
             &main.body[1],
             CheckedStatement::Let {

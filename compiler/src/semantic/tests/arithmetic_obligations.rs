@@ -26,9 +26,9 @@ fn named<'functions>(
         .expect("named function is checked")
 }
 
-/// A reviewed residual theorem about an uncontracted clamp discharges the
-/// literal-operand site: the program is accepted and both overflow conjuncts
-/// are proved.
+/// A reviewed residual theorem about this function's own loop state
+/// discharges the literal-operand site: the program is accepted and both
+/// overflow conjuncts are proved.
 #[test]
 fn a_stronger_claim_discharges_the_literal_site() {
     let source = br#"fn clamp_below_thousand(value: own u64) -> result: own u64 pure {
@@ -36,8 +36,17 @@ fn a_stronger_claim_discharges_the_literal_site() {
 }
 
 fn bump(x: own u64) -> result: own u64 traps {
-  let bounded = clamp_below_thousand(value: x);
-  claim bounded_input: ilt(bounded, 1000_u64) because "premises: bounded is returned by clamp_below_thousand, whose body computes imin(x, 999_u64)\nderivation: imin(x, 999_u64) is at most 999_u64, and 999_u64 is strictly less than 1000_u64\nconclusion: ilt(bounded, 1000_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, x) {
+      break @select_bound;
+    } else if ieq(bounded, 999_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
+  claim bounded_input: ilt(bounded, 1000_u64) because "premises: bounded starts at zero; each continuing iteration increments it once; the loop exits no later than the equality branch at 999\nderivation: induction over reached loop bodies keeps bounded between zero and 999 inclusive\nconclusion: ilt(bounded, 1000_u64) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
   let y = bounded + 1_u64;
   return y;
 }
@@ -138,9 +147,9 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// A reviewed residual theorem about an uncontracted clamp discharges the
-/// exact-site obligation. The claim itself remains the function's `traps`
-/// effect source.
+/// A reviewed residual theorem about this function's own loop state
+/// discharges the exact-site obligation. The claim itself remains the
+/// function's `traps` effect source.
 #[test]
 fn a_dominating_claim_discharges_the_site() {
     let source = br#"fn clamp_hundred(value: own u64) -> result: own u64 pure {
@@ -148,8 +157,17 @@ fn a_dominating_claim_discharges_the_site() {
 }
 
 fn bump(x: own u64) -> result: own u64 traps {
-  let bounded = clamp_hundred(value: x);
-  claim small: ile(bounded, 100_u64) because "premises: bounded is returned by clamp_hundred, whose body computes imin(x, 100_u64)\nderivation: imin(x, 100_u64) is at most 100_u64\nconclusion: ile(bounded, 100_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, x) {
+      break @select_bound;
+    } else if ieq(bounded, 100_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
+  claim small: ile(bounded, 100_u64) because "premises: bounded starts at zero; each continuing iteration increments it once; the loop exits no later than the equality branch at 100\nderivation: induction over reached loop bodies keeps bounded between zero and 100 inclusive\nconclusion: ile(bounded, 100_u64) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
   let y = bounded + 1_u64;
   return y;
 }

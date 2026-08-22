@@ -20,6 +20,76 @@ fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_l
   return Ok<unit, InflateError>(value: unit);
 }
 
+fn ordered_code_symbol(index: own u64) -> result: own Result<u64, InflateError> traps {
+  let bounded = index % 19_u64;
+  let unchanged = ieq(bounded, index);
+  if unchanged {
+  } else {
+    let error = InvalidHuffmanTree();
+    return Err<u64, InflateError>(error: error);
+  }
+  let order_ok = ilt(bounded, 19_u64);
+  claim code_index_in_order: order_ok because "premises: bounded is index remainder 19_u64 computed in this function and the unchanged branch rejects every clipped index\nderivation: unsigned remainder by nineteen is one of 0_u64 through 18_u64 and is therefore strictly less than nineteen\nconclusion: order_ok is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following code_length_order[bounded] subscript requires this exact bound";
+  let ordered_symbol_byte = code_length_order[bounded];
+  let ordered_symbol = cvt<u8, u64>(ordered_symbol_byte);
+  return Ok<u64, InflateError>(value: ordered_symbol);
+}
+
+fn read_dynamic_code_lengths['s, 'i, 'c](state: &uniq 's InflateState, input: &'i buffer<u8>, code_lengths: &uniq 'c buffer<u8>, code_count: own u64) -> result: own Result<unit, InflateError> reads('s 'i 'c), writes('s 'c), traps contract {
+  define code_count_fits = ile(code_count, 19_u64);
+  define code_room = len(deref(code_lengths));
+  define order_fits = ile(19_u64, code_room);
+  requires code_count_fits;
+  requires order_fits;
+} {
+  let code_index = 0_u64;
+  loop @read_code_lengths {
+    let codes_done = ieq(code_index, code_count);
+    if codes_done {
+      break @read_code_lengths;
+    } else {
+      let ordered_symbol = 0_u64;
+      match ordered_code_symbol(index: code_index) {
+        Ok(value: symbol) => {
+          set ordered_symbol = symbol;
+        }
+        Err(error: order_error) => {
+          return Err<unit, InflateError>(error: order_error);
+        }
+      }
+      let length_bits = 0_u64;
+      region 'code_length_call {
+        match read_bits<'code_length_call, 'code_length_call>(state: &uniq 'code_length_call deref(state), input: &'code_length_call deref(input), count: 3_u32, mask: 7_u64) {
+          Ok(value: read_length) => {
+            set length_bits = read_length;
+          }
+          Err(error: length_error) => {
+            return Err<unit, InflateError>(error: length_error);
+          }
+        }
+      }
+      match cvt<u64, u8>(length_bits) {
+        Ok(value: length) => {
+          let code_room = len(deref(code_lengths));
+          let ordered_ok = ilt(ordered_symbol, code_room);
+          if ordered_ok {
+            set deref(code_lengths)[ordered_symbol] = length;
+          } else {
+            let error = InvalidHuffmanTree();
+            return Err<unit, InflateError>(error: error);
+          }
+        }
+        Err(error: conversion_error) => {
+          let error = InvalidHuffmanTree();
+          return Err<unit, InflateError>(error: error);
+        }
+      }
+      set code_index = code_index +wrap 1_u64;
+    }
+  }
+  return Ok<unit, InflateError>(value: unit);
+}
+
 fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> result: own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), allocates(heap), traps {
   let literal_count_bits = 0_u64;
   region 'literal_count_call {
@@ -62,41 +132,15 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
     }
   }
   let code_count = code_count_bits +wrap 4_u64;
+  let code_count_fits = ile(code_count, 19_u64);
+  if code_count_fits {
+  } else {
+    let error = InvalidHuffmanTree();
+    return Err<unit, InflateError>(error: error);
+  }
   let code_lengths = buffer_new(19_u64, 0_u8);
-  let code_index = 0_u64;
-  loop @read_code_lengths {
-    let codes_done = ieq(code_index, code_count);
-    if codes_done {
-      break @read_code_lengths;
-    } else {
-      let order_ok = ilt(code_index, 19_u64);
-      claim code_index_in_order: order_ok because "premises: successful read_bits with mask fifteen bounds code_count_bits by fifteen; code_count adds four; code_index starts at zero, increments once, and the equality branch exits before the body\nderivation: code_count is at most nineteen and induction gives each reached body code_index strictly below code_count and therefore below nineteen\nconclusion: order_ok is true\nchecker gap: ENT carries no code_index induction fact across the read_code_lengths loop backedge\nconsumers: code_length_order[code_index] requires this exact bound";
-      let ordered_symbol_byte = code_length_order[code_index];
-      let ordered_symbol = cvt<u8, u64>(ordered_symbol_byte);
-      let length_bits = 0_u64;
-      region 'code_length_call {
-        match read_bits<'code_length_call, 'code_length_call>(state: &uniq 'code_length_call deref(state), input: &'code_length_call deref(input), count: 3_u32, mask: 7_u64) {
-          Ok(value: read_length) => {
-            set length_bits = read_length;
-          }
-          Err(error: length_error) => {
-            return Err<unit, InflateError>(error: length_error);
-          }
-        }
-      }
-      match cvt<u64, u8>(length_bits) {
-        Ok(value: length) => {
-          let code_room = len(code_lengths);
-          let ordered_ok = ilt(ordered_symbol, code_room);
-          set code_lengths[ordered_symbol] = length;
-        }
-        Err(error: conversion_error) => {
-          let error = InvalidHuffmanTree();
-          return Err<unit, InflateError>(error: error);
-        }
-      }
-      set code_index = code_index +wrap 1_u64;
-    }
+  region 'code_lengths_fill {
+    let filled = propagate read_dynamic_code_lengths<'code_lengths_fill, 'code_lengths_fill, 'code_lengths_fill>(state: &uniq 'code_lengths_fill deref(state), input: &'code_lengths_fill deref(input), code_lengths: &uniq 'code_lengths_fill code_lengths, code_count: code_count);
   }
   let code_tree_allow_single = False();
   let code_tree_allow_empty = False();

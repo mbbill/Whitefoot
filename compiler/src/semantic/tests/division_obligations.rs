@@ -35,9 +35,9 @@ fn division_outcomes(
         .collect()
 }
 
-/// A reviewed residual theorem about an uncontracted normalizer discharges
-/// the zero-divisor conjunct of an unsigned site: the program is accepted and
-/// both conjuncts are proved.
+/// A reviewed residual theorem about this function's own loop state
+/// discharges the zero-divisor conjunct of an unsigned site: the program is
+/// accepted and both conjuncts are proved.
 #[test]
 fn a_stronger_claim_discharges_an_unsigned_site() {
     let source = br#"fn reviewed_positive(value: own u64) -> result: own u64 pure {
@@ -45,8 +45,17 @@ fn a_stronger_claim_discharges_an_unsigned_site() {
 }
 
 fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
-  let divisor = reviewed_positive(value: d);
-  claim positive_divisor: igt(divisor, 0_u64) because "premises: divisor is returned by reviewed_positive, whose body computes imax(d, 1_u64)\nderivation: imax(d, 1_u64) is at least 1_u64, which is strictly greater than 0_u64\nconclusion: igt(divisor, 0_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following n / divisor exact division requires a nonzero divisor for its OP-2 domain obligation";
+  let divisor = 1_u64;
+  loop @select_divisor {
+    if ieq(divisor, d) {
+      break @select_divisor;
+    } else if ieq(divisor, 2_u64) {
+      break @select_divisor;
+    } else {
+      set divisor = divisor +wrap 1_u64;
+    }
+  }
+  claim positive_divisor: igt(divisor, 0_u64) because "premises: divisor starts at one, advances by one only on the ordinary-loop backedge, and exits no later than two\nderivation: induction over reached loop bodies keeps divisor in the closed interval from one through two\nconclusion: igt(divisor, 0_u64) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following n / divisor exact division requires a nonzero divisor for its OP-2 domain obligation";
   let q = n / divisor;
   return q;
 }
@@ -70,9 +79,9 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// A reviewed residual theorem spells the selected normalized divisor's
-/// canonical disequality and discharges the obligation. The claim itself
-/// remains the function's `traps` effect source.
+/// A reviewed residual theorem spells the selected local divisor's canonical
+/// disequality and discharges the obligation. The claim itself remains the
+/// function's `traps` effect source.
 #[test]
 fn a_canonical_claim_discharges_the_site() {
     let source = br#"fn reviewed_nonzero(value: own u64) -> result: own u64 pure {
@@ -80,8 +89,17 @@ fn a_canonical_claim_discharges_the_site() {
 }
 
 fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
-  let divisor = reviewed_nonzero(value: d);
-  claim nonzero: ine(divisor, 0_u64) because "premises: divisor is returned by reviewed_nonzero, whose body computes imax(d, 1_u64)\nderivation: imax(d, 1_u64) is at least 1_u64 and therefore cannot equal 0_u64\nconclusion: ine(divisor, 0_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result disequality\nconsumers: the following n / divisor exact division requires this disequality for its OP-2 domain obligation";
+  let divisor = 1_u64;
+  loop @select_divisor {
+    if ieq(divisor, d) {
+      break @select_divisor;
+    } else if ieq(divisor, 2_u64) {
+      break @select_divisor;
+    } else {
+      set divisor = divisor +wrap 1_u64;
+    }
+  }
+  claim nonzero: ine(divisor, 0_u64) because "premises: divisor starts at one, advances by one only on the ordinary-loop backedge, and exits no later than two\nderivation: induction over reached loop bodies keeps divisor in the closed interval from one through two\nconclusion: ine(divisor, 0_u64) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following n / divisor exact division requires this disequality for its OP-2 domain obligation";
   let q = n / divisor;
   return q;
 }
@@ -259,8 +277,8 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// The same site with a reviewed, uncontracted clamp that bounds the dividend
-/// away from the type minimum discharges both conjuncts.
+/// The same site with a reviewed local loop invariant that bounds the
+/// dividend away from the type minimum discharges both conjuncts.
 #[test]
 fn a_bounded_dividend_over_minus_one_discharges() {
     let source = br#"fn clamp_above_minus_hundred(value: own i32) -> result: own i32 pure {
@@ -268,8 +286,17 @@ fn a_bounded_dividend_over_minus_one_discharges() {
 }
 
 fn negate(n: own i32) -> result: own i32 traps {
-  let bounded = clamp_above_minus_hundred(value: n);
-  claim bounded_input: igt(bounded, -100_i32) because "premises: bounded is returned by clamp_above_minus_hundred, whose body computes imax(n, -99_i32)\nderivation: imax(n, -99_i32) is at least -99_i32, which is strictly greater than -100_i32\nconclusion: igt(bounded, -100_i32) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following bounded / -1_i32 exact division requires exclusion of i32::MIN for its OP-2 domain obligation";
+  let bounded = -99_i32;
+  loop @select_bound {
+    if ieq(bounded, n) {
+      break @select_bound;
+    } else if ieq(bounded, 0_i32) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_i32;
+    }
+  }
+  claim bounded_input: igt(bounded, -100_i32) because "premises: bounded starts at -99, advances by one only on the ordinary-loop backedge, and exits no later than zero\nderivation: induction over reached loop bodies keeps bounded in the closed interval from -99 through zero\nconclusion: igt(bounded, -100_i32) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following bounded / -1_i32 exact division requires exclusion of i32::MIN for its OP-2 domain obligation";
   let q = bounded / -1_i32;
   return q;
 }
@@ -459,8 +486,8 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 /// [OP-2]'s own mechanical fix must be writable at a signed type. The claim
-/// route first obtains a genuinely nonzero divisor from an uncontracted
-/// normalizer, then states the selected operand's residual disequality; the
+/// route first obtains a genuinely nonzero divisor from a local loop, then
+/// states the selected operand's residual disequality; the
 /// branch route establishes the original divisor's disequality directly.
 /// Both routes compare the selected divisor against a written `0_i32`, which
 /// is the same mathematical value as the zero term the conjunct is stated
@@ -473,8 +500,17 @@ fn the_signed_zero_divisor_conjunct_is_discharged_by_its_own_mechanical_fix() {
 }
 
 fn ratio(d: own i32) -> result: own i32 traps {
-  let divisor = reviewed_nonzero(value: d);
-  claim nonzero: ine(divisor, 0_i32) because "premises: divisor is returned by reviewed_nonzero, whose body computes imax(d, 1_i32)\nderivation: imax(d, 1_i32) is at least 1_i32 and therefore cannot equal 0_i32\nconclusion: ine(divisor, 0_i32) is true\nchecker gap: ENT does not publish an uncontracted user-call result disequality\nconsumers: the following 100_i32 / divisor exact division requires this disequality for its OP-2 domain obligation";
+  let divisor = 1_i32;
+  loop @select_divisor {
+    if ieq(divisor, d) {
+      break @select_divisor;
+    } else if ieq(divisor, 2_i32) {
+      break @select_divisor;
+    } else {
+      set divisor = divisor +wrap 1_i32;
+    }
+  }
+  claim nonzero: ine(divisor, 0_i32) because "premises: divisor starts at one, advances by one only on the ordinary-loop backedge, and exits no later than two\nderivation: induction over reached loop bodies keeps divisor in the closed interval from one through two\nconclusion: ine(divisor, 0_i32) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following 100_i32 / divisor exact division requires this disequality for its OP-2 domain obligation";
   let q = 100_i32 / divisor;
   return q;
 }

@@ -199,9 +199,18 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 fn multiply_seven(input: own i64) -> result: own i64 traps {
-  let a = clamp_ten(value: input);
+  let a = 0_i64;
+  loop @select_operand {
+    if ieq(a, input) {
+      break @select_operand;
+    } else if ieq(a, 10_i64) {
+      break @select_operand;
+    } else {
+      set a = a +wrap 1_i64;
+    }
+  }
   let b = 7_i64;
-  claim product_defined: a *defined b because \"premises: a is returned by clamp_ten, whose body clamps its result to -10_i64 through 10_i64\\nderivation: multiplying any value in that interval by 7_i64 produces -70_i64 through 70_i64\\nconclusion: a *defined b is true\\nchecker gap: ENT does not publish the range of an uncontracted user-call result\\nconsumers: the following exact a * b operation requires both signed product bounds\";
+  claim product_defined: a *defined b because \"premises: a starts at zero, advances by one only on the ordinary-loop backedge, and exits no later than ten\\nderivation: induction over reached loop bodies keeps a between zero and ten, so multiplying it by seven remains in range\\nconclusion: a *defined b is true\\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\\nconsumers: the following exact a * b operation requires both signed product bounds\";
   return a * b;
 }
 

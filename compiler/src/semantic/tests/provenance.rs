@@ -240,16 +240,18 @@ fn read(values: own array<u8, count>, position: own u64) -> result: own u8 pure 
 }
 
 fn from_first_claim(values: own array<u8, count>, position: own u64) -> result: own u8 traps {
-  let bounded = clamp_three(value: position);
+  let observed_call = clamp_three(value: position);
+  let bounded = imin(position, 3_u64);
   let room = len(values);
-  claim first_bound: ilt(bounded, room) because "premises: values has length count=4 and bounded is returned by clamp_three, whose body computes imin(position, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded, room) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following read requirement needs bounded below room";
+  claim first_bound: ilt(bounded, room) because "premises: values has length count=4 and bounded is the current function's imin(position, 3_u64) result\nderivation: bounded is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following read requirement needs bounded below room";
   return read(values: move values, position: bounded);
 }
 
 fn from_second_claim(values: own array<u8, count>, position: own u64) -> result: own u8 traps {
-  let bounded = clamp_three(value: position);
+  let observed_call = clamp_three(value: position);
+  let bounded = imin(position, 3_u64);
   let room = len(values);
-  claim second_bound: ilt(bounded, room) because "premises: values has length count=4 and bounded is returned by clamp_three, whose body computes imin(position, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded, room) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following read requirement needs bounded below room";
+  claim second_bound: ilt(bounded, room) because "premises: values has length count=4 and bounded is the current function's imin(position, 3_u64) result\nderivation: bounded is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following read requirement needs bounded below room";
   return read(values: move values, position: bounded);
 }
 
@@ -453,30 +455,50 @@ fn coordinate_bytes<'source>(
 #[test]
 fn an_external_system_result_cannot_use_a_claim_to_authorize_a_local_subscript() {
     let source =
-        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
-  let values = array_new<u8, 4>(0_u8);
+        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
   region 'a {
-    let position = args_count<'a>(args: &'a args);
-    let room = len(values);
-    claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-    let selected = values[position];
+    let external_value = args_count<'a>(args: &'a args);
+    set deref(output) = external_value;
   }
+  return unit;
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+  let values = array_new<u8, 4>(0_u8);
+  let position = 0_u64;
+  region 'write {
+    store_count<'write>(output: &uniq 'write position, args: move args);
+  }
+  let bounded_position = imin(position, 3_u64);
+  let room = len(values);
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  let selected = values[bounded_position];
   return exit_status(code: 0_u8);
 }
 "#;
 
-    assert_provenance_rule_at(source, "PRV-3", b"[position]");
+    assert_provenance_rule_at(source, "PRV-3", b"[bounded_position]");
 }
 
 #[test]
 fn an_uninstantiated_generic_schema_cannot_use_a_claim_to_launder_external_provenance() {
-    let source = br#"fn unused<T>(args: own Args, values: own array<u8, 4>) -> result: own u8 traps {
+    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
   region 'a {
-    let position = args_count<'a>(args: &'a args);
-    let room = len(values);
-    claim bounded: ilt(position, room) because "premises: no premise bounds the external args_count result in this negative fixture\nderivation: there is no valid derivation; PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; PRV-3 must reject before any CheckedProgram is published\nconsumers: the following values[position] subscript is the protected terminal root";
-    return values[position];
+    let external_value = args_count<'a>(args: &'a args);
+    set deref(output) = external_value;
   }
+  return unit;
+}
+
+fn unused<T>(args: own Args, values: own array<u8, 4>) -> result: own u8 traps {
+  let position = 0_u64;
+  region 'write {
+    store_count<'write>(output: &uniq 'write position, args: move args);
+  }
+  let bounded_position = imin(position, 3_u64);
+  let room = len(values);
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  return values[bounded_position];
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -484,7 +506,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
 
-    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+    inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
         let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
             panic!("expected structured schema PRV-3 detail: {kind:?}");
         };
@@ -496,36 +518,47 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_external_nested_give_reaches_the_outer_value_binding_and_is_rejected() {
     let source =
-        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
-  let values = array_new<u8, 4>(0_u8);
+        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
   region 'a {
-    let position = args_count<'a>(args: &'a args);
-    let derived = if True() {
-      if True() {
-        give position;
-      } else {
-        give 0_u64;
-      }
+    let external_value = args_count<'a>(args: &'a args);
+    set deref(output) = external_value;
+  }
+  return unit;
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+  let values = array_new<u8, 4>(0_u8);
+  let position = 0_u64;
+  region 'write {
+    store_count<'write>(output: &uniq 'write position, args: move args);
+  }
+  let derived = if True() {
+    if True() {
+      give position;
     } else {
       give 0_u64;
     }
-    let room = len(values);
-    claim bounded: ilt(derived, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-    let selected = values[derived];
+  } else {
+    give 0_u64;
   }
+  let bounded_derived = imin(derived, 3_u64);
+  let room = len(values);
+  claim bounded: ilt(bounded_derived, room) because "premises: bounded_derived is the current function's imin(derived, 3_u64) result and values has length 4\nderivation: bounded_derived is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_derived, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  let selected = values[bounded_derived];
   return exit_status(code: 0_u8);
 }
 "#;
 
-    assert_provenance_rule_at(source, "PRV-3", b"[derived]");
+    assert_provenance_rule_at(source, "PRV-3", b"[bounded_derived]");
 }
 
 #[test]
 fn a_direct_parameter_demand_rejects_the_external_actual_at_its_argument() {
     let source = br#"fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
+  let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-  return values[position];
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains derived from the position parameter and PRV-2 must reject its external actual";
+  return values[bounded_position];
 }
 
 command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
@@ -595,9 +628,10 @@ fn a_bridge_converts_to_direct_and_crosses_a_requirement_free_call() {
 }
 
 fn wrapper(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
+  let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim wrapper_assertion: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-  return leaf(values: move values, position: position);
+  claim wrapper_assertion: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following leaf requirement remains derived from the wrapper position parameter and PRV-2 must reject its external actual";
+  return leaf(values: move values, position: bounded_position);
 }
 
 command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
@@ -644,7 +678,15 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 
 #[test]
 fn a_two_hop_bridge_diagnostic_retains_every_boundary_and_terminal_origin() {
-    let source = br#"fn bridge_leaf(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
+    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+  region 'a {
+    let external_value = args_count<'a>(args: &'a args);
+    set deref(output) = external_value;
+  }
+  return unit;
+}
+
+fn bridge_leaf(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
   define room = len(bytes);
   define inside = ilt(index, room);
   requires inside;
@@ -671,15 +713,17 @@ fn bridge_top(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pur
 }
 
 command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
-  region 'a {
-    let index = args_count<'a>(args: &'a args);
-    let bytes = buffer_new(4_u64, 0_u8);
-    let room = len(bytes);
-    let inside = ilt(index, room);
-    claim entry_call_precondition: inside because "premises: no premise bounds index, which comes from the external args_count result\nderivation: no legal theorem derivation exists; this occurrence intentionally attempts to launder external provenance across three requirement bridges\nconclusion: inside is not established\nchecker gap: none; PRV-2 must reject before any CheckedProgram is published\nconsumers: bridge_top's index actual reaches the protected bridge_leaf subscript";
-    let value = bridge_top(bytes: move bytes, index: index);
-    return exit_status(code: 0_u8);
+  let raw_index = 0_u64;
+  region 'write {
+    store_count<'write>(output: &uniq 'write raw_index, args: move args);
   }
+  let index = imin(raw_index, 3_u64);
+  let bytes = buffer_new(4_u64, 0_u8);
+  let room = len(bytes);
+  let inside = ilt(index, room);
+  claim entry_call_precondition: inside because "premises: index is the current function's imin(raw_index, 3_u64) result and bytes has length 4\nderivation: index is at most 3_u64 and therefore strictly less than room\nconclusion: inside is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: bridge_top's externally derived index actual reaches the protected bridge_leaf subscript and PRV-2 must reject it";
+  let value = bridge_top(bytes: move bytes, index: index);
+  return exit_status(code: 0_u8);
 }
 "#;
     inspect_provenance_issue(source, "PRV-2", b"index", |kind| {
@@ -715,7 +759,15 @@ command fn main(command.args as args: own Args) -> return_value: own ExitStatus 
 
 #[test]
 fn a_command_entry_bridge_terminates_at_its_call_argument_without_upstream_continuation() {
-    let source = br#"fn required_read(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
+    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+  region 'a {
+    let external_value = args_count<'a>(args: &'a args);
+    set deref(output) = external_value;
+  }
+  return unit;
+}
+
+fn required_read(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pure contract {
   define room = len(bytes);
   define inside = ilt(index, room);
   requires inside;
@@ -724,15 +776,17 @@ fn a_command_entry_bridge_terminates_at_its_call_argument_without_upstream_conti
 }
 
 command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
-  region 'a {
-    let index = args_count<'a>(args: &'a args);
-    let bytes = buffer_new(4_u64, 0_u8);
-    let room = len(bytes);
-    let inside = ilt(index, room);
-    claim entry_call_precondition: inside because "premises: no premise bounds index, which comes from the external args_count result\nderivation: no legal theorem derivation exists; this occurrence intentionally attempts to launder external provenance into a protected requirement\nconclusion: inside is not established\nchecker gap: none; PRV-2 must reject before any CheckedProgram is published\nconsumers: required_read's index argument reaches the protected subscript";
-    let value = required_read(bytes: move bytes, index: index);
-    return exit_status(code: 0_u8);
+  let raw_index = 0_u64;
+  region 'write {
+    store_count<'write>(output: &uniq 'write raw_index, args: move args);
   }
+  let index = imin(raw_index, 3_u64);
+  let bytes = buffer_new(4_u64, 0_u8);
+  let room = len(bytes);
+  let inside = ilt(index, room);
+  claim entry_call_precondition: inside because "premises: index is the current function's imin(raw_index, 3_u64) result and bytes has length 4\nderivation: index is at most 3_u64 and therefore strictly less than room\nconclusion: inside is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: required_read's externally derived index argument reaches the protected subscript and PRV-2 must reject it";
+  let value = required_read(bytes: move bytes, index: index);
+  return exit_status(code: 0_u8);
 }
 "#;
     inspect_provenance_issue(source, "PRV-2", b"index", |kind| {
@@ -762,9 +816,10 @@ fn a_recursive_direct_route_uses_complete_state_identity_and_stays_finite() {
     let stop = False();
     return rotate(values: move values, current: future, future: current, again: stop);
   } else {
+    let bounded_current = imin(current, 3_u64);
     let room = len(values);
-    claim bounded: ilt(current, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-    return values[current];
+    claim bounded: ilt(bounded_current, room) because "premises: bounded_current is the current invocation's imin(current, 3_u64) result and values has length 4\nderivation: bounded_current is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_current, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains derived from the permuted recursive parameter and PRV-2 must reject its external actual";
+    return values[bounded_current];
   }
 }
 
@@ -813,17 +868,27 @@ fn a_cross_function_system_result_retains_every_result_and_let_carrier() {
   }
 }
 
+fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+  let position = count_arguments(args: move args);
+  set deref(output) = position;
+  return unit;
+}
+
 command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
-  let position = count_arguments(args: move args);
+  let position = 0_u64;
+  region 'write {
+    store_count<'write>(output: &uniq 'write position, args: move args);
+  }
+  let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-  let selected = values[position];
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  let selected = values[bounded_position];
   return exit_status(code: selected);
 }
 "#;
 
-    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+    inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
         let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
@@ -883,14 +948,15 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus alloca
   }
   let raw = bytes[0_u64];
   let position = cvt<u8, u64>(raw);
+  let bounded_position = imin(position, 3_u64);
   let room = len(bytes);
-  claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-  let selected = bytes[position];
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and bytes has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally written and PRV-3 must reject it";
+  let selected = bytes[bounded_position];
   return exit_status(code: selected);
 }
 "#;
 
-    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+    inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
         let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
@@ -944,24 +1010,34 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus alloca
 
 #[test]
 fn an_alias_whole_place_write_taints_the_resolved_owner_and_retains_its_set_carrier() {
-    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
-  let values = buffer_new(4_u64, 0_u8);
-  let position = 0_u64;
+    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
-    region 'write {
-      let holder = &uniq 'write position;
-      set deref(holder) = external_value;
-    }
-    let room = len(values);
-    claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-    let selected = values[position];
-    return exit_status(code: selected);
+    set deref(output) = external_value;
   }
+  return unit;
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
+  let values = buffer_new(4_u64, 0_u8);
+  let position = 0_u64;
+  let external_value = 0_u64;
+  region 'seed {
+    store_count<'seed>(output: &uniq 'seed external_value, args: move args);
+  }
+  region 'write {
+    let holder = &uniq 'write position;
+    set deref(holder) = external_value;
+  }
+  let bounded_position = imin(position, 3_u64);
+  let room = len(values);
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  let selected = values[bounded_position];
+  return exit_status(code: selected);
 }
 "#;
 
-    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+    inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
         let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
@@ -983,23 +1059,33 @@ fn an_alias_whole_place_write_taints_the_resolved_owner_and_retains_its_set_carr
 #[test]
 fn a_simple_borrow_holder_route_keeps_the_holder_let_and_borrow_atom() {
     let source =
-        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
   region 'a {
-    let raw = args_count<'a>(args: &'a args);
-    region 'r {
-      let holder = &'r raw;
-      let position = deref(holder);
-      let values = array_new<u8, 4>(0_u8);
-      let room = len(values);
-      claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-      let selected = values[position];
-      return exit_status(code: selected);
-    }
+    let external_value = args_count<'a>(args: &'a args);
+    set deref(output) = external_value;
+  }
+  return unit;
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+  let raw = 0_u64;
+  region 'write {
+    store_count<'write>(output: &uniq 'write raw, args: move args);
+  }
+  region 'r {
+    let holder = &'r raw;
+    let position = deref(holder);
+    let bounded_position = imin(position, 3_u64);
+    let values = array_new<u8, 4>(0_u8);
+    let room = len(values);
+    claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+    let selected = values[bounded_position];
+    return exit_status(code: selected);
   }
 }
 "#;
 
-    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+    inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
         let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
@@ -1026,28 +1112,38 @@ fn a_borrowed_match_payload_deref_reconstructs_a_prv3_carrier() {
   Item(value: u64);
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
   region 'a {
-    let raw = args_count<'a>(args: &'a args);
-    let choice = Item(value: raw);
-    region 'r {
-      let holder = &'r choice;
-      match deref(holder) {
-        Item(value: selected) => {
-          let index = deref(selected);
-          let values = array_new<u8, 4>(0_u8);
-          let room = len(values);
-          claim bounded: ilt(index, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-          let value = values[index];
-          return exit_status(code: value);
-        }
+    let external_value = args_count<'a>(args: &'a args);
+    set deref(output) = external_value;
+  }
+  return unit;
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+  let raw = 0_u64;
+  region 'write {
+    store_count<'write>(output: &uniq 'write raw, args: move args);
+  }
+  let choice = Item(value: raw);
+  region 'r {
+    let holder = &'r choice;
+    match deref(holder) {
+      Item(value: selected) => {
+        let index = deref(selected);
+        let bounded_index = imin(index, 3_u64);
+        let values = array_new<u8, 4>(0_u8);
+        let room = len(values);
+        claim bounded: ilt(bounded_index, room) because "premises: bounded_index is the current function's imin(index, 3_u64) result and values has length 4\nderivation: bounded_index is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_index, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+        let value = values[bounded_index];
+        return exit_status(code: value);
       }
     }
   }
 }
 "#;
 
-    inspect_provenance_issue(source, "PRV-3", b"[index]", |kind| {
+    inspect_provenance_issue(source, "PRV-3", b"[bounded_index]", |kind| {
         let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
@@ -1073,27 +1169,37 @@ enum Wrap {
   Data(values: array<u64, count>);
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
   region 'a {
-    let raw = args_count<'a>(args: &'a args);
-    let seeded = array_new<u64, count>(raw);
-    let wrapped = Data(values: move seeded);
-    let selected = match move wrapped {
-      Data(values: payload) => {
-        let position = payload[0_u64];
-        let output = array_new<u8, count>(0_u8);
-        let room = len(output);
-        claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-        let value = output[position];
-        give value;
-      }
-    }
-    return exit_status(code: selected);
+    let external_value = args_count<'a>(args: &'a args);
+    set deref(output) = external_value;
   }
+  return unit;
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+  let raw = 0_u64;
+  region 'write {
+    store_count<'write>(output: &uniq 'write raw, args: move args);
+  }
+  let seeded = array_new<u64, count>(raw);
+  let wrapped = Data(values: move seeded);
+  let selected = match move wrapped {
+    Data(values: payload) => {
+      let position = payload[0_u64];
+      let bounded_position = imin(position, 3_u64);
+      let output = array_new<u8, count>(0_u8);
+      let room = len(output);
+      claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and output has length count=4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+      let value = output[bounded_position];
+      give value;
+    }
+  }
+  return exit_status(code: selected);
 }
 "#;
 
-    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+    inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
         let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
@@ -1118,20 +1224,30 @@ fn a_parameter_backed_user_result_keeps_distinct_result_and_substitution_edges()
   return copied;
 }
 
+fn store_relay['r](output: &uniq 'r u64, outside: own u64) -> result: own unit writes('r) {
+  let position = relay(value: outside);
+  set deref(output) = position;
+  return unit;
+}
+
 command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
+  let position = 0_u64;
   region 'a {
     let outside = args_count<'a>(args: &'a args);
-    let position = relay(value: outside);
-    let room = len(values);
-    claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-    let selected = values[position];
-    return exit_status(code: selected);
+    region 'write {
+      store_relay<'write>(output: &uniq 'write position, outside: outside);
+    }
   }
+  let bounded_position = imin(position, 3_u64);
+  let room = len(values);
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  let selected = values[bounded_position];
+  return exit_status(code: selected);
 }
 "#;
 
-    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+    inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
         let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
@@ -1176,14 +1292,15 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
     }
   }
   let position = saved;
+  let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim bounded: ilt(position, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-  let selected = values[position];
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  let selected = values[bounded_position];
   return exit_status(code: selected);
 }
 "#;
 
-    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+    inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
         let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
@@ -1229,33 +1346,47 @@ fn a_selected_payload_witness_never_uses_an_external_sibling_root_path() {
   Second(value: u64);
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+fn store_two['f, 's](first_output: &uniq 'f u64, second_output: &uniq 's u64, args: own Args) -> result: own unit writes('f 's) {
   region 'a {
     let first = args_count<'a>(args: &'a args);
     let second = args_count<'a>(args: &'a args);
-    let choose_first = True();
-    let choice = if choose_first {
-      give First(value: first);
-    } else {
-      give Second(value: second);
+    set deref(first_output) = first;
+    set deref(second_output) = second;
+  }
+  return unit;
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+  let first = 0_u64;
+  let second = 0_u64;
+  region 'first_write {
+    region 'second_write {
+      store_two<'first_write, 'second_write>(first_output: &uniq 'first_write first, second_output: &uniq 'second_write second, args: move args);
     }
-    match choice {
-      First(value: selected) => {
-        let values = array_new<u8, 4>(0_u8);
-        let room = len(values);
-        claim bounded: ilt(selected, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-        let value = values[selected];
-        return exit_status(code: value);
-      }
-      Second(value: ignored) => {
-        return exit_status(code: 0_u8);
-      }
+  }
+  let choose_first = True();
+  let choice = if choose_first {
+    give First(value: first);
+  } else {
+    give Second(value: second);
+  }
+  match choice {
+    First(value: selected) => {
+      let bounded_selected = imin(selected, 3_u64);
+      let values = array_new<u8, 4>(0_u8);
+      let room = len(values);
+      claim bounded: ilt(bounded_selected, room) because "premises: bounded_selected is the current function's imin(selected, 3_u64) result and values has length 4\nderivation: bounded_selected is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_selected, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+      let value = values[bounded_selected];
+      return exit_status(code: value);
+    }
+    Second(value: ignored) => {
+      return exit_status(code: 0_u8);
     }
   }
 }
 "#;
 
-    inspect_provenance_issue(source, "PRV-3", b"[selected]", |kind| {
+    inspect_provenance_issue(source, "PRV-3", b"[bounded_selected]", |kind| {
         let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
@@ -1282,35 +1413,45 @@ fn an_external_result_payload_keeps_selectors_through_value_delivery_and_outer_e
   Missing();
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
   region 'a {
-    let raw = args_count<'a>(args: &'a args);
-    let wrapped = match cvt<u64, u8>(raw) {
-      Ok(value: small) => {
-        let widened = cvt<u8, u64>(small);
-        give Present(value: widened);
-      }
-      Err(error: narrow) => {
-        give Missing();
-      }
+    let external_value = args_count<'a>(args: &'a args);
+    set deref(output) = external_value;
+  }
+  return unit;
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+  let raw = 0_u64;
+  region 'write {
+    store_count<'write>(output: &uniq 'write raw, args: move args);
+  }
+  let wrapped = match cvt<u64, u8>(raw) {
+    Ok(value: small) => {
+      let widened = cvt<u8, u64>(small);
+      give Present(value: widened);
     }
-    match wrapped {
-      Present(value: selected) => {
-        let values = array_new<u8, 4>(0_u8);
-        let room = len(values);
-        claim bounded: ilt(selected, room) because "premises: no premise bounds the externally derived value in this negative fixture\nderivation: there is no valid theorem derivation; PRV-2 or PRV-3 must reject the attempted provenance laundering\nconclusion: this occurrence is not an approved theorem\nchecker gap: none; the applicable PRV rule must reject before any CheckedProgram is published\nconsumers: the following protected subscript or requirement is the terminal root";
-        let value = values[selected];
-        return exit_status(code: value);
-      }
-      Missing() => {
-        return exit_status(code: 0_u8);
-      }
+    Err(error: narrow) => {
+      give Missing();
+    }
+  }
+  match wrapped {
+    Present(value: selected) => {
+      let bounded_selected = imin(selected, 3_u64);
+      let values = array_new<u8, 4>(0_u8);
+      let room = len(values);
+      claim bounded: ilt(bounded_selected, room) because "premises: bounded_selected is the current function's imin(selected, 3_u64) result and values has length 4\nderivation: bounded_selected is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_selected, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+      let value = values[bounded_selected];
+      return exit_status(code: value);
+    }
+    Missing() => {
+      return exit_status(code: 0_u8);
     }
   }
 }
 "#;
 
-    inspect_provenance_issue(source, "PRV-3", b"[selected]", |kind| {
+    inspect_provenance_issue(source, "PRV-3", b"[bounded_selected]", |kind| {
         let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
@@ -1762,9 +1903,9 @@ fn read(position: own u8, selector: own u64) -> result: own u8 pure contract {
 }
 
 fn counterfactual(positions: own array<u8, count>, selector: own u64) -> result: own u8 traps {
-  let bounded_selector = clamp_three(value: selector);
+  let bounded_selector = imin(selector, 3_u64);
   let selector_inside = ilt(bounded_selector, count);
-  claim selector_in_range: selector_inside because "premises: positions has length count=4 and bounded_selector is returned by clamp_three, whose body computes imin(selector, 3_u64)\nderivation: bounded_selector is at most 3_u64 and therefore strictly less than count\nconclusion: ilt(bounded_selector, count) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following positions[bounded_selector] actual expression and read requirement both need this bound";
+  claim selector_in_range: selector_inside because "premises: positions has length count=4 and bounded_selector is the current function's imin(selector, 3_u64) result\nderivation: bounded_selector is at most 3_u64 and therefore strictly less than count\nconclusion: ilt(bounded_selector, count) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following positions[bounded_selector] actual expression and read requirement both need this bound";
   return read(position: positions[bounded_selector], selector: bounded_selector);
 }
 
@@ -2390,7 +2531,7 @@ pub(super) fn assert_canonical_deflate_provenance(program: &CheckedProgramData) 
         .collect::<Vec<_>>();
     assert_eq!(
         retained_claims,
-        [("decode_dynamic", "code_index_in_order")],
+        [("ordered_code_symbol", "code_index_in_order")],
         "the canonical DEFLATE bundle retains only its audited loop-induction residual"
     );
 }

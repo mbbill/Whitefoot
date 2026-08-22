@@ -669,7 +669,7 @@ fn filled_float_buffer<T: Float>(length: own u64, value: own T) -> result: own b
   return buffer_new(length, value);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let bytes = filled_array<u8, 2>(value: 7_u8);
   let words = filled_array<i64, 3>(value: -5_i64);
   let byte = bytes[1_u64];
@@ -677,14 +677,20 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   let storage = filled_buffer<u16>(length: 2_u64, value: 9_u16);
   let storage_room = len(storage);
   let storage_ok = ilt(1_u64, storage_room);
-  claim storage_sized: storage_ok because "premises: storage is returned by filled_buffer<u16>(length: 2_u64), whose body returns buffer_new(length, value)\nderivation: that body allocates exactly length elements, so len(storage) is 2_u64 and 1_u64 is strictly less\nconclusion: ilt(1_u64, len(storage)) is true\nchecker gap: ENT does not publish the length of an uncontracted user-call buffer result\nconsumers: the following storage[1_u64] subscript requires this exact bound";
+  if storage_ok {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let buffered = storage[1_u64];
   let samples = filled_float_array<f32, 2>(value: 1.5_f32);
   let sample = samples[1_u64];
   let weights = filled_float_buffer<f64>(length: 2_u64, value: 2.5_f64);
   let weights_room = len(weights);
   let weights_ok = ilt(1_u64, weights_room);
-  claim weights_sized: weights_ok because "premises: weights is returned by filled_float_buffer<f64>(length: 2_u64), whose body returns buffer_new(length, value)\nderivation: that body allocates exactly length elements, so len(weights) is 2_u64 and 1_u64 is strictly less\nconclusion: ilt(1_u64, len(weights)) is true\nchecker gap: ENT does not publish the length of an uncontracted user-call buffer result\nconsumers: the following weights[1_u64] subscript requires this exact bound";
+  if weights_ok {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   let weight = weights[1_u64];
   return exit_status(code: 0_u8);
 }

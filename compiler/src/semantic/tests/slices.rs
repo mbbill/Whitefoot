@@ -531,7 +531,7 @@ fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r,
   }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let left = array_new<u8, 2>(11_u8);
   let right = array_new<u8, 2>(29_u8);
   region 'view {
@@ -539,7 +539,10 @@ command fn main() -> status: own ExitStatus traps {
     let passed = pass<'view>(value: move pass_source);
     let passed_room = len(passed);
     let passed_ok = ilt(0_u64, passed_room);
-    claim passed_sized: passed_ok because "premises: left has two elements; pass_source views all of left; pass returns its input descriptor unchanged\nderivation: passed therefore has length 2, and 0_u64 is less than 2_u64\nconclusion: passed_ok is true\nchecker gap: the checker does not carry the caller's concrete slice length through this uncontracted user call\nconsumers: the bounds obligation of passed[0_u64]";
+    if passed_ok {
+    } else {
+      return exit_status(code: 1_u8);
+    }
     let passed_value = passed[0_u64];
     let left_source = slice_of(&'view left);
     let right_source = slice_of(&'view right);
@@ -547,7 +550,10 @@ command fn main() -> status: own ExitStatus traps {
     let selected = choose<'view>(take_left: take_left, left: move left_source, right: move right_source);
     let selected_room = len(selected);
     let selected_ok = ilt(0_u64, selected_room);
-    claim selected_sized: selected_ok because "premises: left_source and right_source each view a two-element array; choose returns exactly one input descriptor\nderivation: either return branch produces a slice of length 2, and 0_u64 is less than 2_u64\nconclusion: selected_ok is true\nchecker gap: the checker preserves both possible origins but does not derive their common concrete length across the uncontracted user call\nconsumers: the bounds obligation of selected[0_u64]";
+    if selected_ok {
+    } else {
+      return exit_status(code: 2_u8);
+    }
     let selected_value = selected[0_u64];
   }
   return exit_status(code: 0_u8);

@@ -9,9 +9,9 @@ use crate::{
 use super::super::entailment::{ProofView, StrictDerivationRootKind};
 use super::{with_semantics, with_semantics_dark};
 
-const CLAMP_LT_FOUR_REVIEW: &str = "premises: values has length 4 and bounded is returned by clamp_three, whose body computes imin(index, 3_u64)\\nderivation: bounded is at most 3_u64 and therefore strictly less than room\\nconclusion: ilt(bounded, room) is true\\nchecker gap: ENT does not publish an uncontracted user-call result bound\\nconsumers: the following length-four array subscript uses bounded";
+const CLAMP_LT_FOUR_REVIEW: &str = "premises: values has length 4 and bounded is the claim owner's current-function imin(index, 3_u64) result\\nderivation: bounded is at most 3_u64 and therefore strictly less than room\\nconclusion: ilt(bounded, room) is true\\nchecker gap: ENT does not retain the local imin upper bound through this let binding\\nconsumers: the following length-four array subscript uses bounded";
 
-const CLAMP_LT_EIGHT_REVIEW: &str = "premises: bounded is returned by clamp_seven, whose body computes imin(value, 7_u64)\\nderivation: bounded is at most 7_u64 and therefore strictly less than 8_u64\\nconclusion: ilt(bounded, 8_u64) is true\\nchecker gap: ENT does not publish an uncontracted user-call result bound\\nconsumers: the following FN-8 requirement needs bounded below 8_u64";
+const CLAMP_LT_EIGHT_REVIEW: &str = "premises: bounded is the claim owner's current-function imin(value, 7_u64) result\\nderivation: bounded is at most 7_u64 and therefore strictly less than 8_u64\\nconclusion: ilt(bounded, 8_u64) is true\\nchecker gap: ENT does not retain the local imin upper bound through this let binding\\nconsumers: the following FN-8 requirement needs bounded below 8_u64";
 
 const GENERIC_MAX_NONNEGATIVE_REVIEW: &str = "premises: nonnegative is imax(value, 0_T) for an integer type T\\nderivation: imax returns an operand no smaller than 0_T\\nconclusion: ige(nonnegative, 0_T) is true\\nchecker gap: ENT does not derive the result range of imax for GenericInt\\nconsumers: the following FN-8 requirement needs nonnegative at least 0_T";
 
@@ -166,7 +166,8 @@ fn need_below_eight(value: own u64) -> result: own unit pure contract {{
 fn left(value: own u64) -> result: own u64 traps {{
   let done = ieq(value, 0_u64);
   if done {{
-    let bounded = clamp_seven(value: value);
+    let observed_clamp = clamp_seven(value: value);
+    let bounded = imin(value, 7_u64);
     let inside = ilt(bounded, 8_u64);
     claim cycle_seed: inside because "{CLAMP_LT_EIGHT_REVIEW}";
     need_below_eight(value: bounded);
@@ -218,7 +219,8 @@ fn a_load_bearing_claim_cannot_authorize_a_strict_bounds_query() {
 }}
 
 deny_claims fn read(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {{
-  let bounded = clamp_three(value: index);
+  let observed_clamp = clamp_three(value: index);
+  let bounded = imin(index, 3_u64);
   let room = len(values);
   let inside = ilt(bounded, room);
   claim body_authorization: inside because "{CLAMP_LT_FOUR_REVIEW}";
@@ -260,7 +262,8 @@ fn required(value: own u64) -> result: own unit pure contract {{
 }}
 
 deny_claims fn forward(value: own u64) -> result: own unit traps {{
-  let bounded = clamp_seven(value: value);
+  let observed_clamp = clamp_seven(value: value);
+  let bounded = imin(value, 7_u64);
   let allowed = ilt(bounded, 8_u64);
   claim body_authorization: allowed because "{CLAMP_LT_EIGHT_REVIEW}";
   required(value: bounded);
@@ -297,7 +300,8 @@ fn a_downstream_authorization_is_reported_against_the_real_leaf() {
 }}
 
 fn leaf(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {{
-  let bounded = clamp_three(value: index);
+  let observed_clamp = clamp_three(value: index);
+  let bounded = imin(index, 3_u64);
   let room = len(values);
   let inside = ilt(bounded, room);
   claim leaf_authorization: inside because "{CLAMP_LT_FOUR_REVIEW}";
@@ -345,7 +349,8 @@ deny_claims fn guarded(value: own u64) -> result: own unit pure contract {{
 }}
 
 fn ordinary(value: own u64) -> result: own unit traps {{
-  let bounded = clamp_seven(value: value);
+  let observed_clamp = clamp_seven(value: value);
+  let bounded = imin(value, 7_u64);
   let allowed = ilt(bounded, 8_u64);
   claim ordinary_authorization: allowed because "{CLAMP_LT_EIGHT_REVIEW}";
   guarded(value: bounded);
@@ -386,7 +391,8 @@ deny_claims fn sink(value: own u8) -> result: own unit pure contract {{
 }}
 
 fn ordinary(values: own array<u8, 4>, index: own u64) -> result: own unit traps {{
-  let bounded = clamp_three(value: index);
+  let observed_clamp = clamp_three(value: index);
+  let bounded = imin(index, 3_u64);
   let room = len(values);
   let inside = ilt(bounded, room);
   claim ordinary_actual_authorization: inside because "{CLAMP_LT_FOUR_REVIEW}";
@@ -516,7 +522,8 @@ deny_claims fn identity<T: Int>(value: own T) -> result: own T pure {{
 
 fn ordinary(index: own u64) -> result: own u64 traps {{
   let values = array_new<u8, 4>(0_u8);
-  let bounded = clamp_three(value: index);
+  let observed_clamp = clamp_three(value: index);
+  let bounded = imin(index, 3_u64);
   let room = len(values);
   let inside = ilt(bounded, room);
   claim caller_only: inside because "{CLAMP_LT_FOUR_REVIEW}";
@@ -550,7 +557,8 @@ fn removing_the_marker_preserves_the_ordinary_diagnostic_and_dark_observability(
 }}
 
 fn read(values: own array<u8, 4>, index: own u64) -> result: own u8 traps {{
-  let bounded = clamp_three(value: index);
+  let observed_clamp = clamp_three(value: index);
+  let bounded = imin(index, 3_u64);
   let room = len(values);
   let inside = ilt(bounded, room);
   claim ordinary_authorization: inside because "{CLAMP_LT_FOUR_REVIEW}";
@@ -617,7 +625,8 @@ fn clamp_three(value: own u64) -> result: own u64 pure {{
 deny_claims command fn main() -> status: own ExitStatus traps {{
   let values = array_new<u8, 4>(0_u8);
   let index = 9_u64;
-  let bounded = clamp_three(value: index);
+  let observed_clamp = clamp_three(value: index);
+  let bounded = imin(index, 3_u64);
   let room = len(values);
   let inside = ilt(bounded, room);
   claim later_seed: inside because "{CLAMP_LT_FOUR_REVIEW}";
@@ -654,7 +663,8 @@ fn clamp_three(value: own u64) -> result: own u64 pure {{
 deny_claims command fn main() -> status: own ExitStatus traps {{
   let values = array_new<u8, 4>(0_u8);
   let index = 9_u64;
-  let bounded = clamp_three(value: index);
+  let observed_clamp = clamp_three(value: index);
+  let bounded = imin(index, 3_u64);
   let room = len(values);
   let inside = ilt(bounded, room);
   claim later_seed: inside because "{CLAMP_LT_FOUR_REVIEW}";

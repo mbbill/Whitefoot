@@ -2964,10 +2964,20 @@ fn hidden_identity(value: own u64) -> result: own u64 pure {
 }
 
 fn directed(value: own u64) -> result: own unit traps {
-  let left = hidden_identity(value: value);
+  let left = value;
   let right = value;
-  claim forward: ile(left, right) because "premises: left is returned by hidden_identity called with right\nderivation: hidden_identity returns its argument unchanged, so left equals right and left is at most right\nconclusion: left is at most right\nchecker gap: ENT does not publish equality for an uncontracted user-call result\nconsumers: need_equal requires this directed half of left equals right";
-  claim reverse: ile(right, left) because "premises: left is returned by hidden_identity called with right\nderivation: hidden_identity returns its argument unchanged, so right equals left and right is at most left\nconclusion: right is at most left\nchecker gap: ENT does not publish equality for an uncontracted user-call result\nconsumers: need_equal requires this directed half of left equals right";
+  let cursor = 0_u8;
+  loop @advance_pair {
+    if ieq(cursor, 3_u8) {
+      break @advance_pair;
+    } else {
+      set left = left +wrap 1_u64;
+      set right = right +wrap 1_u64;
+      set cursor = cursor +wrap 1_u8;
+    }
+  }
+  claim forward: ile(left, right) because "premises: left and right start equal and every completed current-function loop iteration applies the same wrapping increment to both\nderivation: induction over reached loop bodies preserves equality, so left is at most right\nconclusion: left is at most right\nchecker gap: ENT carries no relational induction fact across this ordinary-loop backedge\nconsumers: need_equal requires this directed half of left equals right";
+  claim reverse: ile(right, left) because "premises: left and right start equal and every completed current-function loop iteration applies the same wrapping increment to both\nderivation: induction over reached loop bodies preserves equality, so right is at most left\nconclusion: right is at most left\nchecker gap: ENT carries no relational induction fact across this ordinary-loop backedge\nconsumers: need_equal requires this directed half of left equals right";
   need_equal(left: left, right: right);
   return unit;
 }
@@ -4439,8 +4449,8 @@ fn clamp_three(value: own u64) -> result: own u64 pure {
 }
 
 fn read(values: own array<u8, 4>, raw_position: own u64) -> result: own u8 traps {
-  let position = clamp_three(value: raw_position);
-  claim bounded: ilt(position, 4_u64) because "premises: position is returned by clamp_three\nderivation: clamp_three returns at most three, so position is below four\nconclusion: position is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript consumes this bound";
+  let position = imin(raw_position, 3_u64);
+  claim bounded: ilt(position, 4_u64) because "premises: position is imin(raw_position, 3_u64) computed in the current function\nderivation: minimum with three is always between zero and three inclusive\nconclusion: position is below four\nchecker gap: ENT does not publish the result range of imin\nconsumers: the following array subscript consumes this bound";
   return values[position];
 }
 
@@ -5812,15 +5822,33 @@ fn a_passed_claim_establishes_its_comparison_on_the_continuation() {
 }
 
 fn direct(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
-  let bounded = clamp_three(value: input);
-  claim i_must_be_in_range: ilt(bounded, 4_u64) because "premises: bounded is returned by clamp_three\nderivation: clamp_three returns at most three, so bounded is below four\nconclusion: bounded is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript consumes this bound";
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, input) {
+      break @select_bound;
+    } else if ieq(bounded, 3_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
+  claim i_must_be_in_range: ilt(bounded, 4_u64) because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than three\nderivation: induction over reached loop bodies keeps bounded between zero and three inclusive\nconclusion: bounded is below four\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following array subscript consumes this bound";
   return values[bounded];
 }
 
 fn through_origin(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
-  let bounded = clamp_three(value: input);
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, input) {
+      break @select_bound;
+    } else if ieq(bounded, 3_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
   let ok = ilt(bounded, 4_u64);
-  claim i_must_be_in_range: ok because "premises: bounded is returned by clamp_three and ok is ilt(bounded, 4)\nderivation: clamp_three returns at most three, so ilt(bounded, 4) evaluates to True\nconclusion: ok is True\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript expands ok and consumes its bounded-below-four comparison";
+  claim i_must_be_in_range: ok because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, exits no later than three, and ok is ilt(bounded, 4)\nderivation: induction over reached loop bodies makes ok true\nconclusion: ok is True\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following array subscript expands ok and consumes its bounded-below-four comparison";
   return values[bounded];
 }
 
@@ -5846,11 +5874,29 @@ fn a_claim_on_a_band_establishes_its_conjuncts_not_a_whole_tree_relation() {
 }
 
 fn read(left_values: own array<i32, 4>, right_values: own array<i32, 4>, left_raw: own u64, right_raw: own u64) -> result: own i32 traps {
-  let left = clamp_three(value: left_raw);
-  let right = clamp_three(value: right_raw);
+  let left = 0_u64;
+  loop @select_left {
+    if ieq(left, left_raw) {
+      break @select_left;
+    } else if ieq(left, 3_u64) {
+      break @select_left;
+    } else {
+      set left = left +wrap 1_u64;
+    }
+  }
+  let right = 0_u64;
+  loop @select_right {
+    if ieq(right, right_raw) {
+      break @select_right;
+    } else if ieq(right, 3_u64) {
+      break @select_right;
+    } else {
+      set right = right +wrap 1_u64;
+    }
+  }
   let left_inside = ilt(left, 4_u64);
   let right_inside = ilt(right, 4_u64);
-  claim both_inside: band(left_inside, right_inside) because "premises: left and right are returned by clamp_three, and left_inside and right_inside are their below-four comparisons\nderivation: each clamp_three result is at most three, so both comparisons evaluate to True and their band evaluates to True\nconclusion: band(left_inside, right_inside) is True\nchecker gap: ENT does not publish result bounds for the uncontracted clamp_three calls\nconsumers: the two array subscripts consume the left and right comparison components respectively";
+  claim both_inside: band(left_inside, right_inside) because "premises: each value starts at zero, advances by one only on its own current-function ordinary-loop backedge, and exits no later than three\nderivation: induction over both reached loop bodies makes both below-four comparisons true\nconclusion: band(left_inside, right_inside) is True\nchecker gap: ENT carries no induction fact across either ordinary-loop backedge\nconsumers: the two array subscripts consume the left and right comparison components respectively";
   let first = left_values[left];
   let second = right_values[right];
   return first +wrap second;
@@ -7182,9 +7228,18 @@ fn a_passed_claim_establishes_its_fact_on_the_continuation() {
 }
 
 fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
-  let bounded = clamp_three(value: input);
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, input) {
+      break @select_bound;
+    } else if ieq(bounded, 3_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
   let inside = ilt(bounded, 4_u64);
-  claim in_range: inside because "premises: bounded is returned by clamp_three and inside is ilt(bounded, 4)\nderivation: clamp_three returns at most three, so ilt(bounded, 4) evaluates to True\nconclusion: inside is True\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript expands inside and consumes its bounded-below-four comparison";
+  claim in_range: inside because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, exits no later than three, and inside is ilt(bounded, 4)\nderivation: induction over reached loop bodies makes inside true\nconclusion: inside is True\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following array subscript expands inside and consumes its bounded-below-four comparison";
   return values[bounded];
 }
 
@@ -7216,9 +7271,9 @@ fn the_claim_ledger_reports_exact_source_text_used_proof_and_provenance() {
 }
 
 fn read(values: own array<i32, 4>, i: own u64) -> result: own i32 traps {
-  let bounded = clamp_three(value: i);
+  let bounded = imin(i, 3_u64);
   let inside = ilt(bounded, 4_u64);
-  claim in_range: inside because "premises: bounded is returned by clamp_three called with i, and inside is ilt(bounded, 4)\nderivation: clamp_three returns imin(i, 3), which is at most three, so inside evaluates to True\nconclusion: inside is True\nchecker gap: ENT does not publish result bounds for an uncontracted user call\nconsumers: the array subscript values[bounded] expands inside and requires its bounded-below-four comparison";
+  claim in_range: inside because "premises: bounded is imin(i, 3_u64) computed in the current function, and inside is ilt(bounded, 4)\nderivation: minimum with three is always between zero and three inclusive, so inside is true\nconclusion: inside is True\nchecker gap: ENT does not publish the result range of imin\nconsumers: the array subscript values[bounded] expands inside and requires its bounded-below-four comparison";
   return values[bounded];
 }
 
@@ -7239,24 +7294,24 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(entry.predicate, "inside");
         assert_eq!(
             entry.justification.raw,
-            "premises: bounded is returned by clamp_three called with i, and inside is ilt(bounded, 4)\n\
-derivation: clamp_three returns imin(i, 3), which is at most three, so inside evaluates to True\n\
+            "premises: bounded is imin(i, 3_u64) computed in the current function, and inside is ilt(bounded, 4)\n\
+derivation: minimum with three is always between zero and three inclusive, so inside is true\n\
 conclusion: inside is True\n\
-checker gap: ENT does not publish result bounds for an uncontracted user call\n\
+checker gap: ENT does not publish the result range of imin\n\
 consumers: the array subscript values[bounded] expands inside and requires its bounded-below-four comparison"
         );
         assert_eq!(
             entry.justification.premises,
-            "bounded is returned by clamp_three called with i, and inside is ilt(bounded, 4)"
+            "bounded is imin(i, 3_u64) computed in the current function, and inside is ilt(bounded, 4)"
         );
         assert_eq!(
             entry.justification.derivation,
-            "clamp_three returns imin(i, 3), which is at most three, so inside evaluates to True"
+            "minimum with three is always between zero and three inclusive, so inside is true"
         );
         assert_eq!(entry.justification.conclusion, "inside is True");
         assert_eq!(
             entry.justification.checker_gap,
-            "ENT does not publish result bounds for an uncontracted user call"
+            "ENT does not publish the result range of imin"
         );
         assert_eq!(
             entry.justification.consumers,
@@ -7268,7 +7323,7 @@ consumers: the array subscript values[bounded] expands inside and requires its b
         let end = entry.source.coordinate.end().value() as usize;
         assert_eq!(
             &source[start..end],
-            br#"claim in_range: inside because "premises: bounded is returned by clamp_three called with i, and inside is ilt(bounded, 4)\nderivation: clamp_three returns imin(i, 3), which is at most three, so inside evaluates to True\nconclusion: inside is True\nchecker gap: ENT does not publish result bounds for an uncontracted user call\nconsumers: the array subscript values[bounded] expands inside and requires its bounded-below-four comparison";"#
+            br#"claim in_range: inside because "premises: bounded is imin(i, 3_u64) computed in the current function, and inside is ilt(bounded, 4)\nderivation: minimum with three is always between zero and three inclusive, so inside is true\nconclusion: inside is True\nchecker gap: ENT does not publish the result range of imin\nconsumers: the array subscript values[bounded] expands inside and requires its bounded-below-four comparison";"#
         );
 
         assert_eq!(entry.uses.len(), 1);
@@ -7352,11 +7407,11 @@ fn the_claim_ledger_links_only_live_canonical_s3_premises() {
 }
 
 fn joined(values: own array<i32, 4>, input: own u64, choose: own Bool) -> result: own i32 traps {
-  let i = clamp_three(value: input);
+  let i = imin(input, 3_u64);
   if choose {
-    claim left: ilt(i, 4_u64) because "premises: i is returned by clamp_three\nderivation: clamp_three returns at most three, so i is below four\nconclusion: i is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the array subscript after the join consumes this true-arm proof";
+    claim left: ilt(i, 4_u64) because "premises: i is imin(input, 3_u64) computed in the current function\nderivation: minimum with three is always between zero and three inclusive\nconclusion: i is below four\nchecker gap: ENT does not publish the result range of imin\nconsumers: the array subscript after the join consumes this true-arm proof";
   } else {
-    claim right: ilt(i, 4_u64) because "premises: i is returned by clamp_three\nderivation: clamp_three returns at most three, so i is below four\nconclusion: i is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the array subscript after the join consumes this false-arm proof";
+    claim right: ilt(i, 4_u64) because "premises: i is imin(input, 3_u64) computed in the current function\nderivation: minimum with three is always between zero and three inclusive\nconclusion: i is below four\nchecker gap: ENT does not publish the result range of imin\nconsumers: the array subscript after the join consumes this false-arm proof";
   }
   return values[i];
 }
@@ -7398,9 +7453,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
-  let i = clamp_three(value: input);
+  let i = imin(input, 3_u64);
   let inside = ilt(i, 4_u64);
-  claim first: inside because "premises: i is returned by clamp_three and inside is ilt(i, 4)\nderivation: clamp_three returns at most three, so inside evaluates to True\nconclusion: inside is True\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the following array subscript expands inside and consumes its bounded-below-four comparison";
+  claim first: inside because "premises: i is imin(input, 3_u64) computed in the current function and inside is ilt(i, 4)\nderivation: minimum with three is always between zero and three inclusive, so inside is true\nconclusion: inside is True\nchecker gap: ENT does not publish the result range of imin\nconsumers: the following array subscript expands inside and consumes its bounded-below-four comparison";
   claim second: inside because "premises: the earlier claim already establishes inside\nderivation: no residual remains for a second occurrence\nconclusion: inside is already checker-known at this point\nchecker gap: none; this negative fixture must be rejected as redundant\nconsumers: no consumer may receive duplicate claim authority";
   return values[i];
 }
@@ -7425,8 +7480,8 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 fn read(values: own array<i32, 4>, input: own u64) -> result: own unit traps {
-  let i = clamp_three(value: input);
-  claim stale: ilt(i, 4_u64) because "premises: i is returned by clamp_three\nderivation: clamp_three returns at most three, so i is below four\nconclusion: i is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: no terminal consumer remains after i is overwritten, so this negative fixture must reject";
+  let i = imin(input, 3_u64);
+  claim stale: ilt(i, 4_u64) because "premises: i is imin(input, 3_u64) computed in the current function\nderivation: minimum with three is always between zero and three inclusive\nconclusion: i is below four\nchecker gap: ENT does not publish the result range of imin\nconsumers: no terminal consumer remains after i is overwritten, so this negative fixture must reject";
   set i = 0_u64;
   return unit;
 }
@@ -7460,17 +7515,17 @@ fn need(index: own u64) -> result: own unit pure contract {
 }
 
 fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
-  let i = clamp_three(value: input);
+  let i = imin(input, 3_u64);
   let inside = ilt(i, 4_u64);
-  claim bounded: inside because "premises: i is returned by clamp_three and inside is ilt(i, 4)\nderivation: clamp_three returns at most three, so inside evaluates to True\nconclusion: inside is True\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: both following array subscripts expand inside and consume its bounded-below-four comparison";
+  claim bounded: inside because "premises: i is imin(input, 3_u64) computed in the current function and inside is ilt(i, 4)\nderivation: minimum with three is always between zero and three inclusive, so inside is true\nconclusion: inside is True\nchecker gap: ENT does not publish the result range of imin\nconsumers: both following array subscripts expand inside and consume its bounded-below-four comparison";
   let first = values[i];
   let second = values[i];
   return first;
 }
 
 fn caller(input: own u64) -> result: own unit traps {
-  let i = clamp_three(value: input);
-  claim small: ilt(i, 4_u64) because "premises: i is returned by clamp_three\nderivation: clamp_three returns at most three, so i is below four\nconclusion: i is below four\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: need requires this exact bound for its index argument";
+  let i = imin(input, 3_u64);
+  claim small: ilt(i, 4_u64) because "premises: i is imin(input, 3_u64) computed in the current function\nderivation: minimum with three is always between zero and three inclusive\nconclusion: i is below four\nchecker gap: ENT does not publish the result range of imin\nconsumers: need requires this exact bound for its index argument";
   need(index: i);
   return unit;
 }
@@ -7611,8 +7666,17 @@ fn normalized(value: own i32) -> result: own i32 pure contract {
 }
 
 fn caller() -> result: own unit traps {
-  let value = hidden_one();
-  claim normalized_input: ieq(value, 1_i32) because "premises: value is returned by hidden_one\nderivation: hidden_one returns the integer one, so value equals one\nconclusion: value equals one\nchecker gap: ENT does not publish result equalities for uncontracted calls\nconsumers: normalized requires value equal to one";
+  let value = 1_i32;
+  let cursor = 0_u8;
+  loop @retain_one {
+    if ieq(cursor, 3_u8) {
+      break @retain_one;
+    } else {
+      set value = 1_i32;
+      set cursor = cursor +wrap 1_u8;
+    }
+  }
+  claim normalized_input: ieq(value, 1_i32) because "premises: value starts at one and every completed current-function loop iteration writes one again before advancing the cursor\nderivation: induction over reached loop bodies preserves value equal to one\nconclusion: value equals one\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: normalized requires value equal to one";
   let called = normalized(value: value);
   return unit;
 }
@@ -7677,9 +7741,9 @@ fn a_loop_body_claim_links_only_the_obligation_it_reaches() {
 
 fn read(values: own array<i32, 4>, input: own u64, leave: own Bool) -> result: own i32 traps {
   loop @again {
-    let bounded = clamp_three(value: input);
+    let bounded = imin(input, 3_u64);
     let inside = ilt(bounded, 4_u64);
-    claim loop_bound: inside because "premises: bounded is returned by clamp_three in this iteration and inside is ilt(bounded, 4)\nderivation: clamp_three returns at most three, so inside evaluates to True\nconclusion: inside is True\nchecker gap: ENT does not publish the result bound of the uncontracted clamp_three call\nconsumers: the array subscript in this iteration expands inside and consumes its bounded-below-four comparison";
+    claim loop_bound: inside because "premises: bounded is imin(input, 3_u64) computed in this iteration of the current function and inside is ilt(bounded, 4)\nderivation: minimum with three is always between zero and three inclusive, so inside is true\nconclusion: inside is True\nchecker gap: ENT does not publish the result range of imin\nconsumers: the array subscript in this iteration expands inside and consumes its bounded-below-four comparison";
     let value = values[bounded];
     if leave {
       return value;
@@ -7728,8 +7792,8 @@ fn need_equal<T: Int>(left: own T, right: own T) -> result: own unit pure contra
 }
 
 fn identity<T: Int>(value: own T) -> result: own T traps {
-  let echoed = hidden_identity<T>(value: value);
-  claim echo_preserved: ieq(echoed, value) because "premises: echoed is the result of hidden_identity applied to value\nderivation: hidden_identity returns its argument unchanged, so echoed equals value\nconclusion: echoed equals value\nchecker gap: ENT does not publish result equalities for uncontracted generic calls\nconsumers: need_equal requires the same equality for its two arguments";
+  let echoed = imax(value, value);
+  claim echo_preserved: ieq(echoed, value) because "premises: echoed is imax(value, value) computed in the current generic function\nderivation: selecting the maximum of two identical operands returns that same value\nconclusion: echoed equals value\nchecker gap: schema ENT does not publish the idempotent result equality of GenericInt imax\nconsumers: need_equal requires the same equality for its two arguments";
   need_equal<T>(left: echoed, right: value);
   return echoed;
 }
@@ -7784,8 +7848,17 @@ fn need_true(flag: own Bool) -> result: own unit pure contract {
 }
 
 command fn main() -> status: own ExitStatus traps {
-  let flag = hidden_true();
-  claim held: flag because "premises: flag is the result of hidden_true\nderivation: hidden_true returns True, so the exact opaque Bool flag evaluates to True\nconclusion: flag is True\nchecker gap: ENT does not publish result predicates for uncontracted calls\nconsumers: need_true requires flag itself to be True";
+  let flag = True();
+  let cursor = 0_u8;
+  loop @retain_true {
+    if ieq(cursor, 3_u8) {
+      break @retain_true;
+    } else {
+      set flag = True();
+      set cursor = cursor +wrap 1_u8;
+    }
+  }
+  claim held: flag because "premises: flag starts true and every completed current-function loop iteration writes True() again before advancing the cursor\nderivation: induction over reached loop bodies preserves the exact opaque Bool flag as true\nconclusion: flag is True\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: need_true requires flag itself to be True";
   need_true(flag: flag);
   return exit_status(code: 0_u8);
 }
@@ -8173,13 +8246,13 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
     ];
     let expected_claims: [&[(&str, &str)]; 3] = [
         &[("parse", "byte_in_source"), ("parse", "events_behind_scan")],
-        &[("decode_dynamic", "code_index_in_order")],
+        &[("ordered_code_symbol", "code_index_in_order")],
         &[
-            ("search_file", "carry_in_input"),
-            ("search_file", "probe_in_input"),
-            ("search_file", "spot_in_input"),
-            ("search_file", "shift_read_in_input"),
-            ("search_file", "shift_write_in_input"),
+            ("append_trailing_newline", "carry_in_input"),
+            ("scan_line", "probe_in_input"),
+            ("scan_line", "spot_in_input"),
+            ("shift_input_tail", "shift_read_in_input"),
+            ("shift_input_tail", "shift_write_in_input"),
         ],
     ];
     for ((inputs, expected_claims), inventory) in
@@ -8314,10 +8387,10 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
         None,
         None,
         Some(1),
+        Some(7),
         Some(31),
         Some(31),
         Some(15),
-        Some(7),
         Some(3),
         Some(7),
         Some(127),
