@@ -1,7 +1,7 @@
 const values: array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 command fn main() -> status: own ExitStatus traps {
-  doc "The accepted source carries one true, load-bearing residual and runs normally. A compiler test redirects this retained claim to the existing false constant in typed IR to verify the exact DIAG-3 runtime record without admitting a knowingly false source claim.";
+  doc "The accepted source carries one true, load-bearing residual and runs normally. DIAG-3 runtime failure is covered separately by the compiler's test-only typed-IR fault-injection path on an independently accepted true residual.";
   let injection_false = False();
   let seed = 7_u64;
   let bounded = seed % 4_u64;

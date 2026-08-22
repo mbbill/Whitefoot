@@ -1,7 +1,7 @@
 const values: array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 command fn main() -> status: own ExitStatus traps {
-  doc "The source claim is a true, load-bearing residual and therefore runs normally. SCOPE-4's false-evaluation behavior is exercised by typed-IR fault injection after this source has passed CLM-1 and CLM-2.";
+  doc "The source claim is a true, load-bearing residual and therefore runs normally. SCOPE-4 false-evaluation behavior is covered separately by the compiler's test-only typed-IR fault-injection path on an independently accepted true residual.";
   let injection_false = False();
   let seed = 7_u64;
   let bounded = seed % 4_u64;

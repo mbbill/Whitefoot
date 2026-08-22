@@ -13,7 +13,7 @@ fn divide(p: own i32, q: own i32) -> function_result: own i32 traps {
 }
 
 command fn main() -> status: own ExitStatus traps {
-  doc "The source program runs normally with the normalized divisor. A compiler test redirects the retained division claim to the same-function false constant in typed IR to exercise its runtime failure path without admitting a false theorem.";
+  doc "The source program runs normally with the normalized divisor. Runtime claim failure is covered separately by the compiler's test-only typed-IR fault-injection path on an independently accepted true residual.";
   let v = divide(p: 10_i32, q: 0_i32);
   let expected = ieq(v, 5_i32);
   if expected {
