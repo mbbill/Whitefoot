@@ -159,6 +159,14 @@ the call cannot be inlined, and the weak `wf__par_try_fork` cannot be folded
 away because a linker may replace it. It is the price of asking, and it is now
 only paid by a build that asks.
 
+> **Superseded for this program by batch 0075 Dig 3 (2026-08-21).** The 1.2x
+> was the pre-Dig-1 unconditional per-activation hand-out frame. Re-measured
+> on the same program with the compiler at `826cea41`, interleaved, N = 11:
+> default 0.7486 s against `--par` `WF_WORKERS=1` 0.7481 s — 1.00x, no tax.
+> The tax was never a property of outlining as such; it was F1. It remains
+> real where the grain is fine: `fib(38)` still measures 2.6x (0.0839 s
+> default against 0.2201 s `--par` unset) at the same commit.
+
 **The win at four workers is 1.68x against the non-outlined baseline** and 1.93x
 against the `--par` build's own `WF_WORKERS=1`. The second figure is the one the
 phase decomposition in section 5 explains; the first is the one a user gets.
@@ -321,6 +329,15 @@ The batch audit added three more, each measured rather than argued.
    is the baseline build. The rest is the grain hazard, unchanged in magnitude
    from the closure measurement (2.1x / 3.9x / ~17x there), and now reachable
    only by asking for it.
+
+   > **The lane rows are superseded by batch 0075 Dig 2; re-measured by Dig 3
+   > (2026-08-21) at `826cea41`, same source, interleaved, N = 15, all
+   > publishing `0000000002547029`:** default 0.0839 s, `--par` unset 0.2201 s
+   > (2.6x), `WF_WORKERS=2` 0.1933 s, `=4` **0.1112 s**, `=8` **0.0767 s**.
+   > The 12.6x-slower lane row is gone — work stealing turned it into 1.33x at
+   > four workers and 0.91x at eight, i.e. faster than the default build. The
+   > opt-in tax itself (2.6x) survives, because this program's grain is a
+   > handful of instructions per call and the frame cannot amortise.
 9. **Switching lanes on for a fine-grained program is a large loss, not a small
    one.** `wfgrep e compiler` over this repository's own source tree — the
    branch tip through `git archive`, so no build directory — interleaved,

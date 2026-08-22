@@ -150,12 +150,18 @@ struct Options {
     ///
     /// Off by default. Outlining a call is not free — it passes its arguments
     /// through a memory frame and is reached through a function pointer, so it
-    /// cannot be inlined — and the measured cost with no runtime linked is
-    /// about 1.2x on a heavy recursive fold and 2.1x on `fib(38)`. The
-    /// permission is never an obligation, so the default compilation takes
-    /// none of it and emits exactly the module it emitted before this path
-    /// existed. `WF_WORKERS` remains the runtime knob for a program built
-    /// this way.
+    /// cannot be inlined. What that costs before any worker runs depends
+    /// entirely on grain. On a heavy recursive fold it is now free: the
+    /// `par_layout` demo measures 0.7486 s default against 0.7481 s `--par`
+    /// with no worker requested, and across the twelve paired-layout
+    /// configurations `--par` at one worker is 1.005x-1.016x of the default
+    /// build on the balanced shapes. On a fold whose per-call body is a
+    /// handful of instructions the frame still dominates: `fib(38)` measures
+    /// 0.0839 s default against 0.2201 s `--par` with `WF_WORKERS` unset,
+    /// about 2.6x. The permission is never an obligation, so the default
+    /// compilation takes none of it and emits exactly the module it emitted
+    /// before this path existed. `WF_WORKERS` remains the runtime knob for a
+    /// program built this way.
     par: bool,
     /// Print the non-normative permission ledger on stdout.
     par_ledger: bool,

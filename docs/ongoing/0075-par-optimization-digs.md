@@ -279,6 +279,145 @@ reproduction, never worked around.)
   both implementations near the same limit (bal_d12_w192/8: WF 4.71x, rayon
   4.54x). The scheduler is already making up a code-generation handicap of up
   to 47%; the next parallel gain is a sequential one.
+- Dig 3 + Dig 4 (done; **no codegen fix landed, and the reason is measured**).
+  The dig was chartered to lift the skew sequential floor. The floor is real
+  and reproduces, but it is not a Whitefoot codegen defect and no static
+  compiler change can remove it. Everything below is measured at `826cea41`
+  with one pinned compiler, entirely outside the worktree.
+  **The gap survives the instrument.** The recorded rotation confounds
+  implementation with slot position (`run_bench.zsh:39-52` is a fixed
+  rotation), so the first move was an isolated sequential-only rotation with
+  no 8-thread neighbours, N=15: skew 1.118x / 1.206x / 1.267x at w16/w64/w192
+  and every balanced control flat at 0.981x. Real, and shape-specific.
+  **It is a pure stall, not instruction selection.** `/usr/bin/time -l`,
+  min-of-3: WF retires **fewer** instructions than Rust in all six matched
+  cells (0.980x-0.997x), while IPC is at parity on balanced (4.003/4.061,
+  4.261/4.273, 3.401/3.401) and collapses on skew only (3.455/3.981,
+  3.445/4.234, 2.628/3.399). Statically, all twelve WF binaries contain the
+  **identical 136-instruction `_wf_layout`** (`cascade` and `measure_words`
+  inline into it), so per-binary codegen instability is dead; `fmin`/`fmax`
+  are single instructions; `-O2` already narrows the whole-node load to the
+  fields each arm uses; and the `set deref(slot)` write-back is **dead-store
+  eliminated entirely**, so Whitefoot does strictly less memory work than the
+  Rust twin and still stalls.
+  **The cause is traversal order, and it is data-dependent.** Swapping the two
+  child calls in the source (bit-identical output, ledger still
+  `pair(layout, layout) eligible`) moves skew_d16_w192 from 0.7381 s to
+  0.5739 s against Rust's 0.5856 s — a 1.23x loss becomes a 1.02x win. A
+  depth/shape sweep at w192 separates the variables: balanced shows **zero**
+  order effect at d8/d10/d12/d14 (511 to 32767 nodes, 40 KiB to 2.6 MB) while
+  skew shows a constant **1.28-1.29x** penalty at d12/d14/d16/d18/d20. Skew
+  d12 is 45 KiB — the whole tree is L1D-resident — and still pays in full,
+  which kills every capacity and locality account; balanced d14 at 2.6 MB pays
+  nothing. **Mirroring the tree flips the sign exactly**: with the shallow
+  child on the left, left-first becomes the fast order (0.5699 s) and
+  right-first the slow one (0.7258 s). So the rule is "visit the smaller
+  subtree last", which is a property of the heap at run time, not of the
+  program text. A static sibling reordering would win on this benchmark and
+  lose by the same margin on its mirror image; that is keying codegen to one
+  corpus's source shape, and it was refused on that ground rather than landed
+  for the number.
+  **What is not the cause, each falsified by direct measurement.** Node size:
+  the Rust twin padded to 64 B and to WF's exact 72 B (80-byte malloc class,
+  peak footprint 1632 KiB against WF's 1600 KiB) is unchanged at 0.5789 s
+  against its own 0.5802 s. Allocator: `MallocNanoZone=0` leaves the ratio at
+  1.30 against 1.27. Recursion depth: constant across d12-d20. Code form or
+  alignment: the mirror test gives opposite results from the *same* binary
+  form. Rotation slot, `llvm.minimum` vs `minnum`, whole-node load, whole-node
+  store: all above. Two further Rust replicas were built to reproduce the
+  pathology and did not: one materialising both child pointers before the
+  measure loop (WF's `ldp`), one with `#[repr(C)]` reproducing WF's exact
+  offsets (tag 0, children 32/40, w/h 48/56, 72 B, 136 instructions). A third
+  combining both did reproduce 0.7609 s — but it is **1.25x slower on the
+  balanced shape too** (0.7471 s), a uniform regression from the raw-pointer
+  probe losing aliasing information, so it discriminates nothing and is not
+  claimed as a reproduction. **The microarchitectural root is therefore named
+  only to this precision: an order-dependent stall inside the per-node loop,
+  costing 0 instructions, absent when the per-node body is small (w1 0.84x,
+  w4 0.92x, rising to w192 1.26x), absent on symmetric trees, and not
+  reproducible in a structural replica.** It is honest to report it unlocated
+  rather than to name a mechanism the probes did not support.
+  **The campaign premise this dig was dispatched under is false, and that is
+  the load-bearing result.** The brief assumed `T_P` tracks `T_seq/P`, so
+  lifting the skew floor would convert skew parity cells into wins. The
+  `--par` build **does not pay the floor at all**: `wf_par` at one worker
+  against `wf_seq` is 1.005x-1.016x on balanced but **0.912x / 0.832x /
+  0.733x** on skew w16/w64/w192. The sequential pathology is a property of the
+  default compilation only, so the parallel cells never carried it and lifting
+  it would buy them nothing. Sequential users would gain; the parallel grid
+  would not move.
+  **Parity-cell attribution, against a measured ceiling rather than an assumed
+  one.** Full protocol rotation on the pinned build, N=9, 144 cells, 1296 runs,
+  **all exit 0 and every run byte-identical within and across both languages**:
+  6 cells WF wins outright, 30 parity, **0 where rayon wins**. The machine
+  ceiling was measured directly by running N independent copies of the same
+  sequential binary — zero scheduler, pure hardware throughput: **1.90-1.97x
+  at 2, 3.69-3.89x at 4, and only 4.74-5.71x at 8**, because 8 threads are 4
+  performance plus 4 efficiency cores. Against that, **16 of the 30 parity
+  cells sit at or above the ceiling (>=92%) and are unwinnable by any
+  scheduler**; 14 retain residual overhead, concentrated at 8 workers and at
+  the fine `w16` grain (bal_d8_w16/4 at 69%, bal_d10_w16/8 at 50%,
+  bal_d12_w16/8 at 73%). Every skew parallel cell is at 98%-126% of ceiling —
+  above 100% because its baseline `wf_seq` is the pathological traversal, which
+  is exactly the same finding read from the other side. Measured from the
+  `--par` build's own one-worker baseline, skew_d16_w192 at 8 workers scales
+  4.34x against a 5.40x ceiling, i.e. 80% — indistinguishable from rayon's 79%
+  at the same cell. **There is no scheduler gap left on the coarse cells; the
+  remaining honest targets are the fine-grain and 8-worker cells.**
+  **Dig 4, the outlining paradox: dissolved, both signs.** The "tax" half was
+  F1. `par_layout.wf` recorded 742.6 ms default against 902.5 ms `--par`
+  (`RESULTS.md:134-155`, 1.2x); re-measured here at `826cea41`, N=11:
+  **0.7486 s against 0.7481 s — 1.00x, no tax**, because Dig 1 removed the
+  unconditional per-activation hand-out frame. The "win" half was never a
+  property of outlining: `--par` at one worker is neutral on all balanced
+  shapes (1.005x-1.016x) and only wins where the sequential build is
+  pathological (0.733x on skew w192), by exactly the size of the traversal
+  penalty. The E5 cross rules out sibling-order reversal as the whole story —
+  `--par` is fast in **both** source orders (0.5813 s and 0.5777 s) while the
+  sequential build is fast in only one — so the `--par` lowering removes the
+  penalty by some property beyond the reordering; that property is unlocated
+  for the same reason as above. `fib(38)` was rebuilt and re-measured because
+  the doc comment cited it: the 12.6x-slower four-worker row is now **1.33x**
+  and eight workers is **0.91x, faster than the default build**, while the
+  opt-in tax on that grain survives at 2.6x.
+  **F5 re-check (lead's addition): dissolved by Dig 2.** The probe behind it
+  (`p4.wf`) was never promoted to `probes/` and is gone, so it was
+  reconstructed faithfully — build moved inside the reps loop, one builtin
+  between `layout`'s child calls so the fold stops forking (F3), ledger
+  confirming **only** `pair(build, build)` eligible, the same 16.4M hand-outs
+  at depth 12. Recorded: 1.50x slower at 4 workers, 2.62x at 8, ~58 ns per
+  hand-out. Now, N=9, all cells one sha: seq 0.6923 s, W1 0.7341 s, W2
+  0.6766 s, **W4 0.6335 s (0.92x), W8 0.6533 s (0.94x)** — no cell slower than
+  sequential and the per-hand-out excess now negative. Recorded as dissolved.
+  **What landed.** No codegen change: the default build is byte-identical
+  because the compiler's lowering was not touched. Two corrections to derived
+  material this dig falsified — the `--par` doc comment in
+  `compiler/src/bin/whitefootc.rs`, which asserted a 1.2x fold cost that is
+  now 1.00x, and two superseding notes in `RESULTS.md` beside the tables whose
+  numbers Digs 1 and 2 had already invalidated. **Deviation, recorded:** the
+  brief specified one cohesive commit per landed fix, and this dig lands no
+  fix, so it commits documentation only — the exception the batch rules allow,
+  taken because the dig's entire deliverable is attribution.
+  **Verification.** `make -C compiler check` exit 0 before and after. Rotation
+  1296/1296 exit 0 with `compare_outputs.zsh` green in both languages and
+  across them. Every source variant built for the dig (order swaps, mirror,
+  shape sweep, word sweep, F5 probe, `fib`) published bytes identical to its
+  baseline, and the Rust padding, spread-field and early-materialisation
+  probes all published `420229e929506cdd` unchanged. Approval classes touched:
+  no spec bytes, no conformance or compliance evidence, no new repository root
+  entry.
+  **BLOCKER FOUND, not introduced here, and it blocks the merge.** The
+  compiler gate is green but the repository gate is not: `make check` exits 2
+  at the conformance step because coverage is 135/136 and the uncovered rule
+  is **`PAR-1`** — the CANDIDATE rule this whole branch exists to implement.
+  Confirmed pre-existing by running the same check in a detached worktree at
+  the parent commit `826cea41`, which reports the identical 135/136 and the
+  same uncovered rule, so no commit in this dig caused it. It is reported
+  rather than worked around: closing it means adding conformance coverage for
+  `PAR-1`, which is protected evidence and needs an exact before/after audit
+  and owner approval at merge, so it is a lead decision and not an executor's
+  to take. No branch should request merge presenting a green gate until this
+  is either covered or explicitly dispositioned in the packet.
 - **Dig 0 deviation, recorded not hidden.** Dig 0 was specified as one
   cohesive commit and initially landed as two with byte-identical subject
   lines: two sessions were writing through one worktree and one shared git
