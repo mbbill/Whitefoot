@@ -545,7 +545,7 @@ fn a_zero_length_read_reports_no_bytes_without_issuing_a_host_transfer() {
 
 /// Reads three bytes into the middle of a sentinel buffer and digests the
 /// complete buffer afterwards.
-const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -581,12 +581,15 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
                         break @fold;
                       }
                       let fold_ok = ilt(cursor, 8_u64);
-                      claim cursor_in_bytes: fold_ok because "premises: cursor starts at 0_u64, the loop exits when cursor equals 8_u64, and each continuing iteration increments cursor once\nderivation: induction keeps cursor at most 8_u64; in a continuing iteration cursor is strictly below 8_u64, so the increment cannot wrap\nconclusion: fold_ok is true\nchecker gap: ENT does not synthesize the monotone loop invariant for cursor\nconsumers: the following bytes[cursor] subscript requires this exact OP-4 bound";
-                      let byte = bytes[cursor];
-                      let widened = cvt<u8, u64>(byte);
-                      let scaled = digest *wrap 31_u64;
-                      set digest = scaled +wrap widened;
-                      set cursor = cursor +wrap 1_u64;
+                      if fold_ok {
+                        let byte = bytes[cursor];
+                        let widened = cvt<u8, u64>(byte);
+                        let scaled = digest *wrap 31_u64;
+                        set digest = scaled +wrap widened;
+                        set cursor = cursor +wrap 1_u64;
+                      } else {
+                        return exit_status(code: 253_u8);
+                      }
                     }
                     let masked = iand(digest, 255_u64);
                     let narrowed = cvt<u64, u8>(masked);

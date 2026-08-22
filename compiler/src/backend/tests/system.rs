@@ -97,7 +97,7 @@ fn with_mutated_ir_for<ResultValue>(
 }
 
 /// Reads one argument's bytes and returns their wrapping sum as the status.
-const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> result: own u64 allocates(heap), traps {
+const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> result: own u64 allocates(heap) {
   region 'v {
     let length = host_bytes_len<'v>(value: &'v value);
     let bytes = buffer_new(length, 0_u8);
@@ -119,17 +119,20 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> resul
         break @sum;
       }
       let sum_ok = ilt(cursor, length);
-      claim cursor_in_bytes: sum_ok because "premises: cursor starts at 0_u64, the loop exits when cursor equals length, and each continuing iteration increments cursor once\nderivation: induction keeps cursor at most length; in a continuing iteration cursor is strictly below length, so the increment cannot wrap\nconclusion: sum_ok is true\nchecker gap: ENT does not synthesize the monotone loop invariant relating cursor to length\nconsumers: the following bytes[cursor] subscript requires this exact OP-4 bound";
-      let byte = bytes[cursor];
-      let widened = cvt<u8, u64>(byte);
-      set total = total +wrap widened;
-      set cursor = cursor +wrap 1_u64;
+      if sum_ok {
+        let byte = bytes[cursor];
+        let widened = cvt<u8, u64>(byte);
+        set total = total +wrap widened;
+        set cursor = cursor +wrap 1_u64;
+      } else {
+        return 18446744073709551615_u64;
+      }
     }
     return total;
   }
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
