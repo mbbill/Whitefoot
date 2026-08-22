@@ -567,14 +567,14 @@ fn returning_or_passing_an_owner_derives_no_release_here() {
 #[test]
 fn releases_keep_reverse_declaration_order_and_never_sit_on_a_trapping_edge() {
     let source = format!(
-        "fn hidden_true() -> result: own Bool pure {{\n  return True();\n}}\n\n\
-         fn need_true(flag: own Bool) -> result: own unit pure contract {{\n  \
+        "fn need_true(flag: own Bool) -> result: own unit pure contract {{\n  \
          requires flag;\n}} {{\n  return unit;\n}}\n\n\
-         fn ordered(first: own ReadFile, second: own ReadFile) \
+         fn ordered(first: own ReadFile, second: own ReadFile, ready: own Bool) \
          -> result: own unit external, blocks, traps {{\n  \
-         let ready = hidden_true();\n  \
-         claim ordering_probe: ready because \"premises: ready is returned by hidden_true, whose body returns True()\\nderivation: substituting the helper body's returned constructor makes ready evaluate to True()\\nconclusion: ready is true\\nchecker gap: ENT does not publish the result predicate of an uncontracted user call\\nconsumers: the following need_true call requires this exact ready predicate\";\n  \
-         need_true(flag: ready);\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
+         let not_ready = bnot(ready);\n  \
+         let tautology = bor(ready, not_ready);\n  \
+         claim ordering_probe: tautology because \"premises: ready is the current function's ordinary Bool parameter, not_ready is its Boolean negation, and tautology is their disjunction\\nderivation: every Bool is either true or false, so ready or its negation is always true\\nconclusion: tautology is true\\nchecker gap: ENT decomposes established Boolean expressions but does not synthesize excluded middle for an opaque Bool parameter\\nconsumers: the following need_true call requires this exact tautology\";\n  \
+         need_true(flag: tautology);\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let function = function(program, "ordered");

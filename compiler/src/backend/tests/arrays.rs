@@ -56,19 +56,23 @@ fn filled_arrays_cross_function_boundaries_and_keep_a_checked_read() {
   return array_new<u16, 4>(42_u16);
 }
 
-fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
+fn clamp_three(value: own u64) -> result: own u64 pure contract {
+  ensures ilt(result, 4_u64);
+} {
+  if ilt(value, 4_u64) {
+    return value;
+  } else {
+    return 3_u64;
+  }
 }
 
-fn read(values: own array<u16, 4>, offset: own u64) -> result: own u16 traps {
+fn read(values: own array<u16, 4>, offset: own u64) -> result: own u16 pure {
   let bounded = clamp_three(value: offset);
-  let in_range = ilt(bounded, 4_u64);
-  claim offset_in_range: in_range because "premises: bounded is returned by clamp_three, whose body computes imin(offset, 3_u64)\nderivation: bounded is at most 3_u64 and therefore strictly less than 4_u64\nconclusion: in_range is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: the following values[bounded] subscript requires this exact OP-4 bound";
   let value = values[bounded];
   return value;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let values = make();
   let length = len(values);
   if ine(length, 4_u64) {
@@ -83,20 +87,11 @@ command fn main() -> status: own ExitStatus traps {
 "#;
     let llvm = compile(source);
     let read = emitted_function(&llvm, "read");
-    // The claim is the retained runtime check [CLM-1]; the discharged
-    // subscript forms its element address only after the claim's safe edge.
-    let bounds = read
-        .find("icmp ult i64")
-        .expect("the claim's comparison must compare the offset with the length");
-    let trap = read[bounds..]
-        .find("call void @wf_trap")
-        .map(|offset| bounds + offset)
-        .expect("the claim must retain its CLM-1 trap edge");
-    let load = read[trap..]
-        .find("getelementptr inbounds [4 x i16]")
-        .map(|offset| trap + offset)
-        .expect("array read must address the element only on the safe edge");
-    assert!(bounds < trap && trap < load);
+    // The verified callee summary discharges the subscript directly: the
+    // caller emits neither a claim trap nor a second bounds branch.
+    assert!(!read.contains("icmp ult i64"));
+    assert!(!read.contains("call void @wf_trap"));
+    assert!(read.contains("getelementptr inbounds [4 x i16]"));
     assert!(llvm.contains("array.fill.head"));
     assert!(llvm.contains("array.fill.done"));
 
@@ -128,16 +123,20 @@ fn a_failing_claim_reports_its_clm1_record_before_abort() {
     // load-bearing theorem. The test-only IR mutation then redirects exactly
     // that named claim to an existing false value so DIAG-3 can exercise the
     // runtime record without granting source writers a false-claim escape.
-    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
-command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
-  let bounded = clamp_three(value: 99_u64);
+  let bounded = 0_u64;
+  let step = 0_u64;
+  loop @preserve_zero {
+    if ige(step, 4_u64) {
+      break @preserve_zero;
+    }
+    set bounded = bounded +wrap 0_u64;
+    set step = step +wrap 1_u64;
+  }
   let in_range = ilt(bounded, 4_u64);
   let injected_false = False();
-  claim expected_true: in_range because "premises: bounded is returned by clamp_three\nderivation: clamp_three returns the minimum of its input and 3_u64, which is below 4_u64\nconclusion: in_range is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: values[bounded] requires this exact bound";
+  claim expected_true: in_range because "premises: bounded starts at 0_u64 and each completed preserve_zero iteration adds wrapping zero\nderivation: adding wrapping zero preserves bounded at 0_u64 through every completed iteration\nconclusion: in_range is true\nchecker gap: ENT does not synthesize the loop invariant that bounded remains zero\nconsumers: values[bounded] requires this exact bound";
   let ignored = values[bounded];
   return exit_status(code: 0_u8);
 }

@@ -6,22 +6,27 @@
 
 use super::{emit, emit_division_obligations};
 
-/// An uncontracted normalizer really makes the divisor positive, but ENT does
-/// not publish that result relation across the call. The residual theorem is
-/// load-bearing for the exact division that immediately consumes it; the
-/// final quotient check is an ordinary test oracle.
-const PROVED_UNSIGNED: &[u8] = br#"fn reviewed_positive(value: own u64) -> result: own u64 pure {
-  return imax(value, 1_u64);
+/// The normalizer publishes its verified positive-result relation. The caller
+/// consumes that summary directly to discharge exact division; the final
+/// quotient check is an ordinary test oracle.
+const PROVED_UNSIGNED: &[u8] =
+    br#"fn reviewed_positive(value: own u64) -> result: own u64 pure contract {
+  ensures igt(result, 0_u64);
+} {
+  if igt(value, 0_u64) {
+    return value;
+  } else {
+    return 1_u64;
+  }
 }
 
-fn ratio(n: own u64, d: own u64) -> result: own u64 traps {
+fn ratio(n: own u64, d: own u64) -> result: own u64 pure {
   let divisor = reviewed_positive(value: d);
-  claim positive_divisor: igt(divisor, 0_u64) because "premises: divisor is returned by reviewed_positive, whose body computes imax(d, 1_u64)\nderivation: imax(d, 1_u64) is at least 1_u64, which is strictly greater than 0_u64\nconclusion: igt(divisor, 0_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following n / divisor exact division requires a nonzero divisor for its OP-2 domain obligation";
   let quotient = n / divisor;
   return quotient;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let total = ratio(n: 12_u64, d: 4_u64);
   if ine(total, 3_u64) {
     return exit_status(code: 1_u8);
@@ -78,9 +83,8 @@ fn opcode_count(module: &str, opcode: &str) -> usize {
         .count()
 }
 
-/// The unsigned domain is discharged by the dominating claim, which is the
-/// sole runtime authority, and the exact site becomes a plain `udiv` with no
-/// residual guard.
+/// The unsigned domain is discharged by the callee's verified summary, and
+/// the exact site becomes a plain `udiv` with no residual guard.
 #[test]
 fn a_proved_unsigned_site_emits_no_division_guard() {
     let ratio = function_body(&emit(PROVED_UNSIGNED), "wf_ratio").to_owned();

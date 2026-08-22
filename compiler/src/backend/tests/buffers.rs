@@ -2,14 +2,18 @@ use super::*;
 
 #[test]
 fn primitive_buffers_cross_functions_update_and_free_once() {
-    let source = br#"fn bounded_count(n: own u64) -> result: own u64 pure {
-  return imin(n, 9223372036854775807_u64);
+    let source = br#"fn bounded_count(n: own u64) -> result: own u64 pure contract {
+  ensures ile(result, 9223372036854775807_u64);
+} {
+  if ile(n, 9223372036854775807_u64) {
+    return n;
+  } else {
+    return 9223372036854775807_u64;
+  }
 }
 
-fn make(n: own u64) -> result: own buffer<u16> allocates(heap), traps {
+fn make(n: own u64) -> result: own buffer<u16> allocates(heap) {
   let bounded = bounded_count(n: n);
-  let fits = buffer_fits<u16>(bounded);
-  claim allocation_fits: fits because "premises: bounded is returned by bounded_count, whose body computes imin(n, 9223372036854775807_u64), and buffer_fits<u16> admits counts through 9223372036854775807_u64\nderivation: imin is no greater than its second operand, so bounded is within the u16 language allocation ceiling\nconclusion: fits is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: the following buffer_new requires this exact OP-9 allocation-fit fact";
   return buffer_new(bounded, 3_u16);
 }
 
@@ -17,37 +21,41 @@ fn replacement() -> result: own u16 pure {
   return 9_u16;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let values = make(n: 4_u64);
   let length = len(values);
-  let room = ilt(2_u64, length);
-  claim sized_by_make: room because "premises: main calls make with 4_u64, bounded_count leaves 4_u64 unchanged, and make returns a buffer of that bounded length\nderivation: length is 4_u64, so 2_u64 is strictly less than length\nconclusion: room is true\nchecker gap: ENT does not publish the length of an uncontracted user-call buffer result\nconsumers: the following set and read each require this exact OP-4 index bound";
-  set values[2_u64] = replacement();
-  let stored = values[2_u64];
+  let stored = 0_u16;
   let code = 0_u8;
-  if ine(length, 4_u64) {
-    set code = 1_u8;
+  if ilt(2_u64, length) {
+    set values[2_u64] = replacement();
+    set stored = values[2_u64];
+  } else {
+    set code = 3_u8;
   }
-  if ine(stored, 9_u16) {
-    set code = 2_u8;
+  if ieq(code, 0_u8) {
+    if ine(length, 4_u64) {
+      set code = 1_u8;
+    }
+    if ine(stored, 9_u16) {
+      set code = 2_u8;
+    }
   }
   return exit_status(code: code);
 }
 "#;
     let llvm = compile(source);
     let main = emitted_function(&llvm, "main");
-    // The discharging claim is the retained runtime check; its trap edge
-    // precedes the RHS, and the discharged target commits one store.
-    let guard = main
-        .find("call void @wf_trap")
-        .expect("the claim must retain its CLM-1 trap edge");
+    // The verified scalar normalizer summary discharges allocation, while a
+    // local length branch discharges both indexed sites. The RHS is evaluated
+    // once before the target commits one store, with no claim trap.
     let rhs = main
         .find("call i16 @wf_replacement")
         .expect("SET-1 must evaluate its RHS once");
     let store = main
         .find("store i16 %v")
         .expect("SET-1 must commit one element store");
-    assert!(guard < rhs && rhs < store);
+    assert!(rhs < store);
+    assert!(!main.contains("call void @wf_trap"));
     assert_eq!(main.matches("call void @free").count(), 1);
     assert!(!emitted_function(&llvm, "make").contains("call void @free"));
 

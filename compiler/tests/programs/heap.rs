@@ -162,26 +162,22 @@ fn the_byte_accessor_without_its_capacity_branch_is_an_op4_rejection() {
 /// `deny_claims` on the search path is enforced, not annotation.
 ///
 /// Injecting one genuine residual claim into `bs_find` is still a [CLM-3]
-/// rejection at the claim node. The claim derives an exact array bound from
-/// an uncontracted helper body and is immediately consumed by that subscript,
-/// so neither redundancy nor a later [OP-4] error can masquerade as the
-/// `deny_claims` result. The search layer is claim-free because it must be.
+/// rejection at the claim node. The claim checks a current-function local
+/// index and is immediately consumed by that subscript, so neither redundancy
+/// nor a later [OP-4] error can masquerade as the `deny_claims` result. The
+/// search layer is claim-free because it must be.
 #[test]
 fn a_claim_injected_into_the_strict_search_is_a_clm3_rejection() {
     let declaration = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads('h 'n) {";
-    let trapping = "fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
-deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads('h 'n), traps {";
+    let trapping = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads('h 'n), traps {";
     let entry = "command fn main() -> status: own ExitStatus allocates(heap) {";
     let trapping_entry = "command fn main() -> status: own ExitStatus allocates(heap), traps {";
     let anchor = "  let last = hay_length -wrap needle_length;\n";
     let claim_source = "  let last = hay_length -wrap needle_length;
   let proof_values = array_new<u8, 4>(0_u8);
-  let bounded_probe = clamp_three(value: last);
+  let bounded_probe = last % 4_u64;
   let probe_inside = ilt(bounded_probe, 4_u64);
-  claim search_probe_in_bounds: probe_inside because \"premises: bounded_probe is returned by clamp_three called with last, and probe_inside is ilt(bounded_probe, 4_u64)\\nderivation: clamp_three returns imin(last, 3_u64), which is at most 3_u64 and therefore below 4_u64\\nconclusion: probe_inside is True\\nchecker gap: ENT does not publish the result bound of an uncontracted user-function call\\nconsumers: the immediately following proof_values[bounded_probe] subscript requires this exact bound\";
+  claim search_probe_in_bounds: probe_inside because \"premises: bounded_probe is last remainder 4_u64 computed in the current function\\nderivation: unsigned remainder by four is one of 0_u64 through 3_u64 and is therefore strictly less than 4_u64\\nconclusion: probe_inside is True\\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\\nconsumers: the immediately following proof_values[bounded_probe] subscript requires this exact bound\";
   let consumed_probe = proof_values[bounded_probe];
 ";
     let source = search_layer_with_entry();

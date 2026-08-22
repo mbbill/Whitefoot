@@ -112,7 +112,7 @@ fn borrowed_first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> r
   return deref(value)[0_u64];
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let left = array_new<u8, 2>(11_u8);
   let right = array_new<u8, 2>(29_u8);
   region 'view {
@@ -126,10 +126,12 @@ command fn main() -> status: own ExitStatus traps {
     let initial = slice_of(&'view left);
     let passed = pass<'view>(value: move initial);
     let passed_room = len(passed);
-    let passed_ok = ilt(0_u64, passed_room);
-    claim passed_nonempty: passed_ok because "premises: passed is returned by pass, whose body returns the two-byte slice argument unchanged\nderivation: the returned descriptor retains length 2_u64, so 0_u64 is strictly below passed_room\nconclusion: passed_ok is true\nchecker gap: ENT does not publish the descriptor length of an uncontracted user-call result\nconsumers: the following passed[0_u64] subscript requires this exact OP-4 bound";
-    let pass_value = passed[0_u64];
-    if ine(pass_value, 11_u8) {
+    if ilt(0_u64, passed_room) {
+      let pass_value = passed[0_u64];
+      if ine(pass_value, 11_u8) {
+        return exit_status(code: 2_u8);
+      }
+    } else {
       return exit_status(code: 2_u8);
     }
     let left_view = slice_of(&'view left);
@@ -137,18 +139,22 @@ command fn main() -> status: own ExitStatus traps {
     let take_left = False();
     let selected = choose<'view>(take_left: take_left, left: move left_view, right: move right_view);
     let selected_room = len(selected);
-    let selected_ok = ilt(0_u64, selected_room);
-    claim selected_nonempty: selected_ok because "premises: selected is returned by choose from left_view and right_view, and both arguments are two-byte slices\nderivation: either returned descriptor has length 2_u64, so 0_u64 is strictly below selected_room\nconclusion: selected_ok is true\nchecker gap: ENT does not publish the descriptor length of an uncontracted user-call result\nconsumers: the following selected[0_u64] subscript requires this exact OP-4 bound";
-    let selected_value = selected[0_u64];
-    if ine(selected_value, 29_u8) {
+    if ilt(0_u64, selected_room) {
+      let selected_value = selected[0_u64];
+      if ine(selected_value, 29_u8) {
+        return exit_status(code: 3_u8);
+      }
+    } else {
       return exit_status(code: 3_u8);
     }
     let constant = fixed_view<'view>();
     let constant_room = len(constant);
-    let constant_ok = ilt(1_u64, constant_room);
-    claim constant_sized: constant_ok because "premises: constant is returned by fixed_view, whose body returns a slice of the two-byte fixed array\nderivation: the returned descriptor has length 2_u64, so 1_u64 is strictly below constant_room\nconclusion: constant_ok is true\nchecker gap: ENT does not publish the descriptor length of an uncontracted user-call result\nconsumers: the following constant[1_u64] subscript requires this exact OP-4 bound";
-    let constant_value = constant[1_u64];
-    if ine(constant_value, 13_u8) {
+    if ilt(1_u64, constant_room) {
+      let constant_value = constant[1_u64];
+      if ine(constant_value, 13_u8) {
+        return exit_status(code: 4_u8);
+      }
+    } else {
       return exit_status(code: 4_u8);
     }
   }

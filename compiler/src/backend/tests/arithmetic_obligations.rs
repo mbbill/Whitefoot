@@ -5,22 +5,27 @@
 
 use super::{emit, emit_arithmetic_obligations};
 
-/// An uncontracted normalizer really bounds its result, but ENT does not
-/// publish that result relation across the call. The residual theorem is
-/// therefore load-bearing for the exact addition that immediately consumes
-/// it; the final value check is an ordinary test oracle.
-const PROVED_EXACT: &[u8] = br#"fn clamp_below_thousand(value: own u64) -> result: own u64 pure {
-  return imin(value, 999_u64);
+/// The normalizer publishes its verified result bound. The caller consumes
+/// that exact summary directly to discharge the addition; the final value
+/// check is an ordinary test oracle.
+const PROVED_EXACT: &[u8] =
+    br#"fn clamp_below_thousand(value: own u64) -> result: own u64 pure contract {
+  ensures ilt(result, 1000_u64);
+} {
+  if ilt(value, 1000_u64) {
+    return value;
+  } else {
+    return 999_u64;
+  }
 }
 
-fn increment(x: own u64) -> result: own u64 traps {
+fn increment(x: own u64) -> result: own u64 pure {
   let bounded = clamp_below_thousand(value: x);
-  claim bounded_input: ilt(bounded, 1000_u64) because "premises: bounded is returned by clamp_below_thousand, whose body computes imin(x, 999_u64)\nderivation: imin(x, 999_u64) is at most 999_u64, and 999_u64 is strictly less than 1000_u64\nconclusion: ilt(bounded, 1000_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
   let stepped = bounded + 1_u64;
   return stepped;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let total = increment(x: 6_u64);
   if ine(total, 7_u64) {
     return exit_status(code: 1_u8);

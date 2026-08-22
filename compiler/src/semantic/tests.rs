@@ -346,15 +346,19 @@ fn assert_unsupported(source: &[u8], feature: UnsupportedSemanticFeature) {
 
 #[test]
 fn a_residual_claim_statement_is_an_accepted_named_runtime_check() {
-    let source = br#"fn clamp_seven(value: own u64) -> result: own u64 pure {
-  return imin(value, 7_u64);
-}
-
-fn read(values: own array<i32, 8>, i: own u64) -> result: own i32 traps {
+    let source = br#"fn read(values: own array<i32, 8>, i: own u64) -> result: own i32 traps {
   let size = len(values);
-  let bounded = clamp_seven(value: i);
+  let bounded = 0_u64;
+  let step = 0_u64;
+  loop @preserve_zero {
+    if ige(step, 4_u64) {
+      break @preserve_zero;
+    }
+    set bounded = bounded +wrap 0_u64;
+    set step = step +wrap 1_u64;
+  }
   let inside = ilt(bounded, size);
-  claim held: inside because "premises: values has length 8 and bounded is returned by clamp_seven, whose body computes imin(i, 7_u64)\nderivation: bounded is at most 7_u64 and therefore strictly less than size\nconclusion: inside is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following values[bounded] subscript requires this bound for its OP-4 obligation";
+  claim held: inside because "premises: values has length 8 and bounded starts at 0_u64; every completed preserve_zero iteration adds wrapping zero\nderivation: adding wrapping zero preserves bounded at 0_u64 through every completed iteration\nconclusion: inside is true\nchecker gap: ENT does not synthesize the loop invariant that bounded remains zero\nconsumers: the following values[bounded] subscript requires this bound for its OP-4 obligation";
   return values[bounded];
 }
 

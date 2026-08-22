@@ -436,20 +436,24 @@ fn emitted_drop_ids(function: &str) -> Vec<u32> {
 
 #[test]
 fn emitted_module_retains_claims_without_an_integer_runtime_guard() {
-    let source = br#"fn hidden_answer() -> result: own i32 pure {
-  return 42_i32;
-}
-
-fn need_answer(value: own i32) -> result: own unit pure contract {
+    let source = br#"fn need_answer(value: own i32) -> result: own unit pure contract {
   requires ieq(value, 42_i32);
 } {
   return unit;
 }
 
 command fn main() -> status: own ExitStatus traps {
-  let answer = hidden_answer();
+  let answer = 42_i32;
+  let step = 0_u64;
+  loop @preserve_answer {
+    if ige(step, 4_u64) {
+      break @preserve_answer;
+    }
+    set answer = answer +wrap 0_i32;
+    set step = step +wrap 1_u64;
+  }
   let expected = ieq(answer, 42_i32);
-  claim reviewed_answer: expected because "premises: answer is returned by hidden_answer, whose body returns 42_i32\nderivation: substituting the function body's returned literal gives answer equal to 42_i32\nconclusion: expected is true\nchecker gap: ENT does not publish an uncontracted user-function result equality\nconsumers: need_answer requires this exact equality";
+  claim reviewed_answer: expected because "premises: answer starts at 42_i32 and every completed preserve_answer iteration adds wrapping zero\nderivation: adding wrapping zero preserves answer at 42_i32 through every completed iteration\nconclusion: expected is true\nchecker gap: ENT does not synthesize the loop invariant that answer remains 42_i32\nconsumers: need_answer requires this exact equality";
   need_answer(value: answer);
   return exit_status(code: 0_u8);
 }
@@ -1186,16 +1190,20 @@ command fn main() -> status: own ExitStatus pure {
 /// than its `because` justification.
 #[test]
 fn a_failing_claim_emits_the_exact_mandatory_record_shape() {
-    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
-command fn main() -> status: own ExitStatus traps {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
   let values = array_new<u8, 4>(0_u8);
-  let bounded = clamp_three(value: 99_u64);
+  let bounded = 0_u64;
+  let step = 0_u64;
+  loop @preserve_zero {
+    if ige(step, 4_u64) {
+      break @preserve_zero;
+    }
+    set bounded = bounded +wrap 0_u64;
+    set step = step +wrap 1_u64;
+  }
   let in_range = ilt(bounded, 4_u64);
   let injected_false = False();
-  claim bad_quote_line: in_range because "premises: bounded is returned by clamp_three\nderivation: clamp_three returns the minimum of its input and 3_u64, which is below 4_u64\nconclusion: in_range is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: values[bounded] requires this exact bound";
+  claim bad_quote_line: in_range because "premises: bounded starts at 0_u64 and each completed preserve_zero iteration adds wrapping zero\nderivation: adding wrapping zero preserves bounded at 0_u64 through every completed iteration\nconclusion: in_range is true\nchecker gap: ENT does not synthesize the loop invariant that bounded remains zero\nconsumers: values[bounded] requires this exact bound";
   let ignored = values[bounded];
   return exit_status(code: 0_u8);
 }

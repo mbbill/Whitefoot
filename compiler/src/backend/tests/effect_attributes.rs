@@ -80,17 +80,20 @@ const REPRESENTATIVE_PROGRAMS: &[(&str, &[u8])] = &[
     ),
 ];
 
-/// A self-contained, genuinely residual theorem supplies the claim trap path
-/// used by the measured-hazard tripwire. The theorem follows from the helper's
-/// body, ENT cannot publish that uncontracted result bound, and the exact
-/// addition consumes precisely the written predicate.
-const RESIDUAL_CLAIM_PROGRAM: &[u8] = br#"fn clamp_zero(value: own u64) -> result: own u64 pure {
-  return imin(value, 0_u64);
-}
-
-command fn main() -> status: own ExitStatus traps {
-  let bounded = clamp_zero(value: 1_u64);
-  claim bounded_below_one: ilt(bounded, 1_u64) because "premises: bounded is returned by clamp_zero, whose body computes imin(1_u64, 0_u64)\nderivation: imin(1_u64, 0_u64) is 0_u64, which is strictly less than 1_u64\nconclusion: ilt(bounded, 1_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
+/// A self-contained, genuinely residual local theorem supplies the claim trap
+/// path used by the measured-hazard tripwire. The exact addition consumes
+/// precisely the fact established on the claim's continuing edge.
+const RESIDUAL_CLAIM_PROGRAM: &[u8] = br#"command fn main() -> status: own ExitStatus traps {
+  let bounded = 0_u64;
+  let step = 0_u64;
+  loop @preserve_zero {
+    if ige(step, 4_u64) {
+      break @preserve_zero;
+    }
+    set bounded = bounded +wrap 0_u64;
+    set step = step +wrap 1_u64;
+  }
+  claim bounded_below_one: ilt(bounded, 1_u64) because "premises: bounded starts at 0_u64 and every completed preserve_zero iteration adds wrapping zero\nderivation: adding wrapping zero preserves bounded at 0_u64 through every completed iteration\nconclusion: ilt(bounded, 1_u64) is true\nchecker gap: ENT does not synthesize the loop invariant that bounded remains zero\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
   let successor = bounded + 1_u64;
   return exit_status(code: 0_u8);
 }
