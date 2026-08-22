@@ -1165,22 +1165,55 @@ reproduction, never worked around.)
   (2.37x, 201.6 s saved)**, at the same 1030 lib + 52 program tests — nothing
   was deleted, skipped or weakened. The program suite alone falls 172.24 s →
   34.21 s (5.03x), which is the twelve fresh `wfgrep` compiles getting cheaper.
-  **Remaining cost, attributed and reducible — not yet at the 5 s
-  acceptance.** 9.782 s is above the brief's target and the remainder is *not*
-  irreducible; it is three named things this increment did not take on. (1)
-  `ClosedState` still publishes two pair-keyed maps, so each of the 3185
-  closures rebuilds ~8836 cells into two `HashMap`s — about 56M hashed inserts
-  that carrying the matrix through would delete outright. (2) The fixed point
-  runs 8826 rounds over 3185 closures, and the last round of every closure is
-  a pure verification pass that changes nothing; skipping a `middle` whose row
-  and column did not change in the previous round would remove it, and appears
-  exactly equivalent because bounds only ever decrease, but it needs the
-  argument checked rather than assumed. (3) The 3185 closures are themselves
-  recomputed from scratch as the flow walks, which is the deepest and least
-  contained of the three. A fourth option — semi-naive propagation from
-  changed cells — was **rejected, not deferred**: it reorders `intern_for`, so
-  it would reassign `DerivationId`s, and this dig is not allowed to move
-  emitted bytes on a hunch about what is observable.
+  **Second increment: the closed state carries the matrix.** `ClosedState` was
+  still publishing two pair-keyed maps, so every one of the 3185 closures
+  rebuilt its whole relation into two `HashMap`s only for the next query to
+  hash it back. It now carries the matrix itself, one field where there were
+  two, and the pair-keyed form is built at the single place that still needs
+  it — the `FactState` in `materialize_closure_at`, the rare S11 path. Two
+  sorts go with it: cell order *is* ascending `(left, right)`, because the
+  index is `left * width + right`, so the walk arrives already ordered.
+  `wfgrep` 9.782 s → 9.393 s, which is only 4% — the average closure is far
+  narrower than the 94-term maximum, so the rebuild was smaller than the
+  profile's rank suggested. The gate is where it shows: **146.85 s → 109.04 s**,
+  because the suite is mostly small analyses where the rebuild was a larger
+  share.
+  **Where this landed, end to end.** `wfgrep` frontend **45.299 s → 9.054 s
+  (5.00x)**; full compile including the link **9.612 s default, 9.267 s
+  `--par`**. Across `tests/programs/`: `utf8parse` 5.388 → 0.984 s (5.47x),
+  `sha256_abc` 4.99x, `dir_walk` 4.087 → 0.974 s (4.20x), `percent_decode`
+  3.45x, `grayscale_pixels` 3.26x; nothing regressed. **`make -C compiler
+  check` green, 348.44 s → 109.04 s (3.20x, 239 s saved)**, at the unchanged
+  1030 lib + 52 program tests. All 50 (program, mode) pairs stay byte-identical
+  in module, stderr and exit code against the pre-fix commit.
+  **The scaling probe, re-fitted.** The `wide` family that gave exponent 3.13
+  before now reads 0.029 / 0.064 / 0.121 / 0.221 s at 80/120/160/200 calls in
+  one function — **exponent 2.06 over 80→160 and 2.43 over 120→200, and 17.8x
+  faster at 200 calls than the 3.925 s it took before**. Stated honestly: the
+  fixed point is still a Floyd-Warshall and still cubic in the terms of a
+  function. What collapsed is its constant, by enough that over this range the
+  lower-order work now shows through instead. The practical consequence is the
+  one the owner's directive was about — the wall that made a 44 KB program cost
+  46 s has moved a long way out, and it moves further the larger the function.
+  **The 5 s acceptance is not met, and the remainder is reducible, not
+  irreducible.** 9.054 s against a 5 s target. Being honest about why: the
+  two levers that remain were measured, not skipped. (1) The fixed point runs
+  8826 rounds over 3185 closures, so roughly the last round of each is a pure
+  verification pass that changes nothing. Skipping a `middle` whose row and
+  column have not changed since it was last processed removes it, and it *is*
+  sound — `candidate_better` orders on `(depth, structural tie)`, a strict
+  order, so a route that lost to the held proof also loses to any proof that
+  replaced it. The estimate is only ~28% though, because round 1 dirties
+  almost every row, so round 2 would still run in full. (2) The inner loop
+  reads `Option<(i128, DerivationId)>` cells, 48 bytes each, when the rejection
+  test needs only the bound; splitting the bound and proof into parallel arrays
+  would cut the hot stream to 16 bytes. That is worth measuring before it is
+  worth writing, and this executor stopped rather than guess — the phantom
+  regression recorded under Dig 8 is what guessing here costs. Neither is
+  attempted in this dig. A third option, semi-naive propagation from changed
+  cells, is **rejected rather than deferred**: it reorders `intern_for` and so
+  reassigns `DerivationId`s, and no dig should move emitted bytes on a hunch
+  about what is observable.
   **Approval classes touched:** no spec bytes, no conformance or compliance
   evidence, no gate wiring, no new repository root entry.
 
