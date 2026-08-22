@@ -1,11 +1,11 @@
 # Current Plan — proof-derived parallelism
 
-Status: PROPOSED (branch `par/proof-derived-parallelism`, 2026-08-21). This
-proposal authorizes no execution. Batch 0074's work was carried out under the
-owner's chartering direction of 2026-08-21 recorded in
-`research/investigations/proof-derived-parallelism/DESIGN.md` §0; this plan is
-the durable sequencing that direction implies, and it becomes ACTIVE only with
-the owner's approval at merge.
+Status: PROPOSED (branch `par/proof-derived-parallelism`, 2026-08-21; updated
+on the branch 2026-08-22 for merge review). This proposal authorizes no
+execution. Batches 0074, 0075 and 0076 were carried out under the owner's
+chartering directions of 2026-08-21/22, quoted verbatim in their records;
+this plan is the durable sequencing those directions imply, and it becomes
+ACTIVE only with the owner's approval at merge.
 
 Derived from Direction Outline revision 46 and main at
 `4f01bab6`. Supersedes the completed claim-only trap-surface plan in place.
@@ -28,10 +28,28 @@ program changes.
 
 - **W1 — compute lane v1 (landed on the branch; the first item this plan
   covers).** The permission judgment P over sibling call pairs, the
-  non-normative `--par-ledger` developer output, default-off runtime
-  actualization behind `WF_WORKERS`, the spec CANDIDATE v0.34 [PAR-1] rule,
-  compiler tests including each named counterexample shape, and the measured
-  demo. Recorded in `docs/ongoing/0074-proof-derived-parallelism.md`.
+  non-normative `--par-ledger` developer output, runtime actualization behind
+  `WF_WORKERS`, the spec CANDIDATE v0.34 [PAR-1] rule, compiler tests
+  including each named counterexample shape, and the measured demo. Recorded
+  in `docs/ongoing/0074-proof-derived-parallelism.md`.
+- **W1b — the optimization campaign (landed on the branch, batches 0075 and
+  0076, chartered by the owner's directions of 2026-08-21/22).** Against a
+  paired benchmark oracle with a Rust/rayon twin: the hand-out frame moved
+  off the activation record; the lane scan replaced by per-thread
+  work-stealing deques; two-world compilation selecting a sequential clone
+  once per process; the permission window generalized over interposed
+  statements; the `band` discharge read through its proving binding; the
+  ENT-4 closure made ~5x faster (compile time only, emission byte-identical);
+  the shipped default changed so an unset `WF_WORKERS` in a `--par` binary
+  runs its parallel world (default-behavior change, flagged for owner
+  approval at merge); a second oracle family (`grid`, recursive index-split)
+  and a counted-loop ledger hint. End state on the N=18 authoritative
+  rotation: rayon wins zero cells; matched worker counts 14 WF wins / 25
+  parity / 0 losses; each language's shipped default 11 / 2 / 0. Records
+  `docs/ongoing/0075-par-optimization-digs.md` and
+  `docs/ongoing/0076-night-par-ceiling.md` carry the digs, the adversarial
+  audit's dispositions, and one recorded invariant breach (a w1-only
+  code-placement regression on three cells, attributed, W>=2 unaffected).
 - **W2 — the I/O concurrency lane (sequenced first among the remaining
   work).** A completion-based family for overlapping host waits. This is where
   the investigation found the profit: 2.83x on the dominant term of a
@@ -55,9 +73,13 @@ program changes.
 
 ## Boundaries and invariants
 
-Permission is never an obligation: a build with no runtime, or with
-`WF_WORKERS` unset, is byte-identical in behavior to today, and every test
-that passes sequentially must pass under overlap. Worker count, schedule, and
+Permission is never an obligation: a build without `--par` is byte-identical
+to today, an explicit opt-out (`WF_WORKERS=0` or `=1`) selects the sequential
+world, and every test that passes sequentially must pass under overlap. Since
+batch 0076 an unset `WF_WORKERS` in a `--par` binary defaults to one lane per
+logical CPU — published bytes stay identical at every worker count, but the
+default execution is parallel; that default stands only with the owner's
+merge approval. Worker count, schedule, and
 thread identity are outside the language and outside every rule. Acceptance is
 untouched in both directions — P consults typing, rows, places, the CFG, and
 the call graph, never the entailment fact state, so facts-on and facts-off

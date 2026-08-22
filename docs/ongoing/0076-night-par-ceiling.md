@@ -441,4 +441,25 @@ battery reports.)
 
 ## Outcome
 
-(Filled at closure.)
+Chartered as the overnight continuation; closed 2026-08-22. Six-lens
+ideation produced a falsifier battery (A1-A6: two premises killed before
+any build — the publish-ordering barrier that was never emitted, the pop
+CAS suspicion; four confirmed) and three landings: the shipped default
+(62e30831, flagged for owner approval), the grid oracle family plus the
+counted-loop hint (165f8b5e, 36963401), and two record corrections
+(38bebf8c). The authoritative N=18 rotation (b87d20bb, 3276 measurements,
+every run byte-identical within and across languages) fixed the campaign's
+end state: rayon wins zero cells; matched worker counts 14 WF wins / 25
+parity / 0 losses; shipped defaults 11 / 2 / 0; the defaults table shows
+rayon's own default collapsing to 0.22x of its sequential build on the
+finest cell while Whitefoot's holds its floor everywhere. The adversarial
+audit ran at this tip; every refuter-confirmed finding was repaired in
+187c8b80, including one honest breach entry: the w1-only code-placement
+regression on three w192 cells (1.24-1.27x, attributed to L1's link-layout
+re-roll of the known unlocated stall; W>=2 and all cross-language
+comparisons unaffected). The repository gate's 135/136 disposition, the
+default-behavior flag, and the placement-stall register are the batch's
+open items for the merge packet; the deferred ideas (adaptive width,
+frontier prologue, split deque, skew-immunity port, flow.rs closure reuse,
+loop-shaped permission) are recorded with their measured reasons and
+belong to future owner-approved work.

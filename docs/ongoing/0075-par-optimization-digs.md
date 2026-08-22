@@ -1421,5 +1421,26 @@ reproduction, never worked around.)
 
 ## Outcome
 
-(Filled at closure: per-dig before/after oracle numbers, landed commits,
-verification, audit dispositions.)
+Ten digs, all closed; every executor claim lead-verified against the tree.
+Landed commits (this batch): 639fdb01, b251382f, 826cea41, 5b933c3a,
+985353ae, d4e674c3, 974d5513, 00b9e686, 947b9f3f, 9c23edb1, 44221e2f,
+0942ee24 — plus the batch-0076 continuation and the audit-repair commit
+187c8b80, which also amends this record. Headlines, each measured before and
+after on the oracle protocol: the --par recursion-depth ceiling restored to
+sequential parity on the realistic shape; the lane scan replaced by
+work-stealing deques (48.6x-slower pathological case to 1.99x faster;
+per-fork excess 48.8 ns to ~4.8 ns; no cell slower than its own w=1);
+two-world compilation removing the pool-off opt-in tax (fib 2.96x to 1.00x);
+the permission window over interposed statements (silent adjacency losses
+ended); the band discharge reading through its proving binding (4 probe
+verdicts REJECT to ACCEPT, 693 unchanged); the ENT-4 closure ~5x faster
+(wfgrep frontend 45.0 to 8.4 s, gate test phases 346 to 76 s), emission
+byte-identical throughout. Verification: compiler gate green at every
+landing; N=18 authoritative rotation recorded in batch 0076's baseline;
+byte identity within and across languages on every run. Audit: the
+2026-08-22 adversarial audit (six finders, six refuters) confirmed no
+CRITICAL defect in this batch's landings; its dispositions are recorded in
+batch 0076's log and repaired in 187c8b80. Standing merge items: the
+[PAR-1] conformance coverage annotation (exact bytes in the 0074 record),
+the spec.rs digest-literal transcription recipe, and the WF_WORKERS default
+flag from batch 0076.
