@@ -32,6 +32,19 @@
  *       release: a slot handed on at the join could be refilled under the read
  *       that follows it.
  *
+ * Beside the protocol, and not part of it, one question the module asks once:
+ *
+ *   int wf__par_pool_active(void)
+ *       Whether this run was asked for a pool at all. The module carries two
+ *       lowerings of everything that can reach a hand-out — the overlapped one
+ *       and the plain sequential one — and its bootstrap asks this to choose
+ *       between them, once, before anything runs. It moves no work, takes no
+ *       frame, and starts nothing: the pool is still created lazily by the
+ *       first claim. See its definition at the bottom of this file for why the
+ *       answer may be kept for the life of the process, why it reads the
+ *       setting rather than the pool, and why that makes it a different thing
+ *       from a demand signal.
+ *
  * The claim comes first because it is what makes the hand-out cost
  * conditional. The frame lives in per-thread storage rather than in the calling
  * function, so an activation that is never granted a slot never builds one: no
@@ -61,7 +74,7 @@
  * and it writes nothing to any output. WF_WORKERS selects the thread count;
  * unset, unparsable, or below two leaves the pool unstarted, so every claim
  * returns NULL and every program runs exactly the sequential schedule it runs
- * today.
+ * today — and, since the module can ask, exactly the sequential code as well.
  */
 
 #include <pthread.h>
@@ -689,4 +702,45 @@ void wf__par_release(void *frame) {
     __atomic_store_n(&slot->state, WF_PAR_SLOT_FREE, __ATOMIC_RELAXED);
     slot->next_free = lane->free_head;
     lane->free_head = (int)(slot - lane->slots);
+}
+
+/* Whether this run was asked for a pool, answered once at the bootstrap.
+ *
+ * Not part of the lane protocol: it takes no frame, publishes nothing, moves
+ * no work, and — deliberately — starts nothing. It answers the one question
+ * the module cannot answer for itself, so that a program built with `--par`
+ * and run without a pool takes the sequential lowering of itself rather than
+ * the refused edge of the overlapped one.
+ *
+ * **It reads the setting rather than the pool, and that is the point.** The
+ * pool is still created lazily, by the first claim, exactly where it was
+ * created before this question existed, so a program that asks this is
+ * scheduled exactly as it was. The alternative — answering by *starting* the
+ * pool here — was built and measured, and it costs real time: it moves the
+ * pool's creation ahead of whatever the program does before its first
+ * hand-out, so those threads spin alongside that work instead of being
+ * created after it. On `tests/programs/par_layout.wf`, which builds its tree
+ * before it folds, starting the pool here read 0.4663 s against 0.3981 s at
+ * `WF_WORKERS=4` and 0.4404 s against 0.3724 s at `W=8` — 17% and 18% — while
+ * this version reads 0.3984 s and 0.3752 s, which is parity. (The first
+ * attempt to price it used `WF_WORKERS=64`, where a single binary's own
+ * spread across an interleaved pass is 47% to 308% and nothing is resolvable;
+ * that reading was withdrawn.) Answering without starting anything also means
+ * a `--par` run that never reaches a hand-out creates no threads at all.
+ *
+ * The answer is fixed for the life of the process: the environment is the
+ * process's own, `wf__par_start` reads the same setting through the same
+ * function, and neither a pool that started nor one that did not ever
+ * changes. That is what makes it safe to keep forever, which is what the
+ * caller does — it asks at the entry and never again — and what distinguishes
+ * it from a demand signal: nothing here measures what the pool is *doing*, so
+ * no thread ever writes a word another reads on account of it.
+ *
+ * The one case where "asked for" and "got" differ is a pool that was
+ * requested and failed to start — no thread could be created. That run takes
+ * the overlapped world and has every claim refused, which is a correct
+ * schedule and exactly what such a run did before this question existed.
+ */
+int wf__par_pool_active(void) {
+    return wf__par_requested_lanes() >= 2;
 }

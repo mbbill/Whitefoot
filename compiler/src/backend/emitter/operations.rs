@@ -130,7 +130,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             "  {} = call {} @{}({})",
             self.value_name(result),
             llvm_type(self.program, ty)?,
-            source_symbol(target.name()),
+            self.callee_symbol(function, target.name()),
             rendered.join(", ")
         )
         .map_err(|_| BackendFailure::TextEmission)

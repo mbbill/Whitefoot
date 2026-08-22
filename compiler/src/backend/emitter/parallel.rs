@@ -32,6 +32,18 @@
 //! come out of memory, so an interprocedural fact about those arguments —
 //! a constant, say — does not survive into the `--par` build.
 //!
+//! **Two worlds, selected once.** What the paragraph above describes is a cost
+//! of *overlapping*, and a program that asked for lanes and did not get them
+//! should not pay it. So a `--par` module carries the lowering above and, for
+//! every function on a path from the entry to a handed-out call, a second copy
+//! that actualizes nothing — the sequential lowering, byte for byte, so that
+//! every transform the default build gets fires on it. The bootstrap asks the
+//! runtime once whether this run was asked for a pool, and enters one world or
+//! the other; neither ever calls into the other, so nothing below that branch
+//! tests anything again. [`sequential_clone_set`] carries why the second copy has to
+//! exist, why once-per-process is the only selection that is safe here, and
+//! why the set is exactly that closure.
+//!
 //! **Symbol reservation.** A source function is emitted as `wf_` followed by
 //! its own IDENT, and [FORM-3] spells IDENT `[a-z][a-z0-9_]*`, so no source
 //! name can produce a symbol whose first character after `wf_` is an
@@ -41,10 +53,11 @@
 //! before this module existed. That is a reserved namespace, not a name check
 //! — nothing here inspects a source function's spelling.
 
+use std::collections::HashSet;
 use std::fmt::Write;
 
 use super::{BackendFailure, FunctionEmitter, llvm_type, source_symbol, value_name};
-use crate::{IrType, IrValueId};
+use crate::{IrInstruction, IrOperation, IrProgram, IrType, IrValueId};
 
 /// The C source of the parallel runtime, embedded so that every path that
 /// links a Whitefoot executable links the same bytes.
@@ -81,6 +94,131 @@ pub(crate) const PARALLEL_CLAIM_SYMBOL: &str = "define weak ptr @wf__par_claim(i
 /// that linking it is what makes the lanes reachable.
 pub fn module_requires_parallel_runtime(module: &str) -> bool {
     module.contains(PARALLEL_CLAIM_SYMBOL)
+}
+
+/// The runtime's answer to "was this run asked for a pool", put once per
+/// process, and the module's own weak answer of "no".
+///
+/// A module carries this for the same reason it carries the four entry points:
+/// with no runtime linked, no pool can ever start, so the honest answer is a
+/// constant zero and the program is complete on its own. The query is not part
+/// of the lane protocol — it takes no frame, moves no work, and starts nothing
+/// — so it is a separate definition rather than a fifth entry point, and the
+/// four signatures above are exactly the bytes they were.
+pub(crate) const PARALLEL_POOL_QUERY_FALLBACK: &str =
+    "define weak i32 @wf__par_pool_active() {\nentry:\n  ret i32 0\n}\n\n";
+
+/// The symbol one function's sequential clone is emitted under.
+///
+/// It lives in the same reserved `wf__par_` namespace as the runtime's own
+/// symbols, which [FORM-3] puts out of reach of any source IDENT, so cloning a
+/// function can never collide with a function the writer declared.
+pub(crate) fn sequential_clone_symbol(name: &str) -> String {
+    format!("wf__par_seq_{name}")
+}
+
+/// The functions that need a sequential clone: every function on some path
+/// from the entry to a handed-out call.
+///
+/// **Why a second copy exists at all.** The hand-out rejoins its granted and
+/// refused edges through a phi, so the callee's result flows into a phi rather
+/// than into the caller's return. That is invisible on a heavy call and
+/// decisive on a light one: it takes `fib`'s second recursion out of tail
+/// position, and with it LLVM's accumulator tail-recursion elimination, which
+/// turns the sequential build's second call into a loop. The measured price
+/// with the pool off was 2.96x on `fib(38)` — a program paying for
+/// parallelism it never activated. No rearrangement of one lowering can serve
+/// both: the phi is what actualization *is*, and the transform requires its
+/// absence. So the module carries both lowerings and selects between them.
+///
+/// **Why the selection is safe.** It is made once per process, from whether the
+/// run asked for a pool, and never again. Without one every claim is refused for
+/// the whole process, so the two worlds compute on exactly the same schedule and
+/// the choice between them is a choice of machine code, not of semantics. A run
+/// that asks for a pool and cannot start one takes the overlapped world and has
+/// every claim refused, which is the schedule such a run always had. A
+/// *per-task* demand signal would be a different thing entirely,
+/// and was measured killing the scheduler it was meant to help: the shared
+/// word it needs costs two contended read-modify-writes per task, which took
+/// the fine-grain oracle cell from 0.4905 s to 0.9254 s. Nothing here reads a
+/// per-task signal, and the two worlds never call each other.
+///
+/// **Why this set and not another.** A function outside it has the same body
+/// in both worlds — no hand-out is reachable from it, so nothing about its
+/// lowering depends on which world called it — and both worlds call the one
+/// copy. Cloning it would be bytes with no reader. The set is a property of
+/// the call graph and the permission judgment, never of a name or a source
+/// shape.
+///
+/// Empty when no hand-out is reachable from the entry, which includes every
+/// default compilation: the default build carries no overlap group at all, so
+/// there is one world and this changes nothing about it.
+pub(crate) fn sequential_clone_set(program: &IrProgram<'_, '_, '_>) -> HashSet<u32> {
+    let functions = program.functions();
+    let mut callees: Vec<Vec<u32>> = vec![Vec::new(); functions.len()];
+    let mut hands_out = Vec::with_capacity(functions.len());
+    for (ordinal, function) in functions.iter().enumerate() {
+        hands_out.push(
+            function
+                .overlaps()
+                .iter()
+                .any(|overlap| !overlap.handed_out().is_empty()),
+        );
+        for block in function.blocks() {
+            for instruction in block.instructions() {
+                if let IrInstruction::Define {
+                    operation: IrOperation::Call { function, .. },
+                    ..
+                } = instruction
+                {
+                    callees[ordinal].push(*function);
+                }
+            }
+        }
+    }
+
+    let mut reachable = HashSet::new();
+    let mut pending = vec![program.main_ordinal()];
+    while let Some(ordinal) = pending.pop() {
+        if !reachable.insert(ordinal) {
+            continue;
+        }
+        if let Some(called) = callees.get(ordinal as usize) {
+            pending.extend(called.iter().copied());
+        }
+    }
+
+    // The other direction: a function needs a clone when a hand-out is
+    // reachable *from* it, so the walk runs the call graph backwards from the
+    // functions that hand work out.
+    let mut callers: Vec<Vec<u32>> = vec![Vec::new(); functions.len()];
+    for (ordinal, called) in callees.iter().enumerate() {
+        let Ok(ordinal) = u32::try_from(ordinal) else {
+            continue;
+        };
+        for callee in called {
+            if let Some(entry) = callers.get_mut(*callee as usize) {
+                entry.push(ordinal);
+            }
+        }
+    }
+    let mut reaches_hand_out = HashSet::new();
+    let mut pending: Vec<u32> = hands_out
+        .iter()
+        .enumerate()
+        .filter(|(_, hands_out)| **hands_out)
+        .filter_map(|(ordinal, _)| u32::try_from(ordinal).ok())
+        .collect();
+    while let Some(ordinal) = pending.pop() {
+        if !reaches_hand_out.insert(ordinal) {
+            continue;
+        }
+        if let Some(calling) = callers.get(ordinal as usize) {
+            pending.extend(calling.iter().copied());
+        }
+    }
+
+    reachable.intersection(&reaches_hand_out).copied().collect()
 }
 
 /// The outlined thunks of one module, in emission order.

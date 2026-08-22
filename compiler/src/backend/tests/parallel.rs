@@ -390,6 +390,20 @@ command fn main() -> status: own ExitStatus pure {
 /// for means the same thing on every machine. The depth sits between what the
 /// old lowering reached under that limit (about 16 200 frames) and what this
 /// one reaches (about 21 600), roughly 15% clear of each.
+///
+/// **What this measures changed when the module grew a second world, and it is
+/// worth saying which half it now holds.** It runs with `WF_WORKERS` removed,
+/// so the bootstrap selects the sequential clone and what descends here is the
+/// clone's frames — the property under test is now that asking for overlap
+/// costs no depth *because the pool-off program runs the sequential code*,
+/// which is a stronger guarantee than the one this case was written for and a
+/// different mechanism. The original mechanism — a refused hand-out building
+/// no frame, which is what the overlapped world still relies on whenever the
+/// pool is on and a claim is refused — is held structurally by
+/// `handing_a_call_out_adds_no_stack_slot`, whose count is taken over the
+/// overlapped world alone. Adding a pool here would not restore it: this
+/// fixture hands out its *deep* side, so a thief takes the descent onto an
+/// 8 MB worker stack and the case would pass without measuring anything.
 #[test]
 fn handing_calls_out_keeps_the_sequential_recursion_depth() {
     const STACK_KILOBYTES: u32 = 1024;
@@ -452,6 +466,14 @@ fn run_with_stack(executable: &Path, kilobytes: u32) -> i32 {
 /// quarter of the sequential build's recursion depth before dying on a bare
 /// SIGSEGV. The comparison is against the default compilation of the same
 /// source, so it measures the lowering rather than the program.
+///
+/// The count is taken over the *overlapped* world alone. A `--par` module
+/// carries a second lowering of the eligible closure, and counting both copies
+/// against one reference would compare a doubled module with a single one — a
+/// failure that says nothing about whether a hand-out costs a slot. What the
+/// clone costs is a separate and stronger question, answered by
+/// `the_sequential_clone_is_the_sequential_lowering`: it is the sequential
+/// lowering byte for byte, so its slots are the sequential build's slots.
 #[test]
 fn handing_a_call_out_adds_no_stack_slot() {
     let sequential = emit(OVERLAPPING_FOLD);
@@ -460,10 +482,143 @@ fn handing_a_call_out_adds_no_stack_slot() {
         module_requires_parallel_runtime(&overlapped),
         "the fixture must hand work out, or this test is vacuous"
     );
+    let actualized = without_clones(&overlapped);
+    assert!(
+        actualized.contains("@wf__par_publish"),
+        "removing the clones must leave the overlapped world:\n{actualized}"
+    );
     assert_eq!(
-        overlapped.matches("= alloca ").count(),
+        actualized.matches("= alloca ").count(),
         sequential.matches("= alloca ").count(),
-        "handing calls out must add no stack slot:\n{overlapped}"
+        "handing calls out must add no stack slot:\n{actualized}"
+    );
+}
+
+/// The sequential clone is the sequential lowering: not similar to it, the
+/// same bytes.
+///
+/// This is the load-bearing property of two-world compilation. The clone
+/// exists so that every transform the default build gets fires on it — the one
+/// that matters is LLVM's accumulator tail-recursion elimination, which the
+/// hand-out's phi at `%par.done` forecloses and which was worth 2.96x on
+/// `fib(38)` with the pool off. "Gets the same transforms" is not something a
+/// test can ask LLVM directly; what it can ask is whether the input is the same
+/// input, which is the whole of the claim and is stronger than any list of
+/// properties spelled out one at a time. A clone that drifted — a slot, a phi,
+/// an operand read in a different order — would be a second lowering nobody
+/// audited, and this case is what stops that.
+///
+/// The comparison restores the clone's own symbols, because the calls inside a
+/// clone name clones: that renaming *is* the difference between the two
+/// worlds, and after it there must be nothing left.
+#[test]
+fn the_sequential_clone_is_the_sequential_lowering() {
+    let sequential = emit(OVERLAPPING_FOLD);
+    let overlapped = emit_with_overlap(OVERLAPPING_FOLD);
+
+    // The closure, spelled out: every function from which a handed-out call is
+    // reachable. `pair`, `quad`, and `oct` hand out their sibling
+    // constructors, `fold` its recursion, and `main` its four `oct` calls.
+    // `leaf`, `branch`, `mix`, `low_byte`, and `spell` reach no hand-out at
+    // all, so both worlds call the one copy of each and neither needs a clone.
+    let mut cloned: Vec<_> = clone_symbols(&overlapped);
+    cloned.sort_unstable();
+    assert_eq!(
+        cloned,
+        [
+            "@wf__par_seq_fold",
+            "@wf__par_seq_main",
+            "@wf__par_seq_oct",
+            "@wf__par_seq_pair",
+            "@wf__par_seq_quad",
+        ],
+        "the clone set must be the closure of the eligible calls:\n{overlapped}"
+    );
+
+    for symbol in &cloned {
+        let clone = function_body(&overlapped, symbol);
+        let restored = clone.replace("@wf__par_seq_", "@wf_");
+        let reference = function_body(&sequential, &symbol.replace("@wf__par_seq_", "@wf_"));
+        assert_eq!(
+            restored, reference,
+            "{symbol} is not the sequential lowering of its function"
+        );
+    }
+}
+
+/// The two worlds never call each other, and which one runs is decided once.
+///
+/// Both halves matter and they fail differently. A clone that called back into
+/// the overlapped world would re-enter the lowering it exists to avoid, and
+/// would do so *below* the one place the choice is made, so the program would
+/// pay the tax again with nothing left to catch it. And a selection made
+/// anywhere but the bootstrap would be a test executed per call or per
+/// activation: at best a branch in a hot loop, at worst the per-task demand
+/// signal this design exists to avoid — the shared word that took the
+/// fine-grain oracle cell from 0.4905 s to 0.9254 s when it was measured.
+///
+/// The query is a separate weak definition, so the four entry points of the
+/// lane protocol are exactly the bytes they were; a link that reads them, and
+/// the cases that pin them, cannot be disturbed by it.
+#[test]
+fn the_bootstrap_selects_one_world_once() {
+    let overlapped = emit_with_overlap(OVERLAPPING_FOLD);
+
+    // Asked once, in the one place that runs once and is inside no loop and no
+    // recursion.
+    assert_eq!(
+        overlapped
+            .matches("call i32 @wf__par_pool_active()")
+            .count(),
+        1,
+        "the world must be selected exactly once per process:\n{overlapped}"
+    );
+    let bootstrap = function_body(&overlapped, "@main");
+    assert!(
+        bootstrap.contains("  %par.pool = call i32 @wf__par_pool_active()")
+            && bootstrap.contains("call i8 @wf_main(")
+            && bootstrap.contains("call i8 @wf__par_seq_main("),
+        "the bootstrap must branch between the two lowerings of the entry:\n{bootstrap}"
+    );
+    // With no runtime linked no pool can start, so the module's own answer is
+    // the honest one and such a program runs the sequential lowering of itself.
+    assert!(
+        overlapped.contains("define weak i32 @wf__par_pool_active() {\nentry:\n  ret i32 0\n}"),
+        "the module must carry its own answer:\n{overlapped}"
+    );
+    for weak in [
+        "define weak ptr @wf__par_claim(i64 %bytes) {",
+        "define weak void @wf__par_publish(ptr %frame, ptr %fn) {",
+        "define weak void @wf__par_join(ptr %frame) {",
+        "define weak void @wf__par_release(ptr %frame) {",
+    ] {
+        assert!(
+            overlapped.contains(weak),
+            "adding the query must not disturb `{weak}`:\n{overlapped}"
+        );
+    }
+
+    // No clone reaches the overlapped world. A clone may still call a function
+    // that has no clone — that copy is shared because its lowering is the same
+    // either way — so the forbidden targets are exactly the cloned ones.
+    let cloned = clone_symbols(&overlapped);
+    for symbol in &cloned {
+        let body = function_body(&overlapped, symbol);
+        for other in &cloned {
+            let forbidden = format!(" @{}(", other.replace("@wf__par_seq_", "wf_"));
+            assert!(
+                !body.contains(&forbidden),
+                "{symbol} calls the overlapped{forbidden}, so the clone world re-enters the \
+                 lowering it exists to avoid:\n{body}"
+            );
+        }
+    }
+    // And nothing but the bootstrap reaches the clone world.
+    let actualized = without_clones(&overlapped);
+    let bootstrap_free = actualized.replace(function_body(&actualized, "@main"), "");
+    assert!(
+        !bootstrap_free.contains("@wf__par_seq_"),
+        "only the bootstrap may name a clone:\n{bootstrap_free}"
     );
 }
 
@@ -1025,6 +1180,43 @@ fn run_counting_grants(
         std::fs::remove_file(path).expect("remove a counted-run artifact");
     }
     (granted, output)
+}
+
+/// Every sequential clone the module defines, by symbol.
+fn clone_symbols(module: &str) -> Vec<String> {
+    module
+        .lines()
+        .filter(|line| line.starts_with("define "))
+        .filter_map(|line| line.split_once(" @wf__par_seq_"))
+        .filter_map(|(_, tail)| tail.split_once('('))
+        .map(|(name, _)| format!("@wf__par_seq_{name}"))
+        .collect()
+}
+
+/// The module with every sequential clone definition removed, leaving the
+/// overlapped world and everything the two worlds share.
+fn without_clones(module: &str) -> String {
+    let mut kept = String::with_capacity(module.len());
+    let mut rest = module;
+    while let Some(offset) = rest.find("\ndefine ") {
+        let (before, definition) = rest.split_at(offset + 1);
+        kept.push_str(before);
+        let end = definition
+            .find("\n}\n")
+            .map(|at| at + 3)
+            .expect("a definition must close");
+        let (definition, remainder) = definition.split_at(end);
+        if !definition
+            .lines()
+            .next()
+            .is_some_and(|header| header.contains(" @wf__par_seq_"))
+        {
+            kept.push_str(definition);
+        }
+        rest = remainder;
+    }
+    kept.push_str(rest);
+    kept
 }
 
 /// The text of one emitted function definition, from its `define` line to its

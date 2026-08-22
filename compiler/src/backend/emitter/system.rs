@@ -2104,10 +2104,21 @@ fn emit_utf8_validator() -> String {
 /// Emits the process entry for one program.
 ///
 /// This is the one [QUAL-3] command bootstrap [FN-7, PROG-3].
+///
+/// `two_worlds` says the module carries a sequential clone of the entry
+/// function, in which case the bootstrap also makes the one selection between
+/// the two lowerings — `parallel::sequential_clone_set` records why the second
+/// one exists. It belongs here because here is the only place in the program
+/// that runs exactly once and is inside no loop and no recursion: the clone set
+/// is closed upwards through the call graph, so the entry function is in it
+/// whenever anything is, and one branch at the bootstrap puts the selection out
+/// of every hot path in both worlds. Neither world reaches the other
+/// afterwards, so nothing below this branch tests anything again.
 pub(super) fn emit_entry(
     program: &IrProgram<'_, '_, '_>,
     qualification: &Qualification,
     main: &IrFunction,
+    two_worlds: bool,
 ) -> Result<String, BackendFailure> {
     let IrEntry::Command { inputs, .. } = program.entry();
     if qualification.kind() != ProgramKind::Command || main.parameters().len() != inputs.len() {
@@ -2201,19 +2212,47 @@ pub(super) fn emit_entry(
     } else {
         writeln!(body, "  br label %enter").map_err(|_| BackendFailure::TextEmission)?;
     }
-    writeln!(
-        body,
-        "enter:\n  \
-         %status = call {status} @{}({})\n  \
-         %code = zext {status} %status to i32\n  \
-         ret i32 %code\n\
-         start.failure:\n  \
-         call void @exit(i32 {START_FAILURE_STATUS})\n  \
-         unreachable",
-        source_symbol(main.name()),
-        supplied.join(", ")
-    )
-    .map_err(|_| BackendFailure::TextEmission)?;
+    let symbol = source_symbol(main.name());
+    let arguments = supplied.join(", ");
+    if two_worlds {
+        // This run either asked for a pool or it did not, and it cannot change
+        // its mind afterwards, so this is the whole of the decision.
+        writeln!(
+            body,
+            "enter:\n  \
+             %par.pool = call i32 @wf__par_pool_active()\n  \
+             %par.requested = icmp ne i32 %par.pool, 0\n  \
+             br i1 %par.requested, label %enter.overlapped, label %enter.sequential\n\
+             enter.overlapped:\n  \
+             %status.overlapped = call {status} @{symbol}({arguments})\n  \
+             br label %enter.selected\n\
+             enter.sequential:\n  \
+             %status.sequential = call {status} @{}({arguments})\n  \
+             br label %enter.selected\n\
+             enter.selected:\n  \
+             %status = phi {status} [ %status.overlapped, %enter.overlapped ], \
+             [ %status.sequential, %enter.sequential ]\n  \
+             %code = zext {status} %status to i32\n  \
+             ret i32 %code\n\
+             start.failure:\n  \
+             call void @exit(i32 {START_FAILURE_STATUS})\n  \
+             unreachable",
+            sequential_clone_symbol(main.name()),
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+    } else {
+        writeln!(
+            body,
+            "enter:\n  \
+             %status = call {status} @{symbol}({arguments})\n  \
+             %code = zext {status} %status to i32\n  \
+             ret i32 %code\n\
+             start.failure:\n  \
+             call void @exit(i32 {START_FAILURE_STATUS})\n  \
+             unreachable",
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+    }
     Ok(format!(
         "define i32 @main(i32 %argc, ptr %argv) {{\n{body}}}\n"
     ))

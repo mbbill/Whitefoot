@@ -34,7 +34,10 @@ use crate::{
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
-use parallel::{HandedOut, PARALLEL_RUNTIME_FALLBACK, ParallelThunks, par_done_label};
+use parallel::{
+    HandedOut, PARALLEL_POOL_QUERY_FALLBACK, PARALLEL_RUNTIME_FALLBACK, ParallelThunks,
+    par_done_label, sequential_clone_set, sequential_clone_symbol,
+};
 pub use parallel::{PARALLEL_RUNTIME_SOURCE, module_requires_parallel_runtime};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -112,14 +115,54 @@ fn emit_llvm_for(
                 &qualification,
                 function,
                 target,
-                &mut claim_records,
-                &mut intrinsics,
-                &mut thunks,
+                ModuleState {
+                    claim_records: &mut claim_records,
+                    intrinsics: &mut intrinsics,
+                    parallel: &mut thunks,
+                    sequential_clones: None,
+                },
             )
             .emit()?,
         );
     }
-    let entry = system::emit_entry(program, &qualification, main)?;
+    // The second world. It exists only where the first one actualizes
+    // something, so a build that hands nothing out — every default build among
+    // them — emits exactly the module it emitted before this path existed.
+    //
+    // The bootstrap selects between the two worlds by calling the entry
+    // function's clone, so a set without the entry in it would emit a call to
+    // a definition that is not there. The set is closed upwards through the
+    // call graph and so holds the entry whenever it holds anything; reading
+    // that off the set rather than trusting the argument is what makes the
+    // module well-formed by construction instead of by that reasoning.
+    let mut clones = if thunks.is_used() {
+        sequential_clone_set(program)
+    } else {
+        HashSet::new()
+    };
+    if !clones.contains(&program.main_ordinal()) {
+        clones.clear();
+    }
+    for (ordinal, function) in program.functions().iter().enumerate() {
+        if u32::try_from(ordinal).is_ok_and(|ordinal| clones.contains(&ordinal)) {
+            functions.push_str(
+                &FunctionEmitter::new(
+                    program,
+                    &qualification,
+                    function,
+                    target,
+                    ModuleState {
+                        claim_records: &mut claim_records,
+                        intrinsics: &mut intrinsics,
+                        parallel: &mut thunks,
+                        sequential_clones: Some(&clones),
+                    },
+                )
+                .emit()?,
+            );
+        }
+    }
+    let entry = system::emit_entry(program, &qualification, main, !clones.is_empty())?;
     let has_matches = program.functions().iter().any(|function| {
         function
             .blocks()
@@ -225,6 +268,9 @@ fn emit_llvm_for(
     if thunks.is_used() {
         text.push('\n');
         text.push_str(PARALLEL_RUNTIME_FALLBACK);
+        if !clones.is_empty() {
+            text.push_str(PARALLEL_POOL_QUERY_FALLBACK);
+        }
         text.push_str(thunks.definitions());
     }
     if !functions.is_empty() {
@@ -445,6 +491,32 @@ struct FunctionEmitter<'program, 'state> {
     overlap_join_sites: HashSet<IrValueId>,
     /// Hand-outs emitted in the current block and not yet joined.
     handed_out: Vec<HandedOut>,
+    /// The functions that have a sequential clone, when this emitter is
+    /// rendering one.
+    ///
+    /// `None` is the ordinary lowering, which is every function of a default
+    /// build and the overlapped half of a `--par` build. `Some` renders the
+    /// clone world: no group is actualized, and a call to a function that also
+    /// has a clone names the clone, so the world a call lands in is the world
+    /// it was made from and neither ever reaches the other.
+    sequential_clones: Option<&'state HashSet<u32>>,
+}
+
+/// What one function's emission shares with the rest of its module, and the
+/// one choice that says which of the module's two worlds it is emitting into.
+///
+/// These travel together because they are all module-scope: the trap records
+/// and the intrinsic declarations are collected across every function and
+/// rendered once at the top, the thunks likewise, and the clone set is the same
+/// set for every function of the module. Passing them as one named group keeps
+/// the emitter's own arguments — the program, the function, the target — the
+/// ones a reader has to think about.
+struct ModuleState<'state> {
+    claim_records: &'state mut Vec<Vec<u8>>,
+    intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
+    parallel: &'state mut ParallelThunks,
+    /// `None` emits the ordinary lowering; `Some` emits the sequential clone.
+    sequential_clones: Option<&'state HashSet<u32>>,
 }
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
@@ -453,10 +525,22 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         qualification: &'program Qualification,
         function: &'program IrFunction,
         target: TargetLayout,
-        claim_records: &'state mut Vec<Vec<u8>>,
-        intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
-        parallel: &'state mut ParallelThunks,
+        module: ModuleState<'state>,
     ) -> Self {
+        let ModuleState {
+            claim_records,
+            intrinsics,
+            parallel,
+            sequential_clones,
+        } = module;
+        // A clone actualizes nothing, so it carries no group at all: the
+        // suppression is here, at the one place the lowering reads the
+        // judgment, rather than at each of the sites that consume it.
+        let overlaps = if sequential_clones.is_some() {
+            &[][..]
+        } else {
+            function.overlaps()
+        };
         Self {
             program,
             qualification,
@@ -469,17 +553,16 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             entry_prelude: String::new(),
             temporary: 0,
             parallel,
-            overlap_handed_out: function
-                .overlaps()
+            overlap_handed_out: overlaps
                 .iter()
                 .flat_map(|overlap| overlap.handed_out().iter().copied())
                 .collect(),
-            overlap_join_sites: function
-                .overlaps()
+            overlap_join_sites: overlaps
                 .iter()
                 .filter_map(crate::IrOverlap::join_site)
                 .collect(),
             handed_out: Vec::new(),
+            sequential_clones,
         }
     }
 
@@ -487,13 +570,29 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         self.overlap_join_sites.contains(&value)
     }
 
+    /// The symbol one call names.
+    ///
+    /// In the clone world a call to a function that also has a clone names the
+    /// clone, which is what keeps a clone's whole dynamic extent inside the
+    /// world the entry selected. Everything else — including every callee with
+    /// no hand-out anywhere below it — is the one copy both worlds share.
+    pub(super) fn callee_symbol(&self, ordinal: u32, name: &str) -> String {
+        match self.sequential_clones {
+            Some(clones) if clones.contains(&ordinal) => sequential_clone_symbol(name),
+            _ => source_symbol(name),
+        }
+    }
+
     fn emit(mut self) -> Result<String, BackendFailure> {
         self.incoming = self.collect_incoming()?;
+        let symbol = match self.sequential_clones {
+            Some(_) => sequential_clone_symbol(self.function.name()),
+            None => source_symbol(self.function.name()),
+        };
         write!(
             self.output,
-            "define internal {} @{}(",
+            "define internal {} @{symbol}(",
             llvm_type(self.program, self.function.result())?,
-            source_symbol(self.function.name())
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         for (index, (value, ty)) in self.function.parameters().iter().enumerate() {

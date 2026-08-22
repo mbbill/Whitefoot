@@ -86,6 +86,20 @@ re-sequenced accordingly.
   the steal path, the sleep/wake bounds, Darwin core placement, and the deque
   bound by measurement; convert what is winnable and attribute the rest with a
   named mechanism. Carries one stretch item, the `fib(38)` opt-in tax.
+- **Dig 7 — the `--par` opt-in tax, at the boundary Dig 6 convicted.** Added by
+  lead direction after Dig 6 attributed `fib(38)`'s 2.96x pool-off tax to the
+  emitter: `emitter/parallel.rs` rejoins the granted and refused edges through a
+  phi at `%par.done`, so the callee's result flows into a phi rather than into
+  the caller's return, which takes the second recursion out of tail position and
+  forecloses LLVM's accumulator tail-recursion elimination. `-flto` recovers
+  only 5%, so it is a foreclosed compile-time transform and not a runtime cost.
+  Emit the sequential lowering as a second world and select between the two
+  **once per process**, from whether a pool was asked for — never per task,
+  which is the shape Dig 2 measured killing C6 (0.4905 -> 0.9254 s from two
+  contended read-modify-writes per task). Acceptance: the tax within 1.05x of
+  the sequential build, the pool-on grid not regressed against Dig 6's N=9
+  rotation, byte identity at every worker count, and the code size the second
+  world costs measured and recorded.
 
 ## Approval classes
 
@@ -576,6 +590,171 @@ reproduction, never worked around.)
   counter still counts and an unparsable or below-two setting still never
   starts the pool. Approval classes touched: no spec bytes, no conformance or
   compliance evidence, no new repository root entry.
+- Dig 7 (done; the opt-in tax is gone, the pool-on world is untouched by
+  construction, and one acceptance criterion is **not met for a reason that is
+  attributed rather than waved at** — see the placement finding below).
+  **What landed is two-version compilation with a once-per-process selection**,
+  and the two halves of that phrase are the whole design.
+  **The second world, and the set it covers.** A `--par` module now also emits,
+  for every function on a path from the entry to a handed-out call, a
+  *sequential clone* under `wf__par_seq_<name>` — the ordinary lowering with no
+  group actualized, whose calls to other cloned functions name their clones. The
+  set is a property of the call graph and the judgment, computed as the
+  functions reachable from the entry intersected with the functions from which a
+  hand-out is reachable; nothing consults a name, a signature, or a source
+  shape. On `fib` it is `{fib, main}` and not `hex_digit` or `spell_hex`; on
+  `par_layout` it is `{build, layout, main}` and not the other seven; on the
+  test fixture it is `{pair, quad, oct, fold, main}` and not `leaf`, `branch`,
+  `mix`, `low_byte`, or `spell` — a function with no hand-out below it has the
+  same body in both worlds, so both worlds call the one copy and cloning it
+  would be bytes with no reader. The clone is not merely similar to the
+  sequential lowering: after restoring its own symbols it is **byte-identical**
+  to the default compilation's body for the same function, checked by
+  `the_sequential_clone_is_the_sequential_lowering` over all five clones of the
+  fixture and reproduced by hand on `fib` and `par_layout`. The accumulator TRE
+  duly fires — the clone's arm64 is the loop Dig 6 recorded for the sequential
+  build, `sub x0, x19, #1; sub x19, x19, #2; bl _wf__par_seq_fib; add x20, x0,
+  x20; cmp x19, #2; b.hs`, one call per two levels with the accumulator in
+  `x20`.
+  **Where the selection lives, and why there.** In the process bootstrap, once,
+  before anything runs: `@main` calls `wf__par_pool_active`, branches, and
+  enters one world or the other. The clone set is closed upwards through the
+  call graph, so the entry function is in it whenever anything is, and one
+  branch there puts the choice outside every loop and every recursion in both
+  worlds — neither world ever calls the other, so nothing below that branch
+  tests anything again. A per-task signal is the thing Dig 2 measured killing
+  C6; this reads one word of the process's own environment, once. The
+  overlapped lowering is not touched at all: the par-world `wf_fib` is 35
+  instructions before this commit and 35 after, identical instruction for
+  instruction with only branch targets shifted, and the same holds for
+  `wf_layout` at 136.
+  **The runtime query starts nothing, and that is measured.**
+  `wf__par_pool_active` answers from `WF_WORKERS` through the same
+  `wf__par_requested_lanes` the pool start uses, so the pool is still created
+  lazily by the first claim, exactly where it was. The first version asked by
+  *starting* the pool, which moves creation ahead of whatever the program does
+  before its first hand-out; on `par_layout`, which builds its tree before it
+  folds, that cost **0.4663 s against 0.3981 s at `W=4` and 0.4404 s against
+  0.3724 s at `W=8`, 17% and 18%**, while the shipped version reads 0.3984 s and
+  0.3752 s — parity. **A withdrawn reading, recorded because it nearly became a
+  comment**: the first attempt to price the two versions used `WF_WORKERS=64`
+  and reported a 14%-25% eager-start cost from one pass; an interleaved pass
+  refuted it — at `W=64` a single binary's own spread is 47% to 308% and the
+  ordering of the three variants flips between passes — and the reading was
+  withdrawn before `par_layout` at `W=4/W=8` measured the same effect properly.
+  The four entry-point signatures and the weak fallback text are byte for byte
+  what they were; the query is a fifth, separate weak definition.
+  **`fib(38)`, the acceptance number. Interleaved min-of-11, every run
+  publishing `09eb377162b2565f`.** Sequential 0.0794 s. `--par` with
+  `WF_WORKERS` unset: **0.2349 s -> 0.0791 s, a 2.96x tax reduced to 1.00x** of
+  the sequential build beside it. Pool on: `W=4` 0.1198 -> 0.1232, `W=8` 0.0837
+  -> 0.0838, against within-cell spreads of 2.0%-6.3%.
+  **Recursion depth, and an unlooked-for 3x.** `min_stack.wf` bisected under a
+  1024 KB stack, first failing depth. Sequential: 65 132 ok / 65 223 fail,
+  unchanged by this commit. `--par` pool-off: **21 683 before, 65 132 after —
+  the identical bisection bracket as the sequential build, from 33% of its
+  ceiling to exact parity.** Dig 1 measured that remaining gap and argued no
+  hand-out lowering could close it, which was right: this closes it by not being
+  a hand-out lowering. Pool on the measurement is **stochastic and is reported
+  as such** — how deep the calling thread descends depends on when a thief takes
+  the deep side — reading 118 339 / 169 917 / 118 700 / 170 008 before and
+  169 014 / 159 982 / 99 097 / 106 957 after, overlapping ranges, both far above
+  the pool-off ceiling, which is the invariant Dig 2 recorded and it holds.
+  **The pool-on grid: no cell regressed, full protocol rotation, N=9, 144 cells,
+  1296 runs, all exit 0, every run byte-identical within and across both
+  languages** (`skew_d16_w192` publishing `420229e929506cdd`, the same bytes
+  Dig 3 recorded). Against Dig 6's recorded grid every one of the 36
+  `workers>=2` cells is at or better than its old time; the worst move is
+  1.00x, far inside the 1.20x band. Wins do not decrease: **13 cells Whitefoot
+  wins outright against rayon, 23 parity, and no cell where rayon is faster**,
+  against Dig 6's 12/24/0 — and the win count remains boundary-sensitive, so the
+  invariant to read is that rayon still wins nothing. The 12 default builds are
+  **text-identical** to Dig 6's, so the rotation's sequential column is the same
+  code.
+  **The opt-in column, and what it cost as well as what it bought.** `--par` at
+  one worker over its own sequential build now reads **1.00x-1.01x on all twelve
+  configurations**, where Dig 6 read 0.68x-1.02x. The sub-1.00x readings were
+  not a win being lost lightly: on the skew shape the outlined lowering was
+  **faster** than the sequential build, because the sequential build hits the
+  traversal-order pathology Dig 3 documented and could not locate. Measured
+  directly and interleaved, `skew_d16_w64` pool-off goes 0.5025 -> 0.6016 s
+  (sequential 0.5988) and `skew_d16_w192` 0.6006 -> 0.7465 s (sequential
+  0.7450): **the pool-off build gives up a 1.20x-1.24x accidental advantage and
+  becomes exactly the sequential build.** That is the design working as
+  specified in both directions — a `--par` build that was not activated now
+  performs as the default build, neither worse nor better — and it makes Dig 3's
+  unlocated sequential stall worth more, since it is no longer masked here.
+  **ACCEPTANCE ITEM NOT MET, with a reproduction: `par_layout` pool-off is
+  1.19x, and the cause is code placement, not the clone.** The brief required it
+  to stay at 1.00x. Measured, min-of-15, spreads 4%-6%: sequential 0.7264 s,
+  `--par` pool-off 0.8614 s. The attribution is complete and the clone is
+  exonerated. (i) The clone's machine code is *identical* to the sequential
+  build's — 136 instructions, differing only in the callee symbol of two `bl`
+  instructions. (ii) `/usr/bin/time -l` puts instructions retired equal to
+  within 0.04% (9 183.1M against 9 181.6M) while cycles rise 19% and **IPC falls
+  from 2.888 to 2.425** — the same work, stalling, which is precisely the
+  signature Dig 3 named as "a pure stall, not instruction selection... costing 0
+  instructions". (iii) The decisive control: **the identical LLVM module linked
+  with its two clang inputs in the other order reads 0.7162 s against 0.8599 s**,
+  a 1.20x swing with not one byte of the module changed. So the effect is whole-
+  binary placement; adding a second copy shifts every address in a `--par`
+  binary and re-rolls this workload's known sensitivity, which landed badly for
+  this one program and neutrally for the twelve oracle programs, `fib`, `q4`,
+  and `bt` — 15 of 16 measured programs read 1.00x-1.01x. **Reordering the clone
+  emission was tried and does fix this program (0.86 -> 0.72 s), and was
+  refused**: it is the same coin, the effect moves in both directions
+  (`skew_d16_w192` pool-off reads 0.79x of its sequential build under one
+  placement), and choosing an emission order on one program's timing is exactly
+  the corpus-keyed codegen Dig 3 declined. Handed on rather than tuned away, and
+  it is a gift to whoever takes Dig 3's stall: this is the first control that
+  isolates the effect to *placement alone* with the executed bytes held
+  identical.
+  **Code size, the price of the second world.** Default build: unchanged, and
+  not approximately — the emitted module is byte-identical and all 12 oracle
+  `_seq` binaries are text-identical to Dig 6's. `--par` build: the linked file
+  grows 0.52% (`fib`) to 0.61%, and the machine code that is the real cost grows
+  **7.0% (`fib`) to 14.2% (`skew_d16_w192`)** in `__text`, the runtime and the
+  executable format being most of the file.
+  **Anti-false-green evidence.** `par_layout` byte-identical at `WF_WORKERS`
+  unset/1/2/4/8/64/65/0/`abc`, all exit 0, with grants 0/0/815/2430/18928/22967/
+  22904/0/0 against the pre-commit build's 0/0/820/2444/19009/22519/22470/0/0 in
+  the same rig — the counter still counts and an unparsable or below-two setting
+  still never starts the pool. The gate case
+  `the_runtime_replaces_the_modules_weak_refusal` is untouched, and its margin
+  was re-measured **before and after in one pass, 1000 runs each at
+  `WF_WORKERS=4`**: both read min 7, first percentile 8, median 13, max 20, mean
+  13.4 and 13.2, so Dig 6's recorded min 7 / max 20 / mean 13.2 reproduces
+  exactly and does not move. (A first pass measured min 5 for the new build
+  alone, on a busier machine; the paired pass is the instrument that settles
+  it.) Written claims survive the second world, whose clones duplicate the
+  [DIAG-3] records: `d1_two_traps` emits the identical record and exit 134
+  sequentially, at `--par` pool-off, and at `--par` `W=4`. Probes, min-of-7, all
+  byte-identical: `q4` seq 0.4538 -> 0.4530, pool-off 0.4984 -> 0.4567, `W=4`
+  0.1942 -> 0.1933, `W=8` 0.2096 -> 0.2122; `bt` seq 0.1718 -> 0.1686, pool-off
+  0.1672 -> 0.1671, `W=8` 0.0435 -> 0.0435. `W=64` is reported for neither: it
+  is not resolvable on this machine.
+  **Tests: two added, one corrected, each with an injected-fault control.**
+  `the_sequential_clone_is_the_sequential_lowering` pins the exact clone set and
+  compares every clone body against the default compilation's; it fails when the
+  clone keeps its groups and when the set is widened to everything reachable.
+  `the_bootstrap_selects_one_world_once` pins one selection per process, the
+  weak answer, the four untouched signatures, and the invariant that neither
+  world calls the other; it fails when the bootstrap stops selecting.
+  `handing_a_call_out_adds_no_stack_slot` now counts over the overlapped world
+  alone, because counting both copies against one reference would compare a
+  doubled module with a single one, and its doc records that;
+  `handing_calls_out_keeps_the_sequential_recursion_depth` records honestly that
+  with the pool off it now measures the clone rather than the refused edge, why
+  adding a pool would not restore that reach on its fixture, and which case
+  holds the property instead. A fourth injected fault — a clone set missing the
+  entry — was caught by the runtime cases and *not* by the structural ones, so
+  the emitter now derives the bootstrap's branch from the set itself rather than
+  from a separate argument, and the module is well-formed by construction.
+  **Verification.** `make -C compiler check` exit 0 before and after; all 16
+  `backend::tests::parallel` cases green. `make check` still exits at the
+  conformance step on the pre-existing `PAR-1` coverage blocker Dig 3 recorded
+  (135/136); nothing here touches it. Approval classes touched: no spec bytes,
+  no conformance or compliance evidence, no new repository root entry.
 - **Dig 0 deviation, recorded not hidden.** Dig 0 was specified as one
   cohesive commit and initially landed as two with byte-identical subject
   lines: two sessions were writing through one worktree and one shared git

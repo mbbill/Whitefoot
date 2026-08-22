@@ -796,22 +796,29 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // Written claims and their mandatory diagnostic record.
             | "wf_trap" | "abort"
             // The lane protocol of a permitted overlap group [PAR-1
-            // candidate]. The module this census reads is the default
-            // compilation, which actualizes nothing and therefore names none
-            // of these. They are listed for the `--par` build of the same
-            // source, where all four are the module's own weak definitions:
-            // the claim refuses every lane and the rest return, so no frame
-            // is built and the handed-out call runs at its own fallback edge
-            // on this thread, reaching no host facility either. That is a
-            // statement about the emitted module, not about every link of it
-            // — with the parallel runtime linked, `wf__par_claim` reaches
+            // candidate], and the one question its bootstrap asks. The module
+            // this census reads is the default compilation, which actualizes
+            // nothing and therefore names none of these. They are listed for
+            // the `--par` build of the same source, where all five are the
+            // module's own weak definitions: the claim refuses every lane and
+            // the rest return, `wf__par_pool_active` answers that no pool
+            // started — so that build runs its own sequential clone, which
+            // reaches no host facility either, and the four protocol entries
+            // go unused. That is a statement about the emitted module, not
+            // about every link of it — with the parallel runtime linked,
+            // `wf__par_pool_active` and `wf__par_claim` both reach
             // `pthread_create`. This census inspects the module, and the pool
             // the runtime adds is trusted computing base below the language,
             // like malloc's own internals. This row is a permission the
             // target may take, not an operation of the first slice, so no
             // §9.1 count moves with it.
             | "wf__par_claim" | "wf__par_publish" | "wf__par_join" | "wf__par_release"
+            | "wf__par_pool_active"
         ) || target.starts_with("wf__par_thunk_")
+            // The sequential clone of a function on a path to a hand-out: the
+            // same body under a reserved symbol, so it calls exactly what its
+            // original calls and adds no row here either.
+            || target.starts_with("wf__par_seq_")
             || target.starts_with("llvm.")
             // The program's own declared functions, and the optimizer's cold
             // outlining of their failure arms, which is where the [SYS-7]

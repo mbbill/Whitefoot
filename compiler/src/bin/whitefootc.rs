@@ -148,20 +148,36 @@ struct Options {
     emit_llvm: bool,
     /// Actualize the permission judgment's eligible groups on worker lanes.
     ///
-    /// Off by default. Outlining a call is not free — it passes its arguments
-    /// through a memory frame and is reached through a function pointer, so it
-    /// cannot be inlined. What that costs before any worker runs depends
-    /// entirely on grain. On a heavy recursive fold it is now free: the
-    /// `par_layout` demo measures 0.7486 s default against 0.7481 s `--par`
-    /// with no worker requested, and across the twelve paired-layout
-    /// configurations `--par` at one worker is 1.005x-1.016x of the default
-    /// build on the balanced shapes. On a fold whose per-call body is a
-    /// handful of instructions the frame still dominates: `fib(38)` measures
-    /// 0.0839 s default against 0.2201 s `--par` with `WF_WORKERS` unset,
-    /// about 2.6x. The permission is never an obligation, so the default
-    /// compilation takes none of it and emits exactly the module it emitted
-    /// before this path existed. `WF_WORKERS` remains the runtime knob for a
-    /// program built this way.
+    /// Off by default, and free when it is on and no pool is asked for.
+    ///
+    /// Outlining a call is not free — it passes its arguments through a memory
+    /// frame, is reached through a function pointer, and rejoins its two edges
+    /// through a phi that can foreclose a transform the sequential build gets.
+    /// What that costs before any worker runs depends entirely on grain: on a
+    /// heavy recursive fold it was already nothing, while `fib(38)` measured
+    /// 0.0790 s default against 0.2337 s `--par` with `WF_WORKERS` unset, or
+    /// 2.96x, almost all of it one foreclosed tail-recursion transform. So a
+    /// `--par` build now carries the sequential lowering as well, byte for
+    /// byte, and its bootstrap selects between the two once, on whether a pool
+    /// was asked for. Re-measured the same way, `fib(38)` reads 0.0810 s with
+    /// `WF_WORKERS` unset against 0.0811 s for the default build, and the
+    /// twelve paired-layout programs read 1.00x-1.01x of their own default
+    /// builds at one worker, where before they ranged 0.68x-1.02x.
+    ///
+    /// Two prices, both real. Code size, paid only by a `--par` build: 7% to
+    /// 14% more machine code, which is 0.5% to 0.6% of the linked file. And a
+    /// second copy shifts every address in that binary, which re-rolls this
+    /// workload's known sensitivity to code placement — `par_layout.wf` reads
+    /// 1.19x of its default build with the pool off, at equal instruction
+    /// count and IPC 2.89 down to 2.43, and the *same* module linked with its
+    /// two inputs in the other order reads 1.00x. That is the unlocated stall
+    /// the batch 0075 skew investigation attributed and could not name; it is
+    /// not a cost of the second copy, and it moves in both directions.
+    ///
+    /// The permission is never an obligation, so the default compilation takes
+    /// none of it and emits exactly the module it emitted before this path
+    /// existed, with one world in it. `WF_WORKERS` remains the runtime knob
+    /// for a program built this way.
     par: bool,
     /// Print the non-normative permission ledger on stdout.
     par_ledger: bool,
