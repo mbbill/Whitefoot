@@ -8,7 +8,7 @@ fn find_byte['r](input: &'r buffer<u8>, needle: own u8) -> function_result: own 
     } else {
       let room = len(deref(input));
       let in_range = ilt(offset, room);
-      claim offset_in_range: in_range because "the scan stops at the buffer length";
+      claim offset_in_range: in_range because "premises: offset starts at zero, advances by one only after a failed comparison, and this loop branch establishes offset differs from the unchanged input length\nderivation: the loop progression cannot skip the equality boundary, so offset is strictly below room, which is the same unchanged buffer length\nconclusion: in_range is true on every iteration reaching the read\nchecker gap: ENT does not derive the strict loop range from initialization, unit progression, and the equality exit\nconsumers: the following input subscript requires this exact upper Range component";
       let byte = deref(input)[offset];
       let found = ieq(byte, needle);
       if found {
@@ -34,10 +34,14 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     let present = find_byte<'scan_region>(input: view, needle: 40_u8);
     match move present {
       None() => {
-        claim present_byte_was_absent: False() because "present byte was absent";
+        return exit_status(code: 1_u8);
       }
       Some(value: present_offset) => {
-        claim present_byte_offset: ieq(present_offset, 3_u64) because "present byte offset";
+        let expected_offset = ieq(present_offset, 3_u64);
+        if expected_offset {
+        } else {
+          return exit_status(code: 2_u8);
+        }
       }
     }
     let missing = find_byte<'scan_region>(input: view, needle: 99_u8);
@@ -45,7 +49,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
       None() => {
       }
       Some(value: missing_offset) => {
-        claim missing_byte_was_present: False() because "missing byte was present";
+        return exit_status(code: 3_u8);
       }
     }
   }

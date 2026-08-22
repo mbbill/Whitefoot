@@ -1,5 +1,14 @@
 command fn main() -> status: own ExitStatus traps {
-  doc "Body exhibits traps (a `claim`) and declares `traps` [EFF-2].";
-  claim x: ieq(2_i32, 2_i32) because "x";
-  return exit_status(code: 0_u8);
+  doc "Body exhibits traps through a genuine same-function range residual that admits exact arithmetic and declares `traps` [EFF-2].";
+  let seed = 7_i32;
+  let bounded = seed % 11_i32;
+  let bounded_above = ile(bounded, 10_i32);
+  claim exhibited_residual: bounded_above because "premises: bounded is seed remainder positive 11_i32 computed in this function\nderivation: signed remainder by 11_i32 is at most 10_i32\nconclusion: bounded_above is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following exact addition requires this upper IntegerDomain component; its lower component is checker-derived";
+  let result = bounded + 1_i32;
+  let expected = ieq(result, 8_i32);
+  if expected {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
 }

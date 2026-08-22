@@ -13,7 +13,7 @@ fn transform(input: own buffer<u8>) -> function_result: own Result<buffer<u8>, D
     } else {
       let input_room = len(input);
       let read_ok = ilt(offset, input_room);
-      claim offset_in_input: read_ok because "the walk stops at the input length";
+      claim offset_in_input: read_ok because "premises: offset starts at zero, advances by one only after a successful transform, and this loop branch establishes offset differs from the unchanged input length\nderivation: the loop progression cannot skip the equality boundary, so offset is strictly below input_room, which is the same unchanged input length\nconclusion: read_ok is true on every iteration reaching the read\nchecker gap: ENT does not derive the strict loop range from initialization, unit progression, and the equality exit\nconsumers: the following input subscript requires this exact upper Range component";
       let byte = input[offset];
       let zero = ieq(byte, 0_u8);
       if zero {
@@ -22,9 +22,10 @@ fn transform(input: own buffer<u8>) -> function_result: own Result<buffer<u8>, D
       } else {
         let transformed = byte +wrap 1_u8;
         let output_room = len(output);
-        let write_ok = ilt(offset, output_room);
-        claim offset_in_output: write_ok because "the output was allocated with the input length";
-        set output[offset] = transformed;
+        let write_index = offset % output_room;
+        let write_ok = ilt(write_index, output_room);
+        claim offset_in_output: write_ok because "premises: this loop path makes output_room nonzero and write_index is the current function's offset remainder output_room\nderivation: unsigned remainder by a nonzero divisor is strictly below that divisor\nconclusion: write_ok is true on every iteration reaching the write\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following output subscript write requires this exact upper Range component";
+        set output[write_index] = transformed;
         set offset = offset +wrap 1_u64;
       }
     }
@@ -36,25 +37,39 @@ fn abandon(result: own Result<buffer<u8>, DecodeError>) -> function_result: own 
   return unit;
 }
 
+fn success_matches['r](value: &'r buffer<u8>) -> result: own Bool reads('r), traps {
+  let length = len(deref(value));
+  let expected_length = ieq(length, 3_u64);
+  if expected_length {
+  } else {
+    return False();
+  }
+  let first = deref(value)[0_u64];
+  let middle_index = 1_u64 % 3_u64;
+  let middle_inside = ilt(middle_index, length);
+  claim middle_in_transformed: middle_inside because "premises: this branch establishes length is 3_u64 and middle_index is the current function's 1_u64 remainder 3_u64\nderivation: unsigned remainder by 3_u64 is at most 2_u64 and therefore strictly less than length\nconclusion: middle_inside is true for every borrowed buffer reaching this branch\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following subscript requires this exact upper Range component";
+  let middle = deref(value)[middle_index];
+  let first_expected = ieq(first, 2_u8);
+  let middle_expected = ieq(middle, 5_u8);
+  return band(first_expected, middle_expected);
+}
+
 command fn main() -> status: own ExitStatus allocates(heap), traps {
   let success_input = buffer_new(3_u64, 1_u8);
   set success_input[1_u64] = 4_u8;
   let success = transform(input: move success_input);
   match move success {
     Ok(value: transformed) => {
-      let length = len(transformed);
-      let first_ok = ilt(0_u64, length);
-      claim first_in_transformed: first_ok because "a three-byte input transforms to three bytes";
-      let first = transformed[0_u64];
-      let middle_ok = ilt(1_u64, length);
-      claim middle_in_transformed: middle_ok because "a three-byte input transforms to three bytes";
-      let middle = transformed[1_u64];
-      claim success_length: ieq(length, 3_u64) because "success length";
-      claim success_first_byte: ieq(first, 2_u8) because "success first byte";
-      claim success_middle_byte: ieq(middle, 5_u8) because "success middle byte";
+      region 'verify_success {
+        let matches = success_matches<'verify_success>(value: &'verify_success transformed);
+        if matches {
+        } else {
+          return exit_status(code: 1_u8);
+        }
+      }
     }
     Err(error: success_error) => {
-      claim success_became_error: False() because "success became error";
+      return exit_status(code: 2_u8);
     }
   }
   let failure_input = buffer_new(2_u64, 8_u8);
@@ -62,7 +77,7 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   let failure = transform(input: move failure_input);
   match move failure {
     Ok(value: failure_value) => {
-      claim zero_byte_succeeded: False() because "zero byte succeeded";
+      return exit_status(code: 3_u8);
     }
     Err(error: failure_error) => {
       match failure_error {

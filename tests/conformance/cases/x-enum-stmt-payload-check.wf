@@ -4,20 +4,25 @@ enum Tagged {
 }
 
 command fn main() -> status: own ExitStatus traps {
-  doc "Statement-position match over an owned payload enum: the moved scrutinee's payload is copied into the arm as a fresh local and gates a claim [TYPE-2, GRAM-10, OWN-13, OP-1].";
+  doc "Statement-position match over an owned payload enum: the moved scrutinee's payload is copied into the arm as a fresh local, normalized in that arm, and its genuine remainder bounds admit exact multiplication [TYPE-2, GRAM-10, OWN-13, OP-1].";
   let t = Num(n: 21_i32);
   match t {
     Num(n: v) => {
-      let v_below = ile(v, 1073741823_i32);
-      claim payload_below_half_max: v_below because "the constructed payload is 21";
-      let v_above = ige(v, -1073741824_i32);
-      claim payload_above_half_min: v_above because "the constructed payload is 21";
-      let d = v * 2_i32;
-      claim num_payload_drift: ieq(d, 42_i32) because "num payload drift";
+      let bounded = v % 1073741824_i32;
+      let bounded_below = ile(bounded, 1073741823_i32);
+      claim payload_below_half_max: bounded_below because "premises: bounded is the current arm's payload remainder 1073741824_i32\nderivation: signed remainder by positive 1073741824_i32 is at most 1073741823_i32\nconclusion: bounded_below is true for every Num payload\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following exact multiplication needs this upper IntegerDomain component";
+      let bounded_above = ige(bounded, -1073741823_i32);
+      claim payload_above_half_min: bounded_above because "premises: bounded is the current arm's payload remainder 1073741824_i32\nderivation: signed remainder by positive 1073741824_i32 is at least -1073741823_i32\nconclusion: bounded_above is true for every Num payload\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following exact multiplication needs this lower IntegerDomain component";
+      let d = bounded * 2_i32;
+      let expected = ieq(d, 42_i32);
+      if expected {
+        return exit_status(code: 0_u8);
+      } else {
+        return exit_status(code: 1_u8);
+      }
     }
     Nil() => {
-      claim nil: False() because "nil";
+      return exit_status(code: 2_u8);
     }
   }
-  return exit_status(code: 0_u8);
 }

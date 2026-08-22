@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
   doc "SYS-8: a file larger than the buffer needs repeated calls, each ReadBytes payload is the absolute endpoint of that call's changed prefix, and the source cursor advances by next - start. On the final short read exactly [start, next) may have changed while every other byte of the reused buffer is unchanged. Repetition and accumulation are ordinary source loops, not a read-exact primitive.";
   let page = buffer_new(8_u64, 0_u8);
   let total = 0_u64;
@@ -44,36 +44,24 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                     } else {
                       return exit_status(code: 12_u8);
                     }
-                    let last_first_room = len(page);
-                    let last_first_ok = ilt(0_u64, last_first_room);
-                    claim last_first_in_page: last_first_ok because "the page buffer holds eight bytes";
                     let last_first = page[0_u64];
                     let wrote_prefix = ieq(last_first, 103_u8);
                     if wrote_prefix {
                     } else {
                       return exit_status(code: 13_u8);
                     }
-                    let last_fourth_room = len(page);
-                    let last_fourth_ok = ilt(3_u64, last_fourth_room);
-                    claim last_fourth_in_page: last_fourth_ok because "the page buffer holds eight bytes";
                     let last_fourth = page[3_u64];
                     let wrote_end = ieq(last_fourth, 106_u8);
                     if wrote_end {
                     } else {
                       return exit_status(code: 14_u8);
                     }
-                    let carried_room = len(page);
-                    let carried_ok = ilt(4_u64, carried_room);
-                    claim carried_in_page: carried_ok because "the page buffer holds eight bytes";
                     let carried = page[4_u64];
                     let untouched = ieq(carried, 99_u8);
                     if untouched {
                     } else {
                       return exit_status(code: 15_u8);
                     }
-                    let carried_last_room = len(page);
-                    let carried_last_ok = ilt(7_u64, carried_last_room);
-                    claim carried_last_in_page: carried_last_ok because "the page buffer holds eight bytes";
                     let carried_last = page[7_u64];
                     let untouched_last = ieq(carried_last, 102_u8);
                     if untouched_last {

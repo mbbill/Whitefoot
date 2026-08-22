@@ -2,15 +2,22 @@ deny_claims fn strict_identity<T: Int>(value: own T) -> result: own T pure {
   return value;
 }
 
-fn ordinary_claiming_caller() -> result: own u64 traps {
-  let asserted = True();
-  claim caller_only: asserted because "this ordinary caller is outside the strict root's outgoing closure";
-  let small = strict_identity<u8>(value: 3_u8);
-  let accepted = strict_identity<u64>(value: 4_u64);
+fn ordinary_claiming_caller(seed: own u64) -> result: own u64 traps {
+  let values = array_new<u64, 8>(5_u64);
+  let bounded = seed % 8_u64;
+  let inside = ilt(bounded, 8_u64);
+  claim caller_only: inside because "premises: bounded is the current function's seed remainder 8_u64\nderivation: unsigned remainder by 8_u64 is at most 7_u64 and therefore strictly less than the array length\nconclusion: inside is true for every seed\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following array subscript needs this upper Range component; this ordinary caller remains outside the strict callee's outgoing closure";
+  let selected = values[bounded];
+  let accepted = strict_identity<u64>(value: selected);
   return accepted;
 }
 
 command fn main() -> status: own ExitStatus traps {
-  let value = ordinary_claiming_caller();
-  return exit_status(code: 0_u8);
+  let value = ordinary_claiming_caller(seed: 4_u64);
+  let expected = ieq(value, 5_u64);
+  if expected {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
 }
