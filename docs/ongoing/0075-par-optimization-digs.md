@@ -1195,25 +1195,61 @@ reproduction, never worked around.)
   lower-order work now shows through instead. The practical consequence is the
   one the owner's directive was about — the wall that made a 44 KB program cost
   46 s has moved a long way out, and it moves further the larger the function.
-  **The 5 s acceptance is not met, and the remainder is reducible, not
-  irreducible.** 9.054 s against a 5 s target. Being honest about why: the
-  two levers that remain were measured, not skipped. (1) The fixed point runs
-  8826 rounds over 3185 closures, so roughly the last round of each is a pure
-  verification pass that changes nothing. Skipping a `middle` whose row and
-  column have not changed since it was last processed removes it, and it *is*
-  sound — `candidate_better` orders on `(depth, structural tie)`, a strict
-  order, so a route that lost to the held proof also loses to any proof that
-  replaced it. The estimate is only ~28% though, because round 1 dirties
-  almost every row, so round 2 would still run in full. (2) The inner loop
-  reads `Option<(i128, DerivationId)>` cells, 48 bytes each, when the rejection
-  test needs only the bound; splitting the bound and proof into parallel arrays
-  would cut the hot stream to 16 bytes. That is worth measuring before it is
-  worth writing, and this executor stopped rather than guess — the phantom
-  regression recorded under Dig 8 is what guessing here costs. Neither is
-  attempted in this dig. A third option, semi-naive propagation from changed
-  cells, is **rejected rather than deferred**: it reorders `intern_for` and so
-  reassigns `DerivationId`s, and no dig should move emitted bytes on a hunch
-  about what is observable.
+  **Third increment, on lead direction: the two named levers, one refuted and
+  one landed.** Both were pursued to a number rather than argued about.
+  **Lever (b) — narrow the hot stream — is REFUTED.** The premise was that the
+  inner loop is bandwidth-bound on its 48-byte `Option<(i128, DerivationId)>`
+  cell when the rejection test reads only the 16-byte bound. Confirmed the cell
+  really is 48 bytes, then tried it two ways. Presence, bound and proof in three
+  parallel columns: **11.074 s, 18% *worse* than the 9.393 s it had to beat** —
+  three streams and three bounds-checks cost more than the traffic saved. One
+  `Vec<Option<i128>>` for the hot test with proofs alongside, 32 bytes and a
+  single stream: **9.411 s, indistinguishable from 9.393 s**. Cutting the hot
+  stream by a third moved nothing, so the loop is not bound on that traffic at
+  all and the premise was simply wrong. Both variants were byte-identical, so
+  this is a refutation on performance, not on correctness. Reverted; nothing of
+  lever (b) is in the tree. Worth recording separately: the sentinel encoding
+  that would have made this cheaper is **unavailable**, because `i128::MIN` and
+  `i128::MAX` are genuinely reachable — a negative cycle lowers a bound until
+  `saturating_add` pins it, which is exactly how this fixed point terminates on
+  one. A reserved bound value would have been a latent defect.
+  **Lever (a) — skip a `middle` whose row and column are unwritten — is
+  LANDED.** A term is marked when a bound is written into its row or column, and
+  a `middle` with neither mark is skipped. Sound because routes through an
+  unmarked `middle` carry the same two bounds *and the same two proofs*, so
+  `via` is unchanged while the target can only have fallen: a route refused for
+  being weaker is refused again; a route that tied and lost to the held proof
+  loses to whatever replaced it, since `candidate_better` orders on
+  `(depth, structural tie)` and that order is strict; and a route that won last
+  time now meets its own proof, which cannot beat itself. Marking on the
+  **write** rather than on a changed bound is what makes this hold — a candidate
+  that keeps the bound and only replaces the proof still marks.
+  **9.393 s → 8.417 s on a quiet machine (1.116x)**, byte-identical.
+  **Why it is 11% and not the ~28% predicted.** Instrumented: **30.5% of
+  middle-sweeps are skipped** (114 516 of 375 616), so the count estimate was
+  right and the *time* estimate was wrong. Sweep cost is heavily skewed, and the
+  skipped sweeps are the cheap tail — a `middle` is skipped precisely when
+  nothing wrote to it, which correlates with having few predecessors, and such a
+  sweep already bailed out of its `left` loop immediately. The expensive hubs
+  keep being written and so keep being swept. Round count is unchanged at 8826;
+  this makes rounds cheaper, it does not remove them.
+  **Measurement note, honest.** The final absolutes were taken while the machine
+  was loaded by corporate agents this session does not control (`CorpLinkExtension`
+  ~60%, `epsext` ~58%), which inflates every absolute. The load-independent
+  evidence is interleaved min-of-5, old and new binaries alternating so both meet
+  the same conditions: **10.620 s → 9.319 s, 1.140x** on the frontend, and
+  1.101x / 1.185x on the full compile. That agrees with the quiet-machine 1.116x,
+  so the gain is real and the absolutes are the noisy part.
+  **End state: the 5 s acceptance is NOT met, and this is the honest end.**
+  `wfgrep` full compile ~9.1 s against a 5 s target. Both named levers are now
+  resolved — (b) refuted by measurement, (a) landed for ~11% — so the stop rule
+  is satisfied and no third lever was invented. What remains is attributed and
+  still reducible, but not by anything cheap: the 1.444e9 triples are genuine
+  Floyd-Warshall work over 3185 closures, and the two ways to cut them further
+  are to stop recomputing closures from scratch as the flow walks (deep, in
+  `flow.rs`, not this dig's scope) or semi-naive propagation, which stays
+  **rejected**: it reorders `intern_for` and so reassigns `DerivationId`s, and
+  no dig should move emitted bytes on a hunch about what is observable.
   **Approval classes touched:** no spec bytes, no conformance or compliance
   evidence, no gate wiring, no new repository root entry.
 
