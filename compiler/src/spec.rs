@@ -65,7 +65,7 @@ pub const ACTIVE_KERNEL_SPEC_HASH: SpecHash = SpecHash::from_sha256([
 /// The one quantity in this module that no one transcribes. Comparing it with
 /// [`ACTIVE_KERNEL_SPEC_HASH`] compares two independently derived values, and
 /// comparing it with the digest recorded in `governance/APPROVALS.md` compares
-/// this implementation against the owner's `shasum -a 256`.
+/// this implementation against the independently measured `shasum -a 256`.
 #[must_use]
 pub fn computed_active_spec_hash() -> SpecHash {
     SpecHash::from_sha256(sha256::digest(ACTIVE_KERNEL_SPEC_BYTES))
@@ -79,9 +79,9 @@ mod tests {
     };
 
     /// The literal is the independently measured `shasum -a 256` value for the
-    /// installed bytes. The activation chain supplies the same protected
-    /// owner-approved value, so a wrong SHA-256 implementation cannot agree
-    /// only with itself.
+    /// installed bytes. The activation chain supplies the same independently
+    /// recorded value, so a wrong SHA-256 implementation cannot agree only
+    /// with itself.
     ///
     /// It is transcribed from `shasum`, never from what this code computes. The
     /// approval ledger independently names the same digest; changing this

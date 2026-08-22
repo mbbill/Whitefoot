@@ -4,7 +4,7 @@ Status: seeded, non-normative writer guidance since 2026-07-09. Only the active
 specification defines accepted source. The selected D6 direction is to test
 whether a closed architecture-level vocabulary can stay COMPLETE (every task
 modelable — a gap is a finding) and EFFICIENT (each pattern names the fact
-channel or machine property that makes it fast) before any owner ratification.
+channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
@@ -93,8 +93,8 @@ select a conformance binding. Therefore contract-driven env-struct behavior is
 not currently a writable Whitefoot pattern. For a closed behavior set, use an
 enum and exhaustive `match`; otherwise use explicitly named direct functions
 and thread the environment struct by value or borrow.
-Candidate direction: an eventual approved form would keep the environment
-explicit and monomorphize a checked member call to a direct call, but v0.17
+Candidate direction: a possible future specification form would keep the
+environment explicit and monomorphize a checked member call to a direct call, but v0.17
 does not claim that mechanism or its performance.
 Would replace: closures capturing mutable environments, trait objects, and
 function pointers.
@@ -109,9 +109,9 @@ acceptance and refutes an invalid or unavailable law at compile time. The
 stored base derivation is not optimizer authority, so v0.17 does not
 reassociate the sequential fold from that record.
 Potential speed: the archived channel-3 experiment measured 3.3x over the
-serial shape. Shipping that transform requires a separately approved fact
-family that independently rederives the law and names its exact authorized
-consequence; until then facts-off lowering is unchanged.
+serial shape. Shipping that transform requires an independently verified fact
+family that rederives the law and names its exact permitted consequence; until
+then facts-off lowering is unchanged.
 Replaces: hand-written multi-accumulator loops resting on unchecked human
 algebra (the signed-sat-add trap).
 

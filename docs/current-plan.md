@@ -1,9 +1,8 @@
 # Current Plan — claim-only runtime trap surface and static contracts
 
-Status: COMPLETE (owner exact-byte activation approval in conversation,
-2026-08-20; v0.33 installed and batch 0073 closed). This completed plan
-authorizes no further execution. The generic-container direction requires a
-separate owner-approved plan and a fresh batch 0074.
+Status: COMPLETE (v0.33 installed 2026-08-20). This is the technical record of
+that completed undertaking. It neither authorizes nor blocks work on a branch;
+the live branch and `main` rules are in `docs/WORKFLOW.md`.
 
 Derived from Direction Outline revision 43 and main at
 `e5b30704831c03a6555aa5a08d049558e468477e`. Supersedes the completed
@@ -56,13 +55,11 @@ compiler path to the tested and active v0.33 specification.
   record every genuine re-decision, including entry enforcement, writer trap
   surface, exact arithmetic spelling, and system declaration visibility, in
   MCTS-Mem.
-- **W6 — verification and owner packet.** Verify candidate grammar with the
-  compiler's own frontend, run accepted-set and artifact differentials, derive
-  effects and trap inventories independently, run focused hostile controls,
-  full compiler and repository gates, protected conformance, target/code-shape
-  checks, and an adversarial batch audit. Deliver the exact spec SHA-256,
-  complete diff and impact inventory, protected before/after audit, verifier
-  output, commits, and unresolved findings in one approval packet.
+- **W6 — verification evidence.** Verify candidate grammar with the compiler's
+  own frontend, run accepted-set and artifact differentials, derive effects and
+  trap inventories independently, run focused hostile controls, full compiler
+  and repository tests, conformance, and target/code-shape checks. Preserve the
+  exact specification identity and the evidence needed to explain the result.
 
 ## Boundaries and invariants
 
@@ -73,11 +70,9 @@ checker can prove them. A claim on an unconditionally external constrained
 subject cannot replace the real value branch required by the installed
 provenance policy. Facts-off acceptance remains correct.
 
-Specification and protected-compliance edits remained candidates until the
-exact owner approval recorded at closure. Candidate preparation, compiler
-implementation, ordinary tests, documentation, MCTS maintenance, verification,
-and audit proceeded under this plan; activation and merge were completed only
-by the separate final owner act.
+The v0.33 work used branch-candidate specification bytes until its recorded
+merge. That is historical execution detail, not a current approval or workflow
+requirement.
 
 ## Acceptance
 
@@ -93,13 +88,13 @@ by the separate final owner act.
   writer-reachable language trap sites, while checked/wrap/saturating values,
   recoverable host failures, cleanup, and TCB/resource behavior retain their
   specified results.
-- Installed grammar, compiler, real programs, protected conformance, repository
-  gates, MCTS lint, and adversarial audit are green; the final packet supported
-  the exact-byte owner decision without follow-up reconstruction.
+- Installed grammar, compiler, real programs, conformance, and repository tests
+  establish the completed v0.33 result.
 
 ## Exclusions
 
-No FFI, export adapter, function values, dynamic dispatch, general SMT or
-linear-arithmetic solver, frozen target ABI, catchable internal invariant
-failure, generalized proof certificate, unrelated wfgrep capacity/performance
-repair, generic-container work, or batch 0074 is authorized by this plan.
+The completed v0.33 undertaking did not include FFI, an export adapter,
+function values, dynamic dispatch, a general SMT or linear-arithmetic solver,
+a frozen target ABI, catchable internal invariant failure, a generalized proof
+certificate, unrelated wfgrep capacity/performance repair, or generic-container
+work. This historical scope statement does not restrict branch work.

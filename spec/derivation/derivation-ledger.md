@@ -5,7 +5,7 @@ on 2026-07-07. Versioned amendments below carry that audit through
 the active v0.33 authority at SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f` at
 `spec/kernel-spec.md`; released versioned files retain the superseded
-authorities. Requirement (owner + META-6): every rule is provably
+authorities. Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
 exist; this form is minimality-selected and awaits its experiment),
@@ -119,7 +119,7 @@ additions; v0.33 adds no numbered rule and changes no status).
 | META-2 | No context-dependent rules; defaulting rules do not exist | ✅ derived | Round-4 decided regularity law ('zero context-dependent rules') retained under W1 grounding per D2a; no-defaulting half independently re-derived from R4 — constitution-audit adopted item 5 records that any defaulting rule (e.g. instantiating round-3 'wrap fallback') would violate R4 + META-2 simultaneously — and from the D2-corrected owner ruling foreclosing elision/inference (uniform verbose-everywhere annotation stands). | No experiment isolates context-dependence harm to weak writers; the chain terminates in constitutional text (D2a retention) plus the recorded R4 analytics, so none is needed — but a W1 measurement would harden the asserted grounding. |
 | META-3 | No exception clauses; total rules or table data | ✅ derived | Round-4 decided regularity law ('empty exception lists') retained under W1 grounding per D2a; enacted in the v0.1 revision (exception clauses reduced to 0: STOR-2 default clause deleted, OP carve-outs became table data — META-5 declaration 2026-07-02); 'exceptions ±' is a priced META-5 delta dimension, making the invariant CI-enforceable. | Same asserted-under-W1 caveat as META-2: the weak-writer case for total-rules-over-exceptions is constitutional assertion plus round-4 law, not measurement. W2 spec-budget origin is weak post-D2a; the rule survives on the D2a retention clause. |
 | META-4 | Each normative fact stated once; cross-references elsewhere | ✅ derived | Round-4 decided regularity law ('each fact stated once') retained under W1 grounding per D2a (constitutional text); analytically required by the round-4 single machine-checked CI artifact and by META-5 delta accounting — unique definition sites make rule deltas countable and internal contradictions structurally impossible (a duplicated fact that drifts would create context-dependent meaning, violating META-2). | Thinnest of the four regularity invariants: its recorded selection ground is D2 spec-compactness, i.e. W2 — weak post-D2a; the D2a retention and CI-machine-checkability arguments carry it. A weak-model spec-comprehension experiment (stated-once vs checked-redundant spec) would put evidence under the asserted W1 grounding. CI observation: FORM-1 and META-1 both state the one-spelling fact with no cross-reference — an apparent META-4 self-violation worth fixing. Re-grounded post-D2a under W1/W3: duplicate normative statements create reconciliation burden for weak writers and a spec-drift channel (two statements can diverge silently); CI-machine-checkable. No longer W2-only. |
-| META-5 | Every spec change declares its delta and selection ground | ✅ derived | Round-4 decided law verbatim ('every design proposal must declare its spec delta') + constitution-audit adopted item 1: every delta also declares its selection ground (evidence-selected vs minimality-selected; spec-delta prices, evidence selects; minimality-selected forms enter the provisional register). This makes META-5 the enforcement mechanism for R3 + D2a reframing. | Current candidates put both declarations in the status header and follow the approval workflow in `WORKFLOW.md`; exact approvals are recorded in `governance/APPROVALS.md`. |
+| META-5 | Every spec change declares its delta and selection ground | ✅ derived | Round-4 decided law verbatim ('every design proposal must declare its spec delta') + constitution-audit adopted item 1: every delta also declares its selection ground (evidence-selected vs minimality-selected; spec-delta prices, evidence selects; minimality-selected forms enter the provisional register). This makes META-5 the enforcement mechanism for R3 + D2a reframing. | Work-branch candidates put both declarations in the status header without approval. If exact specification content merges, rule 4 of `WORKFLOW.md` records that content in `governance/APPROVALS.md`. |
 | FORM-7 | numeric-literal range/leading-zero/non-finite reject; inline sign | ✅ derived | T2 (no undefined value) + R4 (check-reject over silent corruption) + W3 (an out-of-range literal is the silent-corruption channel a cheat-proof language forbids) + FORM-1 (integer leading-zero reject). Inline sign discharges iK::MIN (op-table reconciliation). | Range/non-finite reject R4-forced (evidence-selected); float canonical decimal form DEFERRED to the FORM-1 reject-vs-canonicalize gate. |
 | TYPE-7 | deref typing; no implicit read-through-borrow | ✅ derived | TYPE-4 (no implicit conversions) + META-2 (no context-dependent meaning) + OWN-1 (copy-on-use for primitives) + OWN-5 (reads through shared borrow permitted). Fills a real typing gap: deref had no typing rule; the auto read-through-borrow alternative violates TYPE-4 + META-2. | evidence-selected. |
 | SET-1 | Target-first assignment to a writable copy-typed place, with post-RHS revalidation and one store | ✅ derived | Real loops, buffers and stateful programs require mutation (project P0 experiment path), while T1/T2 forbid an uninitialized ownership hole. OWN-1 + STOR-1/3 make copy-only replacement the complete safe first form: the old copy needs no disposition and the owner remains initialized. R4 + OP-4 require target checks to run before unrelated RHS effects, and OWN-5 requires the commit to be judged against the post-RHS loan state. DIAG-2 carries the checked target and single store so lowering cannot re-evaluate or weaken them. | Affine take/replace is SET-2 (v0.31): failure is EFF-4 no-commit abort, overlap is OWN-5's unchanged loan judgment, and old-value disposition is the mandatory fresh binding. Target-first rather than RHS-first is correctness-selected because an invalid target must not execute unrelated effects. |
@@ -287,8 +287,8 @@ The entries cover all changed rules. This row exposes new PROG-2 to META-6:
   runtime enumeration, and sampling are not v0.9 admission routes.
 - **Evidence and debt:** the exact initial slice is grounded by
   `experiments/checked-law-channel/RESULTS.md` and the protected discharged,
-  refuted-signedness, and undischarged FN-4 cases; the fact channel still
-  requires hostile review before shipment. Additional operations and complete
+  refuted-signedness, and undischarged FN-4 cases; the unshipped fact channel
+  still lacks hostile soundness tests. Additional operations and complete
   proof calculi are deferred specification additions. Most importantly,
   FN-4's local obligation relation does **not** define whole-conformance member
   completeness, extra/missing binding behavior, law-free conformance behavior,
@@ -1125,10 +1125,10 @@ Archive versus archive exits zero with `grammar-preserving candidate verified
 by the active compiler: 73 productions, 90 decisions, 97 terminal predicates`.
 Archive versus candidate exits one with only `candidate changes the lexer or
 source grammar of the baseline but does not match the compiler's embedded
-frontend contract`. This is an explicit approval-sequencing limitation, not a
+frontend contract`. This is a preimplementation verifier limitation, not a
 green frontend result. The candidate inventories above are a static one-token,
-one-optional-node audit; frontend and generated-table agreement must become
-green after approval and before activation.
+one-optional-node audit; frontend and generated-table agreement became green
+only with the installed active identity.
 
 The accepted byte set widens through the optional marked declaration and
 reserves `deny_claims` away from IDENT. Relative to the same function without

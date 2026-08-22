@@ -1,15 +1,16 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 45 (v0.33 activated; claim-only direction terminal)
+Revision: 46 (four-rule branch/main boundary; all-tests merge gate)
 
 The active language authority is v0.33 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`.
 Exact v0.8 through v0.32 are immutable flat archives. The execution plan at
 [`docs/current-plan.md`](current-plan.md) is COMPLETE (claim-only runtime trap
-surface and static contracts) and authorizes no further work. Project law is the
-[`Constitution`](constitution.md), and the operational process is
+surface and static contracts). It records that finished undertaking and neither
+authorizes nor blocks branch work. Project law is the
+[`Constitution`](constitution.md), and the complete branch/`main` boundary is
 [`WORKFLOW.md`](WORKFLOW.md).
 
 ## How to read this outline
@@ -21,12 +22,11 @@ This file is the owner-facing map of Whitefoot's live directions. It answers:
 - what evidence exists and whether it is current or historical; and
 - what is missing before a direction can advance.
 
-It does **not** choose the current execution order. Candidate projects determine
-when a direction matters. `current-plan.md` contains the only high-level
-execution proposal or approved plan; after owner selection, it may coordinate
-several workstreams and many planned, ongoing, and done tasks inside one
-approved undertaking. A project can expose a missing capability, but cannot by
-itself change the language or justify a project-shaped compiler special case.
+It does **not** grant or withhold permission to work. Candidate projects help
+decide when a direction matters, and `current-plan.md` can coordinate a
+high-level undertaking, but neither is an approval gate. A project can expose a
+missing capability, but cannot by itself change language semantics or justify a
+project-shaped compiler special case.
 
 Each item has one canonical home. Other directions link to its ID instead of
 copying its status. Tags are scanning aids. The `Current` sentence is this
@@ -43,8 +43,7 @@ fact:
 - `[speculative]` — an idea has not yet passed a bounded investigation; and
 - `[candidate]` or `[candidate: later]` — a validation-project class, with the
   latter carrying substantial prerequisites; and
-- `[next: ...]` or `[parked]` — the next evidence gate, not implementation
-  authorization.
+- `[next: ...]` or `[parked]` — the next evidence question or current priority.
 
 The file is updated in place. Increment `Revision` when an item's goal,
 evidence-backed current state, next gate, or candidate-project disposition
@@ -76,9 +75,9 @@ Which gap matters next is selected by a project, never by checklist length.
 
 - outline:CAND-1 records the completed flagship selection. outline:CAND-8 remains the selected
   flagship and pressure source. outline:PROOF-8's selected obligation-discharge
-  sequence is now complete, so outline:CAND-8 is unparked; choosing or executing its
-  next bounded slice still requires a new owner-approved plan. Mapped direction
-  items inform that plan, but none authorizes work by itself.
+  sequence is now complete, so outline:CAND-8 is unparked. Mapped direction
+  items describe the relevant capability and evidence relationships; they are
+  not branch-work permission gates.
 - outline:PROOF-9 is the owner-selected successor to terminal outline:PROOF-8.
   It takes the explicit-obligation model language-wide, makes `claim` the only
   writer-reachable runtime rejection point, and replaces the historical entry
@@ -123,8 +122,7 @@ creating writer trust or weakening the checked safety envelope.
   attribution. O11
   Boolean-goal composition stays an open question with four recorded findings
   and a de-pairing ruling (`governance/APPROVALS.md`); its trigger is a real
-  program whose discharge needs a composed Boolean goal, and it re-enters only
-  through the specification workflow.
+  program whose discharge needs a composed Boolean goal.
 - **Facts:** [compiler `requires` boundary](../compiler/README.md) ·
   [historical base64 result](../research/experiments/port-study/base64/RESULTS.md).
 
@@ -370,8 +368,7 @@ creating writer trust or weakening the checked safety envelope.
   specification is sole language authority; the v0.29 activation chain records
   its installed identity, and this outline records terminal `outline:PROOF-8` status.
 - **Missing / next:** none inside outline:PROOF-8. The direction is terminal and
-  `outline:CAND-8` is unparked. Selecting its next bounded slice requires a new
-  owner-approved high-level plan.
+  `outline:CAND-8` is unparked.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
@@ -448,15 +445,18 @@ facts-off evidence rather than trust in the compiler or writer.
 - **Goal:** compare compiler behavior with compiler-independent active-spec
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
-  `make conformance-run` compiles and runs every case through the real
-  compiler. The active v0.33 corpus reports `Pass=498 Skip=1 Fail=0` with
-  499 manifest/source identities and 135/135 rule coverage. This adapter is deliberately `#[ignore]` and
-  invoked separately; `make check` does not silently include it. The earlier
+  `make conformance-run` enumerates every declared case through the real
+  compiler: all 498 non-pending cases reach an actual verdict, run/trap cases
+  link and execute, and the one declared pending case is reported as Skip.
+  Root `make check` includes that focused target as part of the all-tests
+  boundary. The active v0.33 corpus reports `Pass=498 Skip=1 Fail=0` with 499
+  manifest/source identities and 135/135 rule coverage. The earlier
   v0.32 `460/1/0`, v0.28 `423/1/13`, v0.27 `409/1/13`, v0.26 `393/1/13`, and 242/123 runs are
   historical attribution evidence, not current status.
 - **Missing / next:** preserve the independent pass/fail/skip report. Any
-  expectation, source, status, collection, or invocation change remains
-  owner-protected and must report the exact before/after sets.
+  expectation, source, status, collection, or invocation change is conformance
+  evidence under merge rule 4 and therefore has its approved content recorded
+  if merged.
 - **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
 
 ### outline:VERIFY-3 — Facts-on/facts-off differential trust
@@ -495,7 +495,7 @@ and every slower-but-accepted divergence becomes a measured finding.
 ### outline:PERF-1 — Ordinary lowering and baseline code quality
 
 `[current: check-aware wide probe landed]` `[current: wfgrep beats pinned grep 1.07/1.35]`
-`[next: owner-selected next attributed cause or capability]`
+`[next: next attributed cause or capability]`
 
 - **Goal:** make ordinary checked source competitive before relying on a new
   proof channel, special writer trick, or project-specific lowering.
@@ -715,7 +715,8 @@ and failure semantics survive the runtime implementation.
   outer state; the old fixed-spawn answer has no authority.
 - **Missing / next:** the outline:PAR-1 project must exercise or deliberately reject
   that witness and measure allocation, scheduling, determinism, and absolute
-  wall time; any OWN-11 change needs hostile soundness review.
+  wall time; any OWN-11 change must carry hostile soundness tests in the
+  repository's all-tests boundary.
 - **Facts:** [dynamic fan-out placement](../research/archive-promotion-audit.md#3-dynamic-fan-out-retained-as-a-parallel-design-witness).
 
 ## Boundaries, targets, and deployment
@@ -866,14 +867,12 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
 
 ## Candidate validation projects
 
-Ripgrep is the owner-selected umbrella project. Selection fixes the external
-pressure source and the headline objective, **2x ripgrep**; it does not
-authorize a favorable subset, a monolithic rewrite, or any particular
-language, compiler, proof, runtime, or optimizer change. Completed plans
-through batch 0070 closed the bounded outline:PROOF-8 undertaking and the
-specified-gap/take-replace undertaking (v0.31 activated). No next outline:CAND-8
-slice is authorized until a new owner-approved high-level plan selects it and
-states how it returns to the unchanged product comparison.
+Ripgrep is the selected umbrella project. Selection fixes the external pressure
+source and the headline objective, **2x ripgrep**; it does not justify a
+favorable subset, a monolithic rewrite, or project-specific language, compiler,
+proof, runtime, or optimizer behavior. Completed work through batch 0070 closed
+the bounded outline:PROOF-8 undertaking and the specified-gap/take-replace
+undertaking (v0.31 activated).
 
 Owner framing (2026-08-05): the project's deliverable is what `wfgrep` proves
 about the language's functional and performance ceiling — resolved general
@@ -883,8 +882,8 @@ not the completion condition. Every specification amendment on this path is
 sourced from a need the frozen `wfgrep` slice actually exposed, then designed
 as a complete capability rather than a wfgrep-minimal one. A language gap
 exposed by a frozen slice is therefore a finding first; the owner-override
-loop in `WORKFLOW.md` is its expected path, and the gap-accumulation rule
-remains as the owner check-in, not as a presumption against the goal.
+history records why it mattered, but it creates no workflow gate or presumption
+against the goal.
 
 ### outline:CAND-1 — Select the first external validation project
 
@@ -898,16 +897,14 @@ remains as the owner check-in, not as a presumption against the goal.
   performance and immediate tool adoption the primary public test and selected
   pinned ripgrep 15.2.0.
 - **Missing / next:** none; `outline:CAND-8` owns the preserved flagship sequence and
-  is unparked now that outline:PROOF-8 is terminal. Its next slice requires a new
-  owner-approved plan.
+  is unparked now that outline:PROOF-8 is terminal.
 - **Facts:** [historical N1 shortlist](../research/notes/headline-artifact-shortlist.md) ·
   [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md) ·
   [current executable programs](../compiler/README.md).
 
 ### outline:CAND-8 — Ripgrep-compatible command-line search
 
-`[selected flagship]` `[current: credited compute-bound win]`
-`[unparked: new high-level plan required]`
+`[selected flagship]` `[current: credited compute-bound win]` `[unparked]`
 
 - **Goal:** build a Whitefoot-written command-line search tool credible for
   ripgrep's primary line-oriented recursive regex use and reach at least
@@ -940,8 +937,8 @@ remains as the owner check-in, not as a presumption against the goal.
   complete outline:PROOF-8 obligation-discharge sequence selected in the Current Plan
   was implemented and verified. That sequence is now terminal, so the exact
   credited checkpoint and full 2x objective are unparked rather than replaced.
-  The next bounded wfgrep slice must be selected by a new owner-approved plan;
-  this outline does not itself authorize it.
+  The next bounded wfgrep slice should preserve the credited checkpoint and
+  return to the unchanged full comparison.
 - **Directions tested:** outline:PERF-1 owns the baseline and attribution; outline:BOUND-1 and
   outline:VERIFY-1 enter with the real CLI/filesystem path; outline:PAR-1 through outline:PAR-4 enter
   only for measured parallel work and its proof/runtime contract; outline:FLOOR-1
@@ -954,16 +951,16 @@ remains as the owner check-in, not as a presumption against the goal.
   [pinned upstream release](https://github.com/BurntSushi/ripgrep/releases/tag/15.2.0) ·
   [pinned upstream repository](https://github.com/BurntSushi/ripgrep/tree/15.2.0).
 
-The other candidate classes remain comparison evidence or optional separately
-approved probes. They are not phases or prerequisites in front of ripgrep.
+The other candidate classes remain comparison evidence or optional probes.
+They are not phases or prerequisites in front of ripgrep.
 
 | Candidate | Primary outline items | Current disposition | Reopening condition |
 |---|---|---|---|
-| `outline:CAND-2` Compression / binary format | outline:PERF-1, outline:PROOF-1, outline:PROOF-7, outline:VERIFY-1, outline:BOUND-1 | LZ4 and the raw-DEFLATE/zlib evidence are parked; they remain useful binary-transform controls. | A separately approved binary-transform question has independent decision value, including as a bounded cross-check for a live general mechanism. |
-| `outline:CAND-3` Parser / text validation | outline:FLOOR-1, outline:FLOOR-3, outline:FLOOR-4, outline:VERIFY-1, outline:BOUND-1 | The yyjson strict-reader frame and current text witnesses are parked. | A separately approved parser or storage question has independent decision value that the current plan does not answer. |
-| `outline:CAND-5` Embedded / signal processing | outline:TARGET-2, outline:TARGET-3, outline:PROOF-5, outline:BOUND-1 | CMSIS-DSP remains parked; signal and image programs are internal evidence only. | A separately approved target/runtime question has an authentic Cortex boundary. |
-| `outline:CAND-6` Declared parallelism (`later`) | outline:PAR-1 through outline:PAR-4 | BLAKE3 remains a recognizable anchor; ripgrep now supplies the live project pressure, while automatic profitable discovery remains rejected. | A separately approved explicit-parallel question has independent value beyond the ripgrep plan. |
-| `outline:CAND-7` ML systems component (`later`) | outline:APP-1, outline:BOUND-2, outline:TARGET-1 | Llama inference remains a possible attention probe, not a ripgrep prerequisite. | A separately approved ML question has independent value and a bounded real-model boundary. |
+| `outline:CAND-2` Compression / binary format | outline:PERF-1, outline:PROOF-1, outline:PROOF-7, outline:VERIFY-1, outline:BOUND-1 | LZ4 and the raw-DEFLATE/zlib evidence are parked; they remain useful binary-transform controls. | Reopen when a binary-transform question has independent decision value, including as a bounded cross-check for a live general mechanism. |
+| `outline:CAND-3` Parser / text validation | outline:FLOOR-1, outline:FLOOR-3, outline:FLOOR-4, outline:VERIFY-1, outline:BOUND-1 | The yyjson strict-reader frame and current text witnesses are parked. | Reopen when a parser or storage question has independent decision value. |
+| `outline:CAND-5` Embedded / signal processing | outline:TARGET-2, outline:TARGET-3, outline:PROOF-5, outline:BOUND-1 | CMSIS-DSP remains parked; signal and image programs are internal evidence only. | Reopen for a target/runtime question with an authentic Cortex boundary. |
+| `outline:CAND-6` Declared parallelism (`later`) | outline:PAR-1 through outline:PAR-4 | BLAKE3 remains a recognizable anchor; ripgrep now supplies the live project pressure, while automatic profitable discovery remains rejected. | Reopen for an explicit-parallel question with independent value beyond the ripgrep plan. |
+| `outline:CAND-7` ML systems component (`later`) | outline:APP-1, outline:BOUND-2, outline:TARGET-1 | Llama inference remains a possible attention probe, not a ripgrep prerequisite. | Reopen for an ML question with independent value and a bounded real-model boundary. |
 
 ## Settled exclusions and history
 

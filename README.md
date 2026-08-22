@@ -22,12 +22,11 @@ not current goals.
 
 [docs/roadmap.md](docs/roadmap.md) is the living Direction Outline: the current
 map of capabilities, open directions, evidence, and candidate projects.
-[docs/current-plan.md](docs/current-plan.md) is the single rolling execution
-proposal or approved plan derived from that outline; only its `ACTIVE` status
-authorizes execution. [docs/WORKFLOW.md](docs/WORKFLOW.md)
-defines the project-driven process, parallel research lane, and guarded
-language-change branch. [AGENTS.md](AGENTS.md) records the priority rule and
-structure discipline future agents must apply.
+[docs/current-plan.md](docs/current-plan.md) records the latest high-level plan;
+neither document grants or withholds permission to work on a branch.
+[docs/WORKFLOW.md](docs/WORKFLOW.md) defines the complete four-rule branch and
+`main` boundary. [AGENTS.md](AGENTS.md) records the project's technical
+priorities and repository discipline.
 
 ## Current state
 
@@ -72,25 +71,28 @@ live next to what they check.
 | [spec/](spec/) | The language: one stable active kernel specification, immutable flat version archives, and the rule-derivation ledger under `spec/derivation/` |
 | [compiler/](compiler/README.md) | The safe-Rust compiler: frontend, resolver, first semantic/IR slice, LLVM backend, and `whitefootc` |
 | [tests/](tests/) | Test evidence: the active compiler-independent `conformance/` behavior corpus, plus preserved `codegen/` source cases awaiting production-compiler integration |
-| [governance/](governance/) | The protected approval ledger, specification-evolution evidence, and the tracked archive-protection hooks |
+| [governance/](governance/) | The historical approval ledger, merge-time spec/conformance approval records, specification-evolution evidence, and archive-protection hooks |
 | [research/](research/) | Active language and compiler experiments |
-| [mcts_mem/](mcts_mem/) | The live design tree, consulted and maintained only through the `mcts-mem-use` skill |
+| [mcts_mem/](mcts_mem/) | The live design tree and its recorded rejected alternatives |
 | [archive/](archive/) | Retired and superseded material, including the historical [decision log](archive/governance/decision-log.md), Python reference model, and democ-era codegen harness; inert — no active source, build, test, or tool depends on it. Its live disposition map is the [archive promotion audit](research/archive-promotion-audit.md) |
 
 ## Verification
 
 ```sh
-make install-hooks   # once: enable immutable-archive pre-commit protection
-make check           # compiler, conformance, and specification identity gate
+make install-hooks   # optional local early warning for immutable-archive edits
+make check           # every maintained test, including the full conformance adapter
 ```
 
-The gate is deliberately small: the compiler builds and passes its tests; the
-conformance corpus has valid active-spec identity, structure, rule coverage,
-and expectations; and the stable file plus immutable archives match the
-recorded digest chain. The native compile-run adapter is invoked separately by
-`make conformance-run`; its current result is Pass=432, Fail=1,
-Skip=13 and is not silently counted as part of `make check`. A green result
-states only what the selected gate exercises and is not a completeness claim.
+The canonical gate builds, formats, lints, documents, and tests the compiler;
+runs every maintained executable research test; checks conformance structure
+and rule coverage; obtains an actual compiler verdict for every non-pending
+conformance case and executes every run/trap case; and verifies the stable
+specification, immutable archives, and recorded digest chain. Self-described
+deferred prototype scripts that require a removed historical compiler are
+evidence artifacts, not maintained tests. `make conformance-run` remains
+available as the focused adapter target. A green result states only that the
+exact revision passed the current test inventory; it is not a completeness
+claim about that inventory.
 
 ## License
 

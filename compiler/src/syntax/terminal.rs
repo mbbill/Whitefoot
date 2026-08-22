@@ -572,7 +572,7 @@ impl TerminalSet {
     /// Visits matching predicates in stable storage order.
     ///
     /// This order is not the grammar-occurrence order used by syntax
-    /// diagnostics. Parser tables must retain their separately approved
+    /// diagnostics. Parser tables must retain their specification-defined
     /// source-grammar ranks.
     pub fn iter(self) -> impl Iterator<Item = TerminalPredicate> {
         ALL_TERMINAL_PREDICATES
