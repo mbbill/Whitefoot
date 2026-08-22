@@ -80,6 +80,12 @@ re-sequenced accordingly.
   against a derived loop index where two separate claims succeed (recorded
   in the round-3 debate with compiling probes). Fixing the fact-propagation
   gap widens the claim-free set — more eligibility, zero spec bytes.
+- **Dig 6 — the fine-grain and 8-worker residual.** Added by lead direction
+  after Dig 3 scored the grid against a measured ceiling: 14 cells sat below
+  92% of it, concentrated at 8 workers and the fine `w16` grain. Investigate
+  the steal path, the sleep/wake bounds, Darwin core placement, and the deque
+  bound by measurement; convert what is winnable and attribute the rest with a
+  named mechanism. Carries one stretch item, the `fib(38)` opt-in tax.
 
 ## Approval classes
 
@@ -418,6 +424,158 @@ reproduction, never worked around.)
   and owner approval at merge, so it is a lead decision and not an executor's
   to take. No branch should request merge presenting a green gate until this
   is either covered or explicitly dispositioned in the packet.
+- Dig 6 (done; **no runtime change landed, and the reason is that the residual
+  was scored against a yardstick that excludes the one cost this workload is
+  made of**). Chartered to convert the 14 residual parity cells — concentrated
+  at 8 workers and the fine `w16` grain — into wins, or to attribute them.
+  Everything below is measured at `5b933c3a`. Every binary was produced by
+  relinking the compiler's own emitted IR against a runtime source with the
+  exact line `whitefootc` uses (`whitefootc.rs:88-107` with `driver.rs:26`),
+  and the rig was checked by rebuilding all 24 oracle binaries that way and
+  comparing them against `bench/bin`: **24 of 24 byte-identical**, so a
+  variant differs from HEAD only in the runtime source.
+  **The residual reproduces, and its shape is a turnover at the fifth worker,
+  not diffuse overhead.** Ceilings re-derived by Dig 3's N-copies method
+  (min-of-5, `WF_WORKERS` unset): 1.97-2.01x at 2, 3.85-3.90x at 4, 4.90-5.32x
+  at 8. Against them the fine cells sit where Dig 3 left them
+  (`bal_d8_w16`/8 23.2%, `bal_d10_w16`/8 47.9%, `bal_d12_w16`/8 70.2%,
+  `bal_d8_w16`/4 62.6%), and minima repeat to 0.2% across three independent
+  passes. But on those cells **8 workers are slower than 4** (`bal_d8_w16`
+  0.2220 -> 0.4651 s, `bal_d10_w16` 0.1761 -> 0.2383 s, `skew_d16_w16` 0.1824
+  -> 0.2183 s), and a worker sweep puts the knee exactly at five:
+  `bal_d8_w16` reads 0.2218 s at 4 and 0.3456 s at 5, degrading monotonically
+  to 8, while coarse `bal_d12_w192` improves all the way (0.1627 -> 0.1220 s).
+  This machine is **4 performance and 6 efficiency cores**
+  (`hw.perflevel0/1.logicalcpu`, `PROTOCOL.md:5`), so the fifth worker is the
+  first that must live on an efficiency core. *(The Dig 3 entry and its commit
+  message say "four performance plus four efficiency cores"; it is 4P+6E. The
+  ceilings are unaffected — they were measured, not derived from the count.)*
+  **The turnover is not Whitefoot's.** At the same cells: rayon goes 0.3578 ->
+  0.9370 s from 4 to 8 workers, and its recorded N=9 `bal_d8_w16` t=8 is
+  1.125 s, **0.51x of its own sequential build**; `rayoncut`, which forks only
+  above depth 5 and so barely schedules, goes 0.2485 -> 0.6132 s. The recorded
+  rotation's published bytes match these binaries exactly, so it is evidence
+  about the same programs.
+  **What the oracle asks the machine for, and why the ceiling is the wrong
+  yardstick.** The tree is built once and `layout` is folded `reps` times, so
+  each repetition is one fork-join episode of 5.7 us (`bal_d8_w16`) to 854 us
+  (`bal_d12_w192`), each ending in a join. Holding the tree and the fork count
+  fixed and varying only per-node work — the same 255-node tree at w16, w64,
+  w192 — moves the 8-worker score 23.2% -> 45.6% -> 70.7%: **a fixed cost per
+  episode, not a cost per fork.** Dig 3's N-copies figure is a fair
+  *throughput* bound — timing all eight copies separately shows them finishing
+  together, 0.875-0.946 s each, so the cores are shared evenly and there is no
+  straggler artifact — but it is measured with **no synchronisation at all**,
+  and this workload synchronises tens of thousands of times. Measured directly
+  with a scheduler-free probe (P threads, a spinning sense-reversing barrier,
+  no deque, no stealing, one unit of work): **the barrier alone costs 0.340 us
+  at 4 threads and 0.839 us at 5 — a 2.5x jump — reaching 1.399 us at 8.**
+  On a 5.7 us episode that is a quarter of the episode spent meeting, before
+  any work is distributed.
+  **The achievable reference, and Whitefoot against it.** The honest target is
+  what the best available scheduler reaches on the same episode structure: a
+  flat parallel loop, dynamic self-scheduling off a shared counter with a chunk
+  sized so contention is negligible, no tree to discover. Measured at the
+  oracle's own episode lengths, speedup against its own one-thread time:
+  6 us — 3.06x at 4, 2.24x at 5, **1.61x at 8**; 23 us — 3.44 / 3.43 / 3.69;
+  90 us — 3.51 / 3.86 / 4.71; 850 us — 3.54 / 3.99 / 5.12. **The
+  fifth-worker collapse is fully present with no scheduler and disappears as
+  episodes lengthen, which is exactly Whitefoot's pattern.** Scored against
+  that reference instead of the throughput ceiling, the residual cells read
+  `bal_d8_w16`/8 **72%** (1.16x of 1.61x), `bal_d8_w16`/4 79%,
+  `bal_d10_w16`/8 **65%**, `bal_d12_w16`/8 **74%**, `bal_d12_w192`/8 **95%** —
+  a uniform 65-95% rather than a collapse to 23%. The remaining gap is
+  distribution: the reference is handed its work up front, while a tree fold
+  must discover the work by recursing and move it by stealing. Among
+  schedulers that must do that, Whitefoot is the fastest measured at every one
+  of these cells.
+  **Every candidate the brief named, each rejected by measurement.**
+  *Sleep/wake latency and spin bounds:* **falsified.** Counters compiled into
+  the runtime report **10 parks in a whole `bal_d8_w16`/8 run**, 0 join-waits,
+  and `/usr/bin/time -l` reports **0.00 s system time** with no voluntary
+  context switches at any cell. Nothing sleeps.
+  *Deque CAP at fine grain:* **falsified.** `refuse` is **0** in every measured
+  cell; outstanding offers are bounded by recursion depth and the deepest tree
+  here is 16, against a 64-slot bound.
+  *Steal-path volume:* correlates, does **not** cause. The idle scan is
+  enormous — 219.6M victim probes for 2.09M steals at `bal_d8_w16`/8, 98.0%
+  finding an empty deque — and probe *rate* orders the cells perfectly
+  (477 M/s at 23%, 308 at 48%, 274 at 56%, 140 at 70%, 32 at 92%). But a
+  backoff that cuts the rate makes it **monotonically worse**: caps of
+  0/1/4/16/64/256 read 0.5053/0.4843/0.4855/0.5078/0.5452/0.5747 s. Latency
+  to pick work up dominates the traffic that finding it costs, so the
+  correlation follows idleness rather than causing it.
+  *Victim-selection policy:* **rejected.** Trying the lane a steal last
+  succeeded against, before the random scan, loses at every 8-worker cell
+  (`bal_d8_w16` 0.4714 vs 0.4637 s, `bal_d10_w16` 0.2450 vs 0.2388 s) and adds
+  a systematic stall at 4 workers — one run in nine 2-3x long, across all six
+  configs.
+  *Draining more than one entry per steal:* **refused as unsound, not merely
+  slow.** A batch steal taking the k oldest entries under one CAS on `top`
+  **hangs** — empty output under a 20 s timeout, three for three, on a cell
+  that runs in 0.12 s. A single CAS on `top` cannot claim a *range* of a
+  Chase-Lev deque: the owner pops from `bottom`, the ends overlap whenever the
+  deque is short, which at this grain is nearly always, and an entry is claimed
+  twice. Making it sound means replacing the deque protocol.
+  *Worker QoS and core placement on Darwin:* **exonerated.** Requesting
+  `USER_INITIATED`, `USER_INTERACTIVE` or `UTILITY` for the pool's threads
+  moves nothing at `bal_d8_w16`/8: 0.4693 s default against 0.4697 / 0.4703 /
+  0.4737 s. No QoS class creates a fifth performance core.
+  *The grant counter's own global read-modify-write:* **priced and
+  exonerated.** It is the one shared-line atomic left on the steal path, and at
+  this grain the steal path is hot (2.09M increments in 0.465 s). Moving the
+  count onto the lane, isolation only, does not pay for itself: 0.4605 vs
+  0.4667 s at `bal_d8_w16`, and *worse* at the other two cells (0.2695 vs
+  0.2539, 0.2129 vs 0.1703). The counter stays exactly as it is.
+  **The extreme fine grain, `fib(38)`: the tax is a foreclosed compile-time
+  transform, and the boundary is the emitter.** Min-of-9, every run publishing
+  `09eb377162b2565f`: sequential 0.0790 s, `--par` pool-off 0.2337 s
+  (**2.96x**), `--par` at 8 workers 0.0777 s (0.97x of sequential). The cause
+  is in the emitted arm64. The **sequential** build turns the second recursion
+  into a **loop carrying an accumulator** — LLVM's accumulator tail-recursion
+  elimination fires because `fib(n-2)` sits in tail position after an
+  associative add — executing 63.2M calls at 1.25 ns each. The **refused
+  `--par` edge** makes two real calls with no loop: 126.5M calls at 1.85 ns.
+  **2.0x the calls and 1.48x the cost per call.** The claim call is not the
+  tax: relinking with `-flto` so the refusal can inline recovers only 5%
+  (0.2223 s). The transform is foreclosed because the emitter always rejoins
+  the granted and refused edges through a `phi` at `%par.done`
+  (`emitter/parallel.rs:227-257`), so the callee's result flows into a phi
+  instead of into the caller's return. **A measurement therefore convicts the
+  emitter, and per the brief this dig stops and reports rather than changing
+  it.** Recorded for whoever takes it: this is the one shape where Dig 2 stage
+  2's premise (a) *does* hold — the un-promoted path really does carry a tax
+  the sequential program does not — but the fix it implies need not be C6's
+  per-task demand signal, whose contended read-modify-writes Dig 2 measured at
+  0.4905 -> 0.9254 s. With the pool off `wf__par_claim` refuses for the whole
+  process, so selecting a sequential clone is a **once-per-process** decision,
+  not a per-task one, and does not touch the rule that killed C6.
+  **The grant counter's margin, quantified rather than asserted.** The gate
+  case `the_runtime_replaces_the_modules_weak_refusal` is untouched. Its
+  program, linked with the runtime and the same observer the test uses, run
+  **1000 times at `WF_WORKERS=4`: 0 runs with `grants == 0`, minimum observed
+  count 7, maximum 20, mean 13.2.** The assertion cleared its bound by 7 in the
+  worst run of a thousand, which is stronger than Dig 2's "0 failures in 1000"
+  and is the number the merge packet should carry.
+  **The grid at HEAD, full protocol rotation, N=9, 144 cells, 1296 runs, every
+  run byte-identical within and across both languages and all exit 0.** Against
+  rayon's absolute wall time: **12 cells Whitefoot wins outright, 24 parity,
+  and no cell where rayon is faster**; against `rayoncut`, 6 wins, 30 parity,
+  none lost. **The win count is boundary-sensitive and should not be read as a
+  trend**: 8 of the 36 cells sit within 0.02 of the 0.83 line, which is why
+  three passes of the same bytes have reported 14 (Dig 2), 6 (Dig 3) and 12
+  (here). The invariant holding across all three is that rayon wins nothing.
+  **Verification.** `make -C compiler check` exit 0 before and after. No
+  compiler byte changed, so no regression is possible; the probes are recorded
+  as the branch's state rather than a before/after. `q4.wf` min-of-7: seq
+  0.4565, W=1 0.5004, W=4 0.1946, W=8 0.2126, W=64 0.2517 s, against Dig 2's
+  recorded 0.2530 at W=64. `bt.wf`: seq 0.1736, W=1 0.1699, W=8 0.0436, W=64
+  0.0541 s, against Dig 2's 0.0440 and 0.0550. `par_layout` byte-identical at
+  `WF_WORKERS` unset/1/2/4/8/64/65/0/`abc`, all exit 0, grants
+  0/0/258211/625471/2072396/2385458/2400054/0/0, so the anti-false-green
+  counter still counts and an unparsable or below-two setting still never
+  starts the pool. Approval classes touched: no spec bytes, no conformance or
+  compliance evidence, no new repository root entry.
 - **Dig 0 deviation, recorded not hidden.** Dig 0 was specified as one
   cohesive commit and initially landed as two with byte-identical subject
   lines: two sessions were writing through one worktree and one shared git
