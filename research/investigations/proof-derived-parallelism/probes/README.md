@@ -1,11 +1,13 @@
 # Deciding probes for proof-derived parallelism
 
-Two groups live here. The first nine sources decided the design questions behind
-`../DESIGN.md` during the three research rounds; the nine in the second group
-decided the findings in `../gap-hunt-findings.md`. Both were written and run
-outside the repository, so both were dying artifacts; they are landed here
-because the design's and the gap hunt's load-bearing claims cite them, and a
-claim whose evidence has evaporated is an assertion. They are **archived
+Three groups live here. The first nine sources decided the design questions
+behind `../DESIGN.md` during the three research rounds; the nine in the second
+group decided the findings in `../gap-hunt-findings.md`; the four in the third
+carry the band/derived-index discharge asymmetry that Dig 9 of batch 0075
+closed. All were written and run outside the repository, so all were dying
+artifacts; they are landed here
+because the design's, the gap hunt's, and that dig's load-bearing claims cite
+them, and a claim whose evidence has evaporated is an assertion. They are **archived
 evidence, not a gated corpus**: no build, test, or tool reads this directory,
 they are not held to the canonical-form or must-compile rules that
 `tests/programs/` enforces, and each is deleted when the decision or finding it
@@ -163,3 +165,30 @@ rather than on any one entry point's spelling, which has changed since — no
 undefined `pthread` symbol in the binary, and a byte size identical to the
 sequential build. It is also the control for F4c — an empty ledger exiting 0 is
 indistinguishable from a flag that silently did nothing.
+
+## The band/derived-index probes
+
+**The asymmetry itself.** `d2_band2_loop.wf` is the file the Dig 9 queue entry
+cited, and at the time it was cited it did not compile: a `band` of two bounds
+is claimed, `i` discharges, and `j = i +wrap 1` comes back
+`UndischargedBoundsObligation { residual: "j < len(deref(input))" }` — while
+the same two bounds claimed *separately* both discharge. `d2_branch_loop.wf`
+is the same body with the claim replaced by an `if both { .. } else { break }`
+guard, which failed identically, and which matters more than the claim form
+because a function with no claim site is the only kind a caller's pair can
+actualize. Both compile now. Keep them: they are the reproduction, and the
+loop they are written in turned out **not** to be the trigger — the fault is
+over let-bound derived terms and reproduces in straight-line code — so a
+reader who only has the fix will not otherwise see the shape that was
+reported.
+
+**What the fix buys, in two files.** `d2_band_window_guard.wf` and
+`d2_band_window_claim.wf` are the same two adjacent reads with the same
+output, differing only in how the pair of bounds is admitted. The guarded
+version holds no claim site and the ledger reports
+`pair(window, window)  eligible` with a two-member chain; the claimed version
+reports `pair(window, window)  not-actualizable: 1 claim site via window`.
+Before Dig 9 **neither compiled**, which is the point worth keeping: the
+eligible shape was not merely unrewarded, it was unwritable, and closing a
+checker gap made it reachable without a spec byte or a source edit. They are
+deleted when the band/derived-index finding is superseded.

@@ -3850,10 +3850,17 @@ impl Analyzer<'_, '_> {
         &mut self,
         parent: GoalId,
         sign: GoalSign,
+        state: &FactState,
     ) -> Vec<(GoalId, GoalSign)> {
         let expression = self.goals.expression(parent).clone();
         let mut members = Vec::new();
-        self.collect_decomposition_members(&expression, sign, &mut members);
+        self.collect_decomposition_members(
+            &expression,
+            sign,
+            state,
+            &mut members,
+            &mut HashSet::new(),
+        );
         members
     }
 
@@ -3861,8 +3868,49 @@ impl Analyzer<'_, '_> {
         &mut self,
         expression: &GoalExpression,
         sign: GoalSign,
+        state: &FactState,
         members: &mut Vec<(GoalId, GoalSign)>,
+        following: &mut HashSet<BindingId>,
     ) {
+        // An unprojected `own Bool` leaf carrying a still-valid ordinary-let
+        // origin stands for that origin under either sign, so the Boolean root
+        // is read through the leaf and the leaf contributes no member of its
+        // own. Reading the origin here is what keeps a conjunct in the operand
+        // form its own binding recorded: the members of a `band` written over
+        // comparison bindings are those bindings, whose relations
+        // [`Self::establish_boolean_decomposition`] then takes from
+        // `state.origins` — the same source the equivalent pair of single-bound
+        // claims discharges through.
+        if let GoalExpression::Datum(GoalDatum::Place {
+            root,
+            projections,
+            ty: CheckedType::Bool,
+        }) = expression
+            && projections.is_empty()
+        {
+            let Some(origin) = state.goal_origins.get(root).copied() else {
+                return;
+            };
+            // Only a Boolean root has anything to decompose, and the ordinary
+            // guard binding holds a comparison, so this settles the common case
+            // without retaining the origin.
+            if !matches!(
+                self.goals.expression(origin),
+                GoalExpression::Operation {
+                    row: GoalOperation::Boolean(_),
+                    ..
+                }
+            ) {
+                return;
+            }
+            if !following.insert(*root) {
+                return;
+            }
+            let origin = self.goals.expression(origin).clone();
+            self.collect_decomposition_members(&origin, sign, state, members, following);
+            following.remove(root);
+            return;
+        }
         let GoalExpression::Operation {
             row: GoalOperation::Boolean(operation),
             arguments,
@@ -3883,7 +3931,7 @@ impl Analyzer<'_, '_> {
             if !members.contains(&(member, child_sign)) {
                 members.push((member, child_sign));
             }
-            self.collect_decomposition_members(argument, child_sign, members);
+            self.collect_decomposition_members(argument, child_sign, state, members, following);
         }
     }
 
@@ -4220,9 +4268,13 @@ impl Analyzer<'_, '_> {
     /// Each member enters as its own concrete opaque goal under [FN-8]
     /// structural identity, and a member whose complete root is one admitted
     /// comparison additionally delivers its exact L0 projection under `+` and
-    /// that projection's exact negation under `-`. Decomposition never runs
-    /// upward: this establishes children of an established parent only, so no
-    /// child ever establishes or derives a parent.
+    /// that projection's exact negation under `-`. A member that is a bare
+    /// comparison binding carries no projection of its own and delivers the
+    /// relation that binding recorded instead, so a conjunct proves exactly
+    /// what the same comparison proves when a single-bound claim names it.
+    /// Decomposition never runs upward: this establishes children of an
+    /// established parent only, so no child ever establishes or derives a
+    /// parent.
     pub(super) fn establish_boolean_decomposition(
         &mut self,
         parent: GoalId,
@@ -4230,9 +4282,14 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
         event: FlowEventId,
     ) {
-        for (member, member_sign) in self.signed_boolean_decomposition(parent, sign) {
+        for (member, member_sign) in self.signed_boolean_decomposition(parent, sign, state) {
             state.establish_goal(member, member_sign, &mut self.derivations, event);
-            let Some(relation) = self.goals.projection(member).cloned() else {
+            let Some(relation) = self
+                .goals
+                .projection(member)
+                .cloned()
+                .or_else(|| self.member_binding_relation(member, state))
+            else {
                 continue;
             };
             let relation = match member_sign {
@@ -4241,6 +4298,26 @@ impl Analyzer<'_, '_> {
             };
             state.establish(&relation, &mut self.derivations, event);
         }
+    }
+
+    /// The comparison one decomposition member's own binding recorded, for a
+    /// member that is an unprojected `own Bool` place. This is `state.origins`,
+    /// the [ENT-3] comparison-origin map [`Self::scrutinee_relation`] reads, so
+    /// a conjunct and a single-bound claim on the same binding deliver the same
+    /// relation over the same terms.
+    fn member_binding_relation(&self, member: GoalId, state: &FactState) -> Option<Relation> {
+        let GoalExpression::Datum(GoalDatum::Place {
+            root,
+            projections,
+            ty: CheckedType::Bool,
+        }) = self.goals.expression(member)
+        else {
+            return None;
+        };
+        projections
+            .is_empty()
+            .then(|| state.origins.get(root).cloned())
+            .flatten()
     }
 
     /// Records the O11 decomposition inventory entry for one signed-goal
@@ -4252,6 +4329,7 @@ impl Analyzer<'_, '_> {
         parent: GoalId,
         sign: GoalSign,
         view: ProofView,
+        state: &FactState,
     ) {
         if view != ProofView::Complete {
             return;
@@ -4263,7 +4341,7 @@ impl Analyzer<'_, '_> {
         {
             return;
         }
-        let members = self.signed_boolean_decomposition(parent, sign);
+        let members = self.signed_boolean_decomposition(parent, sign, state);
         if members.is_empty() {
             return;
         }
@@ -7679,7 +7757,7 @@ impl Analyzer<'_, '_> {
                     state,
                     event.expect("goal arm has an S1 proof event"),
                 );
-                self.record_boolean_decomposition(*goal, GoalSign::Positive, view);
+                self.record_boolean_decomposition(*goal, GoalSign::Positive, view, state);
             } else if arm.tag == 0 {
                 state.establish_goal(
                     *goal,
@@ -7694,7 +7772,7 @@ impl Analyzer<'_, '_> {
                     state,
                     event.expect("goal arm has an S1 proof event"),
                 );
-                self.record_boolean_decomposition(*goal, GoalSign::Negative, view);
+                self.record_boolean_decomposition(*goal, GoalSign::Negative, view, state);
             }
         }
         if let Some((tag, outcome)) = &facts.outcome

@@ -1,0 +1,31 @@
+fn two_reads['i](input: &'i buffer<u8>) -> result: own u8 reads('i), traps {
+  let acc = 0_u8;
+  let i = 0_u64;
+  loop @scan {
+    let done = ieq(i, 4_u64);
+    if done {
+      break @scan;
+    }
+    let j = i +wrap 1_u64;
+    let room = len(deref(input));
+    let a_ok = ilt(i, room);
+    let b_ok = ilt(j, room);
+    let both = band(a_ok, b_ok);
+    claim reads_in_range: both because "both offsets stay inside the buffer";
+    let x = deref(input)[i];
+    let y = deref(input)[j];
+    set acc = acc +wrap x;
+    set acc = acc +wrap y;
+    set i = i +wrap 1_u64;
+  }
+  return acc;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap), traps {
+  let input = buffer_new(8_u64, 1_u8);
+  region 'i {
+    let v = two_reads<'i>(input: &'i input);
+    claim sum: ieq(v, 8_u8) because "sum";
+  }
+  return exit_status(code: 0_u8);
+}

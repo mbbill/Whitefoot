@@ -75,11 +75,19 @@ re-sequenced accordingly.
   IR/assembly, identify the code-layout mechanism, and decide whether an
   independent sequential codegen improvement falls out. Understanding
   first; a fix only if it is cheap and general.
-- **Dig 5 — checker: the band/derived-index discharge asymmetry.** A `band`
-  claim proving two bounds discharges in straight-line code and fails
+- **Dig 9 — checker: the band/derived-index discharge asymmetry.** Queued as
+  Dig 5 and **renumbered to 9 on dispatch** by lead decision, 2026-08-22, so
+  the number could not collide with a concurrently dispatched session; the
+  scope is unchanged and this entry supersedes the Dig 5 label in place. A
+  `band` claim proving two bounds discharges in straight-line code and fails
   against a derived loop index where two separate claims succeed (recorded
   in the round-3 debate with compiling probes). Fixing the fact-propagation
   gap widens the claim-free set — more eligibility, zero spec bytes.
+  **Corrected on execution:** the loop is not the trigger. The same failure
+  reproduces in straight-line code as soon as the index is a let-bound
+  derived value, and swapping the conjunct order does not move which
+  conjunct is lost — so the asymmetry is over derived terms, not over
+  loops or operand position.
 - **Dig 6 — the fine-grain and 8-worker residual.** Added by lead direction
   after Dig 3 scored the grid against a measured ceiling: 14 cells sat below
   92% of it, concentrated at 8 workers and the fine `w16` grain. Investigate
@@ -1252,6 +1260,107 @@ reproduction, never worked around.)
   no dig should move emitted bytes on a hunch about what is observable.
   **Approval classes touched:** no spec bytes, no conformance or compliance
   evidence, no gate wiring, no new repository root entry.
+
+- Dig 9 (done; the gap is closed at its named cause and the checker is
+  strictly smarter, never more permissive): **the loss is in expansion, not
+  in the band.** Attribution first, because the queued description was wrong
+  in a way that would have sent the fix to the wrong place. `band(a_ok,
+  b_ok)` over two plain parameters discharges both bounds; make either
+  operand a let-bound derived value and that operand's bound is lost while
+  the other still discharges. Swapping the conjunct order does not move
+  which one is lost, and the loop is not required — the minimal
+  reproduction is straight-line. So the trigger is a **derived term**, and
+  the mechanism is this: a claim or guard establishes two goals, the named
+  binding and its expansion (`goal_origin_set`, `flow.rs:3519`), and only
+  the expanded one had anything to decompose, because the named one is a
+  bare `Datum(Place)` and `collect_decomposition_members` only walked
+  Boolean *operations*. `expand_goal_expression` (`flow.rs:3425`) replaces
+  every still-valid ordinary-let leaf by its origin, so the conjunct that
+  read `next < room` became `at +wrap 1 < len(deref(input))` — and
+  `goal_operand` returns `None` for an arithmetic root (`flow.rs:3897`), so
+  that conjunct's projection was `None` and
+  `establish_boolean_decomposition` skipped it with `continue`. Expansion
+  is lossy: it can turn a projectable comparison into an unprojectable one.
+  The equivalent single-bound claim never expands — `scrutinee_relation`
+  reads `state.origins`, which holds the relation over the binding's own
+  place term — which is exactly why the pair discharged where the
+  conjunction did not.
+  **The fix follows the same route the pair takes.** Decomposition now reads
+  through an unprojected `own Bool` leaf that carries a still-valid
+  ordinary-let Boolean origin (`collect_decomposition_members`,
+  `flow.rs:3590`), so the members of a `band` written over comparison
+  bindings are those bindings; a member that is a bare comparison binding
+  takes its relation from `state.origins` (`member_binding_relation`,
+  `flow.rs:3705`). That is the same map, the same terms, and the same
+  validity discipline the single-bound claim already
+  depends on — `origins` and `goal_origins` are invalidated together at every
+  kill, scope exit and join, and `origins` additionally dies when either of
+  the relation's terms dies. No claim shape is special-cased and no source
+  pattern is matched: the rule is over the goal's grammar.
+  **Not more permissive.** The negative twins all still reject, at HEAD and
+  after: a third index the band never bounded (`c < len(deref(input))`
+  survives), `bor` instead of `band` (a disjunction bounds neither side), the
+  **else** edge of `if both` (`-band` is genuinely disjunctive), and
+  `bnot(band(..))`. The runtime check is untouched and is what makes the
+  widening sound: a band claim that is false at run time still traps —
+  `{"rule_id":"CLM-1",...}`, exit 134 — so the admitted subscript never
+  executes out of range. Three tests pin this in
+  `semantic/tests/boolean_composition.rs`: the conjoined and separate forms
+  are asserted to discharge the *same* two obligations, the guard form is
+  asserted to admit the true edge and **not** the false edge, and the
+  uncovered-index and disjunction cases are asserted to keep their
+  obligations undischarged.
+  **Eligibility delta, measured over 697 sources** (`tests/programs`,
+  `tests/conformance/cases`, `tests/codegen`, and all of `research/`),
+  before-binary against after-binary: **4 verdicts changed, all
+  REJECT -> ACCEPT, all of them this dig's own probes**; 276 programs
+  accepted by both produce **byte-identical LLVM IR**, and 417 rejected by
+  both keep the identical rule. Nothing moved in the DENY direction. The
+  ledger changed on exactly two files, both newly compilable:
+  `d2_band_window_guard.wf` gains `pair(window, window) eligible` plus a
+  2-member chain, and its twin `d2_band_window_claim.wf` gains
+  `pair(window, window) not-actualizable: 1 claim site via window`. That
+  pair is the campaign point in two files: the same two adjacent reads, the
+  same output, and only the claim-free branch-guarded form is eligible —
+  and before this fix **neither form compiled at all**, so a writer who
+  wanted the eligible shape had no way to write it.
+  **Cost: none measurable.** This is a compile-time change and the emitted
+  bytes are identical, so only analysis time could move. On the wfgrep
+  frontend, 12 interleaved before/after pairs of user CPU give a **mean
+  paired delta of -0.086 s** (min 9.71 s before / 9.80 s after, median
+  11.55 / 11.47) against a per-round spread of +/-3 s — below this machine's
+  noise floor. `dir_walk`, which has no Boolean composition at all, reads
+  +1.1% at both min and median, which is the cost of the added
+  `goal_origins` lookup on ordinary guards; the lookup returns without
+  retaining the origin unless the origin is a Boolean root, which is what
+  keeps it at that size. **Machine not quiet:** another session held a core
+  at ~99% throughout, so every absolute here is inflated and only the
+  interleaved paired deltas are load-independent.
+  **Oracle rotation.** All 12 `bench/wf` sources emit **byte-identical IR**
+  before and after, so the rotation compares the same program with itself.
+  Run anyway on `skew_d16_w192`, min of 5 interleaved: seq 1.83 -> 1.61,
+  par1 1.81 -> 1.67, par2 0.95 -> 0.86, par4 0.41 -> 0.43, par8 0.32 -> 0.35
+  (ratios 0.88-1.09). That scatter **is** the noise floor rather than a
+  result, since the binaries differ only by the linker's UUID — verified by
+  building the same source twice with the same compiler and getting
+  different bytes, which is why IR, not the linked file, is the identity
+  criterion here. Output is identical at seq and at 1, 2, 4 and 8 workers.
+  **One deliberate behavioural change beyond the fix, flagged.** The O11
+  decomposition inventory now records the binding-rooted parent as well as
+  the expanded one, so `boolean_decompositions` doubles on existing shapes
+  (1 -> 2, 2 -> 4). Four assertions in
+  `semantic/tests/boolean_composition.rs` counted those entries and were
+  updated. They were **not** weakened to go green: every existing member and
+  projection assertion is retained unchanged, and each updated test gained
+  assertions on the new entry's members. bxor still records nothing on
+  either sign or either parent shape, which the new count pins.
+  **Gate.** `make -C compiler check` **green** (196.7 s wall, on the
+  contended machine) at **1033 lib + 52 program tests** — 1030 lib before,
+  the 3 added here, none deleted, none skipped, none ignored. Full
+  `make check` exits 2 at the known 135/136 coverage line and nowhere else.
+  **Approval classes touched:** no spec bytes, no conformance or compliance
+  evidence, no gate wiring, no new repository root entry. Four probes
+  promoted into the existing `probes/` home with README entries.
 
 - **Dig 0 deviation, recorded not hidden.** Dig 0 was specified as one
   cohesive commit and initially landed as two with byte-identical subject

@@ -408,7 +408,12 @@ impl Analyzer<'_, '_> {
             state,
             event,
         );
-        self.record_boolean_decomposition(goal, super::super::state::GoalSign::Positive, view);
+        self.record_boolean_decomposition(
+            goal,
+            super::super::state::GoalSign::Positive,
+            view,
+            state,
+        );
     }
 
     // ------------------------------------------------------------------

@@ -17,7 +17,7 @@ use crate::SemanticOutcome;
 use super::super::entailment::{
     BooleanGoalDecomposition, FunctionEntailment, GoalSign, Relation, TermKind,
 };
-use super::super::goal::{GoalExpression, GoalOperation};
+use super::super::goal::{GoalDatum, GoalExpression, GoalOperation};
 use super::super::model::CheckedBooleanOperation;
 use super::{with_semantics, with_semantics_dark};
 
@@ -62,6 +62,51 @@ fn entry_with_root(
                 summary.boolean_decompositions
             )
         })
+}
+
+/// The recorded entry whose parent is the `own Bool` binding a guard or claim
+/// named, rather than that binding's expanded Boolean tree. Both parents are
+/// established, so both are recorded; this one carries the conjuncts in the
+/// operand forms their own comparison bindings recorded.
+fn binding_rooted_entry(summary: &FunctionEntailment, sign: GoalSign) -> &BooleanGoalDecomposition {
+    summary
+        .boolean_decompositions
+        .iter()
+        .find(|candidate| {
+            candidate.sign == sign
+                && matches!(
+                    &summary.inventory.goals[candidate.parent.0 as usize].expression,
+                    GoalExpression::Datum(GoalDatum::Place { .. })
+                )
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "expected a recorded binding-rooted {sign:?} decomposition, got {:?}",
+                summary.boolean_decompositions
+            )
+        })
+}
+
+/// Asserts every member of one entry is a bare `own Bool` comparison binding
+/// carried at the expected sign — the shape that delivers its relation from
+/// `state.origins` rather than from a projection of its own.
+fn assert_binding_members(
+    summary: &FunctionEntailment,
+    entry: &BooleanGoalDecomposition,
+    sign: GoalSign,
+) {
+    for member in &entry.members {
+        assert_eq!(member.1, sign);
+        assert!(
+            matches!(
+                &summary.inventory.goals[member.0.0 as usize].expression,
+                GoalExpression::Datum(GoalDatum::Place { projections, .. })
+                    if projections.is_empty()
+            ),
+            "member {member:?} must be a bare Bool binding: {:?}",
+            summary.inventory.goals[member.0.0 as usize]
+        );
+    }
 }
 
 /// Asserts one member is a comparison goal whose retained projection is the
@@ -191,7 +236,12 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(summary.obligations.len(), 1);
     assert!(summary.obligations[0].discharged);
     // Only the false edge decomposes a disjunction; +bor contributes nothing.
-    assert_eq!(summary.boolean_decompositions.len(), 1);
+    // The edge establishes the named binding and its expanded tree, so the
+    // false edge records both parents and the true edge still records neither.
+    assert_eq!(summary.boolean_decompositions.len(), 2);
+    let named = binding_rooted_entry(&summary, GoalSign::Negative);
+    assert_eq!(named.members.len(), 2);
+    assert_binding_members(&summary, named, GoalSign::Negative);
     let entry = entry_with_root(&summary, CheckedBooleanOperation::Or, GoalSign::Negative);
     assert_eq!(entry.members.len(), 2);
     // -ilt(symbol, 0): projection symbol - 0 <= -1, negated at activation.
@@ -243,13 +293,21 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     let summary = entailment(source, "classify");
-    // Exactly the +band then-edge and the -bor false-edge entries exist: no
-    // -band, no +bor, and no bxor entry on either sign.
-    assert_eq!(summary.boolean_decompositions.len(), 2);
+    // Exactly the +band then-edge and the -bor false-edge entries exist, each
+    // recorded at both its named binding and its expanded tree: no -band, no
+    // +bor, and no bxor entry on either sign or either parent shape — the
+    // `mixed` edges establish their bindings and still decompose to nothing.
+    assert_eq!(summary.boolean_decompositions.len(), 4);
     let conjunction = entry_with_root(&summary, CheckedBooleanOperation::And, GoalSign::Positive);
     assert_eq!(conjunction.members.len(), 2);
     let disjunction = entry_with_root(&summary, CheckedBooleanOperation::Or, GoalSign::Negative);
     assert_eq!(disjunction.members.len(), 2);
+    let named_conjunction = binding_rooted_entry(&summary, GoalSign::Positive);
+    assert_eq!(named_conjunction.members.len(), 2);
+    assert_binding_members(&summary, named_conjunction, GoalSign::Positive);
+    let named_disjunction = binding_rooted_entry(&summary, GoalSign::Negative);
+    assert_eq!(named_disjunction.members.len(), 2);
+    assert_binding_members(&summary, named_disjunction, GoalSign::Negative);
     assert!(
         conjunction
             .members
@@ -290,7 +348,15 @@ command fn main() -> status: own ExitStatus pure {
     // The recursion reaches `-ilt(index, 4)`, which discharges the subscript.
     assert_eq!(summary.obligations.len(), 1);
     assert!(summary.obligations[0].discharged);
-    assert_eq!(summary.boolean_decompositions.len(), 2);
+    // Both edges record both parents: the named `inside` binding and its
+    // expanded `bnot` tree.
+    assert_eq!(summary.boolean_decompositions.len(), 4);
+    let named_positive = binding_rooted_entry(&summary, GoalSign::Positive);
+    assert_eq!(named_positive.members.len(), 3);
+    assert_binding_members(&summary, named_positive, GoalSign::Negative);
+    let named_negative = binding_rooted_entry(&summary, GoalSign::Negative);
+    assert_eq!(named_negative.members.len(), 1);
+    assert_binding_members(&summary, named_negative, GoalSign::Positive);
     let positive = entry_with_root(&summary, CheckedBooleanOperation::Not, GoalSign::Positive);
     assert_eq!(positive.members.len(), 3);
     let inner = &summary.inventory.goals[positive.members[0].0.0 as usize];
@@ -384,5 +450,176 @@ command fn main() -> status: own ExitStatus pure {
         ),
         "whole-tree caller evidence must discharge: {:?}",
         caller.call_goals[0]
+    );
+}
+
+/// The band/derived-index discharge asymmetry, pinned. A conjunct that bounds
+/// a let-bound derived value keeps the relation its own comparison binding
+/// recorded, so the conjoined claim discharges exactly what the equivalent
+/// pair of single-bound claims discharges. Before the members were read
+/// through their bindings, the expanded conjunct read `at +wrap 1 < len(..)`,
+/// whose arithmetic root has no term form, and the second subscript's
+/// obligation survived while the first discharged.
+#[test]
+fn band_conjunct_over_a_derived_binding_discharges_like_the_single_bound_pair() {
+    let conjoined = br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i), traps {
+  let next = at +wrap 1_u64;
+  let room = len(deref(input));
+  let at_ok = ilt(at, room);
+  let next_ok = ilt(next, room);
+  let both = band(at_ok, next_ok);
+  claim pair_in_range: both because "pair in range";
+  let first = deref(input)[at];
+  let second = deref(input)[next];
+  return first +wrap second;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let separate = br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i), traps {
+  let next = at +wrap 1_u64;
+  let room = len(deref(input));
+  let at_ok = ilt(at, room);
+  let next_ok = ilt(next, room);
+  claim at_in_range: at_ok because "first in range";
+  claim next_in_range: next_ok because "second in range";
+  let first = deref(input)[at];
+  let second = deref(input)[next];
+  return first +wrap second;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for source in [conjoined.as_slice(), separate.as_slice()] {
+        let summary = entailment(source, "read_pair");
+        assert_eq!(summary.obligations.len(), 2);
+        assert!(
+            summary.obligations.iter().all(|o| o.discharged),
+            "both subscripts must discharge: {:?}",
+            summary.obligations
+        );
+    }
+    // The conjunct that bounds the derived value is carried as its own
+    // comparison binding, not as an expanded arithmetic comparison.
+    let summary = entailment(conjoined, "read_pair");
+    let named = binding_rooted_entry(&summary, GoalSign::Positive);
+    assert_eq!(named.members.len(), 2);
+    assert_binding_members(&summary, named, GoalSign::Positive);
+}
+
+/// The same widening under a branch guard rather than a claim, which is the
+/// shape that leaves the function claim-free: `if band(..)` admits both
+/// subscripts on the true edge and neither on the false edge, because `-band`
+/// carries only disjunctive content.
+#[test]
+fn band_guard_over_a_derived_binding_admits_the_true_edge_only() {
+    let source =
+        br#"fn window['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i) {
+  let next = at +wrap 1_u64;
+  let room = len(deref(input));
+  let at_ok = ilt(at, room);
+  let next_ok = ilt(next, room);
+  let both = band(at_ok, next_ok);
+  if both {
+    let first = deref(input)[at];
+    let second = deref(input)[next];
+    return first +wrap second;
+  }
+  return 0_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = entailment(source, "window");
+    assert_eq!(summary.obligations.len(), 2);
+    assert!(summary.obligations.iter().all(|o| o.discharged));
+    // No claim site, so the guarded form is the one that keeps a caller's
+    // sibling pair eligible.
+    assert!(summary.claims.is_empty());
+    let else_edge =
+        br#"fn window['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i) {
+  let next = at +wrap 1_u64;
+  let room = len(deref(input));
+  let at_ok = ilt(at, room);
+  let next_ok = ilt(next, room);
+  let both = band(at_ok, next_ok);
+  if both {
+    return 0_u8;
+  } else {
+    return deref(input)[next];
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = entailment(else_edge, "window");
+    assert_eq!(summary.obligations.len(), 1);
+    assert!(
+        !summary.obligations[0].discharged,
+        "a false `band` bounds neither conjunct: {:?}",
+        summary.obligations[0]
+    );
+}
+
+/// The negative twin the widening must keep failing: reading the conjuncts
+/// through their bindings proves exactly the two bounds the band names and no
+/// third one, so a subscript by an index the band never bounded still carries
+/// its obligation, and a disjunction still bounds neither side.
+#[test]
+fn band_over_derived_bindings_proves_no_unnamed_bound() {
+    let uncovered = br#"fn read_three['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i), traps {
+  let next = at +wrap 1_u64;
+  let far = at +wrap 2_u64;
+  let room = len(deref(input));
+  let at_ok = ilt(at, room);
+  let next_ok = ilt(next, room);
+  let both = band(at_ok, next_ok);
+  claim pair_in_range: both because "pair in range";
+  let first = deref(input)[at];
+  let third = deref(input)[far];
+  return first +wrap third;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = entailment(uncovered, "read_three");
+    assert_eq!(summary.obligations.len(), 2);
+    assert_eq!(
+        summary.obligations.iter().filter(|o| o.discharged).count(),
+        1,
+        "only the named bound discharges: {:?}",
+        summary.obligations
+    );
+    let disjoined = br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i), traps {
+  let next = at +wrap 1_u64;
+  let room = len(deref(input));
+  let at_ok = ilt(at, room);
+  let next_ok = ilt(next, room);
+  let either = bor(at_ok, next_ok);
+  claim one_in_range: either because "one in range";
+  let second = deref(input)[next];
+  return second;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = entailment(disjoined, "read_pair");
+    assert_eq!(summary.obligations.len(), 1);
+    assert!(
+        !summary.obligations[0].discharged,
+        "a disjunction bounds neither side: {:?}",
+        summary.obligations[0]
     );
 }
