@@ -179,6 +179,50 @@ battery reports.)
   gets a line — noise, not error, and suppressing it would mean reading
   constants for no safety gain.
 
+- **L3 — two corrections and one anomaly, all re-measured here rather than
+  forwarded.**
+  **The Dig 6 rig's byte identity, narrowed in the 0075 record.** Reproduced by
+  linking one module three ways: `a/prog` and `b/prog` are byte-equal, and
+  `a/prog2` differs in 429 bytes — `LC_UUID` at offset 1528 plus the ad-hoc
+  code signature that hashes it — because `clang` derives the UUID from the
+  output file's name. `otool -tV` minus its filename header is identical in
+  every direction. The claim that carries the rig's meaning is text identity;
+  the recorded byte identity held only because the rebuilds reused the oracle's
+  file names.
+  **The q4 over-forking arithmetic is withdrawn.** The night battery's A4 probe
+  found q4's claims are mostly refused; re-measured here with an independent
+  claim counter on a scratch copy of the runtime, q4 attempts exactly
+  **65,548,383** claims — deterministic, and matching the derived figure — of
+  which **6.59-6.67 M are granted at `WF_WORKERS=4` (89.9% refused)** and
+  **11.31-11.38 M at `W=8` (82.7% refused)**, over three runs each. The refusal
+  is `wf__par_claim` finding the lane's 64-slot free list exhausted. So the
+  headline "q4 pays 65.5 M x 4.8 ns = 315 ms of protocol = 69% of T_seq" prices
+  forks that were never published and is withdrawn; the published-fork cost is
+  an order of magnitude smaller, and q4 is already self-limiting rather than
+  over-forked. Grant counts vary with worker count and between runs because
+  refusal is schedule-dependent — my `W=8` reading is 11.3 M against the
+  battery's 7.6 M, which is the same phenomenon and a caution against quoting
+  any single grant count as a constant. (Note for the next reader: this is
+  *not* the `wf__par_grants` counter the gate-integrity test reads. That one
+  counts **steals** — 0.34 M at `W=4`, 0.84 M at `W=8` on q4 — and is a
+  different statistic from claim grants.)
+  **Darwin QoS priority inheritance, recorded so the next E-core experiment
+  does not lose a night to it.** A thread that self-sets
+  `QOS_CLASS_BACKGROUND` runs at performance-core speed whenever a higher-QoS
+  thread is blocked joining it, because Darwin propagates the joiner's priority
+  to it. Measured three ways on the A5 probe (`bal_d12_w192`, reps=200, load
+  average 5.16): worker self-sets background and the main thread joins it at
+  the default QoS, **0.156-0.182 s**; the same worker with the whole process
+  put in Darwin background so the joiner has nothing to lend, **0.463-0.467 s**;
+  the measured thread self-sets background with nobody joining it,
+  **0.465-0.478 s**. The two configurations without an inheriting joiner agree
+  to 2%, and the one with a joiner is 2.9x faster. **Consequence:** A5's
+  "ALL-BACKGROUND E-only discriminator" sweep measured performance cores
+  wearing a background label, not efficiency cores, and its ceiling column
+  should not be read as an E-core bound. An experiment that wants E cores must
+  keep the observer off the join — poll a flag, or put the observer at the same
+  QoS.
+
 ## Outcome
 
 (Filled at closure.)

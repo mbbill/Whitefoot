@@ -488,6 +488,18 @@ reproduction, never worked around.)
   and the rig was checked by rebuilding all 24 oracle binaries that way and
   comparing them against `bench/bin`: **24 of 24 byte-identical**, so a
   variant differs from HEAD only in the runtime source.
+  *(Corrected 2026-08-22, batch 0076.* That byte identity is real but narrower
+  than it reads, and the rig's meaning rests on the weaker half. `clang`
+  derives the Mach-O `LC_UUID` from the output file's **name** as well as its
+  content, and the ad-hoc code signature hashes the result: the same module
+  linked to `a/prog` and to `b/prog` is byte-equal, while linking it to
+  `a/prog2` moves **429 bytes** — 16 of `LC_UUID` at offset 1528 and the rest
+  in the signature. The 24 rebuilds matched to the byte because they carried
+  the oracle's own file names. What holds regardless of the output name, and is
+  what "a variant differs from HEAD only in the runtime source" actually needs,
+  is **text identity**: `otool -tV` minus its filename header line is identical
+  in every direction. A future rig that writes to fresh names should compare
+  disassembly, not bytes.*)
   **The residual reproduces, and its shape is a turnover at the fifth worker,
   not diffuse overhead.** Ceilings re-derived by Dig 3's N-copies method
   (min-of-5, `WF_WORKERS` unset): 1.97-2.01x at 2, 3.85-3.90x at 4, 4.90-5.32x
