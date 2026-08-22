@@ -6,11 +6,14 @@ fn mix(word: own u32) -> return_value: own u32 pure {
   return biased;
 }
 
-command fn main() -> return_value: own ExitStatus traps {
+command fn main() -> return_value: own ExitStatus pure {
   doc "OP-8: the extended integer family supports binary-data kernels through the normal compiler path.";
   let mixed = mix(word: 305419896_u32);
   let bits = ipopcount(mixed);
   let bounded = imin(bits, 32_u32);
-  claim integer_family_drift: ile(bounded, 32_u32) because "integer family drift";
+  if ile(bounded, 32_u32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

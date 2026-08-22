@@ -5,12 +5,15 @@ fn fixed_view['r]() -> result: own slice<'r, u8> pure {
   return move view;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   region 'view {
     let view = fixed_view<'view>();
     let view_room = len(view);
     let view_ok = ilt(1_u64, view_room);
-    claim view_sized: view_ok because "premises: fixed_view returns a slice of fixed_bytes, whose declared length is three\nderivation: index 1_u64 is strictly less than that three-element returned view length\nconclusion: view_ok is true\nchecker gap: ENT does not publish a returned slice length through an uncontracted call\nconsumers: the following view subscript needs this upper Range component";
+    if view_ok {
+    } else {
+      return exit_status(code: 211_u8);
+    }
     let observed = view[1_u64];
     if ieq(observed, 13_u8) {
     } else {

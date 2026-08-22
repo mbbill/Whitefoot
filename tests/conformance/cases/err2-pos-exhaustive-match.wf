@@ -18,10 +18,13 @@ fn pick(c: own Color) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "An exhaustive match over all declared variants is accepted [ERR-2].";
   let green_atom_0001 = Green();
   let n = pick(c: green_atom_0001);
-  claim x: ieq(n, 2_i32) because "x";
+  if ieq(n, 2_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

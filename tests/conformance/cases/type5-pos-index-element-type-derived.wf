@@ -1,13 +1,9 @@
-fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
 fn first(b: own array<u8, 4>, i: own u64) -> function_result: own u8 traps {
-  doc "TYPE-5: a subscript states no element type; the selected own u8 type derives from the array base. A genuine residual about an uncontracted clamp discharges the exact bound [OP-4, CLM-1, CLM-2].";
-  let bounded = clamp_three(value: i);
+  doc "TYPE-5: a subscript states no element type; the selected own u8 type derives from the array base. A genuine same-function remainder residual discharges the exact bound [OP-4, CLM-1, CLM-2].";
+  let bounded = i % 4_u64;
   let room = len(b);
   let inside = ilt(bounded, room);
-  claim offset_in_bounds: inside because "premises: b has fixed length four and bounded is returned by clamp_three, whose body computes imin(i, 3_u64)\nderivation: bounded is at most 3_u64, which is strictly less than the array length 4_u64\nconclusion: ilt(bounded, room) is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: the following b[bounded] subscript requires this exact bound";
+  claim offset_in_bounds: inside because "premises: b has fixed length four and bounded is i remainder 4_u64 computed in this function\nderivation: unsigned remainder by 4_u64 is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded, room) is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following b[bounded] subscript requires this exact bound";
   let value = b[bounded];
   return value;
 }

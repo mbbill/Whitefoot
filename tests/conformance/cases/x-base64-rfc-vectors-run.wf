@@ -1,6 +1,53 @@
 const b64: array<u8, 64> =[65_u8, 66_u8, 67_u8, 68_u8, 69_u8, 70_u8, 71_u8, 72_u8, 73_u8, 74_u8, 75_u8, 76_u8, 77_u8, 78_u8, 79_u8, 80_u8, 81_u8, 82_u8, 83_u8, 84_u8, 85_u8, 86_u8, 87_u8, 88_u8, 89_u8, 90_u8, 97_u8, 98_u8, 99_u8, 100_u8, 101_u8, 102_u8, 103_u8, 104_u8, 105_u8, 106_u8, 107_u8, 108_u8, 109_u8, 110_u8, 111_u8, 112_u8, 113_u8, 114_u8, 115_u8, 116_u8, 117_u8, 118_u8, 119_u8, 120_u8, 121_u8, 122_u8, 48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8, 43_u8, 47_u8];
 
-fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_result: own u64 reads('r), writes('r), traps contract {
+enum IndexError {
+  OutOfRange();
+}
+
+fn require_index(index: own u64, limit: own u64) -> result: own Result<u64, IndexError> traps contract {
+  ensures when Ok(value: result): ilt(result, limit);
+} {
+  let nonzero = ine(limit, 0_u64);
+  if nonzero {
+    let bounded = index % limit;
+    let unchanged = ieq(bounded, index);
+    if unchanged {
+      let inside = ilt(bounded, limit);
+      claim admitted_index: inside because "premises: limit is nonzero on this branch, bounded is index remainder limit in this function, and the unchanged branch admits only an index already in the normalized range\nderivation: unsigned remainder by a nonzero divisor is strictly below that divisor\nconclusion: ilt(bounded, limit) is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the selected Ok postcondition publishes this exact bound to the caller through S12";
+      return Ok<u64, IndexError>(value: bounded);
+    }
+  }
+  let error = OutOfRange();
+  return Err<u64, IndexError>(error: error);
+}
+
+fn read_index['r](values: &'r buffer<u8>, index: own u64) -> result: own Result<u8, IndexError> reads('r), traps {
+  let room = len(deref(values));
+  match require_index(index: index, limit: room) {
+    Ok(value: admitted) => {
+      let value = deref(values)[admitted];
+      return Ok<u8, IndexError>(value: value);
+    }
+    Err(error: problem) => {
+      return Err<u8, IndexError>(error: problem);
+    }
+  }
+}
+
+fn write_index['r](values: &uniq 'r buffer<u8>, index: own u64, value: own u8) -> result: own Result<unit, IndexError> reads('r), writes('r), traps {
+  let room = len(deref(values));
+  match require_index(index: index, limit: room) {
+    Ok(value: admitted) => {
+      set deref(values)[admitted] = value;
+      return Ok<unit, IndexError>(value: unit);
+    }
+    Err(error: problem) => {
+      return Err<unit, IndexError>(error: problem);
+    }
+  }
+}
+
+fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_result: own Result<u64, IndexError> reads('r), writes('r), traps contract {
   define required_out_length = len(deref(out));
   define required_input_length = len(input);
   define required_out_groups = ishr.wrap(required_out_length, 2_u32);
@@ -19,15 +66,20 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
     } else {
       let input_one = input_offset +wrap 1_u64;
       let input_two = input_offset +wrap 2_u64;
-      let group_zero_ok = ilt(input_offset, input_length);
-      claim group_zero_in_input: group_zero_ok because "a full group leaves at least three input bytes";
-      let byte_zero = input[input_offset];
-      let group_one_ok = ilt(input_one, input_length);
-      claim group_one_in_input: group_one_ok because "a full group leaves at least three input bytes";
-      let byte_one = input[input_one];
-      let group_two_ok = ilt(input_two, input_length);
-      claim group_two_in_input: group_two_ok because "a full group leaves at least three input bytes";
-      let byte_two = input[input_two];
+      let output_one = output_offset +wrap 1_u64;
+      let output_two = output_offset +wrap 2_u64;
+      let output_three = output_offset +wrap 3_u64;
+      let byte_zero = 0_u8;
+      let byte_one = 0_u8;
+      let byte_two = 0_u8;
+      region 'group_reads {
+        let loaded_zero = propagate read_index<'group_reads>(values: &'group_reads input, index: input_offset);
+        let loaded_one = propagate read_index<'group_reads>(values: &'group_reads input, index: input_one);
+        let loaded_two = propagate read_index<'group_reads>(values: &'group_reads input, index: input_two);
+        set byte_zero = loaded_zero;
+        set byte_one = loaded_one;
+        set byte_two = loaded_two;
+      }
       let word_zero = cvt<u8, u32>(byte_zero);
       let word_one = cvt<u8, u32>(byte_one);
       let word_two = cvt<u8, u32>(byte_two);
@@ -46,33 +98,22 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
       let alphabet_two = cvt<u32, u64>(sextet_two);
       let sextet_three = iand(combined, 63_u32);
       let alphabet_three = cvt<u32, u64>(sextet_three);
-      let alphabet_zero_ok = ilt(alphabet_zero, 64_u64);
-      claim alphabet_zero_in_table: alphabet_zero_ok because "a six-bit mask stays below the table length";
       let encoded_zero = b64[alphabet_zero];
-      let alphabet_one_ok = ilt(alphabet_one, 64_u64);
-      claim alphabet_one_in_table: alphabet_one_ok because "a six-bit mask stays below the table length";
       let encoded_one = b64[alphabet_one];
-      let alphabet_two_ok = ilt(alphabet_two, 64_u64);
-      claim alphabet_two_in_table: alphabet_two_ok because "a six-bit mask stays below the table length";
       let encoded_two = b64[alphabet_two];
-      let alphabet_three_ok = ilt(alphabet_three, 64_u64);
-      claim alphabet_three_in_table: alphabet_three_ok because "a six-bit mask stays below the table length";
       let encoded_three = b64[alphabet_three];
-      let output_one = output_offset +wrap 1_u64;
-      let output_two = output_offset +wrap 2_u64;
-      let output_three = output_offset +wrap 3_u64;
-      let group_out_zero_ok = ilt(output_offset, out_room);
-      claim group_out_zero_in_output: group_out_zero_ok because "the requires clause sizes the output for every group";
-      set deref(out)[output_offset] = encoded_zero;
-      let group_out_one_ok = ilt(output_one, out_room);
-      claim group_out_one_in_output: group_out_one_ok because "the requires clause sizes the output for every group";
-      set deref(out)[output_one] = encoded_one;
-      let group_out_two_ok = ilt(output_two, out_room);
-      claim group_out_two_in_output: group_out_two_ok because "the requires clause sizes the output for every group";
-      set deref(out)[output_two] = encoded_two;
-      let group_out_three_ok = ilt(output_three, out_room);
-      claim group_out_three_in_output: group_out_three_ok because "the requires clause sizes the output for every group";
-      set deref(out)[output_three] = encoded_three;
+      region 'group_write_zero {
+        let wrote_zero = propagate write_index<'group_write_zero>(values: &uniq 'group_write_zero deref(out), index: output_offset, value: encoded_zero);
+      }
+      region 'group_write_one {
+        let wrote_one = propagate write_index<'group_write_one>(values: &uniq 'group_write_one deref(out), index: output_one, value: encoded_one);
+      }
+      region 'group_write_two {
+        let wrote_two = propagate write_index<'group_write_two>(values: &uniq 'group_write_two deref(out), index: output_two, value: encoded_two);
+      }
+      region 'group_write_three {
+        let wrote_three = propagate write_index<'group_write_three>(values: &uniq 'group_write_three deref(out), index: output_three, value: encoded_three);
+      }
       set input_offset = input_offset +wrap 3_u64;
       set output_offset = output_offset +wrap 4_u64;
     }
@@ -80,9 +121,14 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
   let tail_length = input_length -wrap input_offset;
   let one_byte_tail = ieq(tail_length, 1_u64);
   if one_byte_tail {
-    let tail_one_in_ok = ilt(input_offset, input_length);
-    claim tail_one_in_input: tail_one_in_ok because "a one-byte tail leaves one input byte";
-    let tail_one_byte = input[input_offset];
+    let tail_one_output_one = output_offset +wrap 1_u64;
+    let tail_one_output_two = output_offset +wrap 2_u64;
+    let tail_one_output_three = output_offset +wrap 3_u64;
+    let tail_one_byte = 0_u8;
+    region 'tail_one_read {
+      let loaded = propagate read_index<'tail_one_read>(values: &'tail_one_read input, index: input_offset);
+      set tail_one_byte = loaded;
+    }
     let tail_one_word = cvt<u8, u32>(tail_one_byte);
     let tail_one_first_shifted = ishr.wrap(tail_one_word, 2_u32);
     let tail_one_first_sextet = iand(tail_one_first_shifted, 63_u32);
@@ -90,38 +136,36 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
     let tail_one_second_shifted = ishl.wrap(tail_one_word, 4_u32);
     let tail_one_second_sextet = iand(tail_one_second_shifted, 63_u32);
     let tail_one_second_index = cvt<u32, u64>(tail_one_second_sextet);
-    let tail_one_first_ok = ilt(tail_one_first_index, 64_u64);
-    claim tail_one_first_in_table: tail_one_first_ok because "a six-bit mask stays below the table length";
     let tail_one_first = b64[tail_one_first_index];
-    let tail_one_second_ok = ilt(tail_one_second_index, 64_u64);
-    claim tail_one_second_in_table: tail_one_second_ok because "a six-bit mask stays below the table length";
     let tail_one_second = b64[tail_one_second_index];
-    let tail_one_output_one = output_offset +wrap 1_u64;
-    let tail_one_output_two = output_offset +wrap 2_u64;
-    let tail_one_output_three = output_offset +wrap 3_u64;
-    let tail_one_out_zero_ok = ilt(output_offset, out_room);
-    claim tail_one_out_zero_in_output: tail_one_out_zero_ok because "the requires clause sizes the output for the padded tail";
-    set deref(out)[output_offset] = tail_one_first;
-    let tail_one_out_one_ok = ilt(tail_one_output_one, out_room);
-    claim tail_one_out_one_in_output: tail_one_out_one_ok because "the requires clause sizes the output for the padded tail";
-    set deref(out)[tail_one_output_one] = tail_one_second;
-    let tail_one_out_two_ok = ilt(tail_one_output_two, out_room);
-    claim tail_one_out_two_in_output: tail_one_out_two_ok because "the requires clause sizes the output for the padded tail";
-    set deref(out)[tail_one_output_two] = 61_u8;
-    let tail_one_out_three_ok = ilt(tail_one_output_three, out_room);
-    claim tail_one_out_three_in_output: tail_one_out_three_ok because "the requires clause sizes the output for the padded tail";
-    set deref(out)[tail_one_output_three] = 61_u8;
+    region 'tail_one_write_zero {
+      let wrote = propagate write_index<'tail_one_write_zero>(values: &uniq 'tail_one_write_zero deref(out), index: output_offset, value: tail_one_first);
+    }
+    region 'tail_one_write_one {
+      let wrote = propagate write_index<'tail_one_write_one>(values: &uniq 'tail_one_write_one deref(out), index: tail_one_output_one, value: tail_one_second);
+    }
+    region 'tail_one_write_two {
+      let wrote = propagate write_index<'tail_one_write_two>(values: &uniq 'tail_one_write_two deref(out), index: tail_one_output_two, value: 61_u8);
+    }
+    region 'tail_one_write_three {
+      let wrote = propagate write_index<'tail_one_write_three>(values: &uniq 'tail_one_write_three deref(out), index: tail_one_output_three, value: 61_u8);
+    }
     set output_offset = output_offset +wrap 4_u64;
   }
   let two_byte_tail = ieq(tail_length, 2_u64);
   if two_byte_tail {
     let tail_two_input_one = input_offset +wrap 1_u64;
-    let tail_two_in_zero_ok = ilt(input_offset, input_length);
-    claim tail_two_in_zero_in_input: tail_two_in_zero_ok because "a two-byte tail leaves two input bytes";
-    let tail_two_byte_zero = input[input_offset];
-    let tail_two_in_one_ok = ilt(tail_two_input_one, input_length);
-    claim tail_two_in_one_in_input: tail_two_in_one_ok because "a two-byte tail leaves two input bytes";
-    let tail_two_byte_one = input[tail_two_input_one];
+    let tail_two_output_one = output_offset +wrap 1_u64;
+    let tail_two_output_two = output_offset +wrap 2_u64;
+    let tail_two_output_three = output_offset +wrap 3_u64;
+    let tail_two_byte_zero = 0_u8;
+    let tail_two_byte_one = 0_u8;
+    region 'tail_two_reads {
+      let loaded_zero = propagate read_index<'tail_two_reads>(values: &'tail_two_reads input, index: input_offset);
+      let loaded_one = propagate read_index<'tail_two_reads>(values: &'tail_two_reads input, index: tail_two_input_one);
+      set tail_two_byte_zero = loaded_zero;
+      set tail_two_byte_one = loaded_one;
+    }
     let tail_two_word_zero = cvt<u8, u32>(tail_two_byte_zero);
     let tail_two_word_one = cvt<u8, u32>(tail_two_byte_one);
     let tail_two_shifted_zero = ishl.wrap(tail_two_word_zero, 8_u32);
@@ -135,33 +179,24 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
     let tail_two_third_shifted = ishl.wrap(tail_two_combined, 2_u32);
     let tail_two_third_sextet = iand(tail_two_third_shifted, 63_u32);
     let tail_two_third_index = cvt<u32, u64>(tail_two_third_sextet);
-    let tail_two_first_ok = ilt(tail_two_first_index, 64_u64);
-    claim tail_two_first_in_table: tail_two_first_ok because "a six-bit mask stays below the table length";
     let tail_two_first = b64[tail_two_first_index];
-    let tail_two_second_ok = ilt(tail_two_second_index, 64_u64);
-    claim tail_two_second_in_table: tail_two_second_ok because "a six-bit mask stays below the table length";
     let tail_two_second = b64[tail_two_second_index];
-    let tail_two_third_ok = ilt(tail_two_third_index, 64_u64);
-    claim tail_two_third_in_table: tail_two_third_ok because "a six-bit mask stays below the table length";
     let tail_two_third = b64[tail_two_third_index];
-    let tail_two_output_one = output_offset +wrap 1_u64;
-    let tail_two_output_two = output_offset +wrap 2_u64;
-    let tail_two_output_three = output_offset +wrap 3_u64;
-    let tail_two_out_zero_ok = ilt(output_offset, out_room);
-    claim tail_two_out_zero_in_output: tail_two_out_zero_ok because "the requires clause sizes the output for the padded tail";
-    set deref(out)[output_offset] = tail_two_first;
-    let tail_two_out_one_ok = ilt(tail_two_output_one, out_room);
-    claim tail_two_out_one_in_output: tail_two_out_one_ok because "the requires clause sizes the output for the padded tail";
-    set deref(out)[tail_two_output_one] = tail_two_second;
-    let tail_two_out_two_ok = ilt(tail_two_output_two, out_room);
-    claim tail_two_out_two_in_output: tail_two_out_two_ok because "the requires clause sizes the output for the padded tail";
-    set deref(out)[tail_two_output_two] = tail_two_third;
-    let tail_two_out_three_ok = ilt(tail_two_output_three, out_room);
-    claim tail_two_out_three_in_output: tail_two_out_three_ok because "the requires clause sizes the output for the padded tail";
-    set deref(out)[tail_two_output_three] = 61_u8;
+    region 'tail_two_write_zero {
+      let wrote = propagate write_index<'tail_two_write_zero>(values: &uniq 'tail_two_write_zero deref(out), index: output_offset, value: tail_two_first);
+    }
+    region 'tail_two_write_one {
+      let wrote = propagate write_index<'tail_two_write_one>(values: &uniq 'tail_two_write_one deref(out), index: tail_two_output_one, value: tail_two_second);
+    }
+    region 'tail_two_write_two {
+      let wrote = propagate write_index<'tail_two_write_two>(values: &uniq 'tail_two_write_two deref(out), index: tail_two_output_two, value: tail_two_third);
+    }
+    region 'tail_two_write_three {
+      let wrote = propagate write_index<'tail_two_write_three>(values: &uniq 'tail_two_write_three deref(out), index: tail_two_output_three, value: 61_u8);
+    }
     set output_offset = output_offset +wrap 4_u64;
   }
-  return output_offset;
+  return Ok<u64, IndexError>(value: output_offset);
 }
 
 command fn main() -> status: own ExitStatus allocates(heap), traps {
@@ -170,65 +205,155 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   set man_input[1_u64] = 97_u8;
   set man_input[2_u64] = 110_u8;
   let man_output = buffer_new(4_u64, 0_u8);
+  let man_length_ok = False();
   region 'man_region {
     let man_required_out_length = len(man_output);
     let man_required_input_length = len(man_input);
     let man_required_out_groups = ishr.wrap(man_required_out_length, 2_u32);
     let man_required_covered_input = man_required_out_groups *wrap 3_u64;
     let man_capacity = ile(man_required_input_length, man_required_covered_input);
-    claim man_output_capacity: man_capacity because "the four-byte output covers the complete Man input";
-    let man_length = encode<'man_region>(out: &uniq 'man_region man_output, input: move man_input);
-    claim man_length_drift: ieq(man_length, 4_u64) because "Man length drift";
+    if man_capacity {
+    } else {
+      return exit_status(code: 216_u8);
+    }
+    match encode<'man_region>(out: &uniq 'man_region man_output, input: move man_input) {
+      Ok(value: man_length) => {
+        set man_length_ok = ieq(man_length, 4_u64);
+      }
+      Err(error: man_index_error) => {
+        return exit_status(code: 219_u8);
+      }
+    }
   }
   let man_zero = man_output[0_u64];
   let man_one = man_output[1_u64];
   let man_two = man_output[2_u64];
   let man_three = man_output[3_u64];
-  claim man_0_drift: ieq(man_zero, 84_u8) because "Man[0] drift";
-  claim man_1_drift: ieq(man_one, 87_u8) because "Man[1] drift";
-  claim man_2_drift: ieq(man_two, 70_u8) because "Man[2] drift";
-  claim man_3_drift: ieq(man_three, 117_u8) because "Man[3] drift";
+  let man_zero_ok = ieq(man_zero, 84_u8);
+  let man_one_ok = ieq(man_one, 87_u8);
+  let man_two_ok = ieq(man_two, 70_u8);
+  let man_three_ok = ieq(man_three, 117_u8);
   let m_input = buffer_new(1_u64, 77_u8);
   let m_output = buffer_new(4_u64, 0_u8);
+  let m_length_ok = False();
   region 'm_region {
     let m_required_out_length = len(m_output);
     let m_required_input_length = len(m_input);
     let m_required_out_groups = ishr.wrap(m_required_out_length, 2_u32);
     let m_required_covered_input = m_required_out_groups *wrap 3_u64;
     let m_capacity = ile(m_required_input_length, m_required_covered_input);
-    claim m_output_capacity: m_capacity because "the four-byte output covers the complete M input";
-    let m_length = encode<'m_region>(out: &uniq 'm_region m_output, input: move m_input);
-    claim m_length_drift: ieq(m_length, 4_u64) because "M length drift";
+    if m_capacity {
+    } else {
+      return exit_status(code: 217_u8);
+    }
+    match encode<'m_region>(out: &uniq 'm_region m_output, input: move m_input) {
+      Ok(value: m_length) => {
+        set m_length_ok = ieq(m_length, 4_u64);
+      }
+      Err(error: m_index_error) => {
+        return exit_status(code: 220_u8);
+      }
+    }
   }
   let m_zero = m_output[0_u64];
   let m_one = m_output[1_u64];
   let m_two = m_output[2_u64];
   let m_three = m_output[3_u64];
-  claim m_0_drift: ieq(m_zero, 84_u8) because "M[0] drift";
-  claim m_1_drift: ieq(m_one, 81_u8) because "M[1] drift";
-  claim m_2_drift: ieq(m_two, 61_u8) because "M[2] drift";
-  claim m_3_drift: ieq(m_three, 61_u8) because "M[3] drift";
+  let m_zero_ok = ieq(m_zero, 84_u8);
+  let m_one_ok = ieq(m_one, 81_u8);
+  let m_two_ok = ieq(m_two, 61_u8);
+  let m_three_ok = ieq(m_three, 61_u8);
   let ma_input = buffer_new(2_u64, 0_u8);
   set ma_input[0_u64] = 77_u8;
   set ma_input[1_u64] = 97_u8;
   let ma_output = buffer_new(4_u64, 0_u8);
+  let ma_length_ok = False();
   region 'ma_region {
     let ma_required_out_length = len(ma_output);
     let ma_required_input_length = len(ma_input);
     let ma_required_out_groups = ishr.wrap(ma_required_out_length, 2_u32);
     let ma_required_covered_input = ma_required_out_groups *wrap 3_u64;
     let ma_capacity = ile(ma_required_input_length, ma_required_covered_input);
-    claim ma_output_capacity: ma_capacity because "the four-byte output covers the complete Ma input";
-    let ma_length = encode<'ma_region>(out: &uniq 'ma_region ma_output, input: move ma_input);
-    claim ma_length_drift: ieq(ma_length, 4_u64) because "Ma length drift";
+    if ma_capacity {
+    } else {
+      return exit_status(code: 218_u8);
+    }
+    match encode<'ma_region>(out: &uniq 'ma_region ma_output, input: move ma_input) {
+      Ok(value: ma_length) => {
+        set ma_length_ok = ieq(ma_length, 4_u64);
+      }
+      Err(error: ma_index_error) => {
+        return exit_status(code: 221_u8);
+      }
+    }
   }
   let ma_zero = ma_output[0_u64];
   let ma_one = ma_output[1_u64];
   let ma_two = ma_output[2_u64];
   let ma_three = ma_output[3_u64];
-  claim ma_0_drift: ieq(ma_zero, 84_u8) because "Ma[0] drift";
-  claim ma_1_drift: ieq(ma_one, 87_u8) because "Ma[1] drift";
-  claim ma_2_drift: ieq(ma_two, 69_u8) because "Ma[2] drift";
-  claim ma_3_drift: ieq(ma_three, 61_u8) because "Ma[3] drift";
+  let ma_zero_ok = ieq(ma_zero, 84_u8);
+  let ma_one_ok = ieq(ma_one, 87_u8);
+  let ma_two_ok = ieq(ma_two, 69_u8);
+  let ma_three_ok = ieq(ma_three, 61_u8);
+  if man_length_ok {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  if m_length_ok {
+  } else {
+    return exit_status(code: 202_u8);
+  }
+  if ma_length_ok {
+  } else {
+    return exit_status(code: 203_u8);
+  }
+  if man_zero_ok {
+  } else {
+    return exit_status(code: 204_u8);
+  }
+  if man_one_ok {
+  } else {
+    return exit_status(code: 205_u8);
+  }
+  if man_two_ok {
+  } else {
+    return exit_status(code: 206_u8);
+  }
+  if man_three_ok {
+  } else {
+    return exit_status(code: 207_u8);
+  }
+  if m_zero_ok {
+  } else {
+    return exit_status(code: 208_u8);
+  }
+  if m_one_ok {
+  } else {
+    return exit_status(code: 209_u8);
+  }
+  if m_two_ok {
+  } else {
+    return exit_status(code: 210_u8);
+  }
+  if m_three_ok {
+  } else {
+    return exit_status(code: 211_u8);
+  }
+  if ma_zero_ok {
+  } else {
+    return exit_status(code: 212_u8);
+  }
+  if ma_one_ok {
+  } else {
+    return exit_status(code: 213_u8);
+  }
+  if ma_two_ok {
+  } else {
+    return exit_status(code: 214_u8);
+  }
+  if ma_three_ok {
+  } else {
+    return exit_status(code: 215_u8);
+  }
   return exit_status(code: 0_u8);
 }

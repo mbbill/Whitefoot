@@ -11,8 +11,11 @@ fn relay(value: own i32) -> result: own i32 pure contract {
   return called;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let observed = relay(value: 7_i32);
-  claim plain_result_drift: ieq(observed, 7_i32) because "plain result drift";
+  if ieq(observed, 7_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

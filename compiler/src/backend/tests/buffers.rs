@@ -292,20 +292,20 @@ fn compiler_independent_borrowed_pool_tree_executes() {
     let build = emitted_function(&llvm, "build");
     let checksum = emitted_function(&llvm, "checksum");
     let main = emitted_function(&llvm, "main");
-    assert!(build.starts_with("define internal i64 @wf_build(ptr "));
+    assert!(build.starts_with("define internal %wf.t5 @wf_build(ptr "));
     assert!(build.contains(", i32 "));
-    assert!(checksum.starts_with("define internal i64 @wf_checksum(ptr "));
+    assert!(checksum.starts_with("define internal %wf.t5 @wf_checksum(ptr "));
     assert!(checksum.contains(", i64 "));
     assert!(!build.contains("call void @free"));
     assert!(!checksum.contains("call void @free"));
-    // Build retains seven domain/range claims and checksum retains four. The
-    // two terminal result checks are ordinary control flow, so each of their
-    // failure exits and the success exit release both pool buffers.
-    assert_eq!(build.matches("call void @wf_trap").count(), 7);
-    assert_eq!(checksum.matches("call void @wf_trap").count(), 4);
+    // Bounds and arithmetic failures are typed results rather than claims.
+    // Build and checksum therefore contain no trap edge, and each of main's
+    // five status exits still releases both pool buffers.
+    assert!(!build.contains("call void @wf_trap"));
+    assert!(!checksum.contains("call void @wf_trap"));
     assert!(!main.contains("call void @wf_trap"));
-    assert_eq!(main.matches("call i8 @wf.sys.exit_status.v1").count(), 3);
-    assert_eq!(main.matches("call void @free").count(), 6);
+    assert_eq!(main.matches("call i8 @wf.sys.exit_status.v1").count(), 5);
+    assert_eq!(main.matches("call void @free").count(), 10);
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());

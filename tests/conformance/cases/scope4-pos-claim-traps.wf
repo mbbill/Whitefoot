@@ -1,15 +1,12 @@
 const values: array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 
-fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
 command fn main() -> status: own ExitStatus traps {
   doc "The source claim is a true, load-bearing residual and therefore runs normally. SCOPE-4's false-evaluation behavior is exercised by typed-IR fault injection after this source has passed CLM-1 and CLM-2.";
   let injection_false = False();
-  let bounded = clamp_three(value: 9_u64);
+  let seed = 7_u64;
+  let bounded = seed % 4_u64;
   let inside = ilt(bounded, 4_u64);
-  claim reviewed_index: inside because "premises: values has length four and bounded is returned by clamp_three, whose body computes imin(9_u64, 3_u64)\nderivation: bounded is 3_u64, which is strictly less than 4_u64\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: the following values[bounded] subscript requires this exact bound";
+  claim reviewed_index: inside because "premises: values has length four and bounded is seed remainder 4_u64 computed in this function\nderivation: unsigned remainder by 4_u64 is at most 3_u64 and therefore strictly less than the array length\nconclusion: ilt(bounded, 4_u64) is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following values[bounded] subscript requires this exact bound";
   let selected = values[bounded];
   if injection_false {
     return exit_status(code: 1_u8);

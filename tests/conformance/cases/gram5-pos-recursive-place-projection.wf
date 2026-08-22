@@ -10,13 +10,16 @@ fn read_projection['r](outer: &'r OuterProjection) -> return_value: own i32 read
   return deref(outer).inner.value;
 }
 
-command fn main() -> return_value: own ExitStatus traps {
+command fn main() -> return_value: own ExitStatus pure {
   doc "GRAM-5: a structural place base can be followed by multiple field suffixes, each denoting one field projection.";
   let inner = InnerProjection(value: 42_i32);
   let outer = OuterProjection(inner: move inner);
   region 'projection {
     let result = read_projection<'projection>(outer: &'projection outer);
-    claim recursive_projection_drift: ieq(result, 42_i32) because "recursive projection drift";
+    if ieq(result, 42_i32) {
+    } else {
+      return exit_status(code: 201_u8);
+    }
   }
   return exit_status(code: 0_u8);
 }

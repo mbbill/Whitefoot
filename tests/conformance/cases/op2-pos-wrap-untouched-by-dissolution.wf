@@ -4,8 +4,11 @@ fn fold(x: own u64) -> return_value: own u64 pure {
   return y;
 }
 
-command fn main() -> return_value: own ExitStatus traps {
+command fn main() -> return_value: own ExitStatus pure {
   let folded = fold(x: 24_u64);
-  claim wrapped_fold: ieq(folded, 72_u64) because "wrapped fold";
+  if ieq(folded, 72_u64) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

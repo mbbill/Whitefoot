@@ -6,8 +6,11 @@ fn bounded(x: own i32) -> result: own i32 pure contract {
   return x;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let value = bounded(x: 7_i32);
-  claim requires_result_drift: ieq(value, 7_i32) because "requires result drift";
+  if ieq(value, 7_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

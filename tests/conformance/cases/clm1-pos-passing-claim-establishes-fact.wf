@@ -1,12 +1,9 @@
-fn opaque(n: own u64) -> result: own u64 pure {
-  return n;
-}
-
 command fn main() -> status: own ExitStatus traps {
-  doc "A claim that holds passes and the program continues [CLM-1]. The index passes through a call so no fact reaches the claim [ENT-2] and CLM-2 neither proves nor refutes it; the passed claim then establishes its predicate on the dominated path [ENT-3], and the following subscript discharges its OP-4 obligation from that fact alone.";
+  doc "A claim that holds passes and the program continues [CLM-1]. A same-function remainder leaves a genuine range residual; the passed claim establishes its predicate on the dominated path [ENT-3], and the following subscript discharges its OP-4 obligation from that fact alone.";
   let table = array_new<u8, 8>(3_u8);
-  let index = opaque(n: 3_u64);
-  claim check_drift: ilt(index, 8_u64) because "premises: opaque is called with 3_u64 and returns that argument unchanged\nderivation: substituting the opaque call argument yields 3_u64, which is less than the array length 8_u64\nconclusion: ilt(index, 8_u64) is true\nchecker gap: ENT does not publish an uncontracted user-call result bound\nconsumers: the following table subscript needs this upper Range component";
+  let seed = 3_u64;
+  let index = seed % 8_u64;
+  claim check_drift: ilt(index, 8_u64) because "premises: table has length 8 and index is seed remainder 8_u64 computed in this function\nderivation: unsigned remainder by 8_u64 is at most 7_u64 and therefore strictly less than the array length\nconclusion: ilt(index, 8_u64) is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following table subscript needs this upper Range component";
   let value = table[index];
   return exit_status(code: 0_u8);
 }

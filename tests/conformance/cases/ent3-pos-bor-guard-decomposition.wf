@@ -10,9 +10,12 @@ fn get(table: own array<u8, 4>, symbol: own u64) -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let table = array_new<u8, 4>(7_u8);
   let value = get(table: move table, symbol: 2_u64);
-  claim guarded_read: ieq(value, 7_u8) because "guarded read";
+  if ieq(value, 7_u8) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

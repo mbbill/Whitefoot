@@ -18,9 +18,12 @@ fn isodd(n: own i32) -> function_result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "Mutual recursion resolves across two signatures; forward reference is legal [FN-1].";
   let r = iseven(n: 8_i32);
-  claim c_8_is_even: ieq(r, 1_i32) because "8 is even";
+  if ieq(r, 1_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

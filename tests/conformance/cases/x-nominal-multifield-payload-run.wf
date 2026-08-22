@@ -3,12 +3,21 @@ enum Packet {
   Empty();
 }
 
-fn score(packet: own Packet) -> function_result: own i32 traps {
+fn score(packet: own Packet) -> function_result: own i32 pure {
   match move packet {
     Data(left: left_value, right: right_value, ready: ready_value) => {
-      claim left_payload_drift: ieq(left_value, 20_i32) because "left payload drift";
-      claim right_payload_drift: ieq(right_value, 22_u64) because "right payload drift";
-      claim bool_payload_drift: ready_value because "Bool payload drift";
+      if ieq(left_value, 20_i32) {
+      } else {
+        return 0_i32;
+      }
+      if ieq(right_value, 22_u64) {
+      } else {
+        return 0_i32;
+      }
+      if ready_value {
+      } else {
+        return 0_i32;
+      }
       return left_value + 22_i32;
     }
     Empty() => {
@@ -17,11 +26,14 @@ fn score(packet: own Packet) -> function_result: own i32 traps {
   }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "Construct, pass, destructure, and validate every field of one mixed-width payload variant [GRAM-8, GRAM-10, OWN-13].";
   let ready = True();
   let packet = Data(left: 20_i32, right: 22_u64, ready: ready);
   let result = score(packet: move packet);
-  claim multi_field_payload_drift: ieq(result, 42_i32) because "multi-field payload drift";
+  if ieq(result, 42_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

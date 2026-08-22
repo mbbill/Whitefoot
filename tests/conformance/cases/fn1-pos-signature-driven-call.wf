@@ -3,9 +3,12 @@ fn add(x: own i32, y: own i32) -> result: own i32 pure {
   return x +wrap y;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "Caller relies only on add's signature [FN-1].";
   let s = add(x: 40_i32, y: 2_i32);
-  claim sig_drift: ieq(s, 42_i32) because "sig drift";
+  if ieq(s, 42_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

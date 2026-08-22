@@ -4,8 +4,11 @@ fn halve(n: own i32) -> return_value: own i32 pure {
   return h;
 }
 
-command fn main() -> return_value: own ExitStatus traps {
+command fn main() -> return_value: own ExitStatus pure {
   let v = halve(n: 42_i32);
-  claim halved: ieq(v, 21_i32) because "42 halved is 21";
+  if ieq(v, 21_i32) {
+  } else {
+    return exit_status(code: 201_u8);
+  }
   return exit_status(code: 0_u8);
 }

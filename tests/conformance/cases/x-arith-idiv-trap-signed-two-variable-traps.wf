@@ -1,13 +1,10 @@
-fn positive_divisor(n: own i32) -> function_result: own i32 pure {
-  return imax(n, 1_i32);
-}
-
 fn divide(p: own i32, q: own i32) -> function_result: own i32 traps {
-  doc "A reviewed theorem about an uncontracted positive-divisor normalizer is a genuine residual. It discharges the complete domain of the following signed exact division [OP-2, CLM-1, CLM-2].";
+  doc "A reviewed theorem about a same-function remainder normalization is a genuine residual. It discharges the complete domain of the following signed exact division [OP-2, CLM-1, CLM-2].";
   let injection_false = False();
-  let divisor = positive_divisor(n: q);
+  let residue = q % 2_i32;
+  let divisor = residue +wrap 2_i32;
   let positive = igt(divisor, 0_i32);
-  claim division_defined: positive because "premises: divisor is returned by positive_divisor, whose body computes imax(q, 1_i32)\nderivation: divisor is at least 1_i32, so it is strictly greater than 0_i32\nconclusion: igt(divisor, 0_i32) is true\nchecker gap: ENT does not publish the result bound of an uncontracted user call\nconsumers: the following exact p / divisor operation uses this positive bound to exclude both signed-division failure cases";
+  claim reviewed_domain: positive because "premises: residue is q remainder 2_i32 in this function and divisor is residue plus 2_i32 with wrapping semantics\nderivation: signed remainder by 2_i32 is -1_i32, 0_i32, or 1_i32, so divisor is 1_i32 through 3_i32 and is strictly positive\nconclusion: igt(divisor, 0_i32) is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range through the wrapping offset\nconsumers: the following exact p / divisor operation uses this positive bound to exclude both signed-division failure cases";
   let r = p / divisor;
   if injection_false {
     return 0_i32;
@@ -18,7 +15,7 @@ fn divide(p: own i32, q: own i32) -> function_result: own i32 traps {
 command fn main() -> status: own ExitStatus traps {
   doc "The source program runs normally with the normalized divisor. A compiler test redirects the retained division claim to the same-function false constant in typed IR to exercise its runtime failure path without admitting a false theorem.";
   let v = divide(p: 10_i32, q: 0_i32);
-  let expected = ieq(v, 10_i32);
+  let expected = ieq(v, 5_i32);
   if expected {
     return exit_status(code: 0_u8);
   } else {
