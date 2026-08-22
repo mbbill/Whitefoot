@@ -31,15 +31,17 @@ Thirteen configurations in all. The repetition count of each was fitted from a
 measured cost model so that its sequential run lands inside the required
 0.3-3 s band.
 
-## Implementations, twelve cells per configuration
+## Implementations, fourteen cells per configuration
 
 | cell | what it is |
 |---|---|
 | `wf_seq` | `whitefootc` with no `--par`: the default compilation, no outlining, no runtime linked |
 | `wf_par/1` | `whitefootc --par`, `WF_WORKERS=1`: outlined and offered, but the pool never starts. The opt-in cost control. |
 | `wf_par/2` `wf_par/4` `wf_par/8` | the same binary at 2, 4, 8 lanes |
+| `wf_par/default` | the same binary with `WF_WORKERS` genuinely unset: the shipped default, which asks for this machine's logical CPUs, 10 here |
 | `rs_seq` | plain recursive Rust |
 | `rs_rayon/2` `/4` `/8` | `rayon::join` at every `Branch` (at every split, for `grid`), pool sized 2, 4, 8 |
+| `rs_rayon/default` | the same `rayon::join` code with no thread count named anywhere: rayon's own global pool, 10 here |
 | `rs_cut/2` `/4` `/8` | `rayon::join` only above depth 5, plain sequential fold below it |
 
 `WF_WORKERS=N` means N threads of execution in total, because the calling
@@ -48,14 +50,34 @@ non-pool thread blocks the caller and runs the work on the pool, so a pool of
 N is also N threads of execution. The two knobs are therefore comparable at the
 same number.
 
+### Amendment of 2026-08-22: the `default` cells
+
+The two `default` cells were added after the 2026-08-21 baseline was recorded.
+Every cell in that baseline names a worker count, so the number a program
+actually gets when it configures nothing appeared in no table — and on both
+sides that number is the one most programs will run. The amendment measures it
+directly: `wf_par/default` runs the `--par` binary with `WF_WORKERS` unset,
+which the runtime answers with `hw.logicalcpu` clamped to its lane ceiling, and
+`rs_rayon/default` calls `rayon::join` without building a pool at all, which
+rayon answers with its lazily-initialised global pool. Neither cell is a
+configured count that happens to equal the core count: the harness clears
+`WF_WORKERS` from its own environment before the rotation, and the Rust binary
+takes a distinct `default` argument that skips `ThreadPoolBuilder` entirely.
+
+Both languages default to 10 threads of execution on this 4P+6E machine, so
+the pair is comparable in the same way the numbered cells are, and the `default`
+column answers a question the numbered columns cannot: not how well each
+language scales when tuned, but what an untuned program gets.
+
 ## Rotation
 
-Every one of the 13 x 12 = 156 (configuration, implementation) cells is visited
-exactly once per round, in a fixed rotation, and the rounds repeat N = 9 times.
+Every one of the 13 x 14 = 182 (configuration, implementation) cells is visited
+exactly once per round, in a fixed rotation, and the rounds repeat N times.
 No cell is ever run twice in a row and no configuration is run as a block, so
 thermal drift and background activity are spread across all cells rather than
-concentrated in one. 1,404 runs in total. (The 2026-08-21 baseline predates the
-`grid` row and is 144 cells.)
+concentrated in one. The authoritative pass is N = 18: 3,276 runs in total.
+(The 2026-08-21 baseline predates the `grid` row and the `default` cells, and
+is 144 cells at N = 9.)
 
 Each run's stdout goes to its own file in `out/`; its exit status is read
 directly from the process, never through a pipeline; its wall time is taken

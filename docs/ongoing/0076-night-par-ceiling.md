@@ -239,6 +239,69 @@ battery reports.)
   protected conformance or compliance change, and no new repository root entry
   in any of the four commits.
 
+- **Protocol amendment and the campaign's authoritative rotation (lead
+  decision, C1).** The measured grid gains a `default` worker cell for both
+  languages, because every cell measured so far names a worker count and the
+  number an unconfigured program actually gets appeared in no table.
+  `wf_par/default` runs the `--par` binary with `WF_WORKERS` genuinely unset
+  (the harness clears it from its own environment first); `rs_rayon/default`
+  takes a new `default` argument that skips `ThreadPoolBuilder` entirely so the
+  work lands on rayon's own global pool. Both resolve to 10 threads of
+  execution here. `cells.awk` and `compare_outputs.zsh` needed no change and
+  were left alone — verified by running, not by reading: the awk keys the
+  threads column as an opaque string and the comparison globs `out/${tag}__wf_*`
+  and `__rs_*`, so the new cells joined both automatically.
+  **The rotation.** Full protocol at HEAD `1e103492`, N = 18, 13 configurations
+  x 14 cells = 182 cells per round, **3,276 runs, every one exit 0**. Byte
+  comparison over the real published bytes of every run: **1,404 Whitefoot and
+  1,872 Rust outputs, every run of every configuration identical within each
+  language and across them.** Snapshot landed as `bench/baseline-20260822/`;
+  `bench/baseline/` is untouched and retained as the 2026-08-21 record.
+  **Load, stated honestly.** The pass ran 04:14-04:36 with corporate agents
+  (Defender `wdavdaemon`, `epsext`, `netext`, CorpLink) active throughout.
+  Per-round one-minute load averages: 2.68, 6.23, 6.10, 4.27, 5.65, 6.26, 7.12,
+  4.79, 4.12, 4.71, 4.91, 4.80, 4.22, 8.44, 7.45, 7.77, 7.48, 7.46 — rounds
+  14-18 under the heaviest contention. All 182 cells exceed 20% spread and the
+  mean is 112%, which is why only minima are quoted; the min-of-18 numbers
+  reproduce a load-2.9 one-round probe to within a few percent.
+  **WF against rayon at matched worker counts** (`wf_par/N` vs `rs_rayon/N`,
+  N in 2/4/8, 39 cells): **14 WF wins outside the band, 25 parity, 0 losses.**
+  Widest is `bal_d8_w16`/8 at 0.48x (0.4676 s vs 0.9710 s).
+  **At the defaults** (13 cells): **11 WF wins, 2 parity, 0 losses.** Widest is
+  `bal_d8_w16` at 0.19x (0.5070 s vs 2.6388 s); the two parity cells are
+  `bal_d12_w192` 0.89x and `grid_d21_w256` 1.02x. The comparison is untuned WF
+  against untuned idiomatic rayon, and `rs_cut` — a hand-picked depth-5 cutoff —
+  is a tuning choice deliberately excluded from it.
+  **Per-family best cells.** `bal`: `bal_d12_w192`/default 0.1140 s, 5.21x over
+  its own sequential. `skew`: `skew_d16_w192`/default 0.1239 s, 6.32x. `grid`:
+  `grid_d21_w256`/default 0.0788 s, 6.57x, against rayon's default 0.0775 s —
+  1.02x, parity, so the index-split family scales like the data-structure
+  families and neither language wins it. `wf_par/default` is the best Whitefoot
+  cell on 7 of 13 configurations. In `t_headline`, best-WF against best-Rust is
+  unresolved on 12 of 13 and resolves only on `bal_d8_w64` (0.83x, WF faster);
+  **there is still no configuration where Rust's best resolves faster than
+  Whitefoot's best.**
+  **NAMED RISK, found by this pass — the opt-in cost regressed on `bal`, and it
+  is not load noise.** `w1/seq` is now **1.14x-1.30x on all nine `bal`
+  configurations and monotone in the words parameter** (w16 1.14-1.15x, w64
+  1.22x, w192 1.29-1.30x). The 2026-08-21 baseline measured 0.85x-1.04x on the
+  same cells. `skew` is unchanged (0.77-0.88x, was 0.72-0.78x) and `grid` is
+  1.00x. The absolute `wf_seq` minima barely moved (`bal_d12_w192` 0.6515 ->
+  0.5934) while `w1` rose (0.6077 -> 0.7634, +26%), so it is the `--par` build's
+  pool-off path that got slower, not the machine. A clean monotone dependence on
+  a workload parameter across three tree depths is not what contention produces.
+  Not bisected here and no cause is claimed; the words-monotone shape points at
+  the measure loop and so at the counted-loop landing (`36963401`) as the first
+  thing to check. **Consequence for the recorded per-fork number:** 0075's
+  formula takes `w1/4` as the ideal, and an inflated `w1` makes that ideal
+  unreachable — at `bal_d12_w192`/4 it now yields **-9.44 ns/fork**, which
+  measures the regression rather than fork cost. Against `wf_seq/4`, the
+  like-for-like baseline rayon is already scored on, the same cell gives
+  **+5.39 ns/fork against rayon's +5.13 ns/fork** — the two are at parity and
+  the fork path itself did not regress.
+  No spec bytes, no protected conformance or compliance change, and no new
+  repository root entry.
+
 ## Outcome
 
 (Filled at closure.)

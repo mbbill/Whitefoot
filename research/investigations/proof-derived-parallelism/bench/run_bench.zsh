@@ -17,6 +17,11 @@ cd "$ROOT"
 # PRIO_DARWIN_BG (which biases Apple-silicon placement towards efficiency
 # cores), move it out, so that every measured process is scheduled the same way.
 taskpolicy -B -p $$ 2>/dev/null || true
+# The `default` worker cell measures a genuinely unset WF_WORKERS, so an
+# inherited one would silently turn it into a configured cell. Every explicit
+# cell sets the variable on its own command line, so clearing it here costs
+# nothing and closes that hole.
+unset WF_WORKERS
 ROUNDS=${1:-9}
 OFFSET=${2:-0}
 R=rust/target/release/paired-layout
@@ -34,7 +39,9 @@ while read -r shape depth words reps; do
   CONFIGS+=("$shape $depth $words $reps")
 done < configs.txt
 
-# Fixed rotation of implementations inside each configuration visit.
+# Fixed rotation of implementations inside each configuration visit. The
+# `default` cells are the shipped defaults of the two languages: WF_WORKERS
+# genuinely unset, and rayon's own global pool with no thread count named.
 typeset -a IMPLS
 IMPLS=(
   wf_seq:0
@@ -42,10 +49,12 @@ IMPLS=(
   wf_par:2
   wf_par:4
   wf_par:8
+  wf_par:default
   rs_seq:0
   rs_rayon:2
   rs_rayon:4
   rs_rayon:8
+  rs_rayon:default
   rs_cut:2
   rs_cut:4
   rs_cut:8
@@ -72,10 +81,17 @@ for (( round = OFFSET + 1; round <= OFFSET + ROUNDS; round++ )); do
           t1=$EPOCHREALTIME
           ;;
         wf_par)
-          t0=$EPOCHREALTIME
-          WF_WORKERS=$threads ./bin/${tag}_par > "$outfile"
-          e=$?
-          t1=$EPOCHREALTIME
+          if [[ $threads == default ]]; then
+            t0=$EPOCHREALTIME
+            ./bin/${tag}_par > "$outfile"
+            e=$?
+            t1=$EPOCHREALTIME
+          else
+            t0=$EPOCHREALTIME
+            WF_WORKERS=$threads ./bin/${tag}_par > "$outfile"
+            e=$?
+            t1=$EPOCHREALTIME
+          fi
           ;;
         rs_seq)
           t0=$EPOCHREALTIME

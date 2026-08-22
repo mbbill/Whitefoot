@@ -54,32 +54,48 @@ END {
 
   # --- WF --par scaling: against WF sequential ---
   f = "logs/t_wf_par.md"
-  print "| config | WF-seq | --par w=1 | w=2 | w=4 | w=8 | seq/w2 | seq/w4 | seq/w8 | opt-in cost w1/seq |" > f
-  print "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|" > f
+  print "| config | WF-seq | --par w=1 | w=2 | w=4 | w=8 | w=default | seq/w2 | seq/w4 | seq/w8 | seq/wdefault | opt-in cost w1/seq |" > f
+  print "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|" > f
   for (i = 1; i <= nc; i++) {
     c = cfgs[i]
     s = g(c,"wf_seq",0); p1 = g(c,"wf_par",1); p2 = g(c,"wf_par",2); p4 = g(c,"wf_par",4); p8 = g(c,"wf_par",8)
-    printf "| `%s` | %.3f | %.3f | %.3f | %.3f | %.3f | %.2fx%s | %.2fx%s | %.2fx%s | %.2fx%s |\n", \
-      c, s, p1, p2, p4, p8, s/p2, verdict(s/p2), s/p4, verdict(s/p4), s/p8, verdict(s/p8), p1/s, verdict(p1/s) > f
+    pd = g(c,"wf_par","default")
+    printf "| `%s` | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.2fx%s | %.2fx%s | %.2fx%s | %.2fx%s | %.2fx%s |\n", \
+      c, s, p1, p2, p4, p8, pd, s/p2, verdict(s/p2), s/p4, verdict(s/p4), s/p8, verdict(s/p8), \
+      s/pd, verdict(s/pd), p1/s, verdict(p1/s) > f
   }
   f = "logs/t_wf_par_spread.md"
-  print "| config | WF-seq | w=1 | w=2 | w=4 | w=8 |" > f
-  print "|---|---:|---:|---:|---:|---:|" > f
+  print "| config | WF-seq | w=1 | w=2 | w=4 | w=8 | w=default |" > f
+  print "|---|---:|---:|---:|---:|---:|---:|" > f
   for (i = 1; i <= nc; i++) {
     c = cfgs[i]
-    printf "| `%s` | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %.0f%% |\n", c, \
-      sp(c,"wf_seq",0), sp(c,"wf_par",1), sp(c,"wf_par",2), sp(c,"wf_par",4), sp(c,"wf_par",8) > f
+    printf "| `%s` | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %.0f%% |\n", c, \
+      sp(c,"wf_seq",0), sp(c,"wf_par",1), sp(c,"wf_par",2), sp(c,"wf_par",4), sp(c,"wf_par",8), \
+      sp(c,"wf_par","default") > f
   }
 
   # --- rayon scaling: against Rust sequential ---
   f = "logs/t_rayon.md"
-  print "| config | Rust-seq | rayon t=2 | t=4 | t=8 | seq/t2 | seq/t4 | seq/t8 |" > f
-  print "|---|---:|---:|---:|---:|---:|---:|---:|" > f
+  print "| config | Rust-seq | rayon t=2 | t=4 | t=8 | t=default | seq/t2 | seq/t4 | seq/t8 | seq/tdefault |" > f
+  print "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|" > f
   for (i = 1; i <= nc; i++) {
     c = cfgs[i]
     s = g(c,"rs_seq",0); a = g(c,"rs_rayon",2); b = g(c,"rs_rayon",4); d = g(c,"rs_rayon",8)
-    printf "| `%s` | %.3f | %.3f | %.3f | %.3f | %.2fx%s | %.2fx%s | %.2fx%s |\n", \
-      c, s, a, b, d, s/a, verdict(s/a), s/b, verdict(s/b), s/d, verdict(s/d) > f
+    rd = g(c,"rs_rayon","default")
+    printf "| `%s` | %.3f | %.3f | %.3f | %.3f | %.3f | %.2fx%s | %.2fx%s | %.2fx%s | %.2fx%s |\n", \
+      c, s, a, b, d, rd, s/a, verdict(s/a), s/b, verdict(s/b), s/d, verdict(s/d), s/rd, verdict(s/rd) > f
+  }
+
+  # --- the shipped defaults: what a program that configures nothing gets ---
+  f = "logs/t_defaults.md"
+  print "| config | WF default | vs WF-seq | rayon default | vs Rust-seq | WF/rayon at defaults |" > f
+  print "|---|---:|---:|---:|---:|---:|" > f
+  for (i = 1; i <= nc; i++) {
+    c = cfgs[i]
+    ws = g(c,"wf_seq",0); wd = g(c,"wf_par","default")
+    rs2 = g(c,"rs_seq",0); rd = g(c,"rs_rayon","default")
+    printf "| `%s` | %.3f | %.2fx%s | %.3f | %.2fx%s | %.2fx%s |\n", \
+      c, wd, ws/wd, verdict(ws/wd), rd, rs2/rd, verdict(rs2/rd), wd/rd, verdict(wd/rd) > f
   }
 
   f = "logs/t_rayoncut.md"
@@ -96,8 +112,8 @@ END {
   f = "logs/t_headline.md"
   print "| config | best WF | which | best Rust | which | WF/Rust | best WF vs Rust-seq |" > f
   print "|---|---:|---|---:|---|---:|---:|" > f
-  nwf = split("wf_seq:0 wf_par:1 wf_par:2 wf_par:4 wf_par:8", WI, " ")
-  nrs = split("rs_seq:0 rs_rayon:2 rs_rayon:4 rs_rayon:8 rs_cut:2 rs_cut:4 rs_cut:8", RI, " ")
+  nwf = split("wf_seq:0 wf_par:1 wf_par:2 wf_par:4 wf_par:8 wf_par:default", WI, " ")
+  nrs = split("rs_seq:0 rs_rayon:2 rs_rayon:4 rs_rayon:8 rs_rayon:default rs_cut:2 rs_cut:4 rs_cut:8", RI, " ")
   for (i = 1; i <= nc; i++) {
     c = cfgs[i]
     bw = 1e9; bwn = ""

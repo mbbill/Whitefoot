@@ -26,8 +26,9 @@
 //! exactly associative, so no schedule can move a bit.
 //!
 //! usage: paired-layout MODE SHAPE DEPTH WORDS REPS [THREADS]
-//!   MODE   seq | rayon | rayoncut | nodes
-//!   SHAPE  bal | skew | grid
+//!   MODE     seq | rayon | rayoncut | nodes
+//!   SHAPE    bal | skew | grid
+//!   THREADS  a count, or `default` for rayon's own global pool
 
 use std::env;
 
@@ -434,10 +435,18 @@ fn main() {
     let depth: u64 = argv[3].parse().expect("DEPTH");
     let words_n: u64 = argv[4].parse().expect("WORDS");
     let reps: u64 = argv[5].parse().expect("REPS");
-    let threads: usize = if argv.len() > 6 {
-        argv[6].parse().expect("THREADS")
+    // `default` asks for no explicit thread count at all: the work runs on
+    // rayon's own global pool, sized by rayon, which is what a program that
+    // configures nothing gets. Any other value builds a pool of exactly that
+    // size. `None` is therefore "rayon decides", not "one thread".
+    let threads: Option<usize> = if argv.len() > 6 {
+        if argv[6] == "default" {
+            None
+        } else {
+            Some(argv[6].parse().expect("THREADS"))
+        }
     } else {
-        1
+        Some(1)
     };
 
     if shape == "grid" {
@@ -455,14 +464,16 @@ fn main() {
             );
             return;
         }
-        let total = if mode == "seq" {
-            run_grid(&mode, depth, cap, reps)
-        } else {
-            let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(threads)
-                .build()
-                .expect("rayon pool");
-            pool.install(|| run_grid(&mode, depth, cap, reps))
+        let total = match (mode.as_str(), threads) {
+            ("seq", _) => run_grid(&mode, depth, cap, reps),
+            (_, None) => run_grid(&mode, depth, cap, reps),
+            (_, Some(n)) => {
+                let pool = rayon::ThreadPoolBuilder::new()
+                    .num_threads(n)
+                    .build()
+                    .expect("rayon pool");
+                pool.install(|| run_grid(&mode, depth, cap, reps))
+            }
         };
         println!("{:016x}", total as u64);
         return;
@@ -503,14 +514,16 @@ fn main() {
         last
     };
 
-    let last = if mode == "seq" {
-        run(&mut tree)
-    } else {
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build()
-            .expect("rayon pool");
-        pool.install(|| run(&mut tree))
+    let last = match (mode.as_str(), threads) {
+        ("seq", _) => run(&mut tree),
+        (_, None) => run(&mut tree),
+        (_, Some(n)) => {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(n)
+                .build()
+                .expect("rayon pool");
+            pool.install(|| run(&mut tree))
+        }
     };
 
     println!("{:016x}", last.to_bits());

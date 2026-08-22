@@ -38,9 +38,11 @@ quoting a number from here.
 The generator (`gen_wf.sh`, `configs.txt`) and the Rust twin (`rust/`) are the
 sources. The `.wf` files are not checked in: `build_wf.sh` regenerates them
 deterministically from the generator on every build, and a second checked-in
-copy would go stale beside it. `baseline/` holds the 2026-08-21 measurement
-snapshot. `wf/`, `bin/`, `out/`, `logs/`, and `rust/target/` are generated and
-ignored.
+copy would go stale beside it. `baseline-20260822/` holds the current reference
+measurement — N = 18 over all thirteen configurations including the two
+`default` cells — and `baseline/` is kept unchanged as the earlier 2026-08-21
+snapshot, whose tables are the ones quoted under "Baseline, 2026-08-21" below.
+`wf/`, `bin/`, `out/`, `logs/`, and `rust/target/` are generated and ignored.
 
 ## Rerun
 
