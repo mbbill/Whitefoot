@@ -38,10 +38,12 @@ quoting a number from here.
 The generator (`gen_wf.sh`, `configs.txt`) and the Rust twin (`rust/`) are the
 sources. The `.wf` files are not checked in: `build_wf.sh` regenerates them
 deterministically from the generator on every build, and a second checked-in
-copy would go stale beside it. `baseline-20260822/` holds the current reference
+copy would go stale beside it. `baseline-20260823/` holds the current reference
 measurement — N = 18 over all thirteen configurations including the two
-`default` cells — and `baseline/` is kept unchanged as the earlier 2026-08-21
-snapshot, whose tables are the ones quoted under "Baseline, 2026-08-21" below.
+`default` cells, taken on a cleared machine at the rebased lineage's tip — and
+`baseline-20260822/` and `baseline/` are kept unchanged as the earlier
+2026-08-22 and 2026-08-21 snapshots, the latter being the one whose tables are
+quoted under "Baseline, 2026-08-21" below.
 `wf/`, `bin/`, `out/`, `logs/`, and `rust/target/` are generated and ignored.
 
 ## Rerun
@@ -75,11 +77,13 @@ produced by the same rotation and minimum rule.
 
 Ratios are min-of-N. **Any ratio between 0.83x and 1.20x is unresolved** and
 the tables mark it `unres.`; this instrument does not separate those two
-numbers, and no claim may be made about a cell so marked. Per-cell spreads are
-large — mean 112%, worst 411%, over the current reference snapshot's 182 cells
-— because the machine is a shared laptop with efficiency cores; that is exactly
-why the minimum, not the mean, is the statistic, and why sub-20% differences are
-not conclusions.
+numbers, and no claim may be made about a cell so marked. Per-cell spreads
+depend heavily on what else the machine is doing: over the same 182 cells they
+run mean 27% and worst 146% on the current reference snapshot, taken on a
+cleared machine, against mean 112% and worst 411% on the contended
+`baseline-20260822/` pass. Because the machine is a shared laptop with
+efficiency cores and can deliver either, the minimum and not the mean is the
+statistic, and sub-20% differences are not conclusions.
 
 ## Baseline, 2026-08-21
 
@@ -92,12 +96,13 @@ This snapshot is the twelve layout configurations only; the `grid` family was
 added afterwards and is not in it. **This section is superseded and kept as the
 dated 2026-08-21 record.** It once promised that the next authoritative rotation
 would replace it with all thirteen; that rotation landed as
-`baseline-20260822/`, which ships its own README and ten generated tables, and
-this section was left in place instead of being rewritten. Read the tables below
-as history — their headline WF/Rust column reports 1.56x-3.29x with `wf_par/1`
-as the best Whitefoot cell, where the current snapshot reports 0.83x-1.05x,
-unresolved on twelve of thirteen. The `baseline/` pointers in this section are
-correct for this section.
+`baseline-20260822/`, and the current reference is now `baseline-20260823/`.
+Each ships its own README and ten generated tables, and this section was left
+in place instead of being rewritten. Read the tables below as history — their
+headline WF/Rust column reports 1.56x-3.29x with `wf_par/1` as the best
+Whitefoot cell, where the current snapshot reports 0.84x-1.08x, unresolved on
+all thirteen. The `baseline/` pointers in this section are correct for this
+section.
 
 ### Configuration inventory
 

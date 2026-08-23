@@ -328,6 +328,84 @@ they correct.
   claim-free eligibility from it, which is the opposite conclusion. Both §1
   bullets are struck through in place with the withdrawal dated, rather than
   rewritten, so the dossier still reads as the contract it was.
+- **The campaign's final authoritative rotation, on the rebased lineage.**
+  Full protocol at branch tip `0c56d5bd`, N = 18 over all 13 configurations
+  and all 14 cells — 3,276 runs, every one exiting 0, every one of the 13
+  configurations publishing a single byte sequence across both languages and
+  every worker count (1,404 Whitefoot and 1,872 Rust outputs compared by
+  `cmp`). Landed as `bench/baseline-20260823/`, which supersedes
+  `baseline-20260822/` as the current reference; the one pointer in
+  `bench/README.md` follows it, and two further sentences there that quoted
+  the old snapshot's spread and headline range were corrected in the same
+  change rather than left false. **The machine was cleared first**: load
+  average 1.65 before and 3.98 after, no competing process above 13% CPU at
+  any check, and it shows — mean cell spread falls from the prior pass's
+  **112% to 27%** and worst from **411% to 146%**, while the minima the
+  protocol actually reports barely moved. *Protocol note:* the 18 rounds were
+  driven as five foreground `run_bench.zsh` invocations using its `OFFSET`
+  argument (2+4+4+4+4) rather than one `rerun.zsh 18`, an executor harness
+  constraint; round numbering is continuous, the in-round rotation is
+  untouched, and no cell runs twice in a row across a seam either.
+  **Against rayon at matched worker counts: 22 Whitefoot wins, 25 unresolved,
+  5 losses** of 52 cells, where `baseline-20260822/` read 24 / 28 / 0.
+  **At the shipped defaults on both sides: 11 wins, 2 unresolved, 0 losses of
+  13 — unchanged.** Best Whitefoot speedup over its own sequential build, per
+  family, all at the shipped default: `bal` **4.63x** (`bal_d12_w192`), `skew`
+  **6.46x** (`skew_d16_w192`), `grid` **6.71x**. Best-cell-against-best-cell
+  WF/Rust is unresolved on **all thirteen** configurations, spanning
+  0.84x-1.08x.
+- **Nine of 182 cells moved outside the band against `baseline-20260822/`, and
+  the controls say where it lives.** All nine are `wf_par`, all `bal`, all at
+  2 or 4 lanes, all at 64 or 192 words per node, all slower: 1.20x-1.28x.
+  Four controls each exclude something. The **sequential floor did not move** —
+  all 13 `wf_seq` minima within 1% but for `bal_d8_w16` at 1.04x, so `main`'s
+  compiler delta, the expected source of movement, did not reach Whitefoot's
+  sequential codegen. The **Rust twin did not move** — all 52 `rs_rayon` cells
+  between 0.96x and 1.01x, measured interleaved in the same rotation under the
+  same load in both passes, which is what excludes machine state. The
+  **`--par` binary's own sequential world did not move** — all 13 `wf_par/1`
+  cells between 0.93x and 1.01x. And the **judgment actualizes the same
+  thing** — `--par-ledger` reports the same two eligible pairs and two-member
+  chains on `bal` and `skew` alike. Multiplying each penalty by its lane count
+  gives a constant per configuration, independent of lane count: **+0.11
+  core-seconds at 64 words and +0.17 at 192**, and nothing at 16 words,
+  nothing on `skew`, nothing on `grid`. That is added parallel work spread
+  across the lanes, not added serialization; the three `bal` depths agree
+  because `reps` holds total node count near-constant, so it is per-node cost
+  scaling with per-node data volume, with a threshold between 16 and 64 words.
+  **The trap latch is not the cause**: `skew` and `grid` carry claims and hand
+  out exactly as `bal` does and are flat, so a latch-conditional emission would
+  have reached them too. Further attribution needs a compiler bisect across the
+  rebase over `backend/emitter/parallel.rs` and `backend/par_runtime.c`, which
+  was **deliberately not run — reported, not chased.**
+- **Probe re-runs at the branch tip, interleaved min-of-7.** `q4.wf` seq
+  0.4498, W=1 0.4490, W=4 0.1935, W=8 0.2141, W=64 0.2849, default 0.1960 s;
+  `bt.wf` seq 0.1715, W=1 0.1697, W=8 0.0437, W=64 0.0615, default 0.0407 s.
+  Every cell of each probe published one digest (`4400442d0dce55de` and
+  `67c43a57dab7a5cc`), and every cell reproduces batch 0076 Dig 3's recorded
+  numbers inside the band — the widest are `q4` W=1 at 0.90x and `bt` W=64 at
+  1.14x. **Neither probe shows the `bal` regression**, which fits the
+  attribution above: both carry small per-node payloads, the regime where the
+  grid's own `w16` column is also flat.
+- **The `r2` grid loop form still reaches the twin and rayon**, re-measured
+  min-of-7 at the tip: `wf_loop` seq 0.4640, W=4 0.1357, W=8 0.0863, default
+  **0.0764** s; the hand-split twin 0.4739 / 0.1373 / 0.0896 / 0.0769; rayon
+  0.1365 / 0.0923 / 0.0797. Loop against twin reads 0.98 / 0.99 / 0.96 / 0.99
+  and loop against rayon 0.99 / 0.94 / 0.96 — **every ratio inside the
+  unresolved band**, as in the batch's own table. The loop form scales
+  **6.07x** from its own sequential build. All eleven cells published SHA-256
+  prefix `a6522da3cd244c2c`, the same digest of `000000000033517d` this record
+  carries throughout.
+- **`min_stack` depth spot-brackets, exits only, no bisection.** At depths
+  150,000 / 185,000 / 506,827 / 520,000 the default compilation and `--par` at
+  `WF_WORKERS=1` **exit 0 at every one of the four**; the shipped default exits
+  0 at 150,000 and dies at the other three. So the pool-on ceiling is bracketed
+  to **(150,000, 185,000]**, which contains the ~170,000 recorded in the 0077
+  flagged entry, and the sequential and one-lane ceilings are confirmed to
+  clear **520,000**, above the 506,827 that entry recorded as their maximum —
+  a floor from four spot depths, not a re-bisected maximum. **One correction to
+  that entry:** the death at the shipped default is signal 10, SIGBUS, not the
+  "bare SIGSEGV" recorded there.
 
 ## What the redirect actualized, measured
 

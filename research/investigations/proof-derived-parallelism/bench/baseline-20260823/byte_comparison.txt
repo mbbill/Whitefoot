@@ -1,0 +1,15 @@
+bal_d8_w16: WF == Rust, bytes 418978c4dfc3adcb, 108 WF runs, 144 Rust runs
+bal_d8_w64: WF == Rust, bytes 41b7bde1c5b8515c, 108 WF runs, 144 Rust runs
+bal_d8_w192: WF == Rust, bytes 41d434bad9dda9b2, 108 WF runs, 144 Rust runs
+bal_d10_w16: WF == Rust, bytes 41a97eb56fcb8a7e, 108 WF runs, 144 Rust runs
+bal_d10_w64: WF == Rust, bytes 41d7c539f8109d29, 108 WF runs, 144 Rust runs
+bal_d10_w192: WF == Rust, bytes 41f43bcaafe3d6ba, 108 WF runs, 144 Rust runs
+bal_d12_w16: WF == Rust, bytes 41c980c678512691, 108 WF runs, 144 Rust runs
+bal_d12_w64: WF == Rust, bytes 41f7c761152494df, 108 WF runs, 144 Rust runs
+bal_d12_w192: WF == Rust, bytes 42143db997dbfda3, 108 WF runs, 144 Rust runs
+skew_d16_w16: WF == Rust, bytes 41b6e2d19d086103, 108 WF runs, 144 Rust runs
+skew_d16_w64: WF == Rust, bytes 41e556a6323abc33, 108 WF runs, 144 Rust runs
+skew_d16_w192: WF == Rust, bytes 420229e929506cdd, 108 WF runs, 144 Rust runs
+grid_d21_w256: WF == Rust, bytes 000000000033517d, 108 WF runs, 144 Rust runs
+compared 1404 WF outputs and 1872 Rust outputs
+RESULT: every run of every configuration published identical bytes, in both languages and across them.
