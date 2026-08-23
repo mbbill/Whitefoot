@@ -66,9 +66,12 @@ Plus the two design rulings of the same night:
   diverges, the overlapped execution hangs at the join exactly where the
   elision hangs; nothing observable can be emitted mid-lane. **No
   termination judgment, no weakened law, no EFF-4 ruling is needed for
-  v1.** (The EFF-4 two-half ruling and elision-rank arbitration remain on
-  file — `debate/d1-defense.md` — for the day claim-bearing regions are
-  worth actualizing. Deferred, not rejected.)
+  v1.** (The EFF-4 two-half ruling and elision-rank arbitration are on file
+  at `debate/d1-defense.md`, promoted into this directory on 2026-08-23
+  because this citation and the 0078 record's both depended on it and it
+  existed only in the lead's scratch. That day the arbitration was **refused**
+  rather than deferred, for the reason the 0078 record states; the file is the
+  evidence of what was weighed.)
 - ~~**Claim-bearing regions stay sequential and that is principled**: claims
   mark exactly the checker's incompleteness gaps; each checker improvement
   converts claims to proofs and mechanically widens the eligible set
@@ -127,12 +130,18 @@ P(s1,s2) holds iff ALL of:
    continuation"); condition 4 handles the exit half, the join's
    wait-for-all handles the divergence half.
 
-**Eligibility (actualization) additionally requires:** the transitive call
-closure of both callees reaches zero `claim` sites. Chains of ≥2 adjacent
+~~**Eligibility (actualization) additionally requires:** the transitive call
+closure of both callees reaches zero `claim` sites.~~ **Withdrawn 2026-08-23**
+(batch 0078), with the §1 bullets this restated. A permitted pair is eligible;
+there is no further claim condition, and `wf_trap`'s first-trap-wins latch
+carries the erroneous-execution guarantee instead. Chains of ≥2 adjacent
 eligible calls generalize pairwise.
 
 **Invariants P must keep:** P consults typing, rows, resolved places, CFG,
-and the call graph — never the entailment fact state. Acceptance is
+~~and the call graph~~ — never the entailment fact state. **The call graph
+left that list on 2026-08-23**: deleting the claim closure removed its last
+consumer, so `permission.rs` now carries the functions and their signatures
+and nothing else. Acceptance is
 untouched; facts-on/facts-off behavior is identical by construction.
 Permission never licenses reordering of anything `external` (EFF-5
 untouched).
@@ -145,10 +154,14 @@ mandatory record path):
 
 ```
 PAR permitted   file.wf:LINE  pair(f, g)  eligible
-PAR permitted   file.wf:LINE  pair(f, g)  not-actualizable: N claim sites via h
 PAR denied      file.wf:LINE  pair(f, g)  condition 2: writes overlap at <place> vs <place>
 PAR denied      file.wf:LINE  pair(f, g)  condition 4: Err edge of s1 skips s2
 ```
+
+The sample above carried a fourth line,
+~~`PAR permitted file.wf:LINE pair(f, g) not-actualizable: N claim sites via h`~~,
+**struck 2026-08-23**: the `not-actualizable` verdict class was deleted with
+the claim-free eligibility condition and no compilation can print it.
 
 Deterministic order (source order). This is the legality ledger (round-1
 salvage), the AI writer's gradient, and the measurement instrument.
@@ -213,10 +226,17 @@ salvage), the AI writer's gradient, and the measurement instrument.
 One new rule family, minimal text (~1 rule + law paragraph), drafted to the
 spec's register, activation at merge:
 
+**Superseded 2026-08-23.** The candidate sketch below still carries the
+claim-free condition and the unconditional identity; the [PAR-1] v2 text that
+supersedes it — with that condition deleted and the identity made conditional
+on contract compliance in the sense [SCOPE-4] fixes — is the merge-time recipe
+in `docs/ongoing/0078-loop-permission.md`. The sketch is kept as the contract
+it was:
+
 > **[PAR-1]** A conforming implementation may overlap the execution of two
 > statements only when the permission judgment of this rule holds: (their
-> four conditions, stated normatively) and every reachable checked site of
-> both call closures is empty of claims. Under such overlap every
+> four conditions, stated normatively) ~~and every reachable checked site of
+> both call closures is empty of claims~~. Under such overlap every
 > observable — result values, the trap-or-normal outcome, the [DIAG-3]
 > record bytes, and the per-resource order of external effects — is
 > identical in every execution to the sequential execution's. Worker
@@ -242,9 +262,10 @@ Protected gates and wiring: untouched.
   uniq fold; A1-style read-only recursion; B1 bisection `reads`-only) and
   denies each counterexample by the right condition: g2_propagate (cond 4),
   g3_dep (cond 1), shared-`&uniq`-argument overlap (cond 2), external row
-  (cond 3), claim-bearing closure (eligibility). Negative controls follow
-  the m/n discipline: each denial asserts the cited condition, not just
-  "denied".
+  (cond 3), ~~claim-bearing closure (eligibility)~~ — **that last one struck
+  2026-08-23**, since a claim-bearing closure is no longer a denial of any
+  kind. Negative controls follow the m/n discipline: each denial asserts the
+  cited condition, not just "denied".
 - **Codegen:** eligible site emits thunk+try_fork/join; ineligible sites emit
   today's code. **Corrected 2026-08-22:** this line also said "WF_WORKERS unset
   ⇒ no runtime linked/no behavior change", which is false in both halves at the
@@ -263,8 +284,10 @@ Protected gates and wiring: untouched.
 
 Port the debate's realistic-body workload (`a2r_layout*` shape: box-tree
 recursive fold, per-node float cascade + word loop) as
-`tests/programs/par_layout.wf` (claim-free variant for eligibility; a
-claim-bearing sibling variant to show the ledger's not-actualizable line).
+`tests/programs/par_layout.wf` (claim-free variant for eligibility; ~~a
+claim-bearing sibling variant to show the ledger's not-actualizable line~~ —
+**struck 2026-08-23**: there is no such line, and the claim-bearing fold is
+the one whose newly granted lanes the 0078 record measures).
 Measure per the protocol (interleaved A/B in one process, best-of-N,
 differences under 20% reported as unresolved): WF_WORKERS=1 vs 2/4/8,
 wall time + byte-compare. Report the Amdahl share observed. Results into
@@ -276,8 +299,10 @@ repair; sources under do_not_scan are dying artifacts).
 
 Adopted from PAL: the four-layer separation (permission / decomposition /
 profitability / mapping); marker-never-authority (marker itself deferred to
-next packet); claim-free worker closures (§10.2 — vindicated by the claim
-doctrine); serial fallback as the universal member; diagnostics taxonomy
+next packet); ~~claim-free worker closures (§10.2 — vindicated by the claim
+doctrine)~~ — **struck 2026-08-23**, since the claim doctrine turned out to
+argue the opposite and worker closures are not required to be claim-free;
+serial fallback as the universal member; diagnostics taxonomy
 (proved dependence / unknown / unsupported / not-profitable-is-never-an-
 error) — the ledger uses it. Corrected against PAL: its observation list
 omits termination — v1's wait-for-all join makes that moot for eligible

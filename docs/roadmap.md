@@ -111,7 +111,10 @@ Which gap matters next is selected by a project, never by checklist length.
   runtime is now selected for the compute lane and measured there, so it is
   evidence for exactly that lane and preselects nothing for the I/O lane;
   outline:PAR-2 and outline:PAR-3 cannot preselect proof rules or reductions before their
-  own workload evidence.
+  own workload evidence. For outline:PAR-3 the owner's chartering direction of
+  2026-08-23 supplied that evidence and overtook this caution: the branch
+  carries a counted-loop reduction candidate, measured on the `grid` family.
+  outline:PAR-2's half is still parked and still bound by this sentence.
 - outline:STORE-2 must expose a concrete unsolved representation privilege before
   outline:PROOF-6 can enter a plan.
 - outline:TARGET-2 through outline:TARGET-4 depend on outline:BOUND-1 whenever their authentic milestone
@@ -801,11 +804,25 @@ and failure semantics survive the runtime implementation.
   region-level separation is too coarse.
 - **Current:** effects can separate storage origins but do not prove arbitrary
   element-level injectivity; there is no production `split_uniq` capability.
+  **This is exactly what batch 0078 deferred**: its counted-loop permission is
+  the reduction and not the map, because a resolved place carries no index
+  segment, so `dst[i]` and `dst[j]` are one place and every element write
+  denies under its condition 2. The probe carrying that fact is
+  `loop/probes/x1_same_buffer.wf`.
 - **Missing / next:** a selected sequential or parallel project must first
   require this exact access pattern; then choose the smallest judgment and its
-  lifetime across calls or recursion.
+  lifetime across calls or recursion. The 0078 re-entry condition is the
+  concrete form of that: a real program with a compute-heavy
+  single-destination map, or places gaining index granularity — whichever
+  arrives first reopens the map half of [PAR-2].
 - **Facts:** [parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md) ·
-  [pattern gaps](patterns.md#known-gaps-findings-not-yet-patterns).
+  [pattern gaps](patterns.md#known-gaps-findings-not-yet-patterns) ·
+  [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md) ·
+  [batch record 0078](ongoing/0078-loop-permission.md).
+
+Note the name collision, which the `outline:` prefix keeps formally distinct:
+this direction is `outline:PAR-2`, and the spec rule `[PAR-2]` the branch
+carries is counted-loop reduction permission, not intra-object disjointness.
 
 ### outline:PAR-3 — Reductions, algebra, and trap selection
 
@@ -813,12 +830,28 @@ and failure semantics survive the runtime implementation.
 
 - **Goal:** parallelize only an exact algebraic domain whose result and failure
   semantics survive regrouping and concurrent eligibility.
-- **Current:** FN-4 law discharge exists for acceptance; parallel reduction,
-  floating reproducibility, and concurrent trap selection do not. Historical
-  chunk-summary work found no Whitefoot-over-Rust delta.
-- **Missing / next:** a real reduction workload must choose the integer/float
-  domain, deterministic result, and trap rule before any transform.
-- **Facts:** [historical chunk-summary result](../research/experiments/port-study/wc-chunk-summary/RESULTS.md).
+- **Current:** FN-4 law discharge exists for acceptance. Parallel reduction,
+  deterministic result, and concurrent trap selection **now exist as branch
+  candidates**, where this entry previously said they do not. Batch 0078 on
+  `par/loop-permission` carries a CANDIDATE rule [PAR-2] granting counted-loop
+  reduction over a normatively enumerated exactly-associative combine set
+  (float excluded by rule, not by hedge), a lowering that publishes the
+  sequential fold's bytes at every worker count, and a trap rule: the claim
+  redirect makes the observable-identity guarantee conditional on contract
+  compliance, and `wf_trap` takes a first-trap-wins latch, so an erroneous
+  execution writes exactly one record and which claim it names is the
+  schedule's to choose. None of it is active; all of it activates only at
+  merge. Floating reproducibility is still absent and is excluded by the rule.
+  Historical chunk-summary work found no Whitefoot-over-Rust delta.
+- **Missing / next:** the workload evidence this entry asked for is partly in —
+  the `grid` family measures 6.5x for the loop form against its own sequential
+  build, and the corpus census reports the rule fires on none of the twelve
+  counted loops the project has already written. The float domain, the map
+  (element-write) half, and any non-commutative associative operation are open,
+  each with a named re-entry condition in the design ruling.
+- **Facts:** [historical chunk-summary result](../research/experiments/port-study/wc-chunk-summary/RESULTS.md) ·
+  [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md) ·
+  [batch record 0078](ongoing/0078-loop-permission.md).
 
 ### outline:PAR-4 — Runtime, allocation, and dynamic fan-out
 

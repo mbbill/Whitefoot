@@ -22,10 +22,25 @@ verdict class no longer exists, and the seven probes that quoted it —
 `a2_bubble.wf`, `a2r_layout_two.wf`, `d1_two_traps.wf`,
 `d2_band_window_claim.wf`, `p1a.wf`, `p1b.wf`, `p7_dyn.wf` — now report
 `eligible` with a two-member chain. Each paragraph below states today's verdict
-and then what it used to say. **Several of these probes were landed to record a
-decision that is now reversed**; whether they are deleted or kept as the
-evidence of the reversal is the lead's disposition, and is flagged in
-`docs/ongoing/0078-loop-permission.md`. Previously **refreshed 2026-08-22 after
+and then what it used to say.
+
+**Several of these probes were landed to record a decision that is now
+reversed. Disposition, 2026-08-23: all seven are kept, under this file's own
+standing rule that a probe is deleted when the decision or finding it settles
+is superseded.** What the redirect superseded in each of the seven is the
+`not-actualizable` *verdict line* the paragraph quoted, not the finding the
+probe settles: `a2_bubble.wf` and `a2r_layout_two.wf` still carry the
+uniq-tree fold and the realistic layout body the investigation was built on and
+now demonstrate that nothing divides them from their claim-free twins;
+`d1_two_traps.wf` is the only program in the repository that reaches two live
+traps, which is the shape `backend/tests/trap_latch.rs` needs; `p1a.wf` and
+`p1b.wf` are kept for Dig 8's adjacency fix, which the redirect did not touch;
+`d2_band_window_claim.wf` is kept with its guarded twin until the
+band/derived-index finding is superseded, which it is not. The one whose
+*conclusion* was reversed is `p7_dyn.wf` — the design boundary it named is gone
+— and it is kept because it remains the only carrier of the F6 shape and, now,
+of the reversal. Each paragraph below states today's verdict and then what it
+used to say, which is that record. Previously **refreshed 2026-08-22 after
 the 0076/0077 batch audit**,
 which found the warranty unmet on four entries: batch 0076's Dig 8 replaced the
 adjacency rule and rewrote the denial wording, and Dig 9 widened the discharge,

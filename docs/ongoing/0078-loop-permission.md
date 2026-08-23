@@ -74,12 +74,30 @@ be prepared and flagged. No new repository root entries.
 Batch C adds no protected conformance or compliance change of its own: no
 conformance case or verdict is added, modified, deleted, or renamed, and no
 gate, collection path, invocation wiring, or gate-integrity test is touched.
-It **does** supersede the [PAR-1] amendment recipe carried in the phase-1
-merge packet (`docs/ongoing/0074-proof-derived-parallelism.md`, "Required
-before merge" item 2), which is flagged below and is a change the owner
-applies once, at whichever merge lands [PAR-1]. One new file inside an
-existing directory: `compiler/src/backend/tests/trap_latch.rs`. No new
-repository root entry.
+It **does** supersede **both** of the phase-1 merge packet's "Required before
+merge" items (`docs/ongoing/0074-proof-derived-parallelism.md`):
+
+- **item 1, the [PAR-1] conformance annotation bytes.** Not a reason-text
+  revision — the whole line changes. 0074 line 114 carries
+  `"covered_by": "compiler-parallel-tests"` in 576 bytes; the line prepared
+  below carries `"covered_by": "compiler-permission-judgment"` in 1 207 bytes
+  with wholly different `reason` text. Applying 0074's item 1 as written
+  installs the wrong protected line.
+- **item 2, the [PAR-1] amendment recipe**, replaced by the [PAR-1] v2 recipe
+  below.
+
+Both are changes the owner applies once, at whichever merge lands [PAR-1], and
+both are flagged below.
+
+**Added paths, all inside existing directories, none at the repository root:**
+`compiler/src/backend/tests/trap_latch.rs`;
+`mcts_mem/whitefoot/parallelism/permission-judgment.alt/claim-free-eligibility.md`;
+`research/investigations/proof-derived-parallelism/debate/d1-defense.md`; and
+the four `mcts_mem` nodes the loop ruling and the redirect's rejected rival
+needed — `parallelism/loop-permission.md`, its
+`loop-permission.alt/{iteration-leaf-split,par1-amendment}.md`, and
+`permission-judgment.alt/elision-rank-join-arbitration.md`. An earlier version
+of this paragraph named one.
 
 No batch of this record edits `spec/kernel-spec.md`. The candidate text, its
 insertion points, its candidate SHA-256, and the native grammar-verifier
@@ -120,9 +138,11 @@ they correct.
 - D-2 fixed: the emitting world's overlap set is one stored slice, so a
   sequential clone can no longer label a phi predecessor with a `par.done`
   block it never emits. `--par` now compiles and links all 22 corpus units
-  (2 failed before) and publishes the default build's bytes on all 8 units
-  the lowering changes. The `--par` compile test is widened from
-  `par_layout.wf` to the whole corpus and fails without the fix.
+  (2 failed before) and publishes the default build's bytes on every unit the
+  lowering changes — **8** when this line was written, **9** at the repaired
+  tip, the newcomer being `prefix_expression`, which the claim-gate deletion in
+  C1 made eligible. The `--par` compile test is widened from `par_layout.wf` to
+  the whole corpus and fails without the fix.
 - D-1 fixed: `give` refuses the counted-loop hint, split out of the
   `DropExpression` arm and placed with `return` and `propagate`. The
   dossier's give-bearing loop publishes 27 where the advised split publishes
@@ -152,17 +172,24 @@ they correct.
   [OWN-7] overlap relation. It consults no entailment state.
   **Zero emitted bytes, verified rather than asserted.** All 38 corpus and
   bench sources emit byte-identical modules before and after, in the default
-  and the `--par` world both; and over the 703-source sweep every `PAR`
-  pair and chain line is byte-identical with the new loop lines filtered out,
-  so no pair verdict moved anywhere.
+  and the `--par` world both; and over the sweep of every source that checks
+  standalone, every `PAR` pair and chain line is byte-identical with the new
+  loop lines filtered out, so no pair verdict moved among them. (The population
+  was recorded here as "703 sources", which was the count of non-archive `.wf`
+  files at `13ffab4c` rather than the count of sources the sweep actually
+  judged; the census section below names both.)
 - A2, the [PAR-2] candidate prepared: full rule text, insertion point,
   candidate SHA-256, and the native grammar verifier's grammar-preserving
   result, recorded above as the merge-time recipe. `spec/kernel-spec.md` is
   untouched in tree.
 - A3, the attack battery landed as tests: `semantic/tests/loop_permission.rs`
-  carries 32 cases, each denial asserting the condition that judged it, plus
-  the ledger-line assertions in `driver.rs`. Every attack of the batch's
-  adversarial dossier is a case, and every admitted combine has a grant.
+  carries **34** cases at the repaired tip (33 when A3 landed at `13ffab4c`;
+  C1 replaced its two `..._not_actualizable` cases with three), each denial
+  asserting the condition that judged it, plus the ledger-line assertions in
+  `driver.rs`. **Every attack the lead reproduced from the batch's adversarial
+  dossiers is a case** — the dossiers themselves live in the lead's scratch and
+  are not in the repository, so that is a statement about what was reproduced
+  and not a property a reader can check. Every admitted combine has a grant.
 - A conservatism in already-presented material, fixed by the supersession
   rather than by a separate correction: batch 0077's hint refused every loop
   containing a `give`, including one whose `give` delivers into a `value_if`
@@ -250,13 +277,21 @@ they correct.
   the one place a claim still refuses is unchanged and now pinned by a case
   that says so: a claim written *between* the two calls of a window is an
   exit-bearing interposed form and still denies under condition 4.
-- C2, the trap latch. `wf_trap` — the one path a false claim reaches, emitted
-  into every module that carries a `claim` and independent of `--par` — takes
-  a process-wide latch by `cmpxchg` before its first byte. The winner writes
-  its complete [DIAG-3] record and aborts; a thread that loses parks on a
-  volatile load, and the winner's abort takes it down with the process. The
-  cost off the trap path is zero: the latch is one private global that nothing
-  outside `wf_trap` reads or writes.
+- C2, the trap latch. `wf_trap` — the one path a false claim reaches — takes a
+  process-wide latch by `cmpxchg` before its first byte. The winner writes its
+  complete [DIAG-3] record and aborts; a thread that loses parks on a volatile
+  load, and the winner's abort takes it down with the process. The cost off the
+  trap path is zero: the latch is one private global that nothing outside
+  `wf_trap` reads or writes.
+- C2 corrected after the batch audit (`5d73ae59`). As landed at `f6c55a9d` the
+  latch went into `wf_trap` on the sole condition that the module carries a
+  `claim`, with no `--par` predicate anywhere on that path — so it changed the
+  bytes of 21 default compilations and built a parked lane into a world where a
+  lone thread can never race anyone for the record. It is now conditional on
+  the module handing a call out to a worker lane, which is exactly when the
+  module can have more than one thread inside it; every other module emits the
+  pre-latch trap writer it emitted before this path existed. The evidence is
+  under "What the corpus does" below.
 - C3, the tests. `backend/tests/trap_latch.rs` carries the erroneous-execution
   guarantee: forty runs of a two-false-claim race at `WF_WORKERS=4`, each
   producing exactly one record whose [DIAG-3] shape is parsed rather than
@@ -265,6 +300,12 @@ they correct.
   worker settings; and **the control that gives the other three teeth** —
   the same emitted module with the latch's branch forced, which writes two
   records. Measured detection for the control was 200 of 200 runs.
+- C3 corrected after the batch audit (`f4188977`). The control counted a run as
+  caught when the record channel held anything other than one well-formed
+  record — which an **empty** channel also satisfies, so a later change that
+  made the defeated build die before writing would have kept the control green
+  while proving nothing. A caught run now has to carry exactly two records,
+  each parsed as a [DIAG-3] line naming one of the two claims.
 - C3, the payoff pinned rather than asserted:
   `the_claim_bearing_fold_is_granted_lanes_and_publishes_the_same_bytes`
   reads the runtime's own grant counter for `par_layout.wf`, because every
@@ -298,17 +339,40 @@ rotations. `par_layout.wf` compiled by the branch-tip compiler and by the
 pre-redirect compiler at `ddf1d139`, both `cargo build --release`, both linked
 by `/usr/bin/clang -O2` with the same embedded runtime.
 
-**Verdicts that moved, over every `.wf` source in the repository.** 776
-sources judged by both compilers with `--par --par-ledger`. **Eleven pairs
-moved from `not-actualizable` to `eligible`**, each gaining the `chain` line
-its two members now compose into; 319 ledger lines became 330. **No denial
-moved, no verdict narrowed, and no loop verdict moved anywhere** — the loop
-half of the redirect widens nothing in today's corpus, because no counted loop
-the repository contains was refused for a claim. Newly eligible in
+**Verdicts that moved, over every `.wf` source that checks standalone.** The
+repository holds 776 `.wf` files; **312** of them check on their own and are
+the judged population, and both compilers were run over all 776 with
+`--par --par-ledger` so nothing that could produce a line was excluded by hand.
+**Eleven pairs moved from `not-actualizable` to `eligible`**, each gaining the
+`chain` line its two members now compose into; 319 ledger lines became 330.
+**No denial moved, no verdict narrowed, and no loop verdict moved anywhere** —
+the loop half of the redirect widens nothing in today's corpus, because no
+counted loop the repository contains was refused for a claim. Newly eligible in
 `tests/programs`: `par_layout.wf` (`layout_banded`), `prefix_expression.wf`
 (`evaluate`), `recursive_tree.wf` (`count`). One conformance case,
 `x-borrowed-pool-tree-run.wf` (`checksum`, four claim sites). Seven research
-probes, listed in `probes/README.md`.
+probes, listed in `probes/README.md`. The two multi-file `raw_deflate` units
+are in neither sweep; their six distinct lines are listed under "What the
+judgment reaches today" and are all denials.
+
+*Measured before the rebase onto `main`, and kept as measured.* The two
+compilers this paragraph compares are the branch tip and `ddf1d139`, both
+pre-rebase, so 776/312/319/330 are that tree's numbers and the eleven-pair
+delta is that comparison's result. It is the evidence for the redirect and
+stands as taken. The rebased tree's own census is 765/270/161 with 19 loop
+verdicts — restated with what moved under "The corpus-wide census" below — and
+it does not contradict anything here: no denial moves in either, and the
+population shrank only because v0.34 retired the claims of seventeen probes.
+
+**Those seven probes' disposition, which `probes/README.md` deferred to this
+record: all seven are kept**, and the disposition is now written in that file
+rather than here, under its own standing rule that a probe is deleted when the
+decision or finding it settles is superseded. What the redirect superseded in
+each case is the `not-actualizable` verdict line the probe's paragraph quoted,
+not the finding the probe settles — except `p7_dyn.wf`, whose conclusion (that
+a parameter-sized buffer's shape is permanently out of reach) is reversed, and
+which is kept because it is the only carrier of both the shape and the
+reversal.
 
 **Grants, read from the runtime's own counter.** `par_layout.wf`, functions
 that hand out: **2 to 3**.
@@ -318,13 +382,19 @@ that hand out: **2 to 3**.
 | grants before | 0 | 1 052 | 6 128 | 13 709 | 14 694 |
 | grants after | 0 | 2 772 | **12 617** | **28 251** | 29 270 |
 
-Published bytes are `dd3b6c59c5c38307` in all ten runs.
+Published bytes are identical in all ten runs. `dd3b6c59c5c38307` is the
+**SHA-256 of `par_layout.wf`'s standard output**, truncated to sixteen
+characters, not a value the program publishes — the program publishes
+`420a993efa7437a1 41fa962893d45299` with no trailing newline, and
+`sha256` of exactly those bytes begins `dd3b6c59c5c38307`. Naming the hash
+function matters here: without it the digest cannot be checked from this record
+alone, which is the whole point of quoting one.
 
 **Wall clock**, minimum of 18 interleaved rounds, no cell twice in a row:
 
 | WF_WORKERS | before (s) | after (s) | after/before |
 |---|---|---|---|
-| 1 | 0.8076 | 0.9595 | **1.19 (regression)** |
+| 1 | 0.8076 | 0.9595 | ~~**1.19 (regression)**~~ withdrawn, see below |
 | 2 | 0.5595 | 0.4640 | 0.83 |
 | 4 | 0.5845 | 0.3291 | **0.56** |
 | 8 | 0.5442 | 0.2380 | **0.44** |
@@ -332,43 +402,62 @@ Published bytes are `dd3b6c59c5c38307` in all ten runs.
 
 One published-byte digest across every cell and every round.
 
-### FLAGGED: a 1.19x regression in the `--par` build's sequential world
+### WITHDRAWN 2026-08-23: the 1.19x sequential-world flag was load contamination
 
-**The default build is untouched: 1.00x** (0.7996 before, 0.8009 after,
-minimum of 30 interleaved rounds), so the trap latch costs nothing, which is
-what it was built to cost. The regression is confined to a `--par` build run at
-`WF_WORKERS=1`, and it is real: three independent rotations of 18, 30, and 24
-rounds all put it at 1.19x-1.20x on minimum and on median. Before this batch
-that cell matched the default build exactly (1.00x); after it, it is 1.19x
-slower than the default build.
+**This section flagged a 1.19x regression in the `--par` build at
+`WF_WORKERS=1`. It does not reproduce, and the flag is withdrawn.** The row is
+struck in the table above rather than deleted, because the number was presented
+to the owner and the correction belongs where the claim was made.
 
-The cause is the clone set, not the semantics. `layout_banded` is now on a path
-to a handed-out call, so the two-worlds lowering gives it a sequential clone,
-and the module carries the fold twice. **What was ruled out, by experiment
-rather than by argument:**
+Nine independent rotations now bear on that one cell — four by the batch
+audit's finder, three by its refuter, and two run for this repair — and none of
+them finds it:
 
-- *the trap latch* — the default build, which carries the latch and nothing
-  else of this batch, is 1.00x;
-- *module size and code layout* — the pre-redirect module with an extra,
-  externally-visible copy of the fold appended, bringing it to 1 894 post-`-O2`
-  lines against the redirect's 1 934, runs at **1.00x**;
-- *a wrong sequential world* — `wf__par_seq_main` calls
-  `wf__par_seq_layout_banded`, which calls only itself, `wf_cascade`, and
-  `wf_measure_band`, and names no runtime symbol;
-- *a bad clone* — the clone's emitted IR is byte-identical to the default
-  build's own lowering of that function after renaming;
-- *lost inlining* — `wf_measure_band` and `wf_cascade` are fully inlined in
-  both, and the hot function's post-`-O2` IR is identical modulo SSA numbering
-  and one inverted comparison.
+| rotation | rounds | load | `--par` W1 after/before (min) | (median) |
+|---|---|---|---|---|
+| finder 1 (driver link) | 15 | 2.68 | 1.000 | 0.997 |
+| finder 2 (driver link) | 30 | 2.59 | 0.996 | 1.001 |
+| finder 3 (manual clang) | 24 | 1.71 | 0.997 | 1.002 |
+| finder 4 (manual clang) | 20 | 1.95 | 1.004 | 0.998 |
+| refuter 1 | ~20 | 9.6-11.7 | 0.921 | — |
+| refuter 2 | ~20 | 9.7-104.8 | 0.891 | — |
+| refuter 3 | 22 | 5.88-5.74 | 1.010 | 1.000 |
+| repair 1 | 20 | 4.06-4.44 | 1.002 | 1.001 |
+| repair 2 | 24 | ~4.0 | 0.989 | 0.988 |
 
-So the cost sits below the IR the compiler emits, in what the host toolchain
-does with a module whose entry carries two repetition loops over two distinct
-callees instead of one. **This belongs to whoever owns the `--par` lowering,
-not to this batch's brief**, and it is recorded rather than chased further: it
-touches no shipped build, moves no byte, and is bought with 2.4x at the shipped
-worker setting. It does, however, dent the property `e82c113f` established —
-that asking for `--par` costs a program nothing when it gets no lane — for any
-program the redirect adds to the clone set.
+The two repair rotations are `tests/programs/par_layout.wf` compiled and linked
+by the repaired tip and by the pre-redirect compiler at `ddf1d139`, four cells
+interleaved with the order alternating every round and no cell run twice in a
+row. The same harness reproduces the win (`--par` at the shipped default,
+after/before 0.435 for the finder against the record's 0.41) and both of the
+record's 1.00x controls, and does not reproduce the regression.
+
+**What the record's own cells say about themselves.** They were taken at a
+one-minute load average of 5.1 before the timing pass and 3.4 after, and the
+flagged row's "after" cell (0.9595 s) sits 19% above its own "before" (0.8076
+s) — where the eighteen cells that agree across rotations agree to under 1%.
+The refuter's minimum for the tip at `WF_WORKERS=1` on a loaded machine is
+0.805-0.810 s, which is essentially the record's *before* value. Load
+contamination of that one cell is the reading the measurements support.
+
+**The noise floor, measured rather than assumed.** After the repair below, the
+tip and the pre-redirect compiler emit **byte-identical** default modules for
+`par_layout.wf` (`cmp` on the two `.ll` files, and both publish SHA-256
+`0e28f3d229be2e69…`). The same harness still reports 0.990-0.997 between the
+two binaries built from those identical bytes. That is this measurement's
+resolution: about ±1%, an order of magnitude below the withdrawn 19%.
+
+**The property `e82c113f` established stands.** Asking for `--par` costs a
+program nothing when it gets no lane: across all nine rotations the `--par`
+build at `WF_WORKERS=1` is within 1.1% of the default build, before the
+redirect and after it. The earlier sentence in this record saying the redirect
+dents that property is withdrawn with the flag.
+
+What remains true and is not withdrawn is the *mechanism* the flag was
+attributed to: `layout_banded` is now on a path to a handed-out call, so the
+two-worlds lowering gives it a sequential clone and the module carries the fold
+twice (the tip emits `@wf__par_seq_layout_banded` and 1 708 IR lines against
+1 622). That is a real change to the module; it is not a measurable cost.
 
 ## Carried for another record: the L1 depth flag
 
@@ -399,8 +488,21 @@ guarantee is to keep the unconditional one and pay for it — arbitrate, at the
 join, which of several trapping lanes owns the report, by a rank derived from
 each lane's position in the source order the elision defines, so the record an
 overlapped execution writes is the record the sequential execution would have
-written. It is on file from batch 0074 (`debate/d1-defense.md`, the EFF-4
-two-half ruling) and was deferred there rather than refused.
+written. It is on file from batch 0074 — the EFF-4 two-half ruling and Lemma C
+(join arbitration = sequential composition) of the round-3 debate's defense —
+and was deferred there rather than refused.
+
+**That citation named a file that was not in the repository, and now is.** It
+pointed at `debate/d1-defense.md`, which existed only in the lead's scratch;
+`research/investigations/proof-derived-parallelism/probes/README.md` states the
+governing doctrine itself — "a claim whose evidence has evaporated is an
+assertion" — so relying on the file while leaving it outside was the defect.
+It is promoted verbatim to
+`research/investigations/proof-derived-parallelism/debate/d1-defense.md`, with
+a provenance header and with three machine-local paths in its reproduction
+appendix replaced by placeholders. The second citation, at `../DESIGN.md:70`,
+is corrected in the same change — it also still called the arbitration
+deferred, which this record refuses.
 
 It is refused now, on the ground the owner's direction states: every byte of
 that machinery exists to make a *defective* program's report reproducible, and
@@ -439,10 +541,56 @@ counted `for` loops and **the rule permits none of them**:
 | `sha256_abc.wf:82` `@compression_rounds` | denied 1 | `set h = g;` reduces nothing |
 | `wfgrep.wf:132` `@append` | denied 2 | element write |
 
-Across the whole 703-source sweep the ledger reports 18 loop verdicts: **4
-permitted, 14 denied**. The four are two loops of the conformance case
-`ent3-pos-s11-counted-range-run.wf` and two of the batch's own promoted probes,
-every one of them a `+wrap` reduction.
+**The corpus-wide census, re-derived after the rebase onto `main`, with its
+population named.** The repository holds **765** `.wf` files, of which **270**
+check standalone — the rest are negative conformance cases that are meant not
+to check, 71 files under `archive/`, and multi-file fragments that need their
+unit. Sweeping those 270 with `--par --par-ledger` gives **161 `PAR` lines**,
+of which **19 are loop verdicts: 5 permitted, 14 denied**, and **0** are
+`not-actualizable`.
+
+The 5 permitted are two loops of the conformance case
+`ent3-pos-s11-counted-range-run.wf` and three across three probes this batch
+promoted — `m1_pair_in_for` (1), `p4_split_equiv` (1), and
+`r2_grid_loop_d21_w256` (1) — every one of them a `+wrap` reduction.
+
+*What the rebase moved, and what it did not.* The pre-rebase figures were 776
+files, 312 checking standalone, 330 `PAR` lines and 21 loop verdicts (7
+permitted). Denials are unmoved at **14**, and `not-actualizable` is still
+**0**. The standalone-checking population fell because v0.34 admits a claim
+only as a local non-derivable residual, so the seventeen claim-bearing probes
+of `probes/` — retired rather than rewritten, see that directory's README —
+stop checking, and `r1_mandelbrot_for` is one of them. Its two permitted loops
+are the whole of the drop from 7 to 5; no loop the judgment still sees changed
+its verdict.
+
+An earlier version of this paragraph said "18 loop verdicts: 4 permitted, 14
+denied" over a "703-source sweep". Both figures were correct at `13ffab4c` and
+were not re-derived afterwards: 703 is 690 tracked non-archive `.wf` plus the
+13 untracked generated `bench/wf` sources, which is that commit's non-archive
+population; the same population at this tip is 705. The three loops that appear
+between them are `r1_mandelbrot_for`'s two and `r2_grid_loop_d21_w256`'s one,
+both promoted by later commits of this same batch — the paragraph two below
+already credits `r1_mandelbrot_for`'s two, which is the contradiction that
+should have caught it. Neither 703 nor 776 was ever the judged population; 312
+is.
+
+**Multi-file units are in no per-file sweep, and are listed here instead.** The
+corpus has two, both `raw_deflate` variants, and neither appears above because
+neither `raw_deflate_boundary.wf` nor `raw_deflate_vectors.wf` checks alone.
+Compiled as units they add **6 distinct `PAR` lines, every one a denial**:
+
+- the boundary unit gives 3 — the loop denial at `raw_deflate_boundary.wf:28`
+  (condition 2, the element write the table above carries) and two pair
+  denials in `raw_deflate_dynamic_decode.wf` at `:104` and `:250`;
+- the vectors unit gives 5 — the same two pair denials, plus three more in
+  `raw_deflate_vectors.wf` at `:357`, `:385`, and `:400`, all condition 2 on an
+  interposed region.
+
+So "no pair verdict moved anywhere" and "no loop verdict moved anywhere" are
+claims about the 312 standalone-checking sources. All eight lines the two units
+produce are denials, so nothing is likely hiding there, but the claim is scoped
+rather than left to read as whole-repository.
 
 The bench sources say the same thing from the other side: not one of the 13
 carries a counted loop at all, because every one of them is the hand-written
@@ -466,14 +614,16 @@ default form must be the optimal form, the `grid` family's measured 6.5x, and
 programs not yet written. It is not corpus payoff, and a 0-of-12 number that
 went unstated would be the kind of silence this ledger exists to end.
 
-Three refusals in that table are worth a second look at some point, and none is
-in this batch's scope. Four are the deferred map. Three are expression
-statements, which the window judgment also refuses and for the same unresolved
-[STOR-3] release; admitting them would move `byte_string` and `growable_vec`
-from "refused for a reason about `bs_push`" to "refused for a reason about the
-buffer", which is more honest but no more permitted. And two of the map loops
-(`raw_deflate_boundary`, `wfgrep`) also carry a `return`, so they need the exit
-condition relaxed as well as the place work.
+The table partitions as **7 element-write (the deferred map), 4 expression
+statements, and 1 non-reduction** — twelve, and the counts an earlier version
+of this paragraph gave did not add up to it. None of the three groups is in
+this batch's scope. The four expression statements are refused by the window
+judgment too and for the same unresolved [STOR-3] release; admitting them would
+move `byte_string` and `growable_vec` from "refused for a reason about
+`bs_push`" to "refused for a reason about the buffer", which is more honest but
+no more permitted. And two of the map loops (`raw_deflate_boundary`, `wfgrep`)
+also carry a `return`, so they need the exit condition relaxed as well as the
+place work.
 
 ## The measurement: the default form reaches the hand-written form
 
@@ -521,12 +671,16 @@ sequential build (0.5079 to 0.0777), and the `--par` opt-in costs it nothing
 at one lane (0.5061 against 0.5079), because that run takes the sequential
 world where the split does not exist.
 
-**Byte comparison.** One sequence, `000000000033517d`, from: the loop form's
-default compilation; the loop form's `--par` build at `WF_WORKERS` 0, 1, 2, 3,
-4, 5, 8, 10, 16 and unset; the hand-split twin both ways at all of the same;
-and the Rust twin sequential and under rayon at 2, 4, 8, and its own default
-pool. Every run of the timed rotation above hashed to `a6522da3cd244c2c`, all
-seventeen cells. `r1_mandelbrot_for.wf` likewise exits 0 — its
+**Byte comparison.** One sequence — the sixteen hexadecimal characters
+`000000000033517d` that the program itself publishes on standard output — from:
+the loop form's default compilation; the loop form's `--par` build at
+`WF_WORKERS` 0, 1, 2, 3, 4, 5, 8, 10, 16 and unset; the hand-split twin both
+ways at all of the same; and the Rust twin sequential and under rayon at 2, 4,
+8, and its own default pool. Every run of the timed rotation above produced
+standard output whose **SHA-256 begins `a6522da3cd244c2c`** — that is a hash of
+the published bytes, not a second published value, and it is exactly
+`sha256("000000000033517d\n")` truncated to sixteen characters — all seventeen
+cells. `r1_mandelbrot_for.wf` likewise exits 0 — its
 `ieq(escaped_points, 2437_u32)` claim holds — at all ten worker settings and
 in its default compilation.
 
@@ -589,21 +743,45 @@ limit at eight lanes.
 
 ### What the corpus does, and what this batch emitted everywhere else
 
-Re-run at this HEAD, as the brief asked rather than taken from the census:
-`tests/programs` still holds eleven counted `for` loops, **none permitted and
-therefore none split**. The whole-corpus `--par` compile-and-publish test is
-unchanged by this batch because it has nothing to change. The measurement
-above is on the promoted probes, which is where the shape exists.
+Re-run at the repaired tip: `tests/programs` holds **twelve** counted `for`
+loops, **none permitted and therefore none split**. The whole-corpus `--par`
+compile-and-publish test is unchanged by this batch because it has nothing to
+change. The measurement above is on the promoted probes, which is where the
+shape exists.
+
+The earlier version of this paragraph said eleven, and the method is why.
+`raw_deflate_boundary.wf` cannot be compiled on its own — standalone it fails
+with `[TYPE-5] UnresolvedUse { spelling: "InflateError" }` — so a sweep that
+compiles one file at a time silently drops its loop and reports eleven. Judged
+with the other three files of its unit it produces exactly the row the table
+below carries. Every count in this record that is derived from a per-file sweep
+carries the same blind spot, and each such population is now named where it is
+used.
 
 **Zero emitted bytes outside the shape, verified rather than asserted.** Every
 standalone source of `tests/programs`, `bench/wf`, and `loop/probes` was
-emitted by the branch-tip compiler and by the batch-A compiler at `0314c01e`,
-in the default compilation and under `--par`, and the modules compared byte for
-byte: **74 identical, 4 differing.** The four are `--par` only and are exactly
-the four programs carrying a loop [PAR-2] permits — `m1_pair_in_for`,
-`p4_split_equiv`, `r1_mandelbrot_for`, `r2_grid_loop_d21_w256`. **No default
-compilation of anything moved one byte**, which is the property the whole
-`OverlapLowering::Off` path exists to have.
+emitted by the batch-B compiler at `ddf1d139` and by the batch-A compiler at
+`0314c01e`, in the default compilation and under `--par`, and the modules
+compared byte for byte: **74 identical, 4 differing.** The four are `--par`
+only and are exactly the four programs carrying a loop [PAR-2] permits —
+`m1_pair_in_for`, `p4_split_equiv`, `r1_mandelbrot_for`,
+`r2_grid_loop_d21_w256`. **No default compilation of anything moved one byte**,
+which is the property the whole `OverlapLowering::Off` path exists to have.
+
+**That sentence was true when written, was falsified inside this batch, and is
+true again.** `f6c55a9d` emitted the trap latch on the sole condition that a
+module carries a `claim`, with no `--par` predicate on the path, so it changed
+**21 of the 39 default compilations** in the population above — every module of
+the corpus that carries a claim gained `@.wf_trap.latch`, a `cmpxchg`, and a
+`park:` block. The batch audit found it and the record did not: this paragraph
+was never revisited after batch C landed. The repair makes the latch
+conditional on the module actually handing a call out to a worker lane, which
+is false for every default build and for a `--par` build that actualizes
+nothing. At the repaired tip, against the pre-latch compiler at `ddf1d139` over
+the same 39 sources in both worlds (78 comparisons): **all 39 default
+compilations byte-identical**, 10 `--par` modules differing, and those 10 are
+exactly the modules that both carry a claim and hand out — the only 10 that
+name `@.wf_trap.latch` anywhere.
 
 ### One gate flake, chased rather than waved through
 
@@ -636,14 +814,27 @@ bytes and **neither is added to `tests/conformance/manifest.jsonl` on this
 branch**, so the file's protected bytes are untouched and the audit at merge
 has one before/after rather than two.
 
-Exact before: `tests/conformance/manifest.jsonl` ends at line 420 with the
-`GATE-2` annotation; it contains no `PAR-1` and no `PAR-2` row of any kind
-(`grep -c '"rule": "PAR-' tests/conformance/manifest.jsonl` is 0).
+Exact before: `tests/conformance/manifest.jsonl` is **540 lines**, of which 32
+are annotations. The annotations are not a trailing block — they sit at lines
+150-158, 177-186, and 412-424, interleaved with case rows that start at line 4
+and run to 540. Line 424 is the **last annotation**, the `GATE-2` one; line 425
+is the case `run-sysexit-code-0` and 116 case rows follow it. (This census was
+re-derived after the rebase onto `main`: the pre-rebase figures were 536 lines,
+30 annotations at 148-156, 175-182 and 408-420, and the same case at line 421.
+Main's v0.34 added two annotation rows and two cases; the block structure, the
+row that follows the last annotation, and the 116 rows after it are unmoved.) The file contains
+no `PAR-1` and no `PAR-2` row of any kind
+(`grep -c '"rule": "PAR-' tests/conformance/manifest.jsonl` is 0). An earlier
+version of this paragraph said the file "ends at line 420", which is wrong
+about both the end of the file and the block structure; the runner is
+order-independent and both trials below were run by appending at end of file.
 
-Exact after: two lines appended, in this order, each one line of JSON. **The
-[PAR-1] line's reason text was revised by batch C**, to cover the
-erroneous-execution clause the [PAR-1] v2 recipe adds; nothing about the
-manifest's in-tree bytes changed, because neither line is landed:
+Exact after: two lines appended at end of file, in this order, each one line of
+JSON. **The [PAR-1] line supersedes the phase-1 packet's line entirely** — a
+different `covered_by` and wholly different `reason` text, not a reason-text
+revision — and its new text covers the erroneous-execution clause the [PAR-1]
+v2 recipe adds. Nothing about the manifest's in-tree bytes changed, because
+neither line is landed:
 
 ```
 {"rule": "PAR-1", "covered_by": "compiler-permission-judgment", "reason": "A permission rule with nothing in a program to accept or reject: it grants an implementation the room to overlap two sibling calls and forbids nothing a writer can write. Every accepted program is accepted identically whether or not the permission is taken, and the compiler's own actualization tests establish the one observable consequence — that a taken overlap publishes the bytes the sequential schedule publishes — by running one emitted module at every worker count and against the lowering that overlaps nothing. The rule's erroneous-execution clause is covered by the same tests and for the same reason: a false executed claim is a contract violation, so the clause governs only defective programs, and the compiler's cases run one such program many times at several worker counts, parse the single mandatory record each run produces, and carry a control that defeats the trap latch to show that the single record is a mechanism and not an accident. A conformance case could only re-run a program and observe no difference, which is a statement about the implementation's schedule rather than about a source verdict."}
@@ -654,13 +845,47 @@ Both were applied to a scratch copy and run, rather than reasoned about:
 
 - **[PAR-1]'s line alone, against today's 136-rule specification, is
   `136/136 rules covered (116 by case [+115/-55], 31 by annotation); 0
-  uncovered`.** That is the form to apply if the owner takes the annotations
-  without the rule, and it turns `make check` green end to end.
+  uncovered`.** That is what the line does to the gate, and it is recorded so
+  the owner knows what applying it produces — **it is not a form to apply on
+  its own.**
 - **[PAR-2]'s line is *rejected* today** — `invalid conformance manifest:
   annotation PAR-2: unknown rule` — because the rule is not yet in the active
   specification. It is therefore not an independent decision: it belongs to
   the same activation change that applies the rule text, and applying it
   earlier would break the gate rather than extend it.
+
+**Neither annotation may be applied without its rule text, and this is the
+one place in this record where that could be misread.** An earlier version of
+the first bullet called the [PAR-1] line "the form to apply if the owner takes
+the annotations without the rule", and said it turns `make check` green end to
+end. It does turn the gate green — and that is precisely the hazard. The
+prepared reason attests coverage of "the rule's erroneous-execution clause",
+and no such clause exists in the [PAR-1] block the specification carries today:
+in-tree `spec/kernel-spec.md:1984` still reads *"No function reachable from
+either callee through the ordinary call graph contains a `claim_stmt`
+[CLM-1]."*, and `:1988` still reads *"That identity holds in every execution,
+not in a typical execution or in some execution."* Applying the annotation
+alone therefore produces a green gate attesting coverage of rule text that is
+not in the specification.
+
+It is worse than a stale attestation. **`f6c55a9d` made the branch compiler
+contradict the in-tree v1 rule**: it grants and actualizes exactly the
+claim-bearing pairs line 1984 forbids — the ledger reports
+`pair(layout_banded, layout_banded) eligible` and `@wf_layout_banded` emits
+`@wf__par_claim`, `@wf__par_thunk_`, and `@wf__par_join`, where the same
+function at `ddf1d139` emitted none of them. And `backend/tests/trap_latch.rs`
+accepts either claim's name at `WF_WORKERS=4` while asserting the sequential
+schedule names `left_total_is_zero`, which is a behavior v1 `[PAR-1]` forbids
+under `:1987`-`:1988`. Nothing in the gate can see any of this: the coverage
+runner checks only that the rule id is known and that `covered_by` and `reason`
+are non-empty (`tests/conformance/runner.py:344-351`), and never compares
+reason text to spec bytes.
+
+**So the pairing in the candidate table below is the whole of the guidance.**
+The [PAR-1] annotation line is applied only together with the [PAR-1] v2 rule
+text, in the same change; the [PAR-2] line only with [PAR-2] v2. There is no
+annotation-without-rule path, and the gate going green is not evidence that
+there is one.
 
 The manifest was restored byte for byte after each trial; nothing of this
 reached the commit.
@@ -873,8 +1098,20 @@ count in this paragraph was recomputed against the rebased file; only `CLM-1`'s
 starting value moved, because main's v0.34 body cites it twice more than v0.33's
 did.
 
-Both candidates are ASCII in every byte either recipe adds; the non-ASCII
-characters they contain are the file's existing ones.
+**The counting convention, stated because the numbers do not reproduce without
+it:** every count above is of the single-token citation `[X]` only, and the
+specification also carries 47 multi-rule citations of the form `[A, B]` that
+these figures do not count. Under the all-citation convention the combined
+candidate additionally moves `EFF-1` 6 to 7, `FN-1` 29 to 31, `SYS-2` 26 to 27,
+`GIVE-1` 19 to 20, and `ERR-3` 6 to 7 — [PAR-2] v2's text adds `[EFF-1, SYS-2]`
+and `[FN-1, GIVE-1, ERR-3]`. "No rule loses its last reference" holds under
+both conventions.
+
+The [PAR-1] v2 recipe adds no non-ASCII byte. **The combined candidate does:**
+the [PAR-2] v2 block adds four U+2014 em dashes, two on each of the added lines
+quoted at "the loop-shaped permission" and "an execution of L". The
+specification already carries non-ASCII on 100 lines and no gate forbids it, so
+this is a correction to this record rather than to either candidate.
 
 ### Derived material the activation change must carry
 
@@ -883,8 +1120,15 @@ than hand-edited (`whitefoot-spec --emit-identity`), taking `SPEC_SHA256_HEX`
 to the digest above, and the transcribed digest literal in
 `compiler/src/spec.rs` moves with it. The combined candidate additionally
 moves `RULE_COUNT` to 137, gains a second existence-only derivation-ledger row
-for [PAR-2] with totals `85 derived - 52 existence-only` across 137 rules, and
-needs the [PAR-2] coverage annotation prepared under "FLAGGED" above. The
+for [PAR-2], and needs the [PAR-2] coverage annotation prepared under "FLAGGED"
+above. The ledger's totals line reads `84 derived · 52 existence-only · 0
+underived` today, where 84 + 52 = 136 is the branch's rule count. One added
+existence-only row makes it **`84 derived · 53 existence-only · 0 underived`**
+across 137 rules. An earlier version of this paragraph wrote `85 derived · 52
+existence-only`: that sums to 137, but it increments the derived column, which
+would make [PAR-2] a derived rule and contradict the same sentence that calls
+its row existence-only. An owner applying it verbatim writes a wrong totals
+line. The
 conformance corpus delta is zero cases either way: neither rule changes an
 accepted program or a verdict.
 

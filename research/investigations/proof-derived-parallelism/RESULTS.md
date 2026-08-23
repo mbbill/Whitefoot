@@ -83,15 +83,21 @@ Those lines are the same with and without `--par`: the judgment is pure, so the
 ledger is a property of the source rather than of the compilation asked for.
 
 Both child pairs are **permitted** — the judgment's four conditions hold for
-each. Only the claim-free one is **eligible**, and the module emitted by
+each. ~~Only the claim-free one is **eligible**, and the module emitted by
 `whitefootc --par` shows the distinction directly: `@wf_layout` carries an
 outlined thunk, a lane offer, and a join, and `@wf_layout_banded` names no part
-of the runtime at all. The default compilation of the same file names no part
-of the runtime in either function.
+of the runtime at all.~~ **Struck 2026-08-23** with the ledger line above: both
+are eligible, and at the branch tip `@wf_layout_banded` carries one
+`@wf__par_claim`, one `@wf__par_thunk_`, and one `@wf__par_join` of its own,
+where the same function at `ddf1d139` carried none. The default compilation of
+the same file names no part of the runtime in either function.
 
-That is the whole experiment in one program: one claim site in one callee is
+~~That is the whole experiment in one program: one claim site in one callee is
 the entire difference between a fold that scales and a fold that does not, and
-the ledger says so before anything is run.
+the ledger says so before anything is run.~~ **Struck 2026-08-23**: a claim
+site is no longer any difference at all. What the program still demonstrates is
+the pair judgment itself and the two-world lowering; what it demonstrated about
+claims is the thing the redirect withdrew.
 
 ## 2. Machine and build
 

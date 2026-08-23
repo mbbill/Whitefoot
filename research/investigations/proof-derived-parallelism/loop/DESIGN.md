@@ -7,6 +7,18 @@ research corpus lives in the lead's scratch; every load-bearing claim below
 is restated with its evidence, and the probes this design depends on are
 promoted beside this file.
 
+> **Superseded in one place by a later landing on the same branch, and
+> corrected in place.** This ruling was written against the v1 doctrine in
+> which eligibility required a claim-free call closure. **That condition was
+> withdrawn on 2026-08-23** by the owner's chartering direction of that day,
+> the same direction the parent `../DESIGN.md` records at its §1 bullets, and
+> `f6c55a9d` deleted it from both judgments. A `claim` in a loop body is now
+> an ordinary statement: `compiler/src/semantic/loop_permission.rs` carries
+> `PermittedEligible | Denied` and nothing else, and
+> `a_claim_in_the_body_is_permitted` is a landed case. Every place below that
+> stated the withdrawn condition is struck and dated where it stands; the rest
+> reads as the design ruling it is.
+
 ## The charter and the ruling it forces
 
 The owner's direction: the default form must be the optimal form — a
@@ -42,7 +54,8 @@ force the scope:
    be normative.
 
 Ruling: **v1 loop permission is the reduction, not the map.** Scope:
-full-range counted `for`; body claim-free, external-free, blocks-free,
+full-range counted `for`; body ~~claim-free,~~ (**struck 2026-08-23**)
+external-free, blocks-free,
 exit-free (no `break`, `return`, `propagate`, or `give` leaving the loop);
 cross-iteration state exactly one accumulator combined under a normatively
 enumerated exactly-associative integer/boolean operation set; per-iteration
@@ -83,8 +96,11 @@ of the four:
 3. No `external` or `blocks` row anywhere in the body's call closure.
 4. No exit edge leaves the loop; the range is the whole range.
 
-Eligibility: the body's transitive call closure is claim-free — unchanged
-v1 doctrine. The judgment consults no entailment state; the quantification
+~~Eligibility: the body's transitive call closure is claim-free — unchanged
+v1 doctrine.~~ **Withdrawn 2026-08-23**, with the parent dossier's §1 bullets:
+a permitted loop is eligible, and a `claim` in the body or in a callee is an
+ordinary statement whose predicate is read like any other expression. The
+judgment consults no entailment state; the quantification
 over iterations is structural (one binder, unit-increment recurrence), so
 facts-on/off produce one permission table, as today. The diagnostic
 channel gains a loop verdict line naming the judging condition on denial;

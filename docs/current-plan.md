@@ -1,22 +1,25 @@
 # Current Plan — proof-derived parallelism
 
 Status: PROPOSED (branch `par/proof-derived-parallelism`, 2026-08-21; updated
-on the branch 2026-08-23 after the rebase onto `main`). This proposal
-authorizes no execution. Batches 0074, 0076, 0077 and 0078 were carried out
-under the owner's chartering directions of 2026-08-21/22/23, quoted verbatim
-in their records; this plan is the durable sequencing those directions imply,
-and it becomes ACTIVE only with the owner's approval at merge.
+on the branch 2026-08-22 for merge review, again 2026-08-23 on
+`par/loop-permission` for batch 0078, and again after the rebase onto `main`).
+This proposal authorizes no execution. Batches 0074, 0076, 0077 and 0078 were
+carried out under the owner's chartering directions of 2026-08-21/22/23, quoted
+verbatim in their records; this plan is the durable sequencing those directions
+imply, and it becomes ACTIVE only with the owner's approval at merge.
 
 Derived from Direction Outline revision 50 and main at
 `18d332e7`. Supersedes both the completed claim-only trap-surface plan and
 main's implemented claim-residual-canonicality plan, in place; that plan's
 remaining sequence is carried forward below rather than dropped.
 Active language authority: v0.34 at `spec/kernel-spec.md`, SHA-256
-`cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`; the branch
+`cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`. The branch
 carries a v0.35 CANDIDATE adding [PAR-1] at SHA-256
-`73d647c8945ad3d51eea3ed030714b433d6171e0d36b0869dd91366238cbd8f5`, activated
-only by the merge approval and only through one of the two recipes in
-`docs/ongoing/0078-loop-permission.md`.
+`73d647c8945ad3d51eea3ed030714b433d6171e0d36b0869dd91366238cbd8f5` and, since
+batch 0078, a second CANDIDATE rule [PAR-2] for counted-loop reduction
+permission — both activated only by the merge approval, and both prepared as
+merge-time recipes in `docs/ongoing/0078-loop-permission.md` rather than
+applied to `spec/kernel-spec.md` on the branch.
 
 ## Objective
 
@@ -55,8 +58,15 @@ program changes.
   `docs/ongoing/0077-night-par-ceiling.md` carry the digs, the adversarial
   audit's dispositions, and one recorded invariant breach (a w1-only
   code-placement regression on three cells, attributed, W>=2 unaffected).
-- **W2 — the I/O concurrency lane (sequenced first among the remaining
-  work).** A completion-based family for overlapping host waits. This is where
+  **Batch 0078 continues W1b on `par/loop-permission`, chartered by the
+  owner's two directions of 2026-08-23 and recorded in
+  `docs/ongoing/0078-loop-permission.md`.** It carries the first item of W4
+  forward — see W4 below — and it redirected the claim doctrine: the
+  claim-free actualizability gate is deleted from both permission judgments,
+  and `wf_trap` carries a first-trap-wins latch instead. A second protected
+  conformance annotation, for [PAR-2], is prepared and flagged there.
+- **W2 — the I/O concurrency lane (first among the remaining work).** A
+  completion-based family for overlapping host waits. This is where
   the investigation found the profit: 2.83x on the dominant term of a
   directory-walking workload that is 86% I/O, against a compute-lane delta of
   roughly 0.15% of the same frame — with the recorded caveat that part of that
@@ -64,7 +74,11 @@ program changes.
   re-measured before the number is used to justify anything. It is a separate
   packet: it needs its own spec question
   (`blocks` rows are exactly what W1's row gate refuses), its own runtime, and
-  its own owner approval. Nothing in W3 or W4 precedes it.
+  its own owner approval. Nothing in W3 precedes it. **W4's first item does:**
+  this plan sequenced W2 ahead of all of W4, and the owner's chartering
+  direction of 2026-08-23 put counted-loop permission first instead. That
+  direction governs; the sequencing sentence is corrected here rather than
+  left to contradict the branch.
 - **W3 — the `pal` marker.** The writer-visible structural obligation of
   PAL.md §6: non-authoritative, never gating legality, and therefore a grammar
   plus FORM-table plus teaching-text packet of its own. It buys the writer a
@@ -72,9 +86,29 @@ program changes.
 - **W4 — permission growth.** Indexed-loop permission (Tier A) and
   buffer-view splitting (Tier B), each with its recorded hazard ([OWN-9]
   granularity; the c2-F4 aliasing case), and claim-bearing actualization with
-  the trap-arbitration ruling already on file. Each widening is a [PAR-1]
-  amendment, which is the cost W1's necessary-condition form imposes and the
-  first thing to revisit if it bites.
+  the trap-arbitration ruling already on file. ~~Each widening is a [PAR-1]
+  amendment~~, which was stated as the cost W1's necessary-condition form
+  imposes and the first thing to revisit if it bites.
+
+  **Tier A landed on `par/loop-permission` as batch 0078, and it bit.** The
+  widening is a **new rule [PAR-2]**, not a [PAR-1] amendment. The reason is
+  recorded at
+  `research/investigations/proof-derived-parallelism/loop/DESIGN.md:86-88`:
+  the pair conditions and the quantified loop conditions read badly
+  interleaved, and a separate rule keeps the byte surface the owner reviews
+  minimal. That is a deliberate departure from this line, and it makes
+  **[PAR-2] a second protected annotation** at merge rather than the single
+  [PAR-1] one the Exclusions below name.
+
+  **Claim-bearing actualization also landed, and not by arbitration.** The
+  owner's second direction of 2026-08-23 refused the trap-arbitration ruling
+  this line pointed at: a claim is the writer's always-true lemma, so an
+  execution that reaches a trap is erroneous and the program is defective, and
+  a correct program must not pay to make a defective one's report
+  reproducible. The claim-free actualizability gate is deleted from both
+  judgments; the elision-rank arbitration alternative is refused rather than
+  deferred, with the evidence promoted to
+  `research/investigations/proof-derived-parallelism/debate/d1-defense.md`.
 
 ## Boundaries and invariants
 
@@ -87,9 +121,24 @@ default execution is parallel; that default stands only with the owner's
 merge approval. Worker count, schedule, and
 thread identity are outside the language and outside every rule. Acceptance is
 untouched in both directions — P consults typing, rows, places, the CFG, and
-the call graph, never the entailment fact state, so facts-on and facts-off
-behavior are identical by construction. No arbitration machinery, parked lane,
-or coordinator is built while eligible regions are claim-free.
+~~the call graph~~, never the entailment fact state, so facts-on and facts-off
+behavior are identical by construction. (Batch 0078 removed the call graph from
+that list: deleting the claim closure took its last consumer, so
+`permission.rs` now carries the functions and their signatures alone.)
+
+~~No arbitration machinery, parked lane, or coordinator is built while eligible
+regions are claim-free.~~ **Replaced by batch 0078's claim redirect.** Eligible
+regions are no longer required to be claim-free, and the guarantee [PAR-1]
+makes is now conditional on contract compliance in the sense [SCOPE-4] fixes:
+for a correct program, which reaches no trap, nothing changes. The boundary
+this sentence drew becomes: **no arbitration machinery and no coordinator is
+built, and the one latch that exists lives in the overlapped world only.** A
+module emits it exactly when it both carries a `claim` and hands a call out to
+a worker lane; the default build and a `--par` build that actualizes nothing
+emit the pre-latch trap path unchanged. It parks only a losing thread of an
+already-erroneous execution, and the winner's abort takes the process down with
+it, so exactly one well-formed [DIAG-3] record is written under any
+interleaving.
 
 ## Acceptance
 
@@ -141,6 +190,17 @@ trap-latch cases now meet it by fault injection into checked IR.
 
 No writer parallelism construct, no thread or task type, no heartbeat
 profitability policy, no `reduce`-clause regrouping, no arbitration for
-claim-bearing regions, no generic-container work, and no protected conformance
-change beyond the single [PAR-1] coverage annotation the merge approval must
-name.
+trapping lanes, and no generic-container work.
+
+Two exclusions this plan carried are overtaken by batch 0078 and are corrected
+rather than left standing:
+
+- ~~no arbitration for claim-bearing regions~~ — claim-bearing regions are now
+  overlapped like any other. What stays excluded is *arbitration*: no rank, no
+  coordinator, no wakeup protocol. The latch is not arbitration; it is one
+  `cmpxchg` on a path a correct program never executes.
+- ~~no protected conformance change beyond the single [PAR-1] coverage
+  annotation~~ — there are **two** annotations for the merge approval to name,
+  [PAR-1] and [PAR-2]. Neither is landed on the branch; both are prepared as
+  exact bytes in `docs/ongoing/0078-loop-permission.md`, and each is applied
+  only together with its own rule text.
