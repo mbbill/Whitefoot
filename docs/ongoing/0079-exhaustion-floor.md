@@ -139,6 +139,63 @@ home).
   limit bounds such a tree to roughly 500 levels of single-character names
   long before depth threatens the ceiling, so deleting it does not by itself
   exercise the floor.
+- F5 — the compiler-generated drop glue no longer descends the machine stack.
+  A drop is recursive exactly when its type's cleanup can reach that type
+  again, which is a cycle in the cleanup graph and is decided by strongly
+  connected components over that graph — not by a name, a shape, or a corpus.
+  Only the edges *inside* such a component move to a heap worklist; every
+  other drop keeps the straight-line expansion whose depth its type bounds,
+  which is why 19 of the 22 corpus units emit byte-identical modules and the
+  three that change are exactly the programs with recursive `box` types
+  (`par_layout`, `prefix_expression`, `recursive_tree`), in both worlds. All
+  96 observable rows over eight programs, two worlds, and six worker settings
+  are byte-identical to the pre-change compiler's.
+  Measured falsifier, on `drop_deep.wf` — a program with no recursion in its
+  source at all: at 35,000,000 levels the pre-change build writes
+  `{"resource":"stack"}` and aborts (exit 134); the new build completes, exit
+  0, 1.5 s, 2.25 GB peak. At 100,000,000 levels it still completes (6.4 GB
+  peak). What bounds the traversal now is the memory the structure itself
+  occupies, not a stack.
+  Reclamation order, checked against [STOR-3] rather than asserted: the
+  specification fixes reclamation order in exactly two places — reverse
+  declaration order among the bindings a scope exit releases, and ascending
+  index order among buffer elements. Both are untouched (the call sites and
+  the buffer helper are unchanged). Within one value the release action is
+  "compiler-owned semantic data", and [STOR-3] gives every
+  memory-reclamation action the empty effect row, so nothing that moves is
+  observable. Two things move. A box's own heap free now runs before its
+  content rather than after — that is what keeps the pending list the size of
+  the traversal's frontier instead of the depth it has reached, and it is an
+  empty-row action. And a node's own non-deferred cleanup now runs before its
+  deferred children rather than interleaved with them; every action that can
+  move that way is an empty-row memory reclamation *except* one reachable
+  shape, flagged here rather than papered over: an enum variant that declares
+  a system-resource field *after* a recursive `box` field, whose [SYS-5]
+  release is the one action with a non-empty row. In that shape the chain's
+  `close` calls change from deepest-first to shallowest-first. No corpus type
+  has it, and the specification fixes no order there, but it is a real
+  difference and the owner packet should carry it.
+  Deliberately out: a `buffer` in a cleanup cycle. It would need a second
+  traversal shape (the element walk must resume where it left off) and no
+  program can reach one — a nominal recursive through a buffer has no
+  selected target layout and is refused before emission, measured identically
+  on the pre-change compiler. `DropPlan::of` refuses that case as a compiler
+  invariant instead, so lifting the layout limitation cannot silently restore
+  recursive glue.
+  Regressions: `no_compiler_derived_drop_reaches_itself` walks the emitted
+  module's own drop-glue call graph and fails on any cycle, so a new nominal
+  shape is covered without anyone extending a table (it fails against the
+  pre-change compiler, whose `wf.drop.t0` calls `wf.drop.t0`);
+  `an_ownership_chain_keeps_its_straight_line_drop` fails an emitter that put
+  every program on a worklist; `a_deep_boxed_spine_is_reclaimed_without_a_
+  record` runs the traversal end to end.
+  One existing compiler test required rewriting rather than deleting:
+  `programs::heap::recursively_boxed_tree_executes_with_derived_cleanup`
+  pinned the old straight-line shape (first `@wf.drop` definition, two frees
+  inside it). It now pins the same behaviour at the new mechanism — the entry
+  drives a worklist, the per-node step hands both children to it and calls no
+  drop helper, and the traversal releases each block it takes. Not protected
+  conformance evidence; recorded here because the change forced it.
 
 ## Outcome
 

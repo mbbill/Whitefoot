@@ -652,3 +652,205 @@ fn a_frame_larger_than_the_guard_region_is_still_reported() {
     assert_resource_record(&output.stderr, "stack");
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
+
+// ------------------------------------------- the compiler's own recursion
+
+/// A boxed spine whose length is a runtime quantity, built by a counted loop.
+///
+/// The source contains no recursive function at all. The only recursion in the
+/// program used to be the one the compiler generated to *destroy* the value at
+/// scope exit, which is the point: a writer looking at this program can see no
+/// depth to bound, cannot instrument the traversal, and cannot avoid it.
+fn boxed_spine_source(depth: u64) -> Vec<u8> {
+    format!(
+        r#"enum Tree {{
+  Leaf();
+  Branch(left: box<Tree>, right: box<Tree>);
+}}
+
+struct Holder {{
+  node: box<Tree>;
+}}
+
+fn boxed_leaf() -> result: own box<Tree> allocates(heap) {{
+  let leaf = Leaf();
+  return box_new(move leaf);
+}}
+
+fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tree> allocates(heap) {{
+  let branch = Branch(left: move left, right: move right);
+  return box_new(move branch);
+}}
+
+command fn main() -> status: own ExitStatus allocates(heap) {{
+  let seed = boxed_leaf();
+  let held = Holder(node: move seed);
+  for @grow i in 0_u64..{depth}_u64 {{
+    let sibling = boxed_leaf();
+    let placeholder = boxed_leaf();
+    let taken = replace held.node = move placeholder;
+    let taller = boxed_branch(left: move taken, right: move sibling);
+    let spent = replace held.node = move taller;
+  }}
+  return exit_status(code: 0_u8);
+}}
+"#
+    )
+    .into_bytes()
+}
+
+/// A value whose ownership graph is a chain rather than a cycle: deep in
+/// nothing, and reached by the same emitter.
+const SHALLOW_OWNERSHIP: &[u8] = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+  let slots = buffer_vacant<box<u64>>(2_u64);
+  let boxed = box_new(7_u64);
+  let wrapped = Some<box<u64>>(value: move boxed);
+  let vacant = replace slots[0_u64] = move wrapped;
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// Every compiler-derived drop in one module, with the drops each one calls.
+fn drop_glue_calls(module: &str) -> Vec<(String, Vec<String>)> {
+    let mut glue: Vec<(String, Vec<String>)> = Vec::new();
+    // A drop is a caller only inside its own definition. The program's own
+    // functions call these helpers too, and attributing those calls to
+    // whichever definition happened to be last would invent an edge.
+    let mut inside = false;
+    for line in module.lines() {
+        if let Some(rest) = line.strip_prefix("define private void @wf.drop.") {
+            let name = rest.split('(').next().expect("a definition names a symbol");
+            glue.push((format!("wf.drop.{name}"), Vec::new()));
+            inside = true;
+            continue;
+        }
+        if line == "}" {
+            inside = false;
+            continue;
+        }
+        if inside
+            && let Some((_, callee)) = line.split_once("call void @wf.drop.")
+            && let Some((current, calls)) = glue.last_mut()
+        {
+            let callee = format!("wf.drop.{}", callee.split('(').next().unwrap_or_default());
+            assert_ne!(
+                &callee, current,
+                "a compiler-derived drop calls itself, so its depth is the \
+                 value's and no writer can see it: {current}"
+            );
+            calls.push(callee);
+        }
+    }
+    glue
+}
+
+/// No compiler-derived drop can reach itself.
+///
+/// This is the whole property, and it is structural rather than a depth a case
+/// happened to survive: a cycle among these definitions is unbounded recursion
+/// on the destruction path, reached after the program has already spent its
+/// stack, in code the writer never wrote and cannot instrument. Before this
+/// traversal existed, `wf.drop.t0` called `wf.drop.t0` and the corpus had three
+/// programs that dragged it.
+///
+/// The check is over the emitted module rather than over a list of names, so a
+/// new nominal shape whose glue closes a cycle fails it without anyone
+/// remembering to extend a table.
+#[test]
+fn no_compiler_derived_drop_reaches_itself() {
+    let module = compile(&boxed_spine_source(4));
+    let glue = drop_glue_calls(&module);
+    assert!(
+        glue.iter()
+            .any(|(name, _)| name.starts_with("wf.drop.step.")),
+        "a program with a recursive nominal must lower its drop to a \
+         traversal: {module}"
+    );
+    let index: std::collections::HashMap<&str, usize> = glue
+        .iter()
+        .enumerate()
+        .map(|(position, (name, _))| (name.as_str(), position))
+        .collect();
+    // Depth-first over the call graph, refusing a back edge. A drop glue that
+    // recursed at all would already have failed inside `drop_glue_calls`; this
+    // is what catches a cycle through two or more definitions.
+    let mut colour = vec![0_u8; glue.len()];
+    let mut path: Vec<(usize, usize)> = Vec::new();
+    for root in 0..glue.len() {
+        if colour[root] != 0 {
+            continue;
+        }
+        colour[root] = 1;
+        path.push((root, 0));
+        while let Some((node, cursor)) = path.last_mut() {
+            let node = *node;
+            let Some(callee) = glue[node].1.get(*cursor) else {
+                colour[node] = 2;
+                path.pop();
+                continue;
+            };
+            *cursor += 1;
+            let Some(target) = index.get(callee.as_str()).copied() else {
+                continue;
+            };
+            assert_ne!(
+                colour[target], 1,
+                "the compiler-derived drops {} and {callee} reach each other, \
+                 which is unbounded recursion on the destruction path",
+                glue[node].0
+            );
+            if colour[target] == 0 {
+                colour[target] = 1;
+                path.push((target, 0));
+            }
+        }
+    }
+}
+
+/// A program whose drops cannot reach themselves emits no traversal at all.
+///
+/// The traversal is not a new default; it is what the emitter does at exactly
+/// the edges whose depth the *value* chooses. Every other drop keeps the
+/// straight-line expansion it has always had, whose depth the type bounds. A
+/// case that only checked the recursive side would pass against an emitter that
+/// put every program on a worklist and charged them all for it.
+#[test]
+fn an_ownership_chain_keeps_its_straight_line_drop() {
+    let module = compile(SHALLOW_OWNERSHIP);
+    assert!(
+        module.contains("@wf.drop."),
+        "this program owns heap storage and must derive drops: {module}"
+    );
+    assert!(
+        !module.contains("@wf.drop.push"),
+        "a drop whose depth the type bounds must not pay for a worklist: \
+         {module}"
+    );
+}
+
+/// The traversal reclaims a deep value correctly, end to end.
+///
+/// The depth here is not the claim — the case above is what says the traversal
+/// cannot run out of stack at any depth — this one says the traversal is right:
+/// it frees the whole structure, in one pass, and the program ends normally
+/// with an empty record channel.
+#[test]
+fn a_deep_boxed_spine_is_reclaimed_without_a_record() {
+    let directory = test_directory();
+    let executable = build_executable(&compile(&boxed_spine_source(1_000_000)), &directory);
+    let output = Command::new(&executable)
+        .output()
+        .expect("run the deep spine");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "destroying a deep value must end the program normally: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "a completed run wrote to the record channel: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}

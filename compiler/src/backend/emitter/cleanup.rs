@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write;
 
-use crate::IrFlatElement;
+use crate::{IrFlatElement, IrVariant};
 
 use super::super::qualification::Qualification;
 use super::{
@@ -13,6 +13,7 @@ pub(super) fn emit_resource_drop_helpers(
     program: &IrProgram<'_, '_, '_>,
     qualification: &Qualification,
 ) -> Result<String, BackendFailure> {
+    let mut plan = DropPlan::of(program)?;
     let mut output = String::new();
     for nominal in program.nominals() {
         let IrNominalKind::Enum { variants } = nominal.kind() else {
@@ -24,59 +25,44 @@ pub(super) fn emit_resource_drop_helpers(
         }
 
         let aggregate_ty = llvm_type(program, ty)?;
-        writeln!(
-            output,
-            "define private void @{}({aggregate_ty} %value) {{\nentry:\n  %tag = extractvalue {aggregate_ty} %value, 0",
-            drop_helper_symbol(nominal.id())
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        writeln!(output, "  switch i32 %tag, label %invalid [")
-            .map_err(|_| BackendFailure::TextEmission)?;
-        for variant in variants {
+        let symbol = drop_helper_symbol(nominal.id());
+        if plan.is_recursive(ty) {
+            // A drop that can reach its own type again is the one place the
+            // depth of this traversal is chosen by the value rather than by
+            // the type, so it runs on a worklist instead of the machine
+            // stack. The entry point keeps its name and signature; what
+            // changes is that it now drives the traversal rather than being
+            // one level of it.
+            let step = plan.step(ty)?;
+            emit_worklist_driver(&mut output, &symbol, &aggregate_ty, "%value", step)?;
+        } else {
             writeln!(
                 output,
-                "    i32 {}, label %variant.{}",
-                variant.tag(),
-                variant.tag()
+                "define private void @{symbol}({aggregate_ty} %value) {{"
             )
             .map_err(|_| BackendFailure::TextEmission)?;
+            emit_enum_cleanup_body(
+                program,
+                qualification,
+                &mut output,
+                variants,
+                ty,
+                &aggregate_ty,
+                None,
+            )?;
+            output.push_str("}\n\n");
         }
-        output.push_str("  ]\n");
-
-        let mut temporary = 0_u32;
-        for variant in variants {
-            writeln!(output, "variant.{}:", variant.tag())
-                .map_err(|_| BackendFailure::TextEmission)?;
-            let base = variant_field_base(variants, variant.tag())?;
-            let mut jobs = Vec::new();
-            for (field, declaration) in variant.fields().iter().enumerate() {
-                if type_requires_cleanup(program, declaration.ty())? {
-                    jobs.push(CleanupJob::Field {
-                        aggregate_ty: ty,
-                        aggregate: "%value".to_owned(),
-                        index: base
-                            .checked_add(field)
-                            .ok_or(BackendFailure::CounterOverflow)?,
-                        field_ty: declaration.ty(),
-                    });
-                }
-            }
-            emit_cleanup_jobs(program, qualification, &mut output, &mut temporary, jobs)?;
-            output.push_str("  br label %done\n");
-        }
-
-        output.push_str("invalid:\n  call void @abort()\n  unreachable\ndone:\n  ret void\n}\n\n");
     }
     for element in cleanup_buffer_element_nominals(program)? {
         // The [STOR-3] affine-element buffer drop: each element's
         // compiler-derived drop in ascending index order, then the one
         // heap free the copy-element buffer already has.
         let element_ty = IrType::Nominal(element);
+        let symbol = buffer_drop_helper_symbol(element);
         let aggregate_ty = llvm_type(program, element_ty)?;
         writeln!(
             output,
-            "define private void @{}({{ ptr, i64 }} %value) {{\nentry:\n  %pointer = extractvalue {{ ptr, i64 }} %value, 0\n  %length = extractvalue {{ ptr, i64 }} %value, 1\n  br label %head\nhead:\n  %index = phi i64 [ 0, %entry ], [ %next, %body ]\n  %continue = icmp ult i64 %index, %length\n  br i1 %continue, label %body, label %done\nbody:\n  %element.pointer = getelementptr inbounds {aggregate_ty}, ptr %pointer, i64 %index\n  %element = load {aggregate_ty}, ptr %element.pointer",
-            buffer_drop_helper_symbol(element)
+            "define private void @{symbol}({{ ptr, i64 }} %value) {{\nentry:\n  %pointer = extractvalue {{ ptr, i64 }} %value, 0\n  %length = extractvalue {{ ptr, i64 }} %value, 1\n  br label %head\nhead:\n  %index = phi i64 [ 0, %entry ], [ %next, %body ]\n  %continue = icmp ult i64 %index, %length\n  br i1 %continue, label %body, label %done\nbody:\n  %element.pointer = getelementptr inbounds {aggregate_ty}, ptr %pointer, i64 %index\n  %element = load {aggregate_ty}, ptr %element.pointer"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         let mut temporary = 0_u32;
@@ -92,7 +78,14 @@ pub(super) fn emit_resource_drop_helpers(
             "  %next = add i64 %index, 1\n  br label %head\ndone:\n  call void @free(ptr %pointer)\n  ret void\n}\n\n",
         );
     }
-    Ok(output)
+    emit_worklist_steps(program, qualification, &mut output, &mut plan)?;
+    if plan.is_empty() {
+        return Ok(output);
+    }
+    let mut support = String::from(DROP_WORKLIST_SUPPORT);
+    emit_worklist_driver_loop(program, &mut support, &plan)?;
+    support.push_str(&output);
+    Ok(support)
 }
 
 /// Every buffer element nominal in the program whose element drop derives an
@@ -102,8 +95,25 @@ pub(super) fn emit_resource_drop_helpers(
 fn cleanup_buffer_element_nominals(
     program: &IrProgram<'_, '_, '_>,
 ) -> Result<Vec<IrNominalId>, BackendFailure> {
+    let mut needed = BTreeMap::new();
+    for ty in program_types(program) {
+        if let IrType::Buffer {
+            element: IrFlatElement::Nominal(id),
+        } = ty
+            && type_requires_cleanup(program, IrType::Nominal(id))?
+        {
+            needed.insert(id.ordinal(), id);
+        }
+    }
+    Ok(needed.into_values().collect())
+}
+
+/// Every type written anywhere in the program: nominal content, and the
+/// defined values, parameters, and results of every function.
+fn program_types(program: &IrProgram<'_, '_, '_>) -> Vec<IrType> {
     let mut types: Vec<IrType> = Vec::new();
     for nominal in program.nominals() {
+        types.push(IrType::Nominal(nominal.id()));
         match nominal.kind() {
             IrNominalKind::Struct { fields } => {
                 types.extend(fields.iter().map(|field| field.ty()));
@@ -126,17 +136,7 @@ fn cleanup_buffer_element_nominals(
         types.extend(function.parameters().iter().map(|(_, ty)| *ty));
         types.push(function.result());
     }
-    let mut needed = std::collections::BTreeMap::new();
-    for ty in types {
-        if let IrType::Buffer {
-            element: IrFlatElement::Nominal(id),
-        } = ty
-            && type_requires_cleanup(program, IrType::Nominal(id))?
-        {
-            needed.insert(id.ordinal(), id);
-        }
-    }
-    Ok(needed.into_values().collect())
+    types
 }
 
 pub(super) fn buffer_drop_helper_symbol(element: IrNominalId) -> String {
@@ -234,6 +234,7 @@ pub(super) fn emit_value_cleanup(
         output,
         temporary,
         vec![CleanupJob::Value { ty, operand }],
+        None,
     )
 }
 
@@ -243,7 +244,13 @@ fn emit_cleanup_jobs(
     output: &mut String,
     temporary: &mut u32,
     mut jobs: Vec<CleanupJob>,
+    mut deferral: Option<&mut DropPlan>,
 ) -> Result<(), BackendFailure> {
+    // One entry per deferred edge, in the order the edges are reached. The
+    // worklist is last-in first-out, so they are pushed in the reverse of that
+    // order, which leaves the subtrees of one node reclaimed in exactly the
+    // order the straight-line expansion reclaimed them.
+    let mut deferred: Vec<DropEntry> = Vec::new();
     while let Some(job) = jobs.pop() {
         match job {
             CleanupJob::FreePointer(pointer) => {
@@ -277,13 +284,29 @@ fn emit_cleanup_jobs(
                         let IrFlatElement::Nominal(id) = element else {
                             return Err(BackendFailure::InvalidIr);
                         };
-                        writeln!(
-                            output,
-                            "  call void @{}({} {operand})",
-                            buffer_drop_helper_symbol(id),
-                            llvm_type(program, ty)?
-                        )
-                        .map_err(|_| BackendFailure::TextEmission)?;
+                        if let Some(plan) = deferral.as_deref_mut()
+                            && plan.is_recursive(ty)
+                        {
+                            // Reached from inside a traversal that is already
+                            // running on the worklist: the buffer's own drop
+                            // joins that worklist rather than starting a
+                            // second one underneath it.
+                            let step = plan.step(ty)?;
+                            writeln!(
+                                output,
+                                "  call void @{}({{ ptr, i64 }} {operand}, ptr %work)",
+                                worklist_step_symbol(step)
+                            )
+                            .map_err(|_| BackendFailure::TextEmission)?;
+                        } else {
+                            writeln!(
+                                output,
+                                "  call void @{}({} {operand})",
+                                buffer_drop_helper_symbol(id),
+                                llvm_type(program, ty)?
+                            )
+                            .map_err(|_| BackendFailure::TextEmission)?;
+                        }
                     } else {
                         let pointer = next_temporary(temporary)?;
                         writeln!(
@@ -311,13 +334,26 @@ fn emit_cleanup_jobs(
                         }
                         IrNominalKind::Enum { .. } => {
                             if type_requires_cleanup(program, ty)? {
-                                writeln!(
-                                    output,
-                                    "  call void @{}({} {operand})",
-                                    drop_helper_symbol(id),
-                                    nominal_symbol(id)
-                                )
-                                .map_err(|_| BackendFailure::TextEmission)?;
+                                if let Some(plan) = deferral.as_deref_mut()
+                                    && plan.is_recursive(ty)
+                                {
+                                    let step = plan.step(ty)?;
+                                    writeln!(
+                                        output,
+                                        "  call void @{}({} {operand}, ptr %work)",
+                                        worklist_step_symbol(step),
+                                        nominal_symbol(id)
+                                    )
+                                    .map_err(|_| BackendFailure::TextEmission)?;
+                                } else {
+                                    writeln!(
+                                        output,
+                                        "  call void @{}({} {operand})",
+                                        drop_helper_symbol(id),
+                                        nominal_symbol(id)
+                                    )
+                                    .map_err(|_| BackendFailure::TextEmission)?;
+                                }
                             }
                         }
                         // A resource reached through owned content releases
@@ -333,18 +369,34 @@ fn emit_cleanup_jobs(
                             )?;
                         }
                         IrNominalKind::Box { referent } => {
-                            let loaded = next_temporary(temporary)?;
-                            writeln!(
-                                output,
-                                "  %{loaded} = load {}, ptr {operand}",
-                                llvm_type(program, *referent)?
-                            )
-                            .map_err(|_| BackendFailure::TextEmission)?;
-                            jobs.push(CleanupJob::FreePointer(operand));
-                            jobs.push(CleanupJob::Value {
-                                ty: *referent,
-                                operand: format!("%{loaded}"),
-                            });
+                            if let Some(plan) = deferral.as_deref_mut()
+                                && plan.defers(ty, *referent)
+                            {
+                                // One entry names the whole box: the traversal
+                                // takes its content, releases the block, and
+                                // goes on. Releasing before the content rather
+                                // than after is what keeps the pending list
+                                // the size of the traversal's frontier instead
+                                // of the depth it has reached.
+                                let kind = plan.content_kind(*referent)?;
+                                deferred.push(DropEntry {
+                                    kind,
+                                    node: operand,
+                                });
+                            } else {
+                                let loaded = next_temporary(temporary)?;
+                                writeln!(
+                                    output,
+                                    "  %{loaded} = load {}, ptr {operand}",
+                                    llvm_type(program, *referent)?
+                                )
+                                .map_err(|_| BackendFailure::TextEmission)?;
+                                jobs.push(CleanupJob::FreePointer(operand));
+                                jobs.push(CleanupJob::Value {
+                                    ty: *referent,
+                                    operand: format!("%{loaded}"),
+                                });
+                            }
                         }
                         // An arena value's storage is released with its
                         // region, never by an owner-scope cleanup
@@ -369,6 +421,14 @@ fn emit_cleanup_jobs(
             },
         }
     }
+    for entry in deferred.iter().rev() {
+        writeln!(
+            output,
+            "  call void @wf.drop.push(ptr %work, i32 {}, ptr {})",
+            entry.kind, entry.node
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+    }
     Ok(())
 }
 
@@ -378,4 +438,470 @@ fn next_temporary(counter: &mut u32) -> Result<String, BackendFailure> {
         .checked_add(1)
         .ok_or(BackendFailure::CounterOverflow)?;
     Ok(format!("drop.{current}"))
+}
+
+/// The body of one enum's drop: the tag switch and each variant's field
+/// cleanup, from the entry label through the closing `ret`.
+fn emit_enum_cleanup_body(
+    program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
+    output: &mut String,
+    variants: &[IrVariant],
+    ty: IrType,
+    aggregate_ty: &str,
+    mut deferral: Option<&mut DropPlan>,
+) -> Result<(), BackendFailure> {
+    writeln!(
+        output,
+        "entry:\n  %tag = extractvalue {aggregate_ty} %value, 0"
+    )
+    .map_err(|_| BackendFailure::TextEmission)?;
+    writeln!(output, "  switch i32 %tag, label %invalid [")
+        .map_err(|_| BackendFailure::TextEmission)?;
+    for variant in variants {
+        writeln!(
+            output,
+            "    i32 {}, label %variant.{}",
+            variant.tag(),
+            variant.tag()
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+    }
+    output.push_str("  ]\n");
+
+    let mut temporary = 0_u32;
+    for variant in variants {
+        writeln!(output, "variant.{}:", variant.tag()).map_err(|_| BackendFailure::TextEmission)?;
+        let base = variant_field_base(variants, variant.tag())?;
+        let mut jobs = Vec::new();
+        for (field, declaration) in variant.fields().iter().enumerate() {
+            if type_requires_cleanup(program, declaration.ty())? {
+                jobs.push(CleanupJob::Field {
+                    aggregate_ty: ty,
+                    aggregate: "%value".to_owned(),
+                    index: base
+                        .checked_add(field)
+                        .ok_or(BackendFailure::CounterOverflow)?,
+                    field_ty: declaration.ty(),
+                });
+            }
+        }
+        emit_cleanup_jobs(
+            program,
+            qualification,
+            output,
+            &mut temporary,
+            jobs,
+            deferral.as_deref_mut(),
+        )?;
+        output.push_str("  br label %done\n");
+    }
+
+    output.push_str("invalid:\n  call void @abort()\n  unreachable\ndone:\n  ret void\n");
+    Ok(())
+}
+
+// -------------------------------------------------------------- the worklist
+
+/// One pending reclamation: what to do, and the storage to do it to.
+struct DropEntry {
+    kind: u32,
+    node: String,
+}
+
+fn worklist_step_symbol(step: usize) -> String {
+    format!("wf.drop.step.{step}")
+}
+
+/// What a pending entry of one kind means.
+///
+/// One variant, because owning indirection is what closes a cleanup cycle and
+/// `box` is the only owning indirection a recursive type can be written
+/// through — a nominal recursive through a `buffer` has no target layout, and
+/// [`DropPlan::of`] refuses rather than emitting a traversal it cannot reach.
+#[derive(Clone, Copy)]
+enum DropKind {
+    /// The entry's pointer is a heap block this drop owns whose content has
+    /// this type: take the content, release the block, drop the content.
+    Content(IrType),
+}
+
+/// Which compiler-derived drops descend a value instead of a type, and the
+/// worklist entry kinds their traversal uses.
+///
+/// A drop is recursive exactly when the type's cleanup can reach the same type
+/// again, which is a cycle in the graph below and is decided by strongly
+/// connected components rather than by any name, shape, or program. Only the
+/// edges *inside* such a component are carried on the worklist: an edge that
+/// leaves one can never come back, so its depth is bounded by the type and it
+/// stays the straight-line expansion it has always been.
+struct DropPlan {
+    /// Component index per cleanup-requiring type, for components that can
+    /// reach themselves only.
+    recursive: HashMap<IrType, usize>,
+    /// One per-node drop to emit, in registration order; the position is the
+    /// symbol it gets.
+    steps: Vec<IrType>,
+    step_of: HashMap<IrType, usize>,
+    /// One registered entry kind per index.
+    kinds: Vec<DropKind>,
+    content_of: HashMap<IrType, u32>,
+}
+
+impl DropPlan {
+    fn of(program: &IrProgram<'_, '_, '_>) -> Result<Self, BackendFailure> {
+        let recursive = recursive_cleanup_components(program)?;
+        // A `buffer` in a cleanup cycle would need a second traversal shape —
+        // the element walk has to resume where it left off — and no program can
+        // reach one: a nominal recursive through a buffer has no selected
+        // target layout and is refused before emission. Refusing here as a
+        // compiler invariant is what keeps that from silently becoming
+        // recursive glue again if the layout limitation is ever lifted without
+        // this file being revisited.
+        if recursive
+            .keys()
+            .any(|ty| matches!(ty, IrType::Buffer { .. }))
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        Ok(Self {
+            recursive,
+            steps: Vec::new(),
+            step_of: HashMap::new(),
+            kinds: Vec::new(),
+            content_of: HashMap::new(),
+        })
+    }
+
+    fn is_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
+
+    /// Whether this type's own cleanup can reach this type again.
+    fn is_recursive(&self, ty: IrType) -> bool {
+        self.recursive.contains_key(&ty)
+    }
+
+    /// Whether an edge through owning indirection closes a cleanup cycle, so
+    /// its depth is the value's rather than the type's.
+    fn defers(&self, from: IrType, to: IrType) -> bool {
+        match (self.recursive.get(&from), self.recursive.get(&to)) {
+            (Some(source), Some(target)) => source == target,
+            _ => false,
+        }
+    }
+
+    /// The per-node drop of one type, registering its body for emission.
+    fn step(&mut self, ty: IrType) -> Result<usize, BackendFailure> {
+        if let Some(step) = self.step_of.get(&ty) {
+            return Ok(*step);
+        }
+        let step = self.steps.len();
+        self.steps.push(ty);
+        self.step_of.insert(ty, step);
+        Ok(step)
+    }
+
+    fn content_kind(&mut self, ty: IrType) -> Result<u32, BackendFailure> {
+        if let Some(kind) = self.content_of.get(&ty) {
+            return Ok(*kind);
+        }
+        self.step(ty)?;
+        let kind = u32::try_from(self.kinds.len()).map_err(|_| BackendFailure::CounterOverflow)?;
+        self.kinds.push(DropKind::Content(ty));
+        self.content_of.insert(ty, kind);
+        Ok(kind)
+    }
+}
+
+/// One `define` that sets up a worklist, runs one traversal on it, and
+/// releases it.
+fn emit_worklist_driver(
+    output: &mut String,
+    symbol: &str,
+    aggregate_ty: &str,
+    operand: &str,
+    step: usize,
+) -> Result<(), BackendFailure> {
+    writeln!(
+        output,
+        "define private void @{symbol}({aggregate_ty} {operand}) {{\nentry:\n  %work = alloca %wf.drop.work, align 8\n  store %wf.drop.work zeroinitializer, ptr %work\n  call void @{}({aggregate_ty} {operand}, ptr %work)\n  call void @wf.drop.run(ptr %work)\n  ret void\n}}\n",
+        worklist_step_symbol(step)
+    )
+    .map_err(|_| BackendFailure::TextEmission)
+}
+
+/// The per-node drop of every registered step target, including targets that
+/// registration reached while emitting an earlier one.
+fn emit_worklist_steps(
+    program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
+    output: &mut String,
+    plan: &mut DropPlan,
+) -> Result<(), BackendFailure> {
+    let mut emitted = 0;
+    while emitted < plan.steps.len() {
+        let ty = plan.steps[emitted];
+        let symbol = worklist_step_symbol(emitted);
+        emitted += 1;
+        let aggregate_ty = llvm_type(program, ty)?;
+        if let IrType::Nominal(id) = ty
+            && let Some(IrNominalKind::Enum { variants }) =
+                program.nominal(id).map(|nominal| nominal.kind())
+        {
+            writeln!(
+                output,
+                "define private void @{symbol}({aggregate_ty} %value, ptr %work) {{"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            emit_enum_cleanup_body(
+                program,
+                qualification,
+                output,
+                variants,
+                ty,
+                &aggregate_ty,
+                Some(plan),
+            )?;
+            output.push_str("}\n\n");
+            continue;
+        }
+        writeln!(
+            output,
+            "define private void @{symbol}({aggregate_ty} %value, ptr %work) {{\nentry:"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        let mut temporary = 0_u32;
+        emit_cleanup_jobs(
+            program,
+            qualification,
+            output,
+            &mut temporary,
+            vec![CleanupJob::Value {
+                ty,
+                operand: "%value".to_owned(),
+            }],
+            Some(plan),
+        )?;
+        output.push_str("  ret void\n}\n\n");
+    }
+    Ok(())
+}
+
+/// The traversal itself: take the newest pending entry and do what its kind
+/// says, until none is left.
+fn emit_worklist_driver_loop(
+    program: &IrProgram<'_, '_, '_>,
+    output: &mut String,
+    plan: &DropPlan,
+) -> Result<(), BackendFailure> {
+    output.push_str(DROP_WORKLIST_LOOP_HEAD);
+    for kind in 0..plan.kinds.len() {
+        writeln!(output, "    i32 {kind}, label %kind.{kind}")
+            .map_err(|_| BackendFailure::TextEmission)?;
+    }
+    output.push_str("  ]\n");
+    for (kind, entry) in plan.kinds.iter().enumerate() {
+        match entry {
+            DropKind::Content(ty) => {
+                let aggregate_ty = llvm_type(program, *ty)?;
+                let step = *plan.step_of.get(ty).ok_or(BackendFailure::InvalidIr)?;
+                // The content is taken before the block is released, so the
+                // step reads a value and never the freed storage.
+                writeln!(
+                    output,
+                    "kind.{kind}:\n  %content.{kind} = load {aggregate_ty}, ptr %node\n  call void @free(ptr %node)\n  call void @{}({aggregate_ty} %content.{kind}, ptr %work)\n  br label %loop",
+                    worklist_step_symbol(step)
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
+        }
+    }
+    output.push_str(DROP_WORKLIST_LOOP_TAIL);
+    Ok(())
+}
+
+/// The worklist's storage and the one operation that grows it.
+///
+/// The entries are heap-resident because that is the resource the traversal is
+/// releasing: an entry is smaller than the block it names, and the block is
+/// released as the entry is taken, so the list can never outgrow the structure
+/// it is dismantling. A host that refuses the growth writes the heap record
+/// through the same latch every other refused allocation uses.
+const DROP_WORKLIST_SUPPORT: &str = "%wf.drop.entry = type { i32, ptr }\n%wf.drop.work = type { ptr, i64, i64 }\n\ndeclare ptr @realloc(ptr, i64)\n\ndefine private void @wf.drop.push(ptr %work, i32 %kind, ptr %node) {\nentry:\n  %count.slot = getelementptr inbounds %wf.drop.work, ptr %work, i32 0, i32 1\n  %capacity.slot = getelementptr inbounds %wf.drop.work, ptr %work, i32 0, i32 2\n  %count = load i64, ptr %count.slot\n  %capacity = load i64, ptr %capacity.slot\n  %full = icmp eq i64 %count, %capacity\n  br i1 %full, label %grow, label %store\ngrow:\n  %doubled = shl i64 %capacity, 1\n  %fresh = icmp eq i64 %capacity, 0\n  %wanted = select i1 %fresh, i64 64, i64 %doubled\n  %bytes = mul i64 %wanted, ptrtoint (ptr getelementptr (%wf.drop.entry, ptr null, i64 1) to i64)\n  %previous = load ptr, ptr %work\n  %grown = call ptr @realloc(ptr %previous, i64 %bytes)\n  %refused = icmp eq ptr %grown, null\n  br i1 %refused, label %exhausted, label %ready\nexhausted:\n  call void @wf_resource_abort()\n  unreachable\nready:\n  store ptr %grown, ptr %work\n  store i64 %wanted, ptr %capacity.slot\n  br label %store\nstore:\n  %entries = load ptr, ptr %work\n  %slot = getelementptr inbounds %wf.drop.entry, ptr %entries, i64 %count\n  %node.slot = getelementptr inbounds %wf.drop.entry, ptr %slot, i32 0, i32 1\n  store i32 %kind, ptr %slot\n  store ptr %node, ptr %node.slot\n  %after = add i64 %count, 1\n  store i64 %after, ptr %count.slot\n  ret void\n}\n\n";
+
+const DROP_WORKLIST_LOOP_HEAD: &str = "define private void @wf.drop.run(ptr %work) {\nentry:\n  %count.slot = getelementptr inbounds %wf.drop.work, ptr %work, i32 0, i32 1\n  br label %loop\nloop:\n  %count = load i64, ptr %count.slot\n  %empty = icmp eq i64 %count, 0\n  br i1 %empty, label %done, label %take\ntake:\n  %next = sub i64 %count, 1\n  store i64 %next, ptr %count.slot\n  %entries = load ptr, ptr %work\n  %slot = getelementptr inbounds %wf.drop.entry, ptr %entries, i64 %next\n  %node.slot = getelementptr inbounds %wf.drop.entry, ptr %slot, i32 0, i32 1\n  %kind = load i32, ptr %slot\n  %node = load ptr, ptr %node.slot\n  switch i32 %kind, label %invalid [\n";
+
+const DROP_WORKLIST_LOOP_TAIL: &str = "invalid:\n  unreachable\ndone:\n  %remaining = load ptr, ptr %work\n  call void @free(ptr %remaining)\n  ret void\n}\n\n";
+
+/// The cleanup edges of one type: what its compiler-derived drop reaches, and
+/// whether the edge passes through owning indirection.
+///
+/// Only an indirection edge can close a cycle — a value that contained itself
+/// by value would have no finite layout — so the flag is exactly the set of
+/// edges a traversal can be asked to carry on a worklist.
+fn cleanup_edges(
+    program: &IrProgram<'_, '_, '_>,
+    ty: IrType,
+) -> Result<Vec<(IrType, bool)>, BackendFailure> {
+    let mut edges = Vec::new();
+    match ty {
+        IrType::Buffer { element } => {
+            if type_requires_cleanup(program, element.ty())? {
+                edges.push((element.ty(), true));
+            }
+        }
+        IrType::Nominal(id) => {
+            let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
+            match nominal.kind() {
+                IrNominalKind::Struct { fields } => {
+                    for field in fields {
+                        if type_requires_cleanup(program, field.ty())? {
+                            edges.push((field.ty(), false));
+                        }
+                    }
+                }
+                IrNominalKind::Enum { variants } => {
+                    for field in variants.iter().flat_map(|variant| variant.fields()) {
+                        if type_requires_cleanup(program, field.ty())? {
+                            edges.push((field.ty(), false));
+                        }
+                    }
+                }
+                IrNominalKind::Box { referent } => {
+                    if type_requires_cleanup(program, *referent)? {
+                        edges.push((*referent, true));
+                    }
+                }
+                IrNominalKind::Arena { .. }
+                | IrNominalKind::ArenaStorage
+                | IrNominalKind::SystemResource(_) => {}
+            }
+        }
+        IrType::Unit
+        | IrType::Bool
+        | IrType::Integer { .. }
+        | IrType::Float { .. }
+        | IrType::Array { .. }
+        | IrType::Slice { .. }
+        | IrType::Address(_) => {}
+    }
+    Ok(edges)
+}
+
+/// Every cleanup-requiring type that can reach itself, mapped to the component
+/// it reaches itself through.
+///
+/// Tarjan's algorithm over the cleanup graph, iterative because the graph this
+/// analysis exists to find is exactly the one a recursive walk of it would
+/// descend.
+fn recursive_cleanup_components(
+    program: &IrProgram<'_, '_, '_>,
+) -> Result<HashMap<IrType, usize>, BackendFailure> {
+    let mut types: Vec<IrType> = Vec::new();
+    let mut index_of: HashMap<IrType, usize> = HashMap::new();
+    let mut edges: Vec<Vec<usize>> = Vec::new();
+    let mut indirect: Vec<Vec<bool>> = Vec::new();
+    let mut pending: Vec<usize> = Vec::new();
+    for ty in program_types(program) {
+        if !type_requires_cleanup(program, ty)? {
+            continue;
+        }
+        if index_of.contains_key(&ty) {
+            continue;
+        }
+        index_of.insert(ty, types.len());
+        types.push(ty);
+        edges.push(Vec::new());
+        indirect.push(Vec::new());
+        pending.push(types.len() - 1);
+    }
+    while let Some(node) = pending.pop() {
+        for (target, through_indirection) in cleanup_edges(program, types[node])? {
+            let index = match index_of.get(&target) {
+                Some(index) => *index,
+                None => {
+                    let index = types.len();
+                    index_of.insert(target, index);
+                    types.push(target);
+                    edges.push(Vec::new());
+                    indirect.push(Vec::new());
+                    pending.push(index);
+                    index
+                }
+            };
+            edges[node].push(index);
+            indirect[node].push(through_indirection);
+        }
+    }
+
+    let count = types.len();
+    let mut order = vec![usize::MAX; count];
+    let mut low = vec![0_usize; count];
+    let mut on_stack = vec![false; count];
+    let mut component = vec![usize::MAX; count];
+    let mut stack: Vec<usize> = Vec::new();
+    let mut frames: Vec<(usize, usize)> = Vec::new();
+    let mut next_order = 0_usize;
+    let mut components = 0_usize;
+    for root in 0..count {
+        if order[root] != usize::MAX {
+            continue;
+        }
+        frames.push((root, 0));
+        order[root] = next_order;
+        low[root] = next_order;
+        next_order += 1;
+        stack.push(root);
+        on_stack[root] = true;
+        while let Some((node, cursor)) = frames.last_mut() {
+            let node = *node;
+            if *cursor < edges[node].len() {
+                let target = edges[node][*cursor];
+                *cursor += 1;
+                if order[target] == usize::MAX {
+                    order[target] = next_order;
+                    low[target] = next_order;
+                    next_order += 1;
+                    stack.push(target);
+                    on_stack[target] = true;
+                    frames.push((target, 0));
+                } else if on_stack[target] {
+                    low[node] = low[node].min(order[target]);
+                }
+                continue;
+            }
+            frames.pop();
+            if let Some((parent, _)) = frames.last() {
+                low[*parent] = low[*parent].min(low[node]);
+            }
+            if low[node] == order[node] {
+                while let Some(member) = stack.pop() {
+                    on_stack[member] = false;
+                    component[member] = components;
+                    if member == node {
+                        break;
+                    }
+                }
+                components += 1;
+            }
+        }
+    }
+
+    // A component with one member is recursive only when that member reaches
+    // itself, which for a cleanup graph means an indirection edge to its own
+    // type.
+    let mut sizes = vec![0_usize; components];
+    for node in 0..count {
+        sizes[component[node]] += 1;
+    }
+    let mut recursive = HashMap::new();
+    for node in 0..count {
+        let members = sizes[component[node]];
+        let reaches_itself = members > 1 || edges[node].contains(&node);
+        if reaches_itself {
+            recursive.insert(types[node], component[node]);
+        }
+    }
+    Ok(recursive)
 }

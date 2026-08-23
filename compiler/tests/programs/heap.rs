@@ -1,5 +1,18 @@
 use super::support::{compile_and_run, compile_program, compile_rejection, emitted_function};
 
+/// One compiler-derived drop definition, from the first `define` line whose
+/// symbol starts with `prefix` through its closing brace.
+fn derived_drop<'module>(llvm: &'module str, prefix: &str) -> &'module str {
+    let start = llvm
+        .find(prefix)
+        .unwrap_or_else(|| panic!("the module must define {prefix}"));
+    let end = llvm[start..]
+        .find("\n}\n")
+        .map(|offset| start + offset)
+        .expect("a definition must close");
+    &llvm[start..end]
+}
+
 /// The [SET-2] library layer: a growable byte vector over `buffer<u8>` whose
 /// push grows by allocate-new + copy + affine field replace + scope-exit
 /// release of the superseded buffer, and a byte-string append built on it.
@@ -57,16 +70,19 @@ fn recursively_boxed_tree_executes_with_derived_cleanup() {
     assert!(llvm.contains("call ptr @malloc"));
     assert!(llvm.contains("icmp ne ptr"));
     assert!(llvm.contains("call void @free"));
-    let drop_start = llvm
-        .find("define private void @wf.drop")
-        .expect("recursive enum must have a derived drop helper");
-    let drop_end = llvm[drop_start..]
-        .find("\n}\n\n")
-        .map(|offset| drop_start + offset)
-        .expect("drop helper must be complete");
-    let drop_helper = &llvm[drop_start..drop_end];
-    assert!(drop_helper.contains("call void @wf.drop"));
-    assert_eq!(drop_helper.matches("call void @free").count(), 2);
+    // A recursive enum's derived drop is a traversal, not a level of one: the
+    // entry point sets up a worklist and runs it, and the per-node step hands
+    // each of the two boxed children to that worklist instead of descending
+    // into it. The two frees the straight-line helper used to perform are the
+    // traversal's, one for each block it takes off the list.
+    let entry = derived_drop(&llvm, "define private void @wf.drop.t");
+    assert!(entry.contains("call void @wf.drop.step."));
+    assert!(entry.contains("call void @wf.drop.run(ptr %work)"));
+    let step = derived_drop(&llvm, "define private void @wf.drop.step.");
+    assert_eq!(step.matches("call void @wf.drop.push").count(), 2);
+    assert!(!step.contains("call void @wf.drop.t"));
+    let traversal = derived_drop(&llvm, "define private void @wf.drop.run");
+    assert!(traversal.contains("call void @free(ptr %node)"));
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
