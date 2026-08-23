@@ -202,7 +202,13 @@ fn emit_llvm_for(
         )
         .map_err(|_| BackendFailure::TextEmission)?;
     }
-    if !claim_records.is_empty() {
+    // A latch decides between threads, so it belongs only to a module that has
+    // more than one. `thunks.is_used()` is exactly "this module hands a call
+    // out to a worker lane": false for every default build, and false for a
+    // `--par` build that actualizes nothing. A lone thread races no one, so
+    // those modules emit the trap path they emitted before the latch existed.
+    let latched_trap = !claim_records.is_empty() && thunks.is_used();
+    if latched_trap {
         text.push_str(TRAP_LATCH);
     }
     // The mandatory [DIAG-3] record and the qualified system interface can
@@ -224,8 +230,10 @@ fn emit_llvm_for(
         text.push_str(declaration);
         text.push('\n');
     }
-    if !claim_records.is_empty() {
-        text.push_str(TRAP_WRITER);
+    if latched_trap {
+        text.push_str(LATCHED_TRAP_WRITER);
+    } else if !claim_records.is_empty() {
+        text.push_str(SEQUENTIAL_TRAP_WRITER);
     } else if has_matches {
         text.push('\n');
     }
@@ -1481,15 +1489,26 @@ fn source_symbol(name: &str) -> String {
     format!("wf_{name}")
 }
 
+/// The mandatory [DIAG-3] record writer of a module with one thread, reached
+/// from every `claim` that evaluates false, and the sole writer-reachable
+/// runtime trap [SCOPE-4].
+///
+/// The thread that reaches it writes its complete record to standard error and
+/// aborts the process without unwinding. There is no one to arbitrate with, so
+/// there is no latch: these are the bytes every module emitted before the
+/// overlapped world existed, and they are what a default build still gets.
+const SEQUENTIAL_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n";
+
 /// The first-trap-wins latch, and the only state the trap path carries.
 ///
-/// Zero until some thread traps. A module that contains no `claim` contains
-/// neither this nor [`TRAP_WRITER`], and no path outside [`TRAP_WRITER`] ever
-/// reads or writes it, so a program that does not trap pays nothing for it.
+/// Zero until some thread traps. Only a module that both contains a `claim`
+/// and hands a call out carries this and [`LATCHED_TRAP_WRITER`], and no path
+/// outside that writer ever reads or writes it, so a program that does not trap
+/// pays nothing for it.
 const TRAP_LATCH: &str = "@.wf_trap.latch = private global i32 0, align 4\n";
 
-/// The mandatory [DIAG-3] record writer, reached from every `claim` that
-/// evaluates false, and the sole writer-reachable runtime trap [SCOPE-4].
+/// [`SEQUENTIAL_TRAP_WRITER`]'s work under a first-trap-wins latch, emitted
+/// where the module can have more than one thread inside it.
 ///
 /// The first thread to arrive takes [`TRAP_LATCH`] and owns the trap: it
 /// writes its complete record to standard error and aborts the process without
@@ -1509,7 +1528,7 @@ const TRAP_LATCH: &str = "@.wf_trap.latch = private global i32 0, align 4\n";
 /// The park spins on a *volatile* load rather than an empty loop, so no
 /// optimizer may delete the loop and let a losing thread fall through into a
 /// second record.
-const TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  %claimed = cmpxchg ptr @.wf_trap.latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %claimed, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr @.wf_trap.latch, align 4\n  br label %park\n}\n\n";
+const LATCHED_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  %claimed = cmpxchg ptr @.wf_trap.latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %claimed, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr @.wf_trap.latch, align 4\n  br label %park\n}\n\n";
 
 pub(super) fn trap_record(site: &IrClaimSite) -> Vec<u8> {
     let components = site
