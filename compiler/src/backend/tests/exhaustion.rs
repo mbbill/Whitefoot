@@ -186,9 +186,8 @@ command fn main() -> status: own ExitStatus pure {{
     .into_bytes()
 }
 
-/// Deeper than a pool lane's stack and far shallower than the entry's, so a
-/// death at this depth is a lane's and a sequential run at it is not close to
-/// its own limit.
+/// Deep enough that a lane sized the way lanes used to be sized cannot hold it,
+/// and far inside the stack every thread now gets.
 const LANE_DEPTH: u64 = 2_000_000;
 
 /// Deeper than the entry's own stack, so the sequential run reaches the guard
@@ -268,7 +267,8 @@ fn an_exhausted_entry_writes_one_resource_record() {
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
-/// A lane that runs out of stack writes the same record.
+/// An overlapped run that exhausts its stack writes the same record, whichever
+/// thread was carrying the recursion.
 ///
 /// Worth its own case because the two thread classes arrive as *different*
 /// signals — an entry overflow as SIGSEGV, a lane overflow as SIGBUS — so a
@@ -276,41 +276,85 @@ fn an_exhausted_entry_writes_one_resource_record() {
 /// every worker overflow, which is exactly the class the parallel default
 /// introduced.
 ///
-/// The depth is the discriminator: a sequential run at it completes, so a
-/// death here is a lane's. Which runs die is a schedule's to choose — whether
-/// the deep half of the recursion reaches a lane at all depends on a steal
-/// race — so this case samples until it sees the lane path, and holds *every*
-/// run to the same standard: a run either completes or writes exactly the
-/// record. A bare signal or a partial record fails it on the first run,
-/// sampled or not.
+/// It used to be the *depth* that said a death here was a lane's: lanes were
+/// sized from `RLIMIT_STACK` and the entry from the compiler's own constant, so
+/// a depth between the two ceilings could only die on a lane. That asymmetry is
+/// what [`a_deep_recursion_completes_at_every_worker_count`] removes, so no
+/// depth discriminates any more. What is left is the standard every run is held
+/// to: past the ceiling a run must write exactly the record and must not die
+/// bare, and at the default pool the deep descent reaches a lane in the great
+/// majority of runs — measured 27 of 30 on this shape while the ceilings still
+/// differed. A bare signal or a partial record fails this on the first run.
 #[test]
 fn an_exhausted_lane_writes_the_same_resource_record() {
     let directory = test_directory();
-    let module = super::emit_with_overlap(&spine_source(LANE_DEPTH));
+    let module = super::emit_with_overlap(&spine_source(RUNAWAY_DEPTH));
     let executable = build_executable(&module, &directory);
-    let mut exhausted = 0;
-    for _ in 0..20 {
+    for _ in 0..3 {
         let output = Command::new(&executable)
             .output()
             .expect("run the overlapped recursion");
-        match output.status.code() {
-            Some(_) => assert!(
-                output.stderr.is_empty(),
-                "a run that completed wrote to the record channel: {:?}",
+        assert_eq!(
+            output.status.code(),
+            None,
+            "a recursion past every thread's ceiling must not return a status"
+        );
+        assert_resource_record(&output.stderr, "stack");
+    }
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// Whether a recursion completes is not decided by a steal race.
+///
+/// A stolen call is an ordinary Whitefoot call that starts at the bottom of the
+/// stealing lane's own stack. When a lane's stack was smaller than the entry's,
+/// that made a steal *lose* headroom, and the same binary on the same input
+/// either finished or died depending on which thread got there first: on this
+/// recursion, 11 of 30 runs at two workers, 3 of 30 at eight, and 4 of 30 at
+/// the default. [PAR-1] survives that — overlap-resource exhaustion is outside
+/// its observables — but "does my program run" is not something a schedule may
+/// decide.
+///
+/// A lane sized like the entry makes a steal strictly headroom-positive
+/// instead: no thread has less room than the entry, and a stolen subtree gets a
+/// whole fresh stack, so the deepest any schedule reaches is at least what the
+/// no-steal schedule reaches. The case is the whole worker range rather than
+/// one setting because the failure it guards was a distribution, not a
+/// threshold — it showed up at every count above one, and worst where the pool
+/// was largest.
+#[test]
+fn a_deep_recursion_completes_at_every_worker_count() {
+    let directory = test_directory();
+    let module = super::emit_with_overlap(&spine_source(LANE_DEPTH));
+    let executable = build_executable(&module, &directory);
+    for workers in ["0", "1", "2", "4", "8", "16"] {
+        for _ in 0..3 {
+            let output = Command::new(&executable)
+                .env("WF_WORKERS", workers)
+                .output()
+                .expect("run the overlapped recursion");
+            assert_eq!(
+                output.status.code(),
+                Some(0),
+                "a recursion inside every thread's ceiling died at \
+                 WF_WORKERS={workers}, so its liveness depends on the \
+                 schedule: {}",
                 String::from_utf8_lossy(&output.stderr)
-            ),
-            None => {
-                assert_resource_record(&output.stderr, "stack");
-                exhausted += 1;
-                break;
-            }
+            );
         }
     }
-    assert!(
-        exhausted > 0,
-        "twenty runs never carried the recursion onto a lane, so this case \
-         exercised nothing"
-    );
+    for _ in 0..3 {
+        let output = Command::new(&executable)
+            .output()
+            .expect("run the overlapped recursion at the shipped default");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "the shipped default is the setting a binary handed to somebody \
+             runs under: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 

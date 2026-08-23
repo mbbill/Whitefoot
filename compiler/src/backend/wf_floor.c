@@ -54,6 +54,17 @@ extern int wf__main_body(int argc, char **argv);
  * further is that a runaway recursion should still end in a bounded time. */
 #define WF_FLOOR_STACK_BYTES ((size_t)1024u * 1024u * 1024u)
 
+/* The same number, for the parallel runtime's lanes.
+ *
+ * A lane runs ordinary Whitefoot calls and a stolen call starts at the bottom
+ * of the lane's own stack, so a lane sized like the entry makes stealing
+ * strictly headroom-positive: no schedule reaches a depth the no-steal
+ * schedule could not. A lane sized any other way puts the program's liveness
+ * in the hands of a steal race. Exporting the constant rather than repeating
+ * it is what makes "the same number" a fact about the program instead of a
+ * comment in two files. */
+size_t wf__floor_stack_bytes(void) { return WF_FLOOR_STACK_BYTES; }
+
 /* ------------------------------------------------------- per-thread state */
 
 /* [low, high) of this thread's usable stack. Written once at attach, on the

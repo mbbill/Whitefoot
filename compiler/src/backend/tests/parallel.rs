@@ -462,11 +462,17 @@ fn handing_calls_out_keeps_the_sequential_recursion_depth() {
 /// ~45 000 a fourfold frame regression would leave it, so the case fails on
 /// the defect it watches for rather than on ordinary drift.
 ///
-/// The limit is 8 MB rather than the 1 MB its sibling uses, and that is what
-/// takes the steal race out of the result: a stolen descent runs on a worker
+/// The limit is 8 MB rather than the 1 MB its sibling uses, and that used to be
+/// what took the steal race out of the result: a stolen descent ran on a worker
 /// stack of the larger of `RLIMIT_STACK` and 8 MB, so at this limit both sides
-/// of the race have exactly the same room and which one takes the deep call
-/// cannot decide the outcome.
+/// of the race had the same room. Neither half of that is still true. The entry
+/// runs on a stack the runtime owns and a lane runs on one the same size, so
+/// this `ulimit` no longer bounds either thread and the race no longer decides
+/// anything — the depth below is now far inside a ceiling three orders of
+/// magnitude above it, which means this case can no longer catch the frame
+/// regression it was written for. Re-aiming it is a stack-ledger job: the
+/// instrument that catches a moved frame is the predicted-versus-measured
+/// ceiling, not a survival probe at a depth chosen for a limit that is gone.
 #[test]
 fn the_shipped_default_keeps_a_deep_recursion() {
     const STACK_KILOBYTES: u32 = 8192;

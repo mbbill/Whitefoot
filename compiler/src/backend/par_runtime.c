@@ -83,7 +83,6 @@
 #include <pthread.h>
 #include <sched.h>
 #include <stdlib.h>
-#include <sys/resource.h>
 #include <unistd.h>
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
@@ -277,26 +276,21 @@ static int wf__par_ready;
 static pthread_mutex_t wf__par_ready_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t wf__par_ready_signal = PTHREAD_COND_INITIALIZER;
 
-/* A worker stack is at least as large as the calling thread's own stack, and
- * never below this floor: a forked task is an ordinary Whitefoot call that may
- * recurse exactly as deep as it would have on the calling thread, so the much
- * smaller pthread default (512 KB on some platforms) would turn a recursion
- * that succeeds sequentially into an overflow on a lane. */
-#define WF_PAR_STACK_FLOOR ((size_t)8u * 1024u * 1024u)
-
-/* The calling thread's stack size, or the floor when the platform does not
- * report one. RLIMIT_STACK is the main thread's own limit on every platform
- * this compiler targets; RLIM_INFINITY and absurd values fall back to the
- * floor rather than asking for an unbounded worker stack. */
-static size_t wf__par_stack_bytes(void) {
-    struct rlimit limit;
-    if (getrlimit(RLIMIT_STACK, &limit) == 0 && limit.rlim_cur != RLIM_INFINITY
-        && limit.rlim_cur > (rlim_t)WF_PAR_STACK_FLOOR
-        && limit.rlim_cur <= (rlim_t)((size_t)512u * 1024u * 1024u)) {
-        return (size_t)limit.rlim_cur;
-    }
-    return WF_PAR_STACK_FLOOR;
-}
+/* A lane's stack is the entry's stack, byte for byte, defined in `wf_floor.c`.
+ *
+ * A stolen call is an ordinary Whitefoot call that may recurse exactly as deep
+ * as it would have on the thread that offered it, and it starts at the bottom
+ * of the lane's own stack rather than continuing the offerer's. So a lane
+ * sized like the entry makes stealing strictly headroom-positive: the deepest
+ * any thread can go under any schedule is what the no-steal schedule reaches,
+ * and whether a recursion completes stops depending on a race.
+ *
+ * Asking `RLIMIT_STACK` — which is what this used to do — reintroduced exactly
+ * the environment dependence the entry's own stack was given to remove, and
+ * left lanes an order of magnitude short of it: measured on a two-million-deep
+ * recursion, whether the run completed was 11/30 at two workers and 3/30 at
+ * eight, decided by whether the deep spine happened to be stolen. */
+extern size_t wf__floor_stack_bytes(void);
 
 /* ---------------------------------------------------------------- sleeping */
 
@@ -637,7 +631,7 @@ static void wf__par_start(void) {
     /* A refused stack request is a silent downgrade to the pthread default,
      * which is exactly the hazard this call exists to close, so it stops the
      * pool instead: no lane is better than a lane that overflows. */
-    if (pthread_attr_setstacksize(&attributes, wf__par_stack_bytes()) != 0) {
+    if (pthread_attr_setstacksize(&attributes, wf__floor_stack_bytes()) != 0) {
         pthread_attr_destroy(&attributes);
         return;
     }

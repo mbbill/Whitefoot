@@ -196,6 +196,66 @@ home).
   drives a worklist, the per-node step hands both children to it and calls no
   drop helper, and the traversal releases each block it takes. Not protected
   conformance evidence; recorded here because the change forced it.
+- F7 — a lane's stack is the entry's stack, byte for byte, and the steal-race
+  liveness coin flip is gone. Both routed findings close on one lever. Lanes
+  asked `RLIMIT_STACK` with an 8 MiB floor, which reintroduced exactly the
+  environment dependence F2 removed from the entry and left a lane two orders
+  of magnitude short of it; `wf_floor.c` now exports its constant and
+  `par_runtime.c` asks for that, so "the same number" is a fact about the
+  program rather than a comment in two files. `<sys/resource.h>` and
+  `wf__par_stack_bytes` are gone.
+  The argument, which is what makes this a fix rather than a bigger knob: a
+  stolen call is an ordinary Whitefoot call that starts at the *bottom* of the
+  stealing lane's own stack rather than continuing the offerer's. With lanes
+  sized like the entry, no thread has less room than the entry has, so the
+  deepest any schedule reaches is at least what the no-steal schedule reaches
+  — stealing became strictly headroom-positive, where before it lost 128x.
+  Measured on a 2,000,000-deep recursion, 30 runs at each of `WF_WORKERS`
+  0/1/2/4/8/16 and the shipped default. Before: 30/30, 30/30, 11/30, 13/30,
+  3/30, 2/30, 4/30 — every failure a `{"resource":"stack"}` record, never a
+  bare signal. After: **30/30 at every one of the seven**.
+  Residual, looked for rather than assumed away: a schedule that splits a deep
+  chain across two lanes has more total headroom than one that does not, so a
+  program in the band above the single-thread ceiling could in principle
+  complete on some schedules only. Bisected at 1,000,000-level resolution on
+  the same shape: 22M completes 10/10 and 23M fails 0/10 at four workers, and
+  identically at sixteen; 23M fails 0/30 at both two and sixteen workers. The
+  boundary is (1 GiB − ~6 KB)/48 B, the overlapped clone's own frame — a
+  division, not a distribution — so no band was found. The mechanism is the
+  bounded number of outstanding offers per lane (`WF_PAR_LANE_SLOTS` = 64):
+  the top of a recursion is stealable and the rest of its depth is one
+  thread's by construction. Stated as measured on this shape rather than as a
+  theorem; a shape whose deep half is genuinely handed out repeatedly could
+  still reach further on a luckier schedule, and that direction can only
+  *raise* liveness, never lower it.
+  Cost: none measurable. Sixteen lanes now reserve 16 GiB of address space
+  between them; `par_layout` at `WF_WORKERS=16` measures 1.95 MB peak against
+  1.80 MB before at identical wall time, and at four workers the two are
+  within 50 bytes — the reservation is untouched pages, as F2 measured for the
+  entry. All 96 observable rows still byte-identical to the pre-batch
+  compiler's.
+  Regression: `a_deep_recursion_completes_at_every_worker_count` runs the
+  probe three times at each of the seven settings; against the pre-change
+  runtime the eight-worker cell alone fails it with probability ~0.999.
+  Two test consequences, both flagged rather than absorbed.
+  `an_exhausted_lane_writes_the_same_resource_record` lost its discriminator:
+  it identified a lane death *by depth*, which only worked while lanes and the
+  entry had different ceilings. It now runs past the common ceiling and holds
+  every run to the same standard (exactly the record, never a bare signal),
+  and its doc comment says plainly what it can no longer prove. And
+  `the_shipped_default_keeps_a_deep_recursion` in `backend/tests/parallel.rs`
+  became vacuous at F2, not here: it survives a 60,000-deep recursion under an
+  8 MB `ulimit -s` that no longer bounds any thread, so it would pass through
+  a fourfold frame regression. Its comment now says so and names the
+  instrument that replaces it — the F6 predicted-versus-measured ceiling.
+- Branch-tip gate, reported rather than worked around: `make check` fails at
+  `research-tests`' `effect` target, and it fails identically with this
+  executor's changes stashed. The cause is outside the repository — the
+  installed `wasi-sdk` clang crashes in WebAssembly instruction selection on
+  `adversarial-caller.ll` — so it is a host-toolchain failure, not a
+  regression from this batch. Every other `make check` target is green:
+  compiler gate, conformance adapter 500 pass / 1 skip, coverage 137/137,
+  spec append-only, archive integrity, digest sync, approval history.
 
 ## Outcome
 
