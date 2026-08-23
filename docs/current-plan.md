@@ -2,7 +2,7 @@
 
 Status: PROPOSED (branch `par/proof-derived-parallelism`, 2026-08-21; updated
 on the branch 2026-08-22 for merge review). This proposal authorizes no
-execution. Batches 0074, 0075 and 0076 were carried out under the owner's
+execution. Batches 0074, 0076 and 0077 were carried out under the owner's
 chartering directions of 2026-08-21/22, quoted verbatim in their records;
 this plan is the durable sequencing those directions imply, and it becomes
 ACTIVE only with the owner's approval at merge.
@@ -32,8 +32,8 @@ program changes.
   `WF_WORKERS`, the spec CANDIDATE v0.34 [PAR-1] rule, compiler tests
   including each named counterexample shape, and the measured demo. Recorded
   in `docs/ongoing/0074-proof-derived-parallelism.md`.
-- **W1b — the optimization campaign (landed on the branch, batches 0075 and
-  0076, chartered by the owner's directions of 2026-08-21/22).** Against a
+- **W1b — the optimization campaign (landed on the branch, batches 0076 and
+  0077, chartered by the owner's directions of 2026-08-21/22).** Against a
   paired benchmark oracle with a Rust/rayon twin: the hand-out frame moved
   off the activation record; the lane scan replaced by per-thread
   work-stealing deques; two-world compilation selecting a sequential clone
@@ -46,8 +46,8 @@ program changes.
   and a counted-loop ledger hint. End state on the N=18 authoritative
   rotation: rayon wins zero cells; matched worker counts 14 WF wins / 25
   parity / 0 losses; each language's shipped default 11 / 2 / 0. Records
-  `docs/ongoing/0075-par-optimization-digs.md` and
-  `docs/ongoing/0076-night-par-ceiling.md` carry the digs, the adversarial
+  `docs/ongoing/0076-par-optimization-digs.md` and
+  `docs/ongoing/0077-night-par-ceiling.md` carry the digs, the adversarial
   audit's dispositions, and one recorded invariant breach (a w1-only
   code-placement regression on three cells, attributed, W>=2 unaffected).
 - **W2 — the I/O concurrency lane (sequenced first among the remaining
@@ -76,7 +76,7 @@ program changes.
 Permission is never an obligation: a build without `--par` is byte-identical
 to today, an explicit opt-out (`WF_WORKERS=0` or `=1`) selects the sequential
 world, and every test that passes sequentially must pass under overlap. Since
-batch 0076 an unset `WF_WORKERS` in a `--par` binary defaults to one lane per
+batch 0077 an unset `WF_WORKERS` in a `--par` binary defaults to one lane per
 logical CPU — published bytes stay identical at every worker count, but the
 default execution is parallel; that default stands only with the owner's
 merge approval. Worker count, schedule, and

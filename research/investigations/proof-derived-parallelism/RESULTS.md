@@ -12,12 +12,12 @@ workload is a fact about that workload.
 > number below was measured while `layout_banded` — the claim-bearing fold,
 > §8.7's 33.9% of the program — was permanently sequential, because the
 > permission judgment refused to actualize a pair whose call closure reached a
-> `claim`. Batch 0077-C withdrew that refusal under the owner's chartering
+> `claim`. Batch 0078-C withdrew that refusal under the owner's chartering
 > direction of that day, so the fold that the tables treat as the unparallelizable
 > serial share is now overlapped like any other. The measurements stand as
 > measurements of the code that produced them; the *ceiling* they compute for
 > this demo does not. The grant counts before and after, on the same source and
-> the same runtime, are in `docs/ongoing/0077-loop-permission.md`.
+> the same runtime, are in `docs/ongoing/0078-loop-permission.md`.
 
 **Actualization is compile-time opt-in.** `whitefootc --par` is what emits an
 outlined call, a lane offer, and a join; the default compilation emits none of
@@ -26,7 +26,7 @@ linked and no worker requested, cost about 1.2x on this demo and 2.1x on
 `fib(38)`, which contradicted the design's stated default of byte-identical
 behavior. Every table below therefore names which compilation it measured.
 `WF_WORKERS` remains the runtime knob for a program that was built with
-`--par`, but it is no longer *unchanged*: batch 0076's L1 (`62e30831`) made an
+`--par`, but it is no longer *unchanged*: batch 0077's L1 (`62e30831`) made an
 unset or empty setting ask for one lane per logical CPU, where it previously
 meant no pool. Rows below that name an unset `WF_WORKERS` were taken under the
 old sense and reproduce today with `WF_WORKERS=1`.
@@ -50,7 +50,7 @@ publishes the exact bits of both fold results as hexadecimal, so a divergence
 anywhere in either tree is a divergence in the published bytes.
 
 The compiler's own account of the two folds, from `whitefootc --par-ledger`,
-retaken at the branch tip on 2026-08-22. Batch 0075's Dig 8 (`974d5513`)
+retaken at the branch tip on 2026-08-22. Batch 0076's Dig 8 (`974d5513`)
 replaced the adjacency rule with a judged window, which added the `PAR chain`
 lines and the interposed-statement denials and reworded the condition-1 reason;
 the transcript this document carried was the pre-Dig-8 one.
@@ -182,7 +182,7 @@ the call cannot be inlined, and the weak `wf__par_try_fork` cannot be folded
 away because a linker may replace it. It is the price of asking, and it is now
 only paid by a build that asks.
 
-> **Superseded for this program by batch 0075 Dig 3 (2026-08-21).** The 1.2x
+> **Superseded for this program by batch 0076 Dig 3 (2026-08-21).** The 1.2x
 > was the pre-Dig-1 unconditional per-activation hand-out frame. Re-measured
 > on the same program with the compiler at `826cea41`, interleaved, N = 11:
 > default 0.7486 s against `--par` `WF_WORKERS=1` 0.7481 s — 1.00x, no tax.
@@ -353,7 +353,7 @@ The batch audit added three more, each measured rather than argued.
    from the closure measurement (2.1x / 3.9x / ~17x there), and now reachable
    only by asking for it.
 
-   > **The lane rows are superseded by batch 0075 Dig 2; re-measured by Dig 3
+   > **The lane rows are superseded by batch 0076 Dig 2; re-measured by Dig 3
    > (2026-08-21) at `826cea41`, same source, interleaved, N = 15, all
    > publishing `0000000002547029`:** default 0.0839 s, `--par` unset 0.2201 s
    > (2.6x), `WF_WORKERS=2` 0.1933 s, `=4` **0.1112 s**, `=8` **0.0767 s**.
@@ -367,7 +367,7 @@ The batch audit added three more, each measured rather than argued.
    > granted lanes runs the sequential code, and `fib(38)` re-measured at
    > **1.00x** (0.2349 s -> 0.0791 s). Note also that "`--par` unset" in the row
    > above means the pool-off execution, which is what an unset `WF_WORKERS`
-   > meant when the row was taken; batch 0076's L1 (`62e30831`) changed an unset
+   > meant when the row was taken; batch 0077's L1 (`62e30831`) changed an unset
    > setting to mean one lane per logical CPU, so reproducing that row today
    > needs `WF_WORKERS=1`.
 9. **Switching lanes on for a fine-grained program is a large loss, not a small

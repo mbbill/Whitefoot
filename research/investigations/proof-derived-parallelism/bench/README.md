@@ -120,7 +120,7 @@ correct for this section.
 
 Whitefoot with no `--par` against plain recursive Rust. Ten of twelve are
 unresolved; the two resolved cells are both the skewed deep tree, and the loss
-grows with per-node work. That is the skew sequential-gap dig of batch 0075.
+grows with per-node work. That is the skew sequential-gap dig of batch 0076.
 
 | config | WF-seq min | med | spread | Rust-seq min | med | spread | WF/Rust (min-of-N) |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -141,7 +141,7 @@ grows with per-node work. That is the skew sequential-gap dig of batch 0075.
 
 Speedup tops out at 2.23x, the optimum is never past 4 lanes, and at 16
 words/node 8 lanes run up to 7x SLOWER than sequential (0.13x). That is the
-scheduler dig of batch 0075. The last column is the opt-in cost of compiling
+scheduler dig of batch 0076. The last column is the opt-in cost of compiling
 with `--par` and never starting the pool.
 
 | config | WF-seq | --par w=1 | w=2 | w=4 | w=8 | seq/w2 | seq/w4 | seq/w8 | opt-in cost w1/seq |
@@ -161,7 +161,7 @@ with `--par` and never starting the pool.
 
 The skewed rows' opt-in column is below 1.00x in all three: `--par` outlining
 makes that shape 22-28% FASTER single-threaded. That is the outlining-paradox
-dig of batch 0075.
+dig of batch 0076.
 
 ### `rayon::join` at every branch, against Rust sequential
 

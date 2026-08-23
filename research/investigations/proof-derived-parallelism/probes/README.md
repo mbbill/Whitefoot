@@ -3,7 +3,7 @@
 Three groups live here. The first nine sources decided the design questions
 behind `../DESIGN.md` during the three research rounds; the nine in the second
 group decided the findings in `../gap-hunt-findings.md`; the four in the third
-carry the band/derived-index discharge asymmetry that Dig 9 of batch 0075
+carry the band/derived-index discharge asymmetry that Dig 9 of batch 0076
 closed. All were written and run outside the repository, so all were dying
 artifacts; they are landed here
 because the design's, the gap hunt's, and that dig's load-bearing claims cite
@@ -17,7 +17,7 @@ Every verdict quoted below is what the in-tree compiler's
 `whitefootc --par-ledger` reports for that file today, except where a file is a
 template that must be instantiated first — those say so and quote the
 instantiated source. **Refreshed again 2026-08-23 after the claim redirect of
-batch 0077-C**, which withdrew claim-free eligibility: the `not-actualizable`
+batch 0078-C**, which withdrew claim-free eligibility: the `not-actualizable`
 verdict class no longer exists, and the seven probes that quoted it —
 `a2_bubble.wf`, `a2r_layout_two.wf`, `d1_two_traps.wf`,
 `d2_band_window_claim.wf`, `p1a.wf`, `p1b.wf`, `p7_dyn.wf` — now report
@@ -25,9 +25,9 @@ verdict class no longer exists, and the seven probes that quoted it —
 and then what it used to say. **Several of these probes were landed to record a
 decision that is now reversed**; whether they are deleted or kept as the
 evidence of the reversal is the lead's disposition, and is flagged in
-`docs/ongoing/0077-loop-permission.md`. Previously **refreshed 2026-08-22 after
-the 0075/0076 batch audit**,
-which found the warranty unmet on four entries: batch 0075's Dig 8 replaced the
+`docs/ongoing/0078-loop-permission.md`. Previously **refreshed 2026-08-22 after
+the 0076/0077 batch audit**,
+which found the warranty unmet on four entries: batch 0076's Dig 8 replaced the
 adjacency rule and rewrote the denial wording, and Dig 9 widened the discharge,
 so several probes now report verdicts their paragraphs described as impossible.
 Where an entry changed, the paragraph states today's verdict and then what it
@@ -71,7 +71,7 @@ interposed statement 2 skips s2` — and it reports the two pairs in `main`:
 `pair(boxed_leaf, boxed_leaf) eligible` with a two-member chain, and
 `pair(boxed_leaf, boxed_branch) condition 1: the operands of s2 read what s1
 defines`. That fixes what a genuine def-use denial reads like. *What this probe
-originally settled, and what changed:* until Dig 8 of batch 0075 (`974d5513`)
+originally settled, and what changed:* until Dig 8 of batch 0076 (`974d5513`)
 the child pair produced **no line at all**, because the judgment grew a
 candidate group only from consecutive `let x = f(...)` statements, and the probe
 was the evidence that a dependence broken across statements removed the
@@ -142,11 +142,11 @@ finding in its purest form: the sequential module contains no alloca at all,
 `--par` adds one hand-out frame per function with a pair, and the arm64
 prologue grows from 16 to 64 bytes plus two FP spills. *The fourfold ceiling
 loss this paragraph reported with the pool off was fixed by Dig 1 of batch
-0075*, which moved the frame to the lane; the pool-*off* ceiling now matches the
+0076*, which moved the frame to the lane; the pool-*off* ceiling now matches the
 sequential build's. The probe still sweeps a ceiling, but the ceiling it finds
 today is the pool-**on** one, which at an ordinary 8 MB stack is roughly a
 third of the sequential build's — see the flagged default-behavior entry in
-`docs/ongoing/0076-night-par-ceiling.md`. `bt_skew.tmpl` carries the
+`docs/ongoing/0077-night-par-ceiling.md`. `bt_skew.tmpl` carries the
 same finding on a realistic left-spine `BNode` fold (placeholder `SKEWDEPTH`);
 it is what shows the loss is 23%, not 4x, on a real tree, and it produces the
 case that crashes pool-off and survives with a lane.
@@ -155,7 +155,7 @@ case that crashes pool-off and survives with a lane.
 that makes the finding undeniable, because they are the same program twice.
 `p1a.wf` puts one `fmul.strict` builtin between the two recursive `layout`
 calls; `p1b.wf` puts the identical arithmetic there wrapped in a `pure` user
-function. **Dig 8 of batch 0075 (`974d5513`) closed the gap these two were
+function. **Dig 8 of batch 0076 (`974d5513`) closed the gap these two were
 landed to demonstrate, and their ledgers now agree.** Today `p1a.wf` reports
 `p1a.wf:116 pair(layout, layout) eligible` with a two-member chain through line
 118, and `p1b.wf` reports `pair(layout, scale_up) eligible`,
@@ -175,7 +175,7 @@ group established.
 **F2, grain.** `q4.wf` is the quad tree that produced the fine-grain
 catastrophe: six eligible pairs, three adjacent in `build4` and three in
 `qfold`, and about 65.5M offers. As landed it fell to **48.6x slower** than one
-lane at 64 workers, non-monotone in between. *Dig 2 of batch 0075 dissolved
+lane at 64 workers, non-monotone in between. *Dig 2 of batch 0076 dissolved
 that*: the same cell now runs **1.99x faster** than one lane (0.2530 s against
 0.5026 s), so the catastrophe is history and the probe is kept as the carrier of
 the shape, not of the number. It is also the N-ary carrier — a run of four

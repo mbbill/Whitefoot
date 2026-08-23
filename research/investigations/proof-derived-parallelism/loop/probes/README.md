@@ -33,7 +33,7 @@ each probe decides.
   original's does, and the loop judgment permits **both** of its loops under
   `+wrap`. This is the demonstration that [PAR-2] reaches a program the
   project actually wrote, once that program is written in the form the
-  language says is the default one; the corpus census in the 0077 record is
+  language says is the default one; the corpus census in the 0078 record is
   the other half of the picture, and says the rule reaches none of the
   counted loops already written. Remove it when a loop-form mandelbrot lands
   in `tests/programs`, or when batch B's split measurement against the
@@ -45,7 +45,7 @@ each probe decides.
   loop form against the hand-written recursive twin it was rewritten from,
   and against `rayon`, on the standing oracle grid. All three publish
   `000000000033517d`, and the loop form reaches the twin's numbers at every
-  worker count — the table is in the 0077 record. The one thing it adds over
+  worker count — the table is in the 0078 record. The one thing it adds over
   the twin is a claim-free `narrow`, because the binder is `own u64` [TYPE-5]
   while `point_escapes` takes the `u32` the twin's recursion carries; that is
   one compare and one select against a 256-round orbit, and the residual it

@@ -14,7 +14,7 @@ pub const SPEC_VERSION: &str = "v0.35";
 
 /// Lowercase SHA-256 hex of the embedded specification bytes.
 pub const SPEC_SHA256_HEX: &str =
-    "f3e26631c6f168cdcb0add1f1dec6a5e40867d7469150a3854f1878c56eec0f9";
+    "73d647c8945ad3d51eea3ed030714b433d6171e0d36b0869dd91366238cbd8f5";
 
 /// Number of `ACTIVE-SPEC:` records in the embedded activation chain.
 pub const ACTIVATION_CHAIN_LENGTH: usize = 26;

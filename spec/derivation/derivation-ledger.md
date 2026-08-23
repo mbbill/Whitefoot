@@ -1350,7 +1350,7 @@ remain **84 derived · 51 existence-only · 0 underived** across 135 rules.
 ## v0.35 candidate amendment — permitted execution overlap (2026-08-23)
 
 Candidate binding: `spec/kernel-spec.md`, headed v0.35 CANDIDATE, currently at
-SHA-256 `PENDING_V035_SHA256`.
+SHA-256 `73d647c8945ad3d51eea3ed030714b433d6171e0d36b0869dd91366238cbd8f5`.
 Its outgoing authority is active v0.34 at the binding above, and the activation
 chain still ends at v0.34. These candidate bytes are not language authority
 until exact-byte owner approval and the separate activation step. Candidate
@@ -1366,12 +1366,34 @@ operations +0, exception clauses +0. No existing rule changes derivation
 status. The totals become **84 derived · 52 existence-only · 0 underived**
 across 136 rules.
 
+The candidate's PAR-1 still carries a claim-closure condition — no function
+reachable from either callee contains a `claim_stmt` — which the compiler no
+longer applies. The owner's chartering direction of 2026-08-23 withdrew that
+gate and `f6c55a9d` deleted it from both judgments; the matching specification
+edit is the [PAR-1] v2 recipe in `docs/ongoing/0078-loop-permission.md`, which
+the owner applies at activation and which no branch commit applies here, so the
+in-tree bytes and the landed-archive gate stay stable.
+
+Two things retire the condition, and the recipe records both. A claim is an
+always-true reviewed lemma and a false executed claim is the sole
+writer-reachable runtime contract violation [SCOPE-4], so the condition bought
+a stable record for erroneous executions by refusing to overlap correct ones;
+the guarantee becomes conditional on contract compliance exactly as [SCOPE-3]'s
+is, and an erroneous execution still gets one complete record whose claim
+identity is the single thing a schedule may select. And the condition was never
+new law: CLM-3 already forms `MayClaims(K)` over a component and its strictly
+outgoing callees, and v0.34 retains every accepted claim, so the condition was
+`MayClaims` of the callee's component being empty — a second claim-reachability
+analysis that would have had to agree with CLM-3 forever. The recipe deletes
+the clause rather than restating it in CLM-3's vocabulary.
+
 Evidence ground: `research/investigations/proof-derived-parallelism/DESIGN.md`
 (the batch-0074 design contract and its two owner rulings of 2026-08-21 — claims
 are always-true lemmas, so a trap under overlap is an audit failure rather than
 a semantics question; permission comes from proofs on ordinary code while
-actualization and every resource stay outside the language), PAL.md beside it,
-and the batch's measured compute lane. The corpus delta is zero cases because
+actualization and every resource stay outside the language), the owner's
+chartering direction of 2026-08-23 withdrawing the claim-free gate, PAL.md
+beside it, and the batch's measured compute lane. The corpus delta is zero cases because
 the rule changes no accepted program and no verdict; PAR-1 nevertheless needs
 its own coverage annotation in the protected manifest before the repository
 gate's coverage denominator is satisfied, which is an owner-approved protected

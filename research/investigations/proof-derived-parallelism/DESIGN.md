@@ -8,17 +8,17 @@ synthesizes PAL.md (same directory), the three research rounds
 
 > **Superseded in three places by later landings on this branch, and corrected
 > in place.** The runtime protocol named in section 5 (`wf_par_try_fork` /
-> `wf_par_join`) was replaced during batch 0075 by `wf__par_claim` /
+> `wf_par_join`) was replaced during batch 0076 by `wf__par_claim` /
 > `wf__par_publish` / `wf__par_join` / `wf__par_release`; the `WF_WORKERS`
-> semantics changed during batch 0076, so an unset variable now asks for one
+> semantics changed during batch 0077, so an unset variable now asks for one
 > lane per logical CPU instead of meaning "no pool"; and **section 1's
 > claim-free eligibility condition was withdrawn on 2026-08-23**, under the
 > owner's chartering direction of that day. Every correction is made at the
 > paragraph that stated it. Read the rest as the design contract it is — the
 > current behavior of anything it describes lives in
-> `docs/ongoing/0075-par-optimization-digs.md`,
-> `docs/ongoing/0076-night-par-ceiling.md`, and
-> `docs/ongoing/0077-loop-permission.md`.
+> `docs/ongoing/0076-par-optimization-digs.md`,
+> `docs/ongoing/0077-night-par-ceiling.md`, and
+> `docs/ongoing/0078-loop-permission.md`.
 
 ## 0. Charter
 
@@ -48,7 +48,7 @@ Plus the two design rulings of the same night:
   (v0.33: claims are the only writer-reachable runtime checks, spec
   1875–1880). No trap sites ⇒ no trap-selection question ⇒ **no
   arbitration machinery, no parked lanes, no coordinator** in v1.~~
-  **Withdrawn 2026-08-23** (batch 0077). The conclusion this bullet drew is
+  **Withdrawn 2026-08-23** (batch 0078). The conclusion this bullet drew is
   the opposite of the claim doctrine directly above it: if a trap can only
   come from a program that failed audit, then declining to overlap a
   *correct* program to keep a *defective* one's trap identity stable is
@@ -157,7 +157,7 @@ salvage), the AI writer's gradient, and the measurement instrument.
 
 - **Default off, at compile time.** Actualization happens only when the
   compilation asked for it (`whitefootc --par`). **Corrected 2026-08-22:** this
-  paragraph also required `WF_WORKERS` set to an integer ≥ 2, and batch 0076's
+  paragraph also required `WF_WORKERS` set to an integer ≥ 2, and batch 0077's
   L1 landing (`62e30831`) made an unset or empty setting ask for one lane per
   logical CPU instead. `WF_WORKERS=0`, `=1`, and any unparsable value keep the
   original meaning and start no pool, so opting out is still one setting away —
@@ -171,7 +171,7 @@ salvage), the AI writer's gradient, and the measurement instrument.
   alone, with no runtime linked and no worker requested, cost about 1.2x on the
   layout demo and 2.1x on `fib(38)`, so a byte-identical default has to be a
   compile-time choice rather than a runtime one. (Both of those numbers were
-  themselves superseded by Dig 7 of batch 0075, which re-measured the outlining
+  themselves superseded by Dig 7 of batch 0076, which re-measured the outlining
   tax at 1.00x once the sequential clone landed; the conclusion — that the
   switch is a compile-time one — stands on the stronger ground that a build
   which did not ask now emits no overlap lowering at all.) `WF_WORKERS` remains
@@ -183,7 +183,7 @@ salvage), the AI writer's gradient, and the measurement instrument.
   handle|0` (forks only if an idle worker is available — the lane-budget
   policy; else returns 0 and the caller inlines), `wf_par_join(handle)`.
   **Corrected 2026-08-22:** that two-call protocol was replaced during batch
-  0075 (`b251382f`, `826cea41`) by a four-call one — `wf__par_claim`,
+  0076 (`b251382f`, `826cea41`) by a four-call one — `wf__par_claim`,
   `wf__par_publish`, `wf__par_join`, `wf__par_release`, with
   `wf__par_pool_active` selecting the world at the bootstrap. The lane-budget
   intent survives in `wf__par_claim`, which still refuses rather than queueing;

@@ -1,4 +1,4 @@
-# Loop-shaped permission — the batch 0077 design
+# Loop-shaped permission — the batch 0078 design
 
 Lead synthesis over five research dossiers (spec rule, checker mechanism,
 lowering, adversarial soundness, prior art and the decision record) and one

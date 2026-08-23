@@ -1,7 +1,7 @@
-# Batch 0077 — loop-shaped permission
+# Batch 0078 — loop-shaped permission
 
 Branch: `par/loop-permission`, stacked on the frozen
-`par/proof-derived-parallelism` tip `27e02b1f` (batches 0074-0076, closed,
+`par/proof-derived-parallelism` tip `27e02b1f` (batches 0074-0077, closed,
 awaiting owner merge; nothing on that branch moves). This batch's work
 enters a separate, later merge review so the two phases stay independently
 trackable.
@@ -13,12 +13,12 @@ Authority: owner chartering direction, 2026-08-23, verbatim:
 > 目前收官完成的分支可以放着不动,然后在这个顶上再继续开个新分支开始循环的
 > 研究吗?这样我们可以轻松的追踪这两个阶段。
 
-Consequence adopted: the counted-loop ledger hint (batch 0076) is a bridge,
+Consequence adopted: the counted-loop ledger hint (batch 0077) is a bridge,
 not the end state — the loop form itself must receive permission. This is
 the plan's W4 "indexed-loop permission (Tier A)" made current.
 
 Second chartering direction, owner, 2026-08-23, verbatim, redirecting the
-claim-free eligibility condition that batches 0074 and 0077-A both carried:
+claim-free eligibility condition that batches 0074 and 0078-A both carried:
 
 > 我感觉这和claim的初衷有一点点区别。claim是帮助checker证明程序,如果checker
 > 完备,那么任何一个claim都不会trap。如果checker不完备但是每一个claim都能人工
@@ -101,7 +101,7 @@ was checked rather than assumed — the coverage runner reports the identical
 
 ## Defects found in already-presented material
 
-The adversarial probe of the loop surface found two defects in batch 0076's
+The adversarial probe of the loop surface found two defects in batch 0077's
 landing, which is in the pending phase-1 merge packet. Both are corrected on
 this branch and the packet must present the corrections with the material
 they correct.
@@ -164,7 +164,7 @@ they correct.
   the ledger-line assertions in `driver.rs`. Every attack of the batch's
   adversarial dossier is a case, and every admitted combine has a grant.
 - A conservatism in already-presented material, fixed by the supersession
-  rather than by a separate correction: batch 0076's hint refused every loop
+  rather than by a separate correction: batch 0077's hint refused every loop
   containing a `give`, including one whose `give` delivers into a `value_if`
   the loop body itself opens and therefore leaves nothing. That is the
   under-advising direction, not the unsound one D-1 named, so it moved no
@@ -373,10 +373,10 @@ program the redirect adds to the clone set.
 ## Carried for another record: the L1 depth flag
 
 Not this batch's work, landed by this batch's commits because this branch is
-where the file is editable. Batch 0076's L1 item flagged the shipped-default
+where the file is editable. Batch 0077's L1 item flagged the shipped-default
 change with a no-pessimization check over twelve configurations that measures
 **time only**; the **depth** dimension was omitted. The lead measured it and
-the paragraph is now in `docs/ongoing/0076-night-par-ceiling.md` at the L1
+the paragraph is now in `docs/ongoing/0077-night-par-ceiling.md` at the L1
 item: an adversarial spine shape loses about 3x of its recursion ceiling at the
 default (of which 1.5x is structural to the overlapped lowering and the rest is
 an LLVM interprocedural-constant-propagation accident, per Dig 1), a realistic
@@ -458,7 +458,7 @@ the language calls the default one. That is the owner's charter, answered on
 real code rather than on a fixture.
 
 Say this to the owner without dressing it: **the reduction rule fires on zero
-loops of the real corpus as it stands**, which is the same number batch 0076 measured for
+loops of the real corpus as it stands**, which is the same number batch 0077 measured for
 the hint and for the same reason — every counted loop the project has written
 is a copy into a buffer, a push through a trapping callee, or a sequential
 recurrence. The justification for the rule is the owner's principle that the
@@ -629,7 +629,7 @@ because tightening it belongs with whoever owns the parallel test harness.
 
 **Protected class touched at merge, not on this branch.** `make check`'s
 `conformance` target reports `135/136 rules covered ... 1 uncovered`, and the
-one uncovered rule is `PAR-1`. That red predates batch 0077 — batch A verified
+one uncovered rule is `PAR-1`. That red predates batch 0078 — batch A verified
 it with its own changes stashed and unstashed — and [PAR-2] will make it two
 the moment the rule activates. Both annotations are prepared here as exact
 bytes and **neither is added to `tests/conformance/manifest.jsonl` on this
@@ -677,8 +677,16 @@ merge packet (`docs/ongoing/0074-proof-derived-parallelism.md`, "Required
 before merge" item 2), and batch A's [PAR-2] recipe recorded earlier in this
 file. Nothing below is applied to `spec/kernel-spec.md` on this branch; the
 file's in-tree bytes and recorded digest are unchanged at
-`f3e26631c6f168cdcb0add1f1dec6a5e40867d7469150a3854f1878c56eec0f9`, 3,225
-lines, 399,265 bytes, so the landed-archive gate stays green here.
+`73d647c8945ad3d51eea3ed030714b433d6171e0d36b0869dd91366238cbd8f5`, 3,412
+lines, 429,059 bytes, so the landed-archive gate stays green here.
+
+**Re-derived after the rebase onto `main`.** Both digests below were recomputed
+against the rebased candidate, which is main's activated v0.34 body plus this
+branch's [PAR-1] section under a v0.35 CANDIDATE header superseding v0.34 at
+`cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`. Every line
+number quoted below is the rebased file's. The pre-rebase digests
+(`81cbe968…`, `cec3e25e…`) named a candidate whose body was v0.33's and do not
+apply to anything on this branch any more.
 
 Both candidates were produced by applying the exact edits below to scratch
 copies and hashing the result — reproducible from this record and nothing
@@ -686,8 +694,8 @@ else. The owner applies **one** of them:
 
 | candidate | apply when | SHA-256 | size |
 |---|---|---|---|
-| [PAR-1] v2 alone | [PAR-1] activates without [PAR-2] (the phase-1 merge) | `81cbe9685b50303b40b7b64817ea5ff21f85391a2d4ea2ac6a5a52a222ce0eaf` | 401,014 bytes, 3,231 lines, 136 rules |
-| [PAR-1] v2 + [PAR-2] v2 | both rules activate in one change | `cec3e25eb8898868eeda1dbfa4acb63650f0088ae6e908a724ce6745ae49b5e9` | 407,375 bytes, 3,256 lines, 137 rules |
+| [PAR-1] v2 alone | [PAR-1] activates without [PAR-2] (the phase-1 merge) | `15165306e224f13795a1049cc55e1bf78985d71e8c3f1b6432b894f527bf9049` | 430,808 bytes, 3,418 lines, 136 rules |
+| [PAR-1] v2 + [PAR-2] v2 | both rules activate in one change | `f99bb580eec570c62ee6df414aa324039d3b1e55b0cd72ec04b033d73e43bcfd` | 437,169 bytes, 3,443 lines, 137 rules |
 
 The second is exactly the first with the [PAR-2] edits applied on top, so the
 two are a chain and not two alternatives to reconcile.
@@ -710,19 +718,19 @@ identical to the installed inventory in both runs.
 phase-1 packet's first amendment sentence, carried forward unchanged because
 it is still unlanded and still needed. Insert it immediately *before* the
 sentence beginning "A footprint element whose caller place the implementation
-does not resolve" (the file's line 1981):
+does not resolve" (the file's line 2005):
 
 ```
 Evaluating a statement's own argument expressions is part of that statement and therefore part of the overlap, so each call's written footprint also overlaps no place the other statement's argument expressions read; taking the address of a place is not reading it, and both directions are required because which statement's argument evaluation an overlap moves is the implementation's choice.
 ```
 
-**Edit 2 — the unresolved-element sentence** (the file's line 1981) becomes:
+**Edit 2 — the unresolved-element sentence** (the file's line 2005) becomes:
 
 ```
 A footprint element whose caller place the implementation does not resolve overlaps every place, and so does a place read by an argument expression whose caller place the implementation does not resolve, so an unresolved element denies permission rather than granting it.
 ```
 
-**Edit 3 — delete the eligibility condition.** Remove the file's line 1984
+**Edit 3 — delete the eligibility condition.** Remove the file's line 2008
 entirely, leaving no blank line behind:
 
 ```
@@ -734,8 +742,17 @@ phase-1 packet's third amendment sentence, which appended to this condition
 rather than removing it. That sentence is withdrawn with the condition it
 qualified.
 
+Deleting rather than restating it also removes a duplication the rebase made
+visible. [CLM-3] already forms `MayClaims(K)`, the transitive closure of
+retained claim occurrences over a component and its strictly outgoing callees,
+and v0.34 retains every accepted claim — so this condition was exactly
+"`MayClaims` of the callee's component is empty", a second claim-reachability
+analysis that would have had to agree with [CLM-3] forever. The v0.35 text
+simply has no such condition: one less clause, and no second analysis to keep
+in step.
+
 **Edit 4 — the observable identity becomes conditional.** Replace the file's
-line 1988:
+line 2012:
 
 ```
 That identity holds in every execution, not in a typical execution or in some execution.
@@ -830,7 +847,7 @@ This rule binds neither [CAP-1] predicate, because its conditions admit concurre
 its end:
 
 > [PAR-2] is selected on the same ground by the loop-shaped permission
-> investigation of batch 0077, whose value falsifier, probed byte-identity of
+> investigation of batch 0078, whose value falsifier, probed byte-identity of
 > a regrouped wrap-family fold, and corpus census are recorded in
 > `research/investigations/proof-derived-parallelism/loop/`, under the owner's
 > chartering direction of 2026-08-23; it states the admitted combination set
@@ -839,19 +856,22 @@ its end:
 
 ### Impact inventory
 
-`[PAR-1]`'s extent moves from lines 1976 to 1995 and 3,269 bytes to lines
-1976 to 2001 and 4,801 bytes, in both candidates. In the combined candidate
-`[PAR-2]` occupies lines 2003 to 2026 and 5,781 bytes. Line-initial rule
+`[PAR-1]`'s extent moves from lines 2000 to 2019 and 3,269 bytes to lines
+2000 to 2025 and 4,801 bytes, in both candidates. In the combined candidate
+`[PAR-2]` occupies lines 2027 to 2050 and 5,781 bytes. Line-initial rule
 definitions are 136 for the [PAR-1] v2 candidate and 137 for the combined one,
 so `RULE_COUNT` moves only when [PAR-2] activates.
 
 **Bracketed rule-token occurrence counts do move**, which the phase-1 packet's
 [PAR-1] recipe could report as unchanged and this one cannot. [PAR-1] v2 alone:
-`CLM-1` 12 to 11 (the deleted condition's citation), `DIAG-3` 11 to 12,
+`CLM-1` 14 to 13 (the deleted condition's citation), `DIAG-3` 11 to 12,
 `EFF-1` 5 to 6, `SCOPE-3` 7 to 9, `SCOPE-4` 5 to 7, `TRAP-1` 2 to 3. No rule
 loses its last reference, and no rule becomes unreferenced. Adding [PAR-2] on
 top moves `CAP-1` 4 to 5, `DIAG-3` 12 to 14, `EFF-5` 4 to 5, `FN-1` 24 to 25,
-`OP-1` 11 to 13, `SCOPE-3` 9 to 10, `PAR-1` 2 to 5, and `PAR-2` 0 to 3.
+`OP-1` 11 to 13, `SCOPE-3` 9 to 10, `PAR-1` 2 to 5, and `PAR-2` 0 to 3. Every
+count in this paragraph was recomputed against the rebased file; only `CLM-1`'s
+starting value moved, because main's v0.34 body cites it twice more than v0.33's
+did.
 
 Both candidates are ASCII in every byte either recipe adds; the non-ASCII
 characters they contain are the file's existing ones.

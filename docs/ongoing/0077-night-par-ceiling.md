@@ -1,6 +1,6 @@
-# Batch 0076 — overnight par-ceiling expansion
+# Batch 0077 — overnight par-ceiling expansion
 
-Branch: `par/proof-derived-parallelism` (stacks after batch 0075; enters the
+Branch: `par/proof-derived-parallelism` (stacks after batch 0076; enters the
 same merge review). Authority: owner chartering direction, 2026-08-22
 (evening), verbatim:
 
@@ -242,7 +242,7 @@ battery reports.)
 
 - **L3 — two corrections and one anomaly, all re-measured here rather than
   forwarded.**
-  **The Dig 6 rig's byte identity, narrowed in the 0075 record.** Reproduced by
+  **The Dig 6 rig's byte identity, narrowed in the 0076 record.** Reproduced by
   linking one module three ways: `a/prog` and `b/prog` are byte-equal, and
   `a/prog2` differs in 429 bytes — `LC_UUID` at offset 1528 plus the ad-hoc
   code signature that hashes it — because `clang` derives the UUID from the
@@ -372,7 +372,7 @@ battery reports.)
   and not work the runtime does — at `WF_WORKERS=1` the new
   `wf__par_default_lanes` is never reached, and the binaries differ by 144
   bytes. See the invariant-breach entry below.
-  **Consequence for the recorded per-fork number:** 0075's
+  **Consequence for the recorded per-fork number:** 0076's
   formula takes `w1/4` as the ideal, and an inflated `w1` makes that ideal
   unreachable — at `bal_d12_w192`/4 it now yields **-9.44 ns/fork**, which
   measures the regression rather than fork cost. Against `wf_seq/4`, the
@@ -408,9 +408,9 @@ battery reports.)
   binary and which nothing in the tree locates or pins. It stays open as this
   campaign's one unlocated stall. It also supersedes Dig 7's headline —
   "`--par` at one worker now reads 1.00x-1.01x on all twelve configurations"
-  (`0075:727`) — which nine of twelve configurations no longer meet.
+  (`0076:727`) — which nine of twelve configurations no longer meet.
 
-- **Adversarial batch audit of 0075 and 0076, and the repairs it produced
+- **Adversarial batch audit of 0076 and 0077, and the repairs it produced
   (2026-08-22).** Six finder lenses — hygiene and drift, protected classes and
   the approval surface, relevance and attribution, soundness of the semantic
   changes, record-against-tree truthfulness, and gate and test integrity —
@@ -436,7 +436,7 @@ battery reports.)
   `main` has since ACTIVATED its own v0.34, which a refuter reproduced against
   the archive-integrity target itself.
   **Repaired in this commit.** The invariant breach and its attribution above,
-  with 0075's superseded Dig 7 headline corrected in place; the false safety
+  with 0076's superseded Dig 7 headline corrected in place; the false safety
   claim in the counted-loop hint, where `CalleeFacts::admits` ignored the
   callee's `writes` row so a `fadd.strict` fold one call frame away could be
   reported as a `+wrap` reduction — one root cause closing three findings, now
@@ -470,7 +470,7 @@ battery reports.)
   `an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not`,
   the second flaky even on an idle machine and admitting an injected live
   defect a quarter of the time under load. Both are protected gate-integrity
-  material, and 0075's recorded margin for the first is withdrawn there. (3)
+  material, and 0076's recorded margin for the first is withdrawn there. (3)
   `docs/current-plan.md`, still `PROPOSED` and contradicted by L1; the lead
   authors it separately. (4) gap-hunt F7 — open, low, untouched in range. (5)
   The proportionality objection to `loop_hint` itself: 565 lines of permanent

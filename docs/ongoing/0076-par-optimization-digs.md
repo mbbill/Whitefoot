@@ -1,4 +1,4 @@
-# Batch 0075 — optimization digs against the paired-layout oracle
+# Batch 0076 — optimization digs against the paired-layout oracle
 
 Branch: `par/proof-derived-parallelism` (continues after batch 0074, which
 remains closed and pending owner merge; this batch's commits stack after it
@@ -273,14 +273,14 @@ reproduction, never worked around.)
   W=4/W=8, i.e. the pool-on ceiling is at or *above* the pool-off ceiling,
   because the slot bound stops the reclaim path after the first 64 levels and
   handed-out work runs on 8 MB worker stacks.
-  **Corrected 2026-08-22 by the 0075/0076 batch audit: this comparison is a
+  **Corrected 2026-08-22 by the 0076/0077 batch audit: this comparison is a
   race and the stated ordering does not hold.** Whether the deep side is
   stolen onto an 8 MB worker stack decides the outcome, so at a 1024 KB limit
   the same binary and input give both answers. A refuter measured depth 22 000
   at the tip: pool-off 20/20 exit 0, pool-on **13/20 SIGSEGV**. The bisection
   above found the stolen branch. At an ordinary 8 MB stack, where the race
   cannot decide it, the pool-on ceiling is roughly a third of the pool-off
-  ceiling; that is the figure batch 0076's Approval-classes entry now carries,
+  ceiling; that is the figure batch 0077's Approval-classes entry now carries,
   and `the_shipped_default_keeps_a_deep_recursion` pins a floor under it. **The spin bound is measured,
   not chosen**: a park and its wake cost 2 097-2 514 ns here, so a thread that
   looks for work for less than that sleeps to save less than the sleep costs;
@@ -497,7 +497,7 @@ reproduction, never worked around.)
   and the rig was checked by rebuilding all 24 oracle binaries that way and
   comparing them against `bench/bin`: **24 of 24 byte-identical**, so a
   variant differs from HEAD only in the runtime source.
-  *(Corrected 2026-08-22, batch 0076.* That byte identity is real but narrower
+  *(Corrected 2026-08-22, batch 0077.* That byte identity is real but narrower
   than it reads, and the rig's meaning rests on the weaker half. `clang`
   derives the Mach-O `LC_UUID` from the output file's **name** as well as its
   content, and the ad-hoc code signature hashes the result: the same module
@@ -632,7 +632,7 @@ reproduction, never worked around.)
   count 7, maximum 20, mean 13.2.** The assertion cleared its bound by 7 in the
   worst run of a thousand, which is stronger than Dig 2's "0 failures in 1000"
   and is the number the merge packet should carry.
-  **Withdrawn 2026-08-22 by the 0075/0076 batch audit — this margin is a
+  **Withdrawn 2026-08-22 by the 0076/0077 batch audit — this margin is a
   property of one idle sample, not of the artifact, and must not reach the
   owner as stated.** Two refuters reproduced the experiment. The mean holds
   (13.20), but the minimum does not: one measured **min 3**, and a separate
@@ -640,12 +640,12 @@ reproduction, never worked around.)
   assertion fails outright — matched A/B at 8 spinners, the same load band this
   campaign records for its own bench rounds: base `8a41dbf5` 0/40 failures,
   tip `b87d20bb` **17-20/40**, and `make test` goes red there. A second case
-  added by 0076, `an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not`,
+  added by 0077, `an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not`,
   is worse: it reports `grants == 0` in 21/200 runs on an *idle* machine, and
   its opt-out half admits a live injected defect 25-30% of the time under load,
   because `granted == 0` is also the honest report of a running pool that
   stole nothing. Both cases are gate-integrity material and neither is repaired
-  here; see the audit summary in `docs/ongoing/0076-night-par-ceiling.md`.
+  here; see the audit summary in `docs/ongoing/0077-night-par-ceiling.md`.
   **The grid at HEAD, full protocol rotation, N=9, 144 cells, 1296 runs, every
   run byte-identical within and across both languages and all exit 0.** Against
   rayon's absolute wall time: **12 cells Whitefoot wins outright, 24 parity,
@@ -747,13 +747,13 @@ reproduction, never worked around.)
   **text-identical** to Dig 6's, so the rotation's sequential column is the same
   code.
   **The opt-in column, and what it cost as well as what it bought.**
-  **Superseded 2026-08-22 by the 0075/0076 batch audit:** the "1.00x-1.01x on
-  all twelve" result below did not survive batch 0076. L1 (`62e30831`)
+  **Superseded 2026-08-22 by the 0076/0077 batch audit:** the "1.00x-1.01x on
+  all twelve" result below did not survive batch 0077. L1 (`62e30831`)
   re-rolled the link layout of every `--par` binary and nine of the twelve
   configurations now read 1.10x-1.30x, three of them outside the 1.20x band.
   The mechanism is the one this same dig measures two paragraphs down —
   placement, not runtime work. The account, the three breaching cells, and the
-  standing-item disposition are in `docs/ongoing/0076-night-par-ceiling.md`.
+  standing-item disposition are in `docs/ongoing/0077-night-par-ceiling.md`.
   As measured on 2026-08-21: `--par` at
   one worker over its own sequential build now reads **1.00x-1.01x on all twelve
   configurations**, where Dig 6 read 0.68x-1.02x. The sub-1.00x readings were
@@ -1424,7 +1424,7 @@ reproduction, never worked around.)
 Ten digs, all closed; every executor claim lead-verified against the tree.
 Landed commits (this batch): 639fdb01, b251382f, 826cea41, 5b933c3a,
 985353ae, d4e674c3, 974d5513, 00b9e686, 947b9f3f, 9c23edb1, 44221e2f,
-0942ee24 — plus the batch-0076 continuation and the audit-repair commit
+0942ee24 — plus the batch-0077 continuation and the audit-repair commit
 187c8b80, which also amends this record. Headlines, each measured before and
 after on the oracle protocol: the --par recursion-depth ceiling restored to
 sequential parity on the realistic shape; the lane scan replaced by
@@ -1436,11 +1436,11 @@ ended); the band discharge reading through its proving binding (4 probe
 verdicts REJECT to ACCEPT, 693 unchanged); the ENT-4 closure ~5x faster
 (wfgrep frontend 45.0 to 8.4 s, gate test phases 346 to 76 s), emission
 byte-identical throughout. Verification: compiler gate green at every
-landing; N=18 authoritative rotation recorded in batch 0076's baseline;
+landing; N=18 authoritative rotation recorded in batch 0077's baseline;
 byte identity within and across languages on every run. Audit: the
 2026-08-22 adversarial audit (six finders, six refuters) confirmed no
 CRITICAL defect in this batch's landings; its dispositions are recorded in
-batch 0076's log and repaired in 187c8b80. Standing merge items: the
+batch 0077's log and repaired in 187c8b80. Standing merge items: the
 [PAR-1] conformance coverage annotation (exact bytes in the 0074 record),
 the spec.rs digest-literal transcription recipe, and the WF_WORKERS default
-flag from batch 0076.
+flag from batch 0077.
