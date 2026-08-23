@@ -275,9 +275,11 @@ fn nested_counted_loops_are_each_judged_on_their_own_terms() {
 fn a_claim_outside_the_loop_leaves_it_eligible() {
     let source = br#"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads('s), traps {
   let room = len(deref(src));
-  claim limit_fits: ile(limit, room) because "the caller bounds the request";
+  let bounded_limit = imin(limit, room);
+  let fits = ile(bounded_limit, room);
+  claim limit_fits: fits because "premises: bounded_limit is the minimum of the requested limit and room, and room is the input buffer's length\nderivation: a minimum is at most either operand, so bounded_limit is at most room\nconclusion: ile(bounded_limit, room) is true\nchecker gap: ENT does not publish the result range of imin\nconsumers: the counted range below runs to bounded_limit and subscripts the input at its binder";
   let total = 0_u64;
-  for @sum i in 0_u64..limit {
+  for @sum i in 0_u64..bounded_limit {
     let v = deref(src)[i];
     set total = total +wrap v;
   }
@@ -983,10 +985,14 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_claim_in_the_body_is_permitted() {
     let source = br#"command fn main() -> status: own ExitStatus traps {
+  let values = array_new<u8, 8>(0_u8);
+  let size = len(values);
   let total = 0_u64;
-  let limit = 4096_u64;
   for @sum i in 0_u64..16_u64 {
-    claim index_small: ilt(i, limit) because "the counted range bounds it";
+    let bounded = imin(i, 7_u64);
+    let inside = ilt(bounded, size);
+    claim index_small: inside because "premises: bounded is the minimum of the counted binder i and seven, and values has length eight\nderivation: a minimum is at most either operand, so bounded is at most seven and therefore below eight\nconclusion: ilt(bounded, size) is true\nchecker gap: ENT does not publish the result range of imin\nconsumers: the following length-eight array subscript uses bounded";
+    let picked = values[bounded];
     set total = total +wrap i;
   }
   return exit_status(code: 0_u8);
@@ -1009,9 +1015,13 @@ fn a_claim_in_the_body_is_permitted() {
 #[test]
 fn a_claim_reading_the_accumulator_is_still_a_read() {
     let source = br#"command fn main() -> status: own ExitStatus traps {
+  let values = array_new<u8, 128>(0_u8);
+  let size = len(values);
   let total = 0_u64;
   for @sum i in 0_u64..16_u64 {
-    claim running_small: ilt(total, 4096_u64) because "the range is short";
+    let inside = ilt(total, size);
+    claim running_small: inside because "premises: total starts at zero and each iteration adds the counted binder, which the range keeps below sixteen, over at most sixteen iterations; values has length one hundred twenty-eight\nderivation: induction over the reached iterations keeps total at the sum of distinct values below sixteen, which is at most one hundred twenty\nconclusion: ilt(total, size) is true\nchecker gap: ENT carries no induction over the accumulator across the counted-range backedge\nconsumers: the following length-128 array subscript uses total";
+    let picked = values[total];
     set total = total +wrap i;
   }
   return exit_status(code: 0_u8);
@@ -1025,7 +1035,10 @@ fn a_claim_reading_the_accumulator_is_still_a_read() {
             judged.verdict
         );
     };
-    assert_eq!(*reads, 2, "the claim's read counts beside the combine's");
+    assert_eq!(
+        *reads, 3,
+        "the claim's predicate read and its consumer's subscript both count beside the combine's"
+    );
 }
 
 /// A `claim` in the body's call closure is likewise no reason to refuse. The
@@ -1033,8 +1046,12 @@ fn a_claim_reading_the_accumulator_is_still_a_read() {
 #[test]
 fn a_claim_in_the_call_closure_is_permitted() {
     let source = br#"fn narrow(v: own u64) -> result: own u64 traps {
-  claim value_small: ilt(v, 64_u64) because "the caller keeps it small";
-  return v;
+  let values = array_new<u64, 8>(1_u64);
+  let size = len(values);
+  let bounded = imin(v, 7_u64);
+  let inside = ilt(bounded, size);
+  claim value_small: inside because "premises: bounded is the minimum of the parameter v and seven, and values has length eight\nderivation: a minimum is at most either operand, so bounded is at most seven and therefore below eight\nconclusion: ilt(bounded, size) is true\nchecker gap: ENT does not publish the result range of imin\nconsumers: the following length-eight array subscript uses bounded";
+  return values[bounded];
 }
 
 command fn main() -> status: own ExitStatus traps {
@@ -1093,9 +1110,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 ";
     let claimed = br#"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads('s), traps {
   let room = len(deref(src));
-  claim limit_fits: ile(limit, room) because "the caller bounds the request";
+  let bounded_limit = imin(limit, room);
+  let fits = ile(bounded_limit, room);
+  claim limit_fits: fits because "premises: bounded_limit is the minimum of the requested limit and room, and room is the input buffer's length\nderivation: a minimum is at most either operand, so bounded_limit is at most room\nconclusion: ile(bounded_limit, room) is true\nchecker gap: ENT does not publish the result range of imin\nconsumers: the counted range below runs to bounded_limit and subscripts the input at its binder";
   let total = 0_u64;
-  for @sum i in 0_u64..limit {
+  for @sum i in 0_u64..bounded_limit {
     let v = deref(src)[i];
     set total = total +wrap v;
   }

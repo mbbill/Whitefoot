@@ -576,6 +576,12 @@ command fn main() -> status: own ExitStatus pure {
 /// executed claim is a contract violation [SCOPE-4], an execution reaching one
 /// is erroneous, and a correct program — this one — traps under no schedule at
 /// all. The four conditions are the whole judgment.
+///
+/// The claim sits in `scaled`, one call deeper, because v0.34 admits only a
+/// local non-derivable residual and the fold's own `a + b` overflow guard was
+/// a statement about the callers rather than a lemma. Depth is what this case
+/// needs anyway: the claim is reached through the ordinary call graph from
+/// both judged callees, which is exactly the closure the retired gate walked.
 #[test]
 fn a_claim_bearing_closure_is_eligible() {
     let source = br#"enum BoxNode {
@@ -593,17 +599,35 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
   return box_new(move branch);
 }
 
+fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 traps {
+  let size = len(values);
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, index) {
+      break @select_bound;
+    } else if ieq(bounded, 7_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
+  let inside = ilt(bounded, size);
+  claim index_in_range: inside because "premises: bounded starts at zero, advances by one only on this function's ordinary-loop backedge, and exits no later than seven; values has length eight\nderivation: induction over reached loop bodies keeps bounded between zero and seven inclusive\nconclusion: ilt(bounded, size) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following length-eight array subscript uses bounded";
+  return values[bounded];
+}
+
 fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b), traps {
   match deref(deref(node)) {
     Leaf(w: leaf_w) => {
-      return deref(leaf_w);
+      let w = deref(leaf_w);
+      let values = array_new<u8, 8>(0_u8);
+      let touched = scaled(values: move values, index: w);
+      return w;
     }
     Branch(left: l, right: r, w: slot) => {
       let a = bubble<'b>(node: move l);
       let b = bubble<'b>(node: move r);
-      let sum_defined = a +defined b;
-      claim bubble_sum_fits: sum_defined because "an in-memory tree has representable widths";
-      let total = a + b;
+      let total = a +wrap b;
       set deref(slot) = total;
       return total;
     }
@@ -616,7 +640,10 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
   region 'tree {
     let total = bubble<'tree>(node: &uniq 'tree branch0);
-    claim bubble_total: ieq(total, 7_u64) because "bubble total";
+    if ieq(total, 7_u64) {
+    } else {
+      return exit_status(code: 1_u8);
+    }
   }
   return exit_status(code: 0_u8);
 }
@@ -637,13 +664,14 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
 
     // The claim really is in the closure of the judged pair, so what the case
     // above pins is the redirect and not an accident of this fixture: `bubble`
-    // calls itself, and its own body carries `bubble_sum_fits`.
+    // calls itself, and its leaf arm calls `scaled`, which carries
+    // `index_in_range`.
     assert_eq!(pair.first.callee_name, "bubble");
     assert_eq!(pair.second.callee_name, "bubble");
     assert!(
         std::str::from_utf8(source)
             .expect("the fixture is UTF-8")
-            .contains("claim bubble_sum_fits:"),
+            .contains("claim index_in_range:"),
         "the fixture must keep the claim whose closure this case is about"
     );
 
@@ -985,27 +1013,51 @@ command fn main() -> status: own ExitStatus pure {
 /// the [DIAG-3] sink. It is an exit out of the window like a `return` or a
 /// `propagate` `Err` edge, and an exit taken there abandons an unjoined lane
 /// still reading the caller's frame. Nothing in the redirect touches it.
+///
+/// The window sits in `probe` rather than in `main` because the claim has to
+/// be one v0.34 admits: a local, non-derivable, load-bearing residual. The
+/// clamp bound is a parameter and the length is the parameter array's, so
+/// neither endpoint is a constant the checker can fold, and the subscript that
+/// follows is what consumes it. The ordinary subscript between the calls is
+/// the control: it interposes too, and only the claim's trap edge denies.
 #[test]
 fn an_interposed_claim_is_denied_by_condition_four() {
     let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {
   return deref(v);
 }
 
+fn probe['r](values: own array<u8, 8>, index: own u64, cell: &'r u64, other: &'r u64) -> result: own u64 reads('r), traps {
+  let size = len(values);
+  let bounded = 0_u64;
+  loop @select_bound {
+    if ieq(bounded, index) {
+      break @select_bound;
+    } else if ieq(bounded, 7_u64) {
+      break @select_bound;
+    } else {
+      set bounded = bounded +wrap 1_u64;
+    }
+  }
+  let inside = ilt(bounded, size);
+  let a = peek<'r>(v: other);
+  claim index_in_range: inside because "premises: bounded starts at zero, advances by one only on this function's ordinary-loop backedge, and exits no later than seven; values has length eight\nderivation: induction over reached loop bodies keeps bounded between zero and seven inclusive\nconclusion: ilt(bounded, size) is true\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following length-eight array subscript uses bounded";
+  let picked = values[bounded];
+  let b = peek<'r>(v: cell);
+  return imax(a, b);
+}
+
 command fn main() -> status: own ExitStatus traps {
   let cell = 1_u64;
   let other = 2_u64;
-  let ok = ige(cell, 0_u64);
+  let table = array_new<u8, 8>(0_u8);
   region 'r {
-    let a = peek<'r>(v: &'r other);
-    claim cell_is_initialized: ok because "cell is bound to a literal above";
-    let b = peek<'r>(v: &'r cell);
-    let total = imax(a, b);
+    let total = probe<'r>(values: move table, index: 3_u64, cell: &'r cell, other: &'r other);
   }
   return exit_status(code: 0_u8);
 }
 "#;
     let table = permission_of(source);
-    let pair = only_pair(&table, "main");
+    let pair = only_pair(&table, "probe");
     let Denial::SkippingExit { side, kind } = denial(pair, 4) else {
         panic!(
             "a claim between the calls must deny, not fall through to eligibility: {:?}",
