@@ -151,7 +151,7 @@ fn an_ordinary_frame_emits_no_probe_call() {
 /// returns, so there is no tail call to eliminate and each level really takes
 /// a frame. `spine`'s two callees are also an eligible overlap pair, which is
 /// what lets the `--par` build carry the deep half onto a lane.
-fn spine_source(depth: u64) -> Vec<u8> {
+pub(super) fn spine_source(depth: u64) -> Vec<u8> {
     format!(
         r#"fn leafval(v: own f64) -> result: own f64 pure {{
   return fmul.strict(v, 0.5_f64);

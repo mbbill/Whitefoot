@@ -5,12 +5,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use whitefoot::{
-    CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
-    PARALLEL_RUNTIME_SOURCE, SourceInput, compile_with_overlap, compile_with_permission_ledger,
-    module_requires_parallel_runtime,
+    CompilerLimits, FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
+    OverlapLowering, PARALLEL_RUNTIME_SOURCE, SourceInput, compile_with_overlap,
+    compile_with_permission_ledger, module_requires_parallel_runtime, stack_ledger,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-ledger] [-o OUTPUT] SOURCE...";
+const USAGE: &str =
+    "usage: whitefootc [--emit-llvm] [--par] [--par-ledger] [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 fn main() {
     if let Err(message) = run() {
@@ -60,6 +61,11 @@ fn run() -> Result<(), String> {
         compile_with_overlap(&inputs, CompilerLimits::default(), overlap)
             .map_err(|failure| failure.to_string())?
     };
+    if options.stack_ledger {
+        for line in print_stack_ledger(&module)? {
+            println!("{line}");
+        }
+    }
     if options.emit_llvm {
         if let Some(output) = options.output {
             std::fs::write(&output, &module)
@@ -73,6 +79,53 @@ fn run() -> Result<(), String> {
         &module,
         options.output.as_deref().unwrap_or(Path::new("a.out")),
     )
+}
+
+/// Compiles the module once more, to assembly, purely to read the two things
+/// the ledger needs out of the host compiler: what each surviving machine
+/// function's frame costs and which functions call which.
+///
+/// It is a second invocation rather than a flag on the link that already
+/// happens, for two reasons. `-fstack-usage` writes its report beside the file
+/// it compiled, so putting it on the ordinary link would drop a `.su` into
+/// whatever directory the writer asked for output in, on a flag they may have
+/// passed for the report alone. And the call graph has to be the post-inline
+/// one that belongs to those frame numbers, which means assembly, which the
+/// link does not produce. Both come out of the one compilation below, into a
+/// directory this function owns and removes, and none of it runs unless the
+/// ledger was asked for.
+fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
+    let directory = std::env::temp_dir().join(format!("whitefootc-ledger-{}", std::process::id()));
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("cannot create the ledger directory: {error}"))?;
+    let module = directory.join("module.ll");
+    let assembly = directory.join("module.s");
+    let result = (|| {
+        std::fs::write(&module, llvm)
+            .map_err(|error| format!("cannot write the ledger module: {error}"))?;
+        let status = Command::new("/usr/bin/clang")
+            .arg("-x")
+            .arg("ir")
+            .arg(&module)
+            .arg("-S")
+            .arg("-o")
+            .arg(&assembly)
+            .arg("-fstack-usage")
+            .arg("-Wno-override-module")
+            .args(HOST_OPTIMIZATION_ARGUMENTS)
+            .status()
+            .map_err(|error| format!("cannot start /usr/bin/clang: {error}"))?;
+        if !status.success() {
+            return Err(format!("clang exited with {status}"));
+        }
+        let usage = std::fs::read_to_string(directory.join("module.su"))
+            .map_err(|error| format!("cannot read the stack-usage report: {error}"))?;
+        let text = std::fs::read_to_string(&assembly)
+            .map_err(|error| format!("cannot read the ledger assembly: {error}"))?;
+        Ok(stack_ledger(&usage, &text, FLOOR_STACK_BYTES))
+    })();
+    let _ = std::fs::remove_dir_all(&directory);
+    result
 }
 
 fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
@@ -197,6 +250,18 @@ struct Options {
     par: bool,
     /// Print the non-normative permission ledger on stdout.
     par_ledger: bool,
+    /// Print the non-normative stack ledger on stdout.
+    ///
+    /// What a writer cannot otherwise see: a frame size is a whole-program,
+    /// optimizer-chosen property, so no reading of a function tells anyone
+    /// what one activation of it costs, and no reading of a program tells
+    /// anyone which of its functions can reach themselves once the inliner has
+    /// finished. The flagship program in this repository caps its directory
+    /// recursion at sixteen levels and documents that the truncation is
+    /// indistinguishable from a complete search; its frame is 1744 bytes,
+    /// which the runtime's own stack holds six hundred thousand of. The bound
+    /// was not careful, it was blind.
+    stack_ledger: bool,
     output: Option<PathBuf>,
     sources: Vec<PathBuf>,
 }
@@ -206,6 +271,7 @@ impl Options {
         let mut emit_llvm = false;
         let mut par = false;
         let mut par_ledger = false;
+        let mut stack_ledger = false;
         let mut output = None;
         let mut sources = Vec::new();
         let mut cursor = 0;
@@ -214,6 +280,7 @@ impl Options {
                 "--emit-llvm" => emit_llvm = true,
                 "--par" => par = true,
                 "--par-ledger" => par_ledger = true,
+                "--stack-ledger" => stack_ledger = true,
                 "-o" => {
                     cursor += 1;
                     let path = arguments
@@ -245,10 +312,17 @@ impl Options {
                     .to_owned(),
             );
         }
+        if stack_ledger && emit_llvm && output.is_none() {
+            return Err(
+                "--stack-ledger cannot share stdout with --emit-llvm: name a module output with -o"
+                    .to_owned(),
+            );
+        }
         Ok(Self {
             emit_llvm,
             par,
             par_ledger,
+            stack_ledger,
             output,
             sources,
         })
@@ -283,6 +357,36 @@ mod tests {
             .expect("a named output separates the module from the ledger");
         assert!(options.par_ledger);
         assert!(options.emit_llvm);
+    }
+
+    /// The stack ledger is developer output on its own switch, and it is
+    /// independent of `--par`: a writer reads what a program's frames cost in
+    /// the build they are shipping, not in one the flag changed underneath
+    /// them. Asking for it with `--par` reports both of that module's worlds
+    /// instead of one.
+    #[test]
+    fn the_stack_ledger_is_requested_by_its_own_option() {
+        let options = parse(&["value.wf"]).expect("one source is a complete invocation");
+        assert!(!options.stack_ledger);
+
+        let options = parse(&["--stack-ledger", "value.wf"]).expect("the option is accepted");
+        assert!(options.stack_ledger);
+        assert!(!options.par, "reading the ledger must not enable lowering");
+        assert!(!options.emit_llvm);
+
+        let options = parse(&["--par", "--stack-ledger", "value.wf"]).expect("both are accepted");
+        assert!(options.stack_ledger && options.par);
+    }
+
+    /// Either ledger may not be interleaved into a module that is itself going
+    /// to stdout, so that invocation is refused rather than corrupted.
+    #[test]
+    fn a_ledger_refuses_to_share_stdout_with_the_module() {
+        let message = parse(&["--stack-ledger", "--emit-llvm", "value.wf"])
+            .err()
+            .expect("the two stdout streams must not be mixed");
+        assert!(message.contains("--stack-ledger"), "{message}");
+        assert!(message.contains("-o"), "{message}");
     }
 
     /// The ledger may not be interleaved into a module that is itself going
@@ -320,7 +424,13 @@ mod tests {
     /// cannot drift from the option list the parser accepts.
     #[test]
     fn the_usage_text_lists_every_accepted_option() {
-        for option in ["--emit-llvm", "--par", "--par-ledger", "-o"] {
+        for option in [
+            "--emit-llvm",
+            "--par",
+            "--par-ledger",
+            "--stack-ledger",
+            "-o",
+        ] {
             assert!(
                 super::USAGE.contains(option),
                 "usage text omits {option}: {}",

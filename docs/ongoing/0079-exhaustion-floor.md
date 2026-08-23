@@ -248,6 +248,87 @@ home).
   8 MB `ulimit -s` that no longer bounds any thread, so it would pass through
   a fourfold frame regression. Its comment now says so and names the
   instrument that replaces it — the F6 predicted-versus-measured ceiling.
+- F6 — `--stack-ledger`, a developer channel that says what a level costs and
+  how many of them the program's stack holds. Post-codegen by necessity, not
+  by preference: the compiler's own pre-lowering frame accumulator reports
+  **zero bytes** for `wf_spine`, the function that ends the program, because
+  its real 16-to-48 bytes are the ABI frame record and the register
+  allocator's spills — neither exists before LLVM runs. So the numbers come
+  from `-fstack-usage` and the call graph from the assembly of the same
+  compilation, Tarjan over that graph, and one line per frame, per cycle, and
+  per acyclic chain.
+  Sample, unedited (`--stack-ledger`, cold and outlined rows trimmed for the
+  record only):
+
+  ```
+  STACK stack     1073741824 B  the entry thread and every worker lane
+  STACK frame     wf_walk                                    1744 B  static
+  STACK cycle     wf_walk                                    1744 B/level  615677 levels
+  STACK chain     main            4240 B  main -> wf__floor_run -> wf__main_body -> wf_search_file -> ...
+  ```
+
+  That first cycle row is the batch falsifier's other half, in one line:
+  wfgrep's hand-written `depth >= 16` cap, whose own doc string admits the
+  truncation is indistinguishable from a complete search, is **38,479x**
+  conservative. The bound was not careful, it was blind.
+  Both `--par` worlds, on the `min_stack` shape, which is the report the 0076
+  default-depth regression would have shipped against:
+
+  ```
+  STACK cycle     wf_spine              48 B/level  22369621 levels  overlapped clone
+  STACK cycle     wf__par_seq_spine     16 B/level  67108864 levels  sequential clone
+  ```
+
+  and on `par_layout --par`, where the same side-by-side prices the overlap
+  tax per recursion (`wf_build` 80 B/level against its clone's 48, `wf_layout`
+  and `wf_layout_banded` 80 and 96 against 80) — structural, not the 3x the
+  0076 record carried.
+  Drop glue is in the ledger like anything else, and that is now a *negative*
+  result worth reading: `par_layout --par` shows `STACK frame wf.drop.step.0
+  64 B` and **no** `wf.drop` cycle row at all. Before F5 that row was a cycle.
+  The regression `the_compilers_own_drop_glue_has_rows_and_no_cycle` fails the
+  day one comes back.
+  The model, re-derived here rather than carried over: the research measured
+  `(stack − 6144)/frame`, where the 6144 was argv, environ, and auxv at the
+  top of the process stack. The entry does not run on the process stack any
+  more, so that term is gone and the ceiling is exactly `stack/frame`.
+  Measured first-failing depth against the report at four frame widths — 16 B,
+  10,272 B, 34,848 B, 291,760 B — deviations of at most 1,136, 2, 0, and 0
+  levels, the largest being 0.0017% of its own ceiling. The regression asserts
+  the program completes at 0.999x the reported ceiling and dies at 1.001x, at
+  two frame widths three orders of magnitude apart; it fails the day the
+  report and the machine stop agreeing, in either direction, and it names both
+  numbers when it does.
+  Two deviations from the brief, both deliberate. The ledger runs its own
+  clang rather than adding `-fstack-usage` to the link that already happens:
+  `-fstack-usage` writes its report beside the file it compiled, so the flag
+  on the ordinary link would drop a `.su` into whatever directory the writer
+  asked for output in, and the call graph needs assembly, which the link does
+  not produce. One compilation into a directory the driver owns and removes
+  gives both artifacts, guaranteed consistent, and none of it runs unless the
+  flag is passed. And the three row classes from the research are two here:
+  `bounded` would have to come from the compiler annotating the recursions it
+  created (the loop splitter's ten-frame theorem), which is a channel that
+  does not exist yet; inventing one for a report would have cost more than the
+  report is worth, so a splitter's row reads as an ordinary cycle. Flagged as
+  the one place this ledger is wrong in spirit.
+  Stated limits, in the module's own doc comment: it is a build fact, not a
+  source fact (per target, per optimization level, per host compiler); it
+  covers the emitted module's machine functions, so the floor and parallel
+  runtime translation units linked beside it are outside it; an inlined
+  callee's bytes are inside its caller's row; and the one indirect edge in a
+  Whitefoot program — the pool's thunk pointer — is not in the assembly, which
+  is why a `wf__par_thunk_` row heads a chain of its own.
+  Cost: none on the ordinary path. No corpus module changed, and all 96
+  observable rows remain byte-identical to the pre-batch compiler's. The
+  regression itself is 2.3 s; the first draft was 28 s because the host
+  compiler spends nine seconds vectorizing a 7,168-element array fill, so the
+  wide-frame probe is 256 elements for the same arithmetic under test.
+  `FLOOR_STACK_BYTES` restates the runtime's constant on the Rust side and
+  `the_ledger_and_the_runtime_name_the_same_stack` pins the two spellings
+  together, because a ledger deriving depths from a stack no thread has would
+  be worse than none: every number would be wrong by the same factor and
+  nothing in the output would say so.
 - Branch-tip gate, reported rather than worked around: `make check` fails at
   `research-tests`' `effect` target, and it fails identically with this
   executor's changes stashed. The cause is outside the repository — the

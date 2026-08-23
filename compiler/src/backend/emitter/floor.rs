@@ -13,6 +13,17 @@
 /// variable decides which floor a program gets.
 pub const FLOOR_RUNTIME_SOURCE: &str = include_str!("../wf_floor.c");
 
+/// The stack every thread that runs Whitefoot code gets, as a number this side
+/// of the link can read.
+///
+/// The definition is the C one; this is the same number, restated where the
+/// stack ledger can derive a depth from it. Deriving one from anything else —
+/// the host's limit, a guess, a second constant — would give the writer a
+/// figure the program does not obey, so
+/// `the_ledger_and_the_runtime_name_the_same_stack` pins the two together
+/// instead of trusting the comment.
+pub const FLOOR_STACK_BYTES: u64 = 1024 * 1024 * 1024;
+
 /// The module's own definition of the floor entry point.
 ///
 /// An emitted module is a complete program on its own — `--emit-llvm` output
@@ -33,3 +44,32 @@ pub const FLOOR_RUNTIME_SOURCE: &str = include_str!("../wf_floor.c");
 /// still runs and still means the same thing, with the ceiling and the bare
 /// host signal it had before the floor existed.
 pub(crate) const FLOOR_RUNTIME_FALLBACK: &str = "define weak i32 @wf__floor_run(i32 %argc, ptr %argv) {\nentry:\n  %status = call i32 @wf__main_body(i32 %argc, ptr %argv) noinline\n  ret i32 %status\n}\n\n";
+
+#[cfg(test)]
+mod tests {
+    use super::{FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES};
+
+    /// The runtime's constant and the ledger's are one number.
+    ///
+    /// They are written in two languages and cannot share a definition, so the
+    /// agreement is machine-checked rather than remembered. A ledger deriving
+    /// depths from a stack no thread actually has would be worse than no
+    /// ledger: every number in it would be wrong by the same factor, and
+    /// nothing in the output would say so.
+    #[test]
+    fn the_ledger_and_the_runtime_name_the_same_stack() {
+        let spelling = format!(
+            "#define WF_FLOOR_STACK_BYTES ((size_t){}u",
+            FLOOR_STACK_BYTES
+        );
+        let megabytes = format!(
+            "#define WF_FLOOR_STACK_BYTES ((size_t){}u * 1024u * 1024u)",
+            FLOOR_STACK_BYTES / (1024 * 1024)
+        );
+        assert!(
+            FLOOR_RUNTIME_SOURCE.contains(&spelling) || FLOOR_RUNTIME_SOURCE.contains(&megabytes),
+            "the floor runtime does not define a {FLOOR_STACK_BYTES}-byte stack, so the \
+             ledger would derive depths from a stack no thread has"
+        );
+    }
+}

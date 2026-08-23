@@ -37,6 +37,7 @@ use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
 use floor::FLOOR_RUNTIME_FALLBACK;
 pub use floor::FLOOR_RUNTIME_SOURCE;
+pub use floor::FLOOR_STACK_BYTES;
 use parallel::{
     HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_FALLBACK, PARALLEL_RUNTIME_FALLBACK,
     PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, par_done_label, sequential_clone_set,
@@ -1575,6 +1576,17 @@ fn invalid_tag_label(block: IrBlockId) -> String {
 
 fn source_symbol(name: &str) -> String {
     format!("wf_{name}")
+}
+
+/// The overlapped-world symbol a sequential clone was made from, for a caller
+/// that has only the two symbols and needs to know they are one function.
+///
+/// It lives beside [`source_symbol`] because that is the other half of the
+/// spelling: a clone is `wf__par_seq_` plus the source name where the ordinary
+/// definition is `wf_` plus the same name, and a reader who has to reconstruct
+/// that from two files gets it wrong.
+pub(crate) fn overlapped_clone_symbol(sequential: &str) -> Option<String> {
+    sequential.strip_prefix("wf__par_seq_").map(source_symbol)
 }
 
 /// The mandatory [DIAG-3] record writer of a module with one thread, reached

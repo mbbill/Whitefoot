@@ -27,6 +27,7 @@ mod reinterpret;
 mod requires;
 mod resource_enums;
 mod slices;
+mod stack_ledger;
 mod system;
 mod system_io;
 mod trap_latch;
