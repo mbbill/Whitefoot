@@ -1011,6 +1011,38 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         );
     }
 
+    /// The line names each combine the way a writer spells it.
+    ///
+    /// The advice is a rewrite the reader is meant to type, so an operation
+    /// named in a spelling the language does not have is advice that does not
+    /// compile. The `Bool` row is `band`, `bor`, `bxor` [OP-1]; the integer
+    /// rows are covered by the cases above.
+    #[test]
+    fn the_split_hint_names_the_boolean_combines_as_a_writer_spells_them() {
+        let source = b"command fn main() -> status: own ExitStatus pure {
+  let every = True();
+  let any = False();
+  let parity = False();
+  for @scan i in 0_u64..64_u64 {
+    let low = iand(i, 1_u64);
+    let bit = ieq(low, 0_u64);
+    set every = band(every, bit);
+    set any = bor(any, bit);
+    set parity = bxor(parity, bit);
+  }
+  return exit_status(code: 0_u8);
+}
+";
+        assert_eq!(
+            ledger_of("booleans.wf", source),
+            vec![
+                "PAR hint        booleans.wf:5  loop  no eligible pair; a recursive split over \
+                 its index range would be eligible, combining under band, bor, bxor"
+                    .to_owned()
+            ]
+        );
+    }
+
     /// A program with no analyzed pair reports nothing, and the ledger never
     /// reaches the module: the same compilation with and without it emits the
     /// same bytes.

@@ -75,6 +75,10 @@ they correct.
   `DropExpression` arm and placed with `return` and `propagate`. The
   dossier's give-bearing loop publishes 27 where the advised split publishes
   80; it now draws no line, while the same loop without the give still does.
+- D-3 fixed: the hint named the boolean combines `and, or, xor`, which are
+  not spellings the language has; it now names `band, bor, bxor` as [OP-1]
+  does. No case covered the boolean row, which is why the wrong spellings
+  shipped; one now pins all three.
 
 ## Outcome
 

@@ -453,9 +453,9 @@ fn integer_combine(operation: CheckedIntegerOperation) -> Option<&'static str> {
 /// The exactly-associative boolean operations. `not` is unary and no combine.
 fn boolean_combine(operation: CheckedBooleanOperation) -> Option<&'static str> {
     Some(match operation {
-        CheckedBooleanOperation::And => "and",
-        CheckedBooleanOperation::Or => "or",
-        CheckedBooleanOperation::ExclusiveOr => "xor",
+        CheckedBooleanOperation::And => "band",
+        CheckedBooleanOperation::Or => "bor",
+        CheckedBooleanOperation::ExclusiveOr => "bxor",
         CheckedBooleanOperation::Not => return None,
     })
 }
