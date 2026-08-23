@@ -1,4 +1,4 @@
-use crate::lowering::lower_checked;
+use crate::lowering::{OverlapLowering, lower_checked};
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::super::entailment::{CallGoalDisposition, CallGoalEvidence};
@@ -704,7 +704,8 @@ command fn main() -> status: own ExitStatus pure {
                 .iter()
                 .all(|field| matches!(field.ty, CheckedType::GenericInt(_)))
         );
-        lower_checked(*checked).expect("metadata-only symbolic nominals must not reach lowering");
+        lower_checked(*checked, OverlapLowering::Off)
+            .expect("metadata-only symbolic nominals must not reach lowering");
     });
 }
 
@@ -741,7 +742,7 @@ command fn main() -> status: own ExitStatus pure {
             rendered.contains("DerivedConstId") && rendered.contains("0,"),
             "the retained goal must name the checked-program-owned table entry: {rendered}"
         );
-        lower_checked(*checked)
+        lower_checked(*checked, OverlapLowering::Off)
             .expect("metadata-only derived consts must not enter executable lowering");
     });
 }

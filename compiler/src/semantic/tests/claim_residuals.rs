@@ -1,4 +1,6 @@
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, lower_checked};
+use crate::{
+    SemanticIssueKind, SemanticOutcome, SemanticRule, lower_checked, lowering::OverlapLowering,
+};
 
 use super::super::entailment::{
     ClaimComponentFact, ClaimMaskedDisposition, ClaimTerminalOwner, ClaimTerminalRoot,
@@ -2221,7 +2223,8 @@ command fn main() -> status: own ExitStatus pure {
                 .count(),
             1
         );
-        lower_checked(*program).expect("a concrete-only replay inventory must lower");
+        lower_checked(*program, OverlapLowering::Off)
+            .expect("a concrete-only replay inventory must lower");
     });
 }
 
@@ -2278,7 +2281,8 @@ command fn main() -> status: own ExitStatus pure {
                 .iter()
                 .all(|function| function.name != "next")
         );
-        lower_checked(*program).expect("the concrete descendant inventory must lower");
+        lower_checked(*program, OverlapLowering::Off)
+            .expect("the concrete descendant inventory must lower");
     });
 }
 

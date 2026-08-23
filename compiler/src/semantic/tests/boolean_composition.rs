@@ -455,39 +455,55 @@ command fn main() -> status: own ExitStatus pure {
 
 /// The band/derived-index discharge asymmetry, pinned. A conjunct that bounds
 /// a let-bound derived value keeps the relation its own comparison binding
-/// recorded, so the conjoined claim discharges exactly what the equivalent
-/// pair of single-bound claims discharges. Before the members were read
+/// recorded, so the conjoined guard discharges exactly what the equivalent
+/// pair of nested single-bound guards discharges. Before the members were read
 /// through their bindings, the expanded conjunct read `at +wrap 1 < len(..)`,
 /// whose arithmetic root has no term form, and the second subscript's
 /// obligation survived while the first discharged.
+///
+/// Both halves are branch guards rather than claims. The claim spelling this
+/// case first used bounded an unconstrained parameter against an unconstrained
+/// length, which is an assertion about the callers rather than a lemma, and
+/// [CLM-2] retired that genre. The guard proves the same thing about
+/// decomposition and keeps its teeth: without the binding-read the conjoined
+/// half fails `[OP-4]` on `next < len(deref(input))` while the nested half
+/// still discharges.
 #[test]
 fn band_conjunct_over_a_derived_binding_discharges_like_the_single_bound_pair() {
-    let conjoined = br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i), traps {
+    let conjoined =
+        br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i) {
   let next = at +wrap 1_u64;
   let room = len(deref(input));
   let at_ok = ilt(at, room);
   let next_ok = ilt(next, room);
   let both = band(at_ok, next_ok);
-  claim pair_in_range: both because "pair in range";
-  let first = deref(input)[at];
-  let second = deref(input)[next];
-  return first +wrap second;
+  if both {
+    let first = deref(input)[at];
+    let second = deref(input)[next];
+    return first +wrap second;
+  }
+  return 0_u8;
 }
 
 command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let separate = br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i), traps {
+    let separate =
+        br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i) {
   let next = at +wrap 1_u64;
   let room = len(deref(input));
   let at_ok = ilt(at, room);
   let next_ok = ilt(next, room);
-  claim at_in_range: at_ok because "first in range";
-  claim next_in_range: next_ok because "second in range";
-  let first = deref(input)[at];
-  let second = deref(input)[next];
-  return first +wrap second;
+  if at_ok {
+    if next_ok {
+      let first = deref(input)[at];
+      let second = deref(input)[next];
+      return first +wrap second;
+    }
+    return 0_u8;
+  }
+  return 0_u8;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -572,20 +588,24 @@ command fn main() -> status: own ExitStatus pure {
 /// The negative twin the widening must keep failing: reading the conjuncts
 /// through their bindings proves exactly the two bounds the band names and no
 /// third one, so a subscript by an index the band never bounded still carries
-/// its obligation, and a disjunction still bounds neither side.
+/// its obligation, and a disjunction still bounds neither side. Guards for the
+/// same reason as the positive case above.
 #[test]
 fn band_over_derived_bindings_proves_no_unnamed_bound() {
-    let uncovered = br#"fn read_three['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i), traps {
+    let uncovered =
+        br#"fn read_three['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i) {
   let next = at +wrap 1_u64;
   let far = at +wrap 2_u64;
   let room = len(deref(input));
   let at_ok = ilt(at, room);
   let next_ok = ilt(next, room);
   let both = band(at_ok, next_ok);
-  claim pair_in_range: both because "pair in range";
-  let first = deref(input)[at];
-  let third = deref(input)[far];
-  return first +wrap third;
+  if both {
+    let first = deref(input)[at];
+    let third = deref(input)[far];
+    return first +wrap third;
+  }
+  return 0_u8;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -600,15 +620,17 @@ command fn main() -> status: own ExitStatus pure {
         "only the named bound discharges: {:?}",
         summary.obligations
     );
-    let disjoined = br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i), traps {
+    let disjoined =
+        br#"fn read_pair['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads('i) {
   let next = at +wrap 1_u64;
   let room = len(deref(input));
   let at_ok = ilt(at, room);
   let next_ok = ilt(next, room);
   let either = bor(at_ok, next_ok);
-  claim one_in_range: either because "one in range";
-  let second = deref(input)[next];
-  return second;
+  if either {
+    return deref(input)[next];
+  }
+  return 0_u8;
 }
 
 command fn main() -> status: own ExitStatus pure {
