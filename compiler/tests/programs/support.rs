@@ -70,10 +70,53 @@ pub fn compile_programs(names: &[&str]) -> String {
 /// lowering only: the judgment, the accepted program, and the ledger are the
 /// same either way.
 pub fn compile_program_with_overlap(name: &str) -> String {
-    let source = read_program(name);
-    let inputs = [SourceInput::new(name, &source)];
+    compile_programs_with_overlap(&[name])
+}
+
+/// [`compile_program_with_overlap`] over a corpus unit of several sources.
+///
+/// A program the corpus keeps as several files does not compile a file at a
+/// time, so a case that asks what the whole corpus compiles to under `--par`
+/// needs the same multi-source entry [`compile_programs`] gives the default
+/// lowering.
+pub fn compile_programs_with_overlap(names: &[&str]) -> String {
+    let sources = names
+        .iter()
+        .map(|name| read_program(name))
+        .collect::<Vec<_>>();
+    let inputs = names
+        .iter()
+        .zip(&sources)
+        .map(|(name, source)| SourceInput::new(name, source))
+        .collect::<Vec<_>>();
     compile_with_overlap(&inputs, CompilerLimits::default(), OverlapLowering::On)
         .expect("program corpus source must compile")
+}
+
+/// Every `.wf` file the program corpus holds, in one stable order.
+///
+/// Read from the directory rather than listed, so a case that claims to cover
+/// the corpus cannot quietly stop covering it when a program is added.
+pub fn corpus_program_files() -> Vec<String> {
+    let root = corpus_directory();
+    let mut names = std::fs::read_dir(&root)
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", root.display()))
+        .map(|entry| {
+            entry
+                .unwrap_or_else(|error| panic!("cannot read {}: {error}", root.display()))
+                .path()
+        })
+        .filter(|path| path.extension().is_some_and(|extension| extension == "wf"))
+        .map(|path| {
+            path.file_name()
+                .expect("a corpus file has a name")
+                .to_str()
+                .expect("a corpus file name is UTF-8")
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    names.sort();
+    names
 }
 
 /// Compiles one corpus program and returns its permission ledger lines.

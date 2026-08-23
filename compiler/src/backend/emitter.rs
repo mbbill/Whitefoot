@@ -29,8 +29,8 @@ use crate::{
     IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrClaimSite, IrConstant,
     IrDrop, IrEntry, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction,
     IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind, IrOperation,
-    IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator, IrType,
-    IrValueId, SystemResourceType,
+    IrOverlap, IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator,
+    IrType, IrValueId, SystemResourceType,
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
@@ -484,6 +484,14 @@ struct FunctionEmitter<'program, 'state> {
     /// The module's outlined thunks, shared by every function that hands a
     /// call out.
     parallel: &'state mut ParallelThunks,
+    /// The overlap groups *this world* actualizes: the judgment's groups in
+    /// the ordinary lowering, and none at all in a sequential clone.
+    ///
+    /// Every consumer reads this one slice and none reads `function.overlaps()`
+    /// again, which is what keeps the blocks a world emits and the labels its
+    /// phis name from disagreeing: a `par.done` label can be named only where
+    /// the same slice caused the block to be emitted.
+    overlaps: &'program [IrOverlap],
     /// Values whose defining call is handed to a worker lane [PAR-1
     /// candidate], and the values whose definitions are the join sites that
     /// complete them.
@@ -553,6 +561,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             entry_prelude: String::new(),
             temporary: 0,
             parallel,
+            overlaps,
             overlap_handed_out: overlaps
                 .iter()
                 .flat_map(|overlap| overlap.handed_out().iter().copied())
@@ -697,7 +706,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     block_exit_label(
                         edge.predecessor,
                         self.block(edge.predecessor)?,
-                        self.function
+                        self.overlaps
                     )
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
@@ -1309,15 +1318,18 @@ fn variant_field_base(
 
 /// The last handed-out member of the overlap group `result` joins, if it is a
 /// join site at all. Its `par.done` block is where the block continues.
-fn overlap_join_tail(function: &IrFunction, result: IrValueId) -> Option<IrValueId> {
-    function
-        .overlaps()
+///
+/// `overlaps` is the emitting world's set, never `IrFunction::overlaps`: a
+/// clone actualizes nothing, so it emits no `par.done` block and must not name
+/// one either.
+fn overlap_join_tail(overlaps: &[IrOverlap], result: IrValueId) -> Option<IrValueId> {
+    overlaps
         .iter()
         .find(|overlap| overlap.join_site() == Some(result))
         .and_then(|overlap| overlap.handed_out().last().copied())
 }
 
-fn block_exit_label(block_id: IrBlockId, block: &IrBlock, function: &IrFunction) -> String {
+fn block_exit_label(block_id: IrBlockId, block: &IrBlock, overlaps: &[IrOverlap]) -> String {
     let mut label = block_label(block_id);
     for (index, instruction) in block.instructions().iter().enumerate() {
         match instruction {
@@ -1367,7 +1379,7 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock, function: &IrFunction)
         // The overlap join rides its last member's own emission, so it settles
         // the label after whatever that emission left.
         if let IrInstruction::Define { result, .. } = instruction
-            && let Some(last) = overlap_join_tail(function, *result)
+            && let Some(last) = overlap_join_tail(overlaps, *result)
         {
             label = par_done_label(last);
         }

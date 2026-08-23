@@ -20,7 +20,8 @@
 //! below and hands nothing out at all.
 
 use super::support::{
-    build_program, compile_program, compile_program_with_overlap, program_permission_ledger,
+    build_program, compile_program, compile_program_with_overlap, compile_programs,
+    compile_programs_with_overlap, corpus_program_files, program_permission_ledger,
 };
 use whitefoot::module_requires_parallel_runtime;
 
@@ -147,6 +148,125 @@ fn the_layout_program_publishes_one_byte_sequence_at_every_worker_count() {
             "WF_WORKERS={named} moved a byte of the result"
         );
         assert!(overlapped.stderr.is_empty(), "WF_WORKERS={named}");
+    }
+}
+
+/// Every program the corpus holds, as the source list it compiles from.
+///
+/// A program written across several files compiles from all of them at once,
+/// so the unit of compilation is this list and not the file. The list is
+/// checked against the corpus directory by
+/// [`the_corpus_units_cover_every_program_file`], which is what keeps it from
+/// silently falling behind the corpus it claims to cover.
+const CORPUS_UNITS: &[&[&str]] = &[
+    &["byte_string.wf"],
+    &["dir_walk.wf"],
+    &["feedback_controller.wf"],
+    &["fir_filter.wf"],
+    &["generic_instances.wf"],
+    &["generic_nominals.wf"],
+    &["geometry_vectors.wf"],
+    &["grayscale_pixels.wf"],
+    &["growable_vec.wf"],
+    &["ipv4_checksum.wf"],
+    &["mandelbrot_grid.wf"],
+    &["option_slots.wf"],
+    &["par_layout.wf"],
+    &["percent_decode.wf"],
+    &["prefix_expression.wf"],
+    &["recursive_tree.wf"],
+    &["sha256_abc.wf"],
+    &["telemetry_packet.wf"],
+    &["utf8parse.wf"],
+    &["wfgrep.wf"],
+    &[
+        "raw_deflate.wf",
+        "raw_deflate_dynamic.wf",
+        "raw_deflate_dynamic_decode.wf",
+        "raw_deflate_boundary.wf",
+    ],
+    &[
+        "raw_deflate.wf",
+        "raw_deflate_dynamic.wf",
+        "raw_deflate_dynamic_decode.wf",
+        "raw_deflate_vectors.wf",
+    ],
+];
+
+/// Adding a program to the corpus puts it under the `--par` case below.
+#[test]
+fn the_corpus_units_cover_every_program_file() {
+    for file in corpus_program_files() {
+        assert!(
+            CORPUS_UNITS
+                .iter()
+                .any(|unit| unit.contains(&file.as_str())),
+            "{file} is in the program corpus but in no unit of CORPUS_UNITS, so the \
+             --par case does not compile it"
+        );
+    }
+}
+
+/// Every corpus program compiles to a module the host accepts under `--par`,
+/// and every one the overlap lowering actually changes publishes exactly what
+/// its default build publishes.
+///
+/// The case exists because compiling is not the check. A module the emitter
+/// produces can still be ill-formed, and the emitter's own `Ok` says nothing
+/// about that — it took a real host assembler to reject a `--par` build of
+/// `percent_decode.wf` and `sha256_abc.wf` whose phis named a block their
+/// world never emitted. So each unit is *linked*, which is the step that
+/// rejected them, and the case covers the whole corpus rather than the one
+/// program written for this path: those two were the programs no case here
+/// compiled with overlap.
+///
+/// Linking every unit is the cheap half. The expensive half — a second
+/// compilation of the default build and four executions — is spent only on the
+/// units the lowering changes, and naming the runtime is exactly that
+/// condition: a module that hands nothing out is emitted byte for byte as its
+/// default build, which that program's own case already links and runs.
+///
+/// What the comparison reaches varies by program. Most of the corpus states
+/// its result in claims and publishes an exit status, so a run that ends
+/// successfully with an empty record channel is the assertion that every claim
+/// held under that schedule. `wfgrep.wf` is a command entry that reports its
+/// usage when invoked with no arguments, so for that one unit this case
+/// reaches the argument-handling path only and the link is what carries it;
+/// its search path is covered with real arguments in `wfgrep.rs`.
+#[test]
+fn every_corpus_program_links_under_par_and_publishes_its_default_bytes() {
+    for unit in CORPUS_UNITS {
+        let named = unit.join(" + ");
+        let llvm = compile_programs_with_overlap(unit);
+        // Linking is the assertion: `build_program` fails the case if the host
+        // assembler rejects the module.
+        let overlapped = build_program(&llvm);
+        if !module_requires_parallel_runtime(&llvm) {
+            continue;
+        }
+
+        let default = build_program(&compile_programs(unit));
+        let reference = default.run_with_workers(None);
+        for workers in [Some("1"), Some("4"), None] {
+            let spelling = workers.unwrap_or("absent");
+            let published = overlapped.run_with_workers(workers);
+            assert_eq!(
+                published.status.code(),
+                reference.status.code(),
+                "{named} at WF_WORKERS={spelling} left the default build's exit status; \
+                 its record channel said: {}",
+                String::from_utf8_lossy(&published.stderr)
+            );
+            assert_eq!(
+                published.stdout, reference.stdout,
+                "{named} at WF_WORKERS={spelling} moved a byte of the default build's result"
+            );
+            assert_eq!(
+                published.stderr, reference.stderr,
+                "{named} at WF_WORKERS={spelling} moved a byte of the default build's \
+                 record channel"
+            );
+        }
     }
 }
 
