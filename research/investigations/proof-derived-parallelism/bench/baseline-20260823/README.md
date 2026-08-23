@@ -86,10 +86,11 @@ Four controls bound where this can live, and each excludes something:
   `--par-ledger` reports the same two eligible pairs (`build`, `layout`) with
   the same two-member chains on `bal` and on `skew` alike.
 
-**Quantified, the move is a fixed amount of added parallel work.** Multiplying
-each cell's penalty by its lane count gives a constant per configuration,
-independent of lane count — which is what "added work, spread across the
-lanes" looks like and what "added serialization" does not:
+**Quantified, the penalty is a uniform slowdown of the parallel region.**
+Multiplying each cell's penalty by its lane count gives a constant per
+configuration, independent of lane count — which is what a fixed factor
+applied to perfectly divided work looks like, and what added serialization
+does not:
 
 | config | x1 lane | x2 lanes | x4 lanes | x8 lanes |
 |---|---:|---:|---:|---:|
@@ -99,27 +100,58 @@ lanes" looks like and what "added serialization" does not:
 | `skew_*` | +0.00 | -0.00 | -0.03 .. -0.00 | -0.04 .. -0.00 |
 | `grid` | -0.00 | -0.01 | -0.01 | -0.00 |
 
-So the parallel clone gained roughly **0.11 core-seconds at 64 words and 0.17
-at 192 words** on the balanced tree, and nothing at 16 words, nothing on the
-skewed tree, and nothing on the index split. The three `bal` depths agree with
-each other because `reps` is fitted per configuration to hold total node count
-near-constant, so this is per-node cost scaling with per-node data volume, with
-a threshold between 16 and 64 words.
+So the parallel fold costs roughly **0.11 core-seconds more at 64 words and
+0.17 at 192 words** on the balanced tree, and nothing at 16 words, nothing on
+the skewed tree, and nothing on the index split. The three `bal` depths agree
+with each other because `reps` is fitted per configuration to hold total node
+count near-constant, so the penalty scales with per-node data volume, with a
+threshold between 16 and 64 words.
 
 **The trap latch is not the cause.** `skew` and `grid` carry claims and hand
 out to lanes exactly as `bal` does, so any latch-conditional emission would
-reach them too, and they are flat. Attribution beyond this needs a compiler
-bisect across the rebase over `backend/emitter/parallel.rs` and
-`backend/par_runtime.c`; that was deliberately not run here. **Reported, not
-chased.**
+reach them too, and they are flat.
+
+## Attributed after this snapshot was taken: code placement
+
+The bisect this file left open was run, and it lands on nothing the program
+executes. The full evidence chain is the attribution entry in
+`docs/ongoing/0078-loop-permission.md`; the result, so nobody reads the table
+above as a cost the implementation pays:
+
+- **The tips compared here are not the ones this file's prose assumed.** This
+  snapshot's own HEAD is `0c56d5bd`; `baseline-20260822/`'s is `1e103492`. The
+  rebase is not in question — across it the linked `bal` executables are
+  byte-for-byte identical.
+- **No instruction was added.** The emitted `--par` modules for `bal`, `skew`,
+  and `grid` are identical at both tips except one comment line carrying the
+  specification version, which the LLVM lexer discards.
+- **The whole penalty is where the linker put the code.** `ddf1d139` appended
+  196 bytes of never-called runtime to `par_runtime.c`, shifting every hot
+  symbol by exactly +196 while leaving every data symbol in place. Linking the
+  older runtime with 196 bytes of unexecutable `__asm__(".space")` padding
+  reproduces all nine cells above, and every control, inside 3%.
+- **2 of the 16 four-byte alignments are pathological**, worth 1.18x-1.28x, so
+  every link of this workload draws a 12.5% chance of the slow one. The five
+  matched-worker losses below are that draw, not a property of the
+  implementation: at the fast alignment all five read inside the unresolved
+  band.
+
+The measurements in this file stand exactly as recorded. What changed is what
+they are evidence *of*.
 
 ## Effect on the headline verdicts
 
 Against rayon at matched worker counts (52 cells): **22 Whitefoot wins, 25
 unresolved, 5 losses**, where the prior pass read 24 / 28 / 0. The five losses
-are exactly five of the nine cells above.
+are exactly five of the nine cells above — all of them `bal_*_w192` at 2 and 4
+lanes — and by the attribution they are one link's alignment draw. **Neither
+count is the implementation's property.** The defensible form is that those
+five cells sit inside a ±20% placement band, and the matched-worker verdict is
+22-24 wins, 25-28 unresolved, 0-5 losses depending on where the link lands.
 
 At the shipped defaults on both sides (13 cells): **11 Whitefoot wins, 2
 unresolved, 0 losses — unchanged from the prior pass.** The regression sits at
 2 and 4 lanes and has largely decayed by 8 lanes, so it does not reach the
-column that answers what an untuned program gets.
+column that answers what an untuned program gets — though it does touch those
+cells, at 1.02x-1.12x, and they keep their verdict on margin rather than
+immunity.

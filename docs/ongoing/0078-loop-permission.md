@@ -377,7 +377,107 @@ they correct.
   out exactly as `bal` does and are flat, so a latch-conditional emission would
   have reached them too. Further attribution needs a compiler bisect across the
   rebase over `backend/emitter/parallel.rs` and `backend/par_runtime.c`, which
-  was **deliberately not run — reported, not chased.**
+  was **deliberately not run — reported, not chased.** *(Chased in the next
+  entry, which corrects both the compared tips and the mechanism.)*
+- **The nine-cell `bal` regression is attributed: it is code placement, and
+  not one instruction was added, moved, or lost.** Two corrections to the
+  entry above come first. **(i) The compared tips were wrong.**
+  `baseline-20260822/`'s recorded HEAD is `1e103492`, not the pre-rebase tip,
+  so the span separating the two passes is `1e103492..0c56d5bd` — 18 branch
+  commits plus `main`'s 49 — and the rebase is not in question at all. Across
+  the rebase alone the linked executables are **byte-for-byte identical**:
+  building `bal_d12_w64` with the pre-rebase and post-rebase compilers to the
+  same output name gives zero differing bytes, and `bin/bal_d12_w64_par` as it
+  ran in the 2026-08-23 pass is one of them. **(ii) Nothing was added to the
+  parallel work.** The emitted `--par` modules for `bal_d12_w{16,64,192}`,
+  `skew_d16_w64`, and `grid_d21_w256` are **identical at `1e103492` and at the
+  tip except one comment line** (`; QUAL-1 qualification: specification v0.34`
+  → `v0.35`, which the LLVM lexer discards), and so are the five default
+  compilations. So "a fixed amount of added parallel work" is **withdrawn**:
+  there is no added work, and the constant-core-seconds arithmetic was fitting
+  a shape to what is simply a uniform slowdown of the parallel region.
+  **What did change.** `ddf1d139` — this campaign's own loop-split commit, and
+  the only commit in the span touching `backend/par_runtime.c`, +129/-0 —
+  appends two `#define`s, one static `int`, and two functions,
+  `wf__par_lanes_once` and `wf__par_split_budget`. **`bal` calls neither**: its
+  module is byte-identical to one emitted by a compiler that had no split at
+  all, so no call to either can exist. In the linked binary the two occupy
+  **196 bytes** of `__text`, and every hot symbol after them moves by exactly
+  +196 — `wf__par_start`, `wf__par_worker_main`, both thunks, `wf_build`,
+  `wf_layout`, `main`. Every `__data` and `__bss` symbol is at an **identical**
+  address (`wf__par_lanes`, `wf__par_ready`, `wf__par_grants`, `wf__par_idle`,
+  `wf__par_lane_count`, both locks), which excludes data layout and false
+  sharing.
+  **The decisive control is 196 bytes that cannot execute.** Linking the
+  `1e103492` runtime with `__asm__(".space 196")` appended puts the whole hot
+  block at the tip binary's exact addresses, with the same C and the same IR.
+  Interleaved min-of-9, every variant of a configuration publishing one digest:
+
+  | cell | 08-22 rec. | `.space 0` | 08-23 rec. | `.space 196` |
+  |---|---:|---:|---:|---:|
+  | `bal_d8_w64` /2 | 0.2655 | 0.2666 | 0.3201 | 0.3161 |
+  | `bal_d8_w192` /2 | 0.3147 | 0.3043 | 0.3960 | 0.3888 |
+  | `bal_d8_w192` /4 | 0.1650 | 0.1664 | 0.2097 | 0.2112 |
+  | `bal_d10_w64` /2 | 0.2623 | 0.2644 | 0.3170 | 0.3165 |
+  | `bal_d10_w192` /2 | 0.3117 | 0.3036 | 0.3992 | 0.3862 |
+  | `bal_d10_w192` /4 | 0.1612 | 0.1625 | 0.2061 | 0.2071 |
+  | `bal_d12_w64` /2 | 0.2691 | 0.2668 | 0.3233 | 0.3229 |
+  | `bal_d12_w192` /2 | 0.3115 | 0.3108 | 0.3968 | 0.3982 |
+  | `bal_d12_w192` /4 | 0.1638 | 0.1640 | 0.2040 | 0.2063 |
+  | *ctl* `bal_d12_w64` /1 | 0.6038 | 0.5773 | 0.6075 | 0.5773 |
+  | *ctl* `bal_d12_w64` /8 | 0.1214 | 0.1220 | 0.1347 | 0.1362 |
+  | *ctl* `bal_d12_w16` /1 | 0.6616 | 0.6599 | 0.6133 | 0.6141 |
+  | *ctl* `bal_d12_w16` /2 | 0.3242 | 0.3243 | 0.3277 | 0.3307 |
+  | *ctl* `bal_d12_w16` /4 | 0.1708 | 0.1710 | 0.1730 | 0.1747 |
+  | *ctl* `bal_d12_w16` /8 | 0.1667 | 0.1674 | 0.1691 | 0.1694 |
+  | *ctl* `skew_d16_w64` /2 | 0.2794 | 0.2785 | 0.2774 | 0.2796 |
+  | *ctl* `skew_d16_w64` /4 | 0.1495 | 0.1499 | 0.1490 | 0.1502 |
+  | *ctl* `skew_d16_w64` /8 | 0.1422 | 0.1409 | 0.1412 | 0.1412 |
+
+  **All nine regressed cells reproduce inside 3%, and so does every control**,
+  including the one-lane `bal_d12_w16` cell that moved *downward* between the
+  passes — dead padding reproduces that too. The reverse also holds: the tip
+  runtime plus its own 196 bytes of `.space` returns `bal_d12_w64` /4 to
+  0.1438 s against the unpadded tip's 0.1703 s.
+  **The lottery, characterized.** Sweeping the pad 0..124 in 4-byte steps on
+  the `1e103492` runtime, `bal_d12_w64` at 4 lanes, min-of-7: slow at pads
+  **4, 32, 68, 96** (0.1706-0.1737 s) and fast at the other **28 of 32**
+  (0.1423-0.1459 s). The four slow pads are exactly `wf_layout` at 64-byte
+  offsets 16 and 44 — **2 of the 16 four-byte alignments, a 12.5% draw per
+  link, worth 1.18x-1.28x.** `ddf1d139` added 196 bytes, and 196 mod 64 = 4,
+  which walked the fold from offset 12 to offset 16. It is the same coin batch
+  0076 Dig 3 and Dig 7 named and could not localize (1.19x there, 1.20x on the
+  input-order control); this is the first control that isolates it to a
+  *known byte count* rather than a reordering, and the first characterization
+  of how often the coin lands badly.
+  **The five matched-worker losses trace to it.** All five are `bal_*_w192` at
+  2 and 4 lanes. Against the same rayon minima — rayon moved 0.96x-1.01x
+  between the passes and is not in question — the `.space 0` column reads
+  0.94x, 0.96x, 0.95x, 0.99x, and 1.00x, **every one inside the unresolved
+  band**. So `baseline-20260823/`'s 22 / 25 / 5 and `baseline-20260822/`'s
+  24 / 28 / 0 are the same implementation on two sides of one coin toss.
+  **The zero-losses invariant needs the band caveat, and this is it.** "Rayon
+  wins zero cells at matched worker counts" cannot be stated as a property of
+  the implementation on this workload: a relink that changes no executed byte
+  moves five `bal_*_w192` cells across the 1.20x threshold. The defensible
+  form is that those five sit inside a **±20% placement band** whose draw the
+  compiler does not control, and the matched-worker verdict is 22-24 wins,
+  25-28 unresolved, 0-5 losses depending on that draw. The shipped-defaults
+  column keeps its 11 / 2 / 0 in **both** passes, but on margin rather than
+  immunity — those cells carry the same penalty at 1.02x-1.12x and stay inside
+  the band.
+  **No code fix, deliberately.** There is no defect to repair: the compiler
+  emitted the same program and the runtime executed the same instructions.
+  Padding `par_runtime.c` back to a lucky offset would be tuning the compiler
+  on one program's timing, which is the corpus-keyed codegen Dig 3 and Dig 7
+  both declined, and the next commit of any size re-rolls it anyway.
+  **One lever measured, not adopted:** adding `-falign-functions=64` to the
+  link removes the sensitivity outright — at pads 0, 4, 32, and 68 the cell
+  reads 0.1459, 0.1461, 0.1460, and 0.1438 s, so the three pathological draws
+  vanish. That is a whole-compiler codegen-policy change to
+  `HOST_OPTIMIZATION_ARGUMENTS` with its own code-size price and its own
+  measurement campaign to run; it is recorded here as an available remedy and
+  nothing in this batch adopts it.
 - **Probe re-runs at the branch tip, interleaved min-of-7.** `q4.wf` seq
   0.4498, W=1 0.4490, W=4 0.1935, W=8 0.2141, W=64 0.2849, default 0.1960 s;
   `bt.wf` seq 0.1715, W=1 0.1697, W=8 0.0437, W=64 0.0615, default 0.0407 s.
