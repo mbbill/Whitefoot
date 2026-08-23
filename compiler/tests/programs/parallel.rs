@@ -4,9 +4,11 @@
 //! with a per-node measure whose walk is bounded by the metric table's own
 //! length, and once with a measure whose bound comes from the caller and is
 //! therefore carried by a claim. The two folds differ in nothing else, so the
-//! program isolates exactly what the permission judgment adds: the same
-//! sibling pair is permitted in both, and only the claim-free one is eligible
-//! for actualization.
+//! program isolates exactly what the permission judgment does with a claim in
+//! the call closure — and since batch 0077 the answer is *nothing*: both folds
+//! are permitted, both are eligible, and both are handed out. The claim is the
+//! writer's lemma, so a correct program traps under no schedule and the
+//! guarantee it would otherwise buy is one only a defective program collects.
 //!
 //! The program publishes the exact bits of both folds, so any divergence
 //! anywhere in either tree is a divergence in the published bytes. Whether the
@@ -22,60 +24,75 @@
 use super::support::{
     build_program, compile_program, compile_program_with_overlap, compile_programs,
     compile_programs_with_overlap, corpus_program_files, program_permission_ledger,
+    run_counting_grants,
 };
 use whitefoot::module_requires_parallel_runtime;
 
-/// The claim-free fold is handed out and the claim-bearing one is not, in the
-/// same module, from the same source shape.
+/// Both folds are handed out, in the same module, from the same source shape.
 ///
-/// This is the whole point of the demo: the difference between the two folds
-/// is one claim site in a callee, and that difference is visible in the
-/// emitted code as an outlined thunk, a lane offer, and a join present in one
-/// function and absent from the other.
+/// This is the redirect made visible in emitted code. The two folds differ by
+/// one claim site in a callee, and that difference used to be the difference
+/// between an outlined thunk, a lane offer, and a join — and none of the
+/// three. Both now carry all three.
+///
+/// The negative control is `@wf_measure_band`, the callee that actually holds
+/// the claim: it sits in no permitted pair, so it must still name no part of
+/// the runtime. It is checked for the runtime's real symbol prefix `wf__par_`.
+/// The assertion this case replaced looked for `wf_par` — with one underscore
+/// — which no emitted symbol can contain, since every runtime symbol reserves
+/// `wf__par_`. It could not have failed, and so said nothing about the fold it
+/// was written to describe.
 #[test]
-fn only_the_claim_free_fold_is_handed_out() {
+fn both_folds_are_handed_out() {
     let llvm = compile_program_with_overlap("par_layout.wf");
     assert!(
         module_requires_parallel_runtime(&llvm),
         "a module with an eligible site must ask for the runtime"
     );
 
-    let layout = function_body(&llvm, "@wf_layout");
-    assert!(
-        layout.contains("= call ptr @wf__par_claim(i64 ptrtoint"),
-        "the claim-free fold must claim a lane for its first child call:\n{layout}"
-    );
-    assert!(
-        layout.contains(", ptr @wf__par_thunk_"),
-        "the claimed lane must be published the outlined call:\n{layout}"
-    );
-    assert!(
-        layout.contains("call void @wf__par_join(ptr"),
-        "the claim-free fold must join what it offered:\n{layout}"
-    );
+    for symbol in ["@wf_layout", "@wf_layout_banded"] {
+        let fold = function_body(&llvm, symbol);
+        assert!(
+            fold.contains("= call ptr @wf__par_claim(i64 ptrtoint"),
+            "{symbol} must claim a lane for its first child call:\n{fold}"
+        );
+        assert!(
+            fold.contains(", ptr @wf__par_thunk_"),
+            "{symbol} must publish the outlined call to the claimed lane:\n{fold}"
+        );
+        assert!(
+            fold.contains("call void @wf__par_join(ptr"),
+            "{symbol} must join what it offered:\n{fold}"
+        );
+    }
 
-    let banded = function_body(&llvm, "@wf_layout_banded");
+    let measure = function_body(&llvm, "@wf_measure_band");
     assert!(
-        !banded.contains("wf_par"),
-        "a fold whose closure reaches a claim must name no part of the runtime:\n{banded}"
+        measure.contains("call void @wf_trap("),
+        "the negative control must be the function that carries the claim:\n{measure}"
+    );
+    assert!(
+        !measure.contains("wf__par_"),
+        "a callee in no permitted pair must name no part of the runtime:\n{measure}"
     );
 }
 
-/// The ledger says which pair was permitted, which was eligible, and why the
-/// other one was not, naming the callee the claim was found through.
+/// The ledger reports both folds identically, and reports no claim-derived
+/// verdict at all: `not-actualizable` is a verdict class that no longer exists.
 #[test]
-fn the_ledger_separates_the_two_folds_by_their_claim_closures() {
+fn the_ledger_reports_both_folds_eligible() {
     let ledger = program_permission_ledger("par_layout.wf").join("\n");
     assert!(
         ledger.contains("pair(layout, layout)  eligible"),
         "the claim-free fold's child pair must be reported eligible:\n{ledger}"
     );
     assert!(
-        ledger.contains(
-            "pair(layout_banded, layout_banded)  not-actualizable: 1 claim site via measure_band"
-        ),
-        "the claim-bearing fold's child pair must be reported permitted and \
-         not actualizable, naming the callee that carries the claim:\n{ledger}"
+        ledger.contains("pair(layout_banded, layout_banded)  eligible"),
+        "the claim-bearing fold's child pair must be reported eligible too:\n{ledger}"
+    );
+    assert!(
+        !ledger.contains("not-actualizable"),
+        "no verdict may still be withheld for a reachable claim:\n{ledger}"
     );
 }
 
@@ -148,6 +165,50 @@ fn the_layout_program_publishes_one_byte_sequence_at_every_worker_count() {
             "WF_WORKERS={named} moved a byte of the result"
         );
         assert!(overlapped.stderr.is_empty(), "WF_WORKERS={named}");
+    }
+}
+
+/// The claim-bearing fold is granted real lanes, and granting them moves no
+/// byte of what the program publishes.
+///
+/// This is the redirect's payoff measured rather than argued. Every other case
+/// here would pass against a runtime that refused every lane, because refusing
+/// is a correct execution and the permission is never an obligation — so
+/// "`layout_banded` now actualizes" has to be read off the runtime's own grant
+/// counter. Before batch 0077 this program's only eligible sites were `build`
+/// and `layout`; `layout_banded` is the fold whose call closure reaches the
+/// claim in `measure_band`.
+#[test]
+fn the_claim_bearing_fold_is_granted_lanes_and_publishes_the_same_bytes() {
+    let llvm = compile_program_with_overlap("par_layout.wf");
+
+    let (sequential_grants, sequential) = run_counting_grants(&llvm, Some("1"));
+    assert_eq!(
+        sequential.status.code(),
+        Some(0),
+        "the sequential execution must succeed"
+    );
+    assert_eq!(
+        sequential_grants, 0,
+        "WF_WORKERS=1 never starts the pool, so it is the honest reference"
+    );
+
+    for workers in [Some("2"), Some("4"), None] {
+        let spelling = workers.unwrap_or("absent");
+        let (granted, published) = run_counting_grants(&llvm, workers);
+        assert_eq!(
+            published.status.code(),
+            Some(0),
+            "WF_WORKERS={spelling} must succeed"
+        );
+        assert!(
+            granted > 0,
+            "WF_WORKERS={spelling} was granted no lane, so nothing was overlapped"
+        );
+        assert_eq!(
+            published.stdout, sequential.stdout,
+            "WF_WORKERS={spelling} moved a byte of the result"
+        );
     }
 }
 

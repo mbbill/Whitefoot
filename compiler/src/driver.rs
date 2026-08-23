@@ -553,12 +553,12 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
 
 ";
 
-    /// The ledger states a permitted and eligible pair, and a permitted pair
-    /// that a reachable claim keeps out of reach of actualization, with the
-    /// claim count and the function the claim sits in. Both lines are exactly
-    /// the developer-channel form of DESIGN section 4.
+    /// The ledger states an eligible pair and the chain it composes into, and
+    /// says the same of a pair whose recursive closure carries a `claim` —
+    /// which is the redirect made visible on the developer channel: the claim
+    /// used to produce a `not-actualizable` line here and now produces none.
     #[test]
-    fn the_permission_ledger_reports_eligible_and_not_actualizable_pairs() {
+    fn the_permission_ledger_reports_eligible_pairs_and_their_chains() {
         let eligible = format!(
             "{TREE_PRELUDE}fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b) {{
   match deref(deref(node)) {{
@@ -600,8 +600,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
             "PAR chain       fold.wf:22  run(fold, fold)  2 members through line 23"
         );
 
-        // The same tree fold with one claim in the recursive closure. P still
-        // holds; the line reports why the overlap is not actualized.
+        // The same tree fold with one claim in the recursive closure. It reads
+        // exactly like the fold above: the claim is the writer's lemma, not a
+        // reason to sequentialize a correct program.
         let claiming = format!(
             "{TREE_PRELUDE}fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b), traps {{
   match deref(deref(node)) {{
@@ -635,31 +636,36 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {{
         let ledger = ledger_of("bubble.wf", claiming.as_bytes());
         assert_eq!(
             ledger[0],
-            "PAR permitted   bubble.wf:22  pair(bubble, bubble)  not-actualizable: 1 claim site via bubble"
+            "PAR permitted   bubble.wf:22  pair(bubble, bubble)  eligible"
+        );
+        assert_eq!(
+            ledger[1],
+            "PAR chain       bubble.wf:22  run(bubble, bubble)  2 members through line 23"
+        );
+        assert!(
+            !ledger.iter().any(|line| line.contains("not-actualizable")),
+            "the not-actualizable verdict class no longer exists:\n{}",
+            ledger.join("\n")
         );
 
-        // `bubble` is not actualizable, so its permitted pair composes into no
-        // chain and gets no `run` line — which is exactly the distinction the
-        // chain lines exist to make visible.
-        //
         // Both programs end with main's own two leaf allocations, which are
         // eligible and do form a chain, and then the branch call that consumes
         // them, which is denied by condition 1. The ledger is in source order,
-        // so those lines follow the recursive one and the file is fully
+        // so those lines follow the recursive ones and the file is fully
         // reported.
         assert_eq!(
-            ledger[1],
+            ledger[2],
             "PAR permitted   bubble.wf:34  pair(boxed_leaf, boxed_leaf)  eligible"
         );
         assert_eq!(
-            ledger[2],
+            ledger[3],
             "PAR chain       bubble.wf:34  run(boxed_leaf, boxed_leaf)  2 members through line 35"
         );
         assert_eq!(
-            ledger[3],
+            ledger[4],
             "PAR denied      bubble.wf:35  pair(boxed_leaf, boxed_branch)  condition 1: the operands of s2 read what s1 defines"
         );
-        assert_eq!(ledger.len(), 4);
+        assert_eq!(ledger.len(), 5);
     }
 
     /// One denial line per numbered condition, each citing that condition and

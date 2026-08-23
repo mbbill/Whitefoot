@@ -3,12 +3,11 @@
 //! and one more for a refused loop a hand-written index split would reach.
 //!
 //! The ledger is the visible half of the permission judgment. It states, for
-//! every pair the judgment looked at, whether overlap is permitted, whether a
-//! permitted overlap is actualizable, and — when it is not permitted — exactly
-//! which numbered condition refused it and at which source text. That makes a
-//! sequentialization a reported fact rather than a silent one, and gives a
-//! writer a gradient: a condition-2 line names the two places to separate, a
-//! not-actualizable line names the claim that keeps the overlap out of reach.
+//! every pair the judgment looked at, whether overlap is permitted and — when
+//! it is not — exactly which numbered condition refused it and at which source
+//! text. That makes a sequentialization a reported fact rather than a silent
+//! one, and gives a writer a gradient: a condition-2 line names the two places
+//! to separate.
 //!
 //! Pairs alone do not say what will be handed out. A chain of three permitted
 //! pairs and three separate permitted pairs read identically as pairs and are
@@ -81,8 +80,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
         for pair in &permissions.pairs {
             let (logical_path, line) = source.location(&pair.first.statement)?;
             let verdict = match &pair.verdict {
-                PermissionVerdict::PermittedEligible
-                | PermissionVerdict::PermittedNotActualizable { .. } => "permitted",
+                PermissionVerdict::PermittedEligible => "permitted",
                 PermissionVerdict::Denied(_) => "denied",
             };
             let detail = detail(&pair.verdict, source)?;
@@ -166,14 +164,6 @@ fn detail<Source: LedgerSource>(
 ) -> Result<String, Source::Error> {
     Ok(match verdict {
         PermissionVerdict::PermittedEligible => "eligible".to_owned(),
-        PermissionVerdict::PermittedNotActualizable {
-            claim_sites,
-            witness,
-        } => format!(
-            "not-actualizable: {claim_sites} claim {} via {}",
-            if *claim_sites == 1 { "site" } else { "sites" },
-            witness.function
-        ),
         PermissionVerdict::Denied(denial) => denied_detail(denial, source)?,
     })
 }
@@ -269,14 +259,6 @@ fn loop_detail<Source: LedgerSource>(
     };
     Ok(match &judged.verdict {
         LoopVerdict::PermittedEligible => format!("eligible; {carried}"),
-        LoopVerdict::PermittedNotActualizable {
-            claim_sites,
-            witness,
-        } => format!(
-            "not-actualizable: {claim_sites} claim {} via {}; {carried}",
-            if *claim_sites == 1 { "site" } else { "sites" },
-            witness.function
-        ),
         LoopVerdict::Denied(denial) => loop_denied_detail(denial, source)?,
     })
 }

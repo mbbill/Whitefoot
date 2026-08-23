@@ -202,6 +202,9 @@ fn emit_llvm_for(
         )
         .map_err(|_| BackendFailure::TextEmission)?;
     }
+    if !claim_records.is_empty() {
+        text.push_str(TRAP_LATCH);
+    }
     // The mandatory [DIAG-3] record and the qualified system interface can
     // need the same host symbol; one module declares it once.
     let mut system_declarations = system.declarations;
@@ -222,9 +225,7 @@ fn emit_llvm_for(
         text.push('\n');
     }
     if !claim_records.is_empty() {
-        text.push_str(
-            "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n",
-        );
+        text.push_str(TRAP_WRITER);
     } else if has_matches {
         text.push('\n');
     }
@@ -1479,6 +1480,36 @@ fn invalid_tag_label(block: IrBlockId) -> String {
 fn source_symbol(name: &str) -> String {
     format!("wf_{name}")
 }
+
+/// The first-trap-wins latch, and the only state the trap path carries.
+///
+/// Zero until some thread traps. A module that contains no `claim` contains
+/// neither this nor [`TRAP_WRITER`], and no path outside [`TRAP_WRITER`] ever
+/// reads or writes it, so a program that does not trap pays nothing for it.
+const TRAP_LATCH: &str = "@.wf_trap.latch = private global i32 0, align 4\n";
+
+/// The mandatory [DIAG-3] record writer, reached from every `claim` that
+/// evaluates false, and the sole writer-reachable runtime trap [SCOPE-4].
+///
+/// The first thread to arrive takes [`TRAP_LATCH`] and owns the trap: it
+/// writes its complete record to standard error and aborts the process without
+/// unwinding. Every other thread that arrives while the latch is taken parks,
+/// and the winner's abort takes it down with the process. So an execution that
+/// violates the contract on several threads at once still produces exactly one
+/// well-formed record rather than two interleaved ones, and [PAR-1]'s
+/// erroneous-execution guarantee is met by construction instead of by refusing
+/// to overlap the claim-bearing calls of correct programs.
+///
+/// *Which* claim wins may depend on the schedule, and that is the whole of what
+/// a permitted overlap can change about a trap. The record's bytes are fixed by
+/// the claim that wins [DIAG-3] — no worker, thread, or dynamic stack appears
+/// in them — so a correct program, which reaches no trap at all, observes
+/// nothing here.
+///
+/// The park spins on a *volatile* load rather than an empty loop, so no
+/// optimizer may delete the loop and let a losing thread fall through into a
+/// second record.
+const TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  %claimed = cmpxchg ptr @.wf_trap.latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %claimed, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr @.wf_trap.latch, align 4\n  br label %park\n}\n\n";
 
 pub(super) fn trap_record(site: &IrClaimSite) -> Vec<u8> {
     let components = site

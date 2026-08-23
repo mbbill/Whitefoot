@@ -10,7 +10,7 @@
 
 use crate::SemanticOutcome;
 
-use super::super::loop_permission::{LoopDenial, LoopPermission, LoopVerdict};
+use super::super::loop_permission::{LoopCombine, LoopDenial, LoopPermission, LoopVerdict};
 use super::super::permission::PermissionMetadata;
 use super::with_semantics;
 
@@ -973,15 +973,15 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 // ----------------------------------------------------------------------
-// Eligibility
+// Claims in the body and in its call closure
 // ----------------------------------------------------------------------
 
-/// A `claim` in the loop body costs eligibility, not permission: it is a trap
-/// edge whose [DIAG-3] record an overlapped schedule could otherwise select
-/// between. The witness names the enclosing function, because the closure walk
-/// inspects callees and cannot see a claim written here.
+/// A `claim` written in the loop body is an ordinary statement here. It writes
+/// nothing, and it leaves the loop only when it is false — an erroneous
+/// execution, whose narrowed guarantee the trap latch meets. The loop is
+/// permitted, and its accumulator still carries the fold.
 #[test]
-fn a_claim_in_the_body_is_permitted_but_not_actualizable() {
+fn a_claim_in_the_body_is_permitted() {
     let source = br#"command fn main() -> status: own ExitStatus traps {
   let total = 0_u64;
   let limit = 4096_u64;
@@ -994,29 +994,44 @@ fn a_claim_in_the_body_is_permitted_but_not_actualizable() {
 "#;
     let table = permission_of(source);
     let judged = only_loop(&table, "main");
-    let LoopVerdict::PermittedNotActualizable {
-        claim_sites,
-        witness,
-    } = &judged.verdict
-    else {
+    assert_eq!(judged.verdict, LoopVerdict::PermittedEligible);
+    assert_eq!(judged.combines, vec!["+wrap"]);
+    let actualization = judged
+        .actualization
+        .as_ref()
+        .expect("a permitted reduction carries its accumulator");
+    assert_eq!(actualization.combine, LoopCombine::AddWrap);
+}
+
+/// The claim's predicate is still read like any other expression, so a claim
+/// that reads the accumulator is still a second read of it and condition 1
+/// still refuses. Admitting the statement did not stop counting what it reads.
+#[test]
+fn a_claim_reading_the_accumulator_is_still_a_read() {
+    let source = br#"command fn main() -> status: own ExitStatus traps {
+  let total = 0_u64;
+  for @sum i in 0_u64..16_u64 {
+    claim running_small: ilt(total, 4096_u64) because "the range is short";
+    set total = total +wrap i;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let judged = only_loop(&table, "main");
+    let LoopVerdict::Denied(LoopDenial::AccumulatorRead { reads, .. }) = &judged.verdict else {
         panic!(
-            "expected a not-actualizable verdict, got {:?}",
+            "a claim reading the accumulator must still refuse, got {:?}",
             judged.verdict
         );
     };
-    assert_eq!(*claim_sites, 1);
-    assert_eq!(witness.function, "main");
-    assert_eq!(witness.claim, "index_small");
-    assert!(
-        !judged.advises_split,
-        "a recursion would carry the same claim"
-    );
+    assert_eq!(*reads, 2, "the claim's read counts beside the combine's");
 }
 
-/// A `claim` in the body's call closure costs eligibility the same way, and
-/// the witness names the callee that carries it.
+/// A `claim` in the body's call closure is likewise no reason to refuse. The
+/// judgment no longer walks the call graph for claims at all.
 #[test]
-fn a_claim_in_the_call_closure_is_permitted_but_not_actualizable() {
+fn a_claim_in_the_call_closure_is_permitted() {
     let source = br#"fn narrow(v: own u64) -> result: own u64 traps {
   claim value_small: ilt(v, 64_u64) because "the caller keeps it small";
   return v;
@@ -1033,18 +1048,11 @@ command fn main() -> status: own ExitStatus traps {
 "#;
     let table = permission_of(source);
     let judged = only_loop(&table, "main");
-    let LoopVerdict::PermittedNotActualizable {
-        claim_sites,
-        witness,
-    } = &judged.verdict
-    else {
-        panic!(
-            "expected a not-actualizable verdict, got {:?}",
-            judged.verdict
-        );
-    };
-    assert_eq!(*claim_sites, 1);
-    assert_eq!(witness.function, "narrow");
+    assert_eq!(judged.verdict, LoopVerdict::PermittedEligible);
+    assert!(
+        judged.actualization.is_some(),
+        "a permitted loop over a claim-bearing callee still carries its fold"
+    );
 }
 
 // ----------------------------------------------------------------------

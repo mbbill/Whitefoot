@@ -17,6 +17,30 @@ Consequence adopted: the counted-loop ledger hint (batch 0076) is a bridge,
 not the end state — the loop form itself must receive permission. This is
 the plan's W4 "indexed-loop permission (Tier A)" made current.
 
+Second chartering direction, owner, 2026-08-23, verbatim, redirecting the
+claim-free eligibility condition that batches 0074 and 0077-A both carried:
+
+> 我感觉这和claim的初衷有一点点区别。claim是帮助checker证明程序,如果checker
+> 完备,那么任何一个claim都不会trap。如果checker不完备但是每一个claim都能人工
+> 证明成立,那么这个程序也不可能trap(所有trap都是死代码)。唯一可能trap的情况
+> 就是checker不完备(显然)+claim有错。也就是说一个*正确*的wf程序是不可能trap
+> 的。只要trap了,说明程序本身是错误的,某一个claim是非法的。这时候我认为程序
+> 设计不应该为错误的程序垫背。claim目前是唯一一个地方我们把信任交给非作者的,
+> 比如AI写完了以后人类验收。所以我觉得应该假定claim是正确的,在这种情况下因为
+> 要为了一个错误程序垫背而不给一个正确程序进行合理优化,我觉得这个取舍是不合
+> 理的。
+
+Consequence adopted: the schedule-unobservability guarantee of [PAR-1] and
+[PAR-2] becomes **conditional on contract compliance**, mirroring [SCOPE-3]'s
+conditional form. A false executed claim is already the sole writer-reachable
+language runtime contract violation [SCOPE-4], so an execution containing one
+is *erroneous*; for an erroneous execution the guarantee narrows to one
+well-formed [DIAG-3] record of *a* claim whose predicate evaluated false, with
+memory safety, abort-without-unwind, and the absence of external effects from
+overlapped regions unchanged, and with *which* such claim it names left to the
+schedule. Correct executions keep the guarantee whole. The claim-free
+eligibility gate is deleted from both judgments.
+
 ## Known blockers at charter time (the research program's targets)
 
 1. **Spec**: [PAR-1] judges statement pairs; iterations of one statement
@@ -47,11 +71,23 @@ Spec bytes: a CANDIDATE amendment is expected (branch-autonomous; full
 packet at merge). Protected conformance: coverage for any new rule id will
 be prepared and flagged. No new repository root entries.
 
-Batch A did **not** edit `spec/kernel-spec.md`. The [PAR-2] candidate text,
-its insertion point, its candidate SHA-256, and the native grammar-verifier
-result are prepared below as a merge-time application recipe, following the
+Batch C adds no protected conformance or compliance change of its own: no
+conformance case or verdict is added, modified, deleted, or renamed, and no
+gate, collection path, invocation wiring, or gate-integrity test is touched.
+It **does** supersede the [PAR-1] amendment recipe carried in the phase-1
+merge packet (`docs/ongoing/0074-proof-derived-parallelism.md`, "Required
+before merge" item 2), which is flagged below and is a change the owner
+applies once, at whichever merge lands [PAR-1]. One new file inside an
+existing directory: `compiler/src/backend/tests/trap_latch.rs`. No new
+repository root entry.
+
+No batch of this record edits `spec/kernel-spec.md`. The candidate text, its
+insertion points, its candidate SHA-256, and the native grammar-verifier
+result are prepared below as merge-time application recipes, following the
 batch 0074 pattern; the file's in-tree bytes and recorded digest are
-unchanged, so the landed-archive gate stays green on the branch. **The
+unchanged, so the landed-archive gate stays green on the branch. **Batch C's
+recipes supersede batch A's** — the section below carries the v2 text for both
+rules and batch A's is not to be applied. **The
 protected conformance coverage annotation [PAR-2] needs is not landed and is
 not prepared here: it is prepared with batch B**, alongside [PAR-1]'s, so the
 two annotations reach the owner in one protected-class audit rather than two.
@@ -201,6 +237,168 @@ they correct.
   moved no accepted program and no published byte, only the allowance, and it
   is exactly why the constant below was calibrated after the fix and not
   before.
+
+- C1, the claim-free actualizability gate deleted from both judgments. The
+  window judgment's `claim_closure` reverse walk, its `reaches_claim`
+  precomputation, its `ClaimWitness`, and the `PermittedNotActualizable`
+  verdict class are gone, and with them the whole call-graph machinery
+  `permission.rs` carried: nothing in the file needs `direct_callees` any
+  more, so `Program` is now the functions and their signatures. The loop
+  judgment loses its `roots` and `claims` collection the same way, and a
+  `claim_stmt` in a loop body is now an ordinary statement whose predicate is
+  read like any other expression. **Every other condition is untouched**, and
+  the one place a claim still refuses is unchanged and now pinned by a case
+  that says so: a claim written *between* the two calls of a window is an
+  exit-bearing interposed form and still denies under condition 4.
+- C2, the trap latch. `wf_trap` — the one path a false claim reaches, emitted
+  into every module that carries a `claim` and independent of `--par` — takes
+  a process-wide latch by `cmpxchg` before its first byte. The winner writes
+  its complete [DIAG-3] record and aborts; a thread that loses parks on a
+  volatile load, and the winner's abort takes it down with the process. The
+  cost off the trap path is zero: the latch is one private global that nothing
+  outside `wf_trap` reads or writes.
+- C3, the tests. `backend/tests/trap_latch.rs` carries the erroneous-execution
+  guarantee: forty runs of a two-false-claim race at `WF_WORKERS=4`, each
+  producing exactly one record whose [DIAG-3] shape is parsed rather than
+  substring-matched; the sequential schedule's byte-identical record at
+  `WF_WORKERS` 0 and 1; a single-false-claim program byte-identical at five
+  worker settings; and **the control that gives the other three teeth** —
+  the same emitted module with the latch's branch forced, which writes two
+  records. Measured detection for the control was 200 of 200 runs.
+- C3, the payoff pinned rather than asserted:
+  `the_claim_bearing_fold_is_granted_lanes_and_publishes_the_same_bytes`
+  reads the runtime's own grant counter for `par_layout.wf`, because every
+  other case in that file passes just as well against a runtime that refused
+  every lane.
+- C4, the [PAR-1] v2 and [PAR-2] v2 recipes, below, superseding both the
+  phase-1 packet's [PAR-1] recipe and batch A's [PAR-2] recipe.
+- **A test that could not have failed, found and replaced.**
+  `only_the_claim_free_fold_is_handed_out` asserted that the claim-bearing
+  fold's body did not contain `"wf_par"` — with one underscore. Every runtime
+  symbol reserves `wf__par_`, so no emitted module can contain that string and
+  the assertion was vacuous from the day it was written: the case's stated
+  subject, that a claim-bearing fold names no part of the runtime, was never
+  checked. Its replacement checks `wf__par_` and puts the negative control on
+  `@wf_measure_band`, the callee that actually carries the claim and sits in
+  no permitted pair.
+- **The doctrine this redirect restores was already on file.** DESIGN.md §0
+  records the owner's ruling of 2026-08-21 — "如果程序的trap只可能由审计失败
+  的程序产生……我们应该不需要考虑这种情况" — and DESIGN.md §1 then derived
+  claim-free eligibility from it, which is the opposite conclusion. Both §1
+  bullets are struck through in place with the withdrawal dated, rather than
+  rewritten, so the dossier still reads as the contract it was.
+
+## What the redirect actualized, measured
+
+**Machine was not quiet.** Apple M4, 10 cores; other agent sessions were
+running throughout. One-minute load average 5.1 before the timing pass and 3.4
+after. Every ratio below is subject to the protocol's 0.83x-1.20x unresolved
+band, and each was reproduced in at least two independent interleaved
+rotations. `par_layout.wf` compiled by the branch-tip compiler and by the
+pre-redirect compiler at `ddf1d139`, both `cargo build --release`, both linked
+by `/usr/bin/clang -O2` with the same embedded runtime.
+
+**Verdicts that moved, over every `.wf` source in the repository.** 776
+sources judged by both compilers with `--par --par-ledger`. **Eleven pairs
+moved from `not-actualizable` to `eligible`**, each gaining the `chain` line
+its two members now compose into; 319 ledger lines became 330. **No denial
+moved, no verdict narrowed, and no loop verdict moved anywhere** — the loop
+half of the redirect widens nothing in today's corpus, because no counted loop
+the repository contains was refused for a claim. Newly eligible in
+`tests/programs`: `par_layout.wf` (`layout_banded`), `prefix_expression.wf`
+(`evaluate`), `recursive_tree.wf` (`count`). One conformance case,
+`x-borrowed-pool-tree-run.wf` (`checksum`, four claim sites). Seven research
+probes, listed in `probes/README.md`.
+
+**Grants, read from the runtime's own counter.** `par_layout.wf`, functions
+that hand out: **2 to 3**.
+
+| WF_WORKERS | 1 | 2 | 4 | 8 | absent |
+|---|---|---|---|---|---|
+| grants before | 0 | 1 052 | 6 128 | 13 709 | 14 694 |
+| grants after | 0 | 2 772 | **12 617** | **28 251** | 29 270 |
+
+Published bytes are `dd3b6c59c5c38307` in all ten runs.
+
+**Wall clock**, minimum of 18 interleaved rounds, no cell twice in a row:
+
+| WF_WORKERS | before (s) | after (s) | after/before |
+|---|---|---|---|
+| 1 | 0.8076 | 0.9595 | **1.19 (regression)** |
+| 2 | 0.5595 | 0.4640 | 0.83 |
+| 4 | 0.5845 | 0.3291 | **0.56** |
+| 8 | 0.5442 | 0.2380 | **0.44** |
+| absent (shipped default) | 0.5607 | 0.2278 | **0.41** |
+
+One published-byte digest across every cell and every round.
+
+### FLAGGED: a 1.19x regression in the `--par` build's sequential world
+
+**The default build is untouched: 1.00x** (0.7996 before, 0.8009 after,
+minimum of 30 interleaved rounds), so the trap latch costs nothing, which is
+what it was built to cost. The regression is confined to a `--par` build run at
+`WF_WORKERS=1`, and it is real: three independent rotations of 18, 30, and 24
+rounds all put it at 1.19x-1.20x on minimum and on median. Before this batch
+that cell matched the default build exactly (1.00x); after it, it is 1.19x
+slower than the default build.
+
+The cause is the clone set, not the semantics. `layout_banded` is now on a path
+to a handed-out call, so the two-worlds lowering gives it a sequential clone,
+and the module carries the fold twice. **What was ruled out, by experiment
+rather than by argument:**
+
+- *the trap latch* — the default build, which carries the latch and nothing
+  else of this batch, is 1.00x;
+- *module size and code layout* — the pre-redirect module with an extra,
+  externally-visible copy of the fold appended, bringing it to 1 894 post-`-O2`
+  lines against the redirect's 1 934, runs at **1.00x**;
+- *a wrong sequential world* — `wf__par_seq_main` calls
+  `wf__par_seq_layout_banded`, which calls only itself, `wf_cascade`, and
+  `wf_measure_band`, and names no runtime symbol;
+- *a bad clone* — the clone's emitted IR is byte-identical to the default
+  build's own lowering of that function after renaming;
+- *lost inlining* — `wf_measure_band` and `wf_cascade` are fully inlined in
+  both, and the hot function's post-`-O2` IR is identical modulo SSA numbering
+  and one inverted comparison.
+
+So the cost sits below the IR the compiler emits, in what the host toolchain
+does with a module whose entry carries two repetition loops over two distinct
+callees instead of one. **This belongs to whoever owns the `--par` lowering,
+not to this batch's brief**, and it is recorded rather than chased further: it
+touches no shipped build, moves no byte, and is bought with 2.4x at the shipped
+worker setting. It does, however, dent the property `e82c113f` established —
+that asking for `--par` costs a program nothing when it gets no lane — for any
+program the redirect adds to the clone set.
+
+## The alternative this redirect rejected, for the design tree
+
+The lead records the re-decision; this is the executor's statement of what was
+weighed, so the tree entry is not written from memory.
+
+**Rejected: elision-rank join arbitration.** The alternative to a conditional
+guarantee is to keep the unconditional one and pay for it — arbitrate, at the
+join, which of several trapping lanes owns the report, by a rank derived from
+each lane's position in the source order the elision defines, so the record an
+overlapped execution writes is the record the sequential execution would have
+written. It is on file from batch 0074 (`debate/d1-defense.md`, the EFF-4
+two-half ruling) and was deferred there rather than refused.
+
+It is refused now, on the ground the owner's direction states: every byte of
+that machinery exists to make a *defective* program's report reproducible, and
+it is paid for by every *correct* program, which cannot reach it. The cost is
+not only the arbitration — it is a coordinator, a rank the lowering has to
+compute and carry, parked lanes with a wakeup protocol, and a join that can no
+longer be a plain wait-for-all. Against that, the latch is one global and one
+`cmpxchg` on a path a correct program never executes, and the reproduction the
+arbitration would have bought is available for free at `WF_WORKERS=1`, which
+is deterministic and which a defective program's owner can always run.
+
+The narrower rejected variant, **write every record and let them interleave**,
+is refused for a different reason: [DIAG-3] fixes exact record bytes, and two
+concurrent writers produce neither one record nor two clean ones. The measured
+control in `trap_latch.rs` shows what it produces instead — two records in 200
+of 200 runs on this machine, which is the good case; a partial interleave is
+the bad one.
 
 ## What the judgment reaches today
 
@@ -423,10 +621,13 @@ Exact before: `tests/conformance/manifest.jsonl` ends at line 420 with the
 `GATE-2` annotation; it contains no `PAR-1` and no `PAR-2` row of any kind
 (`grep -c '"rule": "PAR-' tests/conformance/manifest.jsonl` is 0).
 
-Exact after: two lines appended, in this order, each one line of JSON:
+Exact after: two lines appended, in this order, each one line of JSON. **The
+[PAR-1] line's reason text was revised by batch C**, to cover the
+erroneous-execution clause the [PAR-1] v2 recipe adds; nothing about the
+manifest's in-tree bytes changed, because neither line is landed:
 
 ```
-{"rule": "PAR-1", "covered_by": "compiler-permission-judgment", "reason": "A permission rule with nothing in a program to accept or reject: it grants an implementation the room to overlap two sibling calls and forbids nothing a writer can write. Every accepted program is accepted identically whether or not the permission is taken, and the compiler's own actualization tests establish the one observable consequence — that a taken overlap publishes the bytes the sequential schedule publishes — by running one emitted module at every worker count and against the lowering that overlaps nothing. A conformance case could only re-run a program and observe no difference, which is a statement about the implementation's schedule rather than about a source verdict."}
+{"rule": "PAR-1", "covered_by": "compiler-permission-judgment", "reason": "A permission rule with nothing in a program to accept or reject: it grants an implementation the room to overlap two sibling calls and forbids nothing a writer can write. Every accepted program is accepted identically whether or not the permission is taken, and the compiler's own actualization tests establish the one observable consequence — that a taken overlap publishes the bytes the sequential schedule publishes — by running one emitted module at every worker count and against the lowering that overlaps nothing. The rule's erroneous-execution clause is covered by the same tests and for the same reason: a false executed claim is a contract violation, so the clause governs only defective programs, and the compiler's cases run one such program many times at several worker counts, parse the single mandatory record each run produces, and carry a control that defeats the trap latch to show that the single record is a mechanism and not an accident. A conformance case could only re-run a program and observe no difference, which is a statement about the implementation's schedule rather than about a source verdict."}
 {"rule": "PAR-2", "covered_by": "compiler-permission-judgment", "reason": "The counted-loop half of the same permission, and covered for the same reason: it grants an implementation the room to overlap the iterations of a counted for and to choose the combination tree over the enumerated exactly-associative operations, and forbids nothing. No program's acceptance moves and no verdict moves. The one observable consequence — that a regrouped fold publishes the bytes the sequential fold publishes — is established by the compiler's own cases, which run one emitted module at ten worker settings, against the lowering that splits nothing, and against a two-sidedness table over every admitted combine at every width it carries."}
 ```
 
@@ -449,16 +650,115 @@ No conformance *case* is added, modified, deleted, or renamed by this batch,
 and no case verdict moves. The delta is exactly the two annotation lines
 above.
 
-## The [PAR-2] merge-time application recipe
+## The merge-time application recipes: [PAR-1] v2 and [PAR-2] v2
 
-Everything below is applied to `spec/kernel-spec.md` in the activation change,
-not on this branch. Applying exactly these three edits to the branch-tip file,
-whose SHA-256 is
-`f3e26631c6f168cdcb0add1f1dec6a5e40867d7469150a3854f1878c56eec0f9`, produces a
-candidate whose SHA-256 is
-`00fa4b0233256b4a2b963d57b66d3a37e0e39cab43a7fe34a24578e5ec9791e3`
-(405523 bytes, 137 bracketed rule ids). The recipe is reproducible: it is the
-only content this batch computed the digest over.
+**These two recipes supersede two earlier ones and are the only ones to
+apply.** They replace the [PAR-1] amendment recipe carried in the phase-1
+merge packet (`docs/ongoing/0074-proof-derived-parallelism.md`, "Required
+before merge" item 2), and batch A's [PAR-2] recipe recorded earlier in this
+file. Nothing below is applied to `spec/kernel-spec.md` on this branch; the
+file's in-tree bytes and recorded digest are unchanged at
+`f3e26631c6f168cdcb0add1f1dec6a5e40867d7469150a3854f1878c56eec0f9`, 3,225
+lines, 399,265 bytes, so the landed-archive gate stays green here.
+
+Both candidates were produced by applying the exact edits below to scratch
+copies and hashing the result — reproducible from this record and nothing
+else. The owner applies **one** of them:
+
+| candidate | apply when | SHA-256 | size |
+|---|---|---|---|
+| [PAR-1] v2 alone | [PAR-1] activates without [PAR-2] (the phase-1 merge) | `81cbe9685b50303b40b7b64817ea5ff21f85391a2d4ea2ac6a5a52a222ce0eaf` | 401,014 bytes, 3,231 lines, 136 rules |
+| [PAR-1] v2 + [PAR-2] v2 | both rules activate in one change | `cec3e25eb8898868eeda1dbfa4acb63650f0088ae6e908a724ce6745ae49b5e9` | 407,375 bytes, 3,256 lines, 137 rules |
+
+The second is exactly the first with the [PAR-2] edits applied on top, so the
+two are a chain and not two alternatives to reconcile.
+
+**Grammar verification.** Neither adds a production, token, or spelling. The
+native verifier, which reuses the compiler's own lexer and parser, confirms it
+on both candidates:
+
+```
+$ whitefoot-grammar spec/kernel-spec.md <candidate>
+grammar-preserving candidate verified by the active compiler: 74 productions,
+93 decisions, 105 terminal predicates
+```
+
+identical to the installed inventory in both runs.
+
+### [PAR-1] v2 — six edits
+
+**Edit 1 — the caller-side operand-read half of the footprint.** This is the
+phase-1 packet's first amendment sentence, carried forward unchanged because
+it is still unlanded and still needed. Insert it immediately *before* the
+sentence beginning "A footprint element whose caller place the implementation
+does not resolve" (the file's line 1981):
+
+```
+Evaluating a statement's own argument expressions is part of that statement and therefore part of the overlap, so each call's written footprint also overlaps no place the other statement's argument expressions read; taking the address of a place is not reading it, and both directions are required because which statement's argument evaluation an overlap moves is the implementation's choice.
+```
+
+**Edit 2 — the unresolved-element sentence** (the file's line 1981) becomes:
+
+```
+A footprint element whose caller place the implementation does not resolve overlaps every place, and so does a place read by an argument expression whose caller place the implementation does not resolve, so an unresolved element denies permission rather than granting it.
+```
+
+**Edit 3 — delete the eligibility condition.** Remove the file's line 1984
+entirely, leaving no blank line behind:
+
+```
+No function reachable from either callee through the ordinary call graph contains a `claim_stmt` [CLM-1].
+```
+
+This is the edit the 2026-08-23 direction charters, and it replaces the
+phase-1 packet's third amendment sentence, which appended to this condition
+rather than removing it. That sentence is withdrawn with the condition it
+qualified.
+
+**Edit 4 — the observable identity becomes conditional.** Replace the file's
+line 1988:
+
+```
+That identity holds in every execution, not in a typical execution or in some execution.
+```
+
+with these seven lines:
+
+```
+That identity is conditional on contract compliance, exactly as [SCOPE-3]'s freedom from undefined behavior is conditional on its trusted computing base.
+For an execution in which no executed `claim` is false it holds in every execution, not in a typical execution or in some execution.
+An execution in which some executed `claim` is false is erroneous: the program has violated the sole writer-reachable language runtime contract [SCOPE-4], and this rule then requires exactly the following of that execution.
+The process writes exactly one complete [DIAG-3] record, naming one `claim` whose predicate evaluated false, and then aborts the whole process without unwinding and without language cleanup [TRAP-1].
+No second record, and no partial or interleaved record, is written.
+Which such `claim` that record names may depend on the schedule, and is the only thing this specification permits a schedule to select.
+Nothing else narrows for an erroneous execution: it has no undefined behavior [SCOPE-3], no overlapped pair reaches one place except as the disjointness condition above admits, and no statement of a permitted overlap produces an external effect at all, because neither callee's row may carry `external` [EFF-1].
+```
+
+**Edit 5 — the META-5 delta declaration** (the file's line 6). Its final
+sentence becomes:
+
+> The one added rule states when an implementation may overlap the execution
+> of two statements and requires every observable of a permitted overlap to be
+> the source-order execution's, conditional on contract compliance in the sense
+> [SCOPE-4] fixes; it adds no construct, changes no accepted program, changes
+> no verdict, and removes no required check.
+
+**Edit 6 — the selection ground** (the file's line 7). The clause naming the
+recorded evidence becomes:
+
+> whose measured lane-budget results are recorded in
+> `research/investigations/proof-derived-parallelism/`, under the owner's
+> chartering direction of 2026-08-21 and the PROPOSED Current Plan derived
+> from it, and whose eligibility condition on claim-free call closures was
+> withdrawn under the owner's chartering direction of 2026-08-23 in favour of
+> the conditional guarantee this rule now states.
+
+### [PAR-2] v2 — three edits, applied on top of [PAR-1] v2
+
+Batch A's recipe with two changes, both consequences of the same direction:
+its claim-free condition sentence is **deleted**, and its identity sentence is
+replaced by one that shares [PAR-1]'s clause by reference rather than
+restating it. Everything else is byte-identical to batch A's text.
 
 **Edit 1 — the rule block.** Insert the following, preceded by one blank line,
 immediately after [PAR-1]'s closing sentence ("This rule binds neither [CAP-1]
@@ -474,7 +774,6 @@ Every place a footprint of B writes is either that accumulator's whole place or 
 A footprint element whose caller place the implementation does not resolve overlaps every place, so an unresolved element denies permission rather than granting it.
 No effect row of a call in B contains `external` or `blocks`, and no statement of B evaluates a system operation [EFF-1, SYS-2].
 Every normal continuation of every statement of B reaches L's compiler-owned binder update, so no statement of B is a `return_stmt`, a `give_stmt`, a `break_stmt` naming L or a loop enclosing L, or a `let_stmt` selecting `propagate_let_rhs` [FN-1, GIVE-1, ERR-3].
-No statement of B is a `claim_stmt`, and no function reachable from a call of B through the ordinary call graph contains one [CLM-1].
 
 Under a permitted overlap every observable is the observable the same program produces by executing L's iterations in index order: the value of every binding and place, the trap-or-normal outcome, the exact [DIAG-3] record bytes, and the external-effect order [EFF-5] requires.
 Write a0 for the accumulator's value on the true header edge entering the first executed iteration, and t0 through tm for the values the second operand of its writes evaluates to, in the order those writes execute across L's iterations taken in index order.
@@ -483,7 +782,7 @@ An implementation may instead apply that operation over any binary tree whose le
 Every admitted operation is a total function on the complete value set of its type, carries no domain obligation, and is associative on that set — `+wrap` and `*wrap` are the ring operations of the integers modulo two to the width, `iand`, `ior`, and `ixor` are the meet, join, and group operations of the bit vector, `imin` and `imax` are the meet and join of that type's total order, and `band`, `bor`, and `bxor` are the two-element cases of the same three — so every such tree denotes one value of that type and the accumulator's value at L's continuation is that one value in every execution.
 No further operation is admitted: `+`, `+defined`, and `+checked` each attach a domain obligation or a `Result` route to every application, `+sat` is not associative, and no float operation of [OP-1] is associative, so recombining a `fadd.strict` or `fmul.strict` fold could change published bytes.
 This rule uses associativity alone: it never reorders leaves, requires no commutativity, and names no identity element, so a range of iterations that writes the accumulator not at all contributes no leaf and is combined with nothing.
-That identity holds in every execution, not in a typical execution or in some execution.
+That identity is conditional on contract compliance exactly as [PAR-1]'s is, and an erroneous execution of L — one in which some executed `claim` is false — receives exactly the guarantee [PAR-1] states for one, with the `claim` the single [DIAG-3] record names selected from among those whose predicates evaluated false.
 Both endpoint atoms are still evaluated exactly once each in [FN-1]'s order before any iteration begins, and the binder still takes each value of the half-open range exactly once; this rule relaxes only the order in which iterations execute and the shape of the accumulator's combination, never the set of iterations, the values the binder takes, or either endpoint evaluation.
 The number of workers, the identity of the host thread that executes an iteration, the schedule, how the index range is divided, and whether any overlap or recombination was performed at all are not observable, and no rule of this specification is stated in terms of them.
 An implementation that overlaps nothing therefore conforms: this permission is never an obligation, and no program depends on it being taken.
@@ -504,8 +803,9 @@ This rule binds neither [CAP-1] predicate, because its conditions admit concurre
 > statements of one block, and when it may overlap two iterations of one
 > counted loop and recombine that loop's accumulator across them; each
 > requires every observable of a permitted overlap to be the source-order
-> execution's, and neither adds a construct, changes an accepted program,
-> changes a verdict, or removes a required check.
+> execution's, conditional on contract compliance in the sense [SCOPE-4]
+> fixes, and neither adds a construct, changes an accepted program, changes a
+> verdict, or removes a required check.
 
 **Edit 3 — the selection ground** (the file's line 7) gains one sentence at
 its end:
@@ -518,35 +818,50 @@ its end:
 > normatively because a conforming implementation chooses the combination
 > tree.
 
-**Grammar verification.** The rule adds no production, token, or spelling. The
-native verifier, which reuses the compiler's own lexer and parser, confirms it
-on the candidate bytes:
+### Impact inventory
 
-```
-$ whitefoot-grammar spec/kernel-spec.md <candidate>
-grammar-preserving candidate verified by the active compiler: 74 productions,
-93 decisions, 105 terminal predicates
-```
+`[PAR-1]`'s extent moves from lines 1976 to 1995 and 3,269 bytes to lines
+1976 to 2001 and 4,801 bytes, in both candidates. In the combined candidate
+`[PAR-2]` occupies lines 2003 to 2026 and 5,781 bytes. Line-initial rule
+definitions are 136 for the [PAR-1] v2 candidate and 137 for the combined one,
+so `RULE_COUNT` moves only when [PAR-2] activates.
 
-**Derived material the activation change must carry with it.** The derivation
-ledger gains a second existence-only row for [PAR-2] and its totals move to
-`85 derived - 52 existence-only` across 137 rules; `compiler/src/spec_identity.rs`
-is regenerated rather than hand-edited (`whitefoot-spec --emit-identity`), which
-moves `SPEC_SHA256_HEX` to the digest above and `RULE_COUNT` to 137; and the
-protected coverage annotation is added with [PAR-1]'s, per the note in Approval
-classes. The conformance corpus delta is zero cases, because [PAR-2] changes no
-accepted program and no verdict.
+**Bracketed rule-token occurrence counts do move**, which the phase-1 packet's
+[PAR-1] recipe could report as unchanged and this one cannot. [PAR-1] v2 alone:
+`CLM-1` 12 to 11 (the deleted condition's citation), `DIAG-3` 11 to 12,
+`EFF-1` 5 to 6, `SCOPE-3` 7 to 9, `SCOPE-4` 5 to 7, `TRAP-1` 2 to 3. No rule
+loses its last reference, and no rule becomes unreferenced. Adding [PAR-2] on
+top moves `CAP-1` 4 to 5, `DIAG-3` 12 to 14, `EFF-5` 4 to 5, `FN-1` 24 to 25,
+`OP-1` 11 to 13, `SCOPE-3` 9 to 10, `PAR-1` 2 to 5, and `PAR-2` 0 to 3.
 
-**Where the rule is deliberately wider than the verifier.** The rule text
-states the accumulator condition at the algebraic boundary — every occurrence
-of the accumulator is one operand of one admitted combine — while the
-implementation keeps the stricter test that the accumulator is read exactly
-once in the body. A loop that combines one accumulator under two branches is
-therefore refused by this compiler and admitted by the rule. That direction
-costs nothing (an implementation never has to take the room a rule leaves it)
-and avoids a further [META-5] amendment when the read test is widened; the
-widening must add the test that every accumulate of one binding carries the
-same operation, which today's one-read shape makes vacuous.
+Both candidates are ASCII in every byte either recipe adds; the non-ASCII
+characters they contain are the file's existing ones.
+
+### Derived material the activation change must carry
+
+For either candidate: `compiler/src/spec_identity.rs` is regenerated rather
+than hand-edited (`whitefoot-spec --emit-identity`), taking `SPEC_SHA256_HEX`
+to the digest above, and the transcribed digest literal in
+`compiler/src/spec.rs` moves with it. The combined candidate additionally
+moves `RULE_COUNT` to 137, gains a second existence-only derivation-ledger row
+for [PAR-2] with totals `85 derived - 52 existence-only` across 137 rules, and
+needs the [PAR-2] coverage annotation prepared under "FLAGGED" above. The
+conformance corpus delta is zero cases either way: neither rule changes an
+accepted program or a verdict.
+
+### Where the rules are deliberately wider than the verifier
+
+Unchanged from batch A for [PAR-2]: the rule states the accumulator condition
+at the algebraic boundary while the implementation keeps the stricter test that
+the accumulator is read exactly once in the body, so a loop combining one
+accumulator under two branches is refused by this compiler and admitted by the
+rule. [PAR-1] v2 adds a second instance of the same direction: the rule now
+requires only one well-formed [DIAG-3] record from an erroneous execution,
+while this implementation additionally makes the sequential schedule
+deterministic, so a defective program has a reproduction path the rule does not
+demand. Both directions cost nothing — an implementation never has to take the
+room a rule leaves it — and both avoid a further [META-5] amendment when the
+implementation is widened.
 
 ## Outcome
 

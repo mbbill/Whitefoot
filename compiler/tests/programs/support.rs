@@ -232,6 +232,75 @@ pub fn compile_and_run(llvm: &str) -> Output {
     output
 }
 
+/// Links one emitted module against the parallel runtime plus an observer that
+/// reports the runtime's own grant count at process exit, then runs it once at
+/// `workers`.
+///
+/// A corpus case that asks whether a permitted overlap was *actualized* cannot
+/// read that from the published bytes, because a runtime that refused every
+/// lane publishes the same bytes — that is the whole point of the permission.
+/// The observer reads `wf__par_grants`, which no Whitefoot construct can name,
+/// so "a lane was granted" is read rather than assumed. It mirrors the in-crate
+/// runtime case's own harness; the corpus needs its own because the program
+/// under test is a corpus file rather than an inline fixture.
+///
+/// The count reaches the destructor only for a program that exits normally: a
+/// trap aborts and runs no destructor. Every corpus program this is used on
+/// exits normally.
+pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
+    let sequence = NEXT_EXECUTION.fetch_add(1, Ordering::Relaxed);
+    let directory = std::env::temp_dir().join(format!(
+        "whitefoot-grants-{}-{sequence}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&directory).expect("create unique grant-count directory");
+    let module = directory.join("counted.ll");
+    let runtime = directory.join("par_runtime.c");
+    let observer = directory.join("observer.c");
+    let executable = directory.join("counted");
+    std::fs::write(&module, llvm).expect("write the module");
+    std::fs::write(&runtime, PARALLEL_RUNTIME_SOURCE).expect("write the parallel runtime");
+    std::fs::write(
+        &observer,
+        "#include <stdio.h>\nextern unsigned long wf__par_grants;\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants);\n}\n",
+    )
+    .expect("write the observer");
+    let linked = Command::new("/usr/bin/clang")
+        .arg("-pthread")
+        .arg("-x")
+        .arg("ir")
+        .arg(&module)
+        .arg("-x")
+        .arg("c")
+        .arg(&runtime)
+        .arg(&observer)
+        .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .expect("invoke host clang");
+    assert!(
+        linked.status.success(),
+        "the runtime and its observer must link:\n{}",
+        String::from_utf8_lossy(&linked.stderr)
+    );
+    let mut command = Command::new(&executable);
+    command.current_dir(&directory);
+    match workers {
+        Some(count) => command.env("WF_WORKERS", count),
+        None => command.env_remove("WF_WORKERS"),
+    };
+    let output = command.output().expect("run the counted program");
+    let report = String::from_utf8_lossy(&output.stderr).into_owned();
+    let granted = report
+        .lines()
+        .find_map(|line| line.strip_prefix("grants="))
+        .and_then(|count| count.trim().parse::<u64>().ok())
+        .unwrap_or_else(|| panic!("the observer must report a grant count, got {report:?}"));
+    std::fs::remove_dir_all(&directory).expect("remove the grant-count directory");
+    (granted, output)
+}
+
 /// One built executable that a case invokes repeatedly.
 ///
 /// A command-entry program takes its input from `command.args` and

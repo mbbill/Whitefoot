@@ -3,8 +3,8 @@
 //!
 //! P is a compiler-internal legality judgment. It refuses nothing, changes no
 //! acceptance, and grants no lowering by itself; it records, per analyzed
-//! site, whether overlapping the two statements is permitted and whether the
-//! permitted overlap is actualizable.
+//! site, whether overlapping the two statements is permitted. A permitted
+//! window is actualizable, full stop.
 //!
 //! # The window
 //!
@@ -69,12 +69,11 @@
 //!    between them carries an exit edge at all: s1's only continuation is s2.
 //!    A `propagate` right-hand side has an `Err` edge to the function-return
 //!    sink [ERR-3], so it is never a first member and never an interposed one;
-//!    a `claim` has a trap edge to the [DIAG-3] sink, which the eligibility
-//!    closure below cannot see because it inspects callees and not the
-//!    caller's own block. This is not merely a condition about differing
-//!    observables: under either schedule a hand-out is outstanding at every
-//!    interposed statement, so an exit taken there abandons an unjoined lane
-//!    still reading the caller's frame.
+//!    a `claim` has a trap edge to the [DIAG-3] sink, so it is neither one
+//!    either. This is not merely a condition about differing observables:
+//!    under either schedule a hand-out is outstanding at every interposed
+//!    statement, so an exit taken there abandons an unjoined lane still
+//!    reading the caller's frame.
 //!
 //! Two schedules are realizable for one window — hand s1 to a lane and run
 //! T1…Tk then s2 on the calling thread, or run s1 then hoist s2's operands,
@@ -83,23 +82,45 @@
 //! what the two admit, never the weaker set the current backend alone would
 //! survive.
 //!
-//! Actualization additionally requires eligibility: the transitive call
-//! closure of both callees reaches zero `claim` sites. Claims are the only
-//! writer-reachable runtime checks, so a claim-free closure has no trap site
-//! and therefore no trap-selection question.
+//! # A claim in the closure is not a reason to refuse
+//!
+//! Nothing beyond those four conditions is required. An earlier version of
+//! this judgment also asked that the transitive call closure of both callees
+//! reach zero `claim` sites, on the ground that one schedule could trap at a
+//! different claim than another and so move the [DIAG-3] record. That
+//! condition is gone, and the reason it is gone is what a claim means.
+//!
+//! A `claim` is the writer's lemma bridging an incompleteness of this checker,
+//! not a runtime test the program is expected to fail. A false executed claim
+//! is the sole writer-reachable language runtime contract violation [SCOPE-4],
+//! so an execution that contains one is *erroneous* and the program that
+//! contains it is defective. [PAR-1]'s observable-identity guarantee is
+//! therefore conditional on contract compliance, exactly as [SCOPE-3]'s
+//! no-undefined-behavior guarantee is conditional on its trusted computing
+//! base. A correct program — one whose every executed claim is true — reaches
+//! no trap under any schedule, so its observables are the source-order
+//! observables and it keeps the guarantee whole. For an erroneous execution
+//! the guarantee narrows to: the process traps with exactly one well-formed
+//! [DIAG-3] record naming *a* claim whose predicate evaluated false; memory
+//! safety, abort without unwinding, and the absence of external effects from
+//! an overlapped region hold unchanged; and *which* such claim the record
+//! names may depend on the schedule.
+//!
+//! "Exactly one record under any interleaving" is a mechanism here rather than
+//! an argument: `wf_trap` takes a process-wide latch before it writes its
+//! first byte, and a thread that loses the latch parks while the winner
+//! aborts. Declining to overlap a correct program in order to keep a defective
+//! program's trap identity stable is the trade this judgment no longer makes.
 //!
 //! **Invariant.** P consults typing, declared effect rows, resolved places
-//! [OWN-5, OWN-7], the statement graph's exit edges, and the monomorphized
-//! call graph — and never the entailment fact state. Nothing here reads a
-//! derived fact, an obligation disposition, a claim disposition, or any
-//! optimizer fact; the only thing it asks about a claim is that its statement
-//! exists. Facts-on and facts-off compilation therefore produce the same
-//! permission table by construction, and permission can never turn an
+//! [OWN-5, OWN-7], and the statement graph's exit edges — and never the
+//! entailment fact state. Nothing here reads a derived fact, an obligation
+//! disposition, a claim disposition, or any optimizer fact; the only thing it
+//! asks about a claim is whether its statement sits between the two calls.
+//! Facts-on and facts-off compilation therefore produce the same permission
+//! table by construction, and permission can never turn an
 //! accepted program into a rejected one or move a required check.
 
-use std::collections::VecDeque;
-
-use super::entailment::collect_statement_calls;
 use super::loop_permission::LoopPermission;
 use super::model::{
     BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedMode, CheckedSetTarget,
@@ -138,10 +159,10 @@ pub(crate) enum ExitKind {
     /// A `propagate` right-hand side's `Err` edge to the function-return
     /// sink [ERR-3].
     PropagateError,
-    /// A `claim`'s trap edge to the [DIAG-3] sink [CLM-1]. Eligibility cannot
-    /// stand in for this one: `claim_closure` walks *callees*, so a claim the
-    /// writer put in the caller's own block between the two calls is invisible
-    /// to it.
+    /// A `claim`'s trap edge to the [DIAG-3] sink [CLM-1]. A claim *inside* a
+    /// callee is no longer a reason to refuse, but one the writer put in the
+    /// caller's own block between the two calls still is: it is an exit edge
+    /// out of the window, and an exit taken there abandons an unjoined lane.
     ClaimTrap,
     /// A `return`, `give`, or `break` edge, which leaves the enclosing block
     /// or function without reaching s2.
@@ -292,31 +313,12 @@ impl Denial {
     }
 }
 
-/// One reachable `claim` site that keeps a permitted pair from being
-/// actualized, with the call path that reaches it.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ClaimWitness {
-    /// Analyzed-callee-to-claim-bearing-callee path, root first.
-    pub(crate) path: Vec<FunctionId>,
-    /// The claim-bearing function's own name, for citation.
-    pub(crate) function: String,
-    /// The claim's written name.
-    pub(crate) claim: String,
-    pub(crate) node_path: NodePath,
-}
-
 /// The judgment's outcome for one analyzed pair.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PermissionVerdict {
-    /// P holds and both call closures are claim-free.
+    /// P holds, so the window may be overlapped. A `claim` anywhere in either
+    /// call closure is not a reason to refuse; the module doc carries why.
     PermittedEligible,
-    /// P holds, but a reachable `claim` site keeps the overlap out of reach
-    /// of this version's actualization. Each checker improvement that turns a
-    /// claim into a proof widens the eligible set [ENT-1].
-    PermittedNotActualizable {
-        claim_sites: usize,
-        witness: ClaimWitness,
-    },
     Denied(Denial),
 }
 
@@ -330,7 +332,7 @@ impl PermissionVerdict {
     pub(crate) const fn denied_condition(&self) -> Option<u8> {
         match self {
             Self::Denied(denial) => Some(denial.condition()),
-            Self::PermittedEligible | Self::PermittedNotActualizable { .. } => None,
+            Self::PermittedEligible => None,
         }
     }
 }
@@ -411,21 +413,9 @@ pub(crate) fn analyze_permission(
     functions: &[CheckedFunction],
     signatures: &[PermissionSignature],
 ) -> PermissionMetadata {
-    let callees = direct_callees(functions);
-    let claims = functions
-        .iter()
-        .map(|function| {
-            let mut sites = Vec::new();
-            collect_claim_sites(&function.body, &mut sites);
-            sites
-        })
-        .collect::<Vec<_>>();
     let program = Program {
         functions,
         signatures,
-        reaches_claim: claim_reachability(&claims, &callees),
-        callees,
-        claims,
     };
     PermissionMetadata {
         functions: functions
@@ -435,63 +425,9 @@ pub(crate) fn analyze_permission(
     }
 }
 
-/// One `claim` statement, by written name and node.
-struct ClaimRecord {
-    name: String,
-    node_path: NodePath,
-}
-
 pub(super) struct Program<'check> {
     functions: &'check [CheckedFunction],
     signatures: &'check [PermissionSignature],
-    /// Direct monomorphized callees per function, ascending and deduplicated.
-    callees: Vec<Vec<FunctionId>>,
-    /// `claim` statements per function, in source order.
-    claims: Vec<Vec<ClaimRecord>>,
-    /// Whether some function reachable from each function carries a `claim`,
-    /// dense by [`FunctionId`]. Eligibility asks this of every judged window,
-    /// and a chain of m calls is judged over O(m²) ordered pairs, so answering
-    /// it by a whole-program search each time made the search the dominant
-    /// cost of the analysis. One reverse walk answers it for every function.
-    reaches_claim: Vec<bool>,
-}
-
-/// Whether a `claim` is reachable from each function, by one walk of the call
-/// graph backwards from the functions that carry one.
-///
-/// This is exactly `claim_closure(&[f]).is_some()` for every f, computed
-/// together. It decides only *whether* to search; the count and the witness
-/// still come from the forward search, so nothing a ledger or a test reads is
-/// derived from here.
-fn claim_reachability(claims: &[Vec<ClaimRecord>], callees: &[Vec<FunctionId>]) -> Vec<bool> {
-    let mut callers: Vec<Vec<usize>> = vec![Vec::new(); claims.len()];
-    for (caller, called) in callees.iter().enumerate() {
-        for callee in called {
-            if let Some(entry) = callers.get_mut(callee.0 as usize) {
-                entry.push(caller);
-            }
-        }
-    }
-    let mut reaches = vec![false; claims.len()];
-    let mut pending = claims
-        .iter()
-        .enumerate()
-        .filter(|(_, sites)| !sites.is_empty())
-        .map(|(ordinal, _)| ordinal)
-        .collect::<Vec<_>>();
-    while let Some(ordinal) = pending.pop() {
-        let Some(seen) = reaches.get_mut(ordinal) else {
-            continue;
-        };
-        if *seen {
-            continue;
-        }
-        *seen = true;
-        if let Some(calling) = callers.get(ordinal) {
-            pending.extend(calling.iter().copied());
-        }
-    }
-    reaches
 }
 
 /// One candidate statement: a `let` whose right-hand side is exactly one
@@ -888,31 +824,10 @@ impl<'check> Program<'check> {
             });
         }
 
-        // Eligibility: every call closure of the window reaches zero claim
-        // sites. A call between the members can be actualized only alongside
-        // them, so its claims count exactly as a member's do.
-        let mut roots = vec![first.call.callee, second.call.callee];
-        roots.extend(interposed.iter().filter_map(|record| record.callee));
-        // The precomputed reachability answers the common case — every root
-        // claim-free — without walking the call graph at all. Only a root that
-        // does reach a claim pays for the search, which exists to produce the
-        // count and the witness.
-        if roots.iter().all(|root| {
-            !self
-                .reaches_claim
-                .get(root.0 as usize)
-                .copied()
-                .unwrap_or(true)
-        }) {
-            return PermissionVerdict::PermittedEligible;
-        }
-        match self.claim_closure(&roots) {
-            Some((claim_sites, witness)) => PermissionVerdict::PermittedNotActualizable {
-                claim_sites,
-                witness,
-            },
-            None => PermissionVerdict::PermittedEligible,
-        }
+        // All four conditions hold, and there is no fifth. A `claim` reachable
+        // from either callee no longer withholds actualization: the module doc
+        // carries the contract-conditional guarantee that replaced it.
+        PermissionVerdict::PermittedEligible
     }
 
     /// One statement between the two members, reduced to what the window rule
@@ -1137,91 +1052,6 @@ impl<'check> Program<'check> {
             .map(|function| function.name.clone())
             .unwrap_or_default()
     }
-
-    /// Whether a `claim` is reachable from one function. An unknown function
-    /// answers `true`, so a callee this analysis cannot place keeps the
-    /// overlap out of reach rather than being read as claim-free.
-    pub(super) fn reaches_claim(&self, function: FunctionId) -> bool {
-        self.reaches_claim
-            .get(function.0 as usize)
-            .copied()
-            .unwrap_or(true)
-    }
-
-    /// Total reachable `claim` sites over the transitive call closure of the
-    /// given roots, with the first witness in deterministic order, or `None`
-    /// when the closure is claim-free. One breadth-first walk covers both
-    /// roots, so a function reachable from both is counted once.
-    pub(super) fn claim_closure(&self, roots: &[FunctionId]) -> Option<(usize, ClaimWitness)> {
-        let mut total = 0;
-        let mut witness = None;
-        let mut visited = vec![false; self.functions.len()];
-        let mut queue = VecDeque::new();
-        let mut parents: Vec<(FunctionId, Option<FunctionId>)> = Vec::new();
-        for root in roots {
-            let Some(seen) = visited.get_mut(root.0 as usize) else {
-                continue;
-            };
-            if !*seen {
-                *seen = true;
-                parents.push((*root, None));
-                queue.push_back(*root);
-            }
-        }
-        while let Some(current) = queue.pop_front() {
-            let claims = self
-                .claims
-                .get(current.0 as usize)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
-            total += claims.len();
-            if witness.is_none()
-                && let Some(claim) = claims.first()
-            {
-                witness = Some(ClaimWitness {
-                    path: witness_path(&parents, current),
-                    function: self
-                        .functions
-                        .get(current.0 as usize)
-                        .map(|function| function.name.clone())
-                        .unwrap_or_default(),
-                    claim: claim.name.clone(),
-                    node_path: claim.node_path.clone(),
-                });
-            }
-            let callees = self
-                .callees
-                .get(current.0 as usize)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
-            for callee in callees {
-                let Some(seen) = visited.get_mut(callee.0 as usize) else {
-                    continue;
-                };
-                if !*seen {
-                    *seen = true;
-                    parents.push((*callee, Some(current)));
-                    queue.push_back(*callee);
-                }
-            }
-        }
-        witness.map(|witness| (total, witness))
-    }
-}
-
-/// The breadth-first path from a root to `target`, root first.
-fn witness_path(
-    parents: &[(FunctionId, Option<FunctionId>)],
-    target: FunctionId,
-) -> Vec<FunctionId> {
-    let mut path = vec![target];
-    let mut current = target;
-    while let Some((_, Some(parent))) = parents.iter().find(|(node, _)| *node == current) {
-        path.push(*parent);
-        current = *parent;
-    }
-    path.reverse();
-    path
 }
 
 #[derive(Debug, Default)]
@@ -1465,59 +1295,6 @@ fn push_nested_blocks<'check>(
         | CheckedStatement::Give { .. }
         | CheckedStatement::Break { .. } => {}
     }
-}
-
-/// Every `claim` statement of one body, in source order.
-///
-/// The match is exhaustive on purpose: a future body-bearing statement form
-/// that this walk did not descend into would hide the claims inside it, and a
-/// hidden claim *widens* eligibility — the one direction this judgment must
-/// never fail in. Every other axis of P denies when it cannot see.
-fn collect_claim_sites(statements: &[CheckedStatement], out: &mut Vec<ClaimRecord>) {
-    for statement in statements {
-        match statement {
-            CheckedStatement::Claim { name, site, .. } => out.push(ClaimRecord {
-                name: name.clone(),
-                node_path: site.node_path.clone(),
-            }),
-            CheckedStatement::Match { arms, .. } | CheckedStatement::ValueMatchLet { arms, .. } => {
-                for arm in arms {
-                    collect_claim_sites(&arm.body, out);
-                }
-            }
-            CheckedStatement::Loop { body, .. }
-            | CheckedStatement::Region { body, .. }
-            | CheckedStatement::CountedRange { body, .. } => collect_claim_sites(body, out),
-            CheckedStatement::Let { .. }
-            | CheckedStatement::PropagateLet { .. }
-            | CheckedStatement::Set { .. }
-            | CheckedStatement::Replace { .. }
-            | CheckedStatement::DropExpression { .. }
-            | CheckedStatement::Evaluate(_)
-            | CheckedStatement::Return { .. }
-            | CheckedStatement::Give { .. }
-            | CheckedStatement::Break { .. } => {}
-        }
-    }
-}
-
-/// The direct monomorphized callees of every function, from the shared
-/// concrete call-occurrence collector. This is call-graph shape only.
-fn direct_callees(functions: &[CheckedFunction]) -> Vec<Vec<FunctionId>> {
-    functions
-        .iter()
-        .map(|function| {
-            let mut calls = Vec::new();
-            collect_statement_calls(function.id, &function.body, &mut calls);
-            let mut callees = calls
-                .into_iter()
-                .map(|call| call.callee)
-                .collect::<Vec<_>>();
-            callees.sort_unstable_by_key(|callee| callee.0);
-            callees.dedup();
-            callees
-        })
-        .collect()
 }
 
 /// Every binding one expression tree mentions, for the ordinary def-use test.

@@ -6,16 +6,19 @@ synthesizes PAL.md (same directory), the three research rounds
 (`do_not_scan/wf-parallelism-research/`), and the owner's rulings of
 2026-08-20/21. Nothing here is approved until the branch merges.
 
-> **Superseded in two places by later landings on this branch, and corrected in
-> place on 2026-08-22 after the 0075/0076 batch audit.** The runtime protocol
-> named in section 5 (`wf_par_try_fork` / `wf_par_join`) was replaced during
-> batch 0075 by `wf__par_claim` / `wf__par_publish` / `wf__par_join` /
-> `wf__par_release`, and the `WF_WORKERS` semantics changed during batch 0076:
-> an unset variable now asks for one lane per logical CPU instead of meaning
-> "no pool". Both corrections are made at the paragraphs that stated them. Read
-> the rest as the design contract it is — the current behavior of anything it
-> describes lives in `docs/ongoing/0075-par-optimization-digs.md` and
-> `docs/ongoing/0076-night-par-ceiling.md`.
+> **Superseded in three places by later landings on this branch, and corrected
+> in place.** The runtime protocol named in section 5 (`wf_par_try_fork` /
+> `wf_par_join`) was replaced during batch 0075 by `wf__par_claim` /
+> `wf__par_publish` / `wf__par_join` / `wf__par_release`; the `WF_WORKERS`
+> semantics changed during batch 0076, so an unset variable now asks for one
+> lane per logical CPU instead of meaning "no pool"; and **section 1's
+> claim-free eligibility condition was withdrawn on 2026-08-23**, under the
+> owner's chartering direction of that day. Every correction is made at the
+> paragraph that stated it. Read the rest as the design contract it is — the
+> current behavior of anything it describes lives in
+> `docs/ongoing/0075-par-optimization-digs.md`,
+> `docs/ongoing/0076-night-par-ceiling.md`, and
+> `docs/ongoing/0077-loop-permission.md`.
 
 ## 0. Charter
 
@@ -40,11 +43,24 @@ Plus the two design rulings of the same night:
 
 ## 1. Doctrine consequences (why v1 is small)
 
-- **Eligibility = transitively claim-free.** An overlappable region whose
+- **Eligibility = transitively claim-free.** ~~An overlappable region whose
   transitive call closure reaches zero `claim` sites has zero trap sites
   (v0.33: claims are the only writer-reachable runtime checks, spec
   1875–1880). No trap sites ⇒ no trap-selection question ⇒ **no
-  arbitration machinery, no parked lanes, no coordinator** in v1.
+  arbitration machinery, no parked lanes, no coordinator** in v1.~~
+  **Withdrawn 2026-08-23** (batch 0077). The conclusion this bullet drew is
+  the opposite of the claim doctrine directly above it: if a trap can only
+  come from a program that failed audit, then declining to overlap a
+  *correct* program to keep a *defective* one's trap identity stable is
+  paying for the case the doctrine says not to consider. Permission is now
+  the four conditions alone, and the observable-identity guarantee is
+  conditional on contract compliance in [SCOPE-4]'s sense — an erroneous
+  execution gets exactly one well-formed [DIAG-3] record of one claim that
+  evaluated false, and which one may depend on the schedule. The second half
+  of the bullet survives for a different reason than it was written: there is
+  still no arbitration machinery and no coordinator, because a process-wide
+  first-trap-wins latch in `wf_trap` makes the single record a mechanism
+  rather than a schedule constraint.
 - **Divergence dissolves.** Eligible lanes carry no `external`, no
   `blocks`, no trap sites. The join waits for all its lanes. If any lane
   diverges, the overlapped execution hangs at the join exactly where the
@@ -53,11 +69,15 @@ Plus the two design rulings of the same night:
   v1.** (The EFF-4 two-half ruling and elision-rank arbitration remain on
   file — `debate/d1-defense.md` — for the day claim-bearing regions are
   worth actualizing. Deferred, not rejected.)
-- **Claim-bearing regions stay sequential and that is principled**: claims
+- ~~**Claim-bearing regions stay sequential and that is principled**: claims
   mark exactly the checker's incompleteness gaps; each checker improvement
   converts claims to proofs and mechanically widens the eligible set
   (ENT-1 version monotonicity). The ledger makes the denial visible, so
-  the sequentialization is never hidden (PAR-4).
+  the sequentialization is never hidden (PAR-4).~~ **Withdrawn 2026-08-23**
+  with the bullet above. Claim-bearing regions are overlapped exactly as any
+  other region is, so the ledger has no sequentialization to report and the
+  `not-actualizable` verdict class no longer exists. What claims still mark
+  is unchanged: the checker's incompleteness gaps, closing monotonically.
 
 ## 2. Scope
 

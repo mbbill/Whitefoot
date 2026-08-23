@@ -8,6 +8,17 @@ the same program executing sequentially. It is the evidence half of
 Nothing here is a promise about other programs. A speedup measured on one
 workload is a fact about that workload.
 
+> **The Amdahl conclusion of sections 6 to 9 is superseded, 2026-08-23.** Every
+> number below was measured while `layout_banded` — the claim-bearing fold,
+> §8.7's 33.9% of the program — was permanently sequential, because the
+> permission judgment refused to actualize a pair whose call closure reached a
+> `claim`. Batch 0077-C withdrew that refusal under the owner's chartering
+> direction of that day, so the fold that the tables treat as the unparallelizable
+> serial share is now overlapped like any other. The measurements stand as
+> measurements of the code that produced them; the *ceiling* they compute for
+> this demo does not. The grant counts before and after, on the same source and
+> the same runtime, are in `docs/ongoing/0077-loop-permission.md`.
+
 **Actualization is compile-time opt-in.** `whitefootc --par` is what emits an
 outlined call, a lane offer, and a join; the default compilation emits none of
 them. Section 4's own measurement is why: the outlining alone, with no runtime
@@ -56,6 +67,7 @@ PAR denied      tests/programs/par_layout.wf:131  pair(cascade, measure_band)  c
 PAR denied      tests/programs/par_layout.wf:138  pair(cascade, measure_band)  condition 1: the operands of s2 read what s1 defines
 PAR denied      tests/programs/par_layout.wf:139  pair(measure_band, layout_banded)  condition 1: the operands of s2 read what interposed statement 1 defines
 PAR permitted   tests/programs/par_layout.wf:141  pair(layout_banded, layout_banded)  not-actualizable: 1 claim site via measure_band
+(superseded 2026-08-23: this line now reads `pair(layout_banded, layout_banded)  eligible`)
 ```
 
 Those lines are the same with and without `--par`: the judgment is pure, so the

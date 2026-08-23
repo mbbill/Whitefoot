@@ -28,6 +28,7 @@ mod resource_enums;
 mod slices;
 mod system;
 mod system_io;
+mod trap_latch;
 
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;

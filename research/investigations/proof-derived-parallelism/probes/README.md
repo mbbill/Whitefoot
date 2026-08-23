@@ -16,7 +16,17 @@ settles is superseded.
 Every verdict quoted below is what the in-tree compiler's
 `whitefootc --par-ledger` reports for that file today, except where a file is a
 template that must be instantiated first — those say so and quote the
-instantiated source. **Refreshed 2026-08-22 after the 0075/0076 batch audit**,
+instantiated source. **Refreshed again 2026-08-23 after the claim redirect of
+batch 0077-C**, which withdrew claim-free eligibility: the `not-actualizable`
+verdict class no longer exists, and the seven probes that quoted it —
+`a2_bubble.wf`, `a2r_layout_two.wf`, `d1_two_traps.wf`,
+`d2_band_window_claim.wf`, `p1a.wf`, `p1b.wf`, `p7_dyn.wf` — now report
+`eligible` with a two-member chain. Each paragraph below states today's verdict
+and then what it used to say. **Several of these probes were landed to record a
+decision that is now reversed**; whether they are deleted or kept as the
+evidence of the reversal is the lead's disposition, and is flagged in
+`docs/ongoing/0077-loop-permission.md`. Previously **refreshed 2026-08-22 after
+the 0075/0076 batch audit**,
 which found the warranty unmet on four entries: batch 0075's Dig 8 replaced the
 adjacency rule and rewrote the denial wording, and Dig 9 widened the discharge,
 so several probes now report verdicts their paragraphs described as impossible.
@@ -26,18 +36,20 @@ landed to record.
 
 ## The design-round probes
 
-**The permitted-but-not-actualizable line.** `a2_bubble.wf` is the two-child
-`uniq` tree fold that started the whole investigation: its recursive child pair
-is permitted, and the ledger reports `not-actualizable: 1 claim site via
-bubble`. `d2_tree_zeroclaim.wf` is the same fold with its two overflow claims
-rewritten as ordinary branches, and the identical pair comes back `eligible` —
-together they are the cleanest demonstration that a claim, and only a claim, is
-what stands between a permitted pair and an actualized one. `a2r_layout.wf` and
-`a2r_layout_two.wf` carry that contrast into a realistic body (a box-tree
-layout with a per-node float cascade and a word loop): the single-table version
-is `eligible`, and the two-table version, whose second buffer forces a derived
-index and therefore two claims, is `not-actualizable: 2 claim sites via
-measure_words`. `a2r_layout.wf` is the direct ancestor of
+**The line that no longer divides them.** `a2_bubble.wf` is the two-child
+`uniq` tree fold that started the whole investigation. Its recursive child pair
+reports `pair(bubble, bubble)  eligible` with a two-member chain; **until
+2026-08-23 it reported `not-actualizable: 1 claim site via bubble`**, and that
+line was the demonstration the whole first group was built around.
+`d2_tree_zeroclaim.wf` is the same fold with its two overflow claims rewritten
+as ordinary branches, and it reported `eligible` then and reports `eligible`
+now — so the pair, which was the cleanest demonstration that a claim was what
+stood between a permitted pair and an actualized one, is now the cleanest
+demonstration that nothing does. `a2r_layout.wf` and `a2r_layout_two.wf` carried
+that contrast into a realistic body (a box-tree layout with a per-node float
+cascade and a word loop): both are `eligible` today, and the two-table version,
+whose second buffer forces a derived index and therefore two claims,
+**previously reported `not-actualizable: 2 claim sites via measure_words`**. `a2r_layout.wf` is the direct ancestor of
 `tests/programs/par_layout.wf`, the measured demo in `../RESULTS.md`.
 
 **The condition-4 requirement.** `g2_propagate.wf` is why the judgment's fourth
@@ -81,11 +93,17 @@ lanes, nothing observable is emitted mid-lane, and the overlapped execution
 hangs exactly where the sequential one hangs. **Do not run this file, or
 `x2_spin.wf`; both are non-terminating by construction.**
 
-**Why claim-bearing regions are deferred.** `d1_two_traps.wf` is two sibling
-calls whose claims are both false on the literal inputs `main` passes, so both
-traps are live. Overlapping them raises the question the v1 design refuses to
-answer — which trap's `[DIAG-3]` record is the program's — and the ledger's
-answer is to decline: `not-actualizable: 2 claim sites via left`.
+**The question this probe posed, now answered.** `d1_two_traps.wf` is two
+sibling calls whose claims are both false on the literal inputs `main` passes,
+so both traps are live. Overlapping them raises the question the v1 design
+refused to answer — which trap's `[DIAG-3]` record is the program's — and the
+ledger's answer was to decline: `not-actualizable: 2 claim sites via left`.
+**Since 2026-08-23 the ledger reports `pair(left, right)  eligible` and the
+question is answered rather than declined**: the record is *a* claim whose
+predicate evaluated false, which one may depend on the schedule, and exactly
+one record is written because `wf_trap` latches. The shape this file carries is
+the shape `compiler/src/backend/tests/trap_latch.rs` now exercises forty times
+a run at four workers.
 
 That file is **a deliberately unreviewed program**, and the batch audit was
 right to flag it. Under the claim doctrine this design rests on (`../DESIGN.md`
@@ -96,8 +114,10 @@ arbitration question needs a program that actually reaches two live traps, and
 because the trap-selection question is exactly the one the doctrine sets aside
 rather than one it answers. It is not a model of ordinary usage, and its
 `because` strings assert what the program falsifies two lines later. The ledger
-line it produces — the decline — needs no false claim at all: `a2_bubble.wf`
-produces the same `not-actualizable` verdict from claims that are true.
+line it produced — the decline — needed no false claim at all: `a2_bubble.wf`
+produced the same `not-actualizable` verdict from claims that are true. With
+the decline withdrawn, what this file uniquely carries is a program that
+actually reaches two live traps, which is what the latch's own control needs.
 
 (`x2_spin.wf`'s `claim never: ieq(v, 7_u64) because "unreachable when spin
 diverges"` is vacuously true because the claim is never reached. It reads as a
@@ -147,9 +167,10 @@ consecutive `let x = f(...)` statements — while `p1b.wf` reported both pairs, 
 the same program was 1.41x apart at four lanes on nothing but where the writer
 put one line. That is the brittleness the judgment's window rule removed; the
 pair is kept because the fix is only legible beside the shape that motivated it.
-Both files also carry the `layout_banded`
-contrast (`not-actualizable: 1 claim site via measure_band`) that ties this
-probe back to the claim line the first group establishes.
+Both files also carry the `layout_banded` fold, which reports
+`eligible` today and **reported `not-actualizable: 1 claim site via
+measure_band` until 2026-08-23** — the tie back to the claim line the first
+group established.
 
 **F2, grain.** `q4.wf` is the quad tree that produced the fine-grain
 catastrophe: six eligible pairs, three adjacent in `build4` and three in
@@ -185,10 +206,12 @@ rather than a blanket refusal.
 
 **F6, the design limit on dynamic allocation.** `p7_dyn.wf` is four lines of
 consequence: a buffer sized by a parameter raises an undischarged `buffer_fits`
-obligation, the only discharge is a `claim`, and a claim in the closure makes
-the pair `not-actualizable: 1 claim site via mkbuf_dyn`. Dropping the claim does
-not compile. It settles that the natural shape of a per-node style-resolve phase
-is permitted and permanently out of reach in v1 — a design boundary, not a bug.
+obligation, and the only discharge is a `claim`. **Until 2026-08-23 that claim
+in the closure made the pair `not-actualizable: 1 claim site via mkbuf_dyn`;
+today it reports `eligible`.** Dropping the claim does not compile. What it
+settled — that the natural shape of a per-node style-resolve phase is
+permitted and permanently out of reach in v1 — **is reversed**: the shape is
+permitted and reachable, and the design boundary it named is gone.
 
 **Linkage.** `zero_elig.wf` is `min_stack.wf` with its one pair broken by an
 interposed builtin. **It no longer has zero eligible sites, and the linkage
@@ -226,8 +249,10 @@ reported.
 `d2_band_window_claim.wf` are the same two adjacent reads with the same
 output, differing only in how the pair of bounds is admitted. The guarded
 version holds no claim site and the ledger reports
-`pair(window, window)  eligible` with a two-member chain; the claimed version
-reports `pair(window, window)  not-actualizable: 1 claim site via window`.
+`pair(window, window)  eligible` with a two-member chain; **the claimed version
+now reports the same, where until 2026-08-23 it reported
+`not-actualizable: 1 claim site via window`** — so the two files differ in what
+they had to prove and no longer in what they get.
 Before Dig 9 **neither compiled**, which is the point worth keeping: the
 eligible shape was not merely unrewarded, it was unwritable, and closing a
 checker gap made it reachable without a spec byte or a source edit. They are

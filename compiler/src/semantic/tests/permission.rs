@@ -567,15 +567,17 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 // ----------------------------------------------------------------------
-// Eligibility
+// Claims in the call closure
 // ----------------------------------------------------------------------
 
-/// The same two-child fold with one `claim` in the recursive closure. P still
-/// holds — the sequentialization is a reachable-trap-site consequence, not an
-/// illegality — and the table says so with the claim count and one witness,
-/// so the denial is visible rather than silent.
+/// The same two-child fold with one `claim` in the recursive closure. This is
+/// the case an earlier judgment permitted but refused to actualize, so that no
+/// schedule could choose which claim traps first. It is eligible now: a false
+/// executed claim is a contract violation [SCOPE-4], an execution reaching one
+/// is erroneous, and a correct program — this one — traps under no schedule at
+/// all. The four conditions are the whole judgment.
 #[test]
-fn a_claim_bearing_closure_is_permitted_but_not_actualizable() {
+fn a_claim_bearing_closure_is_eligible() {
     let source = br#"enum BoxNode {
   Leaf(w: u64);
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
@@ -621,29 +623,32 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "bubble");
-    let PermissionVerdict::PermittedNotActualizable {
-        claim_sites,
-        witness,
-    } = &pair.verdict
-    else {
-        panic!(
-            "expected a not-actualizable verdict, got {:?}",
-            pair.verdict
-        );
-    };
-    assert_eq!(*claim_sites, 1, "one claim site in the closure of bubble");
-    assert_eq!(witness.function, "bubble");
-    assert_eq!(witness.claim, "bubble_sum_fits");
-    assert_eq!(witness.path, vec![pair.first.callee]);
-    assert!(
-        function_table(&table, "bubble").runs.is_empty(),
-        "a permitted pair that is not eligible never forms a chain"
+    assert_eq!(
+        pair.verdict,
+        PermissionVerdict::PermittedEligible,
+        "a claim reachable from the callees is not a reason to refuse"
+    );
+    let runs = &function_table(&table, "bubble").runs;
+    assert_eq!(
+        runs.len(),
+        1,
+        "an eligible pair forms its chain like any other: {runs:?}"
     );
 
-    // main's own two leaf allocations reach no claim, so the same program
-    // still carries an eligible pair: eligibility is per closure, not per
-    // program. Its next pair feeds both leaves into one branch and is denied
-    // by condition 1.
+    // The claim really is in the closure of the judged pair, so what the case
+    // above pins is the redirect and not an accident of this fixture: `bubble`
+    // calls itself, and its own body carries `bubble_sum_fits`.
+    assert_eq!(pair.first.callee_name, "bubble");
+    assert_eq!(pair.second.callee_name, "bubble");
+    assert!(
+        std::str::from_utf8(source)
+            .expect("the fixture is UTF-8")
+            .contains("claim bubble_sum_fits:"),
+        "the fixture must keep the claim whose closure this case is about"
+    );
+
+    // main's next pair feeds both leaves into one branch and is still denied
+    // by condition 1: widening actualization moved no condition.
     let outer = function_table(&table, "main");
     assert_eq!(outer.pairs.len(), 2);
     assert_eq!(outer.pairs[0].verdict, PermissionVerdict::PermittedEligible);
@@ -974,12 +979,12 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(*side, PairSide::Between(0));
 }
 
-/// Condition 4, the case eligibility structurally cannot reach. Both callees
-/// are claim-free, so the eligibility closure — which walks *callees* — sees
-/// nothing and would report this window permitted and eligible. The claim is
-/// in the caller's own block, between the two calls, with a trap edge to the
-/// [DIAG-3] sink: source order completes s1's writes before that trap, and an
-/// overlap does not.
+/// Condition 4, and the one place a `claim` still refuses a window. A claim
+/// inside a callee is no longer a reason to refuse anything; this one is in
+/// the caller's own block, *between* the two calls, and carries a trap edge to
+/// the [DIAG-3] sink. It is an exit out of the window like a `return` or a
+/// `propagate` `Err` edge, and an exit taken there abandons an unjoined lane
+/// still reading the caller's frame. Nothing in the redirect touches it.
 #[test]
 fn an_interposed_claim_is_denied_by_condition_four() {
     let source = br#"fn peek['r](v: &'r u64) -> result: own u64 reads('r) {

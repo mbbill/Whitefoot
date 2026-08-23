@@ -7,7 +7,7 @@
 //! nothing however independent its iterations are. This judgment reads the
 //! loop itself. It refuses nothing, changes no acceptance, and grants no
 //! lowering by itself; it records, per counted loop, whether overlapping its
-//! iterations is permitted and whether the permitted overlap is actualizable.
+//! iterations is permitted. A permitted loop is actualizable, full stop.
 //!
 //! # What is judged
 //!
@@ -29,10 +29,18 @@
 //!    `break` naming L or an enclosing loop leaves the loop, so every
 //!    iteration of the whole range runs.
 //!
-//! Actualization additionally requires eligibility: B and the transitive call
-//! closure of every call it makes reach zero `claim` sites. Claims are the
-//! only writer-reachable runtime checks, so a claim-free loop has no trap site
-//! and therefore no question of which iteration traps first.
+//! There is no fifth condition. An earlier version of this judgment also asked
+//! that B and the transitive call closure of its calls reach zero `claim`
+//! sites, so that no schedule could choose which iteration traps first. That
+//! condition is gone, on the ground the window judgment's module doc derives:
+//! a false executed claim is a contract violation [SCOPE-4], so an execution
+//! reaching one is erroneous, the observable-identity guarantee is conditional
+//! on contract compliance, and a correct loop — one no iteration of which
+//! trips a claim — keeps that guarantee whole under every schedule. An
+//! erroneous one traps with exactly one well-formed [DIAG-3] record, of a
+//! claim the schedule may choose among those that evaluated false, because
+//! `wf_trap` latches. A `claim` in B is therefore an ordinary statement here:
+//! its predicate is read like any other expression and it constrains nothing.
 //!
 //! # Why regrouping is admissible here and nowhere wider
 //!
@@ -60,12 +68,12 @@
 //!   no surviving proof.
 //!
 //! **Invariant.** Like the window judgment, this one consults typing, declared
-//! effect rows, resolved places [OWN-5, OWN-7], the statement graph's exit
-//! edges, and the monomorphized call graph — and never the entailment fact
-//! state. The quantification over iterations is *structural*: it comes from
-//! [FN-1]'s unit-increment recurrence over a compiler-owned binder, never from
-//! a derived fact about two indices. Facts-on and facts-off compilation
-//! therefore produce the same loop permission table by construction.
+//! effect rows, resolved places [OWN-5, OWN-7], and the statement graph's exit
+//! edges — and never the entailment fact state. The quantification over
+//! iterations is *structural*: it comes from [FN-1]'s unit-increment
+//! recurrence over a compiler-owned binder, never from a derived fact about
+//! two indices. Facts-on and facts-off compilation therefore produce the same
+//! loop permission table by construction.
 //!
 //! # Why counting an accumulator's reads by binding is complete
 //!
@@ -93,12 +101,12 @@
 
 use super::model::{
     BindingId, CheckedBooleanOperation, CheckedExpression, CheckedFunction,
-    CheckedIntegerOperation, CheckedLoopId, CheckedSetTarget, CheckedStatement, FunctionId,
+    CheckedIntegerOperation, CheckedLoopId, CheckedSetTarget, CheckedStatement,
     expression_children,
 };
 use super::permission::{
-    Access, ClaimWitness, Footprint, Program, call_projection, collect_consumed_places,
-    set_target_place, visit_read_bindings,
+    Access, Footprint, Program, call_projection, collect_consumed_places, set_target_place,
+    visit_read_bindings,
 };
 use super::places::{PlaceMap, PlaceRoot, ResolvedPlace};
 use crate::NodePath;
@@ -182,24 +190,16 @@ impl LoopCombine {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum LoopVerdict {
-    /// Permission holds and the loop is claim-free.
+    /// Permission holds, so the loop's iterations may be overlapped and its
+    /// accumulator recombined. A `claim` in the body or in a callee is not a
+    /// reason to refuse; the module doc carries why.
     PermittedEligible,
-    /// Permission holds, but a reachable `claim` site keeps the overlap out of
-    /// reach of this version's actualization. Each checker improvement that
-    /// turns a claim into a proof widens the eligible set [ENT-1].
-    PermittedNotActualizable {
-        claim_sites: usize,
-        witness: ClaimWitness,
-    },
     Denied(LoopDenial),
 }
 
 impl LoopVerdict {
     pub(crate) const fn is_permitted(&self) -> bool {
-        matches!(
-            self,
-            Self::PermittedEligible | Self::PermittedNotActualizable { .. }
-        )
+        matches!(self, Self::PermittedEligible)
     }
 
     /// The cited condition of a denial, or `None` for a permitted verdict.
@@ -207,7 +207,7 @@ impl LoopVerdict {
     pub(crate) const fn denied_condition(&self) -> Option<u8> {
         match self {
             Self::Denied(denial) => Some(denial.condition()),
-            Self::PermittedEligible | Self::PermittedNotActualizable { .. } => None,
+            Self::PermittedEligible => None,
         }
     }
 }
@@ -276,7 +276,7 @@ pub(crate) fn judge_loops<'check>(
     eligible_pairs: &[NodePath],
 ) -> Vec<LoopPermission> {
     let mut judged = Vec::new();
-    collect(program, places, function, &function.body, &mut judged);
+    collect(program, places, &function.body, &mut judged);
     for loop_permission in &mut judged {
         if eligible_pairs
             .iter()
@@ -291,7 +291,6 @@ pub(crate) fn judge_loops<'check>(
 fn collect<'check>(
     program: &Program<'check>,
     places: &PlaceMap,
-    function: &'check CheckedFunction,
     statements: &'check [CheckedStatement],
     judged: &mut Vec<LoopPermission>,
 ) {
@@ -307,7 +306,6 @@ fn collect<'check>(
             judged.push(judge(
                 program,
                 places,
-                function,
                 node_path.clone(),
                 *id,
                 *binder,
@@ -315,7 +313,7 @@ fn collect<'check>(
             ));
         }
         for nested in nested_bodies(statement) {
-            collect(program, places, function, nested, judged);
+            collect(program, places, nested, judged);
         }
     }
 }
@@ -330,7 +328,6 @@ fn encloses(outer: &NodePath, inner: &NodePath) -> bool {
 fn judge<'check>(
     program: &Program<'check>,
     places: &PlaceMap,
-    function: &'check CheckedFunction,
     statement: NodePath,
     id: CheckedLoopId,
     binder: BindingId,
@@ -339,14 +336,11 @@ fn judge<'check>(
     let mut survey = Survey {
         program,
         places,
-        function,
         outer_loop: id,
         introduced: vec![binder],
         inner_loops: Vec::new(),
         reads: Vec::new(),
         accumulates: Vec::new(),
-        roots: Vec::new(),
-        claims: Vec::new(),
         carried: None,
         shared: None,
         unresolved: None,
@@ -370,7 +364,6 @@ struct Accumulate {
 struct Survey<'check, 'run> {
     program: &'run Program<'check>,
     places: &'run PlaceMap,
-    function: &'check CheckedFunction,
     /// The counted loop under judgment, so a `break` that closes it is told
     /// apart from one that closes a loop opened inside it.
     outer_loop: CheckedLoopId,
@@ -382,12 +375,6 @@ struct Survey<'check, 'run> {
     /// Every read occurrence, with multiplicity.
     reads: Vec<BindingId>,
     accumulates: Vec<Accumulate>,
-    /// The callees the body calls, for the eligibility closure.
-    roots: Vec<FunctionId>,
-    /// The `claim` statements written in the body itself. The closure walk
-    /// inspects callees, so a claim the writer put in this body is invisible
-    /// to it.
-    claims: Vec<ClaimWitness>,
     carried: Option<NodePath>,
     shared: Option<NodePath>,
     unresolved: Option<NodePath>,
@@ -493,24 +480,11 @@ impl<'check> Survey<'check, '_> {
                 self.moved_places(value, node_path);
                 self.expression(value);
             }
-            // A claim is a trap edge whose [DIAG-3] record a schedule could
-            // otherwise select between. It costs eligibility, not permission,
-            // exactly as a claim in a callee closure does — and its predicate
-            // is an ordinary read of the body, counted here.
-            CheckedStatement::Claim {
-                name,
-                condition,
-                site,
-                ..
-            } => {
-                self.claims.push(ClaimWitness {
-                    path: Vec::new(),
-                    function: self.function.name.clone(),
-                    claim: name.clone(),
-                    node_path: site.node_path.clone(),
-                });
-                self.expression(condition);
-            }
+            // A claim writes nothing, and it leaves the loop only when it is
+            // false — an erroneous execution, which the module doc accounts
+            // for rather than refuses. Its predicate is an ordinary read of the
+            // body, counted here, and that is the whole of its contribution.
+            CheckedStatement::Claim { condition, .. } => self.expression(condition),
             CheckedStatement::Return { .. } => self.leaves("a return"),
             CheckedStatement::Give {
                 node_path, value, ..
@@ -663,7 +637,6 @@ impl<'check> Survey<'check, '_> {
                     let footprint = self.program.footprint(self.places, &projection);
                     self.record_writes(&footprint);
                 }
-                self.roots.push(*function);
                 match self.program.signature(*function) {
                     Some(signature) if signature.external || signature.blocks => {
                         self.row.get_or_insert((
@@ -745,26 +718,19 @@ impl<'check> Survey<'check, '_> {
         }
         let combines = carried.iter().map(|combine| combine.spelling()).collect();
         let denial = self.denial();
-        let claim_free = self.claims.is_empty()
-            && !self
-                .roots
-                .iter()
-                .any(|root| self.program.reaches_claim(*root));
         // The advice outlives exactly one refusal: a loop this version
         // declines only because it carries several accumulators is still one a
         // hand-written recursion returning an aggregate can split. Every other
         // refusal is a reason the split would be refused too, or unsound.
-        let advises_split = matches!(denial, Some(LoopDenial::ManyAccumulators { .. }))
-            && !carried.is_empty()
-            && claim_free;
+        let advises_split =
+            matches!(denial, Some(LoopDenial::ManyAccumulators { .. })) && !carried.is_empty();
         // The one accumulator this version's split carries. Condition 1 has
         // already refused every loop with more than one, so the payload exists
         // exactly where the verdict below is `PermittedEligible` and the body
         // combines something: a permitted loop that carries nothing has no fold
-        // to distribute, and a not-actualizable one has a trap site whose
-        // ordering the split would choose.
-        let actualization = match (&denial, claim_free, self.accumulates.first()) {
-            (None, true, Some(accumulate)) => Some(LoopActualization {
+        // to distribute.
+        let actualization = match (&denial, self.accumulates.first()) {
+            (None, Some(accumulate)) => Some(LoopActualization {
                 accumulator: accumulate.binding,
                 combine: accumulate.combine,
             }),
@@ -772,8 +738,7 @@ impl<'check> Survey<'check, '_> {
         };
         let verdict = match denial {
             Some(denial) => LoopVerdict::Denied(denial),
-            None if claim_free => LoopVerdict::PermittedEligible,
-            None => self.not_actualizable(),
+            None => LoopVerdict::PermittedEligible,
         };
         LoopPermission {
             statement,
@@ -855,26 +820,6 @@ impl<'check> Survey<'check, '_> {
             statement: first.statement.clone(),
             reads,
         })
-    }
-
-    /// The claim sites that keep a permitted loop out of reach, counting the
-    /// body's own claims beside the ones the call closure reaches.
-    fn not_actualizable(&self) -> LoopVerdict {
-        let closure = self.program.claim_closure(&self.roots);
-        let claim_sites = self.claims.len() + closure.as_ref().map_or(0, |(sites, _)| *sites);
-        let witness = self
-            .claims
-            .first()
-            .cloned()
-            .or_else(|| closure.map(|(_, witness)| witness));
-        match witness {
-            Some(witness) => LoopVerdict::PermittedNotActualizable {
-                claim_sites,
-                witness,
-            },
-            // `claim_free` was false, so one of the two sources holds a site.
-            None => LoopVerdict::PermittedEligible,
-        }
     }
 }
 
