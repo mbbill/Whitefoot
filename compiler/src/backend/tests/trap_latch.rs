@@ -328,7 +328,7 @@ fn the_latch_is_what_keeps_the_record_single() {
                 panic!("run {run}: a defeated-latch record is still one [DIAG-3] line: {reason}")
             });
             assert!(
-                name == "left_total_is_zero" || name == "right_total_is_zero",
+                name == "left_index_in_range" || name == "right_index_in_range",
                 "run {run} named a claim neither callee carries: {name}"
             );
         }
