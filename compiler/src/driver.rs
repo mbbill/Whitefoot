@@ -926,6 +926,91 @@ command fn main() -> status: own ExitStatus pure {
         );
     }
 
+    /// A counted loop a `give` can leave gets no line, however associative
+    /// its accumulator is.
+    ///
+    /// `give` is the fourth exit form, and the one that leaves the enclosing
+    /// value initializer as well as the loop. The advised rewrite has no
+    /// representation for that edge at all: it folds the whole index range
+    /// where the loop stopped at the first hit. The fixture below sums 64
+    /// ones, meets a 7 at index 10 and gives there, so the loop contributes 10
+    /// where a full-range split contributes 70 — the advice would move the
+    /// program's published bytes, which is the one failure this path exists to
+    /// prevent.
+    #[test]
+    fn a_counted_loop_a_give_can_leave_is_told_nothing() {
+        let source = b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads('s) {
+  let count = len(deref(src));
+  let acc = 0_u64;
+  let always = True();
+  let answer = if always {
+    for @scan i in 0_u64..count {
+      let v = deref(src)[i];
+      set acc = acc +wrap v;
+      let hit = ieq(v, needle);
+      if hit {
+        give i;
+      }
+    }
+    give 4096_u64;
+  } else {
+    give 4096_u64;
+  }
+  return answer +wrap acc;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let data = buffer_new(64_u64, 1_u64);
+  set data[10_u64] = 7_u64;
+  region 's {
+    let t = scan_until<'s>(src: &'s data, needle: 7_u64);
+    return exit_status(code: 0_u8);
+  }
+}
+";
+        assert_eq!(
+            ledger_of("giving.wf", source),
+            Vec::<String>::new(),
+            "a loop an exit edge can leave must produce no split advice"
+        );
+
+        // The same loop with the give removed does get the line, so the
+        // silence above is about the exit edge and not about the shape.
+        let contained = b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads('s) {
+  let count = len(deref(src));
+  let acc = 0_u64;
+  let always = True();
+  let answer = if always {
+    for @scan i in 0_u64..count {
+      let v = deref(src)[i];
+      set acc = acc +wrap v;
+    }
+    give 4096_u64;
+  } else {
+    give 4096_u64;
+  }
+  return answer +wrap acc;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let data = buffer_new(64_u64, 1_u64);
+  set data[10_u64] = 7_u64;
+  region 's {
+    let t = scan_until<'s>(src: &'s data, needle: 7_u64);
+    return exit_status(code: 0_u8);
+  }
+}
+";
+        assert_eq!(
+            ledger_of("giving.wf", contained),
+            vec![
+                "PAR hint        giving.wf:6  loop  no eligible pair; a recursive split over \
+                 its index range would be eligible, combining under +wrap"
+                    .to_owned()
+            ]
+        );
+    }
+
     /// A program with no analyzed pair reports nothing, and the ledger never
     /// reaches the module: the same compilation with and without it emits the
     /// same bytes.

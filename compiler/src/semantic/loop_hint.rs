@@ -291,8 +291,13 @@ impl Survey<'_> {
             // A claim is a trap edge out of the loop, and a split would have
             // to decide which half traps first.
             CheckedStatement::Claim { .. } => self.refused = true,
-            // Both leave the loop, so the iterations are not independent.
-            CheckedStatement::Return { .. } | CheckedStatement::PropagateLet { .. } => {
+            // All three leave the loop, so the iterations are not independent.
+            // `give` leaves the enclosing value initializer as well, and a
+            // split has no representation for that edge at all: it would sum
+            // the whole range where the loop stopped early.
+            CheckedStatement::Return { .. }
+            | CheckedStatement::PropagateLet { .. }
+            | CheckedStatement::Give { .. } => {
                 self.refused = true;
             }
             CheckedStatement::Break { target, .. } => {
@@ -316,8 +321,7 @@ impl Survey<'_> {
             CheckedStatement::Let { value, .. } | CheckedStatement::Evaluate(value) => {
                 self.expression(value);
             }
-            CheckedStatement::DropExpression { value, .. }
-            | CheckedStatement::Give { value, .. } => self.expression(value),
+            CheckedStatement::DropExpression { value, .. } => self.expression(value),
             CheckedStatement::Match { scrutinee, .. }
             | CheckedStatement::ValueMatchLet { scrutinee, .. } => self.expression(scrutinee),
             CheckedStatement::CountedRange { lower, upper, .. } => {

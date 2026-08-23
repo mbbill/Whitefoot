@@ -71,6 +71,10 @@ they correct.
   (2 failed before) and publishes the default build's bytes on all 8 units
   the lowering changes. The `--par` compile test is widened from
   `par_layout.wf` to the whole corpus and fails without the fix.
+- D-1 fixed: `give` refuses the counted-loop hint, split out of the
+  `DropExpression` arm and placed with `return` and `propagate`. The
+  dossier's give-bearing loop publishes 27 where the advised split publishes
+  80; it now draws no line, while the same loop without the give still does.
 
 ## Outcome
 
