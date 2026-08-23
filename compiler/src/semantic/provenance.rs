@@ -13,7 +13,7 @@ use super::entailment::{
 use super::model::{
     BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedIntegerOperation,
     CheckedMatchArm, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedSetTarget,
-    CheckedSliceSource, CheckedStatement, CheckedType, FunctionId,
+    CheckedSliceSource, CheckedStatement, CheckedType, FunctionId, expression_children,
 };
 use crate::{NodePath, SemanticCompilerFailure};
 
@@ -2036,51 +2036,6 @@ fn collect_expression_sites(
                 collect_expression_sites(function, child, leaves, calls, direct_calls);
             }
         }
-    }
-}
-
-fn expression_children(expression: &CheckedExpression) -> Vec<&CheckedExpression> {
-    match expression {
-        CheckedExpression::Constant(_)
-        | CheckedExpression::NamedConstant { .. }
-        | CheckedExpression::Binding { .. }
-        | CheckedExpression::ArrayLength { .. }
-        | CheckedExpression::BufferLength { .. }
-        | CheckedExpression::SliceOf { .. }
-        | CheckedExpression::SliceLength { .. }
-        | CheckedExpression::BorrowBuffer { .. }
-        | CheckedExpression::BorrowAddressed { .. }
-        | CheckedExpression::BorrowBox { .. }
-        | CheckedExpression::BorrowSystemResource { .. }
-        | CheckedExpression::ReborrowAddressed { .. }
-        | CheckedExpression::DerefAddressed { .. }
-        | CheckedExpression::Project { .. } => Vec::new(),
-        CheckedExpression::UserCall { arguments, .. }
-        | CheckedExpression::SystemCall { arguments, .. }
-        | CheckedExpression::IntegerOperation { arguments, .. }
-        | CheckedExpression::FloatOperation { arguments, .. }
-        | CheckedExpression::BooleanOperation { arguments, .. }
-        | CheckedExpression::EnumEquality { arguments, .. }
-        | CheckedExpression::ConstructStruct {
-            fields: arguments, ..
-        }
-        | CheckedExpression::ConstructEnum {
-            fields: arguments, ..
-        } => arguments.iter().collect(),
-        CheckedExpression::NumericConversion { value, .. }
-        | CheckedExpression::Reinterpret { value, .. }
-        | CheckedExpression::ArrayFill { value, .. }
-        | CheckedExpression::BoxNew { value, .. }
-        | CheckedExpression::BoxDeref { value, .. }
-        | CheckedExpression::ArenaNew { value, .. }
-        | CheckedExpression::ArenaDeref { value, .. }
-        | CheckedExpression::ProjectValue { value, .. } => vec![value],
-        CheckedExpression::ArrayIndex { offset, .. }
-        | CheckedExpression::BufferIndex { offset, .. }
-        | CheckedExpression::SliceIndex { offset, .. } => vec![offset],
-        CheckedExpression::BufferFill { length, value, .. } => vec![length, value],
-        CheckedExpression::BufferVacant { length, .. }
-        | CheckedExpression::BufferFits { length, .. } => vec![length.as_ref()],
     }
 }
 
