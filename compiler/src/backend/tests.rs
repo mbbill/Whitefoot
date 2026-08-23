@@ -39,11 +39,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
-    ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
-    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_RUNTIME_SOURCE, ParseLimits,
-    ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits,
-    TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
-    check_semantics_arithmetic_obligations, check_semantics_division_obligations,
+    ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FLOOR_RUNTIME_SOURCE,
+    FinalizeLimits, FinalizeOutcome, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
+    PARALLEL_RUNTIME_SOURCE, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome,
+    SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical,
+    check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
     classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked,
     module_requires_parallel_runtime, parse, resolve,
 };
@@ -383,6 +383,12 @@ fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> 
     if let Some(path) = host_unit.as_ref() {
         command.arg("-x").arg("c").arg(path);
     }
+    // The exhaustion floor joins every link, exactly as the driver links it:
+    // every program can run out of stack, so a test program dies the way a
+    // shipped one does.
+    let floor_unit = directory.join("wf_floor.c");
+    std::fs::write(&floor_unit, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
+    command.arg("-pthread").arg("-x").arg("c").arg(&floor_unit);
     // The parallel runtime joins the link on exactly the condition the driver
     // uses: the emitted module names its entry point. A test therefore cannot
     // link a runtime a shipped build would not, and a module that overlaps
@@ -390,7 +396,7 @@ fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> 
     let parallel_unit = module_requires_parallel_runtime(llvm).then(|| {
         let path = directory.join("par_runtime.c");
         std::fs::write(&path, PARALLEL_RUNTIME_SOURCE).expect("write the parallel runtime");
-        command.arg("-pthread").arg("-x").arg("c").arg(&path);
+        command.arg("-x").arg("c").arg(&path);
         path
     });
     let compile = command
@@ -410,6 +416,7 @@ fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> 
     if let Some(path) = host_unit {
         std::fs::remove_file(path).expect("remove deterministic host unit");
     }
+    std::fs::remove_file(&floor_unit).expect("remove the floor runtime unit");
     if let Some(path) = parallel_unit {
         std::fs::remove_file(path).expect("remove the parallel runtime unit");
     }
@@ -474,10 +481,17 @@ fn host_optimized_module(llvm: &str) -> String {
     String::from_utf8(output.stdout).expect("optimized module is UTF-8")
 }
 
-/// Returns the definition of `main` inside one optimized module.
+/// Returns the definition of the program's entry inside one optimized module.
+///
+/// This is `@wf__main_body`, not `@main`. Since the exhaustion floor landed,
+/// `@main` keeps the host's entry signature and does one thing — hand the
+/// program to the floor runtime, which runs it on a stack the compiler sized.
+/// The bootstrap, the inputs, and the call into the program all live in the
+/// body, so the body is what every check about the entry's shape reads. The
+/// caller's assertions are unchanged by the move; only where they look is.
 fn optimized_main(module: &str) -> &str {
     let start = module
-        .match_indices(" @main(")
+        .match_indices(" @wf__main_body(")
         .find_map(|(symbol_start, _)| {
             let line_start = module[..symbol_start]
                 .rfind('\n')
@@ -486,7 +500,7 @@ fn optimized_main(module: &str) -> &str {
                 .starts_with("define")
                 .then_some(line_start)
         })
-        .expect("optimized module must still define main");
+        .expect("optimized module must still define the entry body");
     let end = module[start..]
         .find("\n}\n")
         .map(|offset| start + offset + 2)

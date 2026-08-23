@@ -11,6 +11,7 @@ mod buffer;
 mod cleanup;
 mod conversion;
 mod floating;
+mod floor;
 mod integer;
 mod operations;
 mod parallel;
@@ -34,6 +35,8 @@ use crate::{
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
+use floor::FLOOR_RUNTIME_FALLBACK;
+pub use floor::FLOOR_RUNTIME_SOURCE;
 use parallel::{
     HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_FALLBACK, PARALLEL_RUNTIME_FALLBACK,
     PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, par_done_label, sequential_clone_set,
@@ -290,6 +293,11 @@ fn emit_llvm_for(
         text.push('\n');
         text.push_str(&functions);
     }
+    // Unconditional, unlike the parallel runtime's: every program can run out
+    // of stack, so every module names the floor and carries its own answer for
+    // a link that does not supply one.
+    text.push('\n');
+    text.push_str(FLOOR_RUNTIME_FALLBACK);
     text.push_str(&entry);
     Ok(LlvmModule {
         text: attach_stack_probe(&text, target),

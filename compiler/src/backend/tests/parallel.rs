@@ -645,7 +645,10 @@ fn the_bootstrap_selects_one_world_once() {
         1,
         "the world must be selected exactly once per process:\n{overlapped}"
     );
-    let bootstrap = function_body(&overlapped, "@main");
+    // The bootstrap lives in the entry body: `@main` keeps the host's
+    // signature and hands the program to the exhaustion floor, which runs this
+    // on a stack the compiler sized.
+    let bootstrap = function_body(&overlapped, "@wf__main_body");
     assert!(
         bootstrap.contains("  %par.pool = call i32 @wf__par_pool_active()")
             && bootstrap.contains("call i8 @wf_main(")
@@ -687,7 +690,7 @@ fn the_bootstrap_selects_one_world_once() {
     }
     // And nothing but the bootstrap reaches the clone world.
     let actualized = without_clones(&overlapped);
-    let bootstrap_free = actualized.replace(function_body(&actualized, "@main"), "");
+    let bootstrap_free = actualized.replace(function_body(&actualized, "@wf__main_body"), "");
     assert!(
         !bootstrap_free.contains("@wf__par_seq_"),
         "only the bootstrap may name a clone:\n{bootstrap_free}"
@@ -1302,10 +1305,14 @@ pub(super) fn grants_over_runs(
 fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
     let assembly = directory.join("counted.ll");
     let runtime = directory.join("counted_runtime.c");
+    let floor = directory.join("counted_floor.c");
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
     std::fs::write(&assembly, module).expect("write the module");
     std::fs::write(&runtime, PARALLEL_RUNTIME_SOURCE).expect("write the runtime");
+    // The floor joins every link the driver makes, and a lane's per-thread arm
+    // lives in it, so this harness links what a shipped program links.
+    std::fs::write(&floor, super::FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     std::fs::write(
         &observer,
         "#include <stdio.h>\nextern unsigned long wf__par_grants;\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants);\n}\n",
@@ -1319,6 +1326,7 @@ fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
         .arg("-x")
         .arg("c")
         .arg(&runtime)
+        .arg(&floor)
         .arg(&observer)
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")

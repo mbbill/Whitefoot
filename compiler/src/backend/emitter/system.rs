@@ -34,6 +34,15 @@ use crate::ACTIVE_KERNEL_SPEC_VERSION;
 /// failure, and this one is never produced by a returned command code path.
 const START_FAILURE_STATUS: i32 = 71;
 
+/// The symbol carrying the bootstrap and the call into the program.
+///
+/// `@main` keeps the host's entry signature and does one thing: hand this
+/// function to the floor runtime, which runs it on a stack of the compiler's
+/// own size. The floor's translation unit calls this symbol by name, so it has
+/// external linkage; the module's weak fallback calls it directly for a link
+/// that supplies no floor.
+const ENTRY_BODY_SYMBOL: &str = "wf__main_body";
+
 /// The [SYS-2] inventory ordinals this module emits code for.
 const ARGS_COUNT: u8 = 0;
 const ARG_GET: u8 = 1;
@@ -2253,8 +2262,17 @@ pub(super) fn emit_entry(
         )
         .map_err(|_| BackendFailure::TextEmission)?;
     }
+    // The host's entry hands the program to the floor, which runs the
+    // bootstrap and the program itself on a stack the compiler sized rather
+    // than on whatever the environment's limit left behind. Nothing about the
+    // program's meaning moves with it: the same blocks run in the same order,
+    // one frame lower down.
     Ok(format!(
-        "define i32 @main(i32 %argc, ptr %argv) {{\n{body}}}\n"
+        "define i32 @{ENTRY_BODY_SYMBOL}(i32 %argc, ptr %argv) {{\n{body}}}\n\
+         \n\
+         define i32 @main(i32 %argc, ptr %argv) {{\n  \
+         %status = call i32 @wf__floor_run(i32 %argc, ptr %argv)\n  \
+         ret i32 %status\n}}\n"
     ))
 }
 

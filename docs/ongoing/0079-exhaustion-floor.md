@@ -70,6 +70,27 @@ home).
   the attribute is doing work rather than sitting inert. Test needles that
   pinned a `define ... {` line followed the added group; no assertion
   weakened.
+- F2+F3 — `compiler/src/backend/wf_floor.c`, linked into every program.
+  `@main` becomes a trampoline handing the program to `wf__floor_run`, which
+  installs the handlers and runs the entry — now `@wf__main_body` — on a
+  1 GiB thread; each pool lane arms itself at attach. Measured: with the
+  environment's limit cut to 1 MiB a 2,000,000-frame recursion completes,
+  where the pre-floor binary dies at exit 139 with no bytes. An exhausted
+  entry and an exhausted lane both write exactly `{"resource":"stack"}` and
+  abort; a wild fault still exits 139 with zero bytes and its core dump. All
+  176 corpus observable rows byte-identical to the pre-change compiler's.
+  Cost, measured rather than carried over from the research: +0.078 ms per
+  process and +65,560 bytes peak footprint, of which the 1 GiB reservation
+  contributes nothing (an 8 MiB and a 4 GiB thread measure the same) and the
+  alternate signal stacks contribute nothing (16 KiB and 64 KiB measure the
+  same) — it is the entry thread itself. The dossier's "0 ms, 0 RSS" holds
+  for the reservation only.
+  Two findings for the lead, neither in this scope: pool lanes are still
+  sized from `RLIMIT_STACK`, so F2 widens the sequential-versus-lane ceiling
+  gap that F7 owns; and whether a deep recursion reaches a lane at all is a
+  steal-race coin flip, measured at 24/30 at the default and 13/20 to 17/20
+  across worker counts 2 through 16 — F7's liveness item, reproduced here
+  independently of `bt_skew`.
 
 ## Outcome
 

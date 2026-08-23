@@ -22,7 +22,9 @@ mod syntax;
 
 /// The parallel runtime a module that hands work out must be linked against,
 /// and the predicate that decides whether one must.
-pub use backend::{PARALLEL_RUNTIME_SOURCE, module_requires_parallel_runtime};
+pub use backend::{
+    FLOOR_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, module_requires_parallel_runtime,
+};
 pub use driver::*;
 pub use lexer::*;
 /// The compile-time choice of whether the backend actualizes the permission

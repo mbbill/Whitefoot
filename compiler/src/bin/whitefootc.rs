@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use whitefoot::{
-    CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_RUNTIME_SOURCE,
-    SourceInput, compile_with_overlap, compile_with_permission_ledger,
+    CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
+    PARALLEL_RUNTIME_SOURCE, SourceInput, compile_with_overlap, compile_with_permission_ledger,
     module_requires_parallel_runtime,
 };
 
@@ -88,11 +88,20 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
     } else {
         None
     };
+    // The floor joins unconditionally, because every program can exhaust its
+    // stack. It travels the same way and for the same reason: its bytes are
+    // the compiler's, so what a program does when it runs out is decided here
+    // and not by anything installed on the machine.
+    let floor = std::env::temp_dir().join(format!("whitefootc-floor-{}.c", std::process::id()));
+    std::fs::write(&floor, FLOOR_RUNTIME_SOURCE)
+        .map_err(|error| format!("cannot write the floor runtime: {error}"))?;
     let mut command = Command::new("/usr/bin/clang");
+    command.arg("-pthread").arg("-x").arg("c").arg(&floor);
     if let Some(path) = runtime.as_ref() {
-        command.arg("-pthread").arg("-x").arg("c").arg(path);
+        command.arg("-x").arg("c").arg(path);
     }
     let outcome = link(&mut command, llvm, output);
+    let _ = std::fs::remove_file(floor);
     if let Some(path) = runtime {
         let _ = std::fs::remove_file(path);
     }

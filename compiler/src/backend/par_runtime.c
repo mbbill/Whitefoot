@@ -497,11 +497,20 @@ static void wf__par_wait(struct wf__par_lane *lane, struct wf__par_slot *target)
 
 /* ------------------------------------------------------------------- lanes */
 
+/* The exhaustion floor's per-thread arm, defined in `wf_floor.c`, which is
+ * linked into every program. A lane runs ordinary Whitefoot calls and can
+ * recurse exactly as deep as the offering thread would have, so it needs the
+ * same alternate signal stack and the same recorded bounds — without them a
+ * lane's overflow arrives as a bare host signal, which is the case the pool
+ * default introduced. */
+extern void wf__floor_attach_thread(void);
+
 static void *wf__par_worker_main(void *opaque) {
     struct wf__par_lane *lane = (struct wf__par_lane *)opaque;
     int rounds = 0;
     wf__par_self = lane;
     wf__par_attached = 1;
+    wf__floor_attach_thread();
 
     pthread_mutex_lock(&wf__par_ready_lock);
     wf__par_ready += 1;

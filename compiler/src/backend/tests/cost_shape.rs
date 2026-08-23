@@ -826,7 +826,10 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             || DECLARED_FUNCTIONS.iter().any(|name| {
                 target == format!("wf_{name}") || target.starts_with(&format!("wf_{name}.cold."))
             })
-            || target.starts_with("main.cold.");
+            // The entry body — `@main` hands the program to the exhaustion
+            // floor, which runs this — and the optimizer's cold outlining of
+            // its own failure arms.
+            || target.starts_with("wf__main_body.cold.");
         assert!(
             accounted,
             "wfgrep calls @{target}, which no first-slice row accounts for"

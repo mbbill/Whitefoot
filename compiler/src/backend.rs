@@ -8,5 +8,6 @@ mod target;
 mod tests;
 
 pub use emitter::{
-    BackendFailure, PARALLEL_RUNTIME_SOURCE, emit_llvm, module_requires_parallel_runtime,
+    BackendFailure, FLOOR_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, emit_llvm,
+    module_requires_parallel_runtime,
 };
