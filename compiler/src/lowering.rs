@@ -886,6 +886,38 @@ pub enum IrOperation {
         address: IrValueId,
         referent: IrAddressed,
     },
+    /// One permitted counted loop [PAR-2 candidate], actualized as a recursive
+    /// split of its index range.
+    ///
+    /// The whole loop is one instruction here because it has exactly two
+    /// renderings and the choice between them is the world, not the source. The
+    /// overlapped world asks the runtime what a split of this span may afford
+    /// and calls `splitter`; the sequential world calls `chunk`, which *is* the
+    /// loop, so that world runs the code the loop always had. Both take the
+    /// accumulator's incoming value as their first argument and return the
+    /// whole fold, so the site has nothing to recombine and the two renderings
+    /// are one call each.
+    ///
+    /// `splitter` and `chunk` are ordinary synthesized [`IrFunction`]s: the
+    /// splitter's two recursive calls are one ordinary overlap group, so the
+    /// hand-out, the thunk, the deque, and the join are the ones every other
+    /// permitted pair uses.
+    LoopSplit {
+        splitter: u32,
+        chunk: u32,
+        /// The accumulator's value on entry. It folds into the leftmost chunk,
+        /// which is what keeps the fold's leaf order the source's own.
+        seed: IrValueId,
+        lower: IrValueId,
+        upper: IrValueId,
+        /// The values the body reads from the enclosing scope, in the order the
+        /// two synthesized functions declare them.
+        captures: Vec<IrValueId>,
+        /// The static cost estimate of one iteration, which the runtime
+        /// allowance multiplies by the span. A cost over the emitted IR, never
+        /// a name, a signature, or a source shape.
+        weight: u64,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1060,6 +1092,32 @@ impl IrOverlap {
     }
 }
 
+/// How large a lane frame a handed-out call is granted, in bytes.
+///
+/// This restates `WF_PAR_FRAME_BYTES` in `backend/par_runtime.c`, because the
+/// decision to emit a [`IrOperation::LoopSplit`] at all has to be made long
+/// before a runtime exists — and a split whose frame is over the bound would be
+/// refused every lane at run time and sequentialize with no report. The two
+/// numbers live in two languages and are pinned to each other by
+/// `the_compile_time_frame_bound_is_the_runtimes`.
+pub const LANE_FRAME_BYTES: u64 = 256;
+
+/// Why a function exists, for the one consumer that has to tell the two worlds
+/// apart: a source function is emitted into both, while the two halves of a
+/// [`IrOperation::LoopSplit`] each belong to exactly one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrSynthesis {
+    /// The recursive range splitter. It exists only in the overlapped world —
+    /// the sequential world calls the chunk directly — so cloning it would emit
+    /// a second, unreachable caller of the chunk's clone and cost that clone
+    /// the single-call-site inlining the sequential world depends on.
+    Splitter,
+    /// The loop over a subrange, seeded by its first parameter. Both worlds
+    /// reach it, so it is cloned like a source function and each world's copy
+    /// has exactly one caller.
+    Chunk,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrFunction {
     name: String,
@@ -1068,11 +1126,17 @@ pub struct IrFunction {
     values: Vec<IrType>,
     blocks: Vec<IrBlock>,
     overlaps: Vec<IrOverlap>,
+    synthesis: Option<IrSynthesis>,
 }
 
 impl IrFunction {
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Why this function exists, or `None` for a source function.
+    pub const fn synthesis(&self) -> Option<IrSynthesis> {
+        self.synthesis
     }
 
     pub const fn result(&self) -> IrType {
@@ -1160,6 +1224,7 @@ pub struct IrProgram<'classified, 'lexed, 'source> {
     functions: Vec<IrFunction>,
     main: u32,
     entry: IrEntry,
+    actualization: Vec<String>,
 }
 
 impl IrProgram<'_, '_, '_> {
@@ -1239,6 +1304,18 @@ impl IrProgram<'_, '_, '_> {
             }
         }
         false
+    }
+
+    /// The non-normative ledger lines this lowering added: one per permitted
+    /// counted loop it either actualized or declined to.
+    ///
+    /// The judgment's own ledger states what [PAR-2] permits and is the same
+    /// with or without `--par`. These state what *this* lowering did with a
+    /// permission, which is a different fact and exists only where actualization
+    /// was asked for. Both are developer output on the caller's channel; neither
+    /// participates in acceptance or in any mandatory [DIAG-3] record.
+    pub fn actualization_ledger(&self) -> &[String] {
+        &self.actualization
     }
 
     /// Test-only malformed-IR probe: retypes one command parameter while

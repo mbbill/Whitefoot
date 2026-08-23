@@ -1,0 +1,146 @@
+fn hex_digit(v: own u64) -> result: own u8 pure {
+  let nibble = iand(v, 15_u64);
+  let small = ilt(nibble, 10_u64);
+  match cvt<u64, u8>(nibble) {
+    Ok(value: byte) => {
+      if small {
+        return byte +wrap 48_u8;
+      }
+      return byte +wrap 87_u8;
+    }
+    Err(error: wide) => {
+      return 63_u8;
+    }
+  }
+}
+
+fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads('d), writes('d) {
+  doc "Writes one 64-bit value as sixteen lowercase hexadecimal digits, most significant first.";
+  let cursor = at;
+  let rest = value;
+  let limit = at +wrap 16_u64;
+  loop @digits {
+    let done = ige(cursor, limit);
+    if done {
+      break @digits;
+    }
+    let shifted = irotl(rest, 4_u32);
+    let digit = hex_digit(v: shifted);
+    let room = len(deref(destination));
+    let writable = ilt(cursor, room);
+    if writable {
+      set deref(destination)[cursor] = digit;
+    }
+    set rest = shifted;
+    set cursor = cursor +wrap 1_u64;
+  }
+  return limit;
+}
+
+fn mandelbrot_escapes(cx: own f64, cy: own f64) -> result: own Bool pure {
+  doc "One orbit of the quadratic map, to a fixed iteration cap. Claim-free and loop-bearing, so it is the leaf work of the split rather than a bounded closure.";
+  let real = 0.0_f64;
+  let imaginary = 0.0_f64;
+  let iteration = 0_u32;
+  let escaped = False();
+  loop @orbit {
+    let exhausted = ieq(iteration, 256_u32);
+    if exhausted {
+      break @orbit;
+    }
+    let real_squared = fmul.strict(real, real);
+    let imaginary_squared = fmul.strict(imaginary, imaginary);
+    let difference = fsub.strict(real_squared, imaginary_squared);
+    let next_real = fadd.strict(difference, cx);
+    let product = fmul.strict(real, imaginary);
+    let doubled_product = fmul.strict(2.0_f64, product);
+    let next_imaginary = fadd.strict(doubled_product, cy);
+    set real = next_real;
+    set imaginary = next_imaginary;
+    let next_real_squared = fmul.strict(real, real);
+    let next_imaginary_squared = fmul.strict(imaginary, imaginary);
+    let magnitude_squared = fadd.strict(next_real_squared, next_imaginary_squared);
+    let outside = fgt(magnitude_squared, 4.0_f64);
+    if outside {
+      set escaped = True();
+      break @orbit;
+    }
+    set iteration = iteration +wrap 1_u32;
+  }
+  return escaped;
+}
+
+fn point_escapes(index: own u32, phase: own f64) -> result: own u32 pure {
+  doc "Decodes one linear grid index into a complex coordinate. The grid is 1024 wide, so the row and column split with a mask and a shift and need no division and therefore no claim.";
+  let column = iand(index, 1023_u32);
+  let row = ishr.wrap(index, 10_u32);
+  let column_float = cvt<u32, f64>(column);
+  let row_float = cvt<u32, f64>(row);
+  let scaled_x = fmul.strict(column_float, 0.003125_f64);
+  let scaled_y = fmul.strict(row_float, 0.001171875_f64);
+  let cx = fsub.strict(scaled_x, 2.0_f64);
+  let shifted_y = fsub.strict(scaled_y, 1.2_f64);
+  let cy = fadd.strict(shifted_y, phase);
+  let escaped = mandelbrot_escapes(cx: cx, cy: cy);
+  if escaped {
+    return 1_u32;
+  }
+  return 0_u32;
+}
+
+fn narrow(v: own u64) -> result: own u32 pure {
+  doc "A claim-free total narrowing of the counted binder, whose range the caller keeps inside u32. It is the whole cost this program adds over its hand-split twin: one compare and one select per point, against a 256-round orbit.";
+  match cvt<u64, u32>(v) {
+    Ok(value: small) => {
+      return small;
+    }
+    Err(error: wide) => {
+      return 0_u32;
+    }
+  }
+}
+
+fn tile(lo: own u64, hi: own u64, phase: own f64) -> result: own u32 pure {
+  doc "Counts escaping points over the half-open index range, written as the counted `for` a writer reaches for. [PAR-2] judges the loop itself: one accumulator under +wrap, read once, no write to anything the iteration did not introduce, no edge leaving the loop, and a claim-free call closure. This is the same computation the hand-split twin in bench/wf/grid_d21_w256.wf spells as a recursion, and it publishes the same bytes.";
+  let total = 0_u32;
+  for @points index in lo..hi {
+    let narrowed = narrow(v: index);
+    let escaped = point_escapes(index: narrowed, phase: phase);
+    set total = total +wrap escaped;
+  }
+  return total;
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+  doc "Counts the escaping points of a 2097152-point grid by counted loop, once per repetition, and publishes the running total as hexadecimal. Byte-for-byte the output of bench/wf/grid_d21_w256.wf.";
+  let total = 0_u32;
+  let phase = 0.0_f64;
+  let i = 0_u64;
+  loop @reps {
+    let done = ieq(i, 2_u64);
+    if done {
+      break @reps;
+    }
+    let escaped = tile(lo: 0_u64, hi: 2097152_u64, phase: phase);
+    set total = total +wrap escaped;
+    set phase = fadd.strict(phase, 0.0625_f64);
+    set i = i +wrap 1_u64;
+  }
+  let wide = cvt<u32, u64>(total);
+  let report = buffer_new(17_u64, 10_u8);
+  region 'summary {
+    let first = spell_hex<'summary>(destination: &uniq 'summary report, at: 0_u64, value: wide);
+  }
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 17_u64) {
+        Ok(value: next) => {
+          return exit_status(code: 0_u8);
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}

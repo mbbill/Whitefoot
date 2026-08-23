@@ -35,8 +35,9 @@ use crate::{
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
 use parallel::{
-    HandedOut, PARALLEL_POOL_QUERY_FALLBACK, PARALLEL_RUNTIME_FALLBACK, ParallelThunks,
-    par_done_label, sequential_clone_set, sequential_clone_symbol,
+    HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_FALLBACK, PARALLEL_RUNTIME_FALLBACK,
+    PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, par_done_label, sequential_clone_set,
+    sequential_clone_symbol,
 };
 pub use parallel::{PARALLEL_RUNTIME_SOURCE, module_requires_parallel_runtime};
 
@@ -270,6 +271,9 @@ fn emit_llvm_for(
         text.push_str(PARALLEL_RUNTIME_FALLBACK);
         if !clones.is_empty() {
             text.push_str(PARALLEL_POOL_QUERY_FALLBACK);
+        }
+        if thunks.queries_split_budget() {
+            text.push_str(PARALLEL_SPLIT_BUDGET_FALLBACK);
         }
         text.push_str(thunks.definitions());
     }
@@ -801,6 +805,27 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     self.emit_call(result, ty, *function, arguments)
                 }
             }
+            IrOperation::LoopSplit {
+                splitter,
+                chunk,
+                seed,
+                lower,
+                upper,
+                captures,
+                weight,
+            } => self.emit_loop_split(
+                result,
+                ty,
+                &LoopSplitSite {
+                    splitter: *splitter,
+                    chunk: *chunk,
+                    seed: *seed,
+                    lower: *lower,
+                    upper: *upper,
+                    captures,
+                    weight: *weight,
+                },
+            ),
             IrOperation::SystemCall {
                 operation,
                 arguments,

@@ -131,6 +131,47 @@
 #define WF_PAR_SPIN_ROUNDS 4096
 #define WF_PAR_YIELD_ROUNDS 16
 
+/* How far a permitted counted loop's range split may descend, in two policy
+ * constants. `wf__par_split_budget` is where they are applied and what the
+ * argument for each of them is; both are measured machine numbers like the
+ * spin bound above, and both are the lowering's only tuning surface — no
+ * constant of this kind is in the compiler and none is in the language.
+ *
+ * OVERSUBSCRIBE is how many chunks the pool wants per lane. One per lane
+ * leaves a lane that finishes early with nothing to steal, and this machine's
+ * four performance and six efficiency cores make that costly: the slow cores
+ * straggle, and the fast ones have nothing left to take. Measured on the grid
+ * workload at the shipped default of ten lanes, minimum of forty interleaved
+ * runs: 4 chunks per lane read 0.0822 s, 16 read 0.0754 s, and 64 read
+ * 0.0732 s, against 0.0763 s for the hand-written recursive twin of the same
+ * program. Sixteen is the near edge of that flat region; going further buys
+ * three percent and cuts the range finer than any measurement asks for.
+ *
+ * It cannot reopen the hazard the other constant closes, because the two are
+ * combined with a minimum: a range too small to be worth splitting is bounded
+ * by the work term whatever the pool would like.
+ *
+ * WORK_PER_CHUNK is how much work, in the estimated instruction-equivalents of
+ * one iteration, a chunk must be worth before publishing it can pay for
+ * itself. It is the constant that closes the over-split hazard: splitting a
+ * range that is not worth splitting is a real regression, not a wash, and an
+ * allowance derived from the lane count alone produces it on every small loop.
+ * Measured directly, by sweeping the width of a counted loop of estimated
+ * weight 150 over a fixed total amount of work and comparing the split against
+ * the same program's sequential build at the shipped default:
+ *
+ *     width     2 000   8 000  32 000  128 000  512 000
+ *     split    0.0831  0.0269  0.0116   0.0084   0.0072
+ *     plain    0.0205  0.0196  0.0201   0.0201   0.0210
+ *     ratio     4.1x    1.37x   0.58x    0.42x    0.34x
+ *                loss    loss     win      win      win
+ *
+ * The crossing is near a width of 16 000, so a whole range first pays for two
+ * chunks at about 16 000 x 150 = 2.4e6 instruction-equivalents, and one chunk
+ * is worth publishing at about half that. */
+#define WF_PAR_SPLIT_OVERSUBSCRIBE 16
+#define WF_PAR_SPLIT_WORK_PER_CHUNK 1200000
+
 /* A slot's execution state. FREE is the resting state of an unclaimed slot;
  * PENDING says the frame is filled and pushed; DONE says the task has run and
  * the result is in the frame. */
@@ -783,4 +824,92 @@ void wf__par_release(void *frame) {
  */
 int wf__par_pool_active(void) {
     return wf__par_requested_lanes() >= 2;
+}
+
+/* The lane count, settled once per process.
+ *
+ * `wf__par_requested_lanes` reads the environment and, when nothing is set,
+ * asks the machine for its core count. Both answers are fixed for the life of
+ * the process and both are expensive to ask for repeatedly: measured at 129 ns
+ * per call with WF_WORKERS set and 1121 ns with it unset — which is the
+ * shipped default. The allowance below is asked once per loop *entry*, which
+ * is often enough for a microsecond to be a disaster, so it reads this
+ * instead: 2.5-4.1 ns. Two threads that settle it at once compute the same
+ * number, so the race is benign and needs no lock. */
+static int wf__par_cached_lanes = -1;
+
+static int wf__par_lanes_once(void) {
+    int lanes = __atomic_load_n(&wf__par_cached_lanes, __ATOMIC_RELAXED);
+    if (lanes < 0) {
+        lanes = wf__par_requested_lanes();
+        __atomic_store_n(&wf__par_cached_lanes, lanes, __ATOMIC_RELAXED);
+    }
+    return lanes;
+}
+
+/* How many times a permitted counted loop's range may be halved [PAR-2].
+ *
+ * Asked once per loop entry, never per iteration, and answered from three
+ * things: how many chunks this pool could use, how much work the range is
+ * worth, and whether this thread is already inside parallel work.
+ *
+ * **Why it is sound for a schedule to depend on any of that.** Every operation
+ * a permitted loop may recombine under is exactly associative on its type's
+ * complete value set, so the value of the fold does not depend on the shape of
+ * the combination tree. The number of chunks is therefore not observable, and
+ * the same program publishes the same bytes at every worker count and at every
+ * answer this function can give. If a non-associative combine were ever
+ * admitted, this function would become unsound the same day.
+ *
+ * **Why the work term is mandatory rather than a refinement.** The alternative
+ * — deriving the descent from the lane count alone — was measured on a small
+ * loop at 15x slower with eight chunks and 53x with 1024, getting *worse* with
+ * more lanes. Splitting is only free when the range is worth splitting, and
+ * only the caller's static estimate of one iteration says whether it is.
+ *
+ * **Why a busy lane refuses.** A thread inside a chunk of some outer split is
+ * already parallel; splitting again multiplies offers without adding a lane to
+ * run them, and the outer split has already used the pool. One relaxed load of
+ * this thread's own deque says so. */
+unsigned long wf__par_split_budget(unsigned long span, unsigned long weight) {
+    struct wf__par_lane *lane = wf__par_self;
+    int lanes = wf__par_lanes_once();
+    unsigned long want;
+    unsigned long affordable;
+    unsigned long chunks;
+    unsigned long budget;
+    if (lanes < 2) {
+        return 0;
+    }
+    if (lane != NULL) {
+        unsigned long long bottom = __atomic_load_n(&lane->bottom, __ATOMIC_RELAXED);
+        unsigned long long top = __atomic_load_n(&lane->top, __ATOMIC_RELAXED);
+        if ((long long)(bottom - top) > 0) {
+            return 0;
+        }
+    }
+    if (weight == 0) {
+        weight = 1;
+    }
+    want = (unsigned long)lanes * WF_PAR_SPLIT_OVERSUBSCRIBE;
+    /* `span * weight / WORK_PER_CHUNK`, computed so a span near the whole u64
+     * range cannot wrap into a small answer. */
+    if (weight >= (unsigned long)WF_PAR_SPLIT_WORK_PER_CHUNK) {
+        affordable = span;
+    } else {
+        affordable = span / (((unsigned long)WF_PAR_SPLIT_WORK_PER_CHUNK + weight - 1) / weight);
+    }
+    chunks = (want < affordable) ? want : affordable;
+    /* The descent is the base-two logarithm of the chunk count, so the depth
+     * of the splitter's recursion is this answer and nothing else: bounded
+     * above by log2(WF_PAR_MAX_LANES * OVERSUBSCRIBE), which is ten. That is a
+     * theorem about the emitted shape rather than a policy — the recursion is
+     * over the allowance, never over the range, so a loop of 2^64 iterations
+     * costs ten frames. */
+    budget = 0;
+    while ((chunks >> 1) != 0) {
+        chunks >>= 1;
+        budget += 1;
+    }
+    return budget;
 }

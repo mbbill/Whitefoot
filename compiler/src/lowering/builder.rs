@@ -5,6 +5,7 @@ mod loops;
 mod probe;
 mod results;
 mod slices;
+mod split;
 mod storage;
 
 use crate::CheckedProgram;
@@ -17,6 +18,7 @@ use crate::semantic::{
 
 use super::*;
 use loops::LoopTarget;
+use split::{Synthesis, SynthesisCell};
 use storage::collect_addressed_bindings;
 
 pub fn lower_checked<'classified, 'lexed, 'source>(
@@ -51,20 +53,33 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         OverlapLowering::On => Some(&checked.data.permission),
         OverlapLowering::Off => None,
     };
-    let functions = checked
+    // Where a synthesized function's ordinal starts. A [PAR-2] split appends
+    // its two halves after every source function, so nothing renumbers and a
+    // `Call` still indexes one flat table.
+    let source_functions = u32::try_from(checked.data.functions.len())
+        .map_err(|_| LoweringFailure::CounterOverflow)?;
+    let synthesis = SynthesisCell::new(Synthesis::new(source_functions));
+    let context = LoweringContext {
+        nominals: &nominals,
+        constants: &constants,
+        function_results: &function_results,
+        synthesis: &synthesis,
+    };
+    let mut functions = checked
         .data
         .functions
         .iter()
         .map(|function| {
             lower_function(
                 function,
-                &nominals,
-                &constants,
-                &function_results,
+                context,
                 permission.and_then(|table| table.of(function.id)),
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let (synthesized, actualization) = synthesis.into_inner().finish()?;
+    functions.extend(synthesized);
+    split::assign_weights(&mut functions);
     Ok(IrProgram {
         main: checked.data.main.0,
         _checked: checked,
@@ -72,7 +87,24 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         constants,
         functions,
         entry,
+        actualization,
     })
+}
+
+/// What every builder of one lowering shares: the program-wide tables it reads
+/// and the cell the synthesized halves of a [PAR-2] split are filed in.
+///
+/// These travel as one value because a chunk is built by a second builder
+/// created inside the first, and a chunk containing another permitted loop
+/// creates a third; passing the shared half by name keeps that recursion from
+/// growing an argument list at every level.
+#[derive(Clone, Copy)]
+struct LoweringContext<'program> {
+    nominals: &'program [IrNominal],
+    constants: &'program [IrGlobalConstant],
+    /// Every source function's declared IR result, indexed by [`FunctionId`].
+    function_results: &'program [IrType],
+    synthesis: &'program SynthesisCell,
 }
 
 /// Carries the [FN-7] entry form into the IR.
@@ -266,12 +298,10 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
         .collect()
 }
 
-fn lower_function(
+fn lower_function<'program>(
     function: &crate::semantic::CheckedFunction,
-    nominals: &[IrNominal],
-    constants: &[IrGlobalConstant],
-    function_results: &[IrType],
-    permissions: Option<&FunctionPermissions>,
+    context: LoweringContext<'program>,
+    permissions: Option<&'program FunctionPermissions>,
 ) -> Result<IrFunction, LoweringFailure> {
     let uninhabited = matches!(
         function.body_disposition,
@@ -283,23 +313,26 @@ fn lower_function(
     } else {
         collect_addressed_bindings(function)
     };
-    let result = *function_results
+    let result = *context
+        .function_results
         .get(function.id.0 as usize)
         .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+    // The whole permission table of this function, and only when this
+    // compilation asked for actualization: with none, a permitted loop lowers
+    // exactly as it did before the split existed and no group is actualized.
     let mut builder = IrBuilder::new(
-        nominals,
-        constants,
+        context,
         result,
         addressed_bindings,
-        function_results,
+        permissions,
+        &function.symbol,
     )?;
     for parameter in &function.parameters {
-        let ty = lower_parameter_type(parameter, nominals)?;
-        let value = builder.new_value(ty)?;
+        let ty = lower_parameter_type(parameter, context.nominals)?;
+        let value = builder.new_parameter(ty)?;
         if builder.bindings.insert(parameter.binding, value).is_some() {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        builder.parameters.push((value, ty));
         builder.promote_binding_if_needed(parameter.binding)?;
     }
     if uninhabited {
@@ -307,35 +340,8 @@ fn lower_function(
     } else {
         builder.lower_statements(&function.body, None)?;
     }
-    if builder.current.is_some()
-        || builder
-            .blocks
-            .iter()
-            .any(|block| block.terminator.is_none())
-    {
-        return Err(LoweringFailure::InvalidCheckedProgram);
-    }
-    let overlaps = builder.overlaps(permissions);
-    Ok(IrFunction {
-        name: function.symbol.clone(),
-        parameters: builder.parameters,
-        result,
-        values: builder.values,
-        blocks: builder
-            .blocks
-            .into_iter()
-            .map(|block| {
-                Ok(IrBlock {
-                    parameters: block.parameters,
-                    instructions: block.instructions,
-                    terminator: block
-                        .terminator
-                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-                })
-            })
-            .collect::<Result<Vec<_>, LoweringFailure>>()?,
-        overlaps,
-    })
+    let overlaps = builder.overlaps();
+    builder.finish(function.symbol.clone(), overlaps, None)
 }
 
 fn lower_parameter_type(
@@ -401,6 +407,22 @@ struct IrBuilder<'program> {
     /// defined. The permission table names its sites by the binding each
     /// defines, so this is how a permitted group is found in the IR.
     call_results: HashMap<BindingId, (IrBlockId, IrValueId)>,
+    /// The permission table of the source function this body belongs to: the
+    /// [PAR-1] groups its statements may overlap and the [PAR-2] verdict of
+    /// each of its counted loops.
+    ///
+    /// `None` when this compilation actualizes nothing, and inside a
+    /// synthesized splitter, which has no source statement of its own — a
+    /// splitter's overlap group is produced by the lowering that built it.
+    /// A synthesized *chunk* carries the table, because its body is the loop's
+    /// own statements and a pair inside them is permitted exactly as it was
+    /// before the loop was split.
+    permissions: Option<&'program FunctionPermissions>,
+    /// Where a split's synthesized halves are filed, shared with every builder
+    /// this one creates.
+    synthesis: &'program SynthesisCell,
+    /// The source function this body belongs to, for the actualization ledger.
+    function_name: &'program str,
 }
 
 #[derive(Clone)]
@@ -412,12 +434,18 @@ struct GiveTarget {
 
 impl<'program> IrBuilder<'program> {
     fn new(
-        nominals: &'program [IrNominal],
-        constants: &'program [IrGlobalConstant],
+        context: LoweringContext<'program>,
         result: IrType,
         addressed_bindings: std::collections::HashSet<BindingId>,
-        function_results: &'program [IrType],
+        permissions: Option<&'program FunctionPermissions>,
+        function_name: &'program str,
     ) -> Result<Self, LoweringFailure> {
+        let LoweringContext {
+            nominals,
+            constants,
+            function_results,
+            synthesis,
+        } = context;
         let mut builder = Self {
             nominals,
             constants,
@@ -431,6 +459,9 @@ impl<'program> IrBuilder<'program> {
             addressed_bindings,
             function_results,
             call_results: HashMap::new(),
+            permissions,
+            synthesis,
+            function_name,
         };
         let (entry, parameters) = builder.new_block(&[])?;
         if !parameters.is_empty() {
@@ -438,6 +469,56 @@ impl<'program> IrBuilder<'program> {
         }
         builder.current = Some(entry);
         Ok(builder)
+    }
+
+    /// This builder's own shared half, for the builders it creates.
+    const fn context(&self) -> LoweringContext<'program> {
+        LoweringContext {
+            nominals: self.nominals,
+            constants: self.constants,
+            function_results: self.function_results,
+            synthesis: self.synthesis,
+        }
+    }
+
+    /// Declares one more parameter of the function being built.
+    fn new_parameter(&mut self, ty: IrType) -> Result<IrValueId, LoweringFailure> {
+        let value = self.new_value(ty)?;
+        self.parameters.push((value, ty));
+        Ok(value)
+    }
+
+    /// Seals the body into a function, refusing an unterminated one.
+    fn finish(
+        self,
+        name: String,
+        overlaps: Vec<IrOverlap>,
+        synthesis: Option<IrSynthesis>,
+    ) -> Result<IrFunction, LoweringFailure> {
+        if self.current.is_some() || self.blocks.iter().any(|block| block.terminator.is_none()) {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        Ok(IrFunction {
+            name,
+            parameters: self.parameters,
+            result: self.result,
+            values: self.values,
+            blocks: self
+                .blocks
+                .into_iter()
+                .map(|block| {
+                    Ok(IrBlock {
+                        parameters: block.parameters,
+                        instructions: block.instructions,
+                        terminator: block
+                            .terminator
+                            .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, LoweringFailure>>()?,
+            overlaps,
+            synthesis,
+        })
     }
 
     fn new_value(&mut self, ty: IrType) -> Result<IrValueId, LoweringFailure> {
@@ -516,8 +597,8 @@ impl<'program> IrBuilder<'program> {
     ///
     /// A prefix of a permitted chain is itself permitted: the chain's every
     /// ordered pair was judged, so every ordered pair of the prefix was too.
-    fn overlaps(&self, permissions: Option<&FunctionPermissions>) -> Vec<IrOverlap> {
-        let Some(permissions) = permissions else {
+    fn overlaps(&self) -> Vec<IrOverlap> {
+        let Some(permissions) = self.permissions else {
             return Vec::new();
         };
         let mut overlaps = Vec::new();
@@ -661,14 +742,15 @@ impl<'program> IrBuilder<'program> {
                 } => self.lower_loop(*id, body, backedge_drops, give_target.clone())?,
                 CheckedStatement::CountedRange {
                     id,
+                    node_path,
                     binder,
                     lower,
                     upper,
                     body,
                     backedge_drops,
-                    ..
                 } => self.lower_counted_range(
                     *id,
+                    node_path,
                     *binder,
                     lower,
                     upper,

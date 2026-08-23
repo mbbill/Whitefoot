@@ -142,6 +142,65 @@ they correct.
   [OWN-5] borrow conflict — so the check was removed and the argument that
   the read count is complete is recorded in the module doc, with a test
   pinning both directions.
+- B1, the split lowering landed: a permitted counted loop becomes one new
+  `IrOperation::LoopSplit` and two synthesized `IrFunction`s — a *chunk*,
+  which is the loop itself seeded by its first parameter, and a *splitter*,
+  whose two recursive halves are an ordinary overlap group. Nothing about the
+  hand-out changed: the claim, the frame, the thunk, the deque, the join, and
+  the two-world selection are the ones a permitted pair already used. The
+  overlapped world renders the site as one runtime allowance query plus a call
+  to the splitter; the sequential world renders it as a call to the chunk's
+  clone, which is the loop. The splitter's `IrOverlap` is produced by this
+  lowering and is **not** a second permission judgment — it actualizes the
+  loop's own permission, and each world resolves its phi labels against its
+  own overlap set, which is the `eabefcc8` lesson honoured by construction.
+- B2, the runtime allowance landed: one new entry point
+  `wf__par_split_budget(span, weight)` in `par_runtime.c`, asked **once per
+  loop entry** and never per iteration, answering from a lane count settled
+  once per process, this thread's own deque occupancy, and the caller's static
+  weight estimate. Its two policy constants sit beside `WF_PAR_SPIN_ROUNDS`
+  and are named for the packet: `WF_PAR_SPLIT_OVERSUBSCRIBE` = 16 and
+  `WF_PAR_SPLIT_WORK_PER_CHUNK` = 1200000. Both are measured, and the
+  measurements are written into the file beside them.
+- B3, the compile-time declines landed. A lane frame is 256 bytes, so a split
+  whose frame is wider would be refused every lane forever and sequentialize
+  with no report; the lowering measures the frame at emission and declines
+  with a ledger line naming the width. The bound is restated once in the IR as
+  `LANE_FRAME_BYTES` and pinned to the runtime's `WF_PAR_FRAME_BYTES` by
+  `the_compile_time_frame_bound_is_the_runtimes`. The lowering's own ledger
+  lines (`PAR split`) ride the judgment's under `--par --par-ledger`, so an
+  actualization is as reported as a permission.
+- B4, three findings from this batch's own adversarial review of its diff,
+  all fixed before the commit landed:
+  - **A silent loss of already-granted parallelism.** A chunk was built with
+    no overlap group at all, so a permitted [PAR-1] pair *inside* a loop body
+    vanished the moment the loop was split — correct, but sequential, and
+    reported nowhere. The whole permission table now travels into the chunk,
+    whose body is the loop's own statements, so a pair inside them is
+    actualized exactly as it was before the split existed. Reproduced on a
+    loop carrying both: the chunk claims a lane where it previously claimed
+    none, and the program publishes the same answer at every worker count.
+  - **A missing operand check.** `emit_loop_split` checked only that the
+    endpoints were `u64`, where the sibling hand-out path checks every
+    argument against the callee's declared parameters. One lowering builds
+    both lists, so nothing could reach it today; the check is there so a later
+    lowering defect stops at the emitter instead of reaching the assembler.
+  - **Two tests that could not have failed.** No fixture captured anything —
+    every one had an empty capture list — and every fixture folded under
+    `+wrap`, so a swapped capture or a wrong identity element was invisible to
+    `cargo test`. One new fixture closes both: three enclosing values used
+    asymmetrically, folded under `ixor`, compared against the default
+    compilation of the same source with the grant count read.
+- **A defect found and fixed inside this batch's own work.** The first weight
+  estimator read every `break` as a back edge — the builder creates a loop's
+  exit block *before* its body, so a break jumps backwards in block index —
+  and a body with three breaks weighed 65 536 times what it costs. The
+  grid loop's weight read 860 510 instead of 305. Back edges are now tested by
+  their definition (delete the target; ask whether the jumping block is still
+  reachable from the entry) rather than approximated by block order. This
+  moved no accepted program and no published byte, only the allowance, and it
+  is exactly why the constant below was calibrated after the fix and not
+  before.
 
 ## What the judgment reaches today
 
@@ -198,6 +257,197 @@ from "refused for a reason about `bs_push`" to "refused for a reason about the
 buffer", which is more honest but no more permitted. And two of the map loops
 (`raw_deflate_boundary`, `wfgrep`) also carry a `return`, so they need the exit
 condition relaxed as well as the place work.
+
+## The measurement: the default form reaches the hand-written form
+
+The charter's whole claim in one table. `r2_grid_loop_d21_w256.wf`, promoted
+beside DESIGN.md, is the bench family's `grid_d21_w256` with its recursive
+`tile` written as the counted `for` a writer reaches for; everything else in
+the two programs is the same text. The twin is the hand-written recursive
+split the owner objected to having to write. Both were compiled by the
+branch-tip `whitefootc`, linked by `/usr/bin/clang -O2`, and run under the
+bench harness's interleaved rotation at the oracle protocol: minimum of 18
+rounds, no cell run twice in a row.
+
+**Machine was not quiet.** Apple M4, 10 cores; other agent sessions were
+running on it throughout. One-minute load average 4.04 before the pass and
+4.29 after. That is what the interleaved minimum-of-N is for, and the
+protocol's 0.83x-1.20x unresolved band applies to every ratio below; a second
+independent pass of 15 rounds, taken earlier at load 2.74, reproduces every
+cell within four percent.
+
+| cell | min (s) | loop / twin | loop / rayon |
+|---|---|---|---|
+| `wf_loop_seq` | 0.5079 | 0.98 (u) | — |
+| `wf_loop_par/1` | 0.5061 | 0.98 (u) | — |
+| `wf_loop_par/2` | 0.2525 | 0.95 (u) | 0.95 (u) |
+| `wf_loop_par/4` | 0.1360 | 0.98 (u) | 0.99 (u) |
+| `wf_loop_par/8` | 0.0889 | 0.99 (u) | 0.95 (u) |
+| `wf_loop_par/default` | **0.0777** | **1.00 (u)** | **0.95 (u)** |
+| `wf_twin_seq` | 0.5178 | | |
+| `wf_twin_par/1` | 0.5176 | | |
+| `wf_twin_par/2` | 0.2662 | | |
+| `wf_twin_par/4` | 0.1383 | | |
+| `wf_twin_par/8` | 0.0898 | | |
+| `wf_twin_par/default` | 0.0776 | | |
+| `rs_seq` | 0.4841 | | |
+| `rs_rayon/2` | 0.2644 | | |
+| `rs_rayon/4` | 0.1379 | | |
+| `rs_rayon/8` | 0.0935 | | |
+| `rs_rayon/default` | 0.0819 | | |
+
+**The loop form reaches the hand-split form's numbers.** Every one of the six
+loop-versus-twin ratios is inside the unresolved band, and the two cells that
+matter most — the shipped default and eight lanes — are 1.00x and 0.99x. The
+same is true against `rayon`. The loop form scales 6.54x from its own
+sequential build (0.5079 to 0.0777), and the `--par` opt-in costs it nothing
+at one lane (0.5061 against 0.5079), because that run takes the sequential
+world where the split does not exist.
+
+**Byte comparison.** One sequence, `000000000033517d`, from: the loop form's
+default compilation; the loop form's `--par` build at `WF_WORKERS` 0, 1, 2, 3,
+4, 5, 8, 10, 16 and unset; the hand-split twin both ways at all of the same;
+and the Rust twin sequential and under rayon at 2, 4, 8, and its own default
+pool. Every run of the timed rotation above hashed to `a6522da3cd244c2c`, all
+seventeen cells. `r1_mandelbrot_for.wf` likewise exits 0 — its
+`ieq(escaped_points, 2437_u32)` claim holds — at all ten worker settings and
+in its default compilation.
+
+### The residual, attributed
+
+The first pass, taken at `WF_PAR_SPLIT_OVERSUBSCRIBE` = 4, put the loop form
+consistently 11% behind the twin at the shipped default: inside the
+unresolved band, but in the same direction twice. Two candidate causes: the
+one extra `narrow` per point that the loop form pays and the twin does not, or
+the chunk count. The discriminating experiment is to move only the chunk count
+and see whether the gap moves with it — the conversion is unaffected by it.
+Minimum of 40 interleaved rounds at the shipped default:
+
+| chunks per lane | 4 | 16 | 64 | twin |
+|---|---|---|---|---|
+| min (s) | 0.0822 | 0.0754 | 0.0732 | 0.0763 |
+
+Monotone in the constant, and at 16 the loop form already matches the twin. So
+the residual was grain, not the loop form: at 4 chunks per lane this
+4-performance-6-efficiency machine leaves the slow cores straggling with
+nothing for the fast ones to steal. The constant moved to 16, which is where
+the table flattens; 64 buys a further three percent and cuts the range finer
+than any measurement asks for.
+
+### The over-split hazard, closed by measurement rather than by argument
+
+Splitting a range that is not worth splitting is a real regression, so the
+work term of the allowance was calibrated directly rather than assumed. A
+counted loop of estimated weight 150 was swept over its width at a fixed total
+amount of work, and the split compared against the same program's sequential
+build at the shipped default:
+
+| width | 2 000 | 8 000 | 32 000 | 128 000 | 512 000 |
+|---|---|---|---|---|---|
+| split (probe allowance) | 0.0831 | 0.0269 | 0.0116 | 0.0084 | 0.0072 |
+| plain | 0.0205 | 0.0196 | 0.0201 | 0.0201 | 0.0210 |
+| | 4.1x loss | 1.37x loss | 1.73x win | 2.4x win | 2.9x win |
+
+The crossing is near a width of 16 000, which sets
+`WF_PAR_SPLIT_WORK_PER_CHUNK` = 1 200 000 instruction-equivalents. Re-measured
+with the shipped constants, the allowance now refuses exactly where splitting
+loses and takes it where it wins:
+
+| width | 2 000 | 8 000 | 32 000 | 128 000 | 512 000 |
+|---|---|---|---|---|---|
+| shipped | 0.0198 | 0.0197 | 0.0138 | 0.0077 | 0.0071 |
+| plain | 0.0203 | 0.0192 | 0.0192 | 0.0192 | 0.0201 |
+| | parity | parity | 1.39x win | 2.5x win | 2.8x win |
+
+### The recursion depth is the allowance, not the range
+
+The splitter descends exactly `budget` levels and `budget` is the base-two
+logarithm of the chunk count, which the allowance caps at
+`WF_PAR_MAX_LANES * WF_PAR_SPLIT_OVERSUBSCRIBE` = 1024. **The bound is ten
+frames, for any range up to 2^64 iterations.** That is a theorem about the
+emitted shape rather than a policy, and it is strictly better than the pair
+lowering's, whose depth follows the writer's own recursion.
+`a_split_loop_costs_a_bounded_stack` runs a split loop under a 512 KB stack
+limit at eight lanes.
+
+### What the corpus does, and what this batch emitted everywhere else
+
+Re-run at this HEAD, as the brief asked rather than taken from the census:
+`tests/programs` still holds eleven counted `for` loops, **none permitted and
+therefore none split**. The whole-corpus `--par` compile-and-publish test is
+unchanged by this batch because it has nothing to change. The measurement
+above is on the promoted probes, which is where the shape exists.
+
+**Zero emitted bytes outside the shape, verified rather than asserted.** Every
+standalone source of `tests/programs`, `bench/wf`, and `loop/probes` was
+emitted by the branch-tip compiler and by the batch-A compiler at `0314c01e`,
+in the default compilation and under `--par`, and the modules compared byte for
+byte: **74 identical, 4 differing.** The four are `--par` only and are exactly
+the four programs carrying a loop [PAR-2] permits — `m1_pair_in_for`,
+`p4_split_equiv`, `r1_mandelbrot_for`, `r2_grid_loop_d21_w256`. **No default
+compilation of anything moved one byte**, which is the property the whole
+`OverlapLowering::Off` path exists to have.
+
+### One gate flake, chased rather than waved through
+
+The first full run of `make -C compiler check` after the review fixes failed
+one case — `the_runtime_replaces_the_modules_weak_refusal`, on "the runtime
+granted no lane". That run was concurrent with this batch's own timed
+measurement pass, at a one-minute load average of 7.77 on a ten-core machine.
+The case asserts that a pool actually took work, and a saturated machine lets
+the offering thread run every one of its own offers at the join, which is the
+runtime's documented common case and grants nothing.
+
+It was not accepted as a flake on the strength of that story. The case passes
+in isolation three times over; its fixture contains no counted `for` at all, so
+`split_counted_range` is never reached for it; the corpus program that
+exercises the same path, `par_layout.wf`, is byte-identical to `0314c01e` in
+both worlds by the comparison above; and `sequential_clone_set`'s new predicate
+reduces to the old one exactly for a program with no synthesized function. The
+gate is green on a quiet machine. **The load sensitivity is a real property of
+that case and predates this batch**; it is recorded here rather than fixed,
+because tightening it belongs with whoever owns the parallel test harness.
+
+## FLAGGED: the protected conformance coverage annotations, prepared not landed
+
+**Protected class touched at merge, not on this branch.** `make check`'s
+`conformance` target reports `135/136 rules covered ... 1 uncovered`, and the
+one uncovered rule is `PAR-1`. That red predates batch 0077 — batch A verified
+it with its own changes stashed and unstashed — and [PAR-2] will make it two
+the moment the rule activates. Both annotations are prepared here as exact
+bytes and **neither is added to `tests/conformance/manifest.jsonl` on this
+branch**, so the file's protected bytes are untouched and the audit at merge
+has one before/after rather than two.
+
+Exact before: `tests/conformance/manifest.jsonl` ends at line 420 with the
+`GATE-2` annotation; it contains no `PAR-1` and no `PAR-2` row of any kind
+(`grep -c '"rule": "PAR-' tests/conformance/manifest.jsonl` is 0).
+
+Exact after: two lines appended, in this order, each one line of JSON:
+
+```
+{"rule": "PAR-1", "covered_by": "compiler-permission-judgment", "reason": "A permission rule with nothing in a program to accept or reject: it grants an implementation the room to overlap two sibling calls and forbids nothing a writer can write. Every accepted program is accepted identically whether or not the permission is taken, and the compiler's own actualization tests establish the one observable consequence — that a taken overlap publishes the bytes the sequential schedule publishes — by running one emitted module at every worker count and against the lowering that overlaps nothing. A conformance case could only re-run a program and observe no difference, which is a statement about the implementation's schedule rather than about a source verdict."}
+{"rule": "PAR-2", "covered_by": "compiler-permission-judgment", "reason": "The counted-loop half of the same permission, and covered for the same reason: it grants an implementation the room to overlap the iterations of a counted for and to choose the combination tree over the enumerated exactly-associative operations, and forbids nothing. No program's acceptance moves and no verdict moves. The one observable consequence — that a regrouped fold publishes the bytes the sequential fold publishes — is established by the compiler's own cases, which run one emitted module at ten worker settings, against the lowering that splits nothing, and against a two-sidedness table over every admitted combine at every width it carries."}
+```
+
+Both were applied to a scratch copy and run, rather than reasoned about:
+
+- **[PAR-1]'s line alone, against today's 136-rule specification, is
+  `136/136 rules covered (116 by case [+115/-55], 31 by annotation); 0
+  uncovered`.** That is the form to apply if the owner takes the annotations
+  without the rule, and it turns `make check` green end to end.
+- **[PAR-2]'s line is *rejected* today** — `invalid conformance manifest:
+  annotation PAR-2: unknown rule` — because the rule is not yet in the active
+  specification. It is therefore not an independent decision: it belongs to
+  the same activation change that applies the rule text, and applying it
+  earlier would break the gate rather than extend it.
+
+The manifest was restored byte for byte after each trial; nothing of this
+reached the commit.
+
+No conformance *case* is added, modified, deleted, or renamed by this batch,
+and no case verdict moves. The delta is exactly the two annotation lines
+above.
 
 ## The [PAR-2] merge-time application recipe
 

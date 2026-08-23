@@ -38,6 +38,11 @@ pub(crate) use check::check_semantics_reborrow_extension;
 /// ledger renders; nothing derives a second judgment from it.
 pub(crate) use permission::FunctionPermissions;
 
+/// One counted loop's [PAR-2] verdict and, where the loop is permitted and
+/// eligible, the two identities actualizing it needs. Lowering reads these; it
+/// never derives a verdict of its own from them.
+pub(crate) use loop_permission::{LoopActualization, LoopCombine, LoopPermission};
+
 pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBodyDisposition, CheckedBooleanOperation,
     CheckedBufferRoot, CheckedBufferSetTarget, CheckedConstructor, CheckedDrop, CheckedEntryForm,

@@ -57,7 +57,25 @@ use std::collections::HashSet;
 use std::fmt::Write;
 
 use super::{BackendFailure, FunctionEmitter, llvm_type, source_symbol, value_name};
-use crate::{IrInstruction, IrOperation, IrProgram, IrType, IrValueId};
+use crate::{IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType, IrValueId};
+
+/// The counted loop's index type [FN-1], which fixes every width question the
+/// split could otherwise have.
+const U64: IrType = IrType::Integer {
+    width: 64,
+    signed: false,
+};
+
+/// One [`IrOperation::LoopSplit`] site, as the two renderings read it.
+pub(super) struct LoopSplitSite<'ir> {
+    pub(super) splitter: u32,
+    pub(super) chunk: u32,
+    pub(super) seed: IrValueId,
+    pub(super) lower: IrValueId,
+    pub(super) upper: IrValueId,
+    pub(super) captures: &'ir [IrValueId],
+    pub(super) weight: u64,
+}
 
 /// The C source of the parallel runtime, embedded so that every path that
 /// links a Whitefoot executable links the same bytes.
@@ -107,6 +125,20 @@ pub fn module_requires_parallel_runtime(module: &str) -> bool {
 /// four signatures above are exactly the bytes they were.
 pub(crate) const PARALLEL_POOL_QUERY_FALLBACK: &str =
     "define weak i32 @wf__par_pool_active() {\nentry:\n  ret i32 0\n}\n\n";
+
+/// The runtime's answer to "how many times may a split of this span halve",
+/// and the module's own weak answer of "not at all".
+///
+/// Carried for the same reason as the query above: with no runtime linked there
+/// are no lanes, so the honest allowance is zero and a splitter that gets it
+/// descends straight to its leaf — one call, then the loop. That is the
+/// sequential schedule, reached through the overlapped world's code.
+///
+/// It is a separate definition rather than a fifth lane-protocol entry point
+/// because it takes no frame, publishes nothing, and moves no work; keeping it
+/// apart also leaves the four protocol signatures' bytes exactly as they were.
+pub(crate) const PARALLEL_SPLIT_BUDGET_FALLBACK: &str =
+    "define weak i64 @wf__par_split_budget(i64 %span, i64 %weight) {\nentry:\n  ret i64 0\n}\n\n";
 
 /// The symbol one function's sequential clone is emitted under.
 ///
@@ -166,12 +198,21 @@ pub(crate) fn sequential_clone_set(program: &IrProgram<'_, '_, '_>) -> HashSet<u
         );
         for block in function.blocks() {
             for instruction in block.instructions() {
-                if let IrInstruction::Define {
-                    operation: IrOperation::Call { function, .. },
-                    ..
-                } = instruction
-                {
-                    callees[ordinal].push(*function);
+                let IrInstruction::Define { operation, .. } = instruction else {
+                    continue;
+                };
+                match operation {
+                    IrOperation::Call { function, .. } => callees[ordinal].push(*function),
+                    // A split reaches both halves: the overlapped world calls
+                    // the splitter and the sequential world calls the chunk, so
+                    // each world's reachability has to hold the one it uses.
+                    IrOperation::LoopSplit {
+                        splitter, chunk, ..
+                    } => {
+                        callees[ordinal].push(*splitter);
+                        callees[ordinal].push(*chunk);
+                    }
+                    _ => {}
                 }
             }
         }
@@ -218,7 +259,28 @@ pub(crate) fn sequential_clone_set(program: &IrProgram<'_, '_, '_>) -> HashSet<u
         }
     }
 
-    reachable.intersection(&reaches_hand_out).copied().collect()
+    // A chunk reaches no hand-out of its own, and still needs a clone: it is
+    // what the sequential world calls at a split site, and giving that world
+    // its own copy leaves each copy with exactly one caller, which is what lets
+    // the loop be inlined back into it and makes the sequential world free.
+    //
+    // A splitter is the other way round. It exists only in the overlapped
+    // world, so its clone would be unreachable — and would be a second caller
+    // of the chunk's clone, costing exactly the inlining above.
+    reachable
+        .iter()
+        .copied()
+        .filter(|ordinal| {
+            match functions
+                .get(*ordinal as usize)
+                .and_then(IrFunction::synthesis)
+            {
+                Some(IrSynthesis::Splitter) => false,
+                Some(IrSynthesis::Chunk) => true,
+                None => reaches_hand_out.contains(ordinal),
+            }
+        })
+        .collect()
 }
 
 /// The outlined thunks of one module, in emission order.
@@ -226,6 +288,9 @@ pub(crate) fn sequential_clone_set(program: &IrProgram<'_, '_, '_>) -> HashSet<u
 pub(crate) struct ParallelThunks {
     definitions: String,
     count: u32,
+    /// Whether any emitted function asked the runtime for a split allowance, so
+    /// a module that splits no loop names that symbol nowhere.
+    queries_split_budget: bool,
 }
 
 impl ParallelThunks {
@@ -237,6 +302,10 @@ impl ParallelThunks {
 
     pub(crate) const fn is_used(&self) -> bool {
         self.count != 0
+    }
+
+    pub(crate) const fn queries_split_budget(&self) -> bool {
+        self.queries_split_budget
     }
 
     /// Records one thunk body and returns the symbol that names it.
@@ -347,6 +416,118 @@ impl FunctionEmitter<'_, '_> {
             callee,
             arguments: operands.join(", "),
         });
+        Ok(())
+    }
+
+    /// Renders one permitted counted loop [PAR-2 candidate] into the world
+    /// being emitted.
+    ///
+    /// The sequential world calls the chunk — the loop itself, seeded with the
+    /// accumulator's incoming value — and is therefore the code the loop always
+    /// had, behind one call its only caller inlines back. The overlapped world
+    /// asks the runtime once, at loop entry, how far a split of this span may
+    /// descend, and calls the splitter with that allowance. Nothing is asked
+    /// per iteration, and neither world tests anything the other does.
+    pub(super) fn emit_loop_split(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        split: &LoopSplitSite<'_>,
+    ) -> Result<(), BackendFailure> {
+        let result_type = llvm_type(self.program, ty)?;
+        let mut arguments = Vec::with_capacity(split.captures.len() + 4);
+        arguments.push(format!("{result_type} {}", self.value_name(split.seed)));
+        for endpoint in [split.lower, split.upper] {
+            if self.value_type(endpoint) != Some(U64) {
+                return Err(BackendFailure::InvalidIr);
+            }
+            arguments.push(format!("i64 {}", self.value_name(endpoint)));
+        }
+        for capture in split.captures {
+            let capture_type = self.value_type(*capture).ok_or(BackendFailure::InvalidIr)?;
+            arguments.push(format!(
+                "{} {}",
+                llvm_type(self.program, capture_type)?,
+                self.value_name(*capture)
+            ));
+        }
+
+        let target = if self.sequential_clones.is_some() {
+            split.chunk
+        } else {
+            split.splitter
+        };
+        let function = self
+            .program
+            .functions()
+            .get(target as usize)
+            .ok_or(BackendFailure::InvalidIr)?;
+        // The site's operands against the callee's declared parameters, exactly
+        // as a handed-out call checks its own. One lowering builds both lists
+        // from one computation, so a mismatch is a defect in that lowering
+        // rather than a shape this has to render; the point of the check is
+        // that such a defect stops here instead of reaching the assembler as
+        // type-mismatched text.
+        let declared = function.parameters();
+        // The splitter takes the allowance as one further parameter, which the
+        // overlapped world appends below; every other operand is already in
+        // `arguments`.
+        let expected = declared
+            .len()
+            .checked_sub(usize::from(self.sequential_clones.is_none()))
+            .ok_or(BackendFailure::InvalidIr)?;
+        if expected != arguments.len() {
+            return Err(BackendFailure::InvalidIr);
+        }
+        if function.result() != ty
+            || declared.first().map(|(_, ty)| *ty) != Some(ty)
+            || split
+                .captures
+                .iter()
+                .zip(declared.get(3..).unwrap_or_default())
+                .any(|(capture, (_, parameter))| self.value_type(*capture) != Some(*parameter))
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let callee = self.callee_symbol(target, function.name());
+        if self.sequential_clones.is_some() {
+            writeln!(
+                self.output,
+                "  {} = call {result_type} @{callee}({})",
+                value_name(result),
+                arguments.join(", ")
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            return Ok(());
+        }
+
+        // The span, computed so an inverted range asks for nothing rather than
+        // for a bogus 2^63 one. The splitter guards the same way; this keeps a
+        // wrapped width out of the allowance as well as out of the descent.
+        let width = format!("%{}", self.next_temporary()?);
+        let ascending = format!("%{}", self.next_temporary()?);
+        let span = format!("%{}", self.next_temporary()?);
+        let budget = format!("%{}", self.next_temporary()?);
+        let lower = self.value_name(split.lower);
+        let upper = self.value_name(split.upper);
+        writeln!(
+            self.output,
+            "  {width} = sub i64 {upper}, {lower}\n  \
+             {ascending} = icmp ugt i64 {upper}, {lower}\n  \
+             {span} = select i1 {ascending}, i64 {width}, i64 0\n  \
+             {budget} = call i64 @wf__par_split_budget(i64 {span}, i64 {})",
+            split.weight
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        self.parallel.queries_split_budget = true;
+        arguments.push(format!("i64 {budget}"));
+        writeln!(
+            self.output,
+            "  {} = call {result_type} @{callee}({})",
+            value_name(result),
+            arguments.join(", ")
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
         Ok(())
     }
 

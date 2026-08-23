@@ -39,5 +39,19 @@ each probe decides.
   in `tests/programs`, or when batch B's split measurement against the
   recursive oracle is closed.
 
+- `r2_grid_loop_d21_w256.wf` — the bench family's `grid_d21_w256` with its
+  recursive `tile` written as the counted `for` a writer reaches for, and
+  everything else the same text. It is batch B's measurement subject: the
+  loop form against the hand-written recursive twin it was rewritten from,
+  and against `rayon`, on the standing oracle grid. All three publish
+  `000000000033517d`, and the loop form reaches the twin's numbers at every
+  worker count — the table is in the 0077 record. The one thing it adds over
+  the twin is a claim-free `narrow`, because the binder is `own u64` [TYPE-5]
+  while `point_escapes` takes the `u32` the twin's recursion carries; that is
+  one compare and one select against a 256-round orbit, and the residual it
+  could explain was measured to be grain instead. Remove it when a loop-form
+  program of this shape lands in `tests/programs`, or when the bench
+  generator learns to emit the loop form directly.
+
 The value-falsifier measurement table (map splits on memory-shaped vs
 compute-heavy bodies) is in `VALUE.md`.

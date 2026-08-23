@@ -17,6 +17,7 @@ mod integer_absolute;
 mod integer_conversion;
 mod integer_extended;
 mod integer_negation;
+mod loop_split;
 mod options;
 mod parallel;
 mod propagation;
@@ -106,6 +107,23 @@ fn emit(source: &[u8]) -> String {
 /// what `whitefootc --par` compiles.
 fn emit_with_overlap(source: &[u8]) -> String {
     emit_lowered(source, OverlapLowering::On)
+}
+
+/// The developer-channel permission ledger of one source, compiled the way
+/// `whitefootc --par --par-ledger` compiles it.
+///
+/// It carries the judgment's own lines, which are the same with or without
+/// `--par`, and after them the lines this lowering added about what it
+/// actualized — which only a compilation that asked for actualization has.
+fn compile_permission_ledger(source: &[u8]) -> Vec<String> {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let (_, ledger) = crate::compile_with_permission_ledger(
+        &inputs,
+        crate::CompilerLimits::default(),
+        OverlapLowering::On,
+    )
+    .expect("the ledger source must compile");
+    ledger
 }
 
 /// The shared front half: check `source`, then lower and emit it under one

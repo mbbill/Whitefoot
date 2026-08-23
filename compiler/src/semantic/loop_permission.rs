@@ -118,6 +118,66 @@ pub(crate) struct LoopPermission {
     /// the advice the ledger prints for a refused loop; it is never true for a
     /// permitted one, which needs no rewrite.
     pub(crate) advises_split: bool,
+    /// What actualizing this permission needs from the judgment, present
+    /// exactly for a permitted, eligible loop carrying one accumulator.
+    ///
+    /// The judgment does not decide that anything is emitted: lowering reads
+    /// this, applies its own emission conditions, and may still decline. The
+    /// verdict above is the same either way.
+    pub(crate) actualization: Option<LoopActualization>,
+}
+
+/// The identities a synthesized range split needs: which binding carries the
+/// fold, and the operation the combination tree applies.
+///
+/// Everything else the split needs — which values the body reads from the
+/// enclosing scope, what the frame costs, what the body weighs — is a property
+/// of the emitted shape rather than of the judgment, and lowering computes it
+/// from the IR it built.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct LoopActualization {
+    pub(crate) accumulator: BindingId,
+    pub(crate) combine: LoopCombine,
+}
+
+/// The closed set of operations an accumulator may be combined under: exactly
+/// the exactly-associative ones, named once so the judgment, the ledger, and
+/// the emitted combination tree cannot hold three drifting copies of it.
+///
+/// This is its own enumeration rather than a checked operation carried around,
+/// because every consumer needs the set to be *closed*: a total spelling, a
+/// total identity element, and no arm that could be reached by an operation the
+/// rule does not admit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LoopCombine {
+    AddWrap,
+    MultiplyWrap,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Minimum,
+    Maximum,
+    And,
+    Or,
+    ExclusiveOr,
+}
+
+impl LoopCombine {
+    /// The [OP-1] spelling the ledger prints.
+    pub(crate) const fn spelling(self) -> &'static str {
+        match self {
+            Self::AddWrap => "+wrap",
+            Self::MultiplyWrap => "*wrap",
+            Self::BitAnd => "iand",
+            Self::BitOr => "ior",
+            Self::BitXor => "ixor",
+            Self::Minimum => "imin",
+            Self::Maximum => "imax",
+            Self::And => "band",
+            Self::Or => "bor",
+            Self::ExclusiveOr => "bxor",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -303,7 +363,7 @@ fn judge<'check>(
 /// One accepted accumulate statement: `set a = a (+) e` with `(+)` admitted.
 struct Accumulate {
     binding: BindingId,
-    combine: &'static str,
+    combine: LoopCombine,
     statement: NodePath,
 }
 
@@ -495,7 +555,7 @@ impl<'check> Survey<'check, '_> {
         &mut self,
         target: &'check CheckedSetTarget,
         node: &NodePath,
-        combine: Option<&'static str>,
+        combine: Option<LoopCombine>,
     ) {
         // The target's place is formed exactly as the window judgment forms
         // one, so both judgments read one place relation and neither grows a
@@ -533,7 +593,7 @@ impl<'check> Survey<'check, '_> {
         target: &CheckedSetTarget,
         place: &ResolvedPlace,
         node: &NodePath,
-        combine: Option<&'static str>,
+        combine: Option<LoopCombine>,
     ) {
         let named = match target {
             CheckedSetTarget::Place(target) if target.fields.is_empty() => Some(target.binding),
@@ -677,12 +737,13 @@ impl<'check> Survey<'check, '_> {
     /// condition-2 answer to give, so a loop with several defects reports the
     /// unclassified form first, which is the honest report.
     fn finish(self, statement: NodePath) -> LoopPermission {
-        let mut combines = Vec::new();
+        let mut carried = Vec::new();
         for accumulate in &self.accumulates {
-            if !combines.contains(&accumulate.combine) {
-                combines.push(accumulate.combine);
+            if !carried.contains(&accumulate.combine) {
+                carried.push(accumulate.combine);
             }
         }
+        let combines = carried.iter().map(|combine| combine.spelling()).collect();
         let denial = self.denial();
         let claim_free = self.claims.is_empty()
             && !self
@@ -694,8 +755,21 @@ impl<'check> Survey<'check, '_> {
         // hand-written recursion returning an aggregate can split. Every other
         // refusal is a reason the split would be refused too, or unsound.
         let advises_split = matches!(denial, Some(LoopDenial::ManyAccumulators { .. }))
-            && !combines.is_empty()
+            && !carried.is_empty()
             && claim_free;
+        // The one accumulator this version's split carries. Condition 1 has
+        // already refused every loop with more than one, so the payload exists
+        // exactly where the verdict below is `PermittedEligible` and the body
+        // combines something: a permitted loop that carries nothing has no fold
+        // to distribute, and a not-actualizable one has a trap site whose
+        // ordering the split would choose.
+        let actualization = match (&denial, claim_free, self.accumulates.first()) {
+            (None, true, Some(accumulate)) => Some(LoopActualization {
+                accumulator: accumulate.binding,
+                combine: accumulate.combine,
+            }),
+            _ => None,
+        };
         let verdict = match denial {
             Some(denial) => LoopVerdict::Denied(denial),
             None if claim_free => LoopVerdict::PermittedEligible,
@@ -706,6 +780,7 @@ impl<'check> Survey<'check, '_> {
             verdict,
             combines,
             advises_split,
+            actualization,
         }
     }
 
@@ -805,7 +880,7 @@ impl<'check> Survey<'check, '_> {
 
 /// The combine of `set acc = <op>(acc, rest)`, when `op` is exactly
 /// associative and `rest` does not read `acc`.
-fn combine_of(accumulator: BindingId, value: &CheckedExpression) -> Option<&'static str> {
+fn combine_of(accumulator: BindingId, value: &CheckedExpression) -> Option<LoopCombine> {
     let (combine, arguments) = match value {
         CheckedExpression::IntegerOperation {
             operation,
@@ -846,32 +921,32 @@ fn reads_only(operand: &CheckedExpression, binding: BindingId) -> bool {
     matches!(operand, CheckedExpression::Binding { binding: read, .. } if *read == binding)
 }
 
-/// The exactly-associative integer operations, and their [OP-1] spellings.
+/// The exactly-associative integer operations.
 ///
 /// The list is closed and every entry is here for the same stated reason:
 /// regrouping its applications produces the same bits. `+exact`, `+defined`,
 /// and `+checked` are associative in Z and are still absent, because each
 /// application carries its own obligation and regrouping moves which
 /// intermediate has to satisfy it. `+sat` fails associativity outright.
-fn integer_combine(operation: CheckedIntegerOperation) -> Option<&'static str> {
+const fn integer_combine(operation: CheckedIntegerOperation) -> Option<LoopCombine> {
     Some(match operation {
-        CheckedIntegerOperation::AddWrap => "+wrap",
-        CheckedIntegerOperation::MultiplyWrap => "*wrap",
-        CheckedIntegerOperation::BitAnd => "iand",
-        CheckedIntegerOperation::BitOr => "ior",
-        CheckedIntegerOperation::BitXor => "ixor",
-        CheckedIntegerOperation::Minimum => "imin",
-        CheckedIntegerOperation::Maximum => "imax",
+        CheckedIntegerOperation::AddWrap => LoopCombine::AddWrap,
+        CheckedIntegerOperation::MultiplyWrap => LoopCombine::MultiplyWrap,
+        CheckedIntegerOperation::BitAnd => LoopCombine::BitAnd,
+        CheckedIntegerOperation::BitOr => LoopCombine::BitOr,
+        CheckedIntegerOperation::BitXor => LoopCombine::BitXor,
+        CheckedIntegerOperation::Minimum => LoopCombine::Minimum,
+        CheckedIntegerOperation::Maximum => LoopCombine::Maximum,
         _ => return None,
     })
 }
 
 /// The exactly-associative boolean operations. `not` is unary and no combine.
-fn boolean_combine(operation: CheckedBooleanOperation) -> Option<&'static str> {
+const fn boolean_combine(operation: CheckedBooleanOperation) -> Option<LoopCombine> {
     Some(match operation {
-        CheckedBooleanOperation::And => "band",
-        CheckedBooleanOperation::Or => "bor",
-        CheckedBooleanOperation::ExclusiveOr => "bxor",
+        CheckedBooleanOperation::And => LoopCombine::And,
+        CheckedBooleanOperation::Or => LoopCombine::Or,
+        CheckedBooleanOperation::ExclusiveOr => LoopCombine::ExclusiveOr,
         CheckedBooleanOperation::Not => return None,
     })
 }

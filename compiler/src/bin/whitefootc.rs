@@ -44,8 +44,11 @@ fn run() -> Result<(), String> {
     let module = if options.par_ledger {
         // The permission ledger is developer output. It goes to stdout, which
         // `Options::parse` has already kept clear of the emitted module, and
-        // never to the mandatory record channel. It reports the same judgment
-        // with or without `--par`; only the emitted lowering differs.
+        // never to the mandatory record channel. Its judgment lines are the
+        // same with or without `--par`, because the judgment is pure. Its
+        // actualization lines — what the lowering did with each permission it
+        // was handed — exist only where actualization was asked for, so `--par`
+        // adds lines to this ledger rather than changing any of them.
         let (module, ledger) =
             compile_with_permission_ledger(&inputs, CompilerLimits::default(), overlap)
                 .map_err(|failure| failure.to_string())?;

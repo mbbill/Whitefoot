@@ -1204,7 +1204,7 @@ fn the_repeat_reports_a_lowering_whose_joins_were_removed() {
 }
 
 /// Every run produced the same bytes, or the first run that did not.
-fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
+pub(super) fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
     let Some((first_name, first)) = runs.first() else {
         return Err("no run to compare".to_owned());
     };
@@ -1219,7 +1219,10 @@ fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
 }
 
 /// Links one module with no runtime at all, whatever its own predicate says.
-fn build_executable_without_runtime(module: &str, directory: &Path) -> std::path::PathBuf {
+pub(super) fn build_executable_without_runtime(
+    module: &str,
+    directory: &Path,
+) -> std::path::PathBuf {
     let assembly = directory.join("alone.ll");
     let executable = directory.join("alone");
     std::fs::write(&assembly, module).expect("write the module");
@@ -1251,7 +1254,7 @@ fn build_executable_without_runtime(module: &str, directory: &Path) -> std::path
 /// The observer reads `wf__par_grants`, which no Whitefoot construct can name;
 /// it exists exactly so a pool that never grants a lane cannot pass for one
 /// that does.
-fn run_counting_grants(
+pub(super) fn run_counting_grants(
     module: &str,
     directory: &Path,
     workers: Option<&str>,
@@ -1305,7 +1308,7 @@ fn run_counting_grants(
 }
 
 /// Every sequential clone the module defines, by symbol.
-fn clone_symbols(module: &str) -> Vec<String> {
+pub(super) fn clone_symbols(module: &str) -> Vec<String> {
     module
         .lines()
         .filter(|line| line.starts_with("define "))
@@ -1343,7 +1346,7 @@ fn without_clones(module: &str) -> String {
 
 /// The text of one emitted function definition, from its `define` line to its
 /// closing brace.
-fn function_body<'module>(module: &'module str, symbol: &str) -> &'module str {
+pub(super) fn function_body<'module>(module: &'module str, symbol: &str) -> &'module str {
     let opening = format!("{symbol}(");
     let start = module
         .match_indices(&opening)

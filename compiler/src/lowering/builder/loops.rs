@@ -1,12 +1,12 @@
 use crate::semantic::{BindingId, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedStatement};
 use crate::{
     IrBlockId, IrConstant, IrEnumType, IrIntegerOperation, IrMatchTarget, IrOperation,
-    IrTerminator, IrType, IrValueId, LoweringFailure,
+    IrTerminator, IrType, IrValueId, LoweringFailure, NodePath,
 };
 
 use super::{GiveTarget, IrBuilder};
 
-const U64: IrType = IrType::Integer {
+pub(super) const U64: IrType = IrType::Integer {
     width: 64,
     signed: false,
 };
@@ -81,15 +81,19 @@ impl IrBuilder<'_> {
         self.bind_parameters(&carried_bindings, &exit_parameters)
     }
 
-    /// Lowers the compiler-owned [FN-1] counted-range graph without
-    /// desugaring it into source operations. Endpoint values are captured in
-    /// the entry block, the header owns the true/false guard, normal body
-    /// fallthrough runs its drops before reaching the update block, and
-    /// source exits target the continuation directly without an update.
+    /// Lowers one counted `for`, either as the block graph below or — when
+    /// [PAR-2] permitted this loop and this compilation asked for
+    /// actualization — as a recursive split of its index range.
+    ///
+    /// The split is not a second lowering of the loop: its chunk *is* this
+    /// block graph, built by the same code into a synthesized function, and
+    /// the sequential world calls that chunk. What the split adds is a
+    /// splitter beside it and a two-way rendering at this site.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn lower_counted_range(
         &mut self,
         id: CheckedLoopId,
+        node_path: &NodePath,
         binder: BindingId,
         lower: &CheckedExpression,
         upper: &CheckedExpression,
@@ -98,13 +102,53 @@ impl IrBuilder<'_> {
         give_target: Option<GiveTarget>,
     ) -> Result<(), LoweringFailure> {
         // [FN-1] fixes endpoint evaluation order and evaluates each exactly
-        // once. These SSA values are the private immutable captures.
+        // once. These SSA values are the private immutable captures, and they
+        // are captured before the split decision so both renderings evaluate
+        // the endpoints in the same place, exactly once.
         let lower_capture = self.expression(lower)?;
         let upper_capture = self.expression(upper)?;
         if self.value_type(lower_capture)? != U64 || self.value_type(upper_capture)? != U64 {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
+        if self.split_counted_range(
+            id,
+            node_path,
+            binder,
+            body,
+            backedge_drops,
+            lower_capture,
+            upper_capture,
+        )? {
+            return Ok(());
+        }
+        self.counted_range_graph(
+            id,
+            binder,
+            body,
+            backedge_drops,
+            give_target,
+            lower_capture,
+            upper_capture,
+        )
+    }
 
+    /// The compiler-owned [FN-1] counted-range block graph, without
+    /// desugaring it into source operations.
+    ///
+    /// The header owns the true/false guard, normal body fallthrough runs its
+    /// drops before reaching the update block, and source exits target the
+    /// continuation directly without an update.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn counted_range_graph(
+        &mut self,
+        id: CheckedLoopId,
+        binder: BindingId,
+        body: &[CheckedStatement],
+        backedge_drops: &[CheckedDrop],
+        give_target: Option<GiveTarget>,
+        lower_capture: IrValueId,
+        upper_capture: IrValueId,
+    ) -> Result<(), LoweringFailure> {
         let base_bindings = self.bindings.clone();
         let mut carried_bindings = base_bindings.keys().copied().collect::<Vec<_>>();
         carried_bindings.sort_by_key(|binding| binding.0);
@@ -306,7 +350,7 @@ impl IrBuilder<'_> {
         self.bind_parameters(&carried_bindings, &exit_parameters)
     }
 
-    fn bind_parameters(
+    pub(super) fn bind_parameters(
         &mut self,
         bindings: &[BindingId],
         parameters: &[IrValueId],

@@ -478,7 +478,7 @@ fn compile_reporting(
             ));
         }
     };
-    let permission_ledger = checked.data.permission_ledger.clone();
+    let mut permission_ledger = checked.data.permission_ledger.clone();
     let ir = lower_checked(checked, overlap).map_err(|failure: LoweringFailure| {
         CompilationFailure::new(
             CompilationStage::Lowering,
@@ -486,6 +486,11 @@ fn compile_reporting(
             failure,
         )
     })?;
+    // What this lowering did with each permission it was given, appended after
+    // the judgment's own lines. The judgment reports the same verdicts with or
+    // without `--par`; these lines report an actualization, which only a
+    // compilation that asked for one has.
+    permission_ledger.extend_from_slice(ir.actualization_ledger());
     emit_llvm(&ir)
         .map(|module| (module.into_string(), permission_ledger))
         .map_err(|failure: BackendFailure| {
