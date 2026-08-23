@@ -291,7 +291,49 @@ fn emit_llvm_for(
         text.push_str(&functions);
     }
     text.push_str(&entry);
-    Ok(LlvmModule { text })
+    Ok(LlvmModule {
+        text: attach_stack_probe(&text, target),
+    })
+}
+
+/// The attribute group every generated definition carries.
+const STACK_PROBE_GROUP: &str = "#0";
+
+/// Gives every definition in the assembled module the target's `probe-stack`
+/// attribute, and appends the group it names.
+///
+/// This runs over the finished module rather than at each `define` site so
+/// that what the code establishes is "every generated function" rather than
+/// "every site someone remembered": a definition introduced later carries the
+/// probe without anyone deciding to give it one. [SCOPE-3] containment under
+/// exhaustion is exactly a completeness property — one unprobed large frame
+/// is enough to step over the guard region into a neighbouring thread's live
+/// stack — so completeness is what the emission establishes.
+///
+/// A `define` line always ends in ` {`, after any attribute keyword it
+/// carries, and a definition is always followed by its body, so the suffix
+/// test identifies exactly the definition lines. A rodata constant renders on
+/// one line with its bytes escaped, so no constant's contents can look like a
+/// definition to this scan.
+fn attach_stack_probe(module: &str, target: TargetLayout) -> String {
+    let mut text = String::with_capacity(module.len() + 64);
+    for line in module.split_inclusive('\n') {
+        match line.strip_suffix(" {\n") {
+            Some(head) if head.starts_with("define ") => {
+                text.push_str(head);
+                text.push(' ');
+                text.push_str(STACK_PROBE_GROUP);
+                text.push_str(" {\n");
+            }
+            _ => text.push_str(line),
+        }
+    }
+    text.push_str("\nattributes ");
+    text.push_str(STACK_PROBE_GROUP);
+    text.push_str(" = { \"probe-stack\"=\"");
+    text.push_str(target.stack_probe());
+    text.push_str("\" }\n");
+    text
 }
 
 fn emit_global_constants(

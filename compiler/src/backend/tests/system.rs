@@ -526,7 +526,7 @@ fn a_no_input_entry_still_uses_the_command_bootstrap() {
 }
 "#;
     let llvm = compile(source);
-    assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv) {"));
+    assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv) #0 {"));
     assert_eq!(llvm.matches("@signal(i32 13,").count(), 1);
     assert!(llvm.contains("%backing = and i1 %argv.present, %argc.counted"));
     assert_eq!(compile_and_run_with(&llvm, &[]).status.code(), Some(0));

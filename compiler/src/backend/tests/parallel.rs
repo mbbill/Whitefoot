@@ -219,7 +219,7 @@ fn a_program_named_like_the_runtime_still_compiles_and_links() {
         "the source function keeps its own symbol:\n{module}"
     );
     assert!(
-        module.contains("define weak ptr @wf__par_claim(i64 %bytes) {"),
+        module.contains("define weak ptr @wf__par_claim(i64 %bytes) #0 {"),
         "the runtime keeps its reserved symbol:\n{module}"
     );
     let output = compile_and_run(&module);
@@ -238,7 +238,7 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
     // the result back into the frame. Its number is the module's, so the
     // assertion is on the shape rather than on which group came first.
     assert!(
-        module.contains("(ptr %frame) {\nentry:\n  %p0 = getelementptr inbounds "),
+        module.contains("(ptr %frame) #0 {\nentry:\n  %p0 = getelementptr inbounds "),
         "no outlined thunk over a frame:\n{module}"
     );
     assert!(
@@ -252,10 +252,10 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
     // Every runtime entry point is the module's own weak definition, so a
     // module that hands work out is still a complete program.
     for weak in [
-        "define weak ptr @wf__par_claim(i64 %bytes) {",
-        "define weak void @wf__par_publish(ptr %frame, ptr %fn) {",
-        "define weak void @wf__par_join(ptr %frame) {",
-        "define weak void @wf__par_release(ptr %frame) {",
+        "define weak ptr @wf__par_claim(i64 %bytes) #0 {",
+        "define weak void @wf__par_publish(ptr %frame, ptr %fn) #0 {",
+        "define weak void @wf__par_join(ptr %frame) #0 {",
+        "define weak void @wf__par_release(ptr %frame) #0 {",
     ] {
         assert!(module.contains(weak), "no weak `{weak}`:\n{module}");
     }
@@ -655,14 +655,14 @@ fn the_bootstrap_selects_one_world_once() {
     // With no runtime linked no pool can start, so the module's own answer is
     // the honest one and such a program runs the sequential lowering of itself.
     assert!(
-        overlapped.contains("define weak i32 @wf__par_pool_active() {\nentry:\n  ret i32 0\n}"),
+        overlapped.contains("define weak i32 @wf__par_pool_active() #0 {\nentry:\n  ret i32 0\n}"),
         "the module must carry its own answer:\n{overlapped}"
     );
     for weak in [
-        "define weak ptr @wf__par_claim(i64 %bytes) {",
-        "define weak void @wf__par_publish(ptr %frame, ptr %fn) {",
-        "define weak void @wf__par_join(ptr %frame) {",
-        "define weak void @wf__par_release(ptr %frame) {",
+        "define weak ptr @wf__par_claim(i64 %bytes) #0 {",
+        "define weak void @wf__par_publish(ptr %frame, ptr %fn) #0 {",
+        "define weak void @wf__par_join(ptr %frame) #0 {",
+        "define weak void @wf__par_release(ptr %frame) #0 {",
     ] {
         assert!(
             overlapped.contains(weak),

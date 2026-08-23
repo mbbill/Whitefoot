@@ -30,6 +30,7 @@ pub(super) struct TargetLayout {
     data_layout: &'static str,
     address_index_max: u64,
     allocator_parameter_max: u64,
+    stack_probe: &'static str,
 }
 
 impl TargetLayout {
@@ -38,6 +39,7 @@ impl TargetLayout {
         {
             return Ok(Self {
                 triple: "aarch64-apple-darwin",
+                stack_probe: "__chkstk_darwin",
                 data_layout: "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32",
                 address_index_max: i64::MAX as u64,
                 allocator_parameter_max: u64::MAX,
@@ -47,6 +49,7 @@ impl TargetLayout {
         {
             return Ok(Self {
                 triple: "x86_64-apple-darwin",
+                stack_probe: "__chkstk_darwin",
                 data_layout: "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
                 address_index_max: i64::MAX as u64,
                 allocator_parameter_max: u64::MAX,
@@ -56,6 +59,7 @@ impl TargetLayout {
         {
             return Ok(Self {
                 triple: "aarch64-unknown-linux-gnu",
+                stack_probe: "inline-asm",
                 data_layout: "e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
                 address_index_max: i64::MAX as u64,
                 allocator_parameter_max: u64::MAX,
@@ -65,6 +69,7 @@ impl TargetLayout {
         {
             return Ok(Self {
                 triple: "x86_64-unknown-linux-gnu",
+                stack_probe: "inline-asm",
                 data_layout: "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
                 address_index_max: i64::MAX as u64,
                 allocator_parameter_max: u64::MAX,
@@ -80,6 +85,20 @@ impl TargetLayout {
 
     pub(super) const fn data_layout(self) -> &'static str {
         self.data_layout
+    }
+
+    /// The `probe-stack` value every generated function carries: the
+    /// ABI-mandated helper an Apple target already names from its own C
+    /// translation units, and the target-independent spelling — an inline
+    /// page walk — anywhere else.
+    ///
+    /// A frame larger than the guard region must touch each page on its way
+    /// down. Without that, the frame's first store can land past the guard in
+    /// whatever is mapped below — on a pool build, another lane's live stack —
+    /// and the write succeeds silently. The backend emits the walk only for a
+    /// frame past the page threshold, so an ordinary frame pays nothing.
+    pub(super) const fn stack_probe(self) -> &'static str {
+        self.stack_probe
     }
 
     pub(super) const fn address_index_max(self) -> u64 {

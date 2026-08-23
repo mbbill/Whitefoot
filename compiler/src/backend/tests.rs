@@ -11,6 +11,7 @@ mod counted_ranges;
 mod deterministic_target;
 mod division_obligations;
 mod effect_attributes;
+mod exhaustion;
 mod float_conversion;
 mod floating;
 mod integer_absolute;
