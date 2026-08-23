@@ -79,6 +79,16 @@ they correct.
   not spellings the language has; it now names `band, bor, bxor` as [OP-1]
   does. No case covered the boolean row, which is why the wrong spellings
   shipped; one now pins all three.
+- Research and design closed: five dossiers (spec rule, checker mechanism,
+  lowering, adversarial soundness, prior art) plus a value falsifier; the
+  lead's synthesis is `research/investigations/proof-derived-parallelism/
+  loop/DESIGN.md` with its promoted probes and the falsifier table. Ruling:
+  v1 loop permission is the REDUCTION (full-range counted `for`, claim-free
+  exit-free body, one accumulator under a normatively enumerated
+  exactly-associative set); the map is deferred as legal-but-worthless at
+  today's place granularity, with a named re-entry condition. The
+  parallelism decision record entered `mcts_mem` (dda51964) before the
+  design landed, per the tree discipline.
 
 ## Outcome
 

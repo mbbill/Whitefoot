@@ -1,0 +1,21 @@
+fn weight(i: own u64) -> result: own u64 pure {
+  let mixed = iand(i, 3_u64);
+  return mixed;
+}
+
+fn after_loop(n: own u64) -> result: own u64 allocates(heap) {
+  doc "Can any fact about the accumulator reach the continuation? If one could, a regrouped value could falsify it.";
+  let table = buffer_new(4_u64, 0_u64);
+  let acc = 0_u64;
+  for @sum i in 0_u64..n {
+    let w = weight(i: i);
+    set acc = iand(acc, w);
+  }
+  let picked = table[acc];
+  return picked;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let a = after_loop(n: 8_u64);
+  return exit_status(code: 0_u8);
+}

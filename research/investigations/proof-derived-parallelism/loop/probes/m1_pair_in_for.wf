@@ -1,0 +1,20 @@
+fn weight(i: own u64) -> result: own u64 pure {
+  let mixed = i *wrap 2654435761_u64;
+  return mixed;
+}
+
+fn loop_inner_pair(n: own u64) -> result: own u64 pure {
+  let acc = 0_u64;
+  for @both i in 0_u64..n {
+    let left = weight(i: i);
+    let right = weight(i: n);
+    let combined = left +wrap right;
+    set acc = acc +wrap combined;
+  }
+  return acc;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let g = loop_inner_pair(n: 64_u64);
+  return exit_status(code: 0_u8);
+}

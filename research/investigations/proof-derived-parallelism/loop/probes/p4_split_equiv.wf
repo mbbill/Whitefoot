@@ -1,0 +1,97 @@
+fn weight(i: own u64) -> result: own u64 pure {
+  let mixed = i *wrap 2654435761_u64;
+  let spun = irotl(mixed, 13_u32);
+  let folded = ixor(spun, i);
+  return folded;
+}
+
+fn loop_total(n: own u64) -> result: own u64 pure {
+  doc "The ordinary counted fold, left to right: the source order the spec fixes.";
+  let acc = 0_u64;
+  for @sum i in 0_u64..n {
+    let w = weight(i: i);
+    set acc = acc +wrap w;
+  }
+  return acc;
+}
+
+fn split_total(lo: own u64, hi: own u64) -> result: own u64 pure {
+  doc "The same reduction as a recursive halving. Every combination tree over +wrap yields one value, so this must equal loop_total at every worker count.";
+  let width = hi -wrap lo;
+  let single = ieq(width, 1_u64);
+  if single {
+    return weight(i: lo);
+  }
+  let empty = ieq(width, 0_u64);
+  if empty {
+    return 0_u64;
+  }
+  let half = ishr.wrap(width, 1_u32);
+  let mid = lo +wrap half;
+  let a = split_total(lo: lo, hi: mid);
+  let b = split_total(lo: mid, hi: hi);
+  return a +wrap b;
+}
+
+fn hex_digit(v: own u64) -> result: own u8 pure {
+  let nibble = iand(v, 15_u64);
+  let small = ilt(nibble, 10_u64);
+  match cvt<u64, u8>(nibble) {
+    Ok(value: byte) => {
+      if small {
+        return byte +wrap 48_u8;
+      }
+      return byte +wrap 87_u8;
+    }
+    Err(error: wide) => {
+      return 63_u8;
+    }
+  }
+}
+
+fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads('d), writes('d) {
+  let cursor = at;
+  let rest = value;
+  let limit = at +wrap 16_u64;
+  loop @digits {
+    let done = ige(cursor, limit);
+    if done {
+      break @digits;
+    }
+    let shifted = irotl(rest, 4_u32);
+    let digit = hex_digit(v: shifted);
+    let room = len(deref(destination));
+    let writable = ilt(cursor, room);
+    if writable {
+      set deref(destination)[cursor] = digit;
+    }
+    set rest = shifted;
+    set cursor = cursor +wrap 1_u64;
+  }
+  return limit;
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+  let n = 1048576_u64;
+  let sequential = loop_total(n: n);
+  let tree = split_total(lo: 0_u64, hi: n);
+  let report = buffer_new(33_u64, 10_u8);
+  region 'a {
+    let first = spell_hex<'a>(destination: &uniq 'a report, at: 0_u64, value: sequential);
+  }
+  region 'b {
+    let second = spell_hex<'b>(destination: &uniq 'b report, at: 16_u64, value: tree);
+  }
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 33_u64) {
+        Ok(value: next) => {
+          return exit_status(code: 0_u8);
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}
