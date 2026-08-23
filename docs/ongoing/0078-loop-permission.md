@@ -1326,4 +1326,54 @@ implementation is widened.
 
 ## Outcome
 
-(Filled at closure.)
+Closed 2026-08-23 at `dc84ce52` on the rebased lineage (main `18d332e7` +
+62 commits; pre-rebase tips archived as `27e02b1f` for phase 1 and
+`664a2f1b` for this batch). Every deliverable of the two chartering
+directions landed and was lead-verified:
+
+- **The loop form is the optimal form.** A permitted counted `for` is
+  judged by [PAR-2] (CANDIDATE recipe, digests in this record) and
+  actualizes as a synthesized range split over the unchanged runtime; the
+  loop-form grid program reads 0.98-0.99x of its hand-split twin and
+  0.94-0.99x of rayon at every worker count, all inside the band, 6.07x
+  over its own sequential build.
+- **The claim-conditional guarantee.** The claim-free actualizability gate
+  is deleted from both judgments; a first-trap-wins latch (emitted only
+  where a module hands out) keeps an erroneous execution's record singular
+  and well-formed; the sequential world reproduces it deterministically;
+  eleven pairs across the corpus became actualizable and par_layout runs
+  2.4x faster at the shipped default with identical bytes.
+- **The rebase onto main's v0.34.** All 47 branch commits replayed with
+  granularity preserved plus reconciliation: claim records rewritten to
+  main's five-field standard, seventeen probe claims retired with their
+  original verdicts preserved, the trap-latch fixtures migrated to main's
+  injection hook, records renumbered into main's sequence, the candidate
+  re-derived as v0.35 (both recipes digest-verified, grammar-verified).
+- **Final authoritative rotation** (N=18, quiet machine, three baselines
+  standing append-only): defaults 11 wins / 2 unresolved / 0 losses
+  against rayon; matched cells 22 wins / 25 unresolved / 5 losses, where
+  the five losses are the code-placement lottery this record's last entry
+  attributes byte-for-byte (the hot fold lands on one of two pathological
+  64-byte alignments in sixteen; a 196-byte dead-code shift reproduces and
+  reverses all nine moved cells) — the honest matched-cell statement is
+  22-24 / 25-28 / 0-5 depending on the link draw, and the defaults column
+  holds on both sides of it.
+
+Audit: five finders and five refuters over the batch; every
+refuter-confirmed finding repaired on this lineage (the latch left the
+default build — 29/29 default emissions byte-identical to main's own; the
+withdrawn 1.19x flag; both authority documents brought to the tip; the
+design tree carries the loop ruling and both refused rivals, lint-clean).
+Soundness lens: no critical finding — no wrong permission, no torn record,
+no cross-world byte divergence was constructible.
+
+Open at merge, dispositioned in this record: the [PAR-1]+[PAR-2] v0.35
+recipe application (owner's one transcription; digests
+`15165306e224f137...` alone / `f99bb580eec570c6...` combined); the two
+protected coverage annotations; the WF_WORKERS default flag with its time
+and depth dimensions; the repository gate's two expected stops
+(spec-archive CANDIDATE identity; conformance 135/136 pending the
+annotations). Deferred with named re-entry: the map tier, the
+`-falign-functions=64` placement lever (measured to remove the alignment
+lottery outright), the exhaustion-floor design (synthesis ready), and the
+register carried from batches 0076/0077.
