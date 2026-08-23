@@ -75,18 +75,19 @@ fn measure_words['w](words: &'w buffer<f64>, font: own f64) -> result: own f64 r
 }
 
 fn measure_band['w](words: &'w buffer<f64>, count: own u64, font: own f64) -> result: own f64 reads('w), traps {
-  doc "The same walk over a caller-supplied prefix. The bound comes from the caller, so the index obligation needs a claim, which is exactly what makes every call closure through this function permitted but not actualizable.";
+  doc "The same walk over a caller-supplied prefix, clamped to the table it reads. The index obligation still needs a claim, which is what makes this the claim-bearing half of the pair with measure_words.";
   let widest = 0.0_f64;
   let total = 0.0_f64;
   let room = len(deref(words));
+  let bounded_count = imin(count, room);
   let k = 0_u64;
   loop @scan {
-    let done = ige(k, count);
+    let done = ige(k, bounded_count);
     if done {
       break @scan;
     }
     let in_range = ilt(k, room);
-    claim band_index_in_range: in_range because "the caller passes a count no larger than the metric table";
+    claim band_index_in_range: in_range because "premises: bounded_count is the minimum of the requested count and room, room is the metric table's length, k starts at zero, and the loop breaks before the body whenever k has reached bounded_count\nderivation: a minimum is at most either operand, so bounded_count is at most room; induction over reached iterations keeps k below bounded_count, and therefore below room\nconclusion: ilt(k, room) is true\nchecker gap: ENT does not publish the result range of imin and carries no induction over k across this ordinary-loop backedge\nconsumers: the following deref(words)[k] read requires this exact bound";
     let raw = deref(words)[k];
     let scaled = fmul.strict(raw, font);
     let above = fgt(scaled, widest);

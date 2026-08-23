@@ -58,17 +58,26 @@ the transcript this document carried was the pre-Dig-8 one.
 ```
 PAR permitted   tests/programs/par_layout.wf:19  pair(build, build)  eligible
 PAR chain       tests/programs/par_layout.wf:19  run(build, build)  2 members through line 20
-PAR denied      tests/programs/par_layout.wf:106  pair(cascade, measure_words)  condition 1: the operands of s2 read what s1 defines
-PAR denied      tests/programs/par_layout.wf:113  pair(cascade, measure_words)  condition 1: the operands of s2 read what s1 defines
-PAR denied      tests/programs/par_layout.wf:114  pair(measure_words, layout)  condition 1: the operands of s2 read what interposed statement 1 defines
-PAR permitted   tests/programs/par_layout.wf:116  pair(layout, layout)  eligible
-PAR chain       tests/programs/par_layout.wf:116  run(layout, layout)  2 members through line 117
-PAR denied      tests/programs/par_layout.wf:131  pair(cascade, measure_band)  condition 1: the operands of s2 read what s1 defines
-PAR denied      tests/programs/par_layout.wf:138  pair(cascade, measure_band)  condition 1: the operands of s2 read what s1 defines
-PAR denied      tests/programs/par_layout.wf:139  pair(measure_band, layout_banded)  condition 1: the operands of s2 read what interposed statement 1 defines
-PAR permitted   tests/programs/par_layout.wf:141  pair(layout_banded, layout_banded)  not-actualizable: 1 claim site via measure_band
-(superseded 2026-08-23: this line now reads `pair(layout_banded, layout_banded)  eligible`)
+PAR denied      tests/programs/par_layout.wf:107  pair(cascade, measure_words)  condition 1: the operands of s2 read what s1 defines
+PAR denied      tests/programs/par_layout.wf:114  pair(cascade, measure_words)  condition 1: the operands of s2 read what s1 defines
+PAR denied      tests/programs/par_layout.wf:115  pair(measure_words, layout)  condition 1: the operands of s2 read what interposed statement 1 defines
+PAR permitted   tests/programs/par_layout.wf:117  pair(layout, layout)  eligible
+PAR chain       tests/programs/par_layout.wf:117  run(layout, layout)  2 members through line 118
+PAR denied      tests/programs/par_layout.wf:132  pair(cascade, measure_band)  condition 1: the operands of s2 read what s1 defines
+PAR denied      tests/programs/par_layout.wf:139  pair(cascade, measure_band)  condition 1: the operands of s2 read what s1 defines
+PAR denied      tests/programs/par_layout.wf:140  pair(measure_band, layout_banded)  condition 1: the operands of s2 read what interposed statement 1 defines
+PAR permitted   tests/programs/par_layout.wf:142  pair(layout_banded, layout_banded)  eligible
+PAR chain       tests/programs/par_layout.wf:142  run(layout_banded, layout_banded)  2 members through line 143
 ```
+
+*Re-taken 2026-08-23 at the rebased tip.* Two things moved and nothing else
+did. `layout_banded` reads `eligible` rather than `not-actualizable: 1 claim
+site via measure_band`, which is batch 0078-C's redirect. And every line number
+after `measure_band`'s body is one higher, because v0.34 does not admit that
+function's original claim — it asserted a bound the caller was trusted to
+respect — so the function now clamps its own count with `imin` and claims the
+bound that clamp establishes. Both `build` and `layout` chains, and all five
+condition-1 denials, are the verdicts this block recorded before.
 
 Those lines are the same with and without `--par`: the judgment is pure, so the
 ledger is a property of the source rather than of the compilation asked for.

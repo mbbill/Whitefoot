@@ -34,6 +34,50 @@ Where an entry changed, the paragraph states today's verdict and then what it
 used to say, because the superseded reading is often the finding the probe was
 landed to record.
 
+## Retired by v0.34, and deliberately not rewritten
+
+**Rebased onto `main` 2026-08-23.** `main` activated v0.34, which admits a
+`claim` only as a current-function-local, non-derivable, load-bearing residual
+carrying a five-field review record. Seventeen of the twenty-eight sources here
+carry claims written before that rule and no longer compile:
+
+`a2_bubble`, `a2r_layout`, `a2r_layout_two`, `d1_closure_div`, `d1_two_traps`,
+`d2_band2_loop`, `d2_band_window_claim`, `d2_band_window_guard`,
+`d2_branch_loop`, `d2_tree_zeroclaim`, `g2_propagate`, `g3_dep`, `p1a`, `p1b`,
+`p7_dyn`, `x2_spin`, and `loop/probes/r1_mandelbrot_for`. Every one reports
+`[CLM-1] InvalidClaimJustification` first; behind that, most carry a claim over
+a user-call result, which v0.34 rejects as `NonLocalClaim`, and several are
+result-verification claims — "did the fold produce 7?" — which v0.34 retired as
+a genre in favour of ordinary control flow.
+
+**They are not rewritten, and that is the disposition, not an omission.** These
+are archived evidence: each was landed because a design decision or a finding
+cites it, and the verdict quoted in its paragraph is the verdict *that source*
+produced. Editing the source to satisfy a later rule would leave a file that no
+longer produces the recorded verdict, which is the one thing an evidence
+artifact must not do. Each is deleted when the decision it settles is
+superseded — that is this directory's own rule, above — not migrated.
+
+**None of this is rebase damage, and it is checked rather than asserted.** All
+twenty-eight sources were compiled by the rebased compiler and by `main`'s own
+compiler at `18d332e7`, and every verdict is identical between them: the same
+seventeen `[CLM-1]`, the same nine clean accepts (`bt`, `m1_pair_in_for`,
+`p4_split_equiv`, `p5_float_split`, `p6`, `q4`, `r2_grid_loop_d21_w256`,
+`x1_same_buffer`, `zero_elig`), and the same two pre-existing conditions
+(`min_stack` is a `sed` template and reports `[FORM-1]`; `p9_facts` is the
+deliberate undischarged-obligation demonstration and reports `[OP-4]`). The
+rebase moved no probe's verdict.
+
+**Where Dig 9's detection lives now.** The four band/derived-index probes were
+this dig's detector, and a detector that cannot be run is not one. That
+coverage is a compiler test rather than a file here:
+`semantic::tests::boolean_composition::band_conjunct_over_a_derived_binding_discharges_like_the_single_bound_pair`
+uses branch guards instead of claims, so it needs no claim at all, and it was
+checked against `main`'s compiler — which carries v0.34 but not the Dig 9 fix —
+where the conjoined half fails `[OP-4]` on `next < len(deref(input))` while the
+nested single-bound half still discharges. That is the asymmetry the probes
+recorded, kept where it runs on every gate.
+
 ## The design-round probes
 
 **The line that no longer divides them.** `a2_bubble.wf` is the two-child
