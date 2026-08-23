@@ -370,6 +370,25 @@ worker setting. It does, however, dent the property `e82c113f` established —
 that asking for `--par` costs a program nothing when it gets no lane — for any
 program the redirect adds to the clone set.
 
+## Carried for another record: the L1 depth flag
+
+Not this batch's work, landed by this batch's commits because this branch is
+where the file is editable. Batch 0076's L1 item flagged the shipped-default
+change with a no-pessimization check over twelve configurations that measures
+**time only**; the **depth** dimension was omitted. The lead measured it and
+the paragraph is now in `docs/ongoing/0076-night-par-ceiling.md` at the L1
+item: an adversarial spine shape loses about 3x of its recursion ceiling at the
+default (of which 1.5x is structural to the overlapped lowering and the rest is
+an LLVM interprocedural-constant-propagation accident, per Dig 1), a realistic
+tree shape is at or above sequential but not yet deterministically so, the
+`WF_WORKERS=0/1` opt-out restores the full ceiling, and the bare-SIGSEGV
+presentation predates the change in every build.
+
+**The frozen phase-1 branch is not corrected by this.** `par/proof-derived-parallelism`
+at `27e02b1f` still carries the incomplete flag, and the phase-1 merge packet
+is drawn from there, so the owner reviewing that packet sees the time-only
+check unless the correction is carried across.
+
 ## The alternative this redirect rejected, for the design tree
 
 The lead records the re-decision; this is the executor's statement of what was

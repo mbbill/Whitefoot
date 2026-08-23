@@ -92,6 +92,44 @@ battery reports.)
   `skew_d16_w16` 2.72x, `skew_d16_w64` 4.28x, `skew_d16_w192` 6.22x. Every
   configuration's default run published the bytes its sequential build
   published (SHA-256 prefixes equal, twelve of twelve).
+  **FLAGGED, added 2026-08-23: that check covers time and omits depth.** The
+  twelve configurations above answer "is the new default ever slower than
+  sequential"; none of them asks "does the new default still reach as deep",
+  and the answer is shape-dependent. Measured by the lead at `ddf1d139`'s
+  compiler snapshot with the default 8 MB stack, and recorded here rather than
+  reproduced by the executor who landed this paragraph:
+  - *The adversarial spine.* `probes/min_stack.wf`'s shape — pure spine
+    recursion with no eligible site to hand out — reaches depth 506,827
+    sequentially and at `WF_WORKERS=1`, and dies by signal at the shipped
+    default, whose ceiling is about 170,000. That **end-to-end ~3x is two
+    different things and the record should not merge them**: **1.5x of it is
+    structural** to the overlapped lowering, whose frames are 48 bytes; the
+    remainder is an LLVM interprocedural-constant-propagation accident, because
+    the sequential build's 16-byte frame is itself an IPCP artifact that no
+    hand-out lowering can reach. That is Dig 1's attribution, unchanged. A
+    spine is the worst case by construction: it has no siblings to spread
+    across worker stacks.
+  - *The realistic tree.* `probes/bt_skew.tmpl` runs the other way. Depth
+    131,015 dies sequentially and at `WF_WORKERS=1` but **passes at the
+    default**, because hand-outs spread subtrees across fresh worker stacks.
+    State that as **at or above sequential, not yet deterministic**: newly
+    measured, the gain is schedule-dependent, since a steal race decides
+    whether the deep spine lands on a fresh worker stack. It is not a clean
+    win to be quoted as one. (This is compatible with
+    `the_shipped_default_keeps_a_deep_recursion`, whose 8 MB limit gives both
+    sides of that race the same room so the race cannot *cost* anything there;
+    what the race still decides is whether the bonus arrives.)
+  - *The opt-out is whole.* `WF_WORKERS=0` and `WF_WORKERS=1` restore the exact
+    sequential world and its full ceiling in every case measured.
+  - *The presentation is not new.* Stack exhaustion appears as a bare SIGSEGV
+    with no diagnostic in **every** build including the sequential one — it is
+    [SCOPE-3] exhaustion territory, outside the language's guarantee — so the
+    absence of a report is not a consequence of the default change and is not
+    charged to it.
+  - *Register item, deferred and named.* A `--par` module with **zero** eligible
+    sites gains nothing from carrying a parallel world at all. Selecting the
+    sequential world for such modules at compile time is a candidate
+    optimization; it is unmeasured, and nothing here depends on it.
   **What the default costs the fine half, recorded rather than smoothed.** The
   same pass at four lanes reads `bal_d8_w16` 2.43x, `bal_d8_w64` 3.17x,
   `bal_d10_w16` 3.19x, `bal_d10_w64` 3.52x, `skew_d16_w16` 3.37x — so five of
