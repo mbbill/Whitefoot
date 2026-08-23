@@ -1259,6 +1259,47 @@ pub(super) fn run_counting_grants(
     directory: &Path,
     workers: Option<&str>,
 ) -> (u64, std::process::Output) {
+    let executable = link_counting_grants(module, directory);
+    let run = counted_run(&executable, workers);
+    std::fs::remove_file(&executable).expect("remove a counted-run artifact");
+    run
+}
+
+/// What the runtime granted in total over `runs` runs of one linked module.
+///
+/// A steal is a race, so one run's count samples the schedule rather than
+/// stating a property of the lowering. A fixture whose whole range is worth
+/// only a few dozen offers can lose nearly all of them to the offering thread
+/// on a saturated machine — measured down to three grants at `WF_WORKERS=4` —
+/// which would fail a per-run `granted > 0` for a reason that has nothing to do
+/// with the code under test. A total keeps exactly what those assertions are
+/// for: a runtime that grants nothing totals zero and still fails.
+pub(super) fn grants_over_runs(
+    module: &str,
+    directory: &Path,
+    workers: Option<&str>,
+    runs: usize,
+) -> u64 {
+    let executable = link_counting_grants(module, directory);
+    let mut total = 0;
+    for run in 0..runs {
+        let (granted, output) = counted_run(&executable, workers);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "run {run} of the counted program must succeed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        total += granted;
+    }
+    std::fs::remove_file(&executable).expect("remove a counted-run artifact");
+    total
+}
+
+/// Links one module against the runtime and the observer, and returns the
+/// executable. Linking is the expensive half, so a case that wants several runs
+/// of one module pays for it once.
+fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
     let assembly = directory.join("counted.ll");
     let runtime = directory.join("counted_runtime.c");
     let observer = directory.join("observer.c");
@@ -1289,7 +1330,15 @@ pub(super) fn run_counting_grants(
         "the runtime and its observer must link:\n{}",
         String::from_utf8_lossy(&linked.stderr)
     );
-    let mut command = Command::new(&executable);
+    for path in [assembly, runtime, observer] {
+        std::fs::remove_file(path).expect("remove a counted-run artifact");
+    }
+    executable
+}
+
+/// One run of a linked module, with the grant count the observer reported.
+fn counted_run(executable: &Path, workers: Option<&str>) -> (u64, std::process::Output) {
+    let mut command = Command::new(executable);
     match workers {
         Some(count) => command.env("WF_WORKERS", count),
         None => command.env_remove("WF_WORKERS"),
@@ -1301,9 +1350,6 @@ pub(super) fn run_counting_grants(
         .find_map(|line| line.strip_prefix("grants="))
         .and_then(|count| count.trim().parse::<u64>().ok())
         .unwrap_or_else(|| panic!("the observer must report a grant count, got {report:?}"));
-    for path in [assembly, runtime, observer, executable] {
-        std::fs::remove_file(path).expect("remove a counted-run artifact");
-    }
     (granted, output)
 }
 

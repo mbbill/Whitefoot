@@ -15,11 +15,27 @@
 use std::process::Command;
 
 use super::parallel::{
-    build_executable_without_runtime, clone_symbols, function_body, identical, run_counting_grants,
+    build_executable_without_runtime, clone_symbols, function_body, grants_over_runs, identical,
+    run_counting_grants,
 };
 use super::{
     build_executable, emit, emit_with_overlap, module_requires_parallel_runtime, test_directory,
 };
+
+/// How many runs a case sums the runtime's grant counter over before deciding
+/// that a repeat overlapped nothing.
+///
+/// One run's count is a sample of the schedule: the offering thread may run
+/// every one of its own offers before another lane reaches them, and on a
+/// saturated machine it usually does. These fixtures fold a range worth only a
+/// few dozen offers, so the sample is thin — measured on this machine at a
+/// one-minute load average of 7.1, twelve runs each, [`PERMITTED_FOLD`] was
+/// granted 3-8 lanes at `WF_WORKERS=4` and 3-14 at 8, against the pair path's
+/// `par_layout`, which is granted 1 610-2 214 at two workers. A total over four
+/// runs puts the floor an order of magnitude above zero and still fails
+/// outright against a runtime that grants nothing, which is the whole of what
+/// these assertions are for; it buys no confidence in a rate, which is not.
+const GRANT_RUNS: usize = 4;
 
 /// A counted `for` the judgment permits: one accumulator under `+wrap`, a
 /// claim-free pure body doing real arithmetic per iteration, no write to
@@ -531,12 +547,14 @@ fn a_split_loop_publishes_one_byte_sequence_at_every_worker_count() {
 
     // A repeat over runs that never handed anything out would pass against a
     // runtime that granted nothing, so the counts that should overlap are
-    // asked whether they did.
+    // asked whether they did — over [`GRANT_RUNS`] runs, because one steal is
+    // a race rather than a property of the lowering.
     for workers in ["4", "8"] {
-        let (granted, _) = run_counting_grants(&module, &directory, Some(workers));
+        let granted = grants_over_runs(&module, &directory, Some(workers), GRANT_RUNS);
         assert!(
             granted > 0,
-            "WF_WORKERS={workers} granted no lane, so the repeat above overlapped nothing"
+            "WF_WORKERS={workers} granted no lane in {GRANT_RUNS} runs, so the repeat \
+             above overlapped nothing"
         );
     }
     let (opted_out, _) = run_counting_grants(&module, &directory, Some("1"));
@@ -590,8 +608,11 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
     }
     identical(&runs).expect("a captured, xor-folded split must not move one byte");
 
-    let (granted, _) = run_counting_grants(&split, &directory, Some("8"));
-    assert!(granted > 0, "the comparison above overlapped nothing");
+    let granted = grants_over_runs(&split, &directory, Some("8"), GRANT_RUNS);
+    assert!(
+        granted > 0,
+        "the comparison above overlapped nothing in {GRANT_RUNS} runs"
+    );
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
@@ -637,6 +658,465 @@ fn a_split_loop_agrees_with_the_lowering_that_splits_nothing() {
     identical(&runs).expect("splitting a range must not move one byte of the result");
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// One admitted combine, at one accumulator type, as a fold a program actually
+/// runs.
+///
+/// The fixtures above reach two of the ten combines at one width. The rest of
+/// the set was covered only by `the_identity_of_every_admitted_combine_is_two_sided`
+/// in `lowering::builder::split`, which re-implements the operations and so
+/// cannot see a lowering that is wrong for one particular combine. These rows
+/// close that: every combine, at `u64` and at `u8` where the combine has a
+/// width, folded by a real program whose bytes are compared against the
+/// lowering that splits nothing.
+struct Combine {
+    /// Names the fold's function and the row a failure reports.
+    name: &'static str,
+    /// The [OP-1] spelling the ledger prints, which is what says this row
+    /// reached the combine it meant to.
+    spelling: &'static str,
+    /// The accumulator's written type.
+    ty: &'static str,
+    /// The accumulator's initial value.
+    seed: &'static str,
+    /// Statements binding `element` from `mixed`, in order. They are separate
+    /// `let`s because a call is not an operand of another operation here.
+    element: &'static [&'static str],
+    /// The right-hand side of the body's `set total = ...`.
+    fold: &'static str,
+    /// How the accumulator becomes the `u64` the row publishes.
+    publish: &'static str,
+}
+
+/// The `u64` accumulator publishes itself.
+const PUBLISH_WIDE: &str = "  return total;\n";
+/// The `u8` accumulator widens, which is a total pair and so binds directly.
+const PUBLISH_NARROW: &str = "  let wide = cvt<u8, u64>(total);\n  return wide;\n";
+/// `Bool` has no numeric conversion, so the branch is written out.
+const PUBLISH_BOOL: &str =
+    "  let wide = 0_u64;\n  if total {\n    set wide = 1_u64;\n  }\n  return wide;\n";
+
+/// Every admitted combine, at every accumulator type it carries.
+///
+/// Each element expression is chosen so the fold's own value is not the value a
+/// wrong identity element would produce: `iand` keeps a mask alive rather than
+/// collapsing to zero, `imin` folds a range whose minimum is not zero, `imax`
+/// one whose maximum is not the type's, and `band` fold to `True` where `bor`
+/// folds to `False`. The `ixor` and `bxor` rows are the exception and cannot be
+/// discriminating that way: the split always cuts a power-of-two number of
+/// chunks, so a wrong xor identity is seeded an even number of times and
+/// cancels. Their identity is what the two-sidedness table covers; what these
+/// rows add for them is that the chunk boundaries and the join are right.
+const ADMITTED_COMBINES: &[Combine] = &[
+    Combine {
+        name: "add_wide",
+        spelling: "+wrap",
+        ty: "u64",
+        seed: "0_u64",
+        element: &["let element = mixed;"],
+        fold: "total +wrap element",
+        publish: PUBLISH_WIDE,
+    },
+    Combine {
+        name: "mul_wide",
+        spelling: "*wrap",
+        ty: "u64",
+        seed: "1_u64",
+        element: &["let element = ior(mixed, 1_u64);"],
+        fold: "total *wrap element",
+        publish: PUBLISH_WIDE,
+    },
+    Combine {
+        name: "and_wide",
+        spelling: "iand",
+        ty: "u64",
+        seed: "18446744073709551615_u64",
+        element: &["let element = ior(mixed, 12297829382473034410_u64);"],
+        fold: "iand(total, element)",
+        publish: PUBLISH_WIDE,
+    },
+    Combine {
+        name: "or_wide",
+        spelling: "ior",
+        ty: "u64",
+        seed: "0_u64",
+        element: &["let element = iand(mixed, 4886718345_u64);"],
+        fold: "ior(total, element)",
+        publish: PUBLISH_WIDE,
+    },
+    Combine {
+        name: "xor_wide",
+        spelling: "ixor",
+        ty: "u64",
+        seed: "0_u64",
+        element: &["let element = mixed;"],
+        fold: "ixor(total, element)",
+        publish: PUBLISH_WIDE,
+    },
+    Combine {
+        name: "min_wide",
+        spelling: "imin",
+        ty: "u64",
+        seed: "18446744073709551615_u64",
+        element: &["let element = mixed;"],
+        fold: "imin(total, element)",
+        publish: PUBLISH_WIDE,
+    },
+    Combine {
+        name: "max_wide",
+        spelling: "imax",
+        ty: "u64",
+        seed: "0_u64",
+        element: &["let element = mixed;"],
+        fold: "imax(total, element)",
+        publish: PUBLISH_WIDE,
+    },
+    Combine {
+        name: "add_narrow",
+        spelling: "+wrap",
+        ty: "u8",
+        seed: "0_u8",
+        element: &["let element = low_byte(v: mixed);"],
+        fold: "total +wrap element",
+        publish: PUBLISH_NARROW,
+    },
+    Combine {
+        name: "mul_narrow",
+        spelling: "*wrap",
+        ty: "u8",
+        seed: "1_u8",
+        element: &[
+            "let low = low_byte(v: mixed);",
+            "let element = ior(low, 1_u8);",
+        ],
+        fold: "total *wrap element",
+        publish: PUBLISH_NARROW,
+    },
+    Combine {
+        name: "and_narrow",
+        spelling: "iand",
+        ty: "u8",
+        seed: "255_u8",
+        element: &[
+            "let low = low_byte(v: mixed);",
+            "let element = ior(low, 170_u8);",
+        ],
+        fold: "iand(total, element)",
+        publish: PUBLISH_NARROW,
+    },
+    Combine {
+        name: "or_narrow",
+        spelling: "ior",
+        ty: "u8",
+        seed: "0_u8",
+        element: &[
+            "let low = low_byte(v: mixed);",
+            "let element = iand(low, 5_u8);",
+        ],
+        fold: "ior(total, element)",
+        publish: PUBLISH_NARROW,
+    },
+    Combine {
+        name: "xor_narrow",
+        spelling: "ixor",
+        ty: "u8",
+        seed: "0_u8",
+        element: &["let element = low_byte(v: mixed);"],
+        fold: "ixor(total, element)",
+        publish: PUBLISH_NARROW,
+    },
+    Combine {
+        name: "min_narrow",
+        spelling: "imin",
+        ty: "u8",
+        seed: "255_u8",
+        element: &[
+            "let low = low_byte(v: mixed);",
+            "let element = ior(low, 3_u8);",
+        ],
+        fold: "imin(total, element)",
+        publish: PUBLISH_NARROW,
+    },
+    Combine {
+        name: "max_narrow",
+        spelling: "imax",
+        ty: "u8",
+        seed: "0_u8",
+        element: &[
+            "let low = low_byte(v: mixed);",
+            "let element = iand(low, 63_u8);",
+        ],
+        fold: "imax(total, element)",
+        publish: PUBLISH_NARROW,
+    },
+    Combine {
+        name: "and_bool",
+        spelling: "band",
+        ty: "Bool",
+        seed: "True()",
+        element: &["let element = ige(mixed, 0_u64);"],
+        fold: "band(total, element)",
+        publish: PUBLISH_BOOL,
+    },
+    Combine {
+        name: "or_bool",
+        spelling: "bor",
+        ty: "Bool",
+        seed: "False()",
+        element: &["let element = ilt(mixed, 0_u64);"],
+        fold: "bor(total, element)",
+        publish: PUBLISH_BOOL,
+    },
+    Combine {
+        name: "xor_bool",
+        spelling: "bxor",
+        ty: "Bool",
+        seed: "False()",
+        element: &[
+            "let bit = iand(mixed, 1_u64);",
+            "let element = ieq(bit, 1_u64);",
+        ],
+        fold: "bxor(total, element)",
+        publish: PUBLISH_BOOL,
+    },
+];
+
+/// How wide a range every row of [`ADMITTED_COMBINES`] folds. Large enough that
+/// the split allowance is worth taking — every row's loop is checked to have
+/// actually split — and no larger, because seventeen of them run in one
+/// program.
+const COMBINE_SPAN: u64 = 200_000;
+
+/// The helpers every row's fold shares: the per-iteration mix that gives the
+/// body enough weight to be worth splitting, the narrowing to a byte, and the
+/// eight-byte spelling each row publishes through.
+const COMBINE_PRELUDE: &str = r#"fn mix(seed: own u64) -> result: own u64 pure {
+  doc "A claim-free pure mix with enough arithmetic that splitting the range around it pays.";
+  let state = seed;
+  let round = 0_u64;
+  loop @rounds {
+    let done = ieq(round, 24_u64);
+    if done {
+      break @rounds;
+    }
+    let shifted = irotl(state, 27_u32);
+    let scaled = state *wrap 6364136223846793005_u64;
+    set state = ixor(shifted, scaled);
+    set state = state +wrap 1442695040888963407_u64;
+    set round = round +wrap 1_u64;
+  }
+  return state;
+}
+
+fn low_byte(v: own u64) -> result: own u8 pure {
+  let low = iand(v, 255_u64);
+  match cvt<u64, u8>(low) {
+    Ok(value: byte) => {
+      return byte;
+    }
+    Err(error: problem) => {
+      return 0_u8;
+    }
+  }
+}
+
+fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads('d), writes('d) {
+  let cursor = at;
+  let rest = value;
+  loop @octets {
+    let limit = at +wrap 8_u64;
+    let done = ige(cursor, limit);
+    if done {
+      break @octets;
+    }
+    let room = len(deref(destination));
+    let writable = ilt(cursor, room);
+    if writable {
+      let byte = low_byte(v: rest);
+      set deref(destination)[cursor] = byte;
+    }
+    set rest = irotr(rest, 8_u32);
+    set cursor = cursor +wrap 1_u64;
+  }
+  return at +wrap 8_u64;
+}
+"#;
+
+/// One program whose every row of [`ADMITTED_COMBINES`] is a permitted counted
+/// loop, publishing each row's fold as eight bytes in table order.
+fn admitted_combine_source() -> Vec<u8> {
+    let mut source = String::from(COMBINE_PRELUDE);
+    for combine in ADMITTED_COMBINES {
+        let Combine {
+            name,
+            ty,
+            seed,
+            element,
+            fold,
+            publish,
+            ..
+        } = combine;
+        source.push_str(&format!(
+            "\nfn fold_{name}(lo: own u64, hi: own u64) -> result: own {ty} pure {{\n  \
+             let total = {seed};\n  for @points i in lo..hi {{\n    \
+             let mixed = mix(seed: i);\n"
+        ));
+        for statement in *element {
+            source.push_str(&format!("    {statement}\n"));
+        }
+        // `after` is the previous row's write cursor, and `imin(after, 0)` is
+        // zero for every unsigned value it can hold — so the fold's range is
+        // the same for every row, and no two of `main`'s calls are independent.
+        // That is what keeps every lane this program is granted a range split
+        // rather than an overlapped window pair, which is what the grant
+        // assertion below has to be about.
+        source.push_str(&format!(
+            "    set total = {fold};\n  }}\n  return total;\n}}\n\n\
+             fn value_{name}(after: own u64) -> result: own u64 pure {{\n  \
+             let lo = imin(after, 0_u64);\n  \
+             let total = fold_{name}(lo: lo, hi: {COMBINE_SPAN}_u64);\n{publish}}}\n"
+        ));
+    }
+    let width = 8 * ADMITTED_COMBINES.len();
+    source.push_str(&format!(
+        "\ncommand fn main(command.stdout as out: own Output) -> status: own ExitStatus \
+         allocates(heap), external, blocks {{\n  \
+         let report = buffer_new({width}_u64, 0_u8);\n  region 'r {{\n"
+    ));
+    let mut at = "0_u64".to_owned();
+    for (index, combine) in ADMITTED_COMBINES.iter().enumerate() {
+        let name = combine.name;
+        source.push_str(&format!(
+            "    let v{index} = value_{name}(after: {at});\n    \
+             let a{index} = spell<'r>(destination: &uniq 'r report, at: {at}, value: v{index});\n"
+        ));
+        at = format!("a{index}");
+    }
+    source.push_str(&format!(
+        "  }}\n  region 'o {{\n    region 's {{\n      \
+         match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, \
+         end: {width}_u64) {{\n        Ok(value: next) => {{\n          \
+         return exit_status(code: 0_u8);\n        }}\n        Err(error: problem) => {{\n          \
+         return exit_status(code: 1_u8);\n        }}\n      }}\n    }}\n  }}\n}}\n"
+    ));
+    source.into_bytes()
+}
+
+/// Every admitted combine folds a real split range and publishes what the
+/// lowering that splits nothing publishes.
+///
+/// Until this case the only combines a running program ever folded through the
+/// split were `+wrap` and `ixor`, both at `u64`. Everything else rested on
+/// `the_identity_of_every_admitted_combine_is_two_sided`, which takes the
+/// identity and the operation from production but evaluates them through its
+/// own re-implementation — so it catches a wrong identity constant and cannot
+/// catch a wrong lowering for one particular combine.
+///
+/// The rows are one program rather than seventeen because the expensive half is
+/// the link, and one program keeps the whole table to two of them. Each row's
+/// loop is confirmed to have split, by the ledger's own line naming that row's
+/// combine, so a row that quietly stopped splitting fails here instead of
+/// passing as a comparison of two sequential folds.
+#[test]
+fn every_admitted_combine_splits_and_publishes_the_unsplit_bytes() {
+    let source = admitted_combine_source();
+    let ledger = super::compile_permission_ledger(&source);
+    for combine in ADMITTED_COMBINES {
+        let expected = format!("fold_{}  loop at ", combine.name);
+        let line = ledger
+            .iter()
+            .find(|line| line.starts_with("PAR split") && line.contains(&expected))
+            .unwrap_or_else(|| {
+                panic!(
+                    "the {} row's loop must split, or the row checks nothing:\n{}",
+                    combine.name,
+                    ledger.join("\n")
+                )
+            });
+        assert!(
+            line.contains(&format!("split under {} over", combine.spelling)),
+            "the {} row must split under {}: {line}",
+            combine.name,
+            combine.spelling
+        );
+    }
+
+    let unsplit = emit(&source);
+    assert!(
+        !module_requires_parallel_runtime(&unsplit),
+        "the reference module must contain no split at all"
+    );
+    let split = emit_with_overlap(&source);
+
+    let directory = test_directory();
+    let reference = Command::new(build_executable(&unsplit, &directory))
+        .output()
+        .expect("run the module that splits nothing");
+    assert_eq!(reference.status.code(), Some(0));
+    assert_eq!(
+        reference.stdout.len(),
+        8 * ADMITTED_COMBINES.len(),
+        "every row publishes eight bytes"
+    );
+
+    let executable = build_executable(&split, &directory);
+    for workers in ["0", "1", "2", "3", "4", "5", "8", "16"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the split program");
+        assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
+        assert_combine_rows(
+            &reference.stdout,
+            &output.stdout,
+            &format!("WF_WORKERS={workers}"),
+        );
+    }
+    let shipped = Command::new(&executable)
+        .env_remove("WF_WORKERS")
+        .output()
+        .expect("run the split program at the shipped default");
+    assert_eq!(shipped.status.code(), Some(0));
+    assert_combine_rows(&reference.stdout, &shipped.stdout, "WF_WORKERS unset");
+
+    // A splitter in the module is not a range the runtime actually cut: the
+    // allowance is asked at each loop entry, and a range too small to be worth
+    // splitting gets zero and descends straight to its leaf. Without this the
+    // whole table would still pass against seventeen sequential folds — the
+    // control is direct, since narrowing [`COMBINE_SPAN`] to a hundred takes
+    // this program's grant count to zero in every run.
+    let granted = grants_over_runs(&split, &directory, Some("8"), GRANT_RUNS);
+    assert!(
+        granted > 0,
+        "no row's range was cut in {GRANT_RUNS} runs, so the comparisons above \
+         are between two sequential folds"
+    );
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// Compares two runs of the combine program row by row, so a failure names the
+/// combine that moved rather than an offset into a hundred and thirty-six
+/// bytes.
+fn assert_combine_rows(reference: &[u8], published: &[u8], setting: &str) {
+    assert_eq!(
+        published.len(),
+        reference.len(),
+        "{setting} published {} bytes, not {}",
+        published.len(),
+        reference.len()
+    );
+    for (index, combine) in ADMITTED_COMBINES.iter().enumerate() {
+        let row = index * 8..index * 8 + 8;
+        assert_eq!(
+            published[row.clone()],
+            reference[row],
+            "{setting} moved the {} row, folded under {}",
+            combine.name,
+            combine.spelling
+        );
+    }
 }
 
 /// An empty range folds nothing, an inverted one folds nothing, and a one-wide

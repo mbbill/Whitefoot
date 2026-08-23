@@ -280,6 +280,9 @@ fn a_single_false_claim_reports_the_same_bytes_at_every_worker_count() {
 /// at 200 of 200 runs on this machine, both threads reaching the writer
 /// because `abort` on the winner is not instantaneous; eight runs here put a
 /// false green far below anything else that could go wrong in this file.
+///
+/// A caught run must carry **two** well-formed records rather than merely not
+/// one, so an empty record channel cannot pass for a defeated latch.
 #[test]
 fn the_latch_is_what_keeps_the_record_single() {
     let module = emit_with_overlap_and_false_claims(
@@ -302,11 +305,34 @@ fn the_latch_is_what_keeps_the_record_single() {
     let executable = build_executable(&defeated, &directory);
 
     let mut caught = 0;
-    for _ in 0..8 {
+    for run in 0..8 {
         let (_, stderr) = trap_run(&executable, "4");
-        if sole_record(&stderr).is_err() {
-            caught += 1;
+        if sole_record(&stderr).is_ok() {
+            continue;
         }
+        // Not-one is not the property. An empty channel also fails
+        // `sole_record`, so a future change that made the defeated build die
+        // before writing anything would keep this control green while proving
+        // nothing. What the doc-comment above claims, and what is asserted
+        // here, is that the defeated module writes exactly two records.
+        let text = String::from_utf8(stderr).expect("the record channel is UTF-8");
+        let records: Vec<_> = text.lines().collect();
+        assert_eq!(
+            records.len(),
+            2,
+            "run {run}: defeating the latch must produce two records, not {}: {text:?}",
+            records.len()
+        );
+        for record in records {
+            let name = sole_record(format!("{record}\n").as_bytes()).unwrap_or_else(|reason| {
+                panic!("run {run}: a defeated-latch record is still one [DIAG-3] line: {reason}")
+            });
+            assert!(
+                name == "left_total_is_zero" || name == "right_total_is_zero",
+                "run {run} named a claim neither callee carries: {name}"
+            );
+        }
+        caught += 1;
     }
     assert!(
         caught > 0,
