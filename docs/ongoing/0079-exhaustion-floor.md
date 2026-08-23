@@ -91,6 +91,29 @@ home).
   steal-race coin flip, measured at 24/30 at the default and 13/20 to 17/20
   across worker counts 2 through 16 — F7's liveness item, reproduced here
   independently of `bt_skew`.
+- F4 — the four allocation-refusal edges (`boxes.rs`, `arena.rs`, and both
+  sites in `buffer.rs`, re-derived at HEAD) reach one private
+  `@wf_resource_abort`, which writes `{"resource":"heap"}` through the
+  existing trap writer under the existing first-trap-wins latch. The writer
+  and latch conditions widen from "this module has claims" to "this module
+  writes a record", so the two classes share one writer — which is what
+  makes "no execution produces both records" a mechanism rather than an
+  argument. Measured with the optimizer-defeating shape from e3 (a read at
+  an index reachable only through a `u8` range, so `-O2` cannot delete the
+  edge): a refused allocation went from exit 134 with zero bytes to exit 134
+  with exactly the 20-byte record; a forced-false claim in a module that
+  also allocates still writes exactly its `[DIAG-3]` record and no resource
+  bytes. All 176 corpus rows still byte-identical.
+  Deliberately out: the enum-discriminant abort is a compiler-invariant
+  failure, not a resource one, and is untouched.
+  Named gap for the lead, deliberately not closed here: each `buffer.rs`
+  site carries a *second* abort edge — the target-domain ceiling guard —
+  which `spec/kernel-spec.md:719` already calls a "non-continuing
+  TCB/resource-failure path" and which still dies with zero bytes. It is a
+  different condition from an allocator refusal (a request past the target's
+  representable maximum, not memory running out), so naming its class is an
+  F8 decision rather than an executor's; routing it to `"heap"` would be
+  wrong and inventing a third class unasked would prejudge the clause.
 
 ## Outcome
 

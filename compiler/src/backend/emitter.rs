@@ -205,24 +205,44 @@ fn emit_llvm_for(
         )
         .map_err(|_| BackendFailure::TextEmission)?;
     }
+    // An allocation this host refuses is the heap twin of an exhausted stack,
+    // and it gets the same treatment: one record naming the resource class,
+    // written once, before a defined abort. The bytes carry no `rule_id`, no
+    // function, and no node path, which is what keeps them from being read as
+    // a [DIAG-3] trap record — running out of memory is not something the
+    // writer did.
+    if has_heap_storage {
+        writeln!(
+            text,
+            "@.wf_resource.heap = private unnamed_addr constant [{} x i8] c\"{}\", align 1",
+            HEAP_RECORD.len(),
+            llvm_bytes(HEAP_RECORD.as_bytes())
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+    }
+    // One writer serves both records: it is already a general "write these
+    // bytes, then abort, exactly once in this process" primitive, and sharing
+    // it is what makes "no execution produces both records" a mechanism rather
+    // than an argument.
+    let writes_a_record = !claim_records.is_empty() || has_heap_storage;
     // A latch decides between threads, so it belongs only to a module that has
     // more than one. `thunks.is_used()` is exactly "this module hands a call
     // out to a worker lane": false for every default build, and false for a
     // `--par` build that actualizes nothing. A lone thread races no one, so
     // those modules emit the trap path they emitted before the latch existed.
-    let latched_trap = !claim_records.is_empty() && thunks.is_used();
+    let latched_trap = writes_a_record && thunks.is_used();
     if latched_trap {
         text.push_str(TRAP_LATCH);
     }
     // The mandatory [DIAG-3] record and the qualified system interface can
     // need the same host symbol; one module declares it once.
     let mut system_declarations = system.declarations;
-    if !claim_records.is_empty() {
+    if writes_a_record {
         text.push('\n');
         text.push_str("declare i64 @write(i32, ptr, i64)\n");
         system_declarations.remove("declare i64 @write(i32, ptr, i64)");
     }
-    if !claim_records.is_empty() || has_matches || has_heap_storage {
+    if writes_a_record || has_matches {
         text.push_str("declare void @abort() noreturn\n");
         system_declarations.remove("declare void @abort() noreturn");
     }
@@ -235,10 +255,18 @@ fn emit_llvm_for(
     }
     if latched_trap {
         text.push_str(LATCHED_TRAP_WRITER);
-    } else if !claim_records.is_empty() {
+    } else if writes_a_record {
         text.push_str(SEQUENTIAL_TRAP_WRITER);
     } else if has_matches {
         text.push('\n');
+    }
+    if has_heap_storage {
+        writeln!(
+            text,
+            "define private void @wf_resource_abort() noreturn {{\nentry:\n  call void @wf_trap(ptr @.wf_resource.heap, i64 {})\n  unreachable\n}}\n",
+            HEAP_RECORD.len()
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
     }
     if has_arena_storage {
         text.push('\n');
@@ -303,6 +331,16 @@ fn emit_llvm_for(
         text: attach_stack_probe(&text, target),
     })
 }
+
+/// The bytes an allocation refusal writes before aborting.
+///
+/// The heap twin of the exhausted-stack record the floor's runtime writes, and
+/// fixed the same way and for the same reasons: it names the resource class
+/// and nothing else. What it leaves out is what distinguishes it from a
+/// [DIAG-3] record — no rule identifier, no function, no node path — because
+/// an allocation the host refused is the trusted computing base reaching its
+/// limit, not a contract the writer failed to keep.
+const HEAP_RECORD: &str = "{\"resource\":\"heap\"}\n";
 
 /// The attribute group every generated definition carries.
 const STACK_PROBE_GROUP: &str = "#0";

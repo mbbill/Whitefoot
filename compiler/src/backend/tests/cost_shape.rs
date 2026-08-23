@@ -829,7 +829,13 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // The entry body — `@main` hands the program to the exhaustion
             // floor, which runs this — and the optimizer's cold outlining of
             // its own failure arms.
-            || target.starts_with("wf__main_body.cold.");
+            || target.starts_with("wf__main_body.cold.")
+            // The resource abort an allocation refusal reaches. It is on no
+            // success path: the branch that reaches it is the one the
+            // allocator already had, and only its cold arm's target changed,
+            // from a bare `abort` to one that first says which resource ran
+            // out. No §9.1 count moves with it.
+            || target == "wf_resource_abort";
         assert!(
             accounted,
             "wfgrep calls @{target}, which no first-slice row accounts for"

@@ -88,7 +88,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let ready = arena_new_ready_label(result);
         writeln!(
             self.output,
-            "  %{node} = call ptr @malloc(i64 ptrtoint (ptr getelementptr ({node_type}, ptr null, i64 1) to i64))\n  %{nonnull} = icmp ne ptr %{node}, null\n  br i1 %{nonnull}, label %{ready}, label %{oom}\n{oom}:\n  call void @abort()\n  unreachable\n{ready}:\n  %{head} = load ptr, ptr {list}\n  store ptr %{head}, ptr %{node}\n  store ptr %{node}, ptr {list}\n  {result} = getelementptr inbounds {node_type}, ptr %{node}, i64 0, i32 1\n  store {content_type} {value}, ptr {result}",
+            "  %{node} = call ptr @malloc(i64 ptrtoint (ptr getelementptr ({node_type}, ptr null, i64 1) to i64))\n  %{nonnull} = icmp ne ptr %{node}, null\n  br i1 %{nonnull}, label %{ready}, label %{oom}\n{oom}:\n  call void @wf_resource_abort()\n  unreachable\n{ready}:\n  %{head} = load ptr, ptr {list}\n  store ptr %{head}, ptr %{node}\n  store ptr %{node}, ptr {list}\n  {result} = getelementptr inbounds {node_type}, ptr %{node}, i64 0, i32 1\n  store {content_type} {value}, ptr {result}",
             list = self.value_name(list),
             result = self.value_name(result),
             value = self.value_name(value),

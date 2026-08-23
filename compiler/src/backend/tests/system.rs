@@ -715,7 +715,17 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
     let llvm = compile(source);
     assert!(llvm.contains("%bounded = icmp ule i64 %accepted, %extent"));
     assert!(llvm.contains("br i1 %bounded, label %ok, label %tcb.defect"));
-    assert!(!llvm.contains("wf_trap"));
+    // This program states no claim, so it carries no [DIAG-3] record — which
+    // is what the transfer path having no language trap means. The module does
+    // define `@wf_trap`, because the record writer is shared with the
+    // allocation-refusal path and this program allocates a buffer; the writer
+    // existing is not a trap, and the record constants are what a trap would
+    // add.
+    assert!(!llvm.contains("@.wf_trap."));
+    // The transfer's own defect path is a bare abort and stays one: it is a
+    // trusted-computing-base defect, not a resource condition and not a trap,
+    // so it is routed to neither record.
+    assert!(llvm.contains("tcb.defect:\n  call void @abort()\n  unreachable"));
     assert!(llvm.contains("%next = add nuw i64 %start, %accepted"));
     let output = compile_and_run_with(&llvm, &[]);
     assert_eq!(output.stdout, b"AA");

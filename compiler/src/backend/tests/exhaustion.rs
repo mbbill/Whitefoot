@@ -379,3 +379,200 @@ fn a_fault_that_is_not_exhaustion_keeps_its_own_disposition() {
     );
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
+
+/// A heap request no host can serve, read at an index the compiler knows only
+/// through a `u8` range.
+///
+/// The read is what keeps the allocation alive. At the shipped optimization
+/// level LLVM deletes an allocation whose contents nothing observes — it
+/// forwards the fill value to the loads and removes the `malloc`/`free` pair,
+/// taking the refusal edge with it — so a naively written case would ask for
+/// sixteen terabytes, return normally, and test nothing at all. Routing the
+/// index through a type range leaves the optimizer unable to decide the load.
+const REFUSED_ALLOCATION: &[u8] = br#"fn giant(i: own u8) -> result: own u8 allocates(heap) {
+  let b = buffer_new(4000000000000000000_u64, 7_u8);
+  let wide = cvt<u8, u64>(i);
+  let element = b[wide];
+  return element;
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
+  let count = 0_u64;
+  region 'invocation {
+    set count = args_count<'invocation>(args: &'invocation args);
+  }
+  match cvt<u64, u8>(count) {
+    Ok(value: v) => {
+      let r = giant(i: v);
+      return exit_status(code: r);
+    }
+    Err(error: e) => {
+      return exit_status(code: 9_u8);
+    }
+  }
+}
+"#;
+
+/// A module carrying both a claim and heap storage, so one writer serves both
+/// record classes and the case can show they do not bleed into each other.
+///
+/// The claim is true and the source is accepted; the falsehood is injected
+/// into the checked IR after acceptance, the same way the trap-latch cases do
+/// it, because the language admits no source that states a false claim. The
+/// unused `False()` binding is what the injection redirects the claim's
+/// condition to, so the defect is a property of the run rather than of the
+/// source.
+const CLAIM_AND_HEAP: &[u8] = br#"fn pick(seed: own u64) -> result: own u64 allocates(heap), traps {
+  let scratch = buffer_new(4_u64, 0_u8);
+  let values = array_new<u64, 8>(1_u64);
+  let bounded = imin(seed, 7_u64);
+  let in_range = ilt(bounded, 8_u64);
+  let injected_false = False();
+  claim index_in_range: in_range because "premises: bounded is the minimum of the parameter seed and seven, and values has length eight\nderivation: a minimum is at most either operand, so bounded is at most seven and therefore below eight\nconclusion: ilt(bounded, 8_u64) is true\nchecker gap: ENT does not publish the result range of imin\nconsumers: the following length-eight array subscript uses bounded";
+  let picked = values[bounded];
+  return picked;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap), traps {
+  let value = pick(seed: 3_u64);
+  match cvt<u64, u8>(value) {
+    Ok(value: byte) => {
+      return exit_status(code: byte);
+    }
+    Err(error: wide) => {
+      return exit_status(code: 9_u8);
+    }
+  }
+}
+"#;
+
+/// One program reaching every allocation form the emitter lowers: a filled
+/// buffer, a vacant one, a heap box, and an arena node.
+///
+/// The lengths are constants so the fit obligation discharges statically and
+/// the fixture stays about the refusal edges rather than about proving a
+/// dynamic length fits.
+const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 allocates(heap) {
+  let filled = buffer_new(4_u64, 5_u64);
+  let vacant = buffer_vacant<u32>(4_u64);
+  let boxed = box_new(7_u64);
+  let held = deref(boxed);
+  let filled_len = len(filled);
+  let vacant_len = len(vacant);
+  let total = held +wrap filled_len;
+  set total = total +wrap vacant_len;
+  region 'a {
+    let kept = arena_new<'a, u64>(3_u64);
+    let seen = deref(kept);
+    set total = total +wrap seen;
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let total = shapes(n: 4_u64);
+  match cvt<u64, u8>(total) {
+    Ok(value: byte) => {
+      return exit_status(code: byte);
+    }
+    Err(error: wide) => {
+      return exit_status(code: 9_u8);
+    }
+  }
+}
+"#;
+
+/// An allocation the host refuses ends the process the same way an exhausted
+/// stack does: one record naming the resource, then a defined abort.
+///
+/// Before this, a refused allocation was a bare `abort()` with zero bytes —
+/// the same observable event as a false claim and as a corrupted-heap abort
+/// inside the allocator itself, with nothing to tell a reader which had
+/// happened.
+#[test]
+fn an_allocation_the_host_refuses_writes_one_resource_record() {
+    let directory = test_directory();
+    let executable = build_executable(&compile(REFUSED_ALLOCATION), &directory);
+    let output = Command::new(&executable)
+        .output()
+        .expect("run the refused allocation");
+    assert_eq!(
+        output.status.code(),
+        None,
+        "a refused allocation ends by abort, not by a returned status"
+    );
+    assert_resource_record(&output.stderr, "heap");
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// Every allocation-refusal edge reaches the resource abort, not a bare one.
+///
+/// The completeness matters the same way the probe attribute's does: a module
+/// that routed three of its four refusal edges and left the fourth calling
+/// `@abort` directly would still die silently on exactly the allocation that
+/// took the fourth path, and nothing about the program would say which.
+#[test]
+fn every_allocation_refusal_edge_reaches_the_resource_abort() {
+    let module = compile(ALL_HEAP_FORMS);
+    let lines: Vec<&str> = module.lines().collect();
+    for refusal in [
+        "box.new.oom.",
+        "arena.new.oom.",
+        "buffer.fill.oom.",
+        "buffer.vacant.oom.",
+    ] {
+        let mut found = 0;
+        for (index, line) in lines.iter().enumerate() {
+            if !line.starts_with(refusal) || !line.ends_with(':') {
+                continue;
+            }
+            found += 1;
+            assert_eq!(
+                lines.get(index + 1).copied().unwrap_or_default(),
+                "  call void @wf_resource_abort()",
+                "the {line} edge must reach the resource abort, not a bare one"
+            );
+        }
+        assert!(
+            found > 0,
+            "the fixture must reach a {refusal} edge:\n{module}"
+        );
+    }
+}
+
+/// A claim trap still writes exactly its own record, and nothing else.
+///
+/// The two classes share one writer and one latch, which is what makes "no
+/// execution produces both records" a mechanism rather than a hope. This case
+/// is the other half of that: sharing the writer must not let the resource
+/// record leak into a trap's output. The distinction lives in the bytes — a
+/// [DIAG-3] record names a rule, a function, and a node path; a resource
+/// record names a resource class and nothing else — so the check is on the
+/// bytes.
+#[test]
+fn a_claim_trap_still_writes_only_its_own_record() {
+    let module =
+        super::emit_with_overlap_and_false_claims(CLAIM_AND_HEAP, &[("pick", "index_in_range")]);
+    assert!(
+        module.contains("@.wf_resource.heap"),
+        "the fixture must carry heap storage, or it shows nothing:\n{module}"
+    );
+    let directory = test_directory();
+    let executable = build_executable(&module, &directory);
+    let output = Command::new(&executable)
+        .env("WF_WORKERS", "1")
+        .output()
+        .expect("run the defective program");
+    let text = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), None, "a trap aborts");
+    assert_eq!(text.lines().count(), 1, "exactly one record: {text:?}");
+    assert!(
+        text.starts_with("{\"rule_id\":\"CLM-1\",\"message\":\"index_in_range\""),
+        "the trap must write its own [DIAG-3] record: {text:?}"
+    );
+    assert!(
+        !text.contains("\"resource\""),
+        "a claim trap must not carry a resource record: {text:?}"
+    );
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
