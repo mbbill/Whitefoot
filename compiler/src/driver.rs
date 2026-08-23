@@ -746,17 +746,17 @@ command fn main() -> status: own ExitStatus pure {
     }
 
     /// A counted loop that reduces under an exactly-associative integer
-    /// operation gets the split hint, naming the operation that makes the
-    /// rewrite safe.
+    /// operation is permitted, and the line names the operation the
+    /// accumulator recombines under.
     ///
-    /// This is the shape the judgment can never reach: two iterations of one
-    /// statement are not a pair, so without this line the compiler reports the
-    /// most parallel loop in a program by saying nothing about it. The callee
-    /// is a real `pure`, claim-free function with a loop of its own, so the
-    /// case is about the writer's loop rather than about a body small enough
-    /// to be uninteresting.
+    /// This is the shape the pair judgment can never reach: two iterations of
+    /// one statement are not a pair, so before the loop rule the compiler
+    /// reported the most parallel loop in a program by saying nothing about
+    /// it. The callee is a real `pure`, claim-free function with a loop of its
+    /// own, so the case is about the writer's loop rather than about a body
+    /// small enough to be uninteresting.
     #[test]
-    fn a_counted_loop_reducing_under_an_associative_operation_is_told_to_split() {
+    fn a_counted_loop_reducing_under_an_associative_operation_is_permitted() {
         let source = b"fn interesting(index: own u64) -> result: own Bool pure {
   let low = iand(index, 7_u64);
   let seen = 0_u64;
@@ -784,24 +784,24 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("counting.wf", source),
             vec![
-                "PAR hint        counting.wf:16  loop  no eligible pair; a recursive split over \
-                 its index range would be eligible, combining under +wrap"
+                "PAR loop        counting.wf:16  loop  permitted   eligible; \
+                 one accumulator under +wrap"
                     .to_owned()
             ]
         );
     }
 
-    /// The float denial: the same loop with a float accumulator gets no line
-    /// at all.
+    /// The float denial, and the reason a loop rule can exist at all.
     ///
-    /// `fadd.strict` is not associative, so a writer who split this range
-    /// would publish different bytes at a different worker count — the one
-    /// failure the whole permission path exists to make impossible. The hint
-    /// admits an enumerated set of exactly-associative integer and boolean
-    /// operations and no float is in it, which is what this pins: not that the
-    /// advice is hedged for floats, that there is none.
+    /// `fadd.strict` is not associative, so an implementation free to choose
+    /// the combination tree would publish different bytes at a different
+    /// worker count — the one failure this whole path exists to make
+    /// impossible. The admitted set is enumerated and contains no float, so
+    /// the loop is refused outright rather than permitted with a hedge, and
+    /// the line cites the statement, which names the operation the writer
+    /// wrote.
     #[test]
-    fn a_counted_loop_reducing_under_a_float_operation_is_told_nothing() {
+    fn a_counted_loop_reducing_under_a_float_operation_is_denied_by_condition_one() {
         let source = b"command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let step = 0.5_f64;
@@ -813,12 +813,16 @@ command fn main() -> status: own ExitStatus pure {
 ";
         assert_eq!(
             ledger_of("folding.wf", source),
-            Vec::<String>::new(),
-            "a float accumulator must produce no split advice"
+            vec![
+                "PAR loop        folding.wf:4  loop  denied      condition 1: the loop writes \
+                 storage outliving the iteration that no exactly associative operation reduces, \
+                 at set total = fadd.strict(total, step);"
+                    .to_owned()
+            ]
         );
 
-        // The identical loop over an integer accumulator does get the line, so
-        // the silence above is about the operation and not about the loop.
+        // The identical loop over an integer accumulator is permitted, so the
+        // refusal above is about the operation and not about the loop.
         let integral = b"command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   let step = 5_u64;
@@ -831,21 +835,22 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("folding.wf", integral),
             vec![
-                "PAR hint        folding.wf:4  loop  no eligible pair; a recursive split over \
-                 its index range would be eligible, combining under +wrap"
+                "PAR loop        folding.wf:4  loop  permitted   eligible; \
+                 one accumulator under +wrap"
                     .to_owned()
             ]
         );
     }
 
-    /// A counted loop that writes into a buffer gets no line either.
+    /// A counted loop that writes into a buffer is refused by condition 2.
     ///
-    /// The split of a parallel *map* writes two index ranges of one buffer,
-    /// and condition 2 reads those as one place, so the rewrite this hint
-    /// advises would be denied. Advising it would send a writer to a rewrite
-    /// the judgment then refuses, which is worse than silence.
+    /// Two iterations write two elements of one buffer, and a resolved place
+    /// carries no index segment [ENT-2], so the judgment reads them as one
+    /// place and fails closed. The parallel map is the deferred capability,
+    /// and the line says which write costs the overlap rather than leaving the
+    /// loop unreported.
     #[test]
-    fn a_counted_loop_writing_into_a_buffer_is_told_nothing() {
+    fn a_counted_loop_writing_into_a_buffer_is_denied_by_condition_two() {
         let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(64_u64, 0_u64);
   for @fill i in 0_u64..64_u64 {
@@ -856,24 +861,27 @@ command fn main() -> status: own ExitStatus pure {
 ";
         assert_eq!(
             ledger_of("mapping.wf", source),
-            Vec::<String>::new(),
-            "a write into enclosing storage must produce no split advice"
+            vec![
+                "PAR loop        mapping.wf:3  loop  denied      condition 2: the body writes \
+                 storage that is neither introduced by the iteration nor the accumulator, \
+                 at set out[i] = i *wrap i;"
+                    .to_owned()
+            ]
         );
     }
 
-    /// A counted loop whose carried state is written by a callee gets no line
-    /// either, however associative the accumulator in view is.
+    /// A counted loop whose carried state is written by a callee is refused by
+    /// condition 2, however associative the accumulator in view is.
     ///
-    /// The survey classifies the `set` statements of the loop body, so a
-    /// callee writing caller storage through a `&uniq` parameter carries state
-    /// across iterations that no `set` records. The loop below folds a float
-    /// total that way, beside an ordinary `+wrap` counter — and the counter is
-    /// what a line would name, advising the split of a range whose real
-    /// carried state is a `fadd.strict` fold. The callee's `writes` row is the
-    /// fact that refuses it, so the enumerated combine set governs all of the
-    /// loop's carried state and not only the part written in view.
+    /// The loop below folds a float total through a `&uniq` parameter, beside
+    /// an ordinary `+wrap` counter — and the counter is what a line reading
+    /// only the body's `set` statements would name, permitting a loop whose
+    /// real carried state is a `fadd.strict` fold one frame away. The row's
+    /// projection onto the actual is the fact that refuses it, so the
+    /// enumerated combine set governs all of the loop's carried state and not
+    /// only the part written in view.
     #[test]
-    fn a_counted_loop_whose_callee_writes_carried_state_is_told_nothing() {
+    fn a_counted_loop_whose_callee_writes_carried_state_is_denied_by_condition_two() {
         let source =
             b"fn accum['s](slot: &uniq 's f64, x: own f64) -> result: own u64 reads('s), writes('s) {
   set deref(slot) = fadd.strict(deref(slot), x);
@@ -895,12 +903,16 @@ command fn main() -> status: own ExitStatus pure {
 ";
         assert_eq!(
             ledger_of("carrying.wf", source),
-            Vec::<String>::new(),
-            "carried state written by a callee must produce no split advice"
+            vec![
+                "PAR loop        carrying.wf:10  loop  denied      condition 2: the body writes \
+                 storage that is neither introduced by the iteration nor the accumulator, \
+                 at &uniq 'acc total"
+                    .to_owned()
+            ]
         );
 
-        // The same loop over a callee that writes nothing does get the line,
-        // so the silence above is about the row and not about the shape.
+        // The same loop over a callee that writes nothing is permitted, so the
+        // refusal above is about the projected row and not about the shape.
         let reading = b"fn weigh(x: own f64) -> result: own u64 pure {
   let bits = reinterpret<f64, u64>(x);
   return iand(bits, 1_u64);
@@ -919,26 +931,24 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("carrying.wf", reading),
             vec![
-                "PAR hint        carrying.wf:9  loop  no eligible pair; a recursive split over \
-                 its index range would be eligible, combining under +wrap"
+                "PAR loop        carrying.wf:9  loop  permitted   eligible; \
+                 one accumulator under +wrap"
                     .to_owned()
             ]
         );
     }
 
-    /// A counted loop a `give` can leave gets no line, however associative
-    /// its accumulator is.
+    /// A counted loop a `give` can leave is refused by condition 4, however
+    /// associative its accumulator is.
     ///
     /// `give` is the fourth exit form, and the one that leaves the enclosing
-    /// value initializer as well as the loop. The advised rewrite has no
-    /// representation for that edge at all: it folds the whole index range
-    /// where the loop stopped at the first hit. The fixture below sums 64
-    /// ones, meets a 7 at index 10 and gives there, so the loop contributes 10
-    /// where a full-range split contributes 70 — the advice would move the
-    /// program's published bytes, which is the one failure this path exists to
-    /// prevent.
+    /// value initializer as well as the loop. A combination tree over the
+    /// whole range has no representation for that edge at all: it folds every
+    /// iteration where the loop stopped at the first hit. The fixture below
+    /// sums 64 ones, meets a 7 at index 10 and gives there, so the loop
+    /// contributes 10 where a full-range fold contributes 70.
     #[test]
-    fn a_counted_loop_a_give_can_leave_is_told_nothing() {
+    fn a_counted_loop_a_give_can_leave_is_denied_by_condition_four() {
         let source = b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads('s) {
   let count = len(deref(src));
   let acc = 0_u64;
@@ -970,12 +980,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 ";
         assert_eq!(
             ledger_of("giving.wf", source),
-            Vec::<String>::new(),
-            "a loop an exit edge can leave must produce no split advice"
+            vec![
+                "PAR loop        giving.wf:6  loop  denied      condition 4: a give leaves the loop"
+                    .to_owned()
+            ]
         );
 
-        // The same loop with the give removed does get the line, so the
-        // silence above is about the exit edge and not about the shape.
+        // The same loop with the give removed is permitted, so the refusal is
+        // about the exit edge and not about the shape.
         let contained = b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads('s) {
   let count = len(deref(src));
   let acc = 0_u64;
@@ -1004,21 +1016,24 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         assert_eq!(
             ledger_of("giving.wf", contained),
             vec![
-                "PAR hint        giving.wf:6  loop  no eligible pair; a recursive split over \
-                 its index range would be eligible, combining under +wrap"
+                "PAR loop        giving.wf:6  loop  permitted   eligible; \
+                 one accumulator under +wrap"
                     .to_owned()
             ]
         );
     }
 
-    /// The line names each combine the way a writer spells it.
+    /// The split advice outlives exactly one refusal, and names each combine
+    /// the way a writer spells it.
     ///
-    /// The advice is a rewrite the reader is meant to type, so an operation
-    /// named in a spelling the language does not have is advice that does not
-    /// compile. The `Bool` row is `band`, `bor`, `bxor` [OP-1]; the integer
-    /// rows are covered by the cases above.
+    /// Three accumulators is the one shape this version declines while a
+    /// hand-written recursion returning an aggregate still reaches it, so the
+    /// loop line reports the refusal and a second line reports the rewrite.
+    /// The advice is meant to be typed, so an operation named in a spelling
+    /// the language does not have is advice that does not compile: the `Bool`
+    /// row is `band`, `bor`, `bxor` [OP-1].
     #[test]
-    fn the_split_hint_names_the_boolean_combines_as_a_writer_spells_them() {
+    fn a_refused_multi_accumulator_loop_keeps_advice_naming_the_boolean_combines() {
         let source = b"command fn main() -> status: own ExitStatus pure {
   let every = True();
   let any = False();
@@ -1036,9 +1051,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         assert_eq!(
             ledger_of("booleans.wf", source),
             vec![
-                "PAR hint        booleans.wf:5  loop  no eligible pair; a recursive split over \
-                 its index range would be eligible, combining under band, bor, bxor"
-                    .to_owned()
+                "PAR loop        booleans.wf:5  loop  denied      condition 1: the body carries \
+                 3 accumulators, and this rule recombines one"
+                    .to_owned(),
+                "PAR hint        booleans.wf:5  loop  refused by condition 1; a recursive split \
+                 over its index range would be eligible, combining under band, bor, bxor"
+                    .to_owned(),
             ]
         );
     }

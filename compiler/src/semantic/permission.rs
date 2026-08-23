@@ -100,7 +100,7 @@
 use std::collections::VecDeque;
 
 use super::entailment::collect_statement_calls;
-use super::loop_hint::LoopSplitHint;
+use super::loop_permission::LoopPermission;
 use super::model::{
     BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedMode, CheckedSetTarget,
     CheckedSliceSource, CheckedStatement, CheckedType, FunctionId, expression_children,
@@ -372,10 +372,10 @@ pub(crate) struct FunctionPermissions {
     pub(crate) function: String,
     pub(crate) pairs: Vec<PermissionPair>,
     pub(crate) runs: Vec<PermissionRun>,
-    /// Counted loops a recursive index split would make eligible. These are
-    /// not verdicts: nothing here is permitted, denied, or lowered, and the
-    /// judgment above is computed exactly as it was before they existed.
-    pub(crate) hints: Vec<LoopSplitHint>,
+    /// The [PAR-2] verdict of every counted loop of this function, in source
+    /// order. The pair judgment above is computed exactly as it was before
+    /// these existed, and nothing here is lowered by this version.
+    pub(crate) loops: Vec<LoopPermission>,
 }
 
 /// The whole-program permission table, dense by [`FunctionId`].
@@ -441,7 +441,7 @@ struct ClaimRecord {
     node_path: NodePath,
 }
 
-struct Program<'check> {
+pub(super) struct Program<'check> {
     functions: &'check [CheckedFunction],
     signatures: &'check [PermissionSignature],
     /// Direct monomorphized callees per function, ascending and deduplicated.
@@ -503,13 +503,45 @@ struct Candidate<'check> {
     index: usize,
     /// The binding the statement defines.
     binding: BindingId,
-    call: NodePath,
-    callee: FunctionId,
-    arguments: &'check [CheckedExpression],
-    argument_nodes: &'check [NodePath],
-    regions: &'check [DeclarationId],
+    call: CallProjection<'check>,
     /// An exit edge of this statement that does not reach its successor.
     exit: Option<ExitKind>,
+}
+
+/// One call occurrence, reduced to what the [EFF-2] boundary projection reads.
+///
+/// The window judgment reaches a call as the whole right-hand side of a
+/// `let_stmt`; the loop judgment reaches one wherever it is written in a body.
+/// Both project the same boundary, so both build it from this and neither
+/// grows a second copy of the projection.
+pub(super) struct CallProjection<'check> {
+    pub(super) call: &'check NodePath,
+    pub(super) callee: FunctionId,
+    pub(super) arguments: &'check [CheckedExpression],
+    pub(super) argument_nodes: &'check [NodePath],
+    pub(super) regions: &'check [DeclarationId],
+}
+
+/// The call one expression is, or `None` for every other expression form.
+pub(super) fn call_projection(value: &CheckedExpression) -> Option<CallProjection<'_>> {
+    let CheckedExpression::UserCall {
+        function,
+        call,
+        argument_nodes,
+        arguments,
+        goal_regions,
+        ..
+    } = value
+    else {
+        return None;
+    };
+    Some(CallProjection {
+        call,
+        callee: *function,
+        arguments,
+        argument_nodes,
+        regions: goal_regions,
+    })
 }
 
 /// One statement written between the two judged calls, reduced to what the
@@ -561,7 +593,7 @@ impl<'check> Program<'check> {
             function: function.name.clone(),
             pairs: Vec::new(),
             runs: Vec::new(),
-            hints: Vec::new(),
+            loops: Vec::new(),
         };
         let mut blocks = vec![function.body.as_slice()];
         while let Some(block) = blocks.pop() {
@@ -582,22 +614,17 @@ impl<'check> Program<'check> {
                 .components()
                 .cmp(right.sites[0].statement.components())
         });
-        // The hint runs last and reads the finished verdicts, so a loop that
-        // already holds an eligible pair is never told to become one.
+        // The loop judgment runs last and reads the finished verdicts, so a
+        // loop that already holds an eligible pair is never told to become
+        // one. Its own verdict does not read them: [PAR-2] is a judgment of
+        // the loop, not of what a writer could put inside it.
         let eligible = permissions
             .pairs
             .iter()
             .filter(|pair| pair.verdict.is_eligible())
             .map(|pair| pair.first.statement.clone())
             .collect::<Vec<_>>();
-        permissions.hints = super::loop_hint::split_hints(
-            function,
-            super::loop_hint::CalleeFacts {
-                reaches_claim: &self.reaches_claim,
-                signatures: self.signatures,
-            },
-            &eligible,
-        );
+        permissions.loops = super::loop_permission::judge_loops(self, &places, function, &eligible);
         permissions
     }
 
@@ -632,7 +659,7 @@ impl<'check> Program<'check> {
                 .collect(),
             footprints: candidates
                 .iter()
-                .map(|candidate| self.footprint(places, candidate))
+                .map(|candidate| self.footprint(places, &candidate.call))
                 .collect(),
             candidates,
         };
@@ -686,11 +713,11 @@ impl<'check> Program<'check> {
         PermissionSite {
             statement: candidate.statement.clone(),
             binding: candidate.binding,
-            call: candidate.call.clone(),
-            callee: candidate.callee,
+            call: candidate.call.call.clone(),
+            callee: candidate.call.callee,
             callee_name: self
                 .functions
-                .get(candidate.callee.0 as usize)
+                .get(candidate.call.callee.0 as usize)
                 .map(|function| function.name.clone())
                 .unwrap_or_default(),
         }
@@ -736,7 +763,7 @@ impl<'check> Program<'check> {
 
         // Condition 1: ordinary def-use, over the whole window.
         let mut used = Vec::new();
-        for argument in second.arguments {
+        for argument in second.call.arguments {
             collect_used_bindings(argument, &mut used);
         }
         if used.contains(&first.binding) {
@@ -822,8 +849,8 @@ impl<'check> Program<'check> {
         // them. A row that gates the members gates a call written between them
         // for the same reason: nothing about its reach is proved by places.
         for (side, callee) in [
-            (PairSide::First, first.callee),
-            (PairSide::Second, second.callee),
+            (PairSide::First, first.call.callee),
+            (PairSide::Second, second.call.callee),
         ]
         .into_iter()
         .chain(
@@ -864,7 +891,7 @@ impl<'check> Program<'check> {
         // Eligibility: every call closure of the window reaches zero claim
         // sites. A call between the members can be actualized only alongside
         // them, so its claims count exactly as a member's do.
-        let mut roots = vec![first.callee, second.callee];
+        let mut roots = vec![first.call.callee, second.call.callee];
         roots.extend(interposed.iter().filter_map(|record| record.callee));
         // The precomputed reachability answers the common case — every root
         // claim-free — without walking the call graph at all. Only a root that
@@ -913,14 +940,14 @@ impl<'check> Program<'check> {
                 // reads of an ordinary value.
                 if let Some(candidate) = candidate_of(index, statement) {
                     let mut uses = Vec::new();
-                    for argument in candidate.arguments {
+                    for argument in candidate.call.arguments {
                         collect_used_bindings(argument, &mut uses);
                     }
                     return Ok(Interposed {
                         defines: Some(*binding),
                         uses,
-                        footprint: self.footprint(places, &candidate),
-                        callee: Some(candidate.callee),
+                        footprint: self.footprint(places, &candidate.call),
+                        callee: Some(candidate.call.callee),
                     });
                 }
                 let mut uses = Vec::new();
@@ -1003,7 +1030,7 @@ impl<'check> Program<'check> {
 
     /// The written and read footprints of one call, by [EFF-2] boundary
     /// projection onto the actuals' resolved places.
-    fn footprint(&self, places: &PlaceMap, candidate: &Candidate<'check>) -> Footprint {
+    pub(super) fn footprint(&self, places: &PlaceMap, candidate: &CallProjection<'_>) -> Footprint {
         let mut footprint = Footprint::default();
         let (Some(signature), Some(callee)) = (
             self.signatures.get(candidate.callee.0 as usize),
@@ -1038,7 +1065,7 @@ impl<'check> Program<'check> {
             let node = candidate
                 .argument_nodes
                 .get(index)
-                .unwrap_or(&candidate.call);
+                .unwrap_or(candidate.call);
             let mode_region = match parameter.mode {
                 CheckedMode::Own => None,
                 CheckedMode::Shared(region) | CheckedMode::Unique(region) => Some(region),
@@ -1091,17 +1118,41 @@ impl<'check> Program<'check> {
             let node = candidate
                 .argument_nodes
                 .get(index)
-                .unwrap_or(&candidate.call);
+                .unwrap_or(candidate.call);
             collect_operand_reads(places, argument, node, &mut footprint);
         }
         footprint
+    }
+
+    /// The declared row of one concrete function, or `None` when this
+    /// analysis does not hold one. A caller that cannot read a row denies.
+    pub(super) fn signature(&self, function: FunctionId) -> Option<&PermissionSignature> {
+        self.signatures.get(function.0 as usize)
+    }
+
+    /// One concrete function's source name, for citation.
+    pub(super) fn function_name(&self, function: FunctionId) -> String {
+        self.functions
+            .get(function.0 as usize)
+            .map(|function| function.name.clone())
+            .unwrap_or_default()
+    }
+
+    /// Whether a `claim` is reachable from one function. An unknown function
+    /// answers `true`, so a callee this analysis cannot place keeps the
+    /// overlap out of reach rather than being read as claim-free.
+    pub(super) fn reaches_claim(&self, function: FunctionId) -> bool {
+        self.reaches_claim
+            .get(function.0 as usize)
+            .copied()
+            .unwrap_or(true)
     }
 
     /// Total reachable `claim` sites over the transitive call closure of the
     /// given roots, with the first witness in deterministic order, or `None`
     /// when the closure is claim-free. One breadth-first walk covers both
     /// roots, so a function reachable from both is counted once.
-    fn claim_closure(&self, roots: &[FunctionId]) -> Option<(usize, ClaimWitness)> {
+    pub(super) fn claim_closure(&self, roots: &[FunctionId]) -> Option<(usize, ClaimWitness)> {
         let mut total = 0;
         let mut witness = None;
         let mut visited = vec![false; self.functions.len()];
@@ -1174,9 +1225,9 @@ fn witness_path(
 }
 
 #[derive(Debug, Default)]
-struct Footprint {
-    writes: Vec<Access>,
-    reads: Vec<Access>,
+pub(super) struct Footprint {
+    pub(super) writes: Vec<Access>,
+    pub(super) reads: Vec<Access>,
     /// Storage this statement's own operand expressions read on the calling
     /// thread, before the call. An overlap moves some statement's operand
     /// evaluation across another's call, and which one moves is the
@@ -1184,14 +1235,14 @@ struct Footprint {
     /// directions for the pair — and, for a statement between the two, against
     /// s2's writes in both directions but against s1's writes only one way.
     /// The module doc derives that asymmetry.
-    operand_reads: Vec<Access>,
+    pub(super) operand_reads: Vec<Access>,
     /// Set when the row projects an access this analysis cannot resolve to a
     /// caller place. Every such statement is denied.
-    unresolved: Option<NodePath>,
+    pub(super) unresolved: Option<NodePath>,
     /// Set when an operand expression reads storage this analysis cannot
     /// resolve to a caller place. Denies wherever this statement sits in the
     /// window.
-    operand_unresolved: Option<NodePath>,
+    pub(super) operand_unresolved: Option<NodePath>,
 }
 
 /// The condition-2 obligations of one ordered pair of window footprints.
@@ -1290,7 +1341,7 @@ fn value_footprint(places: &PlaceMap, value: &CheckedExpression, node: &NodePath
 /// An element target resolves to the whole collection, because a resolved
 /// place carries no index segment [ENT-2]. That is the fail-closed direction:
 /// one element write conflicts with any access to the collection.
-fn set_target_place(
+pub(super) fn set_target_place(
     places: &PlaceMap,
     target: &CheckedSetTarget,
     node: &NodePath,
@@ -1342,7 +1393,7 @@ fn collect_set_target_bindings(target: &CheckedSetTarget, out: &mut Vec<BindingI
 /// the call-boundary projection records a consumed actual that way: the affine
 /// discipline already forbids a second consumer, and the footprint states it
 /// rather than assuming it.
-fn collect_consumed_places(
+pub(super) fn collect_consumed_places(
     places: &PlaceMap,
     expression: &CheckedExpression,
     node: &NodePath,
@@ -1380,26 +1431,11 @@ fn candidate_of(index: usize, statement: &CheckedStatement) -> Option<Candidate<
         ),
         _ => return None,
     };
-    let CheckedExpression::UserCall {
-        function,
-        call,
-        argument_nodes,
-        arguments,
-        goal_regions,
-        ..
-    } = value
-    else {
-        return None;
-    };
     Some(Candidate {
         statement: node_path.clone(),
         index,
         binding: *binding,
-        call: call.clone(),
-        callee: *function,
-        arguments,
-        argument_nodes,
-        regions: goal_regions,
+        call: call_projection(value)?,
         exit,
     })
 }

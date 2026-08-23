@@ -9,7 +9,7 @@ mod check;
 mod claim_locality;
 mod entailment;
 mod goal;
-mod loop_hint;
+mod loop_permission;
 mod model;
 pub(crate) mod permission;
 mod permission_ledger;

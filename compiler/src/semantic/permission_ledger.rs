@@ -1,6 +1,6 @@
 //! The non-normative permission ledger: one developer-channel line per
-//! analyzed sibling-call pair, one per eligible chain, and one per counted
-//! loop a recursive index split would make eligible.
+//! analyzed sibling-call pair, one per eligible chain, one per counted loop,
+//! and one more for a refused loop a hand-written index split would reach.
 //!
 //! The ledger is the visible half of the permission judgment. It states, for
 //! every pair the judgment looked at, whether overlap is permitted, whether a
@@ -18,13 +18,19 @@
 //! last — and that narrowing happens after this ledger is rendered, so a `run`
 //! line states what the judgment permits and not what the emitter actualizes.
 //!
-//! A `hint` line is the one line here that is about a statement the judgment
-//! never had a verdict for. A counted loop is not a pair and can never become
-//! one, so it is otherwise reported by silence, which reads the same as "no
-//! parallelism here" when the truth is "not in this spelling". The hint says
-//! which spelling would work and names the combining operation that makes the
-//! rewrite safe. See [`super::loop_hint`] for what is admitted and why no
-//! float operation ever is.
+//! A `loop` line is the same statement for a counted loop, whose iterations
+//! are judged by their own rule rather than as a pair. It names the condition
+//! that refused the loop, or, for a permitted one, the operation its
+//! accumulator recombines under — the fact that makes the overlap safe. See
+//! [`super::loop_permission`] for what is admitted and why no float operation
+//! ever is.
+//!
+//! A `hint` line survives underneath it for exactly one refusal: a loop this
+//! version declines only because it carries several accumulators is still one
+//! a hand-written recursion can split, and the line says so and names the
+//! condition that refused the loop itself. Every other refusal is a reason the
+//! rewrite would be refused too, and advice a writer cannot safely take is
+//! worse than silence.
 //!
 //! Nothing here participates in acceptance, in lowering, or in any mandatory
 //! [DIAG-3] record. It reads the finished permission table and the source
@@ -33,6 +39,7 @@
 
 use crate::NodePath;
 
+use super::loop_permission::{LoopDenial, LoopPermission, LoopVerdict};
 use super::permission::{
     Access, Denial, ExitKind, PairSide, PermissionMetadata, PermissionVerdict,
 };
@@ -67,7 +74,8 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
     // writer reads them in.
     const PAIR: u8 = 0;
     const CHAIN: u8 = 1;
-    const HINT: u8 = 2;
+    const LOOP: u8 = 2;
+    const HINT: u8 = 3;
     let mut entries = Vec::new();
     for permissions in &metadata.functions {
         for pair in &permissions.pairs {
@@ -108,15 +116,34 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 ),
             ));
         }
-        for hint in &permissions.hints {
-            let (logical_path, line) = source.location(&hint.statement)?;
+        for judged in &permissions.loops {
+            let (logical_path, line) = source.location(&judged.statement)?;
+            let verdict = if judged.verdict.is_permitted() {
+                "permitted"
+            } else {
+                "denied"
+            };
+            let detail = loop_detail(judged, source)?;
+            entries.push((
+                logical_path.clone(),
+                line,
+                LOOP,
+                format!("PAR loop        {logical_path}:{line}  loop  {verdict:<10}  {detail}"),
+            ));
+            if !judged.advises_split {
+                continue;
+            }
+            let condition = judged
+                .verdict
+                .denied_condition()
+                .expect("only a refused loop carries split advice");
             entries.push((
                 logical_path.clone(),
                 line,
                 HINT,
                 format!(
-                    "PAR hint        {logical_path}:{line}  loop  no eligible pair; a recursive split over its index range would be eligible, combining under {}",
-                    hint.combines.join(", ")
+                    "PAR hint        {logical_path}:{line}  loop  refused by condition {condition}; a recursive split over its index range would be eligible, combining under {}",
+                    judged.combines.join(", ")
                 ),
             ));
         }
@@ -224,6 +251,88 @@ fn denied_detail<Source: LedgerSource>(
             };
             format!("the {edge} of {} skips s2", statement_name(*side))
         }
+    };
+    Ok(format!("condition {condition}: {reason}"))
+}
+
+/// The part of a loop line that states the outcome.
+fn loop_detail<Source: LedgerSource>(
+    judged: &LoopPermission,
+    source: &Source,
+) -> Result<String, Source::Error> {
+    // A permitted loop's accumulator is the fact that makes the overlap safe,
+    // so the line carries it rather than leaving a reader to infer it from
+    // silence.
+    let carried = match judged.combines.as_slice() {
+        [] => "no accumulator".to_owned(),
+        combines => format!("one accumulator under {}", combines.join(", ")),
+    };
+    Ok(match &judged.verdict {
+        LoopVerdict::PermittedEligible => format!("eligible; {carried}"),
+        LoopVerdict::PermittedNotActualizable {
+            claim_sites,
+            witness,
+        } => format!(
+            "not-actualizable: {claim_sites} claim {} via {}; {carried}",
+            if *claim_sites == 1 { "site" } else { "sites" },
+            witness.function
+        ),
+        LoopVerdict::Denied(denial) => loop_denied_detail(denial, source)?,
+    })
+}
+
+fn loop_denied_detail<Source: LedgerSource>(
+    denial: &LoopDenial,
+    source: &Source,
+) -> Result<String, Source::Error> {
+    // The number comes from the judgment itself, so the reported condition
+    // cannot drift from the condition that actually refused the loop.
+    let condition = denial.condition();
+    let reason = match denial {
+        LoopDenial::NotAReduction { statement } => format!(
+            "the loop writes storage outliving the iteration that no exactly associative operation reduces, at {}",
+            source.spelling(statement)?
+        ),
+        LoopDenial::ManyAccumulators { accumulators } => {
+            format!("the body carries {accumulators} accumulators, and this rule recombines one")
+        }
+        LoopDenial::AccumulatorRead { statement, reads } => format!(
+            "the accumulator is read {reads} times in the body and a reduction reads it once, at {}",
+            source.spelling(statement)?
+        ),
+        LoopDenial::SharedWrite { argument } => format!(
+            "the body writes storage that is neither introduced by the iteration nor the accumulator, at {}",
+            source.spelling(argument)?
+        ),
+        LoopDenial::UnresolvedWrite { argument } => format!(
+            "unresolved write footprint through {}",
+            source.spelling(argument)?
+        ),
+        // The disclosure half: a form this judgment does not account for is
+        // reported here rather than passed over silently, so the writer sees
+        // the statement that costs the overlap.
+        LoopDenial::BodyForm { form } => format!("the body contains {form}"),
+        LoopDenial::Row {
+            function,
+            external,
+            blocks,
+        } => {
+            let mut categories = Vec::new();
+            if *external {
+                categories.push("external");
+            }
+            if *blocks {
+                categories.push("blocks");
+            }
+            format!("the row of {function} carries {}", categories.join(", "))
+        }
+        LoopDenial::SystemCall { call } => {
+            format!(
+                "the body performs a [SYS-2] operation, at {}",
+                source.spelling(call)?
+            )
+        }
+        LoopDenial::Exit { edge } => format!("{edge} leaves the loop"),
     };
     Ok(format!("condition {condition}: {reason}"))
 }

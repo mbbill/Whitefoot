@@ -28,6 +28,7 @@ mod integer_absolute;
 mod integer_conversion;
 mod integer_extended;
 mod integer_negation;
+mod loop_permission;
 mod operation_table;
 mod options;
 mod permission;
