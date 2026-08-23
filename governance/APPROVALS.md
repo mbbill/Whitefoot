@@ -1432,3 +1432,39 @@ ACTIVE-SPEC: v0.33 fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d
   successful canonical `make check` is the rule 3 evidence for this same
   boundary.
 ACTIVE-SPEC: v0.34 cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03 fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f
+
+## 2026-08-23 — merge-time approval content: v0.35 proof-derived parallelism ([PAR-1], [PAR-2])
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. The owner's merge approval of
+  2026-08-23 ("合并吧", repeated as "我是说你直接合并,我批准了" after the
+  campaign report) is rule 2's merge approval and rule 4's approval of the
+  content recorded here; this record creates no separate approval step.
+- SPECIFICATION: activate Whitefoot v0.35 at exact SHA-256
+  `645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769`.
+  It supersedes active v0.34 at SHA-256
+  `cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.34.md`. The activated body is the combined candidate
+  of the loop-permission batch record (recipe digest
+  `f99bb580eec570c62ee6df414aa324039d3b1e55b0cd72ec04b033d73e43bcfd` in
+  CANDIDATE form; the ACTIVE digest above differs only by the status line),
+  adding [PAR-1] v2 and [PAR-2]: 137 rules, grammar-preserving (74
+  productions, 93 decisions, 105 terminal predicates, natively verified).
+- CONFORMANCE BOUNDARY: relative to merge base
+  `18d332e7`, the only `tests/conformance` change is two annotation lines
+  appended to the annotation block of `manifest.jsonl` — the [PAR-1] and
+  [PAR-2] coverage annotations whose exact bytes are recorded in
+  `docs/ongoing/0078-loop-permission.md` (the lines carrying
+  `"covered_by": "compiler-permission-judgment"`). The manifest SHA-256
+  changes from
+  `8170ce7a90da9172040a0ccfb86859eb912d532c45be60f67335b2c330a3ec0d` to
+  `114a56c0a575d0dca2b97bfe6c9f0de873e237315646b640698956b90ed3cc0d`.
+  No case source is added, modified, deleted, or renamed; coverage becomes
+  137/137 with zero corpus delta.
+- DEFAULT-BEHAVIOR FLAG, approved with this merge: an unset `WF_WORKERS`
+  in a `--par` binary asks for one lane per logical CPU instead of running
+  sequentially; explicit `0`/`1` keep the sequential world. The time and
+  depth dimensions of the change are measured and recorded in
+  `docs/ongoing/0077-night-par-ceiling.md` and
+  `docs/ongoing/0078-loop-permission.md`.
+ACTIVE-SPEC: v0.35 645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769 cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03

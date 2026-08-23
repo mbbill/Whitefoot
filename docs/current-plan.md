@@ -12,14 +12,11 @@ Derived from Direction Outline revision 50 and main at
 `18d332e7`. Supersedes both the completed claim-only trap-surface plan and
 main's implemented claim-residual-canonicality plan, in place; that plan's
 remaining sequence is carried forward below rather than dropped.
-Active language authority: v0.34 at `spec/kernel-spec.md`, SHA-256
-`cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`. The branch
-carries a v0.35 CANDIDATE adding [PAR-1] at SHA-256
-`73d647c8945ad3d51eea3ed030714b433d6171e0d36b0869dd91366238cbd8f5` and, since
-batch 0078, a second CANDIDATE rule [PAR-2] for counted-loop reduction
-permission — both activated only by the merge approval, and both prepared as
-merge-time recipes in `docs/ongoing/0078-loop-permission.md` rather than
-applied to `spec/kernel-spec.md` on the branch.
+Active language authority: v0.35 at `spec/kernel-spec.md`, SHA-256
+`645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769`,
+activated by the owner-approved merge of 2026-08-23; it carries [PAR-1] v2
+and [PAR-2], and supersedes v0.34, whose bytes are archived as
+`spec/kernel-spec-v0.34.md`.
 
 ## Objective
 
