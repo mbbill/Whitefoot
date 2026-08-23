@@ -2,7 +2,7 @@
 - Four conditions, each necessary: no dataflow from the first call's result into the second's operands; disjoint write/read footprints under the acceptance overlap relation, projected through call boundaries and including caller-side operand evaluation in both directions; no external or blocking effect row in either closure; no exit edge of the first call's span that bypasses the second.
 - Interposed statement forms are classified by an exhaustive match; an unclassified form denies rather than contributing an empty footprint, and the denial is reported.
 - Footprint questions the judgment cannot resolve deny; permission fails closed.
-- Eligibility is claim-freedom of the transitive call closure, answered by one reverse call-graph walk.
+- A permitted window is eligible to actualize; no claim-freedom gate exists, and a claim written between the window's calls still denies as an exit-bearing interposed form.
 
 ## Facts
 
@@ -14,3 +14,4 @@
 
 - 2026-08-21 (974d5513) replaced [[adjacent-pair-enumeration]]: one ordinary statement between two calls ended the candidate group, so permission turned on statement adjacency rather than semantics — two byte-identical-output programs differed 1.9x in wall time; the window judges the pair plus every interposed statement with all four conditions quantified over them. (sourced)
 - 2026-08-21 replaced [[claim-count-eligibility]]: a claim is an always-true reviewed lemma, not an assertion — a fully reviewed program cannot trap, so trap-ordering machinery guards a case that indicates a review defect rather than a language obligation; eligibility is claim-freedom of the transitive closure. (sourced)
+- 2026-08-23 (f6c55a9d) replaced [[claim-free-eligibility]]: a false executed claim is the sole writer-reachable contract violation, so an execution reaching one is erroneous and the program defective; refusing to overlap correct programs to keep a defective execution's trap record stable is the wrong side of the trade — the schedule guarantee becomes conditional on contract compliance, a process-wide latch keeps the record singular and well-formed, and the sequential world reproduces it deterministically. (sourced)

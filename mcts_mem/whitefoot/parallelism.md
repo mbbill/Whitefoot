@@ -1,7 +1,7 @@
 - Parallel execution is admitted by a compiler permission judgment derived from the proofs acceptance already computes (resolved places, effect rows, the overlap relation, the call graph); no source construct declares, requests, or gates it.
 - Permission is never an obligation: actualization is a runtime choice, invisible in source, and published bytes are identical under every schedule and worker count.
 - The permission judgment never consults optimizer fact state; facts-on and facts-off builds produce one permission table.
-- Eligibility to actualize requires the transitive call closure of the overlapped statements to contain no claim site.
+- Permission suffices to actualize; the schedule-unobservability guarantee is conditional on contract compliance, and an erroneous execution (a false executed claim) yields exactly one well-formed trap record whose identity a schedule may select.
 - Overlap-capable compilation is a compile-time opt-in (`--par`); the default build's output is byte-identical to a build with no parallel machinery at all.
 - A developer diagnostic channel reports a verdict for every judged site, the denial's judging condition, and a split hint for counted loops reducing under exactly-associative integer operations.
 
