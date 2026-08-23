@@ -130,6 +130,37 @@ fn compile_permission_ledger(source: &[u8]) -> Vec<String> {
 /// The shared front half: check `source`, then lower and emit it under one
 /// named overlap-lowering choice.
 fn emit_lowered(source: &[u8], overlap: OverlapLowering) -> String {
+    emit_lowered_with(source, overlap, |_| {})
+}
+
+/// [`emit_with_overlap`] with named claims forced false between acceptance and
+/// emission.
+///
+/// The latch cases are about what a *defective* program does under a schedule,
+/// and v0.34 admits no source that states a false claim: the fixture carries
+/// true local residuals and the falsehood is injected into the checked IR.
+/// That is the same hook the single-threaded record-shape case uses, and it is
+/// what keeps the defect a property of the run rather than of the source. Each
+/// entry is a function name and a claim name, so two racing sites are two
+/// entries.
+fn emit_with_overlap_and_false_claims(source: &[u8], claims: &[(&str, &str)]) -> String {
+    emit_lowered_with(source, OverlapLowering::On, |program| {
+        for (function, claim) in claims {
+            assert!(
+                program.force_claim_false_for_test(function, claim),
+                "the fixture must carry claim {claim} in {function}"
+            );
+        }
+    })
+}
+
+fn emit_lowered_with(
+    source: &[u8],
+    overlap: OverlapLowering,
+    mutate: impl for<'classified, 'lexed, 'source> FnOnce(
+        &mut crate::lowering::IrProgram<'classified, 'lexed, 'source>,
+    ),
+) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
     let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -159,7 +190,8 @@ fn emit_lowered(source: &[u8], overlap: OverlapLowering) -> String {
     let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
         panic!("backend test source must check");
     };
-    let ir = lower_checked(*checked, overlap).expect("checked program must lower");
+    let mut ir = lower_checked(*checked, overlap).expect("checked program must lower");
+    mutate(&mut ir);
     emit_llvm(&ir)
         .expect("lowered program must emit")
         .into_string()

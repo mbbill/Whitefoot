@@ -602,19 +602,31 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
 
         // The same tree fold with one claim in the recursive closure. It reads
         // exactly like the fold above: the claim is the writer's lemma, not a
-        // reason to sequentialize a correct program.
+        // reason to sequentialize a correct program. The claim sits in
+        // `scaled`, which the leaf arm calls, because v0.34 admits only a
+        // local non-derivable residual -- and depth is the point anyway, since
+        // the retired gate walked exactly this reachability.
         let claiming = format!(
-            "{TREE_PRELUDE}fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b), traps {{
+            "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 traps {{
+  let size = len(values);
+  let bounded = imin(index, 7_u64);
+  let inside = ilt(bounded, size);
+  claim index_in_range: inside because \"premises: bounded is the minimum of the parameter index and seven, and values has length eight\\nderivation: a minimum is at most either operand, so bounded is at most seven and therefore below eight\\nconclusion: ilt(bounded, size) is true\\nchecker gap: ENT does not publish the result range of imin\\nconsumers: the following length-eight array subscript uses bounded\";
+  return values[bounded];
+}}
+
+fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads('b), writes('b), traps {{
   match deref(deref(node)) {{
     Leaf(w: leaf_w) => {{
-      return deref(leaf_w);
+      let w = deref(leaf_w);
+      let values = array_new<u64, 8>(1_u64);
+      let touched = scaled(values: move values, index: w);
+      return w;
     }}
     Branch(left: l, right: r, w: slot) => {{
       let a = bubble<'b>(node: move l);
       let b = bubble<'b>(node: move r);
-      let sum_defined = a +defined b;
-      claim bubble_sum_fits: sum_defined because \"an in-memory tree has representable widths\";
-      let total = a + b;
+      let total = a +wrap b;
       set deref(slot) = total;
       return total;
     }}
@@ -627,7 +639,10 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {{
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
   region 'tree {{
     let total = bubble<'tree>(node: &uniq 'tree branch0);
-    claim bubble_total: ieq(total, 7_u64) because \"bubble total\";
+    if ieq(total, 7_u64) {{
+    }} else {{
+      return exit_status(code: 1_u8);
+    }}
   }}
   return exit_status(code: 0_u8);
 }}
@@ -636,11 +651,11 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {{
         let ledger = ledger_of("bubble.wf", claiming.as_bytes());
         assert_eq!(
             ledger[0],
-            "PAR permitted   bubble.wf:22  pair(bubble, bubble)  eligible"
+            "PAR permitted   bubble.wf:33  pair(bubble, bubble)  eligible"
         );
         assert_eq!(
             ledger[1],
-            "PAR chain       bubble.wf:22  run(bubble, bubble)  2 members through line 23"
+            "PAR chain       bubble.wf:33  run(bubble, bubble)  2 members through line 34"
         );
         assert!(
             !ledger.iter().any(|line| line.contains("not-actualizable")),
@@ -655,15 +670,15 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {{
         // reported.
         assert_eq!(
             ledger[2],
-            "PAR permitted   bubble.wf:34  pair(boxed_leaf, boxed_leaf)  eligible"
+            "PAR permitted   bubble.wf:43  pair(boxed_leaf, boxed_leaf)  eligible"
         );
         assert_eq!(
             ledger[3],
-            "PAR chain       bubble.wf:34  run(boxed_leaf, boxed_leaf)  2 members through line 35"
+            "PAR chain       bubble.wf:43  run(boxed_leaf, boxed_leaf)  2 members through line 44"
         );
         assert_eq!(
             ledger[4],
-            "PAR denied      bubble.wf:35  pair(boxed_leaf, boxed_branch)  condition 1: the operands of s2 read what s1 defines"
+            "PAR denied      bubble.wf:44  pair(boxed_leaf, boxed_branch)  condition 1: the operands of s2 read what s1 defines"
         );
         assert_eq!(ledger.len(), 5);
     }

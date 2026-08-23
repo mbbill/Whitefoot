@@ -144,16 +144,25 @@ fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "Every degenerate range folds to the accumulator it arrived with, and one wide range folds to the same value split or not.";
   let empty = folded(lo: 5_u64, hi: 5_u64);
-  claim empty_range_is_the_seed: ieq(empty, 7_u64) because "an empty range must fold nothing";
+  if ieq(empty, 7_u64) {
+  } else {
+    return exit_status(code: 1_u8);
+  }
   let inverted = folded(lo: 400000_u64, hi: 5_u64);
-  claim inverted_range_is_the_seed: ieq(inverted, 7_u64) because "an inverted range must fold nothing";
+  if ieq(inverted, 7_u64) {
+  } else {
+    return exit_status(code: 2_u8);
+  }
   let single = folded(lo: 5_u64, hi: 6_u64);
   let one = mix(seed: 5_u64);
   let expected = one +wrap 7_u64;
-  claim one_iteration_folds_once: ieq(single, expected) because "a one-wide range must fold exactly one iteration";
+  if ieq(single, expected) {
+  } else {
+    return exit_status(code: 3_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -182,7 +191,7 @@ const WIDE_FRAME: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
   return state;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "Thirty-two live scalars stand between the loop and a frame that fits.";
   let a0 = 0_u64;
   let a1 = 1_u64;
@@ -222,7 +231,9 @@ command fn main() -> status: own ExitStatus traps {
     let biased = mixed +wrap a0;
     set total = total +wrap biased;
   }
-  claim the_fold_ran: ige(total, 0_u64) because "unreachable";
+  if ieq(total, 0_u64) {
+    return exit_status(code: 1_u8);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
