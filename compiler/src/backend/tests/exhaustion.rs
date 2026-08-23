@@ -576,3 +576,79 @@ fn a_claim_trap_still_writes_only_its_own_record() {
     );
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
+
+/// A recursion whose every activation carries an array far larger than a
+/// guard page, written and read at an index only the run knows so the frame
+/// cannot be shrunk away.
+///
+/// After the host inliner merges several levels together each activation moves
+/// the stack pointer by roughly three hundred kilobytes at once.
+const LARGE_FRAME_SPINE: &[u8] =
+    br#"fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
+  let pad = array_new<u64, 7168>(v);
+  let wide = cvt<u8, u64>(i);
+  set pad[wide] = depth;
+  let done = ieq(depth, 0_u64);
+  if done {
+    return pad[wide];
+  }
+  let next = depth -wrap 1_u64;
+  let a = spine(depth: next, v: v, i: i);
+  let b = pad[wide];
+  return a +wrap b;
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+  let count = 0_u64;
+  region 'invocation {
+    set count = args_count<'invocation>(args: &'invocation args);
+  }
+  match cvt<u64, u8>(count) {
+    Ok(value: idx) => {
+      let depth = count *wrap 20000_u64;
+      let r = spine(depth: depth, v: 3_u64, i: idx);
+      let ok = igt(r, 0_u64);
+      if ok {
+        return exit_status(code: 0_u8);
+      }
+      return exit_status(code: 1_u8);
+    }
+    Err(error: e) => {
+      return exit_status(code: 9_u8);
+    }
+  }
+}
+"#;
+
+/// A frame far larger than the guard region is still reported, not absorbed.
+///
+/// This is the behaviour the probe attribute buys, as distinct from the
+/// attribute being present. A frame that moves the stack pointer three hundred
+/// kilobytes in one step can clear the whole guard region without touching it;
+/// what happens next depends on what is mapped where it lands. If that memory
+/// is mapped — under the pool, the next lane's stack is packed a few pages
+/// below — the write succeeds and the program carries on with frames outside
+/// its own stack, eventually returning an answer for a computation that never
+/// fit. Nothing about that run says anything went wrong.
+///
+/// Ablating just this attribute from just this function, on this program,
+/// turns the run below from a reported death into exactly that: the same frame
+/// arithmetic to the instruction, and a normal exit 0. So the case here is
+/// that an overflow this shape reaches the guard and says so.
+#[test]
+fn a_frame_larger_than_the_guard_region_is_still_reported() {
+    let directory = test_directory();
+    let executable = build_executable(&compile(LARGE_FRAME_SPINE), &directory);
+    let output = Command::new(&executable)
+        .output()
+        .expect("run the large-frame recursion");
+    assert_eq!(
+        output.status.code(),
+        None,
+        "a recursion this deep cannot fit any stack, so it must not return: \
+         {:?}",
+        output.status
+    );
+    assert_resource_record(&output.stderr, "stack");
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}

@@ -114,6 +114,31 @@ home).
   representable maximum, not memory running out), so naming its class is an
   F8 decision rather than an executor's; routing it to `"heap"` would be
   wrong and inventing a third class unasked would prejudge the clause.
+- F1 follow-up — the research's open sub-task is closed: the stack-clash
+  reproduction is no longer modelled in C. `research/investigations/`'s e3
+  demonstrated it on IR whose only difference from clang's was the stripped
+  attribute and left the `.wf`-level repro unbuilt. Built here: a `--par`
+  program with a 7168-element local array per activation, at a depth past
+  its lane's stack, compiled by the shipped compiler and then rebuilt with
+  the attribute ablated from that one recursion. Both binaries carry the
+  identical frame arithmetic — `sub sp, sp, #0x4a, lsl #12` then
+  `sub sp, sp, #0xbd0`, 305,616 bytes per activation — and differ only by
+  the `___chkstk_darwin` page walk before the drop. Probed: exit 134 with
+  the record, 10/10. Ablated: **exit 0, 10/10** — the program runs with
+  frames past the end of its own lane stack, finds what it touches mapped,
+  and returns a normal answer for a computation that never fit.
+  Instrumented across eleven frame sizes, the probed build's first fault is
+  8 bytes below the stack every time; the ablated build's lands 1,552 to
+  16,384 bytes below, or nowhere at all. `a_frame_larger_than_the_guard_
+  region_is_still_reported` is the regression.
+  Also measured, for whoever takes the batch falsifier: with `walk`'s
+  16-level cap raised, wfgrep searches a 450-level tree cleanly and finds
+  the file the capped build silently misses (exit 1, zero matches, output
+  indistinguishable from a real absence). The cap is deletable on this
+  evidence, but the stack was never its binding constraint — the host's path
+  limit bounds such a tree to roughly 500 levels of single-character names
+  long before depth threatens the ceiling, so deleting it does not by itself
+  exercise the floor.
 
 ## Outcome
 
