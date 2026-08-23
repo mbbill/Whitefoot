@@ -25,6 +25,19 @@ each probe decides.
 - `m1_pair_in_for.wf` — the 20-line reproducer for the two-world phi-label
   defect (invalid LLVM when an actualized pair sits in a loop body), fixed
   at `eabefcc8`; kept as the historical witness beside its regression test.
+- `r1_mandelbrot_for.wf` — `tests/programs/mandelbrot_grid.wf` with its two
+  hand-counted `loop`s written as counted `for`s, plus one claim-free
+  `to_float` helper the rewrite needs because the binder is `own u64`
+  [TYPE-5] and `cvt<u64, f64>` is inexact and therefore affine. It exits 0,
+  so its `ieq(escaped_points, 2437_u32)` claim holds exactly as the
+  original's does, and the loop judgment permits **both** of its loops under
+  `+wrap`. This is the demonstration that [PAR-2] reaches a program the
+  project actually wrote, once that program is written in the form the
+  language says is the default one; the corpus census in the 0077 record is
+  the other half of the picture, and says the rule reaches none of the
+  counted loops already written. Remove it when a loop-form mandelbrot lands
+  in `tests/programs`, or when batch B's split measurement against the
+  recursive oracle is closed.
 
 The value-falsifier measurement table (map splits on memory-shaped vs
 compute-heavy bodies) is in `VALUE.md`.

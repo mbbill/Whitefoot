@@ -1,0 +1,64 @@
+fn mandelbrot_escapes(cx: own f64, cy: own f64) -> result: own Bool pure {
+  let real = 0.0_f64;
+  let imaginary = 0.0_f64;
+  let iteration = 0_u32;
+  let escaped = False();
+  loop @orbit {
+    let exhausted = ieq(iteration, 64_u32);
+    if exhausted {
+      break @orbit;
+    }
+    let real_squared = fmul.strict(real, real);
+    let imaginary_squared = fmul.strict(imaginary, imaginary);
+    let difference = fsub.strict(real_squared, imaginary_squared);
+    let next_real = fadd.strict(difference, cx);
+    let product = fmul.strict(real, imaginary);
+    let doubled_product = fmul.strict(2.0_f64, product);
+    let next_imaginary = fadd.strict(doubled_product, cy);
+    set real = next_real;
+    set imaginary = next_imaginary;
+    let next_real_squared = fmul.strict(real, real);
+    let next_imaginary_squared = fmul.strict(imaginary, imaginary);
+    let magnitude_squared = fadd.strict(next_real_squared, next_imaginary_squared);
+    let outside = fgt(magnitude_squared, 4.0_f64);
+    if outside {
+      set escaped = True();
+      break @orbit;
+    }
+    set iteration = iteration +wrap 1_u32;
+  }
+  return escaped;
+}
+
+fn to_float(v: own u64) -> result: own f64 pure {
+  doc "A claim-free total conversion of a small counted index to f64.";
+  match cvt<u64, f64>(v) {
+    Ok(value: exact) => {
+      return exact;
+    }
+    Err(error: inexact) => {
+      return 0.0_f64;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus traps {
+  doc "R1 -- tests/programs/mandelbrot_grid.wf with its two hand-counted `loop`s written as counted `for`s. Same published result (2437), and the reduction the judgment can see.";
+  let escaped_points = 0_u32;
+  for @rows y in 0_u64..48_u64 {
+    for @columns x in 0_u64..64_u64 {
+      let x_float = to_float(v: x);
+      let y_float = to_float(v: y);
+      let scaled_x = fmul.strict(x_float, 0.05_f64);
+      let scaled_y = fmul.strict(y_float, 0.05_f64);
+      let cx = fsub.strict(scaled_x, 2.0_f64);
+      let cy = fsub.strict(scaled_y, 1.2_f64);
+      let escaped = mandelbrot_escapes(cx: cx, cy: cy);
+      if escaped {
+        set escaped_points = escaped_points +wrap 1_u32;
+      }
+    }
+  }
+  claim mandelbrot_grid_mismatch: ieq(escaped_points, 2437_u32) because "mandelbrot grid mismatch";
+  return exit_status(code: 0_u8);
+}

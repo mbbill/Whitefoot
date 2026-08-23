@@ -56,7 +56,12 @@ protected conformance coverage annotation [PAR-2] needs is not landed and is
 not prepared here: it is prepared with batch B**, alongside [PAR-1]'s, so the
 two annotations reach the owner in one protected-class audit rather than two.
 Until then the repository coverage gate reports the same 135/136 it reported
-before this batch, because the rule count is unchanged in tree.
+before this batch, because the rule count is unchanged in tree. `make check`
+therefore still exits nonzero at its `conformance` target and green everywhere
+else; that red is [PAR-1]'s missing annotation and predates this batch, which
+was checked rather than assumed — the coverage runner reports the identical
+`135/136 ... 1 uncovered` with this batch's changes stashed and unstashed.
+`make -C compiler check` is green before and after.
 
 ## Defects found in already-presented material
 
@@ -163,8 +168,21 @@ permitted, 14 denied**. The four are two loops of the conformance case
 `ent3-pos-s11-counted-range-run.wf` and two of the batch's own promoted probes,
 every one of them a `+wrap` reduction.
 
+The bench sources say the same thing from the other side: not one of the 13
+carries a counted loop at all, because every one of them is the hand-written
+recursion the owner objected to.
+
+The other half of the picture is `r1_mandelbrot_for.wf`, promoted beside
+DESIGN.md: `tests/programs/mandelbrot_grid.wf` with its two hand-counted
+`loop`s written as counted `for`s. It exits 0 — its
+`ieq(escaped_points, 2437_u32)` claim holds exactly as the original's does —
+and **both** of its loops are permitted under `+wrap`. So the rule does reach
+a program the project wrote, as soon as that program is written in the form
+the language calls the default one. That is the owner's charter, answered on
+real code rather than on a fixture.
+
 Say this to the owner without dressing it: **the reduction rule fires on zero
-loops of the real corpus**, which is the same number batch 0076 measured for
+loops of the real corpus as it stands**, which is the same number batch 0076 measured for
 the hint and for the same reason — every counted loop the project has written
 is a copy into a buffer, a push through a trapping callee, or a sequential
 recurrence. The justification for the rule is the owner's principle that the
