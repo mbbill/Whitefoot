@@ -1,17 +1,22 @@
 # Current Plan — proof-derived parallelism
 
 Status: PROPOSED (branch `par/proof-derived-parallelism`, 2026-08-21; updated
-on the branch 2026-08-22 for merge review). This proposal authorizes no
-execution. Batches 0074, 0076 and 0077 were carried out under the owner's
-chartering directions of 2026-08-21/22, quoted verbatim in their records;
-this plan is the durable sequencing those directions imply, and it becomes
-ACTIVE only with the owner's approval at merge.
+on the branch 2026-08-23 after the rebase onto `main`). This proposal
+authorizes no execution. Batches 0074, 0076, 0077 and 0078 were carried out
+under the owner's chartering directions of 2026-08-21/22/23, quoted verbatim
+in their records; this plan is the durable sequencing those directions imply,
+and it becomes ACTIVE only with the owner's approval at merge.
 
-Derived from Direction Outline revision 46 and main at
-`4f01bab6`. Supersedes the completed claim-only trap-surface plan in place.
-Active language authority: v0.33 at `spec/kernel-spec.md`, SHA-256
-`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`; the branch
-carries a v0.34 CANDIDATE adding [PAR-1], activated only by the merge approval.
+Derived from Direction Outline revision 50 and main at
+`18d332e7`. Supersedes both the completed claim-only trap-surface plan and
+main's implemented claim-residual-canonicality plan, in place; that plan's
+remaining sequence is carried forward below rather than dropped.
+Active language authority: v0.34 at `spec/kernel-spec.md`, SHA-256
+`cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`; the branch
+carries a v0.35 CANDIDATE adding [PAR-1] at SHA-256
+`73d647c8945ad3d51eea3ed030714b433d6171e0d36b0869dd91366238cbd8f5`, activated
+only by the merge approval and only through one of the two recipes in
+`docs/ongoing/0078-loop-permission.md`.
 
 ## Objective
 
@@ -29,7 +34,7 @@ program changes.
 - **W1 — compute lane v1 (landed on the branch; the first item this plan
   covers).** The permission judgment P over sibling call pairs, the
   non-normative `--par-ledger` developer output, runtime actualization behind
-  `WF_WORKERS`, the spec CANDIDATE v0.34 [PAR-1] rule, compiler tests
+  `WF_WORKERS`, the spec CANDIDATE v0.35 [PAR-1] rule, compiler tests
   including each named counterexample shape, and the measured demo. Recorded
   in `docs/ongoing/0074-proof-derived-parallelism.md`.
 - **W1b — the optimization campaign (landed on the branch, batches 0076 and
@@ -98,6 +103,39 @@ or coordinator is built while eligible regions are claim-free.
 - The repository gate is green with the candidate declared, and the owner
   packet carries the exact candidate SHA-256, diff, impact inventory,
   verifier output, and the protected coverage annotation [PAR-1] needs.
+
+## Carried forward from the claim-residual-canonicality plan
+
+That plan was IMPLEMENTED AND MIGRATED when this branch forked, and superseding
+it in place must resolve its remaining sequence rather than drop it. Its six
+items, with their state at this branch tip:
+
+1. *Review the final branch diff for regressions.* Open — it is this branch's
+   merge review, and it now covers the union of both programs.
+2. *Preserve the measured no-regression result and record the inherited
+   per-mask whole-program residuality risk; re-run compile-cost probes if
+   later code changes touch that path.* **Engaged.** This branch changed that
+   path: the rebase kept main's ENT-4 closure index and dropped this branch's
+   own dense-matrix variant of it, so the compile-cost probes are re-run here
+   rather than inherited.
+3. *Bring the live roadmap and batch record to the same implemented state.*
+   Done for main's program: roadmap revision 50 records claim locality as
+   landed, and `docs/ongoing/0075-claim-residual-canonicality.md` stays main's
+   own live record, untouched by this branch.
+4. *Freeze the exact ACTIVE branch revision and finish the specification and
+   conformance before/after content.* Open, and now over v0.34 to v0.35:
+   ACTIVE v0.34 has digest `cb747505…`, its outgoing immutable v0.33 archive
+   has digest `fc6b5a10…`, and the v0.35 candidate's digest and both merge-time
+   recipe digests are recorded in batch 0078.
+5. *Commit the final bytes, then run canonical root `make check` on that exact
+   revision.* Open — the merge packet reports it.
+6. *Present that exact tested revision for the single owner approval.* Open.
+
+Main's acceptance criteria for claim authority remain in force and are not
+restated here; nothing in this plan relaxes one. The one criterion this branch
+touches directly is that expected failures and runtime observations use
+ordinary control or typed outcomes rather than deliberately false claims — the
+trap-latch cases now meet it by fault injection into checked IR.
 
 ## Exclusions
 

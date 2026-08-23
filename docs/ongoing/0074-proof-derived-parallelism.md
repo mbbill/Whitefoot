@@ -1,5 +1,14 @@
 # Batch 0074 — proof-derived parallelism v1 (permission, ledger, actualization)
 
+> **Superseded by the rebase onto `main` (2026-08-23).** Every version string
+> below is this batch's own history and is left as it was written: the
+> candidate was v0.34 superseding v0.33 when this batch ran. `main` has since
+> activated its own v0.34, so the branch candidate is now **v0.35** superseding
+> v0.34 at `cb747505…`. This record's "Required before merge" [PAR-1] recipe
+> was already superseded by the [PAR-1] v2 recipe in
+> `docs/ongoing/0078-loop-permission.md`, and that recipe — not this one — is
+> the one re-derived against the rebased bytes. Apply nothing from this file.
+
 Branch: `par/proof-derived-parallelism` (worktree, from main 4f01bab6).
 Authority: owner chartering direction, 2026-08-21 (recorded verbatim in
 `research/investigations/proof-derived-parallelism/DESIGN.md` §0), under the
