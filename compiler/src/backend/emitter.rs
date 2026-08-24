@@ -188,6 +188,24 @@ fn emit_llvm_for(
                 IrNominalKind::Box { .. } | IrNominalKind::Arena { .. }
             )
         });
+    // The dynamic target-domain guard is emitted by exactly these two
+    // operations, so its record and its abort helper follow the operations
+    // rather than the buffer type: a module that carries buffers it never
+    // allocates emits no guard and needs neither.
+    let has_target_domain_guard = program.functions().iter().any(|function| {
+        function.blocks().iter().any(|block| {
+            block.instructions().iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    IrInstruction::Define {
+                        operation: IrOperation::BufferFill { .. }
+                            | IrOperation::BufferVacant { .. },
+                        ..
+                    }
+                )
+            })
+        })
+    });
 
     let mut text = format!(
         "; Whitefoot conservative module\nsource_filename = \"whitefoot\"\ntarget datalayout = \"{}\"\ntarget triple = \"{}\"\n\n",
@@ -221,11 +239,20 @@ fn emit_llvm_for(
         )
         .map_err(|_| BackendFailure::TextEmission)?;
     }
+    if has_target_domain_guard {
+        writeln!(
+            text,
+            "@.wf_resource.target_domain = private unnamed_addr constant [{} x i8] c\"{}\", align 1",
+            TARGET_DOMAIN_RECORD.len(),
+            llvm_bytes(TARGET_DOMAIN_RECORD.as_bytes())
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+    }
     // One writer serves both records: it is already a general "write these
     // bytes, then abort, exactly once in this process" primitive, and sharing
     // it is what makes "no execution produces both records" a mechanism rather
     // than an argument.
-    let writes_a_record = !claim_records.is_empty() || has_heap_storage;
+    let writes_a_record = !claim_records.is_empty() || has_heap_storage || has_target_domain_guard;
     // A latch decides between threads, so it belongs only to a module that has
     // more than one. `thunks.is_used()` is exactly "this module hands a call
     // out to a worker lane": false for every default build, and false for a
@@ -266,6 +293,14 @@ fn emit_llvm_for(
             text,
             "define private void @wf_resource_abort() noreturn {{\nentry:\n  call void @wf_trap(ptr @.wf_resource.heap, i64 {})\n  unreachable\n}}\n",
             HEAP_RECORD.len()
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+    }
+    if has_target_domain_guard {
+        writeln!(
+            text,
+            "define private void @wf_target_domain_abort() noreturn {{\nentry:\n  call void @wf_trap(ptr @.wf_resource.target_domain, i64 {})\n  unreachable\n}}\n",
+            TARGET_DOMAIN_RECORD.len()
         )
         .map_err(|_| BackendFailure::TextEmission)?;
     }
@@ -342,6 +377,21 @@ fn emit_llvm_for(
 /// an allocation the host refused is the trusted computing base reaching its
 /// limit, not a contract the writer failed to keep.
 const HEAP_RECORD: &str = "{\"resource\":\"heap\"}\n";
+
+/// The bytes a refused dynamic target-domain guard writes before aborting.
+///
+/// A third class rather than a second spelling of `heap`, because the two
+/// conditions are different and the class is the only thing the record says.
+/// An allocation refusal is memory running out; this guard fires when the byte
+/// count a `buffer` asks for has no exact value in the target's allocator or
+/// address-index domain, which happens on a machine with memory to spare and
+/// would still happen if the machine had more. The specification keeps the two
+/// apart everywhere it names them: its compile-time classification lists
+/// "resource failure" and "target-layout failure" as separate members of the
+/// same non-rejection sum, and it routes this guard down the same
+/// non-continuing path without merging it into that class. Folding them here
+/// would make the record point a reader at the wrong resource.
+const TARGET_DOMAIN_RECORD: &str = "{\"resource\":\"target-domain\"}\n";
 
 /// The attribute group every generated definition carries.
 const STACK_PROBE_GROUP: &str = "#0";

@@ -365,6 +365,44 @@ home).
   error, so a too-deep tree exits 2 with an empty stderr. It predates this batch
   (the 16-level cap kept every tree far away from it), it is a wfgrep defect
   rather than a floor one, and it is flagged here rather than fixed.
+- F8's routed third-class decision, landed rather than only specified — the
+  target-domain ceiling guard gets its own class, `{"resource":"target-domain"}`,
+  and both `buffer.rs` edges reach `@wf_target_domain_abort` instead of a bare
+  `@abort()`. Measured on a `buffer_new` of ten quintillion `u8` — inside
+  `buffer_fits`'s language ceiling of `(2^64 - 1)/stride` and outside the
+  target's `i64::MAX`, which is the whole reachable band of that guard — the
+  same source moved from exit 134 with **zero bytes** to exit 134 with exactly
+  the 29-byte record, verified against a rebuild of the pre-change compiler.
+  The choice is argued from the specification's own distinction rather than
+  from taste. [DIAG-1] lists "resource failure" and "target-layout failure
+  [STOR-6], target-qualification failure [QUAL-1]" as separate members of one
+  non-rejection sum, and `spec/kernel-spec.md:719` routes the dynamic guard down
+  the same non-continuing path without merging it into the resource class. Same
+  death, different condition, so: same path, distinct class. The arena goes the
+  other way and folds into `heap`, because an arena node is that one supply
+  refusing; a target-domain refusal is not, because the byte count has no exact
+  target value and a host with more memory refuses it identically. A reader who
+  sees `heap` goes and looks at the machine's memory, and for this failure that
+  is the wrong place to look.
+  Spelling: `target-domain`, not the brief's suggested `target-ceiling`, so the
+  class name is the specification's own noun for the condition — `:719` reads "a
+  failed dynamic target-domain guard". Recorded as a deviation from the brief.
+  Gating is by operation, not by type: the constant and the helper follow a
+  `BufferFill` or `BufferVacant` in the program, so a module carrying buffers it
+  never allocates emits neither. Regressions:
+  `a_request_past_the_target_ceiling_writes_its_own_resource_record` runs it end
+  to end, and `every_target_domain_guard_reaches_the_target_domain_abort` holds
+  both edges to it for the same completeness reason the refusal edges are held —
+  one edge left calling `@abort` still dies with zero bytes, and it is the edge
+  nobody was looking at.
+  One existing compiler test required rewriting rather than deleting, flagged
+  the way F5 flagged its own:
+  `backend::tests::buffers::target_domain_failure_aborts_before_allocation_without_a_language_record`
+  asserted the edge called `@abort()` and that stderr was empty. Its claim —
+  no *language* record — has not moved and is now pinned at the new mechanism:
+  the bytes on standard error are exactly the resource record and carry none of
+  `rule_id`, `function`, `node_path`, or `message`. Not protected conformance
+  evidence; recorded because the change forced it.
 - Branch-tip gate, reported rather than worked around: `make check` fails at
   `research-tests`' `effect` target, and it fails identically with this
   executor's changes stashed. The cause is outside the repository — the

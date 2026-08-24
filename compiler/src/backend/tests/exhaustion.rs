@@ -549,6 +549,89 @@ fn an_allocation_the_host_refuses_writes_one_resource_record() {
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
+/// A byte count past the target's representable maximum, kept alive the same
+/// way the refusal case is.
+///
+/// Ten quintillion `u8` elements is inside the language ceiling `buffer_fits`
+/// checks — `n <= (2^64 - 1) / 1` — and outside the target's, which is
+/// `i64::MAX`. That band is the whole reachable domain of the dynamic
+/// target-domain guard, and a program in it never reaches the allocator at
+/// all: the guard fires first, on a machine that had memory to spare.
+const PAST_THE_TARGET_CEILING: &[u8] = br#"fn giant(i: own u8) -> result: own u8 allocates(heap) {
+  let b = buffer_new(10000000000000000000_u64, 7_u8);
+  let wide = cvt<u8, u64>(i);
+  let element = b[wide];
+  return element;
+}
+
+command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
+  let count = 0_u64;
+  region 'invocation {
+    set count = args_count<'invocation>(args: &'invocation args);
+  }
+  match cvt<u64, u8>(count) {
+    Ok(value: v) => {
+      let r = giant(i: v);
+      return exit_status(code: r);
+    }
+    Err(error: e) => {
+      return exit_status(code: 9_u8);
+    }
+  }
+}
+"#;
+
+/// A request past the target's domain names its own resource, not the heap's.
+///
+/// The two conditions share a death and nothing else. This one is a byte count
+/// the target cannot represent, which no amount of memory would fix; the
+/// heap's is memory the host would not give. A record that called both `heap`
+/// would send a reader to the machine's memory for a failure that was never
+/// about memory, so the class is the one thing the record says and it has to
+/// be the true one.
+#[test]
+fn a_request_past_the_target_ceiling_writes_its_own_resource_record() {
+    let directory = test_directory();
+    let executable = build_executable(&compile(PAST_THE_TARGET_CEILING), &directory);
+    let output = Command::new(&executable)
+        .output()
+        .expect("run the over-ceiling allocation");
+    assert_eq!(
+        output.status.code(),
+        None,
+        "a refused target-domain guard ends by abort, not by a returned status"
+    );
+    assert_resource_record(&output.stderr, "target-domain");
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// Both target-domain guards reach the record, for the same completeness
+/// reason the refusal edges do: one edge left calling `@abort` directly still
+/// dies with zero bytes, and it is the edge nobody was looking at.
+#[test]
+fn every_target_domain_guard_reaches_the_target_domain_abort() {
+    let module = compile(ALL_HEAP_FORMS);
+    let lines: Vec<&str> = module.lines().collect();
+    for guard in ["buffer.fill.target.", "buffer.vacant.target."] {
+        let mut found = 0;
+        for (index, line) in lines.iter().enumerate() {
+            if !line.starts_with(guard) || !line.ends_with(':') {
+                continue;
+            }
+            found += 1;
+            assert_eq!(
+                lines.get(index + 1).copied().unwrap_or_default(),
+                "  call void @wf_target_domain_abort()",
+                "the {line} guard must reach the target-domain abort, not a bare one"
+            );
+        }
+        assert!(
+            found > 0,
+            "the fixture must reach a {guard} edge:\n{module}"
+        );
+    }
+}
+
 /// Every allocation-refusal edge reaches the resource abort, not a bare one.
 ///
 /// The completeness matters the same way the probe attribute's does: a module

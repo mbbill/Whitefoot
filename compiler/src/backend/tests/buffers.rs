@@ -81,6 +81,15 @@ fn op9_overflow_is_rejected_before_lowering() {
     );
 }
 
+/// The guard is still not a language trap, and it now says which resource it
+/// refused.
+///
+/// "Without a language record" is the claim under test and it has not moved:
+/// the bytes on standard error name a resource class and nothing a [DIAG-3]
+/// record names. What moved is that there are bytes at all. This edge used to
+/// call `@abort` directly and die with an empty stderr, which made it
+/// indistinguishable from an allocator refusal, from a false claim, and from a
+/// corrupted heap.
 #[test]
 fn target_domain_failure_aborts_before_allocation_without_a_language_record() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
@@ -101,13 +110,18 @@ fn target_domain_failure_aborts_before_allocation_without_a_language_record() {
         .expect("allocation must follow both guards");
     assert!(target_check < target_failure && target_failure < allocation);
     assert!(!main.contains("@llvm.umul.with.overflow.i64"));
-    assert!(main[target_failure..allocation].contains("call void @abort()"));
-    assert!(!main[target_failure..allocation].contains("@wf_trap"));
+    assert!(main[target_failure..allocation].contains("call void @wf_target_domain_abort()"));
 
     let output = compile_and_run(&llvm);
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "{\"resource\":\"target-domain\"}\n"
+    );
+    for language_field in ["rule_id", "function", "node_path", "message"] {
+        assert!(!String::from_utf8_lossy(&output.stderr).contains(language_field));
+    }
 }
 
 #[test]
