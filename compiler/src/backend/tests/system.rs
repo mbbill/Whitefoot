@@ -720,8 +720,12 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
     // define `@wf_trap`, because the record writer is shared with the
     // allocation-refusal path and this program allocates a buffer; the writer
     // existing is not a trap, and the record constants are what a trap would
-    // add.
-    assert!(!llvm.contains("@.wf_trap."));
+    // add. The needle is the record constants' own numbering rather than the
+    // `@.wf_trap.` prefix, which also matches the shared latch's fallback
+    // storage: a fixture that grew a thunk would fail this for a reason that
+    // has nothing to do with claims.
+    assert!(!llvm.contains("@.wf_trap.0"));
+    assert!(!llvm.contains("@.wf_trap.1"));
     // The transfer's own defect path is a bare abort and stays one: it is a
     // trusted-computing-base defect, not a resource condition and not a trap,
     // so it is routed to neither record.

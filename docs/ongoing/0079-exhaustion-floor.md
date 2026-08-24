@@ -141,9 +141,35 @@ home).
   `@wf_resource_abort`, which writes `{"resource":"heap"}` through the
   existing trap writer under the existing first-trap-wins latch. The writer
   and latch conditions widen from "this module has claims" to "this module
-  writes a record", so the two classes share one writer — which is what
-  makes "no execution produces both records" a mechanism rather than an
-  argument. Measured with the optimizer-defeating shape from e3 (a read at
+  writes a record", so the two classes share one writer.
+  One latch, not two (2026-08-23, superseding this entry's first form and the
+  F8 justification bullet). As first landed, the sentence "which is what
+  makes 'no execution produces both records' a mechanism rather than an
+  argument" was false, and the audit named the reason: sharing the *writer*
+  serialized the module's three record classes against each other and against
+  nothing else. The floor's signal handler wrote the stack record through a
+  latch of its own in `wf_floor.c`, so two threads dying of different
+  resources at once each won a latch and each wrote. Neither the finder nor
+  its refuter could demonstrate an interleaving — the window between a
+  winner's `write` and its `abort` is microseconds, and 200 tuned runs
+  produced 103 heap, 97 stack, and 0 double records — but the recipe states
+  it unconditionally and the owner is asked to ratify those bytes, so the
+  repair is the mechanism rather than the sentence: there is now one latch in
+  the process. `wf_floor.c` owns it and exports its address; the emitted
+  writer asks for it, and a module linked without that translation unit falls
+  back to one of its own through the same `weak` definition the floor entry
+  already uses. `the_floor_and_the_module_share_one_record_latch` claims the
+  latch and then runs out of stack: shared, the floor writes nothing; separate,
+  it writes the stack record and aborts. `a_module_that_writes_a_resource_
+  record_and_hands_a_call_out_is_latched` covers the widened condition itself,
+  which the audit found untested — narrowing it back to claims would put every
+  `--par` heap-only module on the unlatched writer with nothing failing.
+  Cost: five `--par` corpus modules (`dir_walk`, `generic_instances`,
+  `par_layout`, `recursive_tree`, `wfgrep`) are no longer byte-identical to
+  `d3eee546` — they are the five that emit a latch, and the diff is exactly
+  the accessor and the two uses. All 160 observable rows (20 units, two
+  worlds, four worker settings) remain byte-identical.
+  Measured with the optimizer-defeating shape from e3 (a read at
   an index reachable only through a `u8` range, so `-O2` cannot delete the
   edge): a refused allocation went from exit 134 with zero bytes to exit 134
   with exactly the 20-byte record; a forced-false claim in a module that

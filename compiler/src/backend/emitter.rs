@@ -282,6 +282,7 @@ fn emit_llvm_for(
         text.push('\n');
     }
     if latched_trap {
+        text.push_str(TRAP_LATCH_FALLBACK);
         text.push_str(LATCHED_TRAP_WRITER);
     } else if writes_a_record {
         text.push_str(SEQUENTIAL_TRAP_WRITER);
@@ -1649,36 +1650,54 @@ pub(crate) fn overlapped_clone_symbol(sequential: &str) -> Option<String> {
 /// overlapped world existed, and they are what a default build still gets.
 const SEQUENTIAL_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n";
 
-/// The first-trap-wins latch, and the only state the trap path carries.
+/// The module's own answer for the shared record latch, and the only state the
+/// trap path carries.
 ///
-/// Zero until some thread traps. Only a module that both contains a `claim`
-/// and hands a call out carries this and [`LATCHED_TRAP_WRITER`], and no path
-/// outside that writer ever reads or writes it, so a program that does not trap
-/// pays nothing for it.
+/// The latch a record writer takes is the floor runtime's, because the floor's
+/// signal handler writes the stack record and this module writes every other
+/// one: a latch each would leave the two classes unserialized against each
+/// other, and two threads dying of different resources at once could interleave
+/// two records on one channel. Asking the floor for the address is what makes
+/// "no execution writes a second one" a mechanism rather than an argument.
+///
+/// The `weak` definition here is the same standalone answer
+/// [`floor::FLOOR_RUNTIME_FALLBACK`] gives: an emitted module must link and run
+/// without the floor's translation unit, and the real definition replaces this
+/// one whenever that unit is linked, which is every ordinary build. Zero until
+/// some thread writes a record, and no path outside the writer reads it, so a
+/// program that writes none pays nothing for it.
 const TRAP_LATCH: &str = "@.wf_trap.latch = private global i32 0, align 4\n";
 
-/// [`SEQUENTIAL_TRAP_WRITER`]'s work under a first-trap-wins latch, emitted
-/// where the module can have more than one thread inside it.
+/// The module's standalone definition of the shared latch's accessor.
+const TRAP_LATCH_FALLBACK: &str =
+    "\ndefine weak ptr @wf__floor_record_latch() {\nentry:\n  ret ptr @.wf_trap.latch\n}\n";
+
+/// [`SEQUENTIAL_TRAP_WRITER`]'s work under a first-writer-wins latch, emitted
+/// where the module can have more than one thread inside it — that is, where
+/// it writes any record at all and hands a call out, whether or not it
+/// contains a `claim`.
 ///
-/// The first thread to arrive takes [`TRAP_LATCH`] and owns the trap: it
-/// writes its complete record to standard error and aborts the process without
+/// The first thread to arrive takes the shared latch and owns the record: it
+/// writes its complete bytes to standard error and aborts the process without
 /// unwinding. Every other thread that arrives while the latch is taken parks,
-/// and the winner's abort takes it down with the process. So an execution that
-/// violates the contract on several threads at once still produces exactly one
-/// well-formed record rather than two interleaved ones, and [PAR-1]'s
+/// and the winner's abort takes it down with the process. The latch is the
+/// floor runtime's, not this module's, so the parking also holds between this
+/// writer and the floor's own — an execution that runs out of stack on one
+/// thread while another is refused an allocation still produces exactly one
+/// well-formed record rather than two interleaved ones. [PAR-1]'s
 /// erroneous-execution guarantee is met by construction instead of by refusing
 /// to overlap the claim-bearing calls of correct programs.
 ///
-/// *Which* claim wins may depend on the schedule, and that is the whole of what
-/// a permitted overlap can change about a trap. The record's bytes are fixed by
-/// the claim that wins [DIAG-3] — no worker, thread, or dynamic stack appears
-/// in them — so a correct program, which reaches no trap at all, observes
-/// nothing here.
+/// *Which* record wins may depend on the schedule, and that is the whole of
+/// what a permitted overlap can change about one. The bytes are fixed by the
+/// claim [DIAG-3] or the resource class that wins — no worker, thread, or
+/// dynamic stack appears in them — so a correct program that exhausts nothing
+/// observes nothing here.
 ///
 /// The park spins on a *volatile* load rather than an empty loop, so no
 /// optimizer may delete the loop and let a losing thread fall through into a
 /// second record.
-const LATCHED_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  %claimed = cmpxchg ptr @.wf_trap.latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %claimed, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr @.wf_trap.latch, align 4\n  br label %park\n}\n\n";
+const LATCHED_TRAP_WRITER: &str = "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  %latch = call ptr @wf__floor_record_latch()\n  %claimed = cmpxchg ptr %latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %claimed, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr %latch, align 4\n  br label %park\n}\n\n";
 
 pub(super) fn trap_record(site: &IrClaimSite) -> Vec<u8> {
     let components = site

@@ -626,6 +626,133 @@ fn an_externally_delivered_signal_does_not_disarm_the_floor() {
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
+/// A body that claims the record latch and then runs out of stack.
+///
+/// The store stands in for the emitted module's writer having already won:
+/// what matters is that the floor's handler consults the same word, not how
+/// the word was taken. The alarm is what keeps the case terminating — a loser
+/// parks until the winner's abort takes the process down, and here there is no
+/// winner to do it, so the test's own clock ends the run.
+const CLAIMED_LATCH_BODY: &str = r#"#include <signal.h>
+#include <unistd.h>
+
+extern volatile int *wf__floor_record_latch(void);
+extern int wf__floor_run(int argc, char **argv);
+
+static long descend(long n) {
+    volatile char frame[512];
+    frame[0] = (char)n;
+    if (n == 0) {
+        return frame[0];
+    }
+    return descend(n - 1) + 1;
+}
+
+int wf__main_body(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+    *wf__floor_record_latch() = 1;
+    alarm(2);
+    descend(400000000);
+    return 0;
+}
+
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+
+/// The floor and the emitted module take the same latch, so no execution
+/// writes two records.
+///
+/// This is the mechanism behind "exactly one record", and it needs saying with
+/// a case because the two writers live in different languages. The floor's
+/// signal handler writes the stack record; the module writes the [DIAG-3] trap
+/// record and the heap and target-domain ones. A latch each serializes each
+/// writer against itself and neither against the other, so two threads dying
+/// of different resources at once each win their own latch and interleave two
+/// records on one channel — and every case in the tree still passes, because
+/// each class on its own is fine.
+///
+/// Here the latch is already taken when the stack runs out. Shared, the
+/// handler finds it taken and writes nothing. Separate, it writes the stack
+/// record and aborts, which is what this fixture did before the two were one.
+#[test]
+fn the_floor_and_the_module_share_one_record_latch() {
+    let directory = test_directory();
+    let executable = build_floor_fixture(CLAIMED_LATCH_BODY, &directory);
+    let output = Command::new(&executable)
+        .output()
+        .expect("run the pre-claimed latch fixture");
+    assert!(
+        output.stderr.is_empty(),
+        "a record was already claimed, so the floor must write none: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_ne!(
+        signal_of(&output),
+        Some(libc_sigabrt()),
+        "the floor took a latch of its own and aborted on it: {:?}",
+        output.status
+    );
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// A `--par` module that writes a resource record but contains no `claim`.
+///
+/// The latch is emitted for a module that writes *any* record and hands a call
+/// out, not only for one that contains a `claim`. Narrowing that condition
+/// back to claims would put every `--par` heap-only module on the unlatched
+/// writer, where two lanes whose allocations are both refused interleave two
+/// records — and until this case existed nothing in the tree noticed.
+const HEAP_RECORD_LANE: &[u8] = br#"fn leafwork(v: own u64) -> result: own u64 pure {
+  return v *wrap 3_u64;
+}
+
+fn build(n: own u64) -> result: own u64 allocates(heap) {
+  let b = buffer_new(4000000000000000000_u64, 7_u8);
+  let e = b[0_u64];
+  return 0_u64 +wrap n;
+}
+
+fn both(n: own u64) -> result: own u64 allocates(heap) {
+  let a = build(n: n);
+  let c = leafwork(v: n);
+  return a +wrap c;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let r = both(n: 5_u64);
+  let ok = igt(r, 0_u64);
+  if ok {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}
+"#;
+
+#[test]
+fn a_module_that_writes_a_resource_record_and_hands_a_call_out_is_latched() {
+    let module = super::emit_with_overlap(HEAP_RECORD_LANE);
+    assert!(
+        module.contains("@wf__par_thunk_"),
+        "the fixture must hand a call out, or the latch is not the question: \
+         {module}"
+    );
+    assert!(
+        !module.contains("@.wf_trap.0"),
+        "the fixture must contain no claim, so the latch cannot be there for \
+         one: {module}"
+    );
+    assert!(
+        module.contains("call void @wf_resource_abort()"),
+        "the fixture must reach a resource record: {module}"
+    );
+    assert!(
+        module.contains("%latch = call ptr @wf__floor_record_latch()"),
+        "a module that writes a record on more than one thread must take the \
+         shared latch: {module}"
+    );
+}
+
 fn page_size() -> usize {
     let output = Command::new("/usr/bin/getconf")
         .arg("PAGESIZE")

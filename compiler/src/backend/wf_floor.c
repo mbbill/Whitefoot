@@ -119,10 +119,19 @@ static volatile unsigned long wf__floor_guard_band;
  * nothing here attributes it to source. */
 static const char WF_FLOOR_STACK_RECORD[] = "{\"resource\":\"stack\"}\n";
 
-/* One latch, so two threads faulting together produce one record rather than
- * two interleaved ones — the same first-writer-wins discipline the emitted
- * trap writer uses for its own record. */
+/* One latch for every record any thread of this process can write.
+ *
+ * It has to be one rather than one per writer. The signal handler below writes
+ * the stack record; the emitted module writes the [DIAG-3] trap record and the
+ * heap and target-domain records. Those are different threads reaching
+ * different classes, so a latch per writer leaves them unserialized against
+ * each other and two records can interleave on the same channel — which is
+ * exactly what "exactly one record" is supposed to rule out. The module asks
+ * for the address rather than keeping its own, and a module linked without
+ * this unit falls back to one of its own. */
 static volatile int wf__floor_latch;
+
+volatile int *wf__floor_record_latch(void) { return &wf__floor_latch; }
 
 static void wf__floor_emit(const char *bytes, size_t length) {
     while (length > 0) {
