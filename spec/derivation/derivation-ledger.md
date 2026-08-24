@@ -2,8 +2,8 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
-the active v0.35 authority at SHA-256
-`645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769` at
+the active v0.36 authority at SHA-256
+`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62` at
 `spec/kernel-spec.md`; released versioned files retain the superseded
 authorities. Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:

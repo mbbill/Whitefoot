@@ -12,8 +12,8 @@ Derived from Direction Outline revision 50 and main at
 `18d332e7`. Supersedes both the completed claim-only trap-surface plan and
 main's implemented claim-residual-canonicality plan, in place; that plan's
 remaining sequence is carried forward below rather than dropped.
-Active language authority: v0.35 at `spec/kernel-spec.md`, SHA-256
-`645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769`,
+Active language authority: v0.36 at `spec/kernel-spec.md`, SHA-256
+`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`,
 activated by the owner-approved merge of 2026-08-23; it carries [PAR-1] v2
 and [PAR-2], and supersedes v0.34, whose bytes are archived as
 `spec/kernel-spec-v0.34.md`.

@@ -1468,3 +1468,26 @@ ACTIVE-SPEC: v0.34 cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454dd
   `docs/ongoing/0077-night-par-ceiling.md` and
   `docs/ongoing/0078-loop-permission.md`.
 ACTIVE-SPEC: v0.35 645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769 cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03
+
+## 2026-08-24 — merge-time approval content: v0.36 loan-conditioned overlap permission ([PAR-1], [PAR-2] amendments)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step.
+- SPECIFICATION: activate Whitefoot v0.36 at exact SHA-256
+  `fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
+  It supersedes active v0.35 at SHA-256
+  `645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.35.md`. The rule count is unchanged at 137 and the
+  grammar is untouched. [PAR-1] gains the loans half of its disjointness
+  condition, the window-statement conditions its "exactly when" list never
+  stated, the system-operation clause, and an abandoned-continuation
+  sentence scoped to what survives an abort; [PAR-2] gains the same loans
+  condition and combination-tree sentences that admit the identity-seeded,
+  commutative split the compiler actually emits. The permitted-overlap set
+  only narrows; no acceptance or conformance verdict moves.
+- CONFORMANCE BOUNDARY: relative to the v0.35 activation boundary, no
+  `tests/conformance` content is added, modified, deleted, or renamed;
+  coverage remains 137/137 with zero corpus delta.
+ACTIVE-SPEC: v0.36 fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62 645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769

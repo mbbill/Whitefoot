@@ -33,9 +33,9 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.35 at the stable
+Kernel specification v0.36 at the stable
 [specification path](spec/kernel-spec.md), SHA-256
-`645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769`,
+`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`,
 is active in this exact revision. It supersedes v0.33, whose exact bytes at
 SHA-256 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`
 are preserved as an immutable flat archive. `main` remains on v0.33 until this

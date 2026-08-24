@@ -109,7 +109,19 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // and the outlined thunks carry no semantic ID, occupy no target row, and are
 // reached through no [SYS-2] declaration, so qualification neither admits nor
 // narrows them.
-const REVIEWED_FOR: &str = "v0.35";
+//
+// v0.36 review (2026-08-24): the delta amends [PAR-1] and [PAR-2] only — the
+// loans half of the disjointness condition, the window-statement conditions,
+// and the combination-tree sentences. It adds no system operation, resource
+// type, semantic ID, target guarantee, host facility, representation, release
+// action, private machine ABI record, or entry contract, so every row above
+// stands as reviewed under the v0.36 semantic-ID key. The one relevant motion
+// runs the other way: [PAR-1] now states that no statement of a permitted
+// window evaluates a system operation, so the eight operations the v0.35
+// review admitted inside an overlap are no longer reachable from one at all,
+// and this table's overlap exposure is strictly smaller than the paragraph
+// above argues for.
+const REVIEWED_FOR: &str = "v0.36";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectoryList`.

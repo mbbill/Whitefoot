@@ -2,11 +2,11 @@
 
 Status: CANONICAL DIRECTION OUTLINE
 Revision: 50 (claim locality landed on `main`; proof-derived parallelism is
-the live direction; the v0.35 activation landed with the 2026-08-23 merge)
+the live direction; the v0.36 activation lands with the 0081 loan-column merge)
 
-The active language authority is v0.35 at the stable path
+The active language authority is v0.36 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
-`645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769`.
+`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
 Claim residual canonicality and claim locality are landed on `main`, not
 pending; revision 49 described them as awaiting merge and this revision
 records them as authority. Exact v0.8 through v0.33 are immutable flat
