@@ -318,11 +318,25 @@ home).
   program rather than a comment in two files. `<sys/resource.h>` and
   `wf__par_stack_bytes` are gone.
   The argument, which is what makes this a fix rather than a bigger knob: a
-  stolen call is an ordinary Whitefoot call that starts at the *bottom* of the
-  stealing lane's own stack rather than continuing the offerer's. With lanes
-  sized like the entry, no thread has less room than the entry has, so the
-  deepest any schedule reaches is at least what the no-steal schedule reaches
-  — stealing became strictly headroom-positive, where before it lost 128x.
+  stolen call is an ordinary Whitefoot call that runs on the stealing lane's
+  own stack rather than continuing the offerer's, and with lanes sized like
+  the entry no thread has less room than the entry has. Where before a lane
+  had 128x less than the entry, no thread is now the short one.
+  Mechanism correction (2026-08-23, from the batch audit): the first form of
+  this sentence said a stolen call starts at the *bottom* of the stealing
+  lane's stack, and concluded from that that "the deepest any schedule reaches
+  is at least what the no-steal schedule reaches". The premise is false —
+  `par_runtime.c:449` `wf__par_wait` calls `wf__par_find` and
+  `wf__par_execute` while a thread is blocked, so a thread waiting at depth
+  *k* runs stolen work from depth *k*, not from the bottom. The liveness
+  matrix below is unaffected and stands as measured; what falls is the general
+  claim derived from the premise, which is also the claim F8's recipe
+  transcribed into a candidate spec sentence and which is separately measured
+  false there. The audit probed the derived worry directly — two independent
+  21,000,000-deep chains against a 22.37M per-thread ceiling — and found no
+  liveness failure at any of `WF_WORKERS` 0/2/4/8/16 or the default, 10/10
+  each, so the inaccurate model produced no observed defect. Recorded so the
+  argument is not repeated as proven.
   Measured on a 2,000,000-deep recursion, 30 runs at each of `WF_WORKERS`
   0/1/2/4/8/16 and the shipped default. Before: 30/30, 30/30, 11/30, 13/30,
   3/30, 2/30, 4/30 — every failure a `{"resource":"stack"}` record, never a
@@ -333,8 +347,18 @@ home).
   complete on some schedules only. Bisected at 1,000,000-level resolution on
   the same shape: 22M completes 10/10 and 23M fails 0/10 at four workers, and
   identically at sixteen; 23M fails 0/30 at both two and sixteen workers. The
-  boundary is (1 GiB − ~6 KB)/48 B, the overlapped clone's own frame — a
-  division, not a distribution — so no band was found. The mechanism is the
+  boundary is 1 GiB/48 B = 22,369,621, the overlapped clone's own frame — a
+  division, not a distribution — so no band was found among overlapped
+  schedules. (Corrected 2026-08-23: this said "(1 GiB − ~6 KB)/48 B". F6's
+  later entry retires the 6 KB term outright, the ledger prints 22,369,621
+  with no such term, and a bisection at 1,000,000-level resolution cannot
+  separate the two models anyway — they differ by 128 levels. The conclusion
+  is unaffected.)
+  What this search did not cover, and the audit did: it compared overlapped
+  schedules against each other and never against `WF_WORKERS=0`, which runs
+  the *sequential* clone at 16 B/level. The band is there — see the F8 bullet
+  on the overlap sentence — and it is a band between the two clones of one
+  call, not between two overlapped schedules. The mechanism is the
   bounded number of outstanding offers per lane (`WF_PAR_LANE_SLOTS` = 64):
   the top of a recursion is stealable and the rest of its depth is one
   thread's by construction. Stated as measured on this shape rather than as a
@@ -631,7 +655,14 @@ candidate, and all six are identical.
 
 | candidate | SHA-256 | size |
 |---|---|---|
-| v0.36, ACTIVE header | `ee50a356a392294c8ef5c79e78e658f75269c5948f3d120cf7fd2570a6509cfe` | 441,249 bytes, 3,459 lines, 137 rules |
+| v0.36, ACTIVE header | `25d189ea0ec690091cd259e5e8f95b2b92369588b94e5a78ec0c216b7ebc9f28` | 441,483 bytes, 3,459 lines, 137 rules |
+
+The candidate was recomputed on 2026-08-23 when Edit 1's overlap sentences were
+replaced; the superseded digest was `ee50a356…` at 441,249 bytes, and the
+audit's independent reproduction of it — byte-exact, twice, from this record
+alone — is what makes the recipe's reproducibility a checked property rather
+than a claim. The line count is unchanged because the replacement is two lines
+for two.
 
 The digest is of the bytes that land on `main` — header and status already
 reading v0.36 ACTIVE, since the activation commit is where they take effect. An
@@ -671,7 +702,7 @@ language's guarantee.`), with no blank line between:
 
 ```
 An execution that exhausts a resource the trusted computing base supplies reaches the edge of that envelope without leaving it, and this rule fixes what happens there.
-Such an execution is fail-stop: it performs no further operation of the program, produces no external effect after the operation that exhausted the resource, and neither continues, retries, unwinds, nor runs language cleanup.
+Such an execution is fail-stop: it performs no further operation of the program, produces no external effect of the program after the operation that exhausted the resource, and neither continues, retries, unwinds, nor runs language cleanup.
 It is contained: it writes nothing outside the storage the program already owns, so no resource death is a memory-safety event and the freedom from undefined behavior above survives one.
 Before the process ends, the implementation writes exactly one resource record to standard error; no execution writes a second one, and no record is partial or interleaved with another.
 The record's bytes are fixed by the exhausted resource class alone, and it names no source construct, rule identifier, function, node path, worker, host thread, dynamic call stack, address, depth, or size.
@@ -683,8 +714,8 @@ The third is the target's own representable byte-count and address-index domain 
 This specification fixes neither a spelling for those class names nor an exit status for the death, because the record's presence and its class are what a reader, a test, and a supervising process tell apart, and a second byte-fixed mandatory runtime report would make this a language output instead of the trusted computing base reporting its own limit [DIAG-3].
 Writing the record is a quality obligation on the implementation rather than a language guarantee, and its coverage is exactly the conditions the implementation can observe: an allocation the allocator refuses, an execution that runs past the stack it was given, and a byte count a target-domain guard refuses.
 Where the host ends the process without delivering the condition to it — an external kill, or an operating system that grants more memory than it holds and later reclaims it by killing the process — no record is possible and none is required; on such a host the observed refusal is the rarer case rather than the typical one, and this rule promises nothing about the other.
-A permitted overlap [PAR-1, PAR-2] may raise the call depth an execution reaches and may not lower it below the depth the source-order execution reaches, so taking the permission cannot turn a completing execution into an exhausted one by depth alone.
-It fixes no such relation for allocated storage: overlapping raises peak simultaneous demand by the number of executions in flight, so an overlapped execution may reach a refusal the source-order execution does not.
+Taking a permitted overlap [PAR-1, PAR-2] may change where an execution meets this condition, in either direction and for either supply: the overlapped and source-order forms of one call may spend different amounts of stack per activation, and overlapping raises peak simultaneous storage demand by the number of executions in flight.
+This specification therefore fixes no relation between the depth or the allocation an overlapped execution reaches and the one the source-order execution reaches, and exhaustion under either remains a resource condition of this rule rather than an observable of [PAR-1] or [PAR-2], which say exactly that of the execution resources overlapping spends.
 ```
 
 Sentence by sentence, what each is for and what it is measured against:
@@ -692,13 +723,27 @@ Sentence by sentence, what each is for and what it is measured against:
 - *Fail-stop* and *contained* are the two halves of the charter. Containment is
   the safety half and the only sentence here that is not about reporting: it is
   what F1's `probe-stack` restores, and without it an accepted program can walk
-  a large frame past the guard region into a neighbouring thread's live stack.
-  The `.wf`-level reproduction is in the F1 follow-up entry above — ablate the
-  attribute and the program runs with frames past the end of its own lane stack
-  and returns a normal answer, 10/10.
-- *Exactly one record* is a mechanism, not an aspiration: both writers share the
-  emitted module's one first-writer-wins latch, and the floor's runtime carries
-  its own for the signal path.
+  a large frame past the guard region into whatever is mapped below — under the
+  pool, the next lane's stack.
+  The evidence for it was rewritten on 2026-08-23 after the audit found the
+  first form unreproducible. That form cited a `.wf`-level run in which the
+  ablated build "returns a normal answer, 10/10"; three reconstructions across
+  two agents got exit 134 with the record on both sides, and the reason is that
+  the discrimination band was then a megabyte wide, so the ablated 291,600-byte
+  skip landed inside it and was reported too. With the band at the probe's
+  geometry the property is observable and the case now performs the ablation
+  instead of describing it: probed, the descent walks its pages, faults within
+  one stride of the stack, and is reported, 10/10; ablated, it moves the stack
+  pointer 291,600 bytes in one step, faults far outside anything a descent can
+  reach, and writes nothing, 10/10. `a_frame_larger_than_the_guard_region_is_
+  still_reported` runs both halves and fails against `d3eee546`.
+- *Exactly one record* is a mechanism, not an aspiration — as of 2026-08-23 it
+  is one. The first form of this bullet said "both writers share the emitted
+  module's one first-writer-wins latch, and the floor's runtime carries its own
+  for the signal path", which concedes in its second clause what its first
+  denies: nothing serialized the stack record against the trap, heap, and
+  target-domain records. There is now one latch in the process, owned by the
+  floor and asked for by the emitted writer; see F4 above.
 - *The absence of that record's fields* is the load-bearing distinction and the
   reason the record's shape is what it is. Two unrelated constraints force a
   fixed constant independently — a signal handler may only reach
@@ -721,14 +766,41 @@ Sentence by sentence, what each is for and what it is measured against:
   host the allocator's refusal is the rare case: the measured death is a SIGKILL
   at 78 GB of footprint with nothing on standard error, and no clause can promise
   a record for a signal that cannot be caught.
-- *A permitted overlap may raise the depth and may not lower it* is F7's residual
-  turned into an obligation. It is what makes taking the permission safe rather
-  than a gamble: before F7 a lane's stack came from `RLIMIT_STACK` and a deep
-  recursion at eight workers failed 27 times in 30. After it, every lane gets
-  the entry's stack byte for byte and the same probe passes 30/30 at all seven
-  settings — re-derived at this tip at 35/35 over seven settings. The final
-  sentence refuses to extend the guarantee to storage, because F9's item 2
-  measures the opposite there and a rule that covered both would be false.
+- *Taking a permitted overlap may change where an execution meets this
+  condition* is what F7's residual actually supports, and the pair of sentences
+  replaced a guarantee on 2026-08-23 that the audit measured false against the
+  binary in this same packet. The first form said an overlap "may not lower
+  [the call depth] below the depth the source-order execution reaches, so
+  taking the permission cannot turn a completing execution into an exhausted
+  one by depth alone". The two clones of one call do not cost the same per
+  activation: the tip's own `--stack-ledger` prices a plain `f64`-strict spine
+  at 48 B/level overlapped and 16 B/level sequential in one binary, so the
+  ceilings are 22,369,621 and 67,108,864 levels. Across the band between them
+  the same binary on the same source completes 10/10 at `WF_WORKERS=0` and
+  dies 10/10 with `{"resource":"stack"}` at `WF_WORKERS=4` — confirmed at
+  23,000,000, 30,000,000, and 60,000,000, and confirmed by the refuter at the
+  shipped default, so the divergence is not an opt-in. The trailing "by depth
+  alone" would have given the sentence a literal escape, since the proximate
+  cause is frame width; that escape is the defect rather than a defence,
+  because no reader transcribing it into `spec/kernel-spec.md` would know it
+  was load-bearing.
+  What is true, and what the replacement says, is that exhaustion is a
+  [SCOPE-3] resource condition either way and not a [PAR-1]/[PAR-2]
+  observable — which the ACTIVE spec already states in both rules at `:2022`
+  and `:2048` ("Exhaustion of the execution resources an implementation spends
+  on overlapping is a resource condition under [SCOPE-3] and is not an
+  observable of this rule"). Edit 1 extends that from the resources the
+  implementation spends on overlapping to the program's own two supplies,
+  which is the same principle and the only one the measurement supports. The
+  writer's instrument for the difference is F6's stack ledger: it prints both
+  clones' per-level cost and both ceilings, side by side, for the binary in
+  hand.
+  What F7 did buy is still real and is not this sentence: before it a lane's
+  stack came from `RLIMIT_STACK` and a deep recursion at eight workers failed
+  27 times in 30; after it every lane gets the entry's stack byte for byte and
+  the same probe passes 30/30 at all seven settings, re-derived at this tip at
+  35/35 and independently at 35/35 by the audit. That is a liveness result
+  about lanes, not a depth ordering between the two clones.
 
 ### Edit 2 — [ERR-4] names the class its enumeration has no slot for
 
@@ -791,27 +863,30 @@ Line 1 becomes `# Kernel Specification v0.36` and line 3 becomes
 
 ### Impact inventory
 
+Every number below was recomputed at this tip against the current Edit 1.
+
 `[SCOPE-3]`'s extent moves from lines 24-25 and 335 bytes to lines 24-40 and
-3,654 bytes. `[ERR-4]` moves from line 1471 to line 1486 and gains 174 bytes.
+3,888 bytes. `[ERR-4]` moves from line 1471 to line 1486 and gains 174 bytes.
 `[DIAG-3]` gains one line at what becomes line 2009. Line-initial rule
 definitions are **137 before and 137 after**, so `RULE_COUNT` does not move.
 
-**Bracketed rule-token occurrence counts move, in both directions.** Under the
-single-token convention: `SCOPE-3` 10 to 14, `DIAG-3` 14 to 19, `ERR-4` 4 to 5,
-`SCOPE-4` 7 to **6**, `PAR-1` 5 to **4**, `PAR-2` 3 to **2**. The three
-decreases are all one edit: the outgoing META-5 delta declaration named
-`([PAR-1], [PAR-2]; 137 remain)` and "in the sense [SCOPE-4] fixes", which is
-correct for v0.35's delta and wrong for v0.36's, so the replacement drops them.
-No rule loses its last reference, no rule becomes unreferenced, and the set of
-cited rule ids is identical before and after — checked over the whole file, not
+**Bracketed rule-token occurrence counts move.** Under the single-token
+convention: `SCOPE-3` 10 to 14, `DIAG-3` 14 to 19, `ERR-4` 4 to 5, and
+`SCOPE-4` 7 to **6**. `PAR-1` stays 5 and `PAR-2` stays 3: each loses the
+single-token citation the outgoing META-5 delta declaration carried
+(`([PAR-1], [PAR-2]; 137 remain)`, correct for v0.35's delta and wrong for
+v0.36's) and gains one back in Edit 1's closing sentence. The one decrease is
+the same edit dropping "in the sense [SCOPE-4] fixes". No rule loses its last
+reference, no rule becomes unreferenced, and the set of cited rule ids is
+identical before and after — 137 ids, checked over the whole file rather than
 over the changed lines.
 
 **The counting convention, stated because the numbers do not reproduce without
 it:** every count above is of the single-token citation `[X]` only. Under the
-all-citation convention, which also counts `[A, B]` forms, the same six move
-plus `QUAL-1` 12 to 13 and `STOR-6` 10 to 11 — Edit 1 adds one `[QUAL-1,
-STOR-6]` — while `PAR-1` and `PAR-2` come out unchanged, because each loses one
-single-token citation and gains one inside Edit 1's `[PAR-1, PAR-2]`.
+all-citation convention, which also counts `[A, B]` forms, the moves are
+`SCOPE-3` 11 to 15, `DIAG-3` 15 to 20, `ERR-4` 4 to 5, `SCOPE-4` 11 to **10**,
+`PAR-1` 5 to 6, `PAR-2` 3 to 4, `QUAL-1` 12 to 13, and `STOR-6` 10 to 11 —
+Edit 1 adds one `[QUAL-1, STOR-6]` and one `[PAR-1, PAR-2]`.
 
 The recipe adds non-ASCII: Edit 1's "Where the host ends the process" line
 carries two U+2014 em dashes, taking the file from 98 lines with non-ASCII bytes
@@ -824,11 +899,36 @@ forbids it; this is disclosure, not a defect.
   digest `645b22b1…`. Append-only and hook-enforced thereafter.
 - `compiler/src/spec_identity.rs`: regenerated rather than hand-edited
   (`cargo run --bin whitefoot-spec -- --emit-identity src/spec_identity.rs`),
-  taking `SPEC_SHA256_HEX` to `ee50a356…` and `ACTIVATION_CHAIN_LENGTH` from 27
+  taking `SPEC_SHA256_HEX` to `25d189ea…` and `ACTIVATION_CHAIN_LENGTH` from 27
   to 28. `RULE_COUNT` stays 137.
 - `compiler/src/spec.rs`: the transcribed digest literal moves with it.
+- `compiler/src/backend/qualification.rs:112`: `REVIEWED_FOR` from `"v0.35"` to
+  `"v0.36"`, **and the re-review that constant exists to force**. Added
+  2026-08-23; the audit found this list omitted it and applied the recipe
+  exactly to prove the consequence. `command_entry_row` (`:1231-1237`) returns
+  `MissingMapping(CommandEntry)` whenever `SPEC_VERSION != REVIEWED_FOR`, and
+  `qualify_program` calls it unconditionally before any nominal or instruction
+  scan, so an activation without this bump leaves the compiler **refusing
+  every command-kind program**, with
+  `command_entry_is_the_single_specification_review_tripwire` failing. The
+  file's own doc comment (`:34-47`) states the obligation and every prior
+  version step carried it in the activation commit. The one-line edit is not
+  the cost: the constant exists so that someone re-reads the qualification
+  table against the new specification, which for this recipe is cheap — Edit 1
+  adds no construct, no operation, and no entry form, so the table's rows are
+  unchanged — but it is a reading somebody has to do and sign, not a
+  substitution.
+- The six prose carriers `spec-digest-sync` checks (`Makefile:220-233`):
+  `README.md`, `compiler/README.md`, `docs/roadmap.md`,
+  `docs/current-plan.md`, `docs/patterns.md`, and
+  `spec/derivation/derivation-ledger.md`'s own active-authority header at
+  `:5-6`. Added 2026-08-23 for the same reason. The gate runs five digest
+  greps and six version-phrase greps over those six files; a recipe-faithful
+  tree that skips them fails all eleven. `c704b9e6`, the v0.35 activation,
+  touched exactly this set alongside the archive, identity, and approvals
+  files, which is the pattern to follow.
 - `governance/APPROVALS.md`: one chain record,
-  `ACTIVE-SPEC: v0.36 ee50a356a392294c8ef5c79e78e658f75269c5948f3d120cf7fd2570a6509cfe 645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769`.
+  `ACTIVE-SPEC: v0.36 25d189ea0ec690091cd259e5e8f95b2b92369588b94e5a78ec0c216b7ebc9f28 645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769`.
 - `spec/derivation/derivation-ledger.md`: **no new row and no status change.**
   [SCOPE-3] stays `✅ derived`; the added text is derived from the same R4
   premise its existing row already cites — silent corruption is the forbidden
@@ -971,7 +1071,7 @@ section anyway; the recipe's derived-material list carries the fix.
 **Open for the merge packet.**
 
 1. **The [SCOPE-3] recipe application.** One owner transcription, six edits,
-   candidate `ee50a356a392294c8ef5c79e78e658f75269c5948f3d120cf7fd2570a6509cfe`.
+   candidate `25d189ea0ec690091cd259e5e8f95b2b92369588b94e5a78ec0c216b7ebc9f28`.
    Approval covers exactly those bytes.
 2. **The [SYS-5] release-order question, an owner decision this batch declines
    to make.** F5's iterative drop glue changes one reachable shape: an enum
