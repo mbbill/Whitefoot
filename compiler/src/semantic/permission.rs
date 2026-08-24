@@ -199,6 +199,55 @@ pub(crate) enum Access {
     },
 }
 
+/// One [OWN-5] loan an argument borrow holds over a caller place for the
+/// duration of its call [OWN-12].
+///
+/// A loan is not a use. The callee's declared row says what the callee *does*
+/// through the borrow; the loan says what the borrow *forbids everyone else*
+/// while it is live. The two are independent: `fn peek(c: &uniq 'c u64)
+/// reads('c)` projects a read and holds an exclusive loan, and a `pure`
+/// callee projects nothing and still holds one.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Loan {
+    pub(crate) strength: LoanStrength,
+    pub(crate) place: ResolvedPlace,
+    /// The actual's source node, for citation.
+    pub(crate) argument: NodePath,
+}
+
+/// The two borrow modes [OWN-2], as [OWN-5] grades their exclusion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LoanStrength {
+    Shared,
+    Exclusive,
+}
+
+impl LoanStrength {
+    const fn half(self) -> FootprintHalf {
+        match self {
+            Self::Shared => FootprintHalf::SharedLoan,
+            Self::Exclusive => FootprintHalf::ExclusiveLoan,
+        }
+    }
+
+    /// [OWN-5]'s matrix, read as this loan against one overlapping use of the
+    /// other statement. This is `check_loan_access`'s loan/access table, the
+    /// same word for the same thing: an exclusive loan excludes every access,
+    /// a shared loan excludes writes and admits reads.
+    const fn excludes_use(self, use_half: FootprintHalf) -> bool {
+        match self {
+            Self::Exclusive => true,
+            Self::Shared => matches!(use_half, FootprintHalf::Write),
+        }
+    }
+
+    /// The same matrix against the other statement's loan: two loans
+    /// conflict exactly when at least one is exclusive [OWN-5, OWN-12].
+    const fn excludes_loan(self, other: Self) -> bool {
+        matches!(self, Self::Exclusive) || matches!(other, Self::Exclusive)
+    }
+}
+
 impl Access {
     fn conflicts(&self, other: &Self) -> bool {
         match (self, other) {
@@ -222,33 +271,50 @@ impl Access {
 /// each: for the judged pair those are s1 and s2, and for an interposed
 /// statement they are that statement and whichever member it was judged
 /// against.
+/// One half of a statement's [OWN-5] access set.
+///
+/// The first three are *uses*: what the callee's declared row does through an
+/// actual, and what the caller's own operand evaluation touches. The last two
+/// are *loans*: what an argument borrow forbids everyone else for the
+/// duration of the call [OWN-12], whatever its callee's row does or does not
+/// declare. A row-less `&uniq` argument is the pointed case — it reads
+/// nothing, writes nothing, and still excludes every overlapping access.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ConflictKind {
-    /// Both statements write.
-    WriteWrite,
-    /// The earlier writes and the later's callee reads through an actual.
-    WriteRead,
-    /// The earlier reads and the later writes.
-    ReadWrite,
-    /// The earlier writes and the later reads the same storage on the calling
-    /// thread while evaluating its own operands.
-    WriteOperandRead,
-    /// The earlier reads storage on the calling thread while evaluating its
-    /// own operands, and the later writes it.
-    OperandReadWrite,
+pub(crate) enum FootprintHalf {
+    Write,
+    Read,
+    OperandRead,
+    SharedLoan,
+    ExclusiveLoan,
+}
+
+impl FootprintHalf {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Write => "write",
+            Self::Read => "read",
+            Self::OperandRead => "operand read",
+            Self::SharedLoan => "shared loan",
+            Self::ExclusiveLoan => "exclusive loan",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ConflictKind {
+    pub(crate) earlier: FootprintHalf,
+    pub(crate) later: FootprintHalf,
 }
 
 impl ConflictKind {
+    const fn new(earlier: FootprintHalf, later: FootprintHalf) -> Self {
+        Self { earlier, later }
+    }
+
     /// The two footprint halves this conflict joins, earlier first, as the
     /// ledger names them.
     pub(crate) const fn halves(self) -> (&'static str, &'static str) {
-        match self {
-            Self::WriteWrite => ("write", "write"),
-            Self::WriteRead => ("write", "read"),
-            Self::ReadWrite => ("read", "write"),
-            Self::WriteOperandRead => ("write", "operand read"),
-            Self::OperandReadWrite => ("operand read", "write"),
-        }
+        (self.earlier.name(), self.later.name())
     }
 }
 
@@ -271,6 +337,16 @@ pub(crate) enum Denial {
         left: Access,
         right: Access,
         /// The two statements the accesses belong to, earlier first.
+        sides: (PairSide, PairSide),
+    },
+    /// Condition 2: one statement's [OWN-5] loan excludes an overlapping
+    /// loan or use of the other. Carried apart from `Footprint` only because
+    /// a loan cites its borrow's actual rather than a row entry; it is the
+    /// same condition and the ledger renders it the same way.
+    Loan {
+        kind: ConflictKind,
+        left: NodePath,
+        right: NodePath,
         sides: (PairSide, PairSide),
     },
     /// Condition 2, fail-closed: the row projects an access through an actual
@@ -305,6 +381,7 @@ impl Denial {
         match self {
             Self::Dataflow { .. } => 1,
             Self::Footprint { .. }
+            | Self::Loan { .. }
             | Self::UnresolvedFootprint { .. }
             | Self::InterposedForm { .. } => 2,
             Self::Row { .. } => 3,
@@ -865,6 +942,14 @@ impl<'check> Program<'check> {
                         callee: Some(candidate.call.callee),
                     });
                 }
+                // A written borrow's shared-or-uniq mode is erased from the
+                // checked expression, so the [OWN-5] loan this statement
+                // would hold across the window cannot be formed here. Refusal
+                // is the fail-closed direction: an unloaned borrow would
+                // contribute an empty footprint and widen permission.
+                if expression_forms_borrow(value) {
+                    return Err(InterposedRefusal::Form("a statement that forms a borrow"));
+                }
                 let mut uses = Vec::new();
                 collect_used_bindings(value, &mut uses);
                 Ok(Interposed {
@@ -879,6 +964,9 @@ impl<'check> Program<'check> {
                 target,
                 value,
             } => {
+                if expression_forms_borrow(value) {
+                    return Err(InterposedRefusal::Form("a statement that forms a borrow"));
+                }
                 let mut footprint = value_footprint(places, value, node_path);
                 set_target_place(places, target, node_path, &mut footprint, false);
                 let mut uses = Vec::new();
@@ -900,6 +988,16 @@ impl<'check> Program<'check> {
                 target,
                 value,
             } => {
+                // Dead today: [SET-2] makes a region-bearing target type a
+                // hard error, and a borrow type is region-bearing, so a
+                // replace value can never be a borrow. The guard stands so
+                // the window invariant — every loan live inside a permitted
+                // window is one an argument of a judged call holds — rests
+                // on written checks in all three admitted forms rather than
+                // on that rule staying put.
+                if expression_forms_borrow(value) {
+                    return Err(InterposedRefusal::Form("a statement that forms a borrow"));
+                }
                 let mut footprint = value_footprint(places, value, node_path);
                 set_target_place(places, target, node_path, &mut footprint, true);
                 let mut uses = Vec::new();
@@ -985,6 +1083,28 @@ impl<'check> Program<'check> {
                 CheckedMode::Own => None,
                 CheckedMode::Shared(region) | CheckedMode::Unique(region) => Some(region),
             };
+            // The loans half [OWN-5, OWN-12]. A borrow-mode parameter's
+            // actual is an argument borrow live for the whole call, so it
+            // holds a loan on its resolved place whatever the row declares. A
+            // slice parameter is deliberately not read here: a slice's shared
+            // loan belongs to the named data region its `slice_of`
+            // established, not to the statement that passes the descriptor,
+            // and the borrow checker holds it for that whole region already.
+            let strength = match parameter.mode {
+                CheckedMode::Own => None,
+                CheckedMode::Shared(_) => Some(LoanStrength::Shared),
+                CheckedMode::Unique(_) => Some(LoanStrength::Exclusive),
+            };
+            if let Some(strength) = strength {
+                match argument_place(places, argument) {
+                    Some(place) => footprint.loans.push(Loan {
+                        strength,
+                        place,
+                        argument: node.clone(),
+                    }),
+                    None => footprint.unresolved = Some(node.clone()),
+                }
+            }
             let slice_region = match parameter.ty {
                 CheckedType::Slice { region, .. } => Some(region),
                 _ => None,
@@ -1058,6 +1178,9 @@ impl<'check> Program<'check> {
 pub(super) struct Footprint {
     pub(super) writes: Vec<Access>,
     pub(super) reads: Vec<Access>,
+    /// The [OWN-5] loans this statement's argument borrows hold for the
+    /// duration of its call, independent of what its callee's row declares.
+    pub(super) loans: Vec<Loan>,
     /// Storage this statement's own operand expressions read on the calling
     /// thread, before the call. An overlap moves some statement's operand
     /// evaluation across another's call, and which one moves is the
@@ -1097,23 +1220,32 @@ fn footprint_conflict(
     later_side: PairSide,
     earlier_operands: bool,
 ) -> Option<Denial> {
+    if let Some(denial) = loan_conflict(earlier, earlier_side, later, later_side, earlier_operands)
+    {
+        return Some(denial);
+    }
     for write in &earlier.writes {
         for (kind, access) in later
             .writes
             .iter()
-            .map(|access| (ConflictKind::WriteWrite, access))
-            .chain(
-                later
-                    .reads
-                    .iter()
-                    .map(|access| (ConflictKind::WriteRead, access)),
-            )
-            .chain(
-                later
-                    .operand_reads
-                    .iter()
-                    .map(|access| (ConflictKind::WriteOperandRead, access)),
-            )
+            .map(|access| {
+                (
+                    ConflictKind::new(FootprintHalf::Write, FootprintHalf::Write),
+                    access,
+                )
+            })
+            .chain(later.reads.iter().map(|access| {
+                (
+                    ConflictKind::new(FootprintHalf::Write, FootprintHalf::Read),
+                    access,
+                )
+            }))
+            .chain(later.operand_reads.iter().map(|access| {
+                (
+                    ConflictKind::new(FootprintHalf::Write, FootprintHalf::OperandRead),
+                    access,
+                )
+            }))
         {
             if write.conflicts(access) {
                 return Some(Denial::Footprint {
@@ -1129,14 +1261,21 @@ fn footprint_conflict(
         for (kind, read) in earlier
             .reads
             .iter()
-            .map(|access| (ConflictKind::ReadWrite, access))
+            .map(|access| {
+                (
+                    ConflictKind::new(FootprintHalf::Read, FootprintHalf::Write),
+                    access,
+                )
+            })
             .chain(
                 earlier_operands
                     .then(|| {
-                        earlier
-                            .operand_reads
-                            .iter()
-                            .map(|access| (ConflictKind::OperandReadWrite, access))
+                        earlier.operand_reads.iter().map(|access| {
+                            (
+                                ConflictKind::new(FootprintHalf::OperandRead, FootprintHalf::Write),
+                                access,
+                            )
+                        })
                     })
                     .into_iter()
                     .flatten(),
@@ -1155,8 +1294,118 @@ fn footprint_conflict(
     None
 }
 
+/// The loans half of the same condition: each statement's [OWN-5] loans
+/// against the other statement's loans and uses.
+///
+/// The matrix is [OWN-5]'s own, the one `check_loan_access` applies to a live
+/// loan: an exclusive loan excludes every overlapping access and every
+/// overlapping loan, a shared loan excludes overlapping writes and
+/// overlapping exclusive loans, and two shared loans coexist. Both
+/// directions are judged because an overlap may move either statement.
+///
+/// `earlier_operands` gates the earlier statement's operand reads exactly as
+/// it does above, for the same derivation: no loan of the later statement
+/// can reach an operand evaluation that either happened before the fork or
+/// after the earlier statement completed.
+fn loan_conflict(
+    earlier: &Footprint,
+    earlier_side: PairSide,
+    later: &Footprint,
+    later_side: PairSide,
+    earlier_operands: bool,
+) -> Option<Denial> {
+    fn uses(
+        footprint: &Footprint,
+        operands: bool,
+    ) -> Vec<(FootprintHalf, &ResolvedPlace, &NodePath)> {
+        footprint
+            .writes
+            .iter()
+            .map(|access| (FootprintHalf::Write, access))
+            .chain(
+                footprint
+                    .reads
+                    .iter()
+                    .map(|access| (FootprintHalf::Read, access)),
+            )
+            .chain(
+                operands
+                    .then(|| {
+                        footprint
+                            .operand_reads
+                            .iter()
+                            .map(|access| (FootprintHalf::OperandRead, access))
+                    })
+                    .into_iter()
+                    .flatten(),
+            )
+            .filter_map(|(half, access)| match access {
+                Access::Place { place, argument } => Some((half, place, argument)),
+                // An arena region is not a place a borrow can claim.
+                Access::Arena { .. } => None,
+            })
+            .collect::<Vec<_>>()
+    }
+
+    for loan in &earlier.loans {
+        for other in &later.loans {
+            if loan.strength.excludes_loan(other.strength) && loan.place.overlaps(&other.place) {
+                return Some(Denial::Loan {
+                    kind: ConflictKind::new(loan.strength.half(), other.strength.half()),
+                    left: loan.argument.clone(),
+                    right: other.argument.clone(),
+                    sides: (earlier_side, later_side),
+                });
+            }
+        }
+        for (half, place, argument) in uses(later, true) {
+            if loan.strength.excludes_use(half) && loan.place.overlaps(place) {
+                return Some(Denial::Loan {
+                    kind: ConflictKind::new(loan.strength.half(), half),
+                    left: loan.argument.clone(),
+                    right: argument.clone(),
+                    sides: (earlier_side, later_side),
+                });
+            }
+        }
+    }
+    for loan in &later.loans {
+        for (half, place, argument) in uses(earlier, earlier_operands) {
+            if loan.strength.excludes_use(half) && loan.place.overlaps(place) {
+                return Some(Denial::Loan {
+                    kind: ConflictKind::new(half, loan.strength.half()),
+                    left: argument.clone(),
+                    right: loan.argument.clone(),
+                    sides: (earlier_side, later_side),
+                });
+            }
+        }
+    }
+    None
+}
+
 /// The footprint of a window statement that is not a call: the places its
 /// consumed `own` operands transfer away, and the places its operands read.
+/// Whether an expression forms a borrow anywhere inside it.
+///
+/// The checked tree erases a written borrow's shared-or-uniq mode (the mode
+/// lives only in `CheckedMode`, which a non-argument borrow never meets), so
+/// a window statement that forms one cannot be given its [OWN-5] loan and is
+/// refused instead. Call arguments never reach this: their loans key on the
+/// parameter's mode.
+pub(super) fn expression_forms_borrow(expression: &CheckedExpression) -> bool {
+    matches!(
+        expression,
+        CheckedExpression::BorrowBuffer { .. }
+            | CheckedExpression::BorrowAddressed { .. }
+            | CheckedExpression::BorrowBox { .. }
+            | CheckedExpression::BorrowSystemResource { .. }
+            | CheckedExpression::ReborrowAddressed { .. }
+    ) || expression_children(expression)
+        .into_iter()
+        .any(expression_forms_borrow)
+}
+
 fn value_footprint(places: &PlaceMap, value: &CheckedExpression, node: &NodePath) -> Footprint {
     let mut footprint = Footprint::default();
     collect_consumed_places(places, value, node, &mut footprint);

@@ -16,8 +16,8 @@
 use crate::SemanticOutcome;
 
 use super::super::permission::{
-    Access, ConflictKind, Denial, ExitKind, FunctionPermissions, PairSide, PermissionMetadata,
-    PermissionPair, PermissionVerdict,
+    ConflictKind, Denial, ExitKind, FootprintHalf, FunctionPermissions, PairSide,
+    PermissionMetadata, PermissionPair, PermissionVerdict,
 };
 use super::with_semantics;
 
@@ -298,31 +298,22 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "main");
-    let Denial::Footprint {
-        kind,
-        left,
-        right,
-        sides,
-    } = denial(pair, 2)
-    else {
-        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
+        panic!("expected a loan denial, got {:?}", pair.verdict);
     };
     assert_eq!(
         *kind,
-        ConflictKind::WriteWrite,
-        "both actuals are written through"
+        ConflictKind {
+            earlier: FootprintHalf::ExclusiveLoan,
+            later: FootprintHalf::ExclusiveLoan
+        },
+        "each actual is a `&uniq` borrow of the one cell, and the loan is the cause the row write is downstream of"
     );
     assert_eq!(
         *sides,
         (PairSide::First, PairSide::Second),
         "the conflict is between the two members, not with anything between them"
     );
-    let (Access::Place { place: left, .. }, Access::Place { place: right, .. }) = (left, right)
-    else {
-        panic!("expected two conflicting places, got {left:?} and {right:?}");
-    };
-    assert!(left.overlaps(right));
-    assert_eq!(left, right, "both actuals resolve to the one cell");
 }
 
 /// Condition 2, the caller-side half. `take`'s row is `pure` and reaches no
@@ -353,25 +344,17 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "main");
-    let Denial::Footprint {
-        kind,
-        left,
-        right,
-        sides,
-    } = denial(pair, 2)
-    else {
-        panic!("expected a footprint denial, got {:?}", pair.verdict);
-    };
-    assert_eq!(*kind, ConflictKind::WriteOperandRead);
-    assert_eq!(*sides, (PairSide::First, PairSide::Second));
-    let (Access::Place { place: left, .. }, Access::Place { place: right, .. }) = (left, right)
-    else {
-        panic!("expected two conflicting places, got {left:?} and {right:?}");
+    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
+        panic!("expected a loan denial, got {:?}", pair.verdict);
     };
     assert_eq!(
-        left, right,
-        "the borrow and the operand resolve to the one cell"
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::ExclusiveLoan,
+            later: FootprintHalf::OperandRead
+        }
     );
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
 /// The same hazard through a subscript rather than a whole binding: the
@@ -409,10 +392,16 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "main");
-    let Denial::Footprint { kind, .. } = denial(pair, 2) else {
-        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    let Denial::Loan { kind, .. } = denial(pair, 2) else {
+        panic!("expected a loan denial, got {:?}", pair.verdict);
     };
-    assert_eq!(*kind, ConflictKind::WriteOperandRead);
+    assert_eq!(
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::ExclusiveLoan,
+            later: FootprintHalf::OperandRead
+        }
+    );
 }
 
 /// The caller-side half in its other direction: s1's own operand reads the
@@ -441,10 +430,16 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "main");
-    let Denial::Footprint { kind, .. } = denial(pair, 2) else {
-        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    let Denial::Loan { kind, .. } = denial(pair, 2) else {
+        panic!("expected a loan denial, got {:?}", pair.verdict);
     };
-    assert_eq!(*kind, ConflictKind::OperandReadWrite);
+    assert_eq!(
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::OperandRead,
+            later: FootprintHalf::ExclusiveLoan
+        }
+    );
 }
 
 /// Condition 2 in its other direction: s1 only reads, s2 writes the same
@@ -473,26 +468,18 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "main");
-    let Denial::Footprint {
-        kind,
-        left,
-        right,
-        sides,
-    } = denial(pair, 2)
-    else {
-        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
+        panic!("expected a loan denial, got {:?}", pair.verdict);
     };
     assert_eq!(
         *kind,
-        ConflictKind::ReadWrite,
-        "s1 reads and s2 writes, which is not two writes"
+        ConflictKind {
+            earlier: FootprintHalf::SharedLoan,
+            later: FootprintHalf::ExclusiveLoan
+        },
+        "s1's shared borrow and s2's `&uniq` of the one cell conflict as loans before either row is consulted"
     );
     assert_eq!(*sides, (PairSide::First, PairSide::Second));
-    let (Access::Place { place: left, .. }, Access::Place { place: right, .. }) = (left, right)
-    else {
-        panic!("expected two conflicting places, got {left:?} and {right:?}");
-    };
-    assert_eq!(left, right, "both actuals resolve to the one cell");
 }
 
 /// Condition 3. The row gate refuses `external` before any place is
@@ -758,10 +745,16 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "main");
-    let Denial::Footprint { kind, sides, .. } = denial(pair, 2) else {
-        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
+        panic!("expected a loan denial, got {:?}", pair.verdict);
     };
-    assert_eq!(*kind, ConflictKind::WriteRead);
+    assert_eq!(
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::Write,
+            later: FootprintHalf::SharedLoan
+        }
+    );
     assert_eq!(
         *sides,
         (PairSide::Between(0), PairSide::Second),
@@ -797,10 +790,16 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "main");
-    let Denial::Footprint { kind, sides, .. } = denial(pair, 2) else {
-        panic!("expected a footprint denial, got {:?}", pair.verdict);
+    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
+        panic!("expected a loan denial, got {:?}", pair.verdict);
     };
-    assert_eq!(*kind, ConflictKind::WriteWrite);
+    assert_eq!(
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::ExclusiveLoan,
+            later: FootprintHalf::Write
+        }
+    );
     assert_eq!(
         *sides,
         (PairSide::First, PairSide::Between(0)),
@@ -840,7 +839,13 @@ command fn main() -> status: own ExitStatus pure {
     let Denial::Footprint { kind, sides, .. } = denial(pair, 2) else {
         panic!("expected a footprint denial, got {:?}", pair.verdict);
     };
-    assert_eq!(*kind, ConflictKind::WriteOperandRead);
+    assert_eq!(
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::Write,
+            later: FootprintHalf::OperandRead
+        }
+    );
     assert_eq!(*sides, (PairSide::Between(0), PairSide::Second));
 }
 
@@ -1114,4 +1119,199 @@ command fn main() -> status: own ExitStatus pure {
     };
     assert_eq!(*side, PairSide::Between(0));
     assert_eq!(*form, "a match statement");
+}
+
+// ----------------------------------------------------------------------
+// Condition 2, the loans half [OWN-5, OWN-12]
+// ----------------------------------------------------------------------
+
+/// The pointed case of the loans half: both callees declare `reads` only, so
+/// the row projection alone sees read against read and would permit — but each
+/// actual is a `&uniq` borrow of the one cell, and an overlap would hold two
+/// usable exclusive loans on one place, which [OWN-5] never admits at one
+/// program point. Before the loans half existed this pair was permitted.
+#[test]
+fn read_only_unique_borrows_of_one_place_are_denied_by_their_loans() {
+    let source = br#"fn peek_uniq['c](cell: &uniq 'c u64) -> result: own u64 reads('c) {
+  return deref(cell);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 21_u64;
+  region 'c {
+    let a = peek_uniq<'c>(cell: &uniq 'c cell);
+    let b = peek_uniq<'c>(cell: &uniq 'c cell);
+    let both = a +wrap b;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
+        panic!("expected a loan denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::ExclusiveLoan,
+            later: FootprintHalf::ExclusiveLoan
+        }
+    );
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
+}
+
+/// A shared loan against a consuming `move`: s1 holds `&'c` of the box while
+/// its row is `pure`, and s2 consumes the box, whose drop frees the heap
+/// block. The row projection sees nothing on s1's side at all; the loan is
+/// the only thing standing between the overlap and a read of freed storage.
+#[test]
+fn a_pure_shared_borrow_against_a_consuming_move_is_denied_by_its_loan() {
+    let source = br#"fn ignore_box['c](node: &'c box<u64>) -> result: own u64 pure {
+  return 7_u64;
+}
+
+fn eat_box(node: own box<u64>) -> result: own u64 pure {
+  return 9_u64;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let node = box_new(41_u64);
+  region 'c {
+    let a = ignore_box<'c>(node: &'c node);
+    let b = eat_box(node: move node);
+    let both = a +wrap b;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::Loan { kind, sides, .. } = denial(pair, 2) else {
+        panic!("expected a loan denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::SharedLoan,
+            later: FootprintHalf::Write
+        }
+    );
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
+}
+
+/// An interposed statement that forms a borrow is refused as a form: the
+/// checked tree erases a written borrow's shared-or-uniq mode, so the loan it
+/// would hold across the window cannot be stated, and an unloaned borrow
+/// would widen permission. The refusal, not an empty footprint, is what the
+/// window reports.
+#[test]
+fn an_interposed_borrow_binding_refuses_the_window() {
+    let source = br#"fn bump['r](cell: &uniq 'r u64) -> result: own u64 reads('r), writes('r) {
+  let was = deref(cell);
+  set deref(cell) = was +wrap 1_u64;
+  return was;
+}
+
+fn takeval(v: own u64) -> result: own u64 pure {
+  return v;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 1_u64;
+  region 'c {
+    let a = bump<'c>(cell: &uniq 'c cell);
+    let g = &'c cell;
+    let b = takeval(v: 5_u64);
+    let seen = deref(g);
+    let sum = a +wrap b;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::InterposedForm { form, .. } = denial(pair, 2) else {
+        panic!("expected an interposed-form denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(*form, "a statement that forms a borrow");
+}
+
+/// A borrow-moded actual whose place the judgment cannot resolve: a `&uniq`
+/// of an own slice binding anchors nowhere `argument_place` reaches, and the
+/// loans half fails closed on it even though both rows are `pure` and project
+/// nothing.
+#[test]
+fn an_unresolvable_loan_actual_denies_rather_than_dropping_the_loan() {
+    let source =
+        br#"fn touch_uniqslice['d, 'r](v: &uniq 'd slice<'r, u8>) -> result: own u64 pure {
+  return 3_u64;
+}
+
+fn a_pure_uniqslice() -> result: own u64 allocates(heap) {
+  let buf = buffer_new(8_u64, 1_u8);
+  region 'r {
+    let v = slice_of(&'r buf);
+    region 'd {
+      let a = touch_uniqslice<'d, 'r>(v: &uniq 'd v);
+      let b = touch_uniqslice<'d, 'r>(v: &uniq 'd v);
+      let s = a +wrap b;
+      return s;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let p = a_pure_uniqslice();
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "a_pure_uniqslice");
+    let Denial::UnresolvedFootprint { .. } = denial(pair, 2) else {
+        panic!("expected an unresolved denial, got {:?}", pair.verdict);
+    };
+}
+
+/// [PAR-1]'s system-operation clause: no statement of the window evaluates
+/// one. The refusal is currently carried by the operand walk's fail-closed
+/// catch-all — a call it meets sets the unresolved marker — so this test
+/// names the denial that clause depends on; making that arm smarter without
+/// an explicit system-operation refusal would fail here rather than silently
+/// deleting the clause.
+#[test]
+fn an_interposed_system_operation_denies_the_window() {
+    let source = br#"fn quiet['c](cell: &uniq 'c u64) -> result: own u64 pure {
+  return 3_u64;
+}
+
+fn interposed_pure_syscall(x: own u64, name: own HostString) -> result: own u64 pure {
+  let p = x;
+  let r = x;
+  region 'c {
+    let a = quiet<'c>(cell: &uniq 'c p);
+    let path = relative_path(value: move name);
+    let b = quiet<'c>(cell: &uniq 'c r);
+    let s = a +wrap b;
+    match path {
+      Ok(value: good) => {
+        return s;
+      }
+      Err(error: bad) => {
+        return s +wrap 1_u64;
+      }
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "interposed_pure_syscall");
+    assert!(matches!(
+        denial(pair, 2),
+        Denial::InterposedForm { .. } | Denial::UnresolvedFootprint { .. }
+    ));
 }

@@ -204,6 +204,21 @@ fn denied_detail<Source: LedgerSource>(
                 access(right, source)?
             )
         }
+        Denial::Loan {
+            kind,
+            left,
+            right,
+            sides,
+        } => {
+            let (left_half, right_half) = kind.halves();
+            format!(
+                "the {left_half} of {} overlaps the {right_half} of {} at {} vs {}",
+                statement_name(sides.0),
+                statement_name(sides.1),
+                source.spelling(left)?,
+                source.spelling(right)?
+            )
+        }
         Denial::UnresolvedFootprint { side, argument } => format!(
             "unresolved footprint through {} of {}",
             source.spelling(argument)?,
@@ -281,6 +296,10 @@ fn loop_denied_detail<Source: LedgerSource>(
         LoopDenial::AccumulatorRead { statement, reads } => format!(
             "the accumulator is read {reads} times in the body and a reduction reads it once, at {}",
             source.spelling(statement)?
+        ),
+        LoopDenial::Loan { argument } => format!(
+            "an iteration holds an exclusive loan on storage the iteration does not introduce, at {}",
+            source.spelling(argument)?
         ),
         LoopDenial::SharedWrite { argument } => format!(
             "the body writes storage that is neither introduced by the iteration nor the accumulator, at {}",

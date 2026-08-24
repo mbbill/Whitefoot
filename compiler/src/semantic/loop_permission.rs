@@ -79,9 +79,10 @@
 //!
 //! Condition 1 counts the read occurrences of the accumulator *binding*, and a
 //! read spelled `deref(h)` names the holder rather than the storage. Two facts
-//! close that gap without a second relation. A holder bound inside the body
-//! names the accumulator where it is formed, and forming a borrow is itself a
-//! counted read occurrence, so such a loop is refused by the count. A holder
+//! close that gap without a second relation. A holder bound inside the body is
+//! refused before any count runs: a written borrow's loan strength is erased
+//! from the checked tree, so the body admits no borrow-forming statement at
+//! all and no in-body holder ever exists to read through. A holder
 //! bound outside the body leaves only two spellings: writing the accumulator
 //! by name while that borrow is live is an [OWN-5] borrow conflict and the
 //! program is rejected, and writing it *through* the holder makes the target
@@ -105,8 +106,8 @@ use super::model::{
     expression_children,
 };
 use super::permission::{
-    Access, Footprint, Program, call_projection, collect_consumed_places, set_target_place,
-    visit_read_bindings,
+    Access, Footprint, LoanStrength, Program, call_projection, collect_consumed_places,
+    set_target_place, visit_read_bindings,
 };
 use super::places::{PlaceMap, PlaceRoot, ResolvedPlace};
 use crate::NodePath;
@@ -229,6 +230,11 @@ pub(crate) enum LoopDenial {
     /// Condition 2: a written place that is neither iteration-own storage nor
     /// the accumulator.
     SharedWrite { argument: NodePath },
+    /// Condition 2, the loans half: an iteration's argument borrow holds an
+    /// exclusive [OWN-5] loan on storage the iteration does not introduce, so
+    /// two overlapped iterations would hold two usable `&uniq` borrows of one
+    /// place, whatever the callee's row declares.
+    Loan { argument: NodePath },
     /// Condition 2, fail closed: a written place this judgment cannot
     /// resolve. An unresolved element overlaps every place, so it denies.
     UnresolvedWrite { argument: NodePath },
@@ -255,7 +261,10 @@ impl LoopDenial {
             Self::NotAReduction { .. }
             | Self::ManyAccumulators { .. }
             | Self::AccumulatorRead { .. } => 1,
-            Self::SharedWrite { .. } | Self::UnresolvedWrite { .. } | Self::BodyForm { .. } => 2,
+            Self::SharedWrite { .. }
+            | Self::Loan { .. }
+            | Self::UnresolvedWrite { .. }
+            | Self::BodyForm { .. } => 2,
             Self::Row { .. } | Self::SystemCall { .. } => 3,
             Self::Exit { .. } => 4,
         }
@@ -343,6 +352,7 @@ fn judge<'check>(
         accumulates: Vec::new(),
         carried: None,
         shared: None,
+        loan: None,
         unresolved: None,
         form: None,
         row: None,
@@ -377,6 +387,7 @@ struct Survey<'check, 'run> {
     accumulates: Vec<Accumulate>,
     carried: Option<NodePath>,
     shared: Option<NodePath>,
+    loan: Option<NodePath>,
     unresolved: Option<NodePath>,
     form: Option<&'static str>,
     row: Option<(String, bool, bool)>,
@@ -448,6 +459,18 @@ impl<'check> Survey<'check, '_> {
             CheckedStatement::Let {
                 node_path, value, ..
             } => {
+                // A call's argument borrows carry their loans through the
+                // parameter modes of the [EFF-2] projection below. Any other
+                // value may form a borrow only of iteration-own storage,
+                // where no loan is needed; `admits_borrow_forms` states why.
+                if !matches!(
+                    value,
+                    CheckedExpression::UserCall { .. } | CheckedExpression::SystemCall { .. }
+                ) && !self.admits_borrow_forms(value)
+                {
+                    self.refuse_form("a statement that forms a borrow of storage the iteration does not introduce");
+                    return;
+                }
                 self.moved_places(value, node_path);
                 self.expression(value);
             }
@@ -462,6 +485,10 @@ impl<'check> Survey<'check, '_> {
                     }
                     _ => None,
                 };
+                if !self.admits_borrow_forms(value) {
+                    self.refuse_form("a statement that forms a borrow of storage the iteration does not introduce");
+                    return;
+                }
                 self.written_target(target, node_path, combine);
                 self.moved_places(value, node_path);
                 self.expression(value);
@@ -476,6 +503,10 @@ impl<'check> Survey<'check, '_> {
                 value,
                 ..
             } => {
+                if !self.admits_borrow_forms(value) {
+                    self.refuse_form("a statement that forms a borrow of storage the iteration does not introduce");
+                    return;
+                }
                 self.written_target(target, node_path, None);
                 self.moved_places(value, node_path);
                 self.expression(value);
@@ -598,6 +629,36 @@ impl<'check> Survey<'check, '_> {
     /// Whether a resolved place is storage this iteration introduced. Storage
     /// rooted in a binding the body opens is created and released inside the
     /// iteration, so no two iterations reach one of them.
+    /// Whether every borrow formed inside this expression is a borrow of
+    /// iteration-own storage.
+    ///
+    /// A written borrow's shared-or-uniq mode is erased from the checked
+    /// tree, so the [OWN-5] loan such a borrow would hold cannot be stated.
+    /// A borrow of iteration-own storage needs none: each iteration borrows
+    /// its own instance, and nothing that instance reaches outlives the
+    /// iteration. Every other borrow — outer storage, or a place this walk
+    /// cannot resolve — is inadmissible, and the caller refuses the body,
+    /// which is the fail-closed direction.
+    fn admits_borrow_forms(&self, expression: &CheckedExpression) -> bool {
+        let is_borrow_form = matches!(
+            expression,
+            CheckedExpression::BorrowBuffer { .. }
+                | CheckedExpression::BorrowAddressed { .. }
+                | CheckedExpression::BorrowBox { .. }
+                | CheckedExpression::BorrowSystemResource { .. }
+                | CheckedExpression::ReborrowAddressed { .. }
+        );
+        if is_borrow_form {
+            match self.places.argument_referent(expression) {
+                Some((place, _, _)) if self.is_iteration_own(&place) => {}
+                _ => return false,
+            }
+        }
+        expression_children(expression)
+            .into_iter()
+            .all(|child| self.admits_borrow_forms(child))
+    }
+
     fn is_iteration_own(&self, place: &ResolvedPlace) -> bool {
         match place.root {
             PlaceRoot::Binding(binding) => self.introduced.contains(&binding),
@@ -678,6 +739,19 @@ impl<'check> Survey<'check, '_> {
         if let Some(argument) = &footprint.unresolved {
             self.unresolved.get_or_insert(argument.clone());
         }
+        // The loans half of condition 2 [OWN-5, OWN-12]. Two overlapped
+        // iterations both hold every loan their body forms, so an exclusive
+        // loan on storage outliving the iteration would put two usable
+        // `&uniq` borrows on one place. A shared loan needs no condition of
+        // its own: the written half below already leaves the accumulator as
+        // the one enclosing place any iteration writes, and condition 1
+        // counts a borrow of the accumulator as a read occurrence of it, so
+        // no accepted body holds a shared loan on storage another iteration writes.
+        for loan in &footprint.loans {
+            if loan.strength == LoanStrength::Exclusive && !self.is_iteration_own(&loan.place) {
+                self.loan.get_or_insert(loan.argument.clone());
+            }
+        }
         for write in &footprint.writes {
             match write {
                 Access::Place { place, .. } if self.is_iteration_own(place) => {}
@@ -755,6 +829,11 @@ impl<'check> Survey<'check, '_> {
         }
         if let Some(denial) = self.carried_state() {
             return Some(denial);
+        }
+        if let Some(argument) = &self.loan {
+            return Some(LoopDenial::Loan {
+                argument: argument.clone(),
+            });
         }
         if let Some(argument) = &self.shared {
             return Some(LoopDenial::SharedWrite {

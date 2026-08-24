@@ -710,7 +710,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("bump.wf", overlapping),
             vec![
-                "PAR denied      bump.wf:10  pair(bump, bump)  condition 2: the write of s1 overlaps the write of s2 at &uniq 'r cell vs &uniq 'r cell"
+                "PAR denied      bump.wf:10  pair(bump, bump)  condition 2: the exclusive loan of s1 overlaps the exclusive loan of s2 at &uniq 'r cell vs &uniq 'r cell"
                     .to_owned()
             ]
         );
@@ -930,8 +930,8 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("carrying.wf", source),
             vec![
-                "PAR loop        carrying.wf:10  loop  denied      condition 2: the body writes \
-                 storage that is neither introduced by the iteration nor the accumulator, \
+                "PAR loop        carrying.wf:10  loop  denied      condition 2: an iteration \
+                 holds an exclusive loan on storage the iteration does not introduce, \
                  at &uniq 'acc total"
                     .to_owned()
             ]

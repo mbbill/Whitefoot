@@ -469,10 +469,11 @@ fn an_accumulator_read_in_a_write_subscript_is_denied_by_condition_one() {
     assert_eq!(reads, 3, "the guard, the subscript, and the combine");
 }
 
-/// A borrow of the accumulator formed in the body is itself a read of it, so
-/// a value read through that borrow cannot escape the count.
+/// A borrow of the accumulator formed in the body: the body refuses every
+/// borrow-forming statement outright, so a value read through such a holder
+/// can never reach the count in the first place.
 #[test]
-fn a_borrow_of_the_accumulator_is_denied_by_condition_one() {
+fn a_borrow_of_the_accumulator_is_refused_as_a_borrow_forming_statement() {
     let source = b"command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for @sum i in 0_u64..16_u64 {
@@ -487,12 +488,14 @@ fn a_borrow_of_the_accumulator_is_denied_by_condition_one() {
 }
 ";
     assert!(matches!(
-        denied(source, "main", 1),
-        LoopDenial::AccumulatorRead { .. }
+        denied(source, "main", 2),
+        LoopDenial::BodyForm {
+            form: "a statement that forms a borrow of storage the iteration does not introduce"
+        }
     ));
 
-    // A borrow taken *after* the loop is no read inside it, so the same
-    // reduction stays permitted: the count is per body, never per function.
+    // A borrow taken *after* the loop is outside the body, so the same
+    // reduction stays permitted: the refusal is per body, never per function.
     let after = b"command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for @sum i in 0_u64..16_u64 {
@@ -648,10 +651,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 ";
-    assert!(matches!(
-        denied(source, "main", 2),
-        LoopDenial::SharedWrite { .. }
-    ));
+    assert!(matches!(denied(source, "main", 2), LoopDenial::Loan { .. }));
 }
 
 /// An expression statement is a call whose reach no row projects onto an
@@ -1171,4 +1171,134 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         verdicts[0], verdicts[2],
         "a branch-established bound moves no verdict"
     );
+}
+
+/// The loans half of condition 2: every iteration takes `&uniq` of one outer
+/// cell while the callee's row declares `reads` only, so the written half is
+/// empty and the old judgment permitted — and actually split — a loop whose
+/// iterations each hold an exclusive loan on the one place. The loan, not a
+/// write, is what denies it.
+#[test]
+fn a_read_only_unique_borrow_of_outer_storage_is_denied_by_its_loan() {
+    let source = br#"fn peek_uniq['c](cell: &uniq 'c u64) -> result: own u64 reads('c) {
+  return deref(cell);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 21_u64;
+  let acc = 0_u64;
+  for @sum i in 0_u64..8_u64 {
+    region 'i {
+      let v = peek_uniq<'i>(cell: &uniq 'i cell);
+      set acc = acc +wrap v;
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert!(matches!(denied(source, "main", 2), LoopDenial::Loan { .. }));
+}
+
+/// The shared control for the loan above: a `&'i` borrow of the same outer
+/// cell holds a shared loan, which coexists with itself and conflicts only
+/// with writes, so the loop stays permitted. This is the boundary the loans
+/// half must not cross — read-only sharing across iterations is the point of
+/// a reduction.
+#[test]
+fn a_shared_borrow_of_outer_storage_stays_permitted() {
+    let source = br#"fn peek['c](cell: &'c u64) -> result: own u64 reads('c) {
+  return deref(cell);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let cell = 21_u64;
+  let acc = 0_u64;
+  for @sum i in 0_u64..8_u64 {
+    region 'i {
+      let v = peek<'i>(cell: &'i cell);
+      set acc = acc +wrap v;
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    permitted(source, "main");
+}
+
+/// A bare borrow bound in the body: no call carries it, so no parameter mode
+/// states its loan, and the checked tree erases whether it is shared or
+/// exclusive. The body refuses as a form — before this refusal existed, every
+/// iteration of this loop held what the source spells as an exclusive borrow
+/// of the one outer cell, and the loop was permitted and split.
+#[test]
+fn a_body_statement_forming_a_borrow_is_refused() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  let cell = 21_u64;
+  let acc = 0_u64;
+  for @sum i in 0_u64..8_u64 {
+    region 'i {
+      let g = &uniq 'i cell;
+      let v = deref(g);
+      set acc = acc +wrap v;
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert!(matches!(
+        denied(source, "main", 2),
+        LoopDenial::BodyForm {
+            form: "a statement that forms a borrow of storage the iteration does not introduce"
+        }
+    ));
+}
+
+/// The admissible side of the body borrow guard: a `let`-bound borrow of
+/// storage the iteration itself creates. Each iteration borrows its own
+/// instance, so no loan is needed and the loop stays permitted — the guard
+/// refuses borrows of enclosing storage, not borrowing as such.
+#[test]
+fn a_body_borrow_of_iteration_own_storage_stays_permitted() {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+  let acc = 0_u64;
+  for @sum i in 0_u64..8_u64 {
+    let local = buffer_new(4_u64, 7_u8);
+    region 'r {
+      let h = &'r local;
+      let v = len(deref(h));
+      set acc = acc +wrap v;
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    permitted(source, "main");
+}
+
+/// The knowingly-denied shape: a shared borrow of enclosing storage bound in
+/// the body. Sequentially sound and read-only, but the checked tree erases
+/// the borrow's shared-or-uniq mode, so the guard cannot tell it from an
+/// exclusive one and fails closed. Restoring it needs the mode carried into
+/// the checked borrow forms, recorded as future work in the batch record.
+#[test]
+fn a_body_shared_borrow_of_outer_storage_is_knowingly_denied() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  let shared = 21_u64;
+  let acc = 0_u64;
+  for @sum i in 0_u64..8_u64 {
+    region 'r {
+      let h = &'r shared;
+      let v = deref(h);
+      set acc = acc +wrap v;
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert!(matches!(
+        denied(source, "main", 2),
+        LoopDenial::BodyForm {
+            form: "a statement that forms a borrow of storage the iteration does not introduce"
+        }
+    ));
 }
