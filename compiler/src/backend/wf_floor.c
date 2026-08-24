@@ -80,13 +80,27 @@ static _Thread_local int wf__floor_stack_known;
 /* How far below the usable stack a fault still counts as this thread running
  * out rather than as a wild pointer.
  *
- * A frame larger than the guard region could otherwise land past it, so the
- * window is generous on the low side. It is still a bounded window immediately
- * beneath a known stack rather than a wildcard: a fault outside it keeps the
- * host's own disposition. Generated frames carry the target's `probe-stack`
- * attribute, so on this compiler's own output the fault lands on the guard
- * page itself and the window is slack rather than load-bearing. */
-#define WF_FLOOR_GUARD_BAND ((unsigned long)1u * 1024u * 1024u)
+ * This is the probe's geometry, not a margin of comfort. Every generated
+ * definition carries the target's `probe-stack` attribute, so a frame walks
+ * its pages on the way down in strides of one page: the first touch below the
+ * stack is at most one stride under it, and no descent can step past the guard
+ * page into whatever lies beyond. Below that a leaf may touch its ABI red zone
+ * without moving the stack pointer at all, which is 128 bytes on x86-64 and
+ * none on AArch64. One stride plus the red zone is therefore the whole set of
+ * addresses a thread running out can fault at.
+ *
+ * Sizing it any wider is not free slack: every extra byte is a range of wild
+ * faults reported as exhaustion, which is exactly the misdirection this file
+ * exists to avoid. The band was 1 MiB and ate real corruption faults up to
+ * roughly 128,000 times further from the stack than a legitimate overflow
+ * lands.
+ *
+ * The stride is the host's page size, read once outside signal context because
+ * `sysconf` is not async-signal-safe. Zero means it was never read, which
+ * leaves the discrimination exact rather than absent: the fault must then be
+ * inside the stack itself. */
+#define WF_FLOOR_RED_ZONE_BYTES ((unsigned long)128u)
+static volatile unsigned long wf__floor_guard_band;
 
 /* ------------------------------------------------------------- the record */
 
@@ -133,20 +147,33 @@ static void wf__floor_handler(int signo, siginfo_t *info, void *context) {
 
     if (wf__floor_stack_known) {
         guard_hit = (fault < wf__floor_stack_high)
-                    && (fault + WF_FLOOR_GUARD_BAND >= wf__floor_stack_low);
+                    && (fault + wf__floor_guard_band >= wf__floor_stack_low);
     }
 
     if (!guard_hit) {
         /* Not this mechanism's fault class. Put the default disposition back
-         * and return, so the faulting instruction re-executes and the process
-         * dies exactly as it would have without this file: same signal, same
-         * status, same core dump. The floor adds nothing here and hides
-         * nothing. */
+         * and deliver the signal under it, so the process dies exactly as it
+         * would have without this file: same signal, same status, same core
+         * dump. The floor adds nothing here and hides nothing.
+         *
+         * The re-raise is what makes that true for a signal that has no
+         * faulting instruction to re-execute. An externally delivered SIGBUS
+         * or SIGSEGV reaches this path too — on this host it arrives with a
+         * null `si_addr`, indistinguishable from a null dereference — and
+         * simply returning would swallow it *and* leave the disposition at
+         * SIG_DFL process-wide, so every later thread's overflow would arrive
+         * as a bare host signal with zero bytes. The restore is per-signal and
+         * process-wide while the classification above is per-thread, so the
+         * only safe thing to do after restoring is to make sure this process
+         * does not outlive it. Raising while the signal is still blocked
+         * queues it for delivery on return, with this thread's faulting
+         * context intact. */
         struct sigaction restore;
         memset(&restore, 0, sizeof(restore));
         restore.sa_handler = SIG_DFL;
         sigemptyset(&restore.sa_mask);
         sigaction(signo, &restore, NULL);
+        pthread_kill(pthread_self(), signo);
         return;
     }
 
@@ -177,13 +204,17 @@ static void wf__floor_capture_bounds(void) {
     pthread_attr_t attributes;
     void *base = NULL;
     size_t size = 0;
-    if (pthread_getattr_np(pthread_self(), &attributes) == 0
-        && pthread_attr_getstack(&attributes, &base, &size) == 0) {
+    if (pthread_getattr_np(pthread_self(), &attributes) != 0) {
+        return;
+    }
+    if (pthread_attr_getstack(&attributes, &base, &size) == 0) {
         wf__floor_stack_low = (unsigned long)(uintptr_t)base;
         wf__floor_stack_high = wf__floor_stack_low + (unsigned long)size;
         wf__floor_stack_known = 1;
-        pthread_attr_destroy(&attributes);
     }
+    /* Unconditional: the query can succeed and the read still fail, and the
+     * attribute object is owned either way. */
+    pthread_attr_destroy(&attributes);
 #endif
 }
 
@@ -224,6 +255,10 @@ void wf__floor_attach_thread(void) {
  * so the program runs with the behaviour it had before this file existed. */
 static void wf__floor_install(void) {
     struct sigaction action;
+    long page = sysconf(_SC_PAGESIZE);
+    if (page > 0) {
+        wf__floor_guard_band = (unsigned long)page + WF_FLOOR_RED_ZONE_BYTES;
+    }
     memset(&action, 0, sizeof(action));
     action.sa_sigaction = wf__floor_handler;
     action.sa_flags = SA_SIGINFO | SA_ONSTACK;

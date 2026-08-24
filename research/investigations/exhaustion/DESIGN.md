@@ -35,8 +35,17 @@ F3. sigaltstack + sigaction(SIGSEGV AND SIGBUS, SA_SIGINFO|SA_ONSTACK) on
     overflow presents as SIGSEGV/SEGV_ACCERR, worker overflow as SIGBUS —
     a SIGSEGV-only handler misses every worker overflow. Guard-hit
     discrimination by per-thread stack bounds; NON-guard faults restore
-    SIG_DFL and return (wild faults keep exit 139 + core dump — the
-    mechanism must not eat real corruption evidence). Record: a fixed
+    SIG_DFL and re-raise (wild faults keep exit 139 + core dump — the
+    mechanism must not eat real corruption evidence).
+    [2026-08-23, batch 0079 audit] Two corrections to this line, both
+    measured. (a) The parenthesis is only true if the band is the probe's
+    geometry. As first shipped it was 1 MiB and converted every fault in a
+    megabyte below any thread's stack, so the band is now one page-walk
+    stride plus the ABI red zone. (b) "restore SIG_DFL and return" swallows a
+    signal that has no faulting instruction to re-execute — an externally
+    delivered SIGBUS — and leaves the disposition restored process-wide while
+    the classification is per-thread, disarming the floor for the rest of the
+    run. The handler re-raises after restoring. Record: a fixed
     constant naming ONLY the resource class ({"resource":"stack"}) —
     async-signal-safety and [PAR-1] byte-identity independently force
     fixed bytes; the ABSENCE of rule_id/function/node_path is what proves

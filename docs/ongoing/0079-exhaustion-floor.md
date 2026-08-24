@@ -77,8 +77,53 @@ home).
   environment's limit cut to 1 MiB a 2,000,000-frame recursion completes,
   where the pre-floor binary dies at exit 139 with no bytes. An exhausted
   entry and an exhausted lane both write exactly `{"resource":"stack"}` and
-  abort; a wild fault still exits 139 with zero bytes and its core dump. All
-  176 corpus observable rows byte-identical to the pre-change compiler's.
+  abort; a fault the floor does not own keeps its own signal, status, and
+  core dump. All 176 corpus observable rows byte-identical to the pre-change
+  compiler's.
+  The discrimination band (2026-08-23, superseding this entry's first form
+  and `research/investigations/exhaustion/DESIGN.md:38-39`). As first landed
+  both said unconditionally that a wild fault keeps exit 139 and its core.
+  Measured false by the batch audit: the handler accepted any fault in
+  `[stack_low - 1 MiB, stack_high)`, so a corruption fault anywhere in a
+  megabyte below any thread's stack — a write *or* a read, which can only be
+  wild — was converted to exit 134 and `{"resource":"stack"}`, positively
+  misattributing corruption to exhaustion. That is the misdirection
+  `wf_floor.c`'s own header says a diagnostic must not commit, and the
+  regression sampled one far address (`0xdeadb000`) and asserted only that
+  the process did not return, so nothing could see it.
+  The band is now the probe's geometry: one page-walk stride plus the ABI red
+  zone (16,512 bytes on this host), read once outside signal context. Every
+  generated definition carries `probe-stack`, so a descent touches its pages
+  on the way down and the first touch below the stack is at most one stride
+  under it; below that only a leaf's red zone is reachable. Nothing wider is
+  slack — every extra byte is a range of wild faults reported as exhaustion,
+  and the old band was roughly 64x the stride and about 128,000x the
+  eight-byte distance a legitimate overflow actually lands at.
+  A second defect in the same path, found by the audit's refuter and
+  reachable from an ordinary accepted program with no wild pointer and no
+  FFI: the non-guard path restored `SIG_DFL` and returned, which is
+  per-signal and process-wide where the classification above it is
+  per-thread. An externally delivered SIGBUS — a supervisor, a job
+  controller, a harness — arrives there with a null `si_addr`, was swallowed,
+  and left the floor disarmed for every thread, so the next overflow was a
+  bare host signal with zero bytes. Measured at `d3eee546`: a program that
+  takes one external SIGBUS and then descends 400,000,000 frames printed
+  `SURVIVED COMPLETED` and exited 0 at depth 1,000, and exited 138 with zero
+  bytes at depth. The handler now re-raises after restoring, so the process
+  cannot outlive the restore; the same program exits 138 in both rows.
+  Regressions:
+  `only_a_fault_within_the_probe_stride_is_read_as_an_exhausted_stack` faults
+  at a controlled distance below its own thread's stack and pins both sides
+  of the boundary — half a page and one page below give the record and
+  SIGABRT, four pages, 64 KiB and 16 MiB below give SIGSEGV and zero bytes;
+  `an_externally_delivered_signal_does_not_disarm_the_floor` runs the matrix
+  above; and `a_fault_that_is_not_exhaustion_keeps_its_own_disposition` now
+  asserts SIGSEGV rather than only "did not return", which is the difference
+  between a core dump of the corruption and a core dump of `abort`. All three
+  fail against `d3eee546`'s floor.
+  Also fixed here, from the audit's handler review: the non-Darwin bounds
+  capture leaked its `pthread_attr_t` when `pthread_getattr_np` succeeded and
+  `pthread_attr_getstack` failed. Untested on this host.
   Cost, measured rather than carried over from the research: +0.078 ms per
   process and +65,560 bytes peak footprint, of which the 1 GiB reservation
   contributes nothing (an 8 MiB and a 4 GiB thread measure the same) and the

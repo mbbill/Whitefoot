@@ -386,19 +386,23 @@ int wf__main_body(int argc, char **argv) {
 int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 "#;
 
-#[test]
-fn a_fault_that_is_not_exhaustion_keeps_its_own_disposition() {
-    let directory = test_directory();
-    let body = directory.join("wild_body.c");
+/// Links one C body against the shipped floor, exactly as a program links it.
+///
+/// The bodies below are C because Whitefoot cannot express what they do — a
+/// wild pointer, a fault at a chosen address, a signal raised at the process.
+/// Everything else is the shipped mechanism: the same translation unit, the
+/// same optimization arguments, entered through the same `wf__floor_run`.
+fn build_floor_fixture(body: &str, directory: &std::path::Path) -> std::path::PathBuf {
+    let source = directory.join("floor_body.c");
     let floor = directory.join("wf_floor.c");
-    let executable = directory.join("wild");
-    std::fs::write(&body, WILD_FAULT_BODY).expect("write the faulting body");
+    let executable = directory.join("floor_fixture");
+    std::fs::write(&source, body).expect("write the fixture body");
     std::fs::write(&floor, crate::FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     let compiled = Command::new("/usr/bin/clang")
         .arg("-pthread")
         .arg("-x")
         .arg("c")
-        .arg(&body)
+        .arg(&source)
         .arg(&floor)
         .args(super::HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
@@ -407,9 +411,16 @@ fn a_fault_that_is_not_exhaustion_keeps_its_own_disposition() {
         .expect("invoke host clang");
     assert!(
         compiled.status.success(),
-        "the floor and a faulting body must link:\n{}",
+        "the floor and a fixture body must link:\n{}",
         String::from_utf8_lossy(&compiled.stderr)
     );
+    executable
+}
+
+#[test]
+fn a_fault_that_is_not_exhaustion_keeps_its_own_disposition() {
+    let directory = test_directory();
+    let executable = build_floor_fixture(WILD_FAULT_BODY, &directory);
     let output = Command::new(&executable).output().expect("run the fault");
     assert!(
         output.stderr.is_empty(),
@@ -421,7 +432,209 @@ fn a_fault_that_is_not_exhaustion_keeps_its_own_disposition() {
         None,
         "a wild fault still ends the process by its own signal"
     );
+    assert_eq!(
+        signal_of(&output),
+        Some(libc_sigsegv()),
+        "a wild fault must keep SIGSEGV rather than becoming the floor's \
+         abort: {:?}",
+        output.status
+    );
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// The signal that ended a process, or `None` if it exited normally.
+fn signal_of(output: &std::process::Output) -> Option<i32> {
+    std::os::unix::process::ExitStatusExt::signal(&output.status)
+}
+
+const fn libc_sigsegv() -> i32 {
+    11
+}
+
+const fn libc_sigabrt() -> i32 {
+    6
+}
+
+/// A body that faults a chosen distance below its own thread's stack.
+///
+/// The distance is the whole experiment, so it is read from the environment
+/// rather than compiled in: one binary, one link, one row per offset.
+const OFFSET_FAULT_BODY: &str = r#"#include <pthread.h>
+#include <stdlib.h>
+
+extern int wf__floor_run(int argc, char **argv);
+
+int wf__main_body(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+    {
+#if defined(__APPLE__)
+        char *high = (char *)pthread_get_stackaddr_np(pthread_self());
+        char *low = high - pthread_get_stacksize_np(pthread_self());
+#else
+        pthread_attr_t attributes;
+        void *base = NULL;
+        size_t size = 0;
+        char *low = NULL;
+        pthread_getattr_np(pthread_self(), &attributes);
+        pthread_attr_getstack(&attributes, &base, &size);
+        low = (char *)base;
+        pthread_attr_destroy(&attributes);
+#endif
+        unsigned long below = strtoul(getenv("WF_FAULT_BELOW"), NULL, 10);
+        *(volatile int *)(low - below) = 1;
+    }
+    return 0;
+}
+
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+
+/// The band that separates "this thread ran out" from "this pointer is wild"
+/// is the probe's geometry, and nothing wider.
+///
+/// The classification has exactly one input — the faulting address — so its
+/// only checkable property is where the boundary sits. The previous band was
+/// 1 MiB, which reported every corruption fault within a megabyte below any
+/// thread's stack as an exhausted stack: exit 134 and a `{"resource":"stack"}`
+/// record in place of exit 139 and a core, for a defect that has nothing to do
+/// with depth. That is the misdirection [`wf_floor.c`]'s own header says a
+/// diagnostic must not commit, and no case sampled the band, so the boundary
+/// could sit anywhere.
+///
+/// One page below the stack is where a probed frame's page walk lands, so it
+/// must be reported. Four pages below it and beyond is past anything a descent
+/// can reach, so it must not be — and must keep SIGSEGV rather than the
+/// floor's abort, which is the difference between a core dump of the
+/// corruption and a core dump of `abort`.
+#[test]
+fn only_a_fault_within_the_probe_stride_is_read_as_an_exhausted_stack() {
+    let page = page_size();
+    let directory = test_directory();
+    let executable = build_floor_fixture(OFFSET_FAULT_BODY, &directory);
+    // Inside the stride, so a descent really can land here.
+    for below in [page / 2, page] {
+        let output = Command::new(&executable)
+            .env("WF_FAULT_BELOW", below.to_string())
+            .output()
+            .expect("run the offset fault");
+        assert_resource_record(&output.stderr, "stack");
+        assert_eq!(
+            signal_of(&output),
+            Some(libc_sigabrt()),
+            "a reported exhaustion ends in the floor's abort, {below} bytes \
+             below the stack: {:?}",
+            output.status
+        );
+    }
+    // Past it, so nothing that walks its pages on the way down can reach here.
+    for below in [4 * page, 64 * 1024, 16 * 1024 * 1024] {
+        let output = Command::new(&executable)
+            .env("WF_FAULT_BELOW", below.to_string())
+            .output()
+            .expect("run the offset fault");
+        assert!(
+            output.stderr.is_empty(),
+            "the floor claimed a wild fault {below} bytes below the stack: \
+             {:?}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            signal_of(&output),
+            Some(libc_sigsegv()),
+            "a wild fault {below} bytes below the stack must keep its own \
+             signal: {:?}",
+            output.status
+        );
+    }
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// A body that takes a signal from outside and then descends deep.
+///
+/// `kill` at the process is the cheapest thing that reaches the handler with
+/// no faulting instruction behind it, which is the whole class: a supervisor,
+/// a test harness, a job controller. SIGBUS is the one the floor's own entry
+/// thread uses for exhaustion on this host, so it is the signal whose loss
+/// costs the most.
+const EXTERNAL_SIGNAL_BODY: &str = r#"#include <signal.h>
+#include <stdio.h>
+#include <unistd.h>
+
+extern int wf__floor_run(int argc, char **argv);
+
+static long descend(long n) {
+    volatile char frame[512];
+    frame[0] = (char)n;
+    if (n == 0) {
+        return frame[0];
+    }
+    return descend(n - 1) + 1;
+}
+
+int wf__main_body(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+    kill(getpid(), SIGBUS);
+    printf("SURVIVED ");
+    fflush(stdout);
+    descend(1000);
+    printf("COMPLETED\n");
+    return 0;
+}
+
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+
+/// A signal the floor does not own kills the process instead of disarming it.
+///
+/// The handler's non-guard path restores `SIG_DFL`, and `sigaction` is
+/// per-signal and process-wide while the classification above it is
+/// per-thread. So the restore is only sound if the process cannot outlive it:
+/// otherwise one externally delivered signal — which arrives here with a null
+/// `si_addr`, indistinguishable from a null dereference — is swallowed, and
+/// every later overflow on any thread arrives as a bare host signal with zero
+/// bytes, silently reverting the floor for the rest of the run.
+///
+/// That was the behaviour: this fixture printed `SURVIVED COMPLETED` and
+/// exited 0. Re-raising after the restore is what makes "put it back exactly
+/// as it was" true for a signal with no instruction to re-execute.
+#[test]
+fn an_externally_delivered_signal_does_not_disarm_the_floor() {
+    let directory = test_directory();
+    let executable = build_floor_fixture(EXTERNAL_SIGNAL_BODY, &directory);
+    let output = Command::new(&executable)
+        .output()
+        .expect("run the externally signalled program");
+    assert_eq!(
+        output.status.code(),
+        None,
+        "a signal the floor does not own must still end the process: {:?}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("COMPLETED"),
+        "the process ran on past a signal that should have ended it, with \
+         the floor no longer installed: {:?}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "the floor must add nothing to a signal that is not its own: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+fn page_size() -> usize {
+    let output = Command::new("/usr/bin/getconf")
+        .arg("PAGESIZE")
+        .output()
+        .expect("read the host page size");
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse()
+        .expect("the host reports a page size")
 }
 
 /// A heap request no host can serve, read at an index the compiler knows only
@@ -758,14 +971,24 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
 /// its own stack, eventually returning an answer for a computation that never
 /// fit. Nothing about that run says anything went wrong.
 ///
-/// Ablating just this attribute from just this function, on this program,
-/// turns the run below from a reported death into exactly that: the same frame
-/// arithmetic to the instruction, and a normal exit 0. So the case here is
-/// that an overflow this shape reaches the guard and says so.
+/// So the case runs the ablation rather than describing it. It strips the
+/// attribute group from this one definition, in this one module, and requires
+/// the two runs to differ: probed, the descent walks its pages, faults inside
+/// the probe stride, and is reported; ablated, it moves the stack pointer
+/// 291,600 bytes in one step, faults far outside anything a descent can reach,
+/// and the floor correctly refuses to call that exhaustion.
+///
+/// Both halves are needed and neither alone is the property. Checking only the
+/// probed run passes against an emitter that stopped emitting the attribute,
+/// as long as something else still reported the death — which is exactly what
+/// happened while the discrimination band was a megabyte wide: the ablated
+/// skip landed inside the band and was reported too, and no case could tell
+/// the difference.
 #[test]
 fn a_frame_larger_than_the_guard_region_is_still_reported() {
+    let module = compile(LARGE_FRAME_SPINE);
     let directory = test_directory();
-    let executable = build_executable(&compile(LARGE_FRAME_SPINE), &directory);
+    let executable = build_executable(&module, &directory);
     let output = Command::new(&executable)
         .output()
         .expect("run the large-frame recursion");
@@ -777,7 +1000,45 @@ fn a_frame_larger_than_the_guard_region_is_still_reported() {
         output.status
     );
     assert_resource_record(&output.stderr, "stack");
+
+    let ablated = ablate_probe(&module, "@wf_spine(");
+    assert_eq!(
+        module.matches(" #0 {").count() - ablated.matches(" #0 {").count(),
+        1,
+        "the ablation must remove the group from exactly one definition"
+    );
+    let elsewhere = test_directory();
+    let unprobed = build_executable(&ablated, &elsewhere);
+    let output = Command::new(&unprobed)
+        .output()
+        .expect("run the unprobed large-frame recursion");
+    assert!(
+        output.stderr.is_empty(),
+        "an unprobed frame steps over the guard region, so the fault it \
+         eventually takes is not this thread running out and must not be \
+         reported as one: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
+    std::fs::remove_dir_all(&elsewhere).expect("remove the second test directory");
+}
+
+/// The same module with the probe attribute group taken off the one definition
+/// whose `define` line contains `signature`.
+fn ablate_probe(module: &str, signature: &str) -> String {
+    module
+        .lines()
+        .map(|line| {
+            if line.starts_with("define ") && line.contains(signature) {
+                line.strip_suffix(" #0 {")
+                    .map(|head| format!("{head} {{"))
+                    .unwrap_or_else(|| line.to_owned())
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 // ------------------------------------------- the compiler's own recursion
