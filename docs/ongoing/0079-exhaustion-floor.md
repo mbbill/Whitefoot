@@ -329,6 +329,42 @@ home).
   together, because a ledger deriving depths from a stack no thread has would
   be worse than none: every number would be wrong by the same factor and
   nothing in the output would say so.
+- Batch falsifier — wfgrep's 16-level directory-recursion cap is gone, with its
+  `depth` parameter, its `too_deep` guard, and the doc clauses that recorded the
+  truncation as a defect. On a 450-level tree the uncapped build finds the file
+  at the bottom and the capped build reports exit 1 with empty output: a real
+  absence and a truncated search are the same answer, which is what the doc
+  string admitted. At 300 levels the capped build is worse still — it finds the
+  one shallow match, exits **0**, writes nothing to standard error, and looks
+  like a complete successful search that happened to miss half its input.
+  `a_tree_far_deeper_than_the_deleted_cap_is_searched_completely` is the
+  regression; against the capped program it sees one hit where it requires two.
+  All twelve existing wfgrep cases pass unchanged.
+  **What the falsifier does not exercise, measured rather than assumed.** The
+  stack was never the cap's binding constraint and it is not the new one. `walk`
+  refuses a display path past a thousand bytes (`ile(child_length, 1000_u64)`)
+  and a chain of single-character directories spends two bytes a level, so this
+  shape stops at **493 levels** — bisected here: 493 completes and finds the
+  file, 494 returns exit 2. The stack ledger prices one `wf_walk` activation at
+  1,744 bytes and the entry stack at **615,677** of them, so the program's own
+  buffer binds 1,249x below the machine. Deleting the cap raised the reachable
+  depth 30.8x and left three orders of magnitude between the program and the
+  floor.
+  The honest verdict is therefore narrower than the design's phrasing in one
+  place and stronger in another. The cap **was** deletable, and deleting it
+  converts a truncation indistinguishable from completeness into either a
+  complete search or an error status. What the floor bought is not this
+  program's ceiling but the right to have no hand-written one: before it, a
+  program with no depth cap had no defined behaviour at its ceiling, and now
+  `walk`'s ceiling is a number `--stack-ledger` prints and any death there is a
+  record. A pathological-tree stack death is unreachable through wfgrep on this
+  host, so the record half of the falsifier is carried by the floor's own
+  probes rather than by the search program — re-derived at this tip below.
+  One thing the deletion exposed and did not create: that thousand-byte path
+  refusal sets the failure bit and breaks without writing anything to standard
+  error, so a too-deep tree exits 2 with an empty stderr. It predates this batch
+  (the 16-level cap kept every tree far away from it), it is a wfgrep defect
+  rather than a floor one, and it is flagged here rather than fixed.
 - Branch-tip gate, reported rather than worked around: `make check` fails at
   `research-tests`' `effect` target, and it fails identically with this
   executor's changes stashed. The cause is outside the repository — the

@@ -256,11 +256,11 @@ struct Options {
     /// optimizer-chosen property, so no reading of a function tells anyone
     /// what one activation of it costs, and no reading of a program tells
     /// anyone which of its functions can reach themselves once the inliner has
-    /// finished. The flagship program in this repository caps its directory
-    /// recursion at sixteen levels and documents that the truncation is
-    /// indistinguishable from a complete search; its frame is 1744 bytes,
+    /// finished. The flagship program in this repository used to cap its
+    /// directory recursion at sixteen levels, documenting that the truncation
+    /// was indistinguishable from a complete search; its frame is 1744 bytes,
     /// which the runtime's own stack holds six hundred thousand of. The bound
-    /// was not careful, it was blind.
+    /// was not careful, it was blind, and this report is what replaced it.
     stack_ledger: bool,
     output: Option<PathBuf>,
     sources: Vec<PathBuf>,

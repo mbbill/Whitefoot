@@ -754,15 +754,10 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
   return packed;
 }
 
-fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, pattern: &'a buffer<u8>, pattern_length: own u64, out: &uniq 'o Output, err: &uniq 'e Output, depth: own u64) -> result: own u8 reads('c 'p 'a 'o 'e), writes('o 'e), allocates(heap), external, blocks, traps {
-  doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. Two fixed bounds truncate silently and are recorded as defects: at most 64 entries per directory are retained, in the host's enumeration order, before sorting; and a subtree deeper than 16 levels is left unsearched. Both return normally, so a truncated search is indistinguishable from a complete one.";
+fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, pattern: &'a buffer<u8>, pattern_length: own u64, out: &uniq 'o Output, err: &uniq 'e Output) -> result: own u8 reads('c 'p 'a 'o 'e), writes('o 'e), allocates(heap), external, blocks, traps {
+  doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. The descent is not depth-limited: it follows the tree as far as the tree goes, and an exhausted stack is a reported resource death rather than a silent truncation. One fixed bound remains and is recorded as a defect: at most 64 entries per directory are retained, in the host's enumeration order, before sorting. It returns normally, so that truncation is indistinguishable from a complete one.";
   let matched = 0_u8;
   let failed = 0_u8;
-  let too_deep = ige(depth, 16_u64);
-  if too_deep {
-    let empty = 0_u8;
-    return empty;
-  }
   let entries = buffer_new(8192_u64, 0_u8);
   let names = buffer_new(65664_u64, 0_u8);
   let order = buffer_new(64_u64, 0_u64);
@@ -1147,10 +1142,9 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
       region 'descend {
         match open_directory<'c, 'descend>(root: dir, name: &'descend names, start: name_at, end: name_end) {
           Ok(value: opened) => {
-            let deeper = depth +wrap 1_u64;
             let outcome = 0_u8;
             region 'child_walk {
-              set outcome = walk<'child_walk, 'child_walk, 'a, 'child_walk, 'child_walk>(dir: &'child_walk opened, prefix: &'child_walk child, prefix_length: cursor, pattern: pattern, pattern_length: pattern_length, out: &uniq 'child_walk deref(out), err: &uniq 'child_walk deref(err), depth: deeper);
+              set outcome = walk<'child_walk, 'child_walk, 'a, 'child_walk, 'child_walk>(dir: &'child_walk opened, prefix: &'child_walk child, prefix_length: cursor, pattern: pattern, pattern_length: pattern_length, out: &uniq 'child_walk deref(out), err: &uniq 'child_walk deref(err));
             }
             let found = iand(outcome, 1_u8);
             let broke = iand(outcome, 2_u8);
@@ -1190,7 +1184,7 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
 }
 
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
-  doc "Searches one directory tree recursively and publishes `PATH:LINE:TEXT` for the lines holding the literal pattern bytes; 0 matched, 1 none, 2 error. The search is complete only within `walk`'s two fixed bounds (64 entries per directory and 16 levels of depth), beyond which it truncates and still returns normally.";
+  doc "Searches one directory tree recursively and publishes `PATH:LINE:TEXT` for the lines holding the literal pattern bytes; 0 matched, 1 none, 2 error. The search is complete at every depth and is complete only within `walk`'s one remaining fixed bound (64 entries per directory), beyond which it truncates and still returns normally.";
   let pattern = buffer_new(4096_u64, 0_u8);
   let root_name = buffer_new(256_u64, 0_u8);
   let root_path = buffer_new(1024_u64, 0_u8);
@@ -1324,7 +1318,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       Ok(value: root) => {
         let outcome = 0_u8;
         region 'root_walk {
-          set outcome = walk<'root_walk, 'root_walk, 'root_walk, 'root_walk, 'root_walk>(dir: &'root_walk root, prefix: &'root_walk root_path, prefix_length: copied, pattern: &'root_walk pattern, pattern_length: pattern_length, out: &uniq 'root_walk out, err: &uniq 'root_walk err, depth: 0_u64);
+          set outcome = walk<'root_walk, 'root_walk, 'root_walk, 'root_walk, 'root_walk>(dir: &'root_walk root, prefix: &'root_walk root_path, prefix_length: copied, pattern: &'root_walk pattern, pattern_length: pattern_length, out: &uniq 'root_walk out, err: &uniq 'root_walk err);
         }
         let found = iand(outcome, 1_u8);
         let broke = iand(outcome, 2_u8);

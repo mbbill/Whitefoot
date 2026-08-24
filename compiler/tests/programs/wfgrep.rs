@@ -222,6 +222,37 @@ fn wfgrep_agrees_with_grep_on_the_empty_and_the_total_hit_set() {
     );
 }
 
+/// The descent is not depth-limited, and the failure it used to have was the
+/// worst kind: a file below sixteen levels was left unsearched, the walk
+/// returned normally, and the answer was byte-identical to a real absence.
+///
+/// Three hundred levels is not a round number chosen for effect — it is well
+/// past the deleted cap and well inside the two bounds that do still apply.
+/// The host bounds one absolute path, so the fixture root's own length is part
+/// of the budget; and `walk` refuses a display path past a thousand bytes,
+/// which stops this shape at 493 levels, measured. Neither is the stack: the
+/// stack ledger prices one `wf_walk` activation at 1744 bytes and the
+/// runtime's stack at 615,677 of them, so what bounds a directory search is
+/// still a buffer in the program and not the machine underneath it.
+#[test]
+fn a_tree_far_deeper_than_the_deleted_cap_is_searched_completely() {
+    let fixture = fixture_directory();
+    let mut relative = String::from("tree");
+    for _ in 0..300 {
+        relative.push_str("/d");
+    }
+    relative.push_str("/bottom.txt");
+    fixture.write_nested(&relative, b"needle at the bottom\n");
+    fixture.write_nested("tree/top.txt", b"needle at the top\n");
+
+    let published = assert_reference(wfgrep(), fixture.path(), "tree", b"needle");
+    assert_eq!(
+        sorted_lines(&published).len(),
+        2,
+        "the deep file and the shallow one are both hits"
+    );
+}
+
 /// A match that straddles a read boundary is still one match, and the line
 /// number a straddling line receives is still its ordinal in the file.
 #[test]
