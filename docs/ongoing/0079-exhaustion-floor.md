@@ -497,9 +497,13 @@ one.
   10,272 B, 34,848 B, 291,760 B — deviations of at most 1,136, 2, 0, and 0
   levels, the largest being 0.0017% of its own ceiling. The regression asserts
   the program completes at 0.999x the reported ceiling and dies at 1.001x, at
-  two frame widths three orders of magnitude apart; it fails the day the
-  report and the machine stop agreeing, in either direction, and it names both
-  numbers when it does.
+  two frame widths about six hundred times apart (16 B and 10,272 B — the
+  ratio is 642, and both this sentence and the case's own doc comment said
+  "three orders of magnitude" until 2026-08-23); it fails the day the report
+  and the machine stop agreeing, in either direction, and it names both
+  numbers when it does. The death half now also requires the resource record
+  rather than merely a non-zero exit, so it cannot pass against a floor that
+  had stopped reporting.
   Two deviations from the brief, both deliberate. The ledger runs its own
   clang rather than adding `-fstack-usage` to the link that already happens:
   `-fstack-usage` writes its report beside the file it compiled, so the flag
@@ -1137,7 +1141,8 @@ Audit repairs, in order:
 | `5b460bdd` | one record latch for the whole process (MAJOR) |
 | `09247ef6` | R2 — the overlap sentence, the recipe digest, F7's mechanism (CRITICAL) |
 | `6fc5983d` | R4 — the cases that stopped measuring, and the record's numbers |
-| this commit | the design tree's drop-glue re-decision, and this closure |
+| `ce598cbc` | the design tree's three re-decisions, and this closure |
+| this commit | the ledger regression's frame-width ratio |
 
 **Verification at the tip.** `make -C compiler check` green before and after
 every change in this executor's scope and again after every audit repair:
