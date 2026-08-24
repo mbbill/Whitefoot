@@ -238,6 +238,14 @@ struct wf__par_lane {
 };
 
 static struct wf__par_lane wf__par_lanes[WF_PAR_MAX_LANES];
+/* Every access is a relaxed atomic. The pool-start path rewrites this after
+ * worker threads are already running their steal loops, and a plain write
+ * racing a plain read is a data race whatever values are involved. Relaxed
+ * suffices because the count is only a scan bound: every lane a stale count
+ * can reach was prepared before any thread started, and lane contents carry
+ * their own ordering. A schedule where the parent reaches the rendezvous
+ * lock first hides the race from ThreadSanitizer, so this invariant is held
+ * by review, not by a sanitizer run. */
 static int wf__par_lane_count;
 static pthread_once_t wf__par_started = PTHREAD_ONCE_INIT;
 
@@ -398,7 +406,7 @@ static struct wf__par_slot *wf__par_steal(struct wf__par_lane *victim) {
 /* One round of looking for work anywhere but here, starting somewhere
  * different on each thread and each round. */
 static struct wf__par_slot *wf__par_find(struct wf__par_lane *lane) {
-    int count = wf__par_lane_count;
+    int count = __atomic_load_n(&wf__par_lane_count, __ATOMIC_RELAXED);
     int offset;
     int step;
     if (count < 2) {
@@ -643,7 +651,7 @@ static void wf__par_start(void) {
      * itself a lane, so `WF_WORKERS=2` means two threads of execution in
      * total. The count is published before the threads start so a worker's
      * first look sees the whole pool. */
-    wf__par_lane_count = requested;
+    __atomic_store_n(&wf__par_lane_count, requested, __ATOMIC_RELAXED);
     for (index = 1; index < requested; index += 1) {
         pthread_t thread;
         struct wf__par_lane *lane = &wf__par_lanes[index];
@@ -661,19 +669,19 @@ static void wf__par_start(void) {
         }
         started = index;
     }
-    wf__par_lane_count = started + 1;
+    __atomic_store_n(&wf__par_lane_count, started + 1, __ATOMIC_RELAXED);
     pthread_attr_destroy(&attributes);
     if (started == 0) {
-        wf__par_lane_count = 0;
+        __atomic_store_n(&wf__par_lane_count, 0, __ATOMIC_RELAXED);
         return;
     }
     if (pthread_mutex_init(&wf__par_lanes[0].lock, NULL) != 0) {
-        wf__par_lane_count = 0;
+        __atomic_store_n(&wf__par_lane_count, 0, __ATOMIC_RELAXED);
         return;
     }
     if (pthread_cond_init(&wf__par_lanes[0].signal, NULL) != 0) {
         pthread_mutex_destroy(&wf__par_lanes[0].lock);
-        wf__par_lane_count = 0;
+        __atomic_store_n(&wf__par_lane_count, 0, __ATOMIC_RELAXED);
         return;
     }
     /* Wait for every thread to reach its steal loop. A pool whose threads are
@@ -696,7 +704,7 @@ static struct wf__par_lane *wf__par_attach(void) {
     int expected = 0;
     wf__par_attached = 1;
     pthread_once(&wf__par_started, wf__par_start);
-    if (wf__par_lane_count == 0) {
+    if (__atomic_load_n(&wf__par_lane_count, __ATOMIC_RELAXED) == 0) {
         return NULL;
     }
     if (!__atomic_compare_exchange_n(&taken, &expected, 1, 0, __ATOMIC_ACQ_REL,

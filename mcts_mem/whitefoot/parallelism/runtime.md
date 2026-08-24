@@ -15,6 +15,8 @@
 - 2026-08-22 measurement: worker QoS classes move nothing on the 4P+6E machine, and a self-set background QoS is defeated by priority inheritance while the main thread joins; no QoS class creates a fifth performance core. (sourced)
 - 2026-08-22 measurement: the coarse cells improve monotonically past the performance-core count to W=10 (5.16x against 4.79x at 8), while the finest cells peak at 4; no single width fits both, and the default takes the coarse win while holding every cell at or above its sequential build. (sourced)
 
+- 2026-08-24 pitfall: the lane count was a plain int rewritten by the start path after workers were already reading it in their steal loops, a formal data race hidden from ThreadSanitizer by a parent-first rendezvous schedule; every access is now a relaxed atomic, and the invariant is held by review because no sanitizer run reproduces the racing schedule on this machine. (code)
+
 ## Moves
 
 - 2026-08-21 (826cea41) replaced [[lane-scan-runtime]]: an offer paid an O(lanes) contended scan and a mutex-condvar handshake whether granted or refused — 48.8 ns per fork at the coarsest cell and up to 48.6x slower than sequential at fine grain — while a per-thread deque makes an offer two local stores and moves all synchronization cost to steals, which follow imbalance instead of offer rate. (sourced)
