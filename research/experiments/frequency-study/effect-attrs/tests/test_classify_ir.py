@@ -236,6 +236,14 @@ class BlockerRegressionTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("clang"), "clang validates the LLVM fixture")
     def test_multiline_probe_is_valid_llvm(self) -> None:
+        # Parse and re-emit (-S -emit-llvm) rather than compile (-c): validity
+        # of a fixture is a parse/verify property, and full code generation
+        # drags in the host backend's capabilities. The adversarial fixture
+        # carries a deliberate "deopt" operand bundle, and the wasi-sdk clang
+        # a PATH may select crashes in WebAssembly instruction selection when
+        # lowering it as a statepoint (LLVM 22.1.0-wasi-sdk); that is a
+        # backend defect, not fixture invalidity. A malformed fixture still
+        # fails here at the IR parser.
         with tempfile.TemporaryDirectory() as directory:
             for name in (
                 "multiline-caller.ll",
@@ -249,10 +257,11 @@ class BlockerRegressionTests(unittest.TestCase):
                         "-Wno-override-module",
                         "-x",
                         "ir",
-                        "-c",
+                        "-S",
+                        "-emit-llvm",
                         str(FIXTURES / name),
                         "-o",
-                        str(Path(directory) / f"{name}.o"),
+                        str(Path(directory) / f"{name}.reemitted.ll"),
                     ],
                     check=True,
                     capture_output=True,
