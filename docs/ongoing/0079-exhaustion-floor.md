@@ -58,6 +58,15 @@ the moment it appears. No new repository root entries
 (`research/investigations/exhaustion/` sits in the existing investigations
 home).
 
+Design tree: three re-decisions this batch made and did not record until the
+audit named the omission — the compiler-derived cleanup traversal, the lane
+stack's size, and the exhaustion floor itself, each with the alternative it
+displaced. Added 2026-08-23 under `mcts_mem/whitefoot/toolchain/
+compiler-implementation/` and `mcts_mem/whitefoot/parallelism/runtime/`, lint
+clean. Not an owner approval class; recorded here because the record's
+original Approval classes section named no tree obligation and the batch had
+one.
+
 ## Executor log
 
 - F1 — every generated definition carries the target's `probe-stack`
@@ -1046,8 +1055,50 @@ widens, for instance to a target where a fixed-capacity pool is a fourth class.
 
 ## Outcome
 
-Closed 2026-08-23 on `exhaust/floor`, nine items and one falsifier, all
-lead-verified or re-derived at the branch tip by the closing executor.
+Closed 2026-08-23 on `exhaust/floor`, nine items and one falsifier, then
+reopened the same day by the adversarial batch audit and closed again after
+the repairs below.
+
+**What the audit found, stated plainly because it is the part a reader should
+weigh first.** Four finders and four refuters went over `c704b9e6..d3eee546`.
+They confirmed two CRITICAL defects and a run of MAJOR ones, and every one of
+them was in work this record had already called done and verified. That is the
+useful outcome: an audit of a batch this size that found nothing would be
+evidence about the audit, not about the batch.
+
+- **CRITICAL — a program that compiled and ran stopped compiling.** F5's
+  iterative drop glue refused a cleanup cycle that closes through a `buffer`,
+  on the stated ground that no program could reach one. A reviewer reached one
+  in four lines. The refusal was a bare `Backend/Backend: InvalidIr` with no
+  rule, no coordinate, and no statement of what was unsupported — an
+  acceptance regression, and a compiler-rule violation on top of it. The
+  traversal has the buffer arm now, and the audit's program is a regression.
+- **CRITICAL — the recipe asked the owner to ratify a false sentence.** Edit 1
+  promised that a permitted overlap cannot lower the depth an execution
+  reaches. One command falsifies it against the binary in the same packet: the
+  two clones of a call cost 48 and 16 bytes a level, so a 3x-wide band of
+  depths completes at `WF_WORKERS=0` and dies at the shipped default. The
+  sentence is replaced by what the measurement supports, and the candidate
+  digest recomputed.
+- **MAJOR — the floor read a megabyte of wild faults as exhaustion**, and a
+  single externally delivered signal disarmed it for the rest of the process.
+  Both are fixed, both have regressions, and both regressions fail against
+  `d3eee546`.
+- **MAJOR — three cases had stopped measuring anything**, including the one
+  this Outcome section previously cited for the containment property, whose
+  "exit 0, 10/10" no reviewer could reproduce. That one is now performed by
+  the case rather than described by it, and its real numbers are in F1's
+  entry.
+- **MAJOR — "exactly one record" was one latch per writer**, not one per
+  process, so the stack record was serialized against nothing. There is one
+  latch now.
+- Plus the record's own arithmetic: a frame width wrong three ways, a corpus
+  count contradicting the sentence it sat in, a definition count read from a
+  log under a heading that said re-derived at the tip, a cost stated as two
+  constants that are neither, a release-order shape identified backwards, a
+  bisected level quoted without the root length it depends on, a sample
+  labelled unedited that was reformatted, and a sign error. Each is corrected
+  in place above, dated, with what it said before.
 
 **The charter is answered on its own terms, and the answer has a shape.** A
 correct Whitefoot program can still die of exhaustion — nothing here raises a
@@ -1056,11 +1107,11 @@ abnormal end a correct program could reach was the only one with zero
 diagnostic bytes, while a false claim, which a reviewed program cannot reach at
 all, got a byte-exact record. That asymmetry is gone. And one thing that was
 worse than the owner's complaint is gone with it: an accepted program could
-walk a large frame past its guard region into a neighbouring thread's live
-stack and return a normal answer for a computation that never fit. That is
-silent corruption, not a segfault, and F1's `probe-stack` closes it — measured
-on a `.wf`-level reproduction, exit 0 ablated against exit 134 with the record
-probed, 10/10 each way.
+walk a large frame past its guard region into whatever is mapped below and
+return a normal answer for a computation that never fit. That is silent
+corruption, not a segfault, and F1's `probe-stack` closes it — measured on a
+`.wf`-level reproduction, 10/10 each way, and the measurement is only possible
+because the audit's band narrowing made the difference observable.
 
 Landed commits, in order:
 
@@ -1075,11 +1126,25 @@ Landed commits, in order:
 | `87afd8db` | F6 — `--stack-ledger` |
 | `a4b4b4a1` | the batch falsifier — wfgrep's depth cap deleted |
 | `5c95580d` | F8's routed third class — `{"resource":"target-domain"}` |
-| this commit | F8 recipe, F9 disclosures, closure |
+| `d3eee546` | F8 recipe, F9 disclosures, first closure |
+
+Audit repairs, in order:
+
+| commit | repair |
+|---|---|
+| `04f119ef` | R1 — the buffer arm of the cleanup traversal (CRITICAL) |
+| `453f40e8` | R3 — the wild-fault band and the disarming restore (MAJOR) |
+| `5b460bdd` | one record latch for the whole process (MAJOR) |
+| `09247ef6` | R2 — the overlap sentence, the recipe digest, F7's mechanism (CRITICAL) |
+| `6fc5983d` | R4 — the cases that stopped measuring, and the record's numbers |
+| this commit | the design tree's drop-glue re-decision, and this closure |
 
 **Verification at the tip.** `make -C compiler check` green before and after
-every change in this executor's scope, 1,235 library cases and 56 program
-cases. `make check` reaches the same single stop the branch has carried since
+every change in this executor's scope and again after every audit repair:
+**1,243 library cases and 56 program cases**, up from 1,235 by the eight the
+repairs added (the buffer arm's four, the floor's three, and the widened latch
+condition's one). No case was deleted; three were rewritten in place because
+they had stopped measuring, and each rewrite is described where it landed. `make check` reaches the same single stop the branch has carried since
 it opened: `research-tests`' `effect` target fails because the installed
 `wasi-sdk` clang crashes in WebAssembly instruction selection on
 `adversarial-caller.ll`, identically with the branch's changes stashed. It is a
