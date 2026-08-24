@@ -412,6 +412,502 @@ home).
   compiler gate, conformance adapter 500 pass / 1 skip, coverage 137/137,
   spec append-only, archive integrity, digest sync, approval history.
 
+## F9 — what changes by default, and what a reader must not assume
+
+Five disclosures. Every one is a default-build consequence, not an opt-in, and
+the merge packet is incomplete without them.
+
+**1. Exhaustion paths now write bytes to standard error.** This is the batch's
+whole point and it is also its most visible behaviour change. Before, every
+resource death — an overflowed stack, a refused allocation, a byte count past
+the target's domain — produced zero bytes; a supervising process saw only a
+signal or exit 134. Now each writes exactly one record and aborts: 20 bytes for
+`{"resource":"heap"}`, 21 for `{"resource":"stack"}`, 29 for
+`{"resource":"target-domain"}`. Anything downstream that compared a program's
+standard error against empty now compares it against a record. Nothing on a
+normal path changed: a program that does not exhaust a resource writes nothing
+new, and all 176 corpus observable rows are byte-identical to the pre-batch
+compiler's.
+
+The change is sharpest under `--par`, and this continues the disclosure batch
+0076 made about the pool default. A program that overflows under the pool and
+not sequentially used to differ only in its exit signal. It now also differs in
+its stderr bytes. The dependency is not new — the outcome already differed —
+but it became visible, which is the improvement and the disclosure at once.
+
+**2. The parallel default multiplies peak live heap by the lane count.** This
+is the heap twin of 0076's depth flag and it is not new to this batch either;
+what is new is that it is measured at this tip rather than carried over.
+`pk_peak.wf` — a depth-4 binary recursion whose leaf holds a transient 128 MiB
+buffer — three runs at each setting, byte-stable at every one except the
+eight-lane cell, which varied by 16 KB across three runs:
+
+| build | peak footprint | ratio |
+|---|---|---|
+| sequential | 135,708,672 | 1.00x |
+| `--par WF_WORKERS=2` | 269,991,936 | 1.99x |
+| `--par WF_WORKERS=4` | 538,542,080 | 3.97x |
+| `--par WF_WORKERS=8` | 1,075,609,600 | 7.93x |
+| `--par` default (10 lanes on this host) | 1,344,176,128 | **9.91x** |
+
+Peak is exactly `lanes x 134,217,728` plus a base of 1.49 MB that grows about
+51 KB per lane. The lane count is `hw.logicalcpu`, a property of the machine
+and not of the program, so the same binary on the same input dies on a big-core
+laptop and survives on a two-core VM. What the floor changes is that it now
+dies with `{"resource":"heap"}` instead of silently — where the host delivers
+the refusal at all, which item 5 bounds.
+
+The policy question is the owner's and no executor should settle it: document
+only; bound the number of concurrently live handed-out allocations; or let the
+default lane count consider memory as well as processors.
+
+**3. At `-O2` the optimizer deletes allocations, so an OOM test can test
+nothing.** Every Whitefoot executable links at `-O2` and there is no other
+level. LLVM forwards a fill value to the loads and removes a `malloc`/`free`
+pair whose contents nothing observes, taking the refusal edge with it — the
+research measured four probes asking for 16 TiB and 4 EiB and returning
+normally. This is semantically fine and operationally decisive: **no test may
+assume the refusal edge exists in an optimized binary.** The shape that defeats
+it is the one both refusal cases use — read the buffer at an index the compiler
+knows only through a type range, so the load cannot be decided and the
+allocation cannot be deleted. A naively written case asks for sixteen terabytes,
+exits 0, and passes.
+
+The target-domain guard is not covered by that warning in the same way. Its
+comparison is on the byte count rather than on the buffer's contents, so a
+constant length lets LLVM fold the branch and keep the abort — which is why the
+existing `buffers.rs` case survives `-O2` with an unused buffer. A runtime
+length keeps the guard for the ordinary reason. The rule is still worth stating
+as one sentence: an exhaustion test proves nothing until it has been seen to
+fail against the build without the floor.
+
+**4. The floor's own cost, corrected from the research's estimate.** The
+dossiers priced the runtime-owned entry stack at "0 ms, 0 RSS". Measured here,
+that holds for the 1 GiB *reservation* and not for the mechanism: the floor
+costs **+0.078 ms per process and +65,560 bytes of peak footprint**. An 8 MiB
+and a 4 GiB entry thread measure the same, and a 16 KiB and a 64 KiB alternate
+signal stack measure the same, so neither the reservation nor the handler stacks
+are the cost — it is creating the entry thread at all. The number is small and
+it is not zero, and a packet that repeated "0 ms, 0 RSS" would be wrong.
+
+**5. Sixteen lanes reserve sixteen gibibytes of address space, and it stays
+address space.** Each lane now gets the entry's stack byte for byte, so a
+sixteen-worker run reserves 16 x 1 GiB. Re-derived at this tip on
+`par_layout --par`, three runs each: 1,720,320 bytes peak at four workers and
+2,179,072 to 2,195,456 at sixteen. Twelve extra lanes carrying twelve extra
+gibibytes of reservation cost about 459 KB of resident memory, roughly 38 KB a
+lane — thread bookkeeping and the pages a signal stack touches, not the
+reservation. If the reservation were resident the sixteen-lane run would show
+sixteen gibibytes. The mechanism is confirmed; the absolute numbers sit 0.08 to
+0.23 MB above F7's own (1.80 MB and 1.95 MB) because this is a later build on a
+machine doing other work, and the difference is reported rather than reconciled.
+
+## F8 — the merge-time application recipe: resource death in [SCOPE-3]
+
+**Nothing below is applied to `spec/kernel-spec.md` on this branch.** The
+in-tree file is untouched at ACTIVE v0.35,
+`645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769`, 3,443
+lines, 437,084 bytes, so the landed-archive gate stays green here. Every line
+number quoted below is that file's own.
+
+The candidate was produced by applying the exact edits below to a scratch copy
+and hashing the result. It is reproducible from this record and nothing else,
+and that was checked rather than assumed: each edit block below was extracted
+from this file and diffed against the corresponding lines of the hashed
+candidate, and all six are identical.
+
+| candidate | SHA-256 | size |
+|---|---|---|
+| v0.36, ACTIVE header | `ee50a356a392294c8ef5c79e78e658f75269c5948f3d120cf7fd2570a6509cfe` | 441,249 bytes, 3,459 lines, 137 rules |
+
+The digest is of the bytes that land on `main` — header and status already
+reading v0.36 ACTIVE, since the activation commit is where they take effect. An
+owner who applies the text as CANDIDATE first and flips the header afterwards
+produces a different intermediate digest for the same final bytes.
+
+**Grammar verification.** The recipe adds no production, token, or spelling.
+The native verifier, which reuses the compiler's own lexer and parser, confirms
+it:
+
+```
+$ whitefoot-grammar spec/kernel-spec.md <candidate>
+grammar-preserving candidate verified by the active compiler: 74 productions,
+93 decisions, 105 terminal predicates
+```
+
+identical to the installed inventory.
+
+### Why [SCOPE-3] and not a new rule
+
+The condition already belongs to [SCOPE-3]: `:726` and `:959` both point at it
+by name. A new `[RES-n]` rule would cost a rule-count move, a derivation-ledger
+row, a protected coverage annotation, and a conformance denominator change, for
+a statement that is an obligation on the implementation rather than a new
+language fact. [SCOPE-4] is the precedent for the shape — it owns the trap
+class *and* the trap's reporting obligation ("before aborting, the runtime
+attempts to write the exact [DIAG-3] trap record"), in one rule. [SCOPE-3] now
+owns the resource-death class and its reporting obligation the same way.
+`:726` and `:959` are deliberately left byte-identical: they already say the
+right thing and they already cite the rule that now defines it.
+
+### Edit 1 — [SCOPE-3] gains the resource-death definition
+
+Insert the following fifteen lines immediately *after* the file's line 25 (`This
+is the Layer-4 envelope statement; violations of (a)/(b) are outside the
+language's guarantee.`), with no blank line between:
+
+```
+An execution that exhausts a resource the trusted computing base supplies reaches the edge of that envelope without leaving it, and this rule fixes what happens there.
+Such an execution is fail-stop: it performs no further operation of the program, produces no external effect after the operation that exhausted the resource, and neither continues, retries, unwinds, nor runs language cleanup.
+It is contained: it writes nothing outside the storage the program already owns, so no resource death is a memory-safety event and the freedom from undefined behavior above survives one.
+Before the process ends, the implementation writes exactly one resource record to standard error; no execution writes a second one, and no record is partial or interleaved with another.
+The record's bytes are fixed by the exhausted resource class alone, and it names no source construct, rule identifier, function, node path, worker, host thread, dynamic call stack, address, depth, or size.
+It is not a [DIAG-3] record and never precedes, follows, or replaces one; the absence of that record's fields is what distinguishes the two, and an execution in which no executed `claim` is false produces no [DIAG-3] record whether or not it exhausted a resource.
+The classes are exactly three, and an implementation may not report one of them as another.
+The first is the stack an execution runs on.
+The second is the storage supply an allocation draws on, which is one class for a heap box, a `buffer`, and an arena's backing alike, because a refusal of any of them is that one supply refusing.
+The third is the target's own representable byte-count and address-index domain [QUAL-1, STOR-6], which is not that supply: the byte count it refuses has no exact value there, and a host with more memory refuses it identically.
+This specification fixes neither a spelling for those class names nor an exit status for the death, because the record's presence and its class are what a reader, a test, and a supervising process tell apart, and a second byte-fixed mandatory runtime report would make this a language output instead of the trusted computing base reporting its own limit [DIAG-3].
+Writing the record is a quality obligation on the implementation rather than a language guarantee, and its coverage is exactly the conditions the implementation can observe: an allocation the allocator refuses, an execution that runs past the stack it was given, and a byte count a target-domain guard refuses.
+Where the host ends the process without delivering the condition to it — an external kill, or an operating system that grants more memory than it holds and later reclaims it by killing the process — no record is possible and none is required; on such a host the observed refusal is the rarer case rather than the typical one, and this rule promises nothing about the other.
+A permitted overlap [PAR-1, PAR-2] may raise the call depth an execution reaches and may not lower it below the depth the source-order execution reaches, so taking the permission cannot turn a completing execution into an exhausted one by depth alone.
+It fixes no such relation for allocated storage: overlapping raises peak simultaneous demand by the number of executions in flight, so an overlapped execution may reach a refusal the source-order execution does not.
+```
+
+Sentence by sentence, what each is for and what it is measured against:
+
+- *Fail-stop* and *contained* are the two halves of the charter. Containment is
+  the safety half and the only sentence here that is not about reporting: it is
+  what F1's `probe-stack` restores, and without it an accepted program can walk
+  a large frame past the guard region into a neighbouring thread's live stack.
+  The `.wf`-level reproduction is in the F1 follow-up entry above — ablate the
+  attribute and the program runs with frames past the end of its own lane stack
+  and returns a normal answer, 10/10.
+- *Exactly one record* is a mechanism, not an aspiration: both writers share the
+  emitted module's one first-writer-wins latch, and the floor's runtime carries
+  its own for the signal path.
+- *The absence of that record's fields* is the load-bearing distinction and the
+  reason the record's shape is what it is. Two unrelated constraints force a
+  fixed constant independently — a signal handler may only reach
+  async-signal-safe facilities, and [PAR-1] requires identical observables under
+  every permitted schedule — so this sentence costs nothing the implementation
+  was not already paying.
+- *The classes are exactly three* carries the routed decision. The arena folds
+  into the allocation supply; the target domain does not, argued from the
+  specification's own separation of "resource failure" from "target-layout
+  failure" in [DIAG-1] `:1643`.
+- *Fixes neither a spelling nor an exit status* is what keeps this from becoming
+  a second [DIAG-3]. A byte-exact second mandatory report would make the record
+  a language output, and it would close the class set against a future target
+  with a genuinely different resource. It also declines the research's own
+  recommendation of a distinct exit status: today a trap and a resource death
+  are both 134, and the record is what tells them apart, so the status buys a
+  second discriminator for the case that already has one.
+- *Where the host ends the process without delivering the condition* is the
+  honest limit, named in the rule rather than in a footnote. On an overcommitting
+  host the allocator's refusal is the rare case: the measured death is a SIGKILL
+  at 78 GB of footprint with nothing on standard error, and no clause can promise
+  a record for a signal that cannot be caught.
+- *A permitted overlap may raise the depth and may not lower it* is F7's residual
+  turned into an obligation. It is what makes taking the permission safe rather
+  than a gamble: before F7 a lane's stack came from `RLIMIT_STACK` and a deep
+  recursion at eight workers failed 27 times in 30. After it, every lane gets
+  the entry's stack byte for byte and the same probe passes 30/30 at all seven
+  settings — re-derived at this tip at 35/35 over seven settings. The final
+  sentence refuses to extend the guarantee to storage, because F9's item 2
+  measures the opposite there and a rule that covered both would be false.
+
+### Edit 2 — [ERR-4] names the class its enumeration has no slot for
+
+Replace the file's line 1471 with:
+
+```
+[ERR-4] Classification: expected environment and input failures are values (`Result`); unproved function, operation-domain, allocation-fit, bounds, and system-range obligations are source rejections; a false executed `claim` traps [SCOPE-4]; and exhaustion of a resource the trusted computing base supplies is none of those three, but the contained fail-stop resource death with its own record that [SCOPE-3] fixes.
+```
+
+[ERR-4] is the exhaustive classification of what a failure *is* in this
+language, and runtime resource failure had no slot in it. That gap is why a
+reader could reasonably have assumed a resource death was either a trap or a
+rejection; it is now neither, explicitly.
+
+### Edit 3 — [DIAG-3] says the resource record is not its own and not developer output
+
+Insert one line immediately *after* the file's line 1993 (`An implementation may
+provide additional developer output only on a separately selected channel that
+cannot alter, prefix, suffix, or replace the mandatory trap record.`):
+
+```
+The resource record [SCOPE-3] requires of an exhausted execution is neither this record nor that additional developer output: it is written on this record's own channel, is fixed by its exhausted resource class alone, and no execution produces both records.
+```
+
+This sentence is necessary rather than decorative. Line 1993 as it stands
+confines *additional developer output* to a separately selected channel, and the
+resource record is on standard error — the trap record's own channel. Without
+this sentence the two rules contradict each other the moment the floor ships.
+[DIAG-3]'s exclusivity sentence at `:1986` is deliberately **not** touched: it
+already lists "resource failure" and "target-qualification failure" among the
+things that produce no DIAG-3 record, it is already correct, and it is the
+sentence that keeps the two classes apart.
+
+### Edit 4 — the META-5 delta declaration
+
+Replace the file's line 6 with:
+
+```
+META-5 delta declaration: numbered rules +0/-0 (137 remain); grammar productions +0/-0 (74 remain); unique fixed lowercase grammar atoms net +0; writer operation spellings +0/-0; runtime-trap families +0/-0; entry forms +0/-0; contract block forms +0/-0; system operations +0 and declaration records +0; exception clauses +0/-0. [SCOPE-3] gains the definition of resource death: an execution that exhausts a trusted-computing-base resource is fail-stop and contained, writes exactly one record naming only the exhausted resource class, and is not a [DIAG-3] event; [ERR-4] and [DIAG-3] name that class where their own enumerations had no slot for it. No construct is added, no accepted program changes, no verdict changes, and no required check is removed.
+```
+
+Note that "runtime-trap families +0/-0" is exact and load-bearing: the resource
+record is not a trap and this change adds no trap family. If a future reader
+finds a delta declaration claiming a new trap family for this, the change was
+misread.
+
+### Edit 5 — the selection ground
+
+Append one sentence to the end of the file's line 7, separated by a single
+space:
+
+```
+The resource-death definition [SCOPE-3] states is selected on the same ground by the resource-exhaustion investigation of batch 0079, whose measured death table, containment reproduction, and record evidence are recorded in `research/investigations/exhaustion/` and `docs/done/0079-exhaustion-floor.md`, under the owner's chartering direction of 2026-08-23; it states an implementation obligation and no writer-facing construct, so the accepted language is byte-identical across it.
+```
+
+### Edit 6 — the header
+
+Line 1 becomes `# Kernel Specification v0.36` and line 3 becomes
+`Status: ACTIVE v0.36`.
+
+### Impact inventory
+
+`[SCOPE-3]`'s extent moves from lines 24-25 and 335 bytes to lines 24-40 and
+3,654 bytes. `[ERR-4]` moves from line 1471 to line 1486 and gains 174 bytes.
+`[DIAG-3]` gains one line at what becomes line 2009. Line-initial rule
+definitions are **137 before and 137 after**, so `RULE_COUNT` does not move.
+
+**Bracketed rule-token occurrence counts move, in both directions.** Under the
+single-token convention: `SCOPE-3` 10 to 14, `DIAG-3` 14 to 19, `ERR-4` 4 to 5,
+`SCOPE-4` 7 to **6**, `PAR-1` 5 to **4**, `PAR-2` 3 to **2**. The three
+decreases are all one edit: the outgoing META-5 delta declaration named
+`([PAR-1], [PAR-2]; 137 remain)` and "in the sense [SCOPE-4] fixes", which is
+correct for v0.35's delta and wrong for v0.36's, so the replacement drops them.
+No rule loses its last reference, no rule becomes unreferenced, and the set of
+cited rule ids is identical before and after — checked over the whole file, not
+over the changed lines.
+
+**The counting convention, stated because the numbers do not reproduce without
+it:** every count above is of the single-token citation `[X]` only. Under the
+all-citation convention, which also counts `[A, B]` forms, the same six move
+plus `QUAL-1` 12 to 13 and `STOR-6` 10 to 11 — Edit 1 adds one `[QUAL-1,
+STOR-6]` — while `PAR-1` and `PAR-2` come out unchanged, because each loses one
+single-token citation and gains one inside Edit 1's `[PAR-1, PAR-2]`.
+
+The recipe adds non-ASCII: Edit 1's "Where the host ends the process" line
+carries two U+2014 em dashes, taking the file from 98 lines with non-ASCII bytes
+to 99. The specification already carries non-ASCII on 98 lines and no gate
+forbids it; this is disclosure, not a defect.
+
+### Derived material the activation change must carry
+
+- `spec/kernel-spec-v0.35.md`: the outgoing ACTIVE bytes archived flat,
+  digest `645b22b1…`. Append-only and hook-enforced thereafter.
+- `compiler/src/spec_identity.rs`: regenerated rather than hand-edited
+  (`cargo run --bin whitefoot-spec -- --emit-identity src/spec_identity.rs`),
+  taking `SPEC_SHA256_HEX` to `ee50a356…` and `ACTIVATION_CHAIN_LENGTH` from 27
+  to 28. `RULE_COUNT` stays 137.
+- `compiler/src/spec.rs`: the transcribed digest literal moves with it.
+- `governance/APPROVALS.md`: one chain record,
+  `ACTIVE-SPEC: v0.36 ee50a356a392294c8ef5c79e78e658f75269c5948f3d120cf7fd2570a6509cfe 645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769`.
+- `spec/derivation/derivation-ledger.md`: **no new row and no status change.**
+  [SCOPE-3] stays `✅ derived`; the added text is derived from the same R4
+  premise its existing row already cites — silent corruption is the forbidden
+  failure mode — and states no new fact source. A v0.36 delta section records
+  rules +0, productions +0, and totals unchanged. While writing that section,
+  fix the drift noted under audit dispositions below.
+- Conformance corpus: **zero cases.** The change adds no construct, changes no
+  accepted program, and changes no verdict, so no case and no expected verdict
+  moves and no coverage annotation is needed. This is the reason the batch
+  touches no protected conformance evidence at all.
+
+### Deliberately not in this recipe
+
+- **A distinct exit status for a resource death.** The research asked for one
+  (a trap and a resource death are both 134 today). Declined and stated as
+  declined in Edit 1: the record already discriminates, and a status change
+  would be a second mechanism for a question that now has an answer — and
+  moving off `abort` would cost the core dump that a wild fault still produces.
+- **Byte-exact record bytes in the specification.** Declined for the reason
+  Edit 1 gives: it would create a second mandatory language runtime report
+  beside [DIAG-3] and close the class set against a target with a genuinely
+  different resource.
+- **Any change to `:726` or `:959`.** Both already cite [SCOPE-3] for exactly
+  this condition and both remain correct.
+- **The [SYS-5] release-order question F5 raised.** Deliberately left out of
+  this clause and carried to the owner instead; see the open items below. It is
+  not an exhaustion matter, and folding an unrelated ordering rule into an
+  exhaustion clause would put the mechanism in the wrong home.
+
+### Where the rule is deliberately wider than the implementation
+
+The rule requires one record naming the class; this implementation additionally
+makes the record byte-identical for a given class and makes the sequential
+schedule deterministic. The rule requires a record for the conditions the
+implementation can observe; this implementation observes all three. Neither
+gap costs anything — an implementation never has to take the room a rule leaves
+it — and both avoid a further [META-5] amendment when the implementation
+widens, for instance to a target where a fixed-capacity pool is a fourth class.
+
 ## Outcome
 
-(Filled at closure.)
+Closed 2026-08-23 on `exhaust/floor`, nine items and one falsifier, all
+lead-verified or re-derived at the branch tip by the closing executor.
+
+**The charter is answered on its own terms, and the answer has a shape.** A
+correct Whitefoot program can still die of exhaustion — nothing here raises a
+ceiling — but it can no longer die *silently*. Before this batch the only
+abnormal end a correct program could reach was the only one with zero
+diagnostic bytes, while a false claim, which a reviewed program cannot reach at
+all, got a byte-exact record. That asymmetry is gone. And one thing that was
+worse than the owner's complaint is gone with it: an accepted program could
+walk a large frame past its guard region into a neighbouring thread's live
+stack and return a normal answer for a computation that never fit. That is
+silent corruption, not a segfault, and F1's `probe-stack` closes it — measured
+on a `.wf`-level reproduction, exit 0 ablated against exit 134 with the record
+probed, 10/10 each way.
+
+Landed commits, in order:
+
+| commit | item |
+|---|---|
+| `f089aa4f` | F1 — `probe-stack` on every generated definition |
+| `178d4f69` | F2+F3 — the runtime-owned stack and the defined death |
+| `feef8658` | F4 — the four allocation-refusal edges reach one record |
+| `23279a52` | F1 follow-up — the `.wf`-level containment reproduction |
+| `dc8cf1a3` | F5 — iterative drop glue for recursive nominals |
+| `1a9b4c45` | F7 — a lane's stack is the entry's stack |
+| `87afd8db` | F6 — `--stack-ledger` |
+| `a4b4b4a1` | the batch falsifier — wfgrep's depth cap deleted |
+| `5c95580d` | F8's routed third class — `{"resource":"target-domain"}` |
+| this commit | F8 recipe, F9 disclosures, closure |
+
+**Verification at the tip.** `make -C compiler check` green before and after
+every change in this executor's scope, 1,235 library cases and 56 program
+cases. `make check` reaches the same single stop the branch has carried since
+it opened: `research-tests`' `effect` target fails because the installed
+`wasi-sdk` clang crashes in WebAssembly instruction selection on
+`adversarial-caller.ll`, identically with the branch's changes stashed. It is a
+host-toolchain defect outside the repository, not a regression, and it is an
+open item for the packet rather than a finding. Every other target is green:
+repository invariants (`AGENTS.md` and `CLAUDE.md` byte-identical), approval
+history, spec append-only, archive integrity over 36 recorded specifications,
+digest sync against the chain tail, the conformance harness at 29 cases, and
+coverage 137/137 with 0 uncovered. `conformance-run` sits behind
+`research-tests` in the target list and so never runs in a failing `make check`;
+run alone at this tip it reports **Pass=500 Skip=1**, which is the same figure
+the earlier entry recorded and is the check that the corpus delta really is
+zero.
+
+**The falsifier's verdict: the cap was deletable, and the honest statement is
+narrower than the design's.** wfgrep now searches to the depth of the tree.
+The capped build, on the same 300-level tree the new regression uses, finds the
+shallow match, exits 0, and writes nothing — a complete-looking successful
+search that missed half its input. What deleting the cap does *not* do is
+exercise the floor: `walk`'s own thousand-byte display path stops the descent at
+493 levels, bisected, while the stack holds 615,677 activations of it, so the
+program's own buffer binds 1,249x below the machine. The floor is what makes
+having no hand-written cap defensible, not what raises this program's ceiling.
+The record half of the falsifier is carried by the floor's own probes, which is
+where it was always going to be carried.
+
+**Audit-lite dispositions.** Six landings, load-bearing numbers re-derived
+independently at the tip rather than read from the logs:
+
+- F1 — `par_layout`'s emitted module: 22 definitions, 22 carrying `#0`, one
+  attribute group naming this host's `__chkstk_darwin`. Completeness confirmed.
+- F2 — the 2,000,000-frame recursion completes under `ulimit -s 1024`, exit 0.
+  The compiler's number, not the shell's, confirmed.
+- F5 — the drop-glue call graph of `recursive_tree`'s emitted module,
+  re-extracted with correct function boundaries: `wf.drop.t0` to
+  `wf.drop.step.0` and `wf.drop.run`, `wf.drop.run` to `wf.drop.step.0`,
+  `wf.drop.step.0` to `wf.drop.push`. Acyclic. (A first extraction that
+  misattributed `wf_main`'s three calls to the preceding drop definition
+  appeared to show a cycle; the finding did not survive being done correctly,
+  and is recorded because a reviewer running the same careless one-liner will
+  see the same false positive.)
+- F6 — the ceiling model re-derived by hand: 1,073,741,824 / 1,744 = 615,677,
+  exactly what `--stack-ledger` prints for `wf_walk`. The `(stack - 6144)`
+  term is correctly gone, because the entry no longer runs on the process
+  stack.
+- F7 — the 2,000,000-deep recursion, five runs at each of `WF_WORKERS`
+  0/1/2/4/8/16 and the shipped default: **35/35**. The coin flip is gone.
+- F2/F3 headline — an unbounded recursion at this tip: exit 134, stderr exactly
+  `{"resource":"stack"}`. F4's twin and F8's third class confirmed by hand the
+  same way, the latter against a rebuild of the pre-change compiler to establish
+  that it wrote zero bytes before.
+
+One finding, inherited rather than introduced. `spec/derivation/derivation-ledger.md`'s
+v0.35 section still reads "84 derived · 52 existence-only · 0 underived across
+136 rules" and still names a candidate binding at
+`73d647c8945ad3d51eea3ed030714b433d6171e0d36b0869dd91366238cbd8f5`, which is no
+current file. The ledger carries 137 rule rows including [PAR-2]'s, and the
+0078 record predicted the corrected line verbatim — "84 derived · 53
+existence-only · 0 underived across 137 rules" — so the v0.35 activation added
+the row and left the totals sentence and the candidate paragraph behind. It is
+on `main` at `c704b9e6`, not introduced here. Not repaired in this batch because
+the ledger is spec-adjacent evidence and the v0.36 activation touches that same
+section anyway; the recipe's derived-material list carries the fix.
+
+**Open for the merge packet.**
+
+1. **The [SCOPE-3] recipe application.** One owner transcription, six edits,
+   candidate `ee50a356a392294c8ef5c79e78e658f75269c5948f3d120cf7fd2570a6509cfe`.
+   Approval covers exactly those bytes.
+2. **The [SYS-5] release-order question, an owner decision this batch declines
+   to make.** F5's iterative drop glue changes one reachable shape: an enum
+   variant declaring a system-resource field *after* a recursive `box` field
+   has its chain of `close` calls run shallowest-first where they used to run
+   deepest-first. No corpus type has that shape and the specification fixes no
+   order within one value, so today's rule permits both. But [SYS-5]'s `close`
+   is the one release action with a non-empty effect row — it is externally
+   observable — and an unfixed order over an observable action means two
+   conforming implementations can publish different external-effect orders for
+   the same program, which is the kind of thing [EFF-5] otherwise nails down.
+   Fixing it deepest-first is not free: it would require the worklist to defer a
+   node's own cleanup behind its children, which is exactly the trade F5 made to
+   keep the pending list the size of the traversal's frontier instead of the
+   depth it has reached. Three options, none taken here: leave it unfixed and
+   say so in [STOR-3]; fix it deepest-first and pay the worklist cost; or fix it
+   shallowest-first and ratify what the implementation now does.
+3. **The third record class.** `{"resource":"target-domain"}` landed on the
+   branch with its two regressions and its argument, and Edit 1 states the
+   three-class partition normatively. If the owner prefers the guard folded into
+   `heap`, both the code and the clause move together and the record above says
+   why that would be the wrong reading.
+4. **The `wasi-sdk` research-test host defect**, carried from `main`: the
+   installed toolchain crashes on `adversarial-caller.ll` and `make check`
+   cannot be fully green on this host until it is replaced. Reproduced with the
+   branch's changes stashed.
+5. **The parallel heap multiplier's policy question** (F9 item 2): document
+   only, bound concurrently live handed-out allocations, or let the default
+   lane count consider memory as well as processors.
+6. **wfgrep's thousand-byte path refusal**, exposed by the falsifier and
+   predating it: a too-deep tree exits 2 with an empty standard error. A wfgrep
+   defect, unowned by this batch.
+
+**Deferred with named re-entry conditions**, unchanged from the design synthesis
+except where this batch moved one: the static acyclic stack bound (a batch of
+its own, and the doctrinally right end-state); proof-derived stack segmentation
+(re-evaluate reach now that the claim-in-closure exclusion is deleted); prologue
+depth checks (only on a target without guard pages, and only gated on a
+per-function ledger check); the typed allocation-failure surface (reopen on a
+target where allocation failure is truthful — strict overcommit, a fixed-capacity
+pool, WASM linear memory with a declared maximum, or no virtual memory at all);
+routing `buffer_fits` to bounded-arena facts, which is the only mechanism on the
+list that *prevents* a heap death rather than reporting it; and depth-bound
+proofs past the acyclic tier, which the research measured as a mirage — the loop
+splitter's own ten-frame theorem is free to print as a bound and the general
+question waits for a program it blocks.
+
+F6 reports that free bound as an ordinary cycle row today, because the channel
+by which the compiler would tell the ledger "I created this recursion and I know
+its depth" does not exist. Inventing one for a report would have cost more than
+the report is worth. It is the one place the ledger is wrong in spirit, and its
+own module says so.
