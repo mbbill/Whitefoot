@@ -515,15 +515,24 @@ fn worklist_step_symbol(step: usize) -> String {
 
 /// What a pending entry of one kind means.
 ///
-/// One variant, because owning indirection is what closes a cleanup cycle and
-/// `box` is the only owning indirection a recursive type can be written
-/// through — a nominal recursive through a `buffer` has no target layout, and
-/// [`DropPlan::of`] refuses rather than emitting a traversal it cannot reach.
+/// Both owning indirections a cleanup cycle can close through have a variant.
+/// A `box` closes it with one block holding one content, so one entry names
+/// the whole edge. A `buffer` closes it with one block holding many elements
+/// whose reclamation order [STOR-3] fixes, so it takes one entry per element
+/// plus one for the block, and the ordering the rule fixes is carried by the
+/// order they are pushed in rather than by a walk that has to resume.
 #[derive(Clone, Copy)]
 enum DropKind {
     /// The entry's pointer is a heap block this drop owns whose content has
     /// this type: take the content, release the block, drop the content.
     Content(IrType),
+    /// The entry's pointer addresses one live element of this type inside a
+    /// buffer whose block is still held: take the element and drop it.
+    Element(IrType),
+    /// The entry's pointer is a buffer block whose elements have all been
+    /// taken: release it. [STOR-3] puts this after every element's drop, and
+    /// the worklist is last-in first-out, so it is pushed before them.
+    Storage,
 }
 
 /// Which compiler-derived drops descend a value instead of a type, and the
@@ -546,30 +555,20 @@ struct DropPlan {
     /// One registered entry kind per index.
     kinds: Vec<DropKind>,
     content_of: HashMap<IrType, u32>,
+    element_of: HashMap<IrType, u32>,
+    storage: Option<u32>,
 }
 
 impl DropPlan {
     fn of(program: &IrProgram<'_, '_, '_>) -> Result<Self, BackendFailure> {
-        let recursive = recursive_cleanup_components(program)?;
-        // A `buffer` in a cleanup cycle would need a second traversal shape —
-        // the element walk has to resume where it left off — and no program can
-        // reach one: a nominal recursive through a buffer has no selected
-        // target layout and is refused before emission. Refusing here as a
-        // compiler invariant is what keeps that from silently becoming
-        // recursive glue again if the layout limitation is ever lifted without
-        // this file being revisited.
-        if recursive
-            .keys()
-            .any(|ty| matches!(ty, IrType::Buffer { .. }))
-        {
-            return Err(BackendFailure::InvalidIr);
-        }
         Ok(Self {
-            recursive,
+            recursive: recursive_cleanup_components(program)?,
             steps: Vec::new(),
             step_of: HashMap::new(),
             kinds: Vec::new(),
             content_of: HashMap::new(),
+            element_of: HashMap::new(),
+            storage: None,
         })
     }
 
@@ -612,6 +611,29 @@ impl DropPlan {
         self.content_of.insert(ty, kind);
         Ok(kind)
     }
+
+    fn element_kind(&mut self, ty: IrType) -> Result<u32, BackendFailure> {
+        if let Some(kind) = self.element_of.get(&ty) {
+            return Ok(*kind);
+        }
+        self.step(ty)?;
+        let kind = u32::try_from(self.kinds.len()).map_err(|_| BackendFailure::CounterOverflow)?;
+        self.kinds.push(DropKind::Element(ty));
+        self.element_of.insert(ty, kind);
+        Ok(kind)
+    }
+
+    /// Releasing a buffer block says nothing about what was in it, so every
+    /// buffer in the program shares one entry kind.
+    fn storage_kind(&mut self) -> Result<u32, BackendFailure> {
+        if let Some(kind) = self.storage {
+            return Ok(kind);
+        }
+        let kind = u32::try_from(self.kinds.len()).map_err(|_| BackendFailure::CounterOverflow)?;
+        self.kinds.push(DropKind::Storage);
+        self.storage = Some(kind);
+        Ok(kind)
+    }
 }
 
 /// One `define` that sets up a worklist, runs one traversal on it, and
@@ -645,6 +667,10 @@ fn emit_worklist_steps(
         let symbol = worklist_step_symbol(emitted);
         emitted += 1;
         let aggregate_ty = llvm_type(program, ty)?;
+        if let IrType::Buffer { element } = ty {
+            emit_buffer_worklist_step(program, output, &symbol, &aggregate_ty, element, plan)?;
+            continue;
+        }
         if let IrType::Nominal(id) = ty
             && let Some(IrNominalKind::Enum { variants }) =
                 program.nominal(id).map(|nominal| nominal.kind())
@@ -688,6 +714,46 @@ fn emit_worklist_steps(
     Ok(())
 }
 
+/// The per-node drop of a buffer that is inside a cleanup cycle: hand the
+/// block and every live element to the worklist, in the order that makes the
+/// traversal take them back in the order [STOR-3] fixes.
+///
+/// The rule is each element's drop in ascending index order followed by the
+/// one heap free. The worklist is last-in first-out, so this pushes the free
+/// first and then the elements from the last index down, and nothing here
+/// touches an element: the loop only records where they are. That is what
+/// keeps a buffer's own walk off the machine stack — the step returns after
+/// recording, and the traversal resumes at the entry it takes next rather than
+/// at a frame this function would otherwise have to hold open.
+fn emit_buffer_worklist_step(
+    program: &IrProgram<'_, '_, '_>,
+    output: &mut String,
+    symbol: &str,
+    aggregate_ty: &str,
+    element: IrFlatElement,
+    plan: &mut DropPlan,
+) -> Result<(), BackendFailure> {
+    let element_ty = element.ty();
+    if !type_requires_cleanup(program, element_ty)? {
+        // No element derives an action, so the whole drop is the one free and
+        // the cycle through this buffer is unreachable by value.
+        let storage = plan.storage_kind()?;
+        return writeln!(
+            output,
+            "define private void @{symbol}({aggregate_ty} %value, ptr %work) {{\nentry:\n  %pointer = extractvalue {aggregate_ty} %value, 0\n  call void @wf.drop.push(ptr %work, i32 {storage}, ptr %pointer)\n  ret void\n}}\n"
+        )
+        .map_err(|_| BackendFailure::TextEmission);
+    }
+    let element_llvm = llvm_type(program, element_ty)?;
+    let storage = plan.storage_kind()?;
+    let kind = plan.element_kind(element_ty)?;
+    writeln!(
+        output,
+        "define private void @{symbol}({aggregate_ty} %value, ptr %work) {{\nentry:\n  %pointer = extractvalue {aggregate_ty} %value, 0\n  %length = extractvalue {aggregate_ty} %value, 1\n  call void @wf.drop.push(ptr %work, i32 {storage}, ptr %pointer)\n  br label %head\nhead:\n  %index = phi i64 [ %length, %entry ], [ %next, %body ]\n  %pending = icmp ugt i64 %index, 0\n  br i1 %pending, label %body, label %done\nbody:\n  %next = sub i64 %index, 1\n  %slot = getelementptr inbounds {element_llvm}, ptr %pointer, i64 %next\n  call void @wf.drop.push(ptr %work, i32 {kind}, ptr %slot)\n  br label %head\ndone:\n  ret void\n}}\n"
+    )
+    .map_err(|_| BackendFailure::TextEmission)
+}
+
 /// The traversal itself: take the newest pending entry and do what its kind
 /// says, until none is left.
 fn emit_worklist_driver_loop(
@@ -715,6 +781,26 @@ fn emit_worklist_driver_loop(
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
+            DropKind::Element(ty) => {
+                let aggregate_ty = llvm_type(program, *ty)?;
+                let step = *plan.step_of.get(ty).ok_or(BackendFailure::InvalidIr)?;
+                // The block this element lives in is released by the `Storage`
+                // entry pushed underneath every element of that buffer, so the
+                // load here always reads storage the traversal still holds.
+                writeln!(
+                    output,
+                    "kind.{kind}:\n  %element.{kind} = load {aggregate_ty}, ptr %node\n  call void @{}({aggregate_ty} %element.{kind}, ptr %work)\n  br label %loop",
+                    worklist_step_symbol(step)
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            DropKind::Storage => {
+                writeln!(
+                    output,
+                    "kind.{kind}:\n  call void @free(ptr %node)\n  br label %loop"
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
         }
     }
     output.push_str(DROP_WORKLIST_LOOP_TAIL);
@@ -724,10 +810,14 @@ fn emit_worklist_driver_loop(
 /// The worklist's storage and the one operation that grows it.
 ///
 /// The entries are heap-resident because that is the resource the traversal is
-/// releasing: an entry is smaller than the block it names, and the block is
-/// released as the entry is taken, so the list can never outgrow the structure
-/// it is dismantling. A host that refuses the growth writes the heap record
-/// through the same latch every other refused allocation uses.
+/// releasing, and every pending entry names storage the traversal still holds:
+/// a `box` entry names a block released as that entry is taken, and a buffer's
+/// element entries name slots inside a block whose own entry sits underneath
+/// them. The list is therefore bounded by the structure being dismantled —
+/// within a small constant factor, since a 16-byte entry can name an
+/// eight-byte slot — rather than by the depth reached. A host that refuses the
+/// growth writes the heap record through the same latch every other refused
+/// allocation uses.
 const DROP_WORKLIST_SUPPORT: &str = "%wf.drop.entry = type { i32, ptr }\n%wf.drop.work = type { ptr, i64, i64 }\n\ndeclare ptr @realloc(ptr, i64)\n\ndefine private void @wf.drop.push(ptr %work, i32 %kind, ptr %node) {\nentry:\n  %count.slot = getelementptr inbounds %wf.drop.work, ptr %work, i32 0, i32 1\n  %capacity.slot = getelementptr inbounds %wf.drop.work, ptr %work, i32 0, i32 2\n  %count = load i64, ptr %count.slot\n  %capacity = load i64, ptr %capacity.slot\n  %full = icmp eq i64 %count, %capacity\n  br i1 %full, label %grow, label %store\ngrow:\n  %doubled = shl i64 %capacity, 1\n  %fresh = icmp eq i64 %capacity, 0\n  %wanted = select i1 %fresh, i64 64, i64 %doubled\n  %bytes = mul i64 %wanted, ptrtoint (ptr getelementptr (%wf.drop.entry, ptr null, i64 1) to i64)\n  %previous = load ptr, ptr %work\n  %grown = call ptr @realloc(ptr %previous, i64 %bytes)\n  %refused = icmp eq ptr %grown, null\n  br i1 %refused, label %exhausted, label %ready\nexhausted:\n  call void @wf_resource_abort()\n  unreachable\nready:\n  store ptr %grown, ptr %work\n  store i64 %wanted, ptr %capacity.slot\n  br label %store\nstore:\n  %entries = load ptr, ptr %work\n  %slot = getelementptr inbounds %wf.drop.entry, ptr %entries, i64 %count\n  %node.slot = getelementptr inbounds %wf.drop.entry, ptr %slot, i32 0, i32 1\n  store i32 %kind, ptr %slot\n  store ptr %node, ptr %node.slot\n  %after = add i64 %count, 1\n  store i64 %after, ptr %count.slot\n  ret void\n}\n\n";
 
 const DROP_WORKLIST_LOOP_HEAD: &str = "define private void @wf.drop.run(ptr %work) {\nentry:\n  %count.slot = getelementptr inbounds %wf.drop.work, ptr %work, i32 0, i32 1\n  br label %loop\nloop:\n  %count = load i64, ptr %count.slot\n  %empty = icmp eq i64 %count, 0\n  br i1 %empty, label %done, label %take\ntake:\n  %next = sub i64 %count, 1\n  store i64 %next, ptr %count.slot\n  %entries = load ptr, ptr %work\n  %slot = getelementptr inbounds %wf.drop.entry, ptr %entries, i64 %next\n  %node.slot = getelementptr inbounds %wf.drop.entry, ptr %slot, i32 0, i32 1\n  %kind = load i32, ptr %slot\n  %node = load ptr, ptr %node.slot\n  switch i32 %kind, label %invalid [\n";

@@ -826,6 +826,76 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
     .into_bytes()
 }
 
+/// A cleanup cycle that closes through a `buffer` instead of through a `box`.
+///
+/// `box` supplies the indirection the target layout needs while the buffer
+/// stays inside the cycle: `Chain` -> `box<buffer<Option<Chain>>>` ->
+/// `buffer<Option<Chain>>` -> `Option<Chain>` -> `Chain`. Nothing about the
+/// program says "recursive"; as with the boxed spine, the only recursion is
+/// the one the compiler would generate to destroy the value.
+///
+/// The shape matters because the two indirections need different traversal
+/// arms. A `box` names one content, so one worklist entry carries the whole
+/// edge. A buffer names many elements whose reclamation order [STOR-3] fixes,
+/// so it takes one entry per element plus one for the block.
+fn buffer_chain_source(depth: u64) -> Vec<u8> {
+    format!(
+        r#"enum Chain {{
+  Nil();
+  Cons(kids: box<buffer<Option<Chain>>>);
+}}
+
+fn nest(inner: own Chain) -> result: own Chain allocates(heap) {{
+  let slots = buffer_vacant<Chain>(1_u64);
+  let filled = Some<Chain>(value: move inner);
+  let vacant = replace slots[0_u64] = move filled;
+  match vacant {{
+    None() => {{
+    }}
+    Some(value: stray) => {{
+    }}
+  }}
+  let held = box_new(move slots);
+  return Cons(kids: move held);
+}}
+
+command fn main() -> status: own ExitStatus allocates(heap) {{
+  let holder = buffer_vacant<Chain>(1_u64);
+  let seed = Nil();
+  let seeded = Some<Chain>(value: move seed);
+  let empty = replace holder[0_u64] = move seeded;
+  match empty {{
+    None() => {{
+    }}
+    Some(value: stray) => {{
+    }}
+  }}
+  for @build i in 0_u64..{depth}_u64 {{
+    let taken = replace holder[0_u64] = None<Chain>();
+    match taken {{
+      None() => {{
+        return exit_status(code: 1_u8);
+      }}
+      Some(value: inner) => {{
+        let grown = nest(inner: move inner);
+        let refilled = Some<Chain>(value: move grown);
+        let hole = replace holder[0_u64] = move refilled;
+        match hole {{
+          None() => {{
+          }}
+          Some(value: leftover) => {{
+          }}
+        }}
+      }}
+    }}
+  }}
+  return exit_status(code: 0_u8);
+}}
+"#
+    )
+    .into_bytes()
+}
+
 /// A value whose ownership graph is a chain rather than a cycle: deep in
 /// nothing, and reached by the same emitter.
 const SHALLOW_OWNERSHIP: &[u8] = br#"command fn main() -> status: own ExitStatus allocates(heap) {
@@ -885,8 +955,15 @@ fn drop_glue_calls(module: &str) -> Vec<(String, Vec<String>)> {
 /// remembering to extend a table.
 #[test]
 fn no_compiler_derived_drop_reaches_itself() {
-    let module = compile(&boxed_spine_source(4));
-    let glue = drop_glue_calls(&module);
+    // Both owning indirections a cleanup cycle can close through, because the
+    // traversal has a separate arm for each and a cycle in either one is the
+    // same defect.
+    assert_no_drop_glue_cycle(&compile(&boxed_spine_source(4)));
+    assert_no_drop_glue_cycle(&compile(&buffer_chain_source(4)));
+}
+
+fn assert_no_drop_glue_cycle(module: &str) {
+    let glue = drop_glue_calls(module);
     assert!(
         glue.iter()
             .any(|(name, _)| name.starts_with("wf.drop.step.")),
@@ -977,6 +1054,207 @@ fn a_deep_boxed_spine_is_reclaimed_without_a_record() {
     assert!(
         output.stderr.is_empty(),
         "a completed run wrote to the record channel: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+// ------------------------------------ the cycle that closes through a buffer
+
+/// The shape a reviewer reached for when the traversal shipped with only its
+/// `box` arm, written the way they wrote it.
+///
+/// It is here as a program rather than as a type, because the claim it settles
+/// is about acceptance: this compiled and ran before the traversal existed, so
+/// nothing the traversal does may take it away. When only the `box` arm was
+/// implemented the emitter refused it with a bare compiler-invariant failure —
+/// no rule, no coordinate, and no statement of what was unsupported.
+const BUFFER_CYCLE: &[u8] = br#"enum Chain {
+  Nil();
+  Cons(kids: box<buffer<Option<Chain>>>);
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let inner = buffer_vacant<Chain>(2_u64);
+  let b = box_new(move inner);
+  let node = Cons(kids: move b);
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// A cleanup cycle through a buffer is a program the compiler accepts.
+#[test]
+fn a_cleanup_cycle_through_a_buffer_is_accepted_and_runs() {
+    let directory = test_directory();
+    let executable = build_executable(&compile(BUFFER_CYCLE), &directory);
+    let output = Command::new(&executable)
+        .output()
+        .expect("run the buffer cycle");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "this program compiled and ran before the traversal existed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "a completed run wrote to the record channel: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// The buffer arm carries depth the same way the `box` arm does.
+///
+/// Accepting the program is not the property; reclaiming it without descending
+/// is. This depth cannot fit a machine stack at the frame the recursive glue
+/// used to need, and the compiler that generated that glue dies here with a
+/// bare signal.
+#[test]
+fn a_deep_cleanup_cycle_through_a_buffer_is_reclaimed_without_a_record() {
+    let directory = test_directory();
+    let executable = build_executable(&compile(&buffer_chain_source(1_000_000)), &directory);
+    let output = Command::new(&executable)
+        .output()
+        .expect("run the deep buffer chain");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "destroying a deep value must end the program normally: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "a completed run wrote to the record channel: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// A buffer in a cleanup cycle whose elements each own further storage.
+const WIDE_BUFFER_CYCLE: &[u8] = br#"enum Chain {
+  Nil();
+  Cons(kids: box<buffer<Option<Chain>>>);
+}
+
+fn leafy() -> result: own Chain allocates(heap) {
+  let slots = buffer_vacant<Chain>(1_u64);
+  let held = box_new(move slots);
+  return Cons(kids: move held);
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let slots = buffer_vacant<Chain>(4_u64);
+  let child0 = leafy();
+  let first = Some<Chain>(value: move child0);
+  let hole0 = replace slots[0_u64] = move first;
+  match hole0 {
+    None() => {
+    }
+    Some(value: stray0) => {
+    }
+  }
+  let child1 = leafy();
+  let second = Some<Chain>(value: move child1);
+  let hole1 = replace slots[1_u64] = move second;
+  match hole1 {
+    None() => {
+    }
+    Some(value: stray1) => {
+    }
+  }
+  let child2 = leafy();
+  let third = Some<Chain>(value: move child2);
+  let hole2 = replace slots[2_u64] = move third;
+  match hole2 {
+    None() => {
+    }
+    Some(value: stray2) => {
+    }
+  }
+  let child3 = leafy();
+  let fourth = Some<Chain>(value: move child3);
+  let hole3 = replace slots[3_u64] = move fourth;
+  match hole3 {
+    None() => {
+    }
+    Some(value: stray3) => {
+    }
+  }
+  let held = box_new(move slots);
+  let root = Cons(kids: move held);
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// The body of one definition, from its `define` line to its closing brace.
+fn definition_body<'a>(module: &'a str, signature: &str) -> &'a str {
+    let start = module
+        .find(signature)
+        .unwrap_or_else(|| panic!("the module defines {signature}: {module}"));
+    let body = &module[start..];
+    let end = body.find("\n}\n").expect("a definition closes");
+    &body[..end]
+}
+
+/// [STOR-3] fixes a buffer drop as each element's drop in ascending index
+/// order followed by that same one heap free, and the traversal has to produce
+/// that order out of a last-in first-out worklist.
+///
+/// It does it by pushing in the reverse: the block's own entry first, then the
+/// elements from the last index down. Walking the indices upward instead, or
+/// pushing the block last, both emit a traversal that looks right and reclaims
+/// in the wrong order — and pushing the block last would additionally have the
+/// elements read out of storage the traversal had already released. Nothing
+/// downstream can see the difference, because [STOR-3] gives memory
+/// reclamation the empty effect row, so the order is pinned where it is
+/// chosen.
+#[test]
+fn a_buffer_in_a_cleanup_cycle_is_walked_in_the_order_the_rule_fixes() {
+    let module = compile(&buffer_chain_source(4));
+    // The one definition that takes a buffer descriptor and the worklist: the
+    // per-node drop of the buffer inside the cycle.
+    let buffer_step = definition_body(&module, "({ ptr, i64 } %value, ptr %work)");
+    let block = buffer_step
+        .find(", ptr %pointer)")
+        .expect("the buffer step pushes the block's own entry");
+    let element = buffer_step
+        .find(", ptr %slot)")
+        .expect("the buffer step pushes one entry per element");
+    assert!(
+        block < element,
+        "the block's entry must be pushed before any element's, so the \
+         last-in first-out traversal takes it last: {buffer_step}"
+    );
+    assert!(
+        buffer_step.contains("%index = phi i64 [ %length, %entry ], [ %next, %body ]")
+            && buffer_step.contains("%next = sub i64 %index, 1"),
+        "the element entries must be pushed from the last index down, so the \
+         traversal takes index 0 first: {buffer_step}"
+    );
+}
+
+/// The block outlives every element that lives in it.
+///
+/// This is the half of [STOR-3]'s order that a running program can be made to
+/// notice. The traversal releases a `box` block as it takes that block's entry,
+/// which is what keeps the pending list off the depth; a buffer cannot do that,
+/// because its elements are still in the block. Under a host allocator that
+/// scribbles freed storage, taking that shortcut turns every element load into
+/// a scribbled tag and the enum's own invalid-tag abort fires.
+#[test]
+fn a_buffer_block_outlives_the_elements_the_traversal_takes_from_it() {
+    let directory = test_directory();
+    let executable = build_executable(&compile(WIDE_BUFFER_CYCLE), &directory);
+    let output = Command::new(&executable)
+        .env("MallocScribble", "1")
+        .env("MallocPreScribble", "1")
+        .output()
+        .expect("run the wide buffer cycle");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "an element was read out of a block the traversal had released: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     std::fs::remove_dir_all(&directory).expect("remove the test directory");

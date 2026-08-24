@@ -175,20 +175,62 @@ home).
   `close` calls change from deepest-first to shallowest-first. No corpus type
   has it, and the specification fixes no order there, but it is a real
   difference and the owner packet should carry it.
-  Deliberately out: a `buffer` in a cleanup cycle. It would need a second
-  traversal shape (the element walk must resume where it left off) and no
-  program can reach one — a nominal recursive through a buffer has no
-  selected target layout and is refused before emission, measured identically
-  on the pre-change compiler. `DropPlan::of` refuses that case as a compiler
-  invariant instead, so lifting the layout limitation cannot silently restore
-  recursive glue.
+  The buffer arm (2026-08-23, superseding this entry's first form). As first
+  landed, F5 declared a `buffer` in a cleanup cycle deliberately out of
+  scope on the ground that "no program can reach one — a nominal recursive
+  through a buffer has no selected target layout and is refused before
+  emission", and had `DropPlan::of` refuse the case as a compiler invariant.
+  That ground was false and the batch audit falsified it in one program:
+  `box` supplies the indirection the target layout needs while the buffer
+  stays inside the cycle, so
+  `enum Chain { Nil(); Cons(kids: box<buffer<Option<Chain>>>); }` closes the
+  cycle `Chain -> box<buffer<Option<Chain>>> -> buffer<Option<Chain>> ->
+  Option<Chain> -> Chain`. That program compiles and runs on the pre-change
+  compiler and was refused here with a bare `Backend/Backend: InvalidIr` —
+  a silent acceptance regression, and a compiler-invariant failure shown to
+  the writer with no rule id, no source coordinate, and no statement of what
+  was unsupported.
+  The traversal now has the second arm. A `box` names one content, so one
+  entry carries the whole edge and the block is released as the entry is
+  taken. A buffer names many elements whose order [STOR-3] fixes — each
+  element's drop in ascending index order *followed by* that same one heap
+  free — so its step pushes one entry for the block and then one per element
+  from the last index down, and the last-in first-out worklist takes them
+  back in exactly the order the rule fixes: element 0 first, the free last.
+  Nothing resumes; the step returns after recording where the elements are.
+  This is the one place the preceding paragraph's "both untouched" needs
+  qualifying: ascending index order among buffer elements is no longer only
+  the straight-line helper's loop, it is also produced by the push order
+  here, and the free stays after every element rather than moving ahead of
+  them the way a box's does.
+  Measured at this tip: the audit's program compiles and runs (exit 0, empty
+  stderr, default and `--par`); a 5,000,000-level chain of one-element
+  buffers completes at exit 0 in 276 MB where the pre-batch compiler's
+  cyclic glue (`wf.drop.t0 -> wf.drop.buffer.t4 -> wf.drop.t4 ->
+  wf.drop.t0`) exits 139 with zero bytes. All 40 emitted corpus modules (20
+  standalone units x two worlds) are byte-identical to `d3eee546`, because a
+  program with no recursive buffer registers no new entry kind.
   Regressions: `no_compiler_derived_drop_reaches_itself` walks the emitted
   module's own drop-glue call graph and fails on any cycle, so a new nominal
   shape is covered without anyone extending a table (it fails against the
-  pre-change compiler, whose `wf.drop.t0` calls `wf.drop.t0`);
+  pre-change compiler, whose `wf.drop.t0` calls `wf.drop.t0`), and it now
+  runs over both indirections rather than only the boxed spine;
   `an_ownership_chain_keeps_its_straight_line_drop` fails an emitter that put
   every program on a worklist; `a_deep_boxed_spine_is_reclaimed_without_a_
-  record` runs the traversal end to end.
+  record` runs the traversal end to end;
+  `a_cleanup_cycle_through_a_buffer_is_accepted_and_runs` is the audit's
+  program, so the acceptance regression cannot recur silently;
+  `a_deep_cleanup_cycle_through_a_buffer_is_reclaimed_without_a_record` runs
+  the buffer arm at 1,000,000 levels;
+  `a_buffer_in_a_cleanup_cycle_is_walked_in_the_order_the_rule_fixes` pins
+  the push order where the order is chosen, since [STOR-3] gives memory
+  reclamation the empty effect row and nothing downstream can see it; and
+  `a_buffer_block_outlives_the_elements_the_traversal_takes_from_it` runs the
+  wide shape under a scribbling host allocator, which is the half of that
+  order a running program can be made to notice — pushing the block last
+  turns every element load into a scribbled tag and the enum's invalid-tag
+  abort fires (verified by ablation: both cases fail, the second with a
+  signal instead of exit 0).
   One existing compiler test required rewriting rather than deleting:
   `programs::heap::recursively_boxed_tree_executes_with_derived_cleanup`
   pinned the old straight-line shape (first `@wf.drop` definition, two frees
