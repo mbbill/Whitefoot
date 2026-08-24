@@ -84,7 +84,7 @@ use std::sync::OnceLock;
 
 use super::deterministic_target::{HostScript, run_emitted_on_deterministic_host};
 use super::system::with_ir_for;
-use super::{host_optimized_module, optimized_main};
+use super::{host_optimized_module, optimized_main, optimized_main_wrapper};
 use crate::backend::emit_llvm;
 use crate::backend::emitter::emit_llvm_for_target;
 use crate::backend::qualification::SystemTarget;
@@ -322,6 +322,33 @@ fn call_target(line: &str) -> Option<&str> {
 /// Every symbol one region of a module calls.
 fn call_targets(region: &str) -> Vec<&str> {
     region.lines().filter_map(call_target).collect()
+}
+
+/// Whether one definition in an optimized module carries `noreturn`, whether
+/// it is spelled on the `define` line or moved into the attribute group the
+/// optimizer assigned it.
+fn definition_is_noreturn(module: &str, symbol: &str) -> bool {
+    let needle = format!(" @{symbol}(");
+    let Some(line) = module
+        .lines()
+        .find(|line| line.starts_with("define") && line.contains(&needle))
+    else {
+        return false;
+    };
+    if line.contains(" noreturn") {
+        return true;
+    }
+    let Some(group) = line
+        .split_whitespace()
+        .find(|word| word.starts_with('#'))
+        .and_then(|word| word.strip_prefix('#'))
+    else {
+        return false;
+    };
+    module
+        .lines()
+        .filter(|line| line.starts_with(&format!("attributes #{group} = ")))
+        .any(|line| line.contains(" noreturn "))
 }
 
 /// How many calls one region of a module makes.
@@ -778,7 +805,31 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
     // the compiler's own runtime; nothing here is a release reaching a host
     // facility, a handle table, or a hidden external effect [§12.2]. A release
     // that started making a target call would have to add a name to this list.
-    for target in call_targets(program) {
+    //
+    // The domain is `program()` plus `@main` itself. `program()` reads
+    // `@wf__main_body`, because every check that reads a named result reads
+    // the body, and when the floor moved the program off `@main` this census
+    // silently lost the one generated function whose call — into the floor
+    // runtime — nothing here would have accounted for. It is scanned again.
+    // Still outside the domain, and stated rather than left implicit: the
+    // optimizer's `.cold.` outlines are exempted below as call *targets* but
+    // their own bodies are not scanned, so a host call reaching a program's
+    // failure arm after outlining would not be seen here.
+    //
+    // `@wf_resource_abort` is exempt because it is `noreturn`, checked just
+    // below rather than argued: a call to it cannot return, so no execution
+    // that reaches it also finishes, and it is on no success path by
+    // construction rather than by inspection of its callers.
+    assert!(
+        definition_is_noreturn(optimized(), "wf_resource_abort"),
+        "the resource abort must be noreturn, or its census exemption is an \
+         argument rather than a property"
+    );
+    let host_entry = optimized_main_wrapper(optimized());
+    for target in call_targets(program)
+        .into_iter()
+        .chain(call_targets(host_entry))
+    {
         let accounted = matches!(
             target,
             // The bootstrap's one-time working-directory acquisition and
@@ -827,8 +878,11 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
                 target == format!("wf_{name}") || target.starts_with(&format!("wf_{name}.cold."))
             })
             // The entry body — `@main` hands the program to the exhaustion
-            // floor, which runs this — and the optimizer's cold outlining of
-            // its own failure arms.
+            // floor, which runs this — the floor entry `@main` calls to get
+            // there, and the optimizer's cold outlining of the body's own
+            // failure arms.
+            || target == "wf__main_body"
+            || target == "wf__floor_run"
             || target.starts_with("wf__main_body.cold.")
             // The resource abort an allocation refusal reaches. It is on no
             // success path: the branch that reaches it is the one the

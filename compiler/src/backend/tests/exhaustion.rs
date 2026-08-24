@@ -202,7 +202,7 @@ const RUNAWAY_DEPTH: u64 = 100_000_000;
 /// has "runs out of stack" in its meaning, and the same source on the same
 /// input succeeds or fails depending on the environment. A record that
 /// attributed it to source would be claiming something untrue.
-fn assert_resource_record(stderr: &[u8], resource: &str) {
+pub(super) fn assert_resource_record(stderr: &[u8], resource: &str) {
     let text = String::from_utf8_lossy(stderr);
     assert_eq!(
         text,

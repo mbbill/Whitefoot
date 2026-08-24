@@ -25,8 +25,8 @@ use super::{build_executable, compile, test_directory};
 /// rather than sixty-seven million.
 ///
 /// The pair of widths is the point: the model under test is one division, and
-/// checking it at two frame sizes three orders of magnitude apart says far
-/// more about the division than checking it twice at one size would. The array
+/// checking it at two frame sizes six hundred times apart says far more about
+/// the division than checking it twice at one size would. The array
 /// is 256 elements because the host compiler spends nine seconds vectorizing
 /// the fill of a seven-thousand-element one and a tenth of a second on this,
 /// for the same arithmetic under test.
@@ -88,9 +88,15 @@ const TOLERANCE: f64 = 0.001;
 
 /// The ledger for one source, produced the way the driver produces it.
 fn ledger_for(source: &[u8], directory: &std::path::Path) -> Vec<String> {
+    ledger_lines(&compile(source), directory)
+}
+
+/// The ledger for one already-emitted module, so a caller can ask for the
+/// overlapped world as well as the sequential one.
+pub(super) fn ledger_lines(emitted: &str, directory: &std::path::Path) -> Vec<String> {
     let module = directory.join("ledger.ll");
     let assembly = directory.join("ledger.s");
-    std::fs::write(&module, compile(source)).expect("write the ledger module");
+    std::fs::write(&module, emitted).expect("write the ledger module");
     let status = Command::new("/usr/bin/clang")
         .arg("-x")
         .arg("ir")
@@ -110,12 +116,35 @@ fn ledger_for(source: &[u8], directory: &std::path::Path) -> Vec<String> {
     stack_ledger(&usage, &text, FLOOR_STACK_BYTES)
 }
 
+/// What the ledger says one level of a named recursion costs, in bytes.
+pub(super) fn reported_frame_bytes(lines: &[String], name: &str) -> u64 {
+    let row = cycle_row(lines, name);
+    let bytes = row
+        .split_whitespace()
+        .zip(row.split_whitespace().skip(1))
+        .find_map(|(value, unit)| (unit == "B/level").then_some(value))
+        .unwrap_or_else(|| panic!("the cycle row states no frame width: {row}"));
+    bytes
+        .parse()
+        .unwrap_or_else(|_| panic!("the frame width is not a number: {row}"))
+}
+
+fn cycle_row<'a>(lines: &'a [String], name: &str) -> &'a String {
+    lines
+        .iter()
+        .find(|line| {
+            line.starts_with("STACK cycle")
+                && line
+                    .split_whitespace()
+                    .nth(2)
+                    .is_some_and(|symbol| symbol == name)
+        })
+        .unwrap_or_else(|| panic!("the ledger reports no cycle for {name}: {lines:#?}"))
+}
+
 /// The levels the ledger says one named recursion's stack holds.
 fn reported_levels(lines: &[String], name: &str) -> u64 {
-    let row = lines
-        .iter()
-        .find(|line| line.starts_with("STACK cycle") && line.contains(name))
-        .unwrap_or_else(|| panic!("the ledger reports no cycle for {name}: {lines:#?}"));
+    let row = cycle_row(lines, name);
     let levels = row
         .split_whitespace()
         .zip(row.split_whitespace().skip(1))
@@ -127,12 +156,22 @@ fn reported_levels(lines: &[String], name: &str) -> u64 {
 }
 
 /// Builds the program at one depth and reports whether it completed.
+///
+/// A run that did not complete must have run out of stack and said so. Exit 0
+/// is not the only thing this fixture can produce — it has its own `igt(r, 0)`
+/// false arm at exit 1 — and a bare signal is a third outcome, so a bare
+/// "did not exit 0" would let the ceiling half pass against a floor that had
+/// stopped reporting altogether.
 fn completes(source: Vec<u8>, directory: &std::path::Path) -> bool {
     let executable = build_executable(&compile(&source), directory);
     let output = Command::new(&executable)
         .output()
         .expect("run the depth probe");
-    output.status.code() == Some(0)
+    if output.status.code() == Some(0) {
+        return true;
+    }
+    super::exhaustion::assert_resource_record(&output.stderr, "stack");
+    false
 }
 
 /// The reported ceiling and the measured one agree, at two frame widths.

@@ -386,32 +386,33 @@ command fn main() -> status: own ExitStatus pure {
 /// schedule. The frame belongs to the lane now, so a refused hand-out builds
 /// nothing.
 ///
-/// Both builds run under a stack limit this case sets, so the depth it asks
-/// for means the same thing on every machine. The depth sits between what the
-/// old lowering reached under that limit (about 16 200 frames) and what this
-/// one reaches (about 21 600), roughly 15% clear of each.
+/// The measurement is the frame width itself rather than survival at a chosen
+/// depth, and it was rewritten on 2026-08-23 for that reason.
 ///
-/// **What this measures changed when the module grew a second world, and it is
-/// worth saying which half it now holds.** It runs at `WF_WORKERS=1`, so the
-/// bootstrap selects the sequential clone and what descends here is the
-/// clone's frames — the property under test is now that asking for overlap
-/// costs no depth *because the pool-off program runs the sequential code*,
-/// which is a stronger guarantee than the one this case was written for and a
-/// different mechanism. The original mechanism — a refused hand-out building
-/// no frame, which is what the overlapped world still relies on whenever the
-/// pool is on and a claim is refused — is held structurally by
-/// `handing_a_call_out_adds_no_stack_slot`, whose count is taken over the
-/// overlapped world alone. Adding a pool here would not restore it: this
-/// fixture hands out its *deep* side, so a thief takes the descent onto an
-/// 8 MB worker stack and the case would pass without measuring anything.
+/// It used to run both builds under `ulimit -s 1024` at depth 18 600, chosen
+/// to sit between what the old lowering reached under that limit (about
+/// 16 200 frames) and what this one reached (about 21 600). That calibration
+/// stopped meaning anything when the entry moved onto a stack the runtime
+/// owns: `@main` trampolines to `wf__floor_run` regardless of world, so the
+/// shell's limit binds neither build and both complete at depth 1 000 000,
+/// fifty-four times what the case asked for. Against ceilings of 33 554 432
+/// and 22 369 621 levels the margin was over a thousandfold, so the fourfold
+/// frame regression this case exists to catch left it passing — as did every
+/// other outcome.
+///
+/// A frame width is exact and the defect is a frame width, so that is what is
+/// compared: the `--par` build's sequential clone against the plain build's
+/// own function, byte for byte at one level. A per-activation slot for a
+/// hand-out that was never granted shows up here immediately, with no depth to
+/// calibrate and no host limit to depend on.
+///
+/// The original mechanism — a refused hand-out building no frame, which is what
+/// the overlapped world still relies on whenever the pool is on and a claim is
+/// refused — is held structurally by `handing_a_call_out_adds_no_stack_slot`,
+/// whose count is taken over the overlapped world alone.
 #[test]
 fn handing_calls_out_keeps_the_sequential_recursion_depth() {
-    const STACK_KILOBYTES: u32 = 1024;
-    const DEPTH: u32 = 18_600;
-
-    let source = DEEP_RECURSION
-        .replace("DEPTH", &DEPTH.to_string())
-        .into_bytes();
+    let source = DEEP_RECURSION.replace("DEPTH", "1000").into_bytes();
     let overlapped_module = emit_with_overlap(&source);
     assert!(
         module_requires_parallel_runtime(&overlapped_module),
@@ -420,22 +421,16 @@ fn handing_calls_out_keeps_the_sequential_recursion_depth() {
 
     let plain_directory = test_directory();
     let overlapped_directory = test_directory();
-    let sequential = build_executable(&emit(&source), &plain_directory);
-    let overlapped = build_executable(&overlapped_module, &overlapped_directory);
+    let plain = super::stack_ledger::ledger_lines(&emit(&source), &plain_directory);
+    let overlapped = super::stack_ledger::ledger_lines(&overlapped_module, &overlapped_directory);
 
-    let expected = run_with_stack(&sequential, STACK_KILOBYTES);
-    assert!(
-        expected < 2,
-        "the sequential build itself did not survive depth {DEPTH} on a \
-         {STACK_KILOBYTES} KB stack (exit {expected}), so this case can say \
-         nothing about the overlapped one"
-    );
+    let sequential = super::stack_ledger::reported_frame_bytes(&plain, "wf_spine");
+    let clone = super::stack_ledger::reported_frame_bytes(&overlapped, "wf__par_seq_spine");
     assert_eq!(
-        run_with_stack(&overlapped, STACK_KILOBYTES),
-        expected,
-        "the --par build did not reach a depth the sequential build reaches on \
-         the same stack, so handing calls out is taxing activations that were \
-         never granted a lane"
+        clone, sequential,
+        "the --par build's sequential clone costs {clone} bytes a level where \
+         the plain build's own function costs {sequential}, so handing calls \
+         out is taxing activations that were never granted a lane"
     );
 
     std::fs::remove_dir_all(&plain_directory).expect("remove the test directory");
@@ -445,42 +440,32 @@ fn handing_calls_out_keeps_the_sequential_recursion_depth() {
 /// The world an unconfigured `--par` binary runs in reaches a deep recursion
 /// too.
 ///
-/// [`handing_calls_out_keeps_the_sequential_recursion_depth`] measures the
-/// pool-*off* world: it names `WF_WORKERS=1`, which sends the bootstrap into
-/// the sequential clone. Nothing else in the tree sets a stack limit, so
-/// without this case no test measures depth in the world a binary reaches with
-/// no configuration at all — and that is the world the original defect lived
-/// in. A per-activation frame slot cost about four times the stack there and
-/// died as a bare SIGSEGV: a recursion that ran without `--par` and did not
-/// run with it.
+/// [`handing_calls_out_keeps_the_sequential_recursion_depth`] holds the clone
+/// a pool-off binary runs; this holds the one a binary with no configuration
+/// at all runs, which is the world the original defect lived in. A
+/// per-activation frame slot cost about four times the stack there and died as
+/// a bare SIGSEGV: a recursion that ran without `--par` and did not run with
+/// it.
 ///
-/// What is pinned is a floor and not a parity, because an overlapped
-/// activation is genuinely not free. Measured on this fixture at this limit,
-/// the default reaches past 160 000 frames and fails by 180 000, where the
-/// sequential build still reaches past 200 000. The depth asked for is 60 000
-/// — about 2.7x clear of the ceiling the default has, and far below the
-/// ~45 000 a fourfold frame regression would leave it, so the case fails on
-/// the defect it watches for rather than on ordinary drift.
+/// What is pinned is a bound and not a parity, because an overlapped
+/// activation is genuinely not free — it carries the hand-out's own frame. On
+/// this fixture the two clones cost 48 and 32 bytes a level, so the bound is
+/// two, which admits the real ratio with room and refuses the fourfold
+/// regression this case exists to catch.
 ///
-/// The limit is 8 MB rather than the 1 MB its sibling uses, and that used to be
-/// what took the steal race out of the result: a stolen descent ran on a worker
-/// stack of the larger of `RLIMIT_STACK` and 8 MB, so at this limit both sides
-/// of the race had the same room. Neither half of that is still true. The entry
-/// runs on a stack the runtime owns and a lane runs on one the same size, so
-/// this `ulimit` no longer bounds either thread and the race no longer decides
-/// anything — the depth below is now far inside a ceiling three orders of
-/// magnitude above it, which means this case can no longer catch the frame
-/// regression it was written for. Re-aiming it is a stack-ledger job: the
-/// instrument that catches a moved frame is the predicted-versus-measured
-/// ceiling, not a survival probe at a depth chosen for a limit that is gone.
+/// It used to be a survival probe at depth 60 000 under `ulimit -s 8192`,
+/// re-aimed on 2026-08-23 for the reason its own doc gave: the entry runs on a
+/// stack the runtime owns and a lane runs on one the same size, so that
+/// `ulimit` bounds neither thread, and the depth sat three orders of magnitude
+/// inside a ceiling nothing in the shell could move. The instrument that
+/// catches a moved frame is the frame, and the ledger prints it.
 #[test]
 fn the_shipped_default_keeps_a_deep_recursion() {
-    const STACK_KILOBYTES: u32 = 8192;
-    const DEPTH: u32 = 60_000;
+    /// How much more stack one overlapped level may cost than one sequential
+    /// level.
+    const WIDEST_ADMITTED_RATIO: u64 = 2;
 
-    let source = DEEP_RECURSION
-        .replace("DEPTH", &DEPTH.to_string())
-        .into_bytes();
+    let source = DEEP_RECURSION.replace("DEPTH", "1000").into_bytes();
     let overlapped_module = emit_with_overlap(&source);
     assert!(
         module_requires_parallel_runtime(&overlapped_module),
@@ -488,50 +473,18 @@ fn the_shipped_default_keeps_a_deep_recursion() {
     );
 
     let directory = test_directory();
-    let overlapped = build_executable(&overlapped_module, &directory);
-    let status = run_at_shipped_default_with_stack(&overlapped, STACK_KILOBYTES);
+    let lines = super::stack_ledger::ledger_lines(&overlapped_module, &directory);
+    let overlapped = super::stack_ledger::reported_frame_bytes(&lines, "wf_spine");
+    let sequential = super::stack_ledger::reported_frame_bytes(&lines, "wf__par_seq_spine");
     assert!(
-        status < 2,
-        "a --par binary with no worker setting did not survive depth {DEPTH} on \
-         a {STACK_KILOBYTES} KB stack (exit {status}), so the world it runs in \
-         unconfigured is taxing activations the sequential lowering does not"
+        overlapped <= sequential * WIDEST_ADMITTED_RATIO,
+        "one overlapped level costs {overlapped} bytes against the sequential \
+         clone's {sequential} in the same binary, so the world a --par binary \
+         runs in unconfigured is taxing activations far beyond the hand-out's \
+         own frame"
     );
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
-/// Runs one executable with a stack limit of its own and no pool, and reports
-/// its exit status. A stack overflow arrives here as the shell's report of the
-/// signal, which is no exit status the program itself can produce.
-///
-/// The pool is refused by naming one lane rather than by leaving the setting
-/// absent, because absent is the shipped default and starts a pool. That would
-/// hand this fixture's deep side to a thief descending on an 8 MB worker stack,
-/// where the limit this case sets means nothing and the comparison would pass
-/// without measuring anything.
-fn run_with_stack(executable: &Path, kilobytes: u32) -> i32 {
-    run_under_stack_limit(executable, kilobytes, Some("1"))
-}
-
-/// The same run with the setting genuinely absent, which is what a program
-/// gets when nobody configures it. The variable is removed rather than left
-/// alone, so the result does not depend on the environment the suite runs in.
-fn run_at_shipped_default_with_stack(executable: &Path, kilobytes: u32) -> i32 {
-    run_under_stack_limit(executable, kilobytes, None)
-}
-
-fn run_under_stack_limit(executable: &Path, kilobytes: u32, workers: Option<&str>) -> i32 {
-    let mut command = Command::new("/bin/sh");
-    command
-        .arg("-c")
-        .arg(format!("ulimit -s {kilobytes}; exec \"$0\""))
-        .arg(executable);
-    match workers {
-        Some(lanes) => command.env("WF_WORKERS", lanes),
-        None => command.env_remove("WF_WORKERS"),
-    };
-    let output = command.output().expect("run under a stack limit");
-    output.status.code().unwrap_or(-1)
 }
 
 /// The lane's frame is the lane's: asking for overlap adds no stack slot to

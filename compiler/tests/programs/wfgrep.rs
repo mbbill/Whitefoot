@@ -222,15 +222,21 @@ fn wfgrep_agrees_with_grep_on_the_empty_and_the_total_hit_set() {
     );
 }
 
-/// The descent is not depth-limited, and the failure it used to have was the
-/// worst kind: a file below sixteen levels was left unsearched, the walk
-/// returned normally, and the answer was byte-identical to a real absence.
+/// The descent carries no depth cap of its own, and the failure it used to
+/// have was the worst kind: a file below sixteen levels was left unsearched,
+/// the walk returned normally, and the answer was byte-identical to a real
+/// absence.
 ///
 /// Three hundred levels is not a round number chosen for effect — it is well
 /// past the deleted cap and well inside the two bounds that do still apply.
 /// The host bounds one absolute path, so the fixture root's own length is part
-/// of the budget; and `walk` refuses a display path past a thousand bytes,
-/// which stops this shape at 493 levels, measured. Neither is the stack: the
+/// of the budget; and `walk` refuses a display path past a thousand bytes.
+/// That refusal is arithmetic on the *display* path, so the level it lands at
+/// depends on the root name's length, which is why quoting a level without the
+/// root is not reproducible: for this fixture's four-byte root `tree`,
+/// `4 + 2n + len("/bottom.txt") <= 1000` gives n <= 492, and 493 is the first
+/// level that fails — measured, and measured again at 493 completing with a
+/// three-byte root. Neither bound is the stack: the
 /// stack ledger prices one `wf_walk` activation at 1744 bytes and the
 /// runtime's stack at 615,677 of them, so what bounds a directory search is
 /// still a buffer in the program and not the machine underneath it.

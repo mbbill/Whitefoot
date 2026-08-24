@@ -482,6 +482,25 @@ fn host_optimized_module(llvm: &str) -> String {
     String::from_utf8(output.stdout).expect("optimized module is UTF-8")
 }
 
+/// Returns the definition of the host entry `@main` inside one optimized
+/// module.
+///
+/// This is the wrapper the exhaustion floor left behind: it keeps the host's
+/// entry signature and hands the program to `@wf__floor_run`. Nothing about a
+/// program's shape is read here, but a census that claims to inventory
+/// everything the finished program calls has to include it, or it is complete
+/// over every generated function except the one whose call it would not
+/// otherwise account for.
+pub(super) fn optimized_main_wrapper(module: &str) -> &str {
+    let start = module
+        .find("define i32 @main(")
+        .expect("the optimized module defines a host entry");
+    let end = module[start..]
+        .find("\n}\n")
+        .expect("the host entry closes");
+    &module[start..start + end]
+}
+
 /// Returns the definition of the program's entry inside one optimized module.
 ///
 /// This is `@wf__main_body`, not `@main`. Since the exhaustion floor landed,

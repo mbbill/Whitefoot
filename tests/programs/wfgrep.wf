@@ -755,7 +755,7 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
 }
 
 fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, pattern: &'a buffer<u8>, pattern_length: own u64, out: &uniq 'o Output, err: &uniq 'e Output) -> result: own u8 reads('c 'p 'a 'o 'e), writes('o 'e), allocates(heap), external, blocks, traps {
-  doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. The descent is not depth-limited: it follows the tree as far as the tree goes, and an exhausted stack is a reported resource death rather than a silent truncation. One fixed bound remains and is recorded as a defect: at most 64 entries per directory are retained, in the host's enumeration order, before sorting. It returns normally, so that truncation is indistinguishable from a complete one.";
+  doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. The descent carries no depth cap of its own, and an exhausted stack is a reported resource death rather than a silent truncation. Two bounds remain and both are recorded as defects. One truncates silently: at most 64 entries per directory are retained, in the host's enumeration order, before sorting, and the walk returns normally, so that truncation is indistinguishable from a complete one. The other stops the descent: a display path past a thousand bytes refuses, which on a tree of one-byte directory names binds at roughly five hundred levels, and it reports by exit status alone with nothing on standard error.";
   let matched = 0_u8;
   let failed = 0_u8;
   let entries = buffer_new(8192_u64, 0_u8);
@@ -1184,7 +1184,7 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
 }
 
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
-  doc "Searches one directory tree recursively and publishes `PATH:LINE:TEXT` for the lines holding the literal pattern bytes; 0 matched, 1 none, 2 error. The search is complete at every depth and is complete only within `walk`'s one remaining fixed bound (64 entries per directory), beyond which it truncates and still returns normally.";
+  doc "Searches one directory tree recursively and publishes `PATH:LINE:TEXT` for the lines holding the literal pattern bytes; 0 matched, 1 none, 2 error. The search is complete only within `walk`'s two remaining fixed bounds: 64 entries per directory, beyond which it truncates and still returns normally, and a thousand-byte display path, beyond which the descent stops and the run exits 2 with nothing on standard error.";
   let pattern = buffer_new(4096_u64, 0_u8);
   let root_name = buffer_new(256_u64, 0_u8);
   let root_path = buffer_new(1024_u64, 0_u8);

@@ -230,9 +230,12 @@ command fn main() -> status: own ExitStatus pure {
 fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
     // Both the read and the indexed set need a stack slot for the array value,
     // and the index is not a compile-time constant, so neither slot can be
-    // promoted away. The trip count is far past the point where one slot per
-    // iteration would exhaust the process stack: 200000 iterations of two
-    // 64-byte slots is about 25 MB, against a default 8 MB limit.
+    // promoted away. The structural half is what discriminates: no slot may be
+    // declared outside the entry block, so a frame that grew once per
+    // iteration fails here whatever it would survive. The run is a
+    // corroboration rather than the measurement — 200000 iterations of two
+    // 64-byte slots is about 25 MB, which used to be past a default 8 MB limit
+    // and now fits inside the 1 GiB stack the runtime gives every thread.
     let source = br#"command fn main() -> status: own ExitStatus traps {
   doc "A long loop reads and writes one fixed array through a rotating index.";
   let window = array_new<u64, 8>(1_u64);

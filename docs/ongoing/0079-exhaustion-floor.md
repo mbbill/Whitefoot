@@ -62,10 +62,15 @@ home).
 
 - F1 — every generated definition carries the target's `probe-stack`
   attribute, applied at the module chokepoint so completeness holds for
-  definitions nobody has written yet. Verified on this Darwin host: all 42
-  corpus executables (21 units x default and `--par`) byte-identical to the
+  definitions nobody has written yet. Verified on this Darwin host: all 44
+  corpus executables (22 units x default and `--par`) byte-identical to the
   pre-change compiler's, and all 176 observable rows (4 worker settings)
-  unchanged; on a large-frame program the emitted prologue gains the
+  unchanged. (Corrected 2026-08-23: this said 42 and 21, which contradicts
+  both the 176 in the same sentence — 22 x 2 x 4 — and F5's own "22 corpus
+  units". `tests/programs/` holds 25 `.wf` files: 20 compile standalone and
+  the five `raw_deflate*` files form exactly two multi-file units. The sweep
+  covered 22; the count was misreported.)
+  On a large-frame program the emitted prologue gains the
   `___chkstk_darwin` page walk that the pre-change binary did not have, so
   the attribute is doing work rather than sitting inert. Test needles that
   pinned a `define ... {` line followed the added group; no assertion
@@ -124,12 +129,28 @@ home).
   Also fixed here, from the audit's handler review: the non-Darwin bounds
   capture leaked its `pthread_attr_t` when `pthread_getattr_np` succeeded and
   `pthread_attr_getstack` failed. Untested on this host.
-  Cost, measured rather than carried over from the research: +0.078 ms per
-  process and +65,560 bytes peak footprint, of which the 1 GiB reservation
-  contributes nothing (an 8 MiB and a 4 GiB thread measure the same) and the
-  alternate signal stacks contribute nothing (16 KiB and 64 KiB measure the
-  same) — it is the entry thread itself. The dossier's "0 ms, 0 RSS" holds
-  for the reservation only.
+  Cost, measured rather than carried over from the research: the floor costs
+  one extra thread's worth of footprint and roughly a tenth of a millisecond
+  per process. The 1 GiB reservation contributes nothing (an 8 MiB and a
+  4 GiB thread measure the same) and the alternate signal stacks contribute
+  nothing (16 KiB and 64 KiB measure the same) — it is creating the entry
+  thread at all. The dossier's "0 ms, 0 RSS" holds for the reservation only.
+  (Restated 2026-08-23. The first form gave "+0.078 ms per process and
+  +65,560 bytes peak footprint" as two constants, and neither is one.
+  Footprint: `/usr/bin/time -l` peak, three runs each, tip against a
+  pre-batch build of the same sources, gives deltas of 32,792, 49,176, and
+  65,560 bytes depending on the program — every value 16,384n + 24, i.e.
+  page granularity — and the assignment of value to program differs across
+  measuring sessions. Three sessions produced three different arrangements of
+  the same value set; this one measured +49,176 uniformly across a minimal
+  entry, `geometry_vectors`, `feedback_controller`, and `ipv4_checksum`.
+  65,560 was the largest cell, not a constant. Time: the first form named no
+  method, sample size, or machine condition. Alternating batches of 200 runs
+  of a minimal program, six pairs, at load ~2.3 on this ten-core host: mean
+  +0.207 ms with a batch-to-batch spread of 1.171 ms — the spread is several
+  times the effect, and an independent audit session at load ~2.8 measured
+  +0.057 ms with a 0.29 ms spread. The effect is real and small; three
+  significant figures for it are not supportable on a shared host.)
   Two findings for the lead, neither in this scope: pool lanes are still
   sized from `RLIMIT_STACK`, so F2 widens the sequential-versus-lane ceiling
   gap that F7 owns; and whether a deep recursion reaches a lane at all is a
@@ -192,12 +213,34 @@ home).
   program with a 7168-element local array per activation, at a depth past
   its lane's stack, compiled by the shipped compiler and then rebuilt with
   the attribute ablated from that one recursion. Both binaries carry the
-  identical frame arithmetic — `sub sp, sp, #0x4a, lsl #12` then
-  `sub sp, sp, #0xbd0`, 305,616 bytes per activation — and differ only by
-  the `___chkstk_darwin` page walk before the drop. Probed: exit 134 with
-  the record, 10/10. Ablated: **exit 0, 10/10** — the program runs with
-  frames past the end of its own lane stack, finds what it touches mapped,
-  and returns a normal answer for a computation that never fit.
+  identical frame arithmetic — `sub sp, sp, #0x47, lsl #12` then
+  `sub sp, sp, #0x310`, 291,600 bytes moved by the prologue's own
+  subtractions and 291,760 with the ABI save area, which is the figure
+  `--stack-ledger` prints — and differ only by the `___chkstk_darwin` page
+  walk before the drop. Probed: exit 134 with the record, 10/10. Ablated:
+  **exit 139 with zero bytes, 10/10** — the program steps over the guard
+  region in one move and takes a fault the floor correctly declines to call
+  exhaustion.
+  Both numbers here were corrected on 2026-08-23 after the batch audit, and
+  the correction is worth stating rather than silently applying, because the
+  first form of this entry was wrong in a way that mattered.
+  The arithmetic first: `0x4a<<12 + 0xbd0` is 306,128, not the 305,616 this
+  entry claimed, so the sentence did not even reconcile with itself, and
+  neither operand appears in either binary — F6's own entry at `:296` and
+  the shipped ledger both price this shape at 291,760 bytes, 13,856 bytes
+  away. It was a mistranscription, and three independent rebuilds agree on
+  `#0x47`/`#0x310`.
+  The outcome second, which is the one that carried weight: this entry
+  claimed the ablated build **completed, exit 0, 10/10**, and the F8 recipe
+  cited that as the sole evidence under a candidate spec sentence. Three
+  reconstructions across two audit agents got exit 134 with the record on
+  *both* sides. The cause was not the ablation but the floor: the
+  discrimination band was then 1 MiB, so the ablated 291,600-byte skip landed
+  inside it and was reported as exhaustion too, and the property was
+  unobservable on this host at that band. With the band narrowed to the
+  probe's geometry the separation is real, deterministic, and now performed
+  by the regression itself rather than described by it — see F2+F3 above and
+  `a_frame_larger_than_the_guard_region_is_still_reported`.
   Instrumented across eleven frame sizes, the probed build's first fault is
   8 bytes below the stack every time; the ablated build's lands 1,552 to
   16,384 bytes below, or nowhere at all. `a_frame_larger_than_the_guard_
@@ -241,11 +284,21 @@ home).
   deferred children rather than interleaved with them; every action that can
   move that way is an empty-row memory reclamation *except* one reachable
   shape, flagged here rather than papered over: an enum variant that declares
-  a system-resource field *after* a recursive `box` field, whose [SYS-5]
+  a system-resource field **before** a recursive `box` field, whose [SYS-5]
   release is the one action with a non-empty row. In that shape the chain's
   `close` calls change from deepest-first to shallowest-first. No corpus type
   has it, and the specification fixes no order there, but it is a real
   difference and the owner packet should carry it.
+  (Corrected 2026-08-23: this said *after*, and the audit measured it
+  backwards. `cleanup.rs` pushes a variant's fields in declaration order and
+  `emit_cleanup_jobs` pops last-in first-out, so the *last*-declared field is
+  emitted first. With the resource declared before the box the old expansion
+  destroyed the subtree first and closed after it — deepest-first — and the
+  worklist closes first, which is the change. With the resource declared
+  after the box, both forms close first and nothing moves. An owner
+  reproducing the concern from the old sentence would have written the shape
+  that did not change and concluded the item was moot; re-derived here on
+  emitted IR for both orders, and independently by two audit agents.)
   The buffer arm (2026-08-23, superseding this entry's first form). As first
   landed, F5 declared a `buffer` in a cleanup cycle deliberately out of
   scope on the ground that "no program can reach one — a nominal recursive
@@ -394,8 +447,10 @@ home).
   from `-fstack-usage` and the call graph from the assembly of the same
   compilation, Tarjan over that graph, and one line per frame, per cycle, and
   per acyclic chain.
-  Sample, unedited (`--stack-ledger`, cold and outlined rows trimmed for the
-  record only):
+  Sample (`--stack-ledger`; cold and outlined rows dropped, the name column
+  re-padded, and the chain row's call path elided, all for this record's line
+  width — every number is the tool's own). It was labelled "unedited" until
+  2026-08-23, which the trimming parenthetical did not cover:
 
   ```
   STACK stack     1073741824 B  the entry thread and every worker lane
@@ -481,12 +536,17 @@ home).
   stack was never the cap's binding constraint and it is not the new one. `walk`
   refuses a display path past a thousand bytes (`ile(child_length, 1000_u64)`)
   and a chain of single-character directories spends two bytes a level, so this
-  shape stops at **493 levels** — bisected here: 493 completes and finds the
-  file, 494 returns exit 2. The stack ledger prices one `wf_walk` activation at
-  1,744 bytes and the entry stack at **615,677** of them, so the program's own
-  buffer binds 1,249x below the machine. Deleting the cap raised the reachable
-  depth 30.8x and left three orders of magnitude between the program and the
-  floor.
+  shape stops at roughly five hundred levels. The exact level depends on the
+  root name, because the bound is arithmetic on the *display* path, and a level
+  count quoted without the root length is not reproducible — which is what this
+  sentence did until 2026-08-23, quoting 493 from a three-character root while
+  attributing it to the regression's four-character one. Bisected here at both:
+  with the four-byte root `tree` 492 completes and 493 returns exit 2; with a
+  three-byte root 493 completes and 494 returns exit 2. The stack ledger prices
+  one `wf_walk` activation at 1,744 bytes and the entry stack at **615,677** of
+  them, so the program's own buffer binds about 1,250x below the machine.
+  Deleting the cap raised the reachable depth about 31x and left three orders of
+  magnitude between the program and the floor.
   The honest verdict is therefore narrower than the design's phrasing in one
   place and stronger in another. The cap **was** deletable, and deleting it
   converts a truncation indistinguishable from completeness into either a
@@ -621,11 +681,17 @@ fail against the build without the floor.
 **4. The floor's own cost, corrected from the research's estimate.** The
 dossiers priced the runtime-owned entry stack at "0 ms, 0 RSS". Measured here,
 that holds for the 1 GiB *reservation* and not for the mechanism: the floor
-costs **+0.078 ms per process and +65,560 bytes of peak footprint**. An 8 MiB
-and a 4 GiB entry thread measure the same, and a 16 KiB and a 64 KiB alternate
-signal stack measure the same, so neither the reservation nor the handler stacks
-are the cost — it is creating the entry thread at all. The number is small and
-it is not zero, and a packet that repeated "0 ms, 0 RSS" would be wrong.
+costs one extra thread: a page-granular footprint delta measured at 32,792,
+49,176, or 65,560 bytes depending on the program and the measuring session, and
+a per-process time cost of roughly a tenth of a millisecond whose batch-to-batch
+spread on a shared host is several times the effect. An 8 MiB and a 4 GiB entry
+thread measure the same, and a 16 KiB and a 64 KiB alternate signal stack
+measure the same, so neither the reservation nor the handler stacks are the
+cost — it is creating the entry thread at all. The cost is small and it is not
+zero, and a packet that repeated "0 ms, 0 RSS" would be wrong. It is stated as
+a range with its method because the first form of this item gave two constants
+(+0.078 ms, +65,560 bytes) that the batch audit could not reproduce as
+constants; see F2+F3 for the measurements.
 
 **5. Sixteen lanes reserve sixteen gibibytes of address space, and it stays
 address space.** Each lane now gets the entry's stack byte for byte, so a
@@ -635,9 +701,19 @@ sixteen-worker run reserves 16 x 1 GiB. Re-derived at this tip on
 gibibytes of reservation cost about 459 KB of resident memory, roughly 38 KB a
 lane — thread bookkeeping and the pages a signal stack touches, not the
 reservation. If the reservation were resident the sixteen-lane run would show
-sixteen gibibytes. The mechanism is confirmed; the absolute numbers sit 0.08 to
-0.23 MB above F7's own (1.80 MB and 1.95 MB) because this is a later build on a
-machine doing other work, and the difference is reported rather than reconciled.
+sixteen gibibytes. The mechanism is confirmed and it is the only thing here
+that reproduces: peak resident memory is environment-sensitive, and a third
+independent session measured a third pair again (1,343,896 bytes at four
+workers, 1,983,160 at sixteen) while agreeing on the ~50 KB-a-lane slope.
+(Corrected 2026-08-23. This sentence said the numbers "sit 0.08 to 0.23 MB
+**above** F7's own (1.80 MB and 1.95 MB)". Both halves were wrong. The sign:
+1,720,320 bytes is 1.72 MB, which is 0.08 MB *below* 1.80 MB, while 2.18 MB is
+0.23 MB above 1.95 MB — the range runs in both directions and the sentence
+gave one sign to both ends. The cells: F7's pair at `:231-233` is *two
+sixteen-worker* figures, before and after its change, so this was comparing a
+four-worker measurement against a sixteen-worker one. "Reported rather than
+reconciled" remains the right disposition, for a better reason than the one
+given.)
 
 ## F8 — the merge-time application recipe: resource death in [SCOPE-3]
 
@@ -1033,8 +1109,14 @@ where it was always going to be carried.
 **Audit-lite dispositions.** Six landings, load-bearing numbers re-derived
 independently at the tip rather than read from the logs:
 
-- F1 — `par_layout`'s emitted module: 22 definitions, 22 carrying `#0`, one
-  attribute group naming this host's `__chkstk_darwin`. Completeness confirmed.
+- F1 — `par_layout`'s emitted module: 23 definitions, 23 carrying `#0` in the
+  default world and 36 of 36 under `--par`, one attribute group naming this
+  host's `__chkstk_darwin` in each. Completeness confirmed. (This row said 22,
+  which is the count at `dc8cf1a3`, before `5c95580d` added
+  `@wf_target_domain_abort` — so it was read from a log rather than re-derived
+  at the tip as the heading claims. The property held; the number did not.
+  Re-derived 2026-08-23, after the shared record latch added one more
+  definition to the `--par` module.)
 - F2 — the 2,000,000-frame recursion completes under `ulimit -s 1024`, exit 0.
   The compiler's number, not the shell's, confirmed.
 - F5 — the drop-glue call graph of `recursive_tree`'s emitted module,
@@ -1075,9 +1157,12 @@ section anyway; the recipe's derived-material list carries the fix.
    Approval covers exactly those bytes.
 2. **The [SYS-5] release-order question, an owner decision this batch declines
    to make.** F5's iterative drop glue changes one reachable shape: an enum
-   variant declaring a system-resource field *after* a recursive `box` field
-   has its chain of `close` calls run shallowest-first where they used to run
-   deepest-first. No corpus type has that shape and the specification fixes no
+   variant declaring a system-resource field **before** a recursive `box`
+   field has its chain of `close` calls run shallowest-first where they used
+   to run deepest-first. (The declaration order was stated backwards until
+   2026-08-23; fields are emitted last-declared first, so it is the field
+   *before* the box that moves. The shape declaring the resource after the
+   box is unchanged, and reproducing that one would show nothing.) No corpus type has that shape and the specification fixes no
    order within one value, so today's rule permits both. But [SYS-5]'s `close`
    is the one release action with a non-empty effect row — it is externally
    observable — and an unfixed order over an observable action means two
@@ -1094,6 +1179,14 @@ section anyway; the recipe's derived-material list carries the fix.
    three-class partition normatively. If the owner prefers the guard folded into
    `heap`, both the code and the clause move together and the record above says
    why that would be the wrong reading.
+   A second decision rides in the same item and is named here because it lived
+   only in the executor log until 2026-08-23, where a reader of this list alone
+   would have missed it: the class is **spelled** `target-domain`, not the
+   brief's suggested `target-ceiling`, a deliberate deviation taken so the
+   spelling matches `spec/kernel-spec.md:719`'s own "failed dynamic
+   target-domain guard". The spelling is not fixed by Edit 1 — the clause
+   declines to fix any class spelling — so this is an implementation choice the
+   owner may overrule without a spec change.
 4. **The `wasi-sdk` research-test host defect**, carried from `main`: the
    installed toolchain crashes on `adversarial-caller.ll` and `make check`
    cannot be fully green on this host until it is replaced. Reproduced with the
