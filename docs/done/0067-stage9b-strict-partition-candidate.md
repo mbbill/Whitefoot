@@ -2,7 +2,7 @@
 
 - **Status:** `DONE` (2026-08-15)
 - **Owner:** lead agent `/root`
-- **Workspace / branch:** `/Users/bytedance/code/Whitefoot`, `codex/0067`
+- **Workspace / branch:** `<repository-root>`, `codex/0067`
 - **Base revision:**
   `61b91f095b7b4942b5fa570eb62929a603a93b7c`
 - **Authority:** the then-`ACTIVE` Current Plan, Workstream 9b under Direction
@@ -67,7 +67,7 @@ installed identity, and the roadmap records terminal `PROOF-8` status.
   mapping pin. It was neither an activation-era passing wfgrep gate nor a
   Stage 9b semantic failure.
 - The final repository-root `make check`, run with `TMPDIR` under
-  `/Users/bytedance/do_not_scan`, exited `0`: specification append-only checks,
+  `<scratch-root>`, exited `0`: specification append-only checks,
   archive identities `30`, runner `23/23`, coverage `133/133`, compiler library
   `833/833` in `679.39s`, grammar
   `9/9`, generated tables `1/1`, migration `36/36`, specification `10/10`,

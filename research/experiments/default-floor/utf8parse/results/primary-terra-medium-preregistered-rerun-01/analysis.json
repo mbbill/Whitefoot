@@ -1,18 +1,18 @@
 {
-  "campaign": "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01",
+  "campaign": "<historical-repository-root>/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01",
   "corpus": {
     "bytes": 134217728,
     "command": [
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01/build/cargo-target/aarch64-apple-darwin/release/bench",
+      "<historical-repository-root>/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01/build/cargo-target/aarch64-apple-darwin/release/bench",
       "prepare-corpus",
       "--mode",
       "score",
       "--bytes",
       "134217728",
       "--output",
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01/corpus.bin"
+      "<historical-repository-root>/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01/corpus.bin"
     ],
-    "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01/corpus.bin",
+    "path": "<historical-repository-root>/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01/corpus.bin",
     "sha256": "e7387acef66a3a0ca0cfa88cd7b57c18625cc9713bc16a41827c4899cb39ce18"
   },
   "facts_attribution": {
@@ -62,7 +62,7 @@
     "verdict": "inconclusive against the 2% band"
   },
   "frozen_source": {
-    "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/runs/primary-terra-medium-preregistered/frozen/utf8parse.xl",
+    "path": "<historical-repository-root>/experiments/default-floor/utf8parse/runs/primary-terra-medium-preregistered/frozen/utf8parse.xl",
     "sha256": "3bb7951995120d24c651b6750ac9ba4c7a8fb9b61bc02fb5d219e64e640c1535"
   },
   "kind": "utf8parse-score-analysis",
@@ -1228,7 +1228,7 @@
       "variant": "rust"
     }
   ],
-  "raw_sha256": "71297ba0bfc2bc7b8af1f29b33f7c4769cb6c706f8a0c3f7c855363b86404ab3",
+  "raw_sha256": "efbeaef999ef584742d88b4a3ea9bfb2d7fb80ac41c5e531fca4af9dcf45c9d9",
   "schedule": {
     "repetitions_per_stratum": 5,
     "strata_order": [

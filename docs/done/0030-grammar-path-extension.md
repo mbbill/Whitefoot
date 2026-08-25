@@ -14,7 +14,7 @@ This is a temporary live coordination record, not execution authority.
   `governance/spec-evolution/obligation-discharge-batch1-candidate.md`
   (`governance/APPROVALS.md`)
 - **Owner / workspace:** exec-0030 /
-  `/Users/bytedance/do_not_scan/wf-0030-worktree`, branch
+  `<scratch-root>/wf-0030-worktree`, branch
   `task/0030-grammar-path-extension`
 - **Base revision:** f374082 (rebased 2026-08-07, second rebase)
 - **Dependency:** none (candidate approved; this task gates v0.21 candidate
@@ -99,7 +99,7 @@ cargo run --manifest-path compiler/Cargo.toml --bin whitefoot-grammar -- \
   governance/spec-evolution/kernel-spec-v0.20-candidate.md
 # -> 64 productions, 74 decisions, 75 terminal predicates; exit 0
 cargo run --manifest-path compiler/Cargo.toml --bin whitefoot-grammar -- \
-  /Users/bytedance/do_not_scan/wf-0030/batch1-grammar-probe.md
+  <scratch-root>/wf-0030/batch1-grammar-probe.md
 # -> candidate changes the lexer or source grammar of the active
 #    specification; exit 1   (probe = v0.20 bytes + exactly the §2 delta)
 ```

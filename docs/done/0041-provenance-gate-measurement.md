@@ -8,7 +8,7 @@ This is frozen coordination history, not execution authority.
   revision 22; owner approval 2026-08-07 advancing the provenance measurement;
   and the held `governance/spec-evolution/provenance-gate-candidate.md`.
 - **Owner / workspace:** Codex lead /
-  `/Users/bytedance/do_not_scan/wf-0045-final-activation`, branch
+  `<scratch-root>/wf-0045-final-activation`, branch
   `codex/0045-ent5-activation`.
 - **Base revision:** `e5db43d`; claimed by `41aa352` after task 0045's terminal
   v0.24 acceptance baseline.

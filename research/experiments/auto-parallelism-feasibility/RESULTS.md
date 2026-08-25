@@ -89,7 +89,7 @@ This is a 1–2 day design-spike/paper exercise, no implementation, and it is **
 
 ---
 
-Grounding: XL-specific x-factors and the "scatter is the lone structural win, not provable from effect rows" claim are from `/Users/bytedance/Dev/xlang/optimizer-language-research/notes/regions-effects-vs-safe-rust-2026-07-08.md` (measured, Apple M4, rustc 1.91.1). All prior-art claims (DPJ Table 3 ~10.7%/≤22.6%, Bocchino 2013 pivot, HELIX limits, Halide/Futhark/ISPC/polyhedral, rayon SPAA 2024 11/60/29 split) are from the four survey clusters supplied, which cite primary PDFs.
+Grounding: XL-specific x-factors and the "scatter is the lone structural win, not provable from effect rows" claim are from `<historical-repository-root>/optimizer-language-research/notes/regions-effects-vs-safe-rust-2026-07-08.md` (measured, Apple M4, rustc 1.91.1). All prior-art claims (DPJ Table 3 ~10.7%/≤22.6%, Bocchino 2013 pivot, HELIX limits, Halide/Futhark/ISPC/polyhedral, rayon SPAA 2024 11/60/29 split) are from the four survey clusters supplied, which cite primary PDFs.
 
 
 ---
@@ -517,7 +517,7 @@ Concretely, XL should treat this cluster as three hard gates it must pass and DP
 
 ---
 
-**Key local files:** `/Users/bytedance/Dev/xlang/optimizer-language-research/notes/regions-effects-vs-safe-rust-2026-07-08.md` (the prior adversarial study — scatter is XL's lone structural win, which is *exactly* DPJ's admitted expressiveness gap) and `/Users/bytedance/Dev/xlang/optimizer-language-research/notes/phase2-concurrency-findings.jsonl` (C004: Rust Send/Sync as the incumbent effect-ish baseline).
+**Key local files:** `<historical-repository-root>/optimizer-language-research/notes/regions-effects-vs-safe-rust-2026-07-08.md` (the prior adversarial study — scatter is XL's lone structural win, which is *exactly* DPJ's admitted expressiveness gap) and `<historical-repository-root>/optimizer-language-research/notes/phase2-concurrency-findings.jsonl` (C004: Rust Send/Sync as the incumbent effect-ish baseline).
 
 **Sources:**
 - [Bocchino et al., "A Type and Effect System for Deterministic Parallel Java," OOPSLA 2009 (PDF)](https://rob-bocchino.net/Professional/Bocchino-OOPSLA-2009.pdf) — mechanism, Table 3 annotation counts (~10.7%, ≤22.6%), Fig 15 speedups, admitted permutation/`commuteswith` limits.

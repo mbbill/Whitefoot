@@ -7,7 +7,7 @@ This is frozen coordination history, not execution authority.
   revision 25, the owner's exact approval of v0.25 digest
   `c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab`,
   and the named protected prose change
-- **Owner / workspace:** Codex lead / `/Users/bytedance/code/Whitefoot`, branch
+- **Owner / workspace:** Codex lead / `<repository-root>`, branch
   `codex/0047-counted-range-impl`
 - **Base revision:** `8a44cb111759af87846284adbab2060b199fc861`
 

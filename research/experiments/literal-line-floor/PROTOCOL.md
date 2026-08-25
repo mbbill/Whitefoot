@@ -268,7 +268,7 @@ experiment; it may not motivate a favorable replacement input or algorithm.
 ## Measurement schedule
 
 The first and only run id is `wf-literal-line-floor-1`, stored in a create-once
-directory under `/Users/bytedance/do_not_scan`. That directory must not exist
+directory under `<scratch-root>`. That directory must not exist
 before the run and is never deleted or reused. A preflight refusal before a
 run header does not consume it. Once a header exists, any failure preserves
 the partial evidence and returns to owner review; there is no automatic retry

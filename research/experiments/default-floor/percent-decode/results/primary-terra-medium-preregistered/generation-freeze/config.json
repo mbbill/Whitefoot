@@ -4,18 +4,18 @@
     "argv_without_candidate_sha256": "0701b7ba57de6251a29d6cda147d554817b282899d55aabb06e0529af9ddf9f4",
     "public_metadata": {
       "cargo_config_absence": {
-        "cargo_home": "/Users/bytedance/.cargo",
+        "cargo_home": "<local-home>/.cargo",
         "schema_version": 1,
-        "search_cwd": "/Users/bytedance/Dev/xlang",
+        "search_cwd": "<historical-repository-root>",
         "searched_paths": [
-          "/Users/bytedance/Dev/xlang/.cargo/config.toml",
-          "/Users/bytedance/Dev/xlang/.cargo/config",
-          "/Users/bytedance/Dev/.cargo/config.toml",
-          "/Users/bytedance/Dev/.cargo/config",
-          "/Users/bytedance/.cargo/config.toml",
-          "/Users/bytedance/.cargo/config",
-          "/Users/.cargo/config.toml",
-          "/Users/.cargo/config",
+          "<historical-repository-root>/.cargo/config.toml",
+          "<historical-repository-root>/.cargo/config",
+          "<local-home>/Dev/.cargo/config.toml",
+          "<local-home>/Dev/.cargo/config",
+          "<local-home>/.cargo/config.toml",
+          "<local-home>/.cargo/config",
+          "<users-root>/.cargo/config.toml",
+          "<users-root>/.cargo/config",
           "/.cargo/config.toml",
           "/.cargo/config"
         ],
@@ -65,7 +65,7 @@
       "percent_encoding_registry": {
         "crate_files": [
           {
-            "path": "/Users/bytedance/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2.crate",
+            "path": "<local-home>/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2.crate",
             "sha256": "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
           }
         ],
@@ -74,7 +74,7 @@
         "verified_source_trees": [
           {
             "cargo_ok_sha256": "afbf9d0f3560b0fd7795e81c42a0a79ee6b6fc67e064f77826aee642cad28d91",
-            "path": "/Users/bytedance/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2",
+            "path": "<local-home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2",
             "tree_directories": [
               "src"
             ],
@@ -112,8 +112,8 @@
           "search_directories": {
             "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin": "present",
             "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/etc/clang": "absent",
-            "/Users/bytedance/.config/clang": "absent",
-            "/Users/bytedance/Library/Preferences/clang": "absent",
+            "<local-home>/.config/clang": "absent",
+            "<local-home>/Library/Preferences/clang": "absent",
             "/etc/clang": "absent"
           },
           "status": "only-hash-locked-swift-linux-configs-no-macos-match"
@@ -124,7 +124,7 @@
           "version": "26.5"
         },
         "paths": {
-          "cargo": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
+          "cargo": "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
           "clang": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
           "codex_javascript": "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js",
           "codex_launcher": "/opt/homebrew/bin/codex",
@@ -132,14 +132,14 @@
           "macos_sdk": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
           "macos_sdk_settings": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json",
           "python": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9",
-          "rustc": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+          "rustc": "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
         },
         "sha256": {
           "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9": "271143990bc83af0fb2404a255038f5faafb96df1584ed7f085e5018c0f33ffb",
           "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json": "f8d005f09381389167f9e0aeaa169bc9e7dff162ef22ca2fd8e98df7ff1acafe",
           "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang": "7def90dd8829726686213a747fc5bff1583df933dae5edc55d755479e0bfe00a",
-          "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo": "696d29bd6f5a136ef6c7088558e178efcabbd571de90e8169d0f6596c568eea8",
-          "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc": "f556cd7caa76d85ff0e777ba8e96552b33b4e0ea0dda8fbe6cde1d23b6c4df27",
+          "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo": "696d29bd6f5a136ef6c7088558e178efcabbd571de90e8169d0f6596c568eea8",
+          "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc": "f556cd7caa76d85ff0e777ba8e96552b33b4e0ea0dda8fbe6cde1d23b6c4df27",
           "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js": "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477",
           "/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex": "978740e6bcbd9af2f850823b723fb74f16d8d1e44de05f7dd6737ae631f72017"
         },
@@ -161,18 +161,18 @@
     "argv_sha256": "ead3ba903597dccc3c8b071d10bf1574f0a9e95728d789a6d0358335bfc11db0",
     "public_metadata": {
       "cargo_config_absence": {
-        "cargo_home": "/Users/bytedance/.cargo",
+        "cargo_home": "<local-home>/.cargo",
         "schema_version": 1,
-        "search_cwd": "/Users/bytedance/Dev/xlang",
+        "search_cwd": "<historical-repository-root>",
         "searched_paths": [
-          "/Users/bytedance/Dev/xlang/.cargo/config.toml",
-          "/Users/bytedance/Dev/xlang/.cargo/config",
-          "/Users/bytedance/Dev/.cargo/config.toml",
-          "/Users/bytedance/Dev/.cargo/config",
-          "/Users/bytedance/.cargo/config.toml",
-          "/Users/bytedance/.cargo/config",
-          "/Users/.cargo/config.toml",
-          "/Users/.cargo/config",
+          "<historical-repository-root>/.cargo/config.toml",
+          "<historical-repository-root>/.cargo/config",
+          "<local-home>/Dev/.cargo/config.toml",
+          "<local-home>/Dev/.cargo/config",
+          "<local-home>/.cargo/config.toml",
+          "<local-home>/.cargo/config",
+          "<users-root>/.cargo/config.toml",
+          "<users-root>/.cargo/config",
           "/.cargo/config.toml",
           "/.cargo/config"
         ],
@@ -215,8 +215,8 @@
           "search_directories": {
             "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin": "present",
             "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/etc/clang": "absent",
-            "/Users/bytedance/.config/clang": "absent",
-            "/Users/bytedance/Library/Preferences/clang": "absent",
+            "<local-home>/.config/clang": "absent",
+            "<local-home>/Library/Preferences/clang": "absent",
             "/etc/clang": "absent"
           },
           "status": "only-hash-locked-swift-linux-configs-no-macos-match"
@@ -227,7 +227,7 @@
           "version": "26.5"
         },
         "paths": {
-          "cargo": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
+          "cargo": "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
           "clang": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
           "codex_javascript": "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js",
           "codex_launcher": "/opt/homebrew/bin/codex",
@@ -235,14 +235,14 @@
           "macos_sdk": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
           "macos_sdk_settings": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json",
           "python": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9",
-          "rustc": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+          "rustc": "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
         },
         "sha256": {
           "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9": "271143990bc83af0fb2404a255038f5faafb96df1584ed7f085e5018c0f33ffb",
           "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json": "f8d005f09381389167f9e0aeaa169bc9e7dff162ef22ca2fd8e98df7ff1acafe",
           "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang": "7def90dd8829726686213a747fc5bff1583df933dae5edc55d755479e0bfe00a",
-          "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo": "696d29bd6f5a136ef6c7088558e178efcabbd571de90e8169d0f6596c568eea8",
-          "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc": "f556cd7caa76d85ff0e777ba8e96552b33b4e0ea0dda8fbe6cde1d23b6c4df27",
+          "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo": "696d29bd6f5a136ef6c7088558e178efcabbd571de90e8169d0f6596c568eea8",
+          "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc": "f556cd7caa76d85ff0e777ba8e96552b33b4e0ea0dda8fbe6cde1d23b6c4df27",
           "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js": "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477",
           "/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex": "978740e6bcbd9af2f850823b723fb74f16d8d1e44de05f7dd6737ae631f72017"
         },

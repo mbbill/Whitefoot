@@ -89,7 +89,7 @@ both. A default-engine case may not silently become a PCRE2 comparison.
 
 The native build command, from the pinned clean source checkout, is:
 
-    CARGO_TARGET_DIR=/Users/bytedance/do_not_scan/whitefoot-rg-base/upstream/build-native-apple-m4 \
+    CARGO_TARGET_DIR=<scratch-root>/whitefoot-rg-base/upstream/build-native-apple-m4 \
     RUSTFLAGS=-Ctarget-cpu=apple-m4 \
     cargo build --frozen --offline --profile release-lto \
       --target aarch64-apple-darwin --no-default-features
@@ -142,7 +142,7 @@ number, or universal cache-state claim will be published from this target.
 
 ## Corpora
 
-Bulk data stays under /Users/bytedance/do_not_scan/whitefoot-rg-base and is not
+Bulk data stays under <scratch-root>/whitefoot-rg-base and is not
 committed.
 
 ### Linux source tree
@@ -162,16 +162,16 @@ one-time preparation step:
 
     hdiutil create -size 8g -type SPARSE -fs "Case-sensitive APFS" \
       -volname WF_RG_LINUX -nospotlight \
-      /Users/bytedance/do_not_scan/whitefoot-rg-base/linux-case-sensitive.sparseimage
+      <scratch-root>/whitefoot-rg-base/linux-case-sensitive.sparseimage
 
 The image is not mounted automatically after reboot. Each measurement session
 creates the mountpoint if needed and attaches the existing image:
 
-    mkdir -p /Users/bytedance/do_not_scan/whitefoot-rg-base/corpora-case-sensitive
+    mkdir -p <scratch-root>/whitefoot-rg-base/corpora-case-sensitive
 
     hdiutil attach \
-      /Users/bytedance/do_not_scan/whitefoot-rg-base/linux-case-sensitive.sparseimage \
-      -mountpoint /Users/bytedance/do_not_scan/whitefoot-rg-base/corpora-case-sensitive \
+      <scratch-root>/whitefoot-rg-base/linux-case-sensitive.sparseimage \
+      -mountpoint <scratch-root>/whitefoot-rg-base/corpora-case-sensitive \
       -nobrowse
 
 The runner rejects a missing mount, dirty checkout, wrong commit/tree/content
@@ -415,7 +415,7 @@ and must be tied back to the timed machine code.
 The bundle-local gate is the only correctness gate:
 
     make -C research/experiments/ripgrep gate \
-      WORK_ROOT=/Users/bytedance/do_not_scan/whitefoot-rg-base
+      WORK_ROOT=<scratch-root>/whitefoot-rg-base
 
 It runs the focused unit tests, revalidates host, executable and corpus
 identity, reruns every selected-path and output oracle with both contenders,
@@ -425,14 +425,14 @@ it needs target-specific multi-gigabyte external data.
 After the preregistration commit and a clean worktree, comparator selection is:
 
     make -C research/experiments/ripgrep select \
-      WORK_ROOT=/Users/bytedance/do_not_scan/whitefoot-rg-base \
+      WORK_ROOT=<scratch-root>/whitefoot-rg-base \
       RUN_ID=rg-base-selection-1
 
 After selection evidence and manifest changes are committed, the independent
 baseline is:
 
     make -C research/experiments/ripgrep baseline \
-      WORK_ROOT=/Users/bytedance/do_not_scan/whitefoot-rg-base \
+      WORK_ROOT=<scratch-root>/whitefoot-rg-base \
       RUN_ID=rg-base-baseline-1
 
 Run ids are create-once scratch directories. The two ids above are the only

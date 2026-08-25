@@ -1110,7 +1110,7 @@ that writers will use it the way they used the trap message.
 ## Appendix — probes run for this document
 
 All against the prebuilt `compiler/target/debug/whitefootc` at the v0.32 digest
-above. Sources at `/Users/bytedance/do_not_scan/syn/`; the repository is
+above. Sources at `<scratch-root>/syn/`; the repository is
 unmodified apart from this file (`git status --porcelain` clean before the
 commit).
 

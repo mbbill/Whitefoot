@@ -8,7 +8,7 @@ This is frozen coordination history, not execution authority.
   `18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`,
   including the nine protected source changes, eight manifest documentation
   changes, and outgoing v0.25 archive
-- **Owner / workspace:** Codex lead / `/Users/bytedance/code/Whitefoot`, branch
+- **Owner / workspace:** Codex lead / `<repository-root>`, branch
   `codex/0047-counted-range-impl`
 - **Base revision:** `7eb78ab7ba36bafbb68f1b041104596f1a2d8b21`
 

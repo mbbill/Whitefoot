@@ -4,7 +4,7 @@ Status: INSPECTED BEFORE COMPARATIVE TIMING
 
 This record was completed without observing comparative timing. It describes
 the reproducible build emitted under
-`/Users/bytedance/do_not_scan/whitefoot-literal-line-floor/build` by the frozen
+`<scratch-root>/whitefoot-literal-line-floor/build` by the frozen
 apparatus. Generated IR and assembly remain excluded scratch artifacts; the
 run header binds this record and the protocol by SHA-256.
 

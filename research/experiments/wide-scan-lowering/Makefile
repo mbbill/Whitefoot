@@ -7,8 +7,9 @@
 # base revision) and `wide` by the candidate compiler (this repository).
 
 ROOT := $(abspath ../../..)
-BASE_ROOT ?= /Users/bytedance/do_not_scan/wf-0026-base
-WORK_ROOT ?= /Users/bytedance/do_not_scan/whitefoot-wide-scan-lowering
+WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+BASE_ROOT ?= $(WHITEFOOT_SCRATCH_ROOT)/wf-0026-base
+WORK_ROOT ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-wide-scan-lowering
 BUILD := $(WORK_ROOT)/build
 TMP := $(WORK_ROOT)/tmp
 CARGO_TARGET := $(WORK_ROOT)/cargo-target

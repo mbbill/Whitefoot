@@ -25,3 +25,9 @@ permission to work on a branch.
   reproducibility bundles; an old script inside such a bundle may name a retired
   compiler and is historical evidence, not an active repository tool. Completed
   or superseded design corpora live under `../archive/research/`.
+
+Retained records redact machine-specific locations. `<repository-root>`,
+`<historical-repository-root>`, `<scratch-root>`, `<local-home>`, and
+`<local-workdir>` preserve the role of a path without publishing a developer's
+absolute directory. Where a reproducibility bundle hashes a redacted record,
+the bundle records the digest of the redacted bytes.

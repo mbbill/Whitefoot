@@ -695,7 +695,7 @@ attribution is stated.
 ### Build
 
 ```text
-CARGO_TARGET_DIR=/Users/bytedance/do_not_scan/proof-cert-final-target \
+CARGO_TARGET_DIR=<scratch-root>/proof-cert-final-target \
   cargo build --release --bin whitefootc --locked --offline
 ```
 
@@ -737,8 +737,8 @@ The profile command shape was:
 
 ```text
 samply-for-ai record --save-only --main-thread-only --rate 1000 \
-  --output /Users/bytedance/do_not_scan/PROFILE.json.gz -- \
-  /Users/bytedance/do_not_scan/proof-cert-final-target/release/whitefootc \
+  --output <scratch-root>/PROFILE.json.gz -- \
+  <scratch-root>/proof-cert-final-target/release/whitefootc \
   --emit-llvm -o /dev/null INPUTS...
 ```
 
@@ -1065,7 +1065,7 @@ Primary local evidence inspected for this packet includes:
   real alternatives;
 - the task 0048 and 0049 coordination records;
 - two release sampling profiles and whole-compiler timing probes under
-  `/Users/bytedance/do_not_scan`.
+  `<scratch-root>`.
 
 Three independent read-only investigations covered the current TCB and metadata
 flow, minimal certificate models, and adversarial determinism/completeness/cost.

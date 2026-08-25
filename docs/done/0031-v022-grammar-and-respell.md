@@ -12,7 +12,7 @@ This is a temporary live coordination record, not execution authority.
   `governance/spec-evolution/index-surface-v022-candidate.md` and assembled
   `kernel-spec-v0.22-candidate.md`.
 - **Owner / workspace:** exec-0031 (second executor, took over at the
-  handback boundary) / `/Users/bytedance/do_not_scan/wf-0031-exec2`, branch
+  handback boundary) / `<scratch-root>/wf-0031-exec2`, branch
   `task/0031-v022-grammar-and-respell`
 - **Base revision:** ba6c5cf (branch rebased onto the conformance-ruling
   commit so the cited approval is in-tree)

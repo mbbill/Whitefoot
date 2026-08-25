@@ -1,11 +1,11 @@
 {
-  "archive_root": "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered/generation-freeze",
+  "archive_root": "<historical-repository-root>/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered/generation-freeze",
   "kind": "complete-generation-run-freeze",
-  "original_run_dir": "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/runs/primary-terra-medium-preregistered",
+  "original_run_dir": "<historical-repository-root>/experiments/default-floor/utf8parse/runs/primary-terra-medium-preregistered",
   "result_absolute_paths": {
-    "manifest": "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/runs/primary-terra-medium-preregistered/frozen/trace-manifest.json",
+    "manifest": "<historical-repository-root>/experiments/default-floor/utf8parse/runs/primary-terra-medium-preregistered/frozen/trace-manifest.json",
     "role": "historical-original-run-reference",
-    "source": "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/runs/primary-terra-medium-preregistered/frozen/utf8parse.xl"
+    "source": "<historical-repository-root>/experiments/default-floor/utf8parse/runs/primary-terra-medium-preregistered/frozen/utf8parse.xl"
   },
   "schema_version": 1,
   "tree": {
@@ -15,11 +15,11 @@
       "rounds/000"
     ],
     "files_sha256": {
-      "config.json": "76471fd29f63dbd835ed3291e36f1d316e9a4853f63459656fd17e65a9d2d608",
+      "config.json": "db807413d42a57d1da827dc9401a7935eafd7c8202ff5b388b48165278835989",
       "frozen/source.sha256": "0438fb4c3f2ff47fa65d60319fca6266f8d4f640a5e978ba0f125aa9116b22ef",
-      "frozen/trace-manifest.json": "cb07a8b7dc090d66c2024f469f88fb461748003c8e691eb3bc916fcd2ee6feef",
+      "frozen/trace-manifest.json": "d3c642c26aed33a4185ec866420c90abc9a3367b1b7950725596eda433d6cb30",
       "frozen/utf8parse.xl": "3bb7951995120d24c651b6750ac9ba4c7a8fb9b61bc02fb5d219e64e640c1535",
-      "result.json": "1f80b584ac88490de72ffd04df88de96732af28d1612a974743af8deefc26e0d",
+      "result.json": "bc52da8d85bbdcc786e49f09b9690ceaf1032c936d7a1b047f5c06eb0153c4c4",
       "rounds/000/evaluator-process.json": "04d87c6904b6726b71c4765f4ee2b1e09e771ad19624d0b2310d6a3093c90799",
       "rounds/000/evaluator.json": "353c00f372c4bf2b850a011935b770856c5c1195c649c68e6fec5bd3cf46caa1",
       "rounds/000/evaluator.raw.txt": "820d95883f946971d6a3f9c89e3080786e7c8ae7d18276bf8cd64367148fcbfc",
@@ -34,10 +34,10 @@
     }
   },
   "validation_identity": {
-    "config_sha256": "76471fd29f63dbd835ed3291e36f1d316e9a4853f63459656fd17e65a9d2d608",
+    "config_sha256": "db807413d42a57d1da827dc9401a7935eafd7c8202ff5b388b48165278835989",
     "frozen_round": 0,
-    "manifest_sha256": "cb07a8b7dc090d66c2024f469f88fb461748003c8e691eb3bc916fcd2ee6feef",
-    "result_sha256": "1f80b584ac88490de72ffd04df88de96732af28d1612a974743af8deefc26e0d",
+    "manifest_sha256": "d3c642c26aed33a4185ec866420c90abc9a3367b1b7950725596eda433d6cb30",
+    "result_sha256": "bc52da8d85bbdcc786e49f09b9690ceaf1032c936d7a1b047f5c06eb0153c4c4",
     "source_sha256": "3bb7951995120d24c651b6750ac9ba4c7a8fb9b61bc02fb5d219e64e640c1535",
     "source_sha256_file_sha256": "0438fb4c3f2ff47fa65d60319fca6266f8d4f640a5e978ba0f125aa9116b22ef",
     "trace_sha256": "c856e00fd910388ee64b430b8661469b7cb1f09ee6ac250e72e6cac6c6896c8d"

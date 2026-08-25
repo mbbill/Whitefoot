@@ -145,4 +145,4 @@ A notable structural NON-win inside this bucket: the fusion probe found that an 
 
 **Recommendation:** do not bank a general "regions+effects beat safe Rust on performance" claim. Bank the narrow, true one — *provable disjointness enables a safe parallel scatter that safe Rust cannot express, worth up to ~1.5x on memory-bound reorder kernels* — and frame the rest as automation that removes naive-code footguns automatically from signatures, which is the actual, defensible reason to put these facts in the language for an AI-codegen target.
 
-Kernel evidence dirs: `/private/tmp/claude-501/-Users-bytedance-Dev-xlang/58c81074-5f53-4673-8f02-79dec1070188/scratchpad/reperf/<kernel>/` (interproc-effects, auto-parallel-regions, region-bulk-free, pure-fusion).
+Kernel evidence dirs: `<local-workdir>/58c81074-5f53-4673-8f02-79dec1070188/scratchpad/reperf/<kernel>/` (interproc-effects, auto-parallel-regions, region-bulk-free, pure-fusion).

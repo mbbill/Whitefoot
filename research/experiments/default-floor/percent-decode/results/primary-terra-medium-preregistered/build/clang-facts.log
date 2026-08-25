@@ -1,4 +1,4 @@
-argv: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang", "--no-default-config", "-isysroot", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk", "-O3", "-c", "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/facts.ll", "-o", "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/facts.o"]
+argv: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang", "--no-default-config", "-isysroot", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk", "-O3", "-c", "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/facts.ll", "-o", "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/facts.o"]
 
 stdout:
 

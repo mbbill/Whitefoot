@@ -171,7 +171,7 @@ file, not part of this candidate):
 
 ```sh
 cargo run --manifest-path compiler/Cargo.toml --bin whitefoot-grammar -- \
-  /Users/bytedance/do_not_scan/wf-batch1/batch1-grammar-probe.md
+  <scratch-root>/wf-batch1/batch1-grammar-probe.md
 # -> whitefoot-grammar: candidate changes the lexer or source grammar of the
 #    active specification; a structural change must first extend the native
 #    grammar path

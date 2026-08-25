@@ -1,4 +1,4 @@
-argv: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang", "--no-default-config", "-isysroot", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk", "-O3", "-c", "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered/build/nofacts.ll", "-o", "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered/build/nofacts.o"]
+argv: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang", "--no-default-config", "-isysroot", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk", "-O3", "-c", "<historical-repository-root>/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered/build/nofacts.ll", "-o", "<historical-repository-root>/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered/build/nofacts.o"]
 
 stdout:
 

@@ -3,7 +3,8 @@
 # Profiling is driven per PROTOCOL.md after the bench summaries exist.
 
 ROOT := $(abspath ../../..)
-WORK_ROOT ?= /Users/bytedance/do_not_scan/whitefoot-wfgrep-baseline
+WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+WORK_ROOT ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-wfgrep-baseline
 BUILD := $(WORK_ROOT)/build
 TMP := $(WORK_ROOT)/tmp
 CARGO_TARGET := $(WORK_ROOT)/cargo-target

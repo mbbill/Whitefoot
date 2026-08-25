@@ -1,7 +1,7 @@
-argv: ["/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9", "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/analyze.py", "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01"]
+argv: ["/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9", "<historical-repository-root>/experiments/default-floor/utf8parse/analyze.py", "<historical-repository-root>/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01"]
 
 stdout:
-{"analysis": "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01/analysis.json", "primary_verdict": "meaningful xlang win", "status": "complete"}
+{"analysis": "<historical-repository-root>/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01/analysis.json", "primary_verdict": "meaningful xlang win", "status": "complete"}
 
 
 stderr:

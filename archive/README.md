@@ -3,6 +3,11 @@
 Superseded or shelved material, kept for the record. Nothing here gates
 anything; no tool or test reads from this tree.
 
+Machine-specific locations in retained records are redacted with descriptive
+tokens such as `<historical-repository-root>`, `<local-home>`, and
+`<local-workdir>`. The tokens preserve provenance roles without retaining a
+developer's absolute directory.
+
 - `DECISION_SPRINT.md`, `ROADMAP.md` — pre-consolidation plans, superseded by
   `/THE-PLAN.md` (2026-07-10). Kept because gates-log entries cite them.
 - `HANDOVER-2026-07-17.md` and `compiler/PLAN-2026-07-17.md` — the last

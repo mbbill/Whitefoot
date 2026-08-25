@@ -979,7 +979,7 @@
 {"record":"counters","case":"floor","binary":"grep","repetition":3,"real":0.00,"user":0.00,"sys":0.00,"instructions":12026619,"cycles":4286093,"peak_footprint":950464}
 {"record":"counters","case":"floor","binary":"grep","repetition":4,"real":0.00,"user":0.00,"sys":0.00,"instructions":12027957,"cycles":4411493,"peak_footprint":950464}
 {"record":"power","phase":"counters","event":"end","time":1786054954,"battery":"Now drawing from 'Battery Power'  -InternalBattery-0 (id=22282339)	94%; discharging; 2:57 remaining present: true","mode":"lowpowermode         0"}
-{"record":"profile","time":1786055117,"case":"many","binary":"wfgrep","reps":8,"seconds":"3","file":"/Users/bytedance/do_not_scan/whitefoot-wfgrep-baseline/build/profile-wfgrep-many.txt"}
-{"record":"profile","time":1786055119,"case":"many","binary":"grep","reps":8,"seconds":"2","file":"/Users/bytedance/do_not_scan/whitefoot-wfgrep-baseline/build/profile-grep-many.txt"}
-{"record":"profile","time":1786055129,"case":"large","binary":"wfgrep","reps":52,"seconds":"10","file":"/Users/bytedance/do_not_scan/whitefoot-wfgrep-baseline/build/profile-wfgrep-large.txt"}
-{"record":"profile","time":1786055139,"case":"large","binary":"grep","reps":79,"seconds":"10","file":"/Users/bytedance/do_not_scan/whitefoot-wfgrep-baseline/build/profile-grep-large.txt"}
+{"record":"profile","time":1786055117,"case":"many","binary":"wfgrep","reps":8,"seconds":"3","file":"<scratch-root>/whitefoot-wfgrep-baseline/build/profile-wfgrep-many.txt"}
+{"record":"profile","time":1786055119,"case":"many","binary":"grep","reps":8,"seconds":"2","file":"<scratch-root>/whitefoot-wfgrep-baseline/build/profile-grep-many.txt"}
+{"record":"profile","time":1786055129,"case":"large","binary":"wfgrep","reps":52,"seconds":"10","file":"<scratch-root>/whitefoot-wfgrep-baseline/build/profile-wfgrep-large.txt"}
+{"record":"profile","time":1786055139,"case":"large","binary":"grep","reps":79,"seconds":"10","file":"<scratch-root>/whitefoot-wfgrep-baseline/build/profile-grep-large.txt"}

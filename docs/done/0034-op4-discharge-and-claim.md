@@ -4,7 +4,7 @@ This is a temporary live coordination record, not execution authority.
 
 - **Status:** `DONE` (2026-08-07: OP-4 discharge-or-reject live, claim semantics live, corpus migrated 71+54+9 claims; ENT-5 evidence packet recorded; wide-scan regression flagged)
 - **Authority:** `ACTIVE` docs/current-plan.md selected slice; batch-1/v0.22 candidates and rulings in governance/
-- **Owner / workspace:** exec-0034 / /Users/bytedance/do_not_scan/wf-0034 (branch task/0034-op4-discharge-and-claim)
+- **Owner / workspace:** exec-0034 / <scratch-root>/wf-0034 (branch task/0034-op4-discharge-and-claim)
 - **Base revision:** 8d0e228
 - **Dependency:** 0033, 0031
 

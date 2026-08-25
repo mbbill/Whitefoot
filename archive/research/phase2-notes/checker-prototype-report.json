@@ -1,7 +1,7 @@
 {
   "date": "2026-07-02",
   "gate": "D1a checker-core feasibility (blocking)",
-  "artifact": "/Users/bytedance/Dev/xlang/prototype/checker/",
+  "artifact": "<historical-repository-root>/prototype/checker/",
   "result": "PASSED_INITIAL",
   "measurements": {
     "checker_loc": 227,

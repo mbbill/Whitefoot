@@ -10,7 +10,7 @@ This is a temporary live coordination record, not execution authority.
 - **Authority:** owner instruction 2026-08-07 ("开始吧") on the adversarial
   judgment of the stable-filename proposal; the judgment's amendments M2–M6
   and switchover steps C1–C4
-- **Owner / workspace:** exec-0039 / `/Users/bytedance/do_not_scan/wf-0039`
+- **Owner / workspace:** exec-0039 / `<scratch-root>/wf-0039`
   on branch `task/0039-spec-identity-integrity`
 - **Base revision:** a375dba, rebased onto 041e02d
 - **Dependency:** none. Deliberately independent of the stable-filename

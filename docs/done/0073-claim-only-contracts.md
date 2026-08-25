@@ -4,7 +4,7 @@ Status: DONE (v0.33 activated and merged under the owner's exact-byte approval,
 2026-08-20).
 
 Owner: lead. Workspace: `codex/0073-claim-only-contracts` in the isolated
-`/Users/bytedance/do_not_scan/whitefoot-0073-claim-only` worktree. Base:
+`<scratch-root>/whitefoot-0073-claim-only` worktree. Base:
 main `e5b30704831c03a6555aa5a08d049558e468477e` after batch 0072 closure.
 Registered: 2026-08-19 under the ACTIVE Current Plan (W1–W6).
 

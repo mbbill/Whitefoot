@@ -109,9 +109,7 @@ class GuardTests(unittest.TestCase):
 
     def test_work_path_cannot_escape(self):
         with self.assertRaises(runner.ProtocolError):
-            runner.resolve_work_path(
-                Path("/Users/bytedance/do_not_scan"), "../outside"
-            )
+            runner.resolve_work_path(Path("/work/root"), "../outside")
 
     def test_expected_mismatch_fails(self):
         with self.assertRaises(runner.ProtocolError):

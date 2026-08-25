@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "artifact_path": "/Users/bytedance/Dev/xlang/optimizer-language-research/sources/deep-research/2026-06-30-w6jgx7vrd-numeric.output.json",
-  "original_tmp_path": "/private/tmp/claude-501/-Users-bytedance-Dev-xlang/035e62ef-9ecd-42d5-b288-f6f92231c257/tasks/w6jgx7vrd.output",
+  "artifact_path": "<historical-repository-root>/optimizer-language-research/sources/deep-research/2026-06-30-w6jgx7vrd-numeric.output.json",
+  "original_tmp_path": "<local-workdir>/035e62ef-9ecd-42d5-b288-f6f92231c257/tasks/w6jgx7vrd.output",
   "copied_at": "2026-06-30",
   "artifact_sha256": "ba434be3fa5802b852a69294835cae8b33f45b94c4bd32b2e7f7717954af5462",
   "artifact_size_bytes": 192175,

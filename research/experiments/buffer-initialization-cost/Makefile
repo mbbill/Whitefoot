@@ -1,5 +1,6 @@
 ROOT := $(abspath ../../..)
-WORK_ROOT ?= /Users/bytedance/do_not_scan/whitefoot-buffer-init-cost
+WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+WORK_ROOT ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-buffer-init-cost
 BUILD := $(WORK_ROOT)/build
 TMP := $(WORK_ROOT)/tmp
 CARGO_TARGET := $(WORK_ROOT)/cargo-target

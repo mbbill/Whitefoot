@@ -670,7 +670,7 @@ The frozen real sources matched the Current Plan before and after the probe:
 The unmodified pre-probe command was:
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan make -C compiler check
+env TMPDIR=<scratch-root> make -C compiler check
 ```
 
 Its first sandboxed invocation stopped before a test because Cargo could not
@@ -687,7 +687,7 @@ immediately before its sole normal `Ok(value:)` return. Its early
 test:
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_real_read_bits_mask_bound_is_unproved_without_bit_sources -- --nocapture
+env TMPDIR=<scratch-root> cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_real_read_bits_mask_bound_is_unproved_without_bit_sources -- --nocapture
 ```
 
 It passed 1/1: the single retained call goal was `Unproved`, with empty
@@ -722,7 +722,7 @@ analysis after more than an hour, so the lead approved terminating only that
 test process from this exact aggregate command:
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan cargo test --manifest-path compiler/Cargo.toml --locked --offline --lib stage8a_ -- --test-threads=1
+env TMPDIR=<scratch-root> cargo test --manifest-path compiler/Cargo.toml --locked --offline --lib stage8a_ -- --test-threads=1
 ```
 
 The approved termination exited 143 before validation or any result
@@ -740,7 +740,7 @@ exactly equal to the first. This command exited 0 and passed 1/1 in 160.11
 seconds:
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_unsigned_bit_sources_discharge_192_cases_deterministically -- --nocapture
+env TMPDIR=<scratch-root> cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_unsigned_bit_sources_discharge_192_cases_deterministically -- --nocapture
 ```
 
 The refreshed exact root for each mask-bound query is a four-node chain. In
@@ -778,7 +778,7 @@ summaries were recomputed and compared exactly. This command exited 0 and
 passed 1/1 in 0.08 seconds:
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_shift_source_is_required_for_the_combined_mask_bound -- --nocapture
+env TMPDIR=<scratch-root> cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_shift_source_is_required_for_the_combined_mask_bound -- --nocapture
 ```
 
 The remaining focused matrices retained these exact outcomes:
@@ -794,7 +794,7 @@ The remaining focused matrices retained these exact outcomes:
 The signed and operation near-miss command exited 0 and passed 1/1:
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_signed_and_operation_near_misses_keep_18_goals_unproved -- --nocapture
+env TMPDIR=<scratch-root> cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_signed_and_operation_near_misses_keep_18_goals_unproved -- --nocapture
 ```
 
 Every one of its 18 goals was `Unproved`, with empty evidence and no root,
@@ -802,7 +802,7 @@ including the separate `iand`-only and shift-only cases. Its complete summary
 repeated exactly. The real-body positive command also exited 0 and passed 1/1:
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_real_read_bits_mask_bound_is_discharged_with_bit_sources -- --nocapture
+env TMPDIR=<scratch-root> cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_real_read_bits_mask_bound_is_discharged_with_bit_sources -- --nocapture
 ```
 
 It retained one `Discharged` call goal, only `ExactL0Projection`, the exact
@@ -813,7 +813,7 @@ no normal-result witness.
 The support/kill command exited 0 and passed 1/1:
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_bit_source_support_and_kill_matrix_is_exact -- --nocapture
+env TMPDIR=<scratch-root> cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_bit_source_support_and_kill_matrix_is_exact -- --nocapture
 ```
 
 Its two booleans are respectively the `value <= iand operand` goal and the
@@ -869,14 +869,14 @@ The restored focused command passed 112/112 tests in 340.23 seconds, with 606
 filtered:
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan cargo test --manifest-path compiler/Cargo.toml --locked --offline --lib semantic::tests::entailment -- --test-threads=1
+env TMPDIR=<scratch-root> cargo test --manifest-path compiler/Cargo.toml --locked --offline --lib semantic::tests::entailment -- --test-threads=1
 ```
 
 The persistent result tree was then accepted by these two sequential commands:
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan make -C compiler check
-env TMPDIR=/Users/bytedance/do_not_scan make check
+env TMPDIR=<scratch-root> make -C compiler check
+env TMPDIR=<scratch-root> make check
 ```
 
 The post-restoration compiler gate ended `WHITEFOOT COMPILER GATE GREEN`:
@@ -923,7 +923,7 @@ installed-acceptance byte.
 The pre-probe command
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0052-post0055-cargo-tmp make -C compiler check
+env TMPDIR=<scratch-root>/whitefoot-0052-post0055-cargo-tmp make -C compiler check
 ```
 
 passed at that revision: 718/718 compiler library tests and 30/30 real-program
@@ -1012,21 +1012,21 @@ argv and their direct statuses. The commands below are the final commands for
 the hash-identified inputs above, not earlier source-construction attempts:
 
 ```text
-compiler/target/debug/whitefootc --emit-llvm /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/ordinary-result-bound-negative.wf
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/current-invalid-domain /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/current-invalid-domain.wf
-/Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/current-invalid-domain
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/counted-combined-proof /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/counted-combined-proof.wf
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/counted-early-proof /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/counted-early-proof.wf
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/counted-exhaustion-proof /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/counted-exhaustion-proof.wf
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/control-no-requirement-proof /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/control-no-requirement-proof.wf
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/control-plus-one-proof /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/control-plus-one-proof.wf
-compiler/target/debug/whitefootc --emit-llvm /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/control-plus-two-negative.wf
-compiler/target/debug/whitefootc --emit-llvm /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/control-independent-negative.wf
-compiler/target/debug/whitefootc --emit-llvm /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/control-post-loop-binder-negative.wf
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/behavior-controls /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/behavior-controls.wf
-/Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/behavior-controls
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/admitted-differential-2430 /Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/admitted-differential-2430.wf
-/Users/bytedance/do_not_scan/whitefoot-0052-post0055-probes/admitted-differential-2430
+compiler/target/debug/whitefootc --emit-llvm <scratch-root>/whitefoot-0052-post0055-probes/ordinary-result-bound-negative.wf
+env TMPDIR=<scratch-root>/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o <scratch-root>/whitefoot-0052-post0055-probes/current-invalid-domain <scratch-root>/whitefoot-0052-post0055-probes/current-invalid-domain.wf
+<scratch-root>/whitefoot-0052-post0055-probes/current-invalid-domain
+env TMPDIR=<scratch-root>/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o <scratch-root>/whitefoot-0052-post0055-probes/counted-combined-proof <scratch-root>/whitefoot-0052-post0055-probes/counted-combined-proof.wf
+env TMPDIR=<scratch-root>/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o <scratch-root>/whitefoot-0052-post0055-probes/counted-early-proof <scratch-root>/whitefoot-0052-post0055-probes/counted-early-proof.wf
+env TMPDIR=<scratch-root>/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o <scratch-root>/whitefoot-0052-post0055-probes/counted-exhaustion-proof <scratch-root>/whitefoot-0052-post0055-probes/counted-exhaustion-proof.wf
+env TMPDIR=<scratch-root>/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o <scratch-root>/whitefoot-0052-post0055-probes/control-no-requirement-proof <scratch-root>/whitefoot-0052-post0055-probes/control-no-requirement-proof.wf
+env TMPDIR=<scratch-root>/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o <scratch-root>/whitefoot-0052-post0055-probes/control-plus-one-proof <scratch-root>/whitefoot-0052-post0055-probes/control-plus-one-proof.wf
+compiler/target/debug/whitefootc --emit-llvm <scratch-root>/whitefoot-0052-post0055-probes/control-plus-two-negative.wf
+compiler/target/debug/whitefootc --emit-llvm <scratch-root>/whitefoot-0052-post0055-probes/control-independent-negative.wf
+compiler/target/debug/whitefootc --emit-llvm <scratch-root>/whitefoot-0052-post0055-probes/control-post-loop-binder-negative.wf
+env TMPDIR=<scratch-root>/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o <scratch-root>/whitefoot-0052-post0055-probes/behavior-controls <scratch-root>/whitefoot-0052-post0055-probes/behavior-controls.wf
+<scratch-root>/whitefoot-0052-post0055-probes/behavior-controls
+env TMPDIR=<scratch-root>/whitefoot-0052-post0055-cargo-tmp compiler/target/debug/whitefootc -o <scratch-root>/whitefoot-0052-post0055-probes/admitted-differential-2430 <scratch-root>/whitefoot-0052-post0055-probes/admitted-differential-2430.wf
+<scratch-root>/whitefoot-0052-post0055-probes/admitted-differential-2430
 ```
 
 The ordinary-loop command exited `1` with FN-8 `Unproved` at
@@ -1043,8 +1043,8 @@ no shell pipeline obscured any status.
 The unchanged real-program oracles were replayed exactly with:
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0052-post0055-cargo-tmp cargo test --manifest-path compiler/Cargo.toml --test programs programs::wfgrep:: --locked --offline -- --nocapture
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0052-post0055-cargo-tmp cargo test --manifest-path compiler/Cargo.toml --test programs programs::raw_deflate:: --locked --offline -- --nocapture
+env TMPDIR=<scratch-root>/whitefoot-0052-post0055-cargo-tmp cargo test --manifest-path compiler/Cargo.toml --test programs programs::wfgrep:: --locked --offline -- --nocapture
+env TMPDIR=<scratch-root>/whitefoot-0052-post0055-cargo-tmp cargo test --manifest-path compiler/Cargo.toml --test programs programs::raw_deflate:: --locked --offline -- --nocapture
 ```
 
 They passed wfgrep 9/9 and raw-DEFLATE 3/3. The frozen source identities were:
@@ -1075,8 +1075,8 @@ and `AGENTS.md` and `CLAUDE.md` remained byte-identical at
 After restoration, these commands ran serially in the clean isolated worktree:
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0052-post0055-cargo-tmp make -C compiler check
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0052-post0055-cargo-tmp make check
+env TMPDIR=<scratch-root>/whitefoot-0052-post0055-cargo-tmp make -C compiler check
+env TMPDIR=<scratch-root>/whitefoot-0052-post0055-cargo-tmp make check
 ```
 
 The compiler gate exited `0`. Its compiler library suite passed 718/718, its
@@ -1230,7 +1230,7 @@ at 2,786,720 bytes and candidate SHA-256
 at 2,874,832 bytes.
 
 The sole valid session is
-`/Users/bytedance/do_not_scan/whitefoot-0056-cost-rerun-20260813T230406Z`.
+`<scratch-root>/whitefoot-0056-cost-rerun-20260813T230406Z`.
 Two interval-separated pre-session quiet observations were made outside the
 formal session and are contextual, unsealed checks. The formal session then
 recorded one hash-sealed session-start checkpoint plus start, between, and end
@@ -1246,7 +1246,7 @@ real executable-producing path from the relevant side's exact repository root:
 
 ```text
 /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin \
-  TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0056-cost-rerun-20260813T230406Z/tmp \
+  TMPDIR=<scratch-root>/whitefoot-0056-cost-rerun-20260813T230406Z/tmp \
   LANG=C LC_ALL=C \
   /usr/bin/time -l -o TIME ABSOLUTE_WHITEFOOTC -o UNIQUE_PROGRAM SOURCES...
 ```
@@ -1415,7 +1415,7 @@ four-source raw-DEFLATE bundle and the standalone wfgrep unit. It asserted:
 The exact focused command was run three times:
 
 ```text
-env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0053-cargo-tmp cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_dump_real_caller_census -- --nocapture
+env TMPDIR=<scratch-root>/whitefoot-0053-cargo-tmp cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_dump_real_caller_census -- --nocapture
 ```
 
 Each invocation exited 0 and passed its one selected test. The three selected
@@ -1799,7 +1799,7 @@ recorded only by the actual activation-era commands, never inferred from that
 probe.
 
 The authoritative final root gate ran as
-`TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0067-tmp make check` and exited
+`TMPDIR=<scratch-root>/whitefoot-0067-tmp make check` and exited
 `0`. Specification append-only checks passed; archive integrity covered all 30
 recorded specifications; the runner passed `23/23`; and coverage passed
 `133/133`. The compiler gate passed library `833/833` in `679.39s`, grammar

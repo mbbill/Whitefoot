@@ -1,8 +1,8 @@
 {
  "checks": {
   "files_read": [
-   "/Users/bytedance/Dev/xlang/optimizer-language-research/implementation/systems-performance-coverage/m2-spec-mass/KERNEL-DELTAS-DRAFT.md",
-   "/Users/bytedance/Dev/xlang/optimizer-language-research/implementation/systems-performance-coverage/evidence/brand1v21-regression.json"
+   "<historical-repository-root>/optimizer-language-research/implementation/systems-performance-coverage/m2-spec-mass/KERNEL-DELTAS-DRAFT.md",
+   "<historical-repository-root>/optimizer-language-research/implementation/systems-performance-coverage/evidence/brand1v21-regression.json"
   ],
   "1_arena_get_borrow_mode_B1V22-1": {
    "status": "PASS",

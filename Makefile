@@ -4,8 +4,9 @@
 # than baking a count into this file.
 
 PY := python3 -B
-RESEARCH_TEST_TMP := /Users/bytedance/do_not_scan/whitefoot-research-tests-tmp
-RESEARCH_CARGO_TARGET := /Users/bytedance/do_not_scan/whitefoot-research-tests-target
+WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+RESEARCH_TEST_TMP := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-tmp
+RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-target
 
 check: repository-invariants approval-history-integrity spec-append-only spec-archive-integrity spec-digest-sync conformance compiler research-tests conformance-run
 	@echo "== WHITEFOOT ALL TESTS GREEN =="
@@ -14,6 +15,18 @@ check: repository-invariants approval-history-integrity spec-append-only spec-ar
 repository-invariants:
 	@test -s AGENTS.md -a -s CLAUDE.md || { echo "AGENTS.md or CLAUDE.md missing" >&2; exit 1; }
 	@cmp -s AGENTS.md CLAUDE.md || { echo "AGENTS.md and CLAUDE.md differ" >&2; exit 1; }
+	@mac_home="$$(printf '/%s/' Users)"; \
+	linux_home="$$(printf '/%s/' home)"; \
+	encoded_home="$$(printf -- '-%s-' Users)"; \
+	windows_home="$$(printf '\\%s\\' Users)"; \
+	matches="$$(git grep -a -l -F -e "$$mac_home" -e "$$linux_home" -e "$$encoded_home" -e "$$windows_home" -- . || { status=$$?; test "$$status" -eq 1 || exit "$$status"; })" || exit 1; \
+	name_matches="$$(git ls-files | grep -F -e "$$mac_home" -e "$$linux_home" -e "$$encoded_home" -e "$$windows_home" || { status=$$?; test "$$status" -eq 1 || exit "$$status"; })" || exit 1; \
+	if test -n "$$matches$$name_matches"; then \
+		echo "repository invariants: tracked content or filenames contain a personal home path:" >&2; \
+		test -z "$$matches" || echo "$$matches" >&2; \
+		test -z "$$name_matches" || echo "$$name_matches" >&2; \
+		exit 1; \
+	fi
 
 # The prose before the first dated entry may explain the current four rules,
 # but every historical approval entry already on main is immutable. New rule-4
@@ -21,7 +34,8 @@ repository-invariants:
 # the exact merge candidate rather than a hook or human-process dependency.
 approval-history-integrity:
 	@git rev-parse --verify --quiet refs/heads/main >/dev/null || { echo "approval history integrity: local main ref is required" >&2; exit 1; }
-	@audit_dir="$$(mktemp -d /Users/bytedance/do_not_scan/whitefoot-approval-history.XXXXXX)" || exit 1; \
+	@mkdir -p "$(WHITEFOOT_SCRATCH_ROOT)"
+	@audit_dir="$$(mktemp -d "$(WHITEFOOT_SCRATCH_ROOT)/whitefoot-approval-history.XXXXXX")" || exit 1; \
 	trap 'rm -rf "$$audit_dir"' EXIT HUP INT TERM; \
 	git show main:governance/APPROVALS.md > "$$audit_dir/main-source" || exit 1; \
 	awk 'started || /^## / { started=1; print }' "$$audit_dir/main-source" > "$$audit_dir/main" || exit 1; \

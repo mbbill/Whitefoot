@@ -1,11 +1,11 @@
 {
-  "archive_root": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/generation-freeze",
+  "archive_root": "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/generation-freeze",
   "kind": "complete-generation-run-freeze",
-  "original_run_dir": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered",
+  "original_run_dir": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered",
   "result_absolute_paths": {
-    "manifest": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/trace-manifest.json",
+    "manifest": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/trace-manifest.json",
     "role": "historical-original-run-reference",
-    "source": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl"
+    "source": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl"
   },
   "schema_version": 1,
   "tree": {
@@ -17,11 +17,11 @@
       "rounds/002"
     ],
     "files_sha256": {
-      "config.json": "ee58fabe303c9788f8f705663d0434edb548cb6eed51eb4a0f9de12c6735e23b",
+      "config.json": "01ceaf619430469223c7e2b7a41038b9503a88c69129ec2d0fc2993f31e56e16",
       "frozen/percent_decode.xl": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd",
       "frozen/source.sha256": "8ef1572ad33bae1d08b4af8a2f5fcf7857590419128426e5cf731bce4b5c68f8",
-      "frozen/trace-manifest.json": "8f60aa5514a89ab914f342e6fa8089199a4b761e516d48976bf9186a782532a9",
-      "result.json": "6837f7b2e4aee3096e86e9e863352250047c764fe8abf4ad8becaf0f40515d82",
+      "frozen/trace-manifest.json": "8c3d1672c349929372516698e72ed40a519be40f285c15f2e7cc847b89190a93",
+      "result.json": "76176b20a2a82e553badce02a3b5d02308c0dbb56b8db105ff70dcfa57bfdac4",
       "rounds/000/evaluator-process.json": "04d87c6904b6726b71c4765f4ee2b1e09e771ad19624d0b2310d6a3093c90799",
       "rounds/000/evaluator.json": "8fce6e4c063afea85fff7d5b95f2da30d3ea90d5dc89b7b218c6c7ca8bdbfc50",
       "rounds/000/evaluator.raw.txt": "dece4409516b99fd343abeefa1d87f2536bc4996039a817dad375ede8a3c4ba2",
@@ -56,10 +56,10 @@
     }
   },
   "validation_identity": {
-    "config_sha256": "ee58fabe303c9788f8f705663d0434edb548cb6eed51eb4a0f9de12c6735e23b",
+    "config_sha256": "01ceaf619430469223c7e2b7a41038b9503a88c69129ec2d0fc2993f31e56e16",
     "frozen_round": 2,
-    "manifest_sha256": "8f60aa5514a89ab914f342e6fa8089199a4b761e516d48976bf9186a782532a9",
-    "result_sha256": "6837f7b2e4aee3096e86e9e863352250047c764fe8abf4ad8becaf0f40515d82",
+    "manifest_sha256": "8c3d1672c349929372516698e72ed40a519be40f285c15f2e7cc847b89190a93",
+    "result_sha256": "76176b20a2a82e553badce02a3b5d02308c0dbb56b8db105ff70dcfa57bfdac4",
     "source_sha256": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd",
     "source_sha256_file_sha256": "8ef1572ad33bae1d08b4af8a2f5fcf7857590419128426e5cf731bce4b5c68f8",
     "trace_sha256": "d8c8138ec2a8d6385b31bea17d3289ed72025cf343ed87ccc34a86ca2df9766d"

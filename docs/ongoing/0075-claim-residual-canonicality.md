@@ -7,7 +7,7 @@ out. It is coordination evidence, not permission to work and not an additional
 merge condition.
 
 Workspace: `codex/claim-residual-plan` in
-`/Users/bytedance/do_not_scan/whitefoot-claim-residual-plan`. The locality
+`<scratch-root>/whitefoot-claim-residual-plan`. The locality
 implementation began from `e10b1eae`; the branch now incorporates `main` at
 `0728d7c6`. Registered: 2026-08-21; updated: 2026-08-22.
 

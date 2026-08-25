@@ -3063,7 +3063,7 @@ l_anon.8883933be1ddab77f0e070c5ffe28e0c.0:
 
 	.section	__TEXT,__cstring,cstring_literals
 l_anon.8883933be1ddab77f0e070c5ffe28e0c.1:
-	.asciz	"/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/iter/traits/iterator.rs"
+	.asciz	"<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/iter/traits/iterator.rs"
 
 	.section	__DATA,__const
 	.p2align	3, 0x0

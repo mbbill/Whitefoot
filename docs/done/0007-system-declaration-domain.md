@@ -42,7 +42,7 @@ right stage, it did not disappear. Surface for 0008/0009:
   `index`; GRAM-11+SYS-2 require that exact spelling as a call-site
   `fieldinit` IDENT; but `index` is a fixed GRAM-5 atom excluded from IDENT
   by FORM-3, so no complete legal `arg_get` call exists. Reproduction and a
-  rename control live under `/Users/bytedance/do_not_scan/wf-0007/`. A
+  rename control live under `<scratch-root>/wf-0007/`. A
   systematic sweep of every SYS-2 parameter name, field name, operation
   name, label tail, and canonical binder against the 67 fixed terminals
   found exactly this one collision. The catalog keeps the normative

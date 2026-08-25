@@ -10,7 +10,7 @@ than accepting any position's table. Removed when the question is settled.
 
 # OWN-1 `move`-on-copy: decision report
 
-Repository at `eca2bec`, `git status --porcelain` → empty. Compiler binary `compiler/target/debug/whitefootc` verified current (`find compiler/src -name '*.rs' -newer compiler/target/debug/whitefootc` → nothing). My probes: `/Users/bytedance/do_not_scan/synth-own1/`. I re-ran every load-bearing measurement myself rather than accepting any position's table; where I did not, I say so.
+Repository at `eca2bec`, `git status --porcelain` → empty. Compiler binary `compiler/target/debug/whitefootc` verified current (`find compiler/src -name '*.rs' -newer compiler/target/debug/whitefootc` → nothing). My probes: `<scratch-root>/synth-own1/`. I re-ran every load-bearing measurement myself rather than accepting any position's table; where I did not, I say so.
 
 ---
 
@@ -101,7 +101,7 @@ This shape is neither a whole copy binding nor a type-parameter place. It is a t
 
 ### M8 — THE LEAK. Measured against patched compilers.
 
-I did not build a patch. I audited and reused the trees at `/Users/bytedance/do_not_scan/skeptic/{probe,full}` and verified their contents with `diff -u` before trusting them.
+I did not build a patch. I audited and reused the trees at `<scratch-root>/skeptic/{probe,full}` and verified their contents with `diff -u` before trusting them.
 
 **First, a correction to the record.** The tree labelled "patch A — the literal one-clause deletion" is *not* the literal deletion. `diff -u` shows it deletes the two rejection guards **and** widens both kill conditions from `if !copy {` to `if !copy || options.explicit_move {`. It supplies exactly the death semantics M1 shows the spec text does not. Every number in the FOOTPRINT report describing "patch A" describes deletion-plus-rewiring.
 
@@ -258,7 +258,7 @@ Ranked by measured capability delivered per unit of measured cost. This is a ran
 2. **The tree's newest spelling doctrine is falsified by shipped code.** `spelling-rule.md:5` (*"Every position is mandatory or forbidden; no element is optional"*, 2026-08-07) versus M10's two accepted, byte-identical pairs — one of them mandated by ERR-3 `:537`. Either the doctrine or the spec is wrong, and this is a standing inconsistency in the design memory that predates the proposal.
 3. **The `Int`/`Float` bound restriction is the real constraint on generics, not the `move` clause.** Every generic function in `tests/programs` is bounded (M5), and FN-2 `:425` closes the vocabulary to two prelude markers. That is why the corpus has no unbounded generics at all — the pincer is a symptom of a narrow bound vocabulary, not the disease.
 4. **The one conformance case that instantiates an unbounded generic at a copy type is unresolved.** `fn6-neg-polymorphic-recursion.wf:4` writes bare `return x;` at `poly<i32>`; its manifest row is `"status": "pending"`.
-5. **A scratch artifact in circulation is mislabelled.** `/Users/bytedance/do_not_scan/skeptic/probe` is described in the FOOTPRINT report as "the literal one-clause deletion"; `diff -u` shows it also widens both kill conditions. Its conclusions stand, but its numbers measure something the brief's text does not propose.
+5. **A scratch artifact in circulation is mislabelled.** `<scratch-root>/skeptic/probe` is described in the FOOTPRINT report as "the literal one-clause deletion"; `diff -u` shows it also widens both kill conditions. Its conclusions stand, but its numbers measure something the brief's text does not propose.
 
 ---
 

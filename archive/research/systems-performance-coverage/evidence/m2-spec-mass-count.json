@@ -1,9 +1,9 @@
 {
  "files_written": [
-  "/private/tmp/claude-501/-Users-bytedance-Dev-xlang/aa5fb55b-dd40-41d3-b055-e43be2507ecf/scratchpad/m2/optables.md",
-  "/private/tmp/claude-501/-Users-bytedance-Dev-xlang/aa5fb55b-dd40-41d3-b055-e43be2507ecf/scratchpad/m2/cards.md",
-  "/private/tmp/claude-501/-Users-bytedance-Dev-xlang/aa5fb55b-dd40-41d3-b055-e43be2507ecf/scratchpad/m2/count_tokens.py",
-  "/private/tmp/claude-501/-Users-bytedance-Dev-xlang/aa5fb55b-dd40-41d3-b055-e43be2507ecf/scratchpad/m2/detail_analysis.py"
+  "<local-workdir>/aa5fb55b-dd40-41d3-b055-e43be2507ecf/scratchpad/m2/optables.md",
+  "<local-workdir>/aa5fb55b-dd40-41d3-b055-e43be2507ecf/scratchpad/m2/cards.md",
+  "<local-workdir>/aa5fb55b-dd40-41d3-b055-e43be2507ecf/scratchpad/m2/count_tokens.py",
+  "<local-workdir>/aa5fb55b-dd40-41d3-b055-e43be2507ecf/scratchpad/m2/detail_analysis.py"
  ],
  "method": "tiktoken cl100k_base (importable; the bytes/3.6 fallback was NOT needed \u2014 sanity check shows it would have undercounted this notation-dense text by ~12%: optables 29,613 B/3.6 = 8,226 vs 9,194 actual). Exact counts on both artifacts, split per section at headings. Sealed forms decomposed into fixed per-form prose (form rules + visitor contracts + companion enums + CG marks + OPEN-FLAGs: seq 920, table 1,149, conc_queue 1,273 tokens) plus op-table rows averaging 90 tokens/row (seq 84.5, table 90.3, conc_queue 102.0; concurrency rows run longer). Remaining kernels estimated as prose_estimate + rows x 90, prose scaled by measured analog complexity. Checked-library contracts at 50% (range 40-60% per task assumption) of a same-row-count sealed table. Cards estimated from the two measured samples (C1 = 3,014, C2 = 2,152, mean 2,583) with a two-tier split (heavy ~2,800 / light ~2,150) by card complexity. Kernel-delta per-rule cost measured from spec/kernel-spec-v0.6.md: 15,216 tokens / 90 rules = ~169 tokens/rule.",
  "per_artifact_tokens": {

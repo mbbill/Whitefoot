@@ -1,13 +1,14 @@
 ROOT := $(abspath ../../..)
 EXPERIMENT := $(abspath .)
-WORK_ROOT ?= /Users/bytedance/do_not_scan/whitefoot-literal-line-floor
+WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+WORK_ROOT ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-literal-line-floor
 BUILD := $(WORK_ROOT)/build
 TMP := $(WORK_ROOT)/tmp
 CARGO_TARGET := $(WORK_ROOT)/compiler-target
 CEILING_TARGET := $(WORK_ROOT)/ceiling-target
 INPUT_DIR := $(WORK_ROOT)/input
 INPUT := $(INPUT_DIR)/ru-prefix-67108864.bin
-SOURCE_INPUT ?= /Users/bytedance/do_not_scan/whitefoot-rg-base/corpora/ru.txt
+SOURCE_INPUT ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-rg-base/corpora/ru.txt
 NEEDLE_HEX := d0a8d0b5d180d0bbd0bed0ba20d0a5d0bed0bbd0bcd181
 CLANG := /usr/bin/clang
 RUSTC := rustc

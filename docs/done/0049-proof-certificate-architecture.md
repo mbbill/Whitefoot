@@ -7,7 +7,7 @@ This is frozen coordination history, not execution authority.
   to a decision-ready architecture packet; architectural clarity, correctness,
   and compile-time performance were the ordered selection criteria
 - **Owner / workspace:** Codex lead /
-  `/Users/bytedance/do_not_scan/whitefoot-proof-certificate-final`, branch
+  `<scratch-root>/whitefoot-proof-certificate-final`, branch
   `codex/proof-certificate-architecture-final`
 - **Base revision:**
   `df55e7ca60e14fd32983738c92cef4528f0eda0c`, the separately landed Stage 5b

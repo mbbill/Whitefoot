@@ -4,7 +4,7 @@
 - **Authority:** the owner-approved Stage 5b plan derived from Direction
   Outline revision 30 item `PROOF-8`, with `BOUND-1`, `VERIFY-1`, and
   `VERIFY-2` as boundary and evidence constraints
-- **Owner / workspace:** Codex lead / `/Users/bytedance/code/Whitefoot`, branch
+- **Owner / workspace:** Codex lead / `<repository-root>`, branch
   `codex/0047-counted-range-impl`
 - **Base revision:**
   `63e3407b997cce0716266ce6d7f6dc6039df92ab`

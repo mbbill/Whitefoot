@@ -38,9 +38,9 @@ This is a temporary live coordination record, not execution authority.
 - **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
   (`governance/APPROVALS.md`), including the canonical-renderer ruling; the
   amended delta `governance/spec-evolution/spelling-relief-candidate.md`
-- **Owner / workspace:** exec-0038j (round 9) / `/Users/bytedance/do_not_scan/wf0038-r9`
+- **Owner / workspace:** exec-0038j (round 9) / `<scratch-root>/wf0038-r9`
   on branch `task/0038-floor5-semantic-and-migration`; exec-0038k (round 10) /
-  `/Users/bytedance/do_not_scan/wf0038-r10` on branch
+  `<scratch-root>/wf0038-r10` on branch
   `task/0038-conformance-dispositions`, based on round 9's tip `efb5242`
   (resolved from `git log`, not relayed). The two branches are disjoint in
   files: round 10 touches `compiler/src/resolution/`,
@@ -632,7 +632,7 @@ first time in this batch. Four findings stop short of closing it, and each
 carries a reproduction.
 
 **Handoff state found, corrected before work.** The brief said no worktree
-held the branch; `/Users/bytedance/do_not_scan/wf0038-r7` did, with the
+held the branch; `<scratch-root>/wf0038-r7` did, with the
 `reject-err2-nonexhaustive` restatement uncommitted. Both resolved
 themselves mid-orientation — the branch was committed (`70859f3`), rebased
 onto `e8054fe` and its worktree removed while this round was reading — so
@@ -1270,7 +1270,7 @@ Python `re`. Recorded in §5 with the measurement table.
 
 **All nine migration figures re-measured on this branch after the rebase and
 reproduce to the digit** (420 / 1588 / 102 / 2003 / 262 / 378 / 519 / 207 /
-406). Script at `/Users/bytedance/do_not_scan/wf0038x/recount.py`, re-pointed
+406). Script at `<scratch-root>/wf0038x/recount.py`, re-pointed
 at the live worktree and extended with the new class; exits non-zero on
 divergence.
 
@@ -1304,7 +1304,7 @@ brief's assumption holds.
   **69 productions, 84 decisions, 97 terminal predicates**, unchanged.
 
 **The failure SET is byte-identical to round 3's** — `comm` against
-`/Users/bytedance/do_not_scan/wf0038-baseline-failures.txt` shows zero added
+`<scratch-root>/wf0038-baseline-failures.txt` shows zero added
 and zero removed. That is the check that a prose-only amendment plus a digest
 re-key regressed nothing and fixed nothing, which a count alone could not say.
 
@@ -1395,7 +1395,7 @@ gate rather than skipped by pattern so a third cannot appear unnoticed.
 - `cargo fmt --check`, `clippy --all-targets -D warnings`, `cargo doc`: **0**.
 
 **The lib failure SET is byte-identical to round 4's** — `comm` against
-`/Users/bytedance/do_not_scan/wf0038-baseline-failures.txt` shows zero added
+`<scratch-root>/wf0038-baseline-failures.txt` shows zero added
 and zero removed. Passing moved 257 → 259, which is exactly the two new
 renderer tests. The candidate digest and all three pins were recomputed rather
 than relayed and hold at `ab257aa6…`, including the 32-byte array in
@@ -1860,7 +1860,7 @@ work started.** Branch tip `f7c8b19` **does not exist** in this repository
 (`git cat-file -t` fatal); the real tip of
 `task/0036-floor5-grammar-and-migration` is `12d9eb2`, carrying exactly the
 described renderer commit. And a worktree **did** hold that branch —
-`/Users/bytedance/do_not_scan/wf0038-r5`, clean and at the tip. It was left
+`<scratch-root>/wf0038-r5`, clean and at the tip. It was left
 alone rather than removed, so this round branched
 `task/0038-floor5-semantic-and-migration` from `12d9eb2` and worked in its
 own worktree. **The branch already contained main's tip `fb80bb1` as the
@@ -1897,7 +1897,7 @@ is the callee's and its signature already interned it.
 including `let absent = None<buffer<u8>>();` — the round-3 blocker's own
 witness, which had no legal spelling before the amendment. Lib went
 **259 -> 267 passed / 271 failed**, and the failure SET is byte-identical to
-`/Users/bytedance/do_not_scan/wf0038-baseline-failures.txt`: zero added,
+`<scratch-root>/wf0038-baseline-failures.txt`: zero added,
 zero removed.
 
 ### `9eed20a` — OP-2 operand-derived row selection
@@ -2172,7 +2172,7 @@ know was riding on the deleted annotation.
 
 ### The four controls, re-run rather than inherited
 
-Sources in `/Users/bytedance/do_not_scan/wf0038-r9-controls`, each a complete
+Sources in `<scratch-root>/wf0038-r9-controls`, each a complete
 program, driven by `whitefootc --emit-llvm -o /dev/null <file>; echo "exit=$?"`.
 Round 9's claims reproduce exactly:
 

@@ -1,6 +1,6 @@
 # User directives (fixed design constraints)
 
-## THE GOAL — see /Users/bytedance/Dev/xlang/CONSTITUTION.md
+## THE GOAL — see <historical-repository-root>/CONSTITUTION.md
 
 The constitution (floors, P0 with the Rust test R0, P1 = W1/W2, balance rule, R1–R6) is the authoritative top-level document at the repository root: `CONSTITUTION.md`. It supersedes and grounds every directive below; the text was relocated there on 2026-07-07 for discoverability (stated once, referenced here).
 

@@ -19,7 +19,7 @@ This is a temporary live coordination record, not execution authority.
   re-assembly after the fixed delta; and the lead's 2026-08-07 ruling that the
   three spec-identity checks are activation-gated by design
 - **Owner / workspace (rounds 5–6):** exec-0036d /
-  `/Users/bytedance/do_not_scan/wf-0036e` on branch
+  `<scratch-root>/wf-0036e` on branch
   `task/0036-floor5-grammar-and-migration`, rebased onto main at f80840d
 - **Base revision:** b345e2c
 - **Dependency:** none
@@ -134,7 +134,7 @@ checked IR is compiler-internal, so this is not desugaring in the spec's sense.
 
 ## Generator reproduction gate (round 3, 2026-08-07)
 
-The generator is built (scratch, `/Users/bytedance/do_not_scan/wf-gen`): it
+The generator is built (scratch, `<scratch-root>/wf-gen`): it
 reads a numbered specification, parses the normative EBNF — including the four
 inline prose productions the hand-back brief warned about — and emits the whole
 of `generated.rs`. Two inputs are historical rather than derived and are carried
@@ -282,11 +282,11 @@ v0.23 grammar (0038), 1 stale operation catalog, 1 lexer gap, and the three
 activation-gated spec-identity checks above. None is a table, terminal, or
 derivation failure.
 
-**Workspace note.** Round 5's worktree `/Users/bytedance/do_not_scan/wf-0036c`
+**Workspace note.** Round 5's worktree `<scratch-root>/wf-0036c`
 was removed between rounds and this branch was re-homed to
-`/Users/bytedance/do_not_scan/wf-0038-exec` while task 0038 sits unclaimed in
+`<scratch-root>/wf-0038-exec` while task 0038 sits unclaimed in
 `docs/planned/`. Round 6 therefore worked in a separate detached worktree,
-`/Users/bytedance/do_not_scan/wf-0036e`, rather than committing inside another
+`<scratch-root>/wf-0036e`, rather than committing inside another
 task's workspace. The branch ref needs one fast-forward to pick this round up.
 
 ## Round 4 (2026-08-07) — superseded bytes, retained findings

@@ -29,6 +29,7 @@ from typing import Any, Iterable
 sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
+USER_HOME = Path.home()
 HARNESS = HERE / "harness"
 ANALYZER = HERE / "analyze.py"
 TARGET_RUN_DIR = (HERE / "runs" / "primary-terra-medium-preregistered").resolve()
@@ -48,8 +49,8 @@ MACOS_SDK_SETTINGS = MACOS_SDK / "SDKSettings.json"
 PMSET = Path("/usr/bin/pmset")
 SYSCTL = Path("/usr/sbin/sysctl")
 SYSTEM_PROFILER = Path("/usr/sbin/system_profiler")
-CARGO = Path("/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo")
-RUSTC = Path("/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc")
+CARGO = USER_HOME / ".rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo"
+RUSTC = USER_HOME / ".rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
 CODEX = Path("/opt/homebrew/bin/codex")
 CODEX_JAVASCRIPT = Path(
     "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js"
@@ -62,7 +63,7 @@ ADAPTER = HERE.parent / "codex_model_adapter.py"
 GENERATOR = HERE.parent / "generate.py"
 EVALUATOR = HERE / "verify.py"
 PROMPT = HERE / "base-prompt.txt"
-CARGO_HOME = Path("/Users/bytedance/.cargo")
+CARGO_HOME = USER_HOME / ".cargo"
 NATIVE_TARGET = "aarch64-apple-darwin"
 EXPECTED_BUILD_TOOL_SHA256 = {
     str(CARGO): "696d29bd6f5a136ef6c7088558e178efcabbd571de90e8169d0f6596c568eea8",
@@ -940,8 +941,8 @@ def audit_clang_default_configs() -> dict[str, Any]:
         CLANG.parent,
         CLANG.parent.parent / "etc" / "clang",
         Path("/etc/clang"),
-        Path("/Users/bytedance/.config/clang"),
-        Path("/Users/bytedance/Library/Preferences/clang"),
+        USER_HOME / ".config/clang",
+        USER_HOME / "Library/Preferences/clang",
     )
     observed: dict[str, str] = {}
     observed_symlinks: dict[str, str] = {}

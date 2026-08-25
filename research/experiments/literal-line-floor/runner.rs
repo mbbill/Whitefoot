@@ -336,9 +336,15 @@ fn verify() -> Result<BTreeMap<&'static str, Sample>, String> {
     if sha256_bytes(&decode_hex(NEEDLE_HEX)?)? != NEEDLE_SHA256 {
         return Err("needle SHA-256 mismatch".to_owned());
     }
+    let cargo_home = std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cargo"))
+        })
+        .ok_or_else(|| "CARGO_HOME or HOME is required".to_owned())?;
     require_hash(
-        Path::new(
-            "/Users/bytedance/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/memchr-2.8.3.crate",
+        &cargo_home.join(
+            "registry/cache/index.crates.io-1949cf8c6b5b557f/memchr-2.8.3.crate",
         ),
         MEMCHR_SHA256,
         "memchr 2.8.3 crate",

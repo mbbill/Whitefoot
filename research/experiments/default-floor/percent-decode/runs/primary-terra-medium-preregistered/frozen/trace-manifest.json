@@ -1,7 +1,7 @@
 {
   "config": {
     "path": "config.json",
-    "sha256": "ee58fabe303c9788f8f705663d0434edb548cb6eed51eb4a0f9de12c6735e23b"
+    "sha256": "01ceaf619430469223c7e2b7a41038b9503a88c69129ec2d0fc2993f31e56e16"
   },
   "frozen_round": 2,
   "protocol_version": 1,

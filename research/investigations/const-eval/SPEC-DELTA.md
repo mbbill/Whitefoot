@@ -198,7 +198,7 @@ any effect row.
 ## Validation evidence (scratch candidate run)
 
 Recorded by the executor from a throwaway copy of the repository
-(`/Users/bytedance/do_not_scan/wf-v031-scratch`, deleted after use) with
+(`<scratch-root>/wf-v031-scratch`, deleted after use) with
 exactly the above edits applied to the spec text (scratch candidate bytes
 SHA-256 `25fe8cf625554ebd0e613409a0120df931c9b0e5e712d6f266c25ea9b456412c`
 — informative only; the lead's integration produces the authoritative

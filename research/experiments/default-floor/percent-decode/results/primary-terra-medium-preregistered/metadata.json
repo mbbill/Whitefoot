@@ -2,14 +2,14 @@
   "analysis": {
     "command": [
       "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9",
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/analyze.py",
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered"
+      "<historical-repository-root>/experiments/default-floor/percent-decode/analyze.py",
+      "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered"
     ],
-    "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/analysis.json",
-    "sha256": "24cfe1e9a3aed9d647d7ae9f684f178fe62c363bff1afa405a1dc245376bd5b9"
+    "path": "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/analysis.json",
+    "sha256": "735984abcb723659f72f613cb2be514fe218e25b97237bce1758cf14d48a5c90"
   },
   "benchmark_executable": {
-    "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/cargo-target/aarch64-apple-darwin/release/bench",
+    "path": "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/cargo-target/aarch64-apple-darwin/release/bench",
     "sha256": "7c3dec34669a7aee2b3f70be4053fd996bb6d496a2157fb9b7e70884181638c5"
   },
   "blocks_completed": 30,
@@ -31,9 +31,9 @@
       "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
       "-O3",
       "-c",
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/facts.ll",
+      "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/facts.ll",
       "-o",
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/facts.o"
+      "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/facts.o"
     ],
     [
       "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
@@ -42,14 +42,14 @@
       "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
       "-O3",
       "-c",
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/nofacts.ll",
+      "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/nofacts.ll",
       "-o",
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/nofacts.o"
+      "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/nofacts.o"
     ],
     [
-      "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
+      "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
       "--config",
-      "build.rustc=\"/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc\"",
+      "build.rustc=\"<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc\"",
       "--config",
       "build.rustc-wrapper=\"\"",
       "--config",
@@ -68,9 +68,9 @@
       "target.aarch64-apple-darwin.rustflags=[]",
       "rustc",
       "--manifest-path",
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/harness/Cargo.toml",
+      "<historical-repository-root>/experiments/default-floor/percent-decode/harness/Cargo.toml",
       "--target-dir",
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/cargo-target",
+      "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/cargo-target",
       "--bin",
       "bench",
       "--release",
@@ -81,15 +81,15 @@
       "-vv",
       "--",
       "-C",
-      "link-arg=/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/facts.o",
+      "link-arg=<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/facts.o",
       "-C",
-      "link-arg=/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/nofacts.o"
+      "link-arg=<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/nofacts.o"
     ]
   ],
   "build_environment": {
     "cargo_cli_neutralization": [
       "--config",
-      "build.rustc=\"/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc\"",
+      "build.rustc=\"<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc\"",
       "--config",
       "build.rustc-wrapper=\"\"",
       "--config",
@@ -108,18 +108,18 @@
       "target.aarch64-apple-darwin.rustflags=[]"
     ],
     "cargo_config_absence": {
-      "cargo_home": "/Users/bytedance/.cargo",
+      "cargo_home": "<local-home>/.cargo",
       "schema_version": 1,
-      "search_cwd": "/Users/bytedance/Dev/xlang",
+      "search_cwd": "<historical-repository-root>",
       "searched_paths": [
-        "/Users/bytedance/Dev/xlang/.cargo/config.toml",
-        "/Users/bytedance/Dev/xlang/.cargo/config",
-        "/Users/bytedance/Dev/.cargo/config.toml",
-        "/Users/bytedance/Dev/.cargo/config",
-        "/Users/bytedance/.cargo/config.toml",
-        "/Users/bytedance/.cargo/config",
-        "/Users/.cargo/config.toml",
-        "/Users/.cargo/config",
+        "<historical-repository-root>/.cargo/config.toml",
+        "<historical-repository-root>/.cargo/config",
+        "<local-home>/Dev/.cargo/config.toml",
+        "<local-home>/Dev/.cargo/config",
+        "<local-home>/.cargo/config.toml",
+        "<local-home>/.cargo/config",
+        "<users-root>/.cargo/config.toml",
+        "<users-root>/.cargo/config",
         "/.cargo/config.toml",
         "/.cargo/config"
       ],
@@ -141,18 +141,18 @@
       "search_directories": {
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin": "present",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/etc/clang": "absent",
-        "/Users/bytedance/.config/clang": "absent",
-        "/Users/bytedance/Library/Preferences/clang": "absent",
-        "/etc/clang": "absent"
+        "/etc/clang": "absent",
+        "<local-home>/.config/clang": "absent",
+        "<local-home>/Library/Preferences/clang": "absent"
       },
       "status": "only-hash-locked-swift-linux-configs-no-macos-match"
     },
     "enforced": {
-      "CARGO_HOME": "/Users/bytedance/.cargo",
+      "CARGO_HOME": "<local-home>/.cargo",
       "CARGO_INCREMENTAL": "0",
       "CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
       "CC": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
-      "RUSTC": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+      "RUSTC": "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
       "SDKROOT": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
     },
     "generic_cpu_policy": "no native CPU flags; explicit generic aarch64-apple-darwin target",
@@ -163,36 +163,36 @@
   "corpus": {
     "bytes": 268435456,
     "command": [
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/cargo-target/aarch64-apple-darwin/release/bench",
+      "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/cargo-target/aarch64-apple-darwin/release/bench",
       "prepare-corpus",
       "--mode",
       "score",
       "--bytes",
       "268435456",
       "--output",
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/corpus.bin"
+      "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/corpus.bin"
     ],
-    "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/corpus.bin",
+    "path": "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/corpus.bin",
     "sha256": "a8ea65fd669fe1ca5d5fc635c305067c12de30d67b4fcf9e9e6a85d7bb99e286"
   },
   "created_at": "2026-07-13T06:03:27.822187+00:00",
   "fresh_process_per_block": true,
   "frozen_source": {
-    "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl",
+    "path": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl",
     "sha256": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd"
   },
   "generation_archive": {
     "index": {
-      "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/generation-freeze-index.json",
-      "sha256": "81793e6922c0a61b945d0f5eb6cedf6576b2e89afad750d2dba650ac3968c3ea"
+      "path": "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/generation-freeze-index.json",
+      "sha256": "83126f814f5fc76cc10606d591ee3eaebefbfb6147017a02ceeb587256b4f39f"
     },
-    "original_run_dir": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered",
+    "original_run_dir": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered",
     "result_absolute_paths": {
-      "manifest": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/trace-manifest.json",
+      "manifest": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/trace-manifest.json",
       "role": "historical-original-run-reference",
-      "source": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl"
+      "source": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl"
     },
-    "root": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/generation-freeze",
+    "root": "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/generation-freeze",
     "schema_version": 1,
     "tree": {
       "directories": [
@@ -203,11 +203,11 @@
         "rounds/002"
       ],
       "files_sha256": {
-        "config.json": "ee58fabe303c9788f8f705663d0434edb548cb6eed51eb4a0f9de12c6735e23b",
+        "config.json": "01ceaf619430469223c7e2b7a41038b9503a88c69129ec2d0fc2993f31e56e16",
         "frozen/percent_decode.xl": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd",
         "frozen/source.sha256": "8ef1572ad33bae1d08b4af8a2f5fcf7857590419128426e5cf731bce4b5c68f8",
-        "frozen/trace-manifest.json": "8f60aa5514a89ab914f342e6fa8089199a4b761e516d48976bf9186a782532a9",
-        "result.json": "6837f7b2e4aee3096e86e9e863352250047c764fe8abf4ad8becaf0f40515d82",
+        "frozen/trace-manifest.json": "8c3d1672c349929372516698e72ed40a519be40f285c15f2e7cc847b89190a93",
+        "result.json": "76176b20a2a82e553badce02a3b5d02308c0dbb56b8db105ff70dcfa57bfdac4",
         "rounds/000/evaluator-process.json": "04d87c6904b6726b71c4765f4ee2b1e09e771ad19624d0b2310d6a3093c90799",
         "rounds/000/evaluator.json": "8fce6e4c063afea85fff7d5b95f2da30d3ea90d5dc89b7b218c6c7ca8bdbfc50",
         "rounds/000/evaluator.raw.txt": "dece4409516b99fd343abeefa1d87f2536bc4996039a817dad375ede8a3c4ba2",
@@ -242,10 +242,10 @@
       }
     },
     "validation_identity": {
-      "config_sha256": "ee58fabe303c9788f8f705663d0434edb548cb6eed51eb4a0f9de12c6735e23b",
+      "config_sha256": "01ceaf619430469223c7e2b7a41038b9503a88c69129ec2d0fc2993f31e56e16",
       "frozen_round": 2,
-      "manifest_sha256": "8f60aa5514a89ab914f342e6fa8089199a4b761e516d48976bf9186a782532a9",
-      "result_sha256": "6837f7b2e4aee3096e86e9e863352250047c764fe8abf4ad8becaf0f40515d82",
+      "manifest_sha256": "8c3d1672c349929372516698e72ed40a519be40f285c15f2e7cc847b89190a93",
+      "result_sha256": "76176b20a2a82e553badce02a3b5d02308c0dbb56b8db105ff70dcfa57bfdac4",
       "source_sha256": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd",
       "source_sha256_file_sha256": "8ef1572ad33bae1d08b4af8a2f5fcf7857590419128426e5cf731bce4b5c68f8",
       "trace_sha256": "d8c8138ec2a8d6385b31bea17d3289ed72025cf343ed87ccc34a86ca2df9766d"
@@ -253,26 +253,26 @@
   },
   "generation_freeze": {
     "config": {
-      "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/config.json",
-      "sha256": "ee58fabe303c9788f8f705663d0434edb548cb6eed51eb4a0f9de12c6735e23b",
+      "path": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/config.json",
+      "sha256": "01ceaf619430469223c7e2b7a41038b9503a88c69129ec2d0fc2993f31e56e16",
       "value": {
         "evaluator_invocation": {
           "argv_items_without_candidate": 2,
           "argv_without_candidate_sha256": "0701b7ba57de6251a29d6cda147d554817b282899d55aabb06e0529af9ddf9f4",
           "public_metadata": {
             "cargo_config_absence": {
-              "cargo_home": "/Users/bytedance/.cargo",
+              "cargo_home": "<local-home>/.cargo",
               "schema_version": 1,
-              "search_cwd": "/Users/bytedance/Dev/xlang",
+              "search_cwd": "<historical-repository-root>",
               "searched_paths": [
-                "/Users/bytedance/Dev/xlang/.cargo/config.toml",
-                "/Users/bytedance/Dev/xlang/.cargo/config",
-                "/Users/bytedance/Dev/.cargo/config.toml",
-                "/Users/bytedance/Dev/.cargo/config",
-                "/Users/bytedance/.cargo/config.toml",
-                "/Users/bytedance/.cargo/config",
-                "/Users/.cargo/config.toml",
-                "/Users/.cargo/config",
+                "<historical-repository-root>/.cargo/config.toml",
+                "<historical-repository-root>/.cargo/config",
+                "<local-home>/Dev/.cargo/config.toml",
+                "<local-home>/Dev/.cargo/config",
+                "<local-home>/.cargo/config.toml",
+                "<local-home>/.cargo/config",
+                "<users-root>/.cargo/config.toml",
+                "<users-root>/.cargo/config",
                 "/.cargo/config.toml",
                 "/.cargo/config"
               ],
@@ -322,7 +322,7 @@
             "percent_encoding_registry": {
               "crate_files": [
                 {
-                  "path": "/Users/bytedance/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2.crate",
+                  "path": "<local-home>/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2.crate",
                   "sha256": "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
                 }
               ],
@@ -331,7 +331,7 @@
               "verified_source_trees": [
                 {
                   "cargo_ok_sha256": "afbf9d0f3560b0fd7795e81c42a0a79ee6b6fc67e064f77826aee642cad28d91",
-                  "path": "/Users/bytedance/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2",
+                  "path": "<local-home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2",
                   "tree_directories": [
                     "src"
                   ],
@@ -369,9 +369,9 @@
                 "search_directories": {
                   "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin": "present",
                   "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/etc/clang": "absent",
-                  "/Users/bytedance/.config/clang": "absent",
-                  "/Users/bytedance/Library/Preferences/clang": "absent",
-                  "/etc/clang": "absent"
+                  "/etc/clang": "absent",
+                  "<local-home>/.config/clang": "absent",
+                  "<local-home>/Library/Preferences/clang": "absent"
                 },
                 "status": "only-hash-locked-swift-linux-configs-no-macos-match"
               },
@@ -381,7 +381,7 @@
                 "version": "26.5"
               },
               "paths": {
-                "cargo": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
+                "cargo": "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
                 "clang": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
                 "codex_javascript": "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js",
                 "codex_launcher": "/opt/homebrew/bin/codex",
@@ -389,16 +389,16 @@
                 "macos_sdk": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
                 "macos_sdk_settings": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json",
                 "python": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9",
-                "rustc": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+                "rustc": "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
               },
               "sha256": {
                 "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9": "271143990bc83af0fb2404a255038f5faafb96df1584ed7f085e5018c0f33ffb",
                 "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json": "f8d005f09381389167f9e0aeaa169bc9e7dff162ef22ca2fd8e98df7ff1acafe",
                 "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang": "7def90dd8829726686213a747fc5bff1583df933dae5edc55d755479e0bfe00a",
-                "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo": "696d29bd6f5a136ef6c7088558e178efcabbd571de90e8169d0f6596c568eea8",
-                "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc": "f556cd7caa76d85ff0e777ba8e96552b33b4e0ea0dda8fbe6cde1d23b6c4df27",
                 "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js": "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477",
-                "/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex": "978740e6bcbd9af2f850823b723fb74f16d8d1e44de05f7dd6737ae631f72017"
+                "/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex": "978740e6bcbd9af2f850823b723fb74f16d8d1e44de05f7dd6737ae631f72017",
+                "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo": "696d29bd6f5a136ef6c7088558e178efcabbd571de90e8169d0f6596c568eea8",
+                "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc": "f556cd7caa76d85ff0e777ba8e96552b33b4e0ea0dda8fbe6cde1d23b6c4df27"
               },
               "versions": {
                 "cargo": "cargo 1.91.1 (ea2d97820 2025-10-10)\nrelease: 1.91.1\ncommit-hash: ea2d97820c16195b0ca3fadb4319fe512c199a43\ncommit-date: 2025-10-10\nhost: aarch64-apple-darwin\nlibgit2: 1.9.1 (sys:0.20.2 vendored)\nlibcurl: 8.7.1 (sys:0.4.83+curl-8.15.0 system ssl:(SecureTransport) LibreSSL/3.3.6)\nssl: OpenSSL 3.5.2 5 Aug 2025\nos: Mac OS 26.5.1 [64-bit]",
@@ -418,18 +418,18 @@
           "argv_sha256": "ead3ba903597dccc3c8b071d10bf1574f0a9e95728d789a6d0358335bfc11db0",
           "public_metadata": {
             "cargo_config_absence": {
-              "cargo_home": "/Users/bytedance/.cargo",
+              "cargo_home": "<local-home>/.cargo",
               "schema_version": 1,
-              "search_cwd": "/Users/bytedance/Dev/xlang",
+              "search_cwd": "<historical-repository-root>",
               "searched_paths": [
-                "/Users/bytedance/Dev/xlang/.cargo/config.toml",
-                "/Users/bytedance/Dev/xlang/.cargo/config",
-                "/Users/bytedance/Dev/.cargo/config.toml",
-                "/Users/bytedance/Dev/.cargo/config",
-                "/Users/bytedance/.cargo/config.toml",
-                "/Users/bytedance/.cargo/config",
-                "/Users/.cargo/config.toml",
-                "/Users/.cargo/config",
+                "<historical-repository-root>/.cargo/config.toml",
+                "<historical-repository-root>/.cargo/config",
+                "<local-home>/Dev/.cargo/config.toml",
+                "<local-home>/Dev/.cargo/config",
+                "<local-home>/.cargo/config.toml",
+                "<local-home>/.cargo/config",
+                "<users-root>/.cargo/config.toml",
+                "<users-root>/.cargo/config",
                 "/.cargo/config.toml",
                 "/.cargo/config"
               ],
@@ -472,9 +472,9 @@
                 "search_directories": {
                   "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin": "present",
                   "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/etc/clang": "absent",
-                  "/Users/bytedance/.config/clang": "absent",
-                  "/Users/bytedance/Library/Preferences/clang": "absent",
-                  "/etc/clang": "absent"
+                  "/etc/clang": "absent",
+                  "<local-home>/.config/clang": "absent",
+                  "<local-home>/Library/Preferences/clang": "absent"
                 },
                 "status": "only-hash-locked-swift-linux-configs-no-macos-match"
               },
@@ -484,7 +484,7 @@
                 "version": "26.5"
               },
               "paths": {
-                "cargo": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
+                "cargo": "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
                 "clang": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
                 "codex_javascript": "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js",
                 "codex_launcher": "/opt/homebrew/bin/codex",
@@ -492,16 +492,16 @@
                 "macos_sdk": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
                 "macos_sdk_settings": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json",
                 "python": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9",
-                "rustc": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+                "rustc": "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
               },
               "sha256": {
                 "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9": "271143990bc83af0fb2404a255038f5faafb96df1584ed7f085e5018c0f33ffb",
                 "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json": "f8d005f09381389167f9e0aeaa169bc9e7dff162ef22ca2fd8e98df7ff1acafe",
                 "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang": "7def90dd8829726686213a747fc5bff1583df933dae5edc55d755479e0bfe00a",
-                "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo": "696d29bd6f5a136ef6c7088558e178efcabbd571de90e8169d0f6596c568eea8",
-                "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc": "f556cd7caa76d85ff0e777ba8e96552b33b4e0ea0dda8fbe6cde1d23b6c4df27",
                 "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js": "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477",
-                "/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex": "978740e6bcbd9af2f850823b723fb74f16d8d1e44de05f7dd6737ae631f72017"
+                "/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex": "978740e6bcbd9af2f850823b723fb74f16d8d1e44de05f7dd6737ae631f72017",
+                "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo": "696d29bd6f5a136ef6c7088558e178efcabbd571de90e8169d0f6596c568eea8",
+                "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc": "f556cd7caa76d85ff0e777ba8e96552b33b4e0ea0dda8fbe6cde1d23b6c4df27"
               },
               "versions": {
                 "cargo": "cargo 1.91.1 (ea2d97820 2025-10-10)\nrelease: 1.91.1\ncommit-hash: ea2d97820c16195b0ca3fadb4319fe512c199a43\ncommit-date: 2025-10-10\nhost: aarch64-apple-darwin\nlibgit2: 1.9.1 (sys:0.20.2 vendored)\nlibcurl: 8.7.1 (sys:0.4.83+curl-8.15.0 system ssl:(SecureTransport) LibreSSL/3.3.6)\nssl: OpenSSL 3.5.2 5 Aug 2025\nos: Mac OS 26.5.1 [64-bit]",
@@ -524,12 +524,12 @@
     },
     "frozen_round": 2,
     "manifest": {
-      "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/trace-manifest.json",
-      "sha256": "8f60aa5514a89ab914f342e6fa8089199a4b761e516d48976bf9186a782532a9",
+      "path": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/trace-manifest.json",
+      "sha256": "8c3d1672c349929372516698e72ed40a519be40f285c15f2e7cc847b89190a93",
       "value": {
         "config": {
           "path": "config.json",
-          "sha256": "ee58fabe303c9788f8f705663d0434edb548cb6eed51eb4a0f9de12c6735e23b"
+          "sha256": "01ceaf619430469223c7e2b7a41038b9503a88c69129ec2d0fc2993f31e56e16"
         },
         "frozen_round": 2,
         "protocol_version": 1,
@@ -728,33 +728,33 @@
     "protocol_version": 1,
     "result": {
       "absolute_path_fields": {
-        "manifest": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/trace-manifest.json",
+        "manifest": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/trace-manifest.json",
         "role": "live-canonical-run-binding",
-        "source": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl"
+        "source": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl"
       },
-      "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/result.json",
-      "sha256": "6837f7b2e4aee3096e86e9e863352250047c764fe8abf4ad8becaf0f40515d82",
+      "path": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/result.json",
+      "sha256": "76176b20a2a82e553badce02a3b5d02308c0dbb56b8db105ff70dcfa57bfdac4",
       "value": {
-        "manifest": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/trace-manifest.json",
+        "manifest": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/trace-manifest.json",
         "round": 2,
         "sha256": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd",
-        "source": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl",
+        "source": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl",
         "status": "frozen"
       }
     },
-    "run_dir": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered",
+    "run_dir": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered",
     "source": {
-      "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl",
+      "path": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl",
       "sha256": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd"
     },
     "source_sha256_file": {
-      "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/source.sha256",
+      "path": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/source.sha256",
       "sha256": "8ef1572ad33bae1d08b4af8a2f5fcf7857590419128426e5cf731bce4b5c68f8"
     },
     "status": "verified-frozen",
     "trace": {
       "artifacts_verified": 27,
-      "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/trace.jsonl",
+      "path": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/trace.jsonl",
       "rounds": 3,
       "sha256": "d8c8138ec2a8d6385b31bea17d3289ed72025cf343ed87ccc34a86ca2df9766d"
     }
@@ -807,9 +807,9 @@
       "search_directories": {
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin": "present",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/etc/clang": "absent",
-        "/Users/bytedance/.config/clang": "absent",
-        "/Users/bytedance/Library/Preferences/clang": "absent",
-        "/etc/clang": "absent"
+        "/etc/clang": "absent",
+        "<local-home>/.config/clang": "absent",
+        "<local-home>/Library/Preferences/clang": "absent"
       },
       "status": "only-hash-locked-swift-linux-configs-no-macos-match"
     },
@@ -819,19 +819,19 @@
       "version": "26.5"
     },
     "paths": {
-      "cargo": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
+      "cargo": "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
       "clang": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
       "macos_sdk": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
       "macos_sdk_settings": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json",
       "python": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9",
-      "rustc": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+      "rustc": "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
     },
     "sha256": {
       "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9": "271143990bc83af0fb2404a255038f5faafb96df1584ed7f085e5018c0f33ffb",
       "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json": "f8d005f09381389167f9e0aeaa169bc9e7dff162ef22ca2fd8e98df7ff1acafe",
       "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang": "7def90dd8829726686213a747fc5bff1583df933dae5edc55d755479e0bfe00a",
-      "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo": "696d29bd6f5a136ef6c7088558e178efcabbd571de90e8169d0f6596c568eea8",
-      "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc": "f556cd7caa76d85ff0e777ba8e96552b33b4e0ea0dda8fbe6cde1d23b6c4df27"
+      "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo": "696d29bd6f5a136ef6c7088558e178efcabbd571de90e8169d0f6596c568eea8",
+      "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc": "f556cd7caa76d85ff0e777ba8e96552b33b4e0ea0dda8fbe6cde1d23b6c4df27"
     },
     "versions": {
       "cargo": "cargo 1.91.1 (ea2d97820 2025-10-10)\nrelease: 1.91.1\ncommit-hash: ea2d97820c16195b0ca3fadb4319fe512c199a43\ncommit-date: 2025-10-10\nhost: aarch64-apple-darwin\nlibgit2: 1.9.1 (sys:0.20.2 vendored)\nlibcurl: 8.7.1 (sys:0.4.83+curl-8.15.0 system ssl:(SecureTransport) LibreSSL/3.3.6)\nssl: OpenSSL 3.5.2 5 Aug 2025\nos: Mac OS 26.5.1 [64-bit]",
@@ -847,10 +847,10 @@
   "mode": "score",
   "not_a_score": false,
   "percent_encoding_registry": {
-    "cargo_referenced_source_tree": "/Users/bytedance/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2",
+    "cargo_referenced_source_tree": "<local-home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2",
     "crate_files": [
       {
-        "path": "/Users/bytedance/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2.crate",
+        "path": "<local-home>/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2.crate",
         "sha256": "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
       }
     ],
@@ -859,7 +859,7 @@
     "verified_source_trees": [
       {
         "cargo_ok_sha256": "afbf9d0f3560b0fd7795e81c42a0a79ee6b6fc67e064f77826aee642cad28d91",
-        "path": "/Users/bytedance/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2",
+        "path": "<local-home>/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2",
         "tree_directories": [
           "src"
         ],
@@ -944,7 +944,7 @@
   "proof_reports": {
     "facts-off": {
       "ir_byte_identical_with_and_without_report": true,
-      "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/nofacts-proof-report.json",
+      "path": "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/nofacts-proof-report.json",
       "proof_counts": {
         "None": 6
       },
@@ -956,7 +956,7 @@
     },
     "facts-on": {
       "ir_byte_identical_with_and_without_report": true,
-      "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/facts-proof-report.json",
+      "path": "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/facts-proof-report.json",
       "proof_counts": {
         "None": 6
       },
@@ -968,7 +968,7 @@
     }
   },
   "protocol_sha256": "34f4ad8bf9ae1a8371562a0c2c7562795eb19f56a49ab38c189d54c1a14eda56",
-  "raw_sha256": "a659855f0d3fa909874f861f6d7ec7401653a877a7c0bd0d1544d4333054324b",
+  "raw_sha256": "9644585af07371745ec919167b68accd02a6c200b9f7d13c09933889b4cd9700",
   "repository": {
     "revision": "7acd18adfd985c568b90fcec43b5146e1c41dd96",
     "status_porcelain_v1": [
@@ -1023,7 +1023,7 @@
   "tool_versions": {
     "cargo": {
       "argv": [
-        "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
+        "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
         "--version",
         "--verbose"
       ],
@@ -1051,7 +1051,7 @@
     },
     "rustc": {
       "argv": [
-        "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+        "<local-home>/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
         "--version",
         "--verbose"
       ],

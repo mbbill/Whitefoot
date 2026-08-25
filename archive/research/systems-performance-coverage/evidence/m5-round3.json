@@ -39,7 +39,7 @@
    "Green measures legality/correctness only, not performance: q2 is green with WRONG_CHOICE severity (false cost claims under the rules it cites), which is exactly what the separate par metric exists to catch \u2014 do not read 26.3% green as 26.3% shippable.",
    "Cross-round comparability is limited even beyond doc/grading differences: writer model, sampling, and task mix consistency across rounds 1-3 are not stated in the data provided (round 1 had 20 tasks vs 19 now), so treat round 3 as a fresh baseline rather than a trend point.",
    "Grading itself is one reviewer deep this round; several judgments are explicitly flagged low-confidence in the record (s3's uniq-through-env NOTE, q2's TYPE-5 ambiguity, arm-order rejects graded 'probable'). A second-grader audit of the 5 greens and the near-miss l2 would harden the baseline before the next round.",
-   "Doc set referenced: /Users/bytedance/Dev/xlang/optimizer-language-research/implementation/systems-performance-coverage/m2-spec-mass/{HANDOUT.md, optables.md, cards.md} plus the kernel spec; reduced-cards-A/B and reduced-optables variants exist in the same directory \u2014 next_fixes should be applied to whichever variant set round 4 will hand out, or to both, to avoid re-introducing a docs mismatch."
+   "Doc set referenced: <historical-repository-root>/optimizer-language-research/implementation/systems-performance-coverage/m2-spec-mass/{HANDOUT.md, optables.md, cards.md} plus the kernel spec; reduced-cards-A/B and reduced-optables variants exist in the same directory \u2014 next_fixes should be applied to whichever variant set round 4 will hand out, or to both, to avoid re-introducing a docs mismatch."
   ]
  },
  "rates": {

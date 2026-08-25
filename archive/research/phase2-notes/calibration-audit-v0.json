@@ -1,6 +1,6 @@
 {
   "date": "2026-07-02",
-  "artifact": "/Users/bytedance/Dev/xlang/spec/kernel-spec-v0.md",
+  "artifact": "<historical-repository-root>/spec/kernel-spec-v0.md",
   "audit": "calibration_audit_v0",
   "measurements": {
     "chars": 13109,
@@ -23,7 +23,7 @@
   ],
   "v0_1_update": {
     "date": "2026-07-02",
-    "artifact": "/Users/bytedance/Dev/xlang/spec/kernel-spec-v0.1.md",
+    "artifact": "<historical-repository-root>/spec/kernel-spec-v0.1.md",
     "tokens_cl100k_base": 6310,
     "tokens_o200k_base": 6331,
     "words": 3576,

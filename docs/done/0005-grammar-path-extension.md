@@ -41,7 +41,7 @@ amendments landed mid-task.
 
 ## Follow-ups
 
-- The offline table generator sits at `/Users/bytedance/do_not_scan/wf-grammar-gen`
+- The offline table generator sits at `<scratch-root>/wf-grammar-gen`
   (validated by reproducing the committed v0.17 tables exactly); the
   activation task decides whether to wire it in or regenerate independently.
 - If the candidate's frontend sections are amended again before activation,

@@ -2,10 +2,12 @@
 """Interleave the C-kernel and Rust-baseline binaries R times to share thermal
 state, parse each benchmark's per-run median, and report the median-across-runs
 and the ratio C/Rust. Indicative (Apple M4, macOS arm64)."""
-import subprocess, re, statistics, sys
+import os, subprocess, re, statistics, sys
 
 R = int(sys.argv[1]) if len(sys.argv) > 1 else 9
-HERE = "/private/tmp/claude-501/-Users-bytedance-Dev-xlang/aa5fb55b-dd40-41d3-b055-e43be2507ecf/scratchpad/m3a"
+HERE = os.environ.get("WHITEFOOT_M3A_WORK_ROOT")
+if not HERE:
+    raise SystemExit("WHITEFOOT_M3A_WORK_ROOT is required")
 C_SEQ = f"{HERE}/bench_cseq_lto"
 C_TBL = f"{HERE}/bench_ctable"
 RUST  = f"{HERE}/rustbench/target/release/rustbench"

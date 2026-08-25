@@ -1,18 +1,18 @@
 {
-  "campaign": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered",
+  "campaign": "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered",
   "corpus": {
     "bytes": 268435456,
     "command": [
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/cargo-target/aarch64-apple-darwin/release/bench",
+      "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/build/cargo-target/aarch64-apple-darwin/release/bench",
       "prepare-corpus",
       "--mode",
       "score",
       "--bytes",
       "268435456",
       "--output",
-      "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/corpus.bin"
+      "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/corpus.bin"
     ],
-    "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/corpus.bin",
+    "path": "<historical-repository-root>/experiments/default-floor/percent-decode/results/primary-terra-medium-preregistered/corpus.bin",
     "sha256": "a8ea65fd669fe1ca5d5fc635c305067c12de30d67b4fcf9e9e6a85d7bb99e286"
   },
   "facts_attribution": {
@@ -62,7 +62,7 @@
     "verdict": "practical parity"
   },
   "frozen_source": {
-    "path": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl",
+    "path": "<historical-repository-root>/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl",
     "sha256": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd"
   },
   "kind": "percent-decode-score-analysis",
@@ -1228,7 +1228,7 @@
       "variant": "rust"
     }
   ],
-  "raw_sha256": "a659855f0d3fa909874f861f6d7ec7401653a877a7c0bd0d1544d4333054324b",
+  "raw_sha256": "9644585af07371745ec919167b68accd02a6c200b9f7d13c09933889b4cd9700",
   "schedule": {
     "repetitions_per_stratum": 5,
     "strata_order": [

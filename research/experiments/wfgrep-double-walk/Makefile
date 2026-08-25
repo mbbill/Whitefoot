@@ -4,7 +4,8 @@
 #   [-> confirm SHAPE=sN, conditional per PROTOCOL.md]
 
 ROOT := $(abspath ../../..)
-WORK_ROOT ?= /Users/bytedance/do_not_scan/whitefoot-wfgrep-double-walk
+WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+WORK_ROOT ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-wfgrep-double-walk
 BUILD := $(WORK_ROOT)/build
 TMP := $(WORK_ROOT)/tmp
 CARGO_TARGET := $(WORK_ROOT)/cargo-target

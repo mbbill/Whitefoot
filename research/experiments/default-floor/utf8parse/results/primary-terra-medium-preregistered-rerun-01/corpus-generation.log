@@ -1,4 +1,4 @@
-argv: ["/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01/build/cargo-target/aarch64-apple-darwin/release/bench", "prepare-corpus", "--mode", "score", "--bytes", "134217728", "--output", "/Users/bytedance/Dev/xlang/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01/corpus.bin"]
+argv: ["<historical-repository-root>/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01/build/cargo-target/aarch64-apple-darwin/release/bench", "prepare-corpus", "--mode", "score", "--bytes", "134217728", "--output", "<historical-repository-root>/experiments/default-floor/utf8parse/results/primary-terra-medium-preregistered-rerun-01/corpus.bin"]
 
 stdout:
 {"schema_version":1,"kind":"corpus","mode":"score","not_a_score":false,"bytes":134217728,"block_bytes":4096,"sha256":"e7387acef66a3a0ca0cfa88cd7b57c18625cc9713bc16a41827c4899cb39ce18"}

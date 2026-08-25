@@ -7,7 +7,7 @@ This is frozen coordination history, not execution authority.
   revision 24 and the owner's delegated autonomous specification-review
   authority for the selected obligation-discharge sequence
 - **Owner / workspace:** Codex lead /
-  `/Users/bytedance/do_not_scan/wf-0045-final-activation`, branch
+  `<scratch-root>/wf-0045-final-activation`, branch
   `codex/0045-ent5-activation`
 - **Base revision:** `5998b87`; registered by `3ec9fd5`
 
