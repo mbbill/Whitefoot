@@ -3,7 +3,8 @@
 Branch: `codex/io-model-completion`, from `main` at
 `eab81a335addfb0ae060735771d4e98891dec2ea`.
 
-Status: IN PROGRESS. Phase A started 2026-08-25.
+Status: IN PROGRESS. Phase A started 2026-08-25; activation authorized on the
+work branch on 2026-08-25.
 
 ## Charter
 
@@ -48,6 +49,28 @@ trap-free gate.
   and IOCP remain backend and trusted-base choices.
 - Phase C covers macOS, Linux, and Windows against one shared C contract.
 - No active source, test, tool, or build path may depend on `archive/`.
+
+## Flagged decisions
+
+The owner approved the recommended selections D1 through D5 on 2026-08-25
+and directed that future DESIGN-section flagged decisions adopt their
+recommended selection on the work branch. They take effect in `main` only
+through the owner's eventual approval of the final exact revision.
+
+- **D1, conservative-first ordering:** every former-`external` action writes
+  the command-wide world-order region.
+- **D2, erroneous execution:** a selected schedule may choose the false claim
+  and the pre-abort world-effect prefix; T3 forbids a trap-free permission
+  gate.
+- **D3, worker mapping:** `WF_WORKERS=0` is sequential with no compute pool,
+  `WF_WORKERS=1` is overlapped with one compute lane and no stealing worker,
+  and larger values name the compute-lane count. The flagged observables are
+  false-claim selection, pre-abort output, and the 48 B/level overlapped stack
+  record versus the 16 B/level sequential record.
+- **D4, retired words:** bare `external` and `blocks` remain reserved after
+  their effect alternatives are removed.
+- **D5, provenance vocabulary:** the independent PRV class is renamed
+  `boundary-derived` in this batch without changing verdicts.
 
 ## Phase A evidence
 
@@ -95,9 +118,10 @@ includes:
   syntax, catalog, release, permission, entry, provenance, lowering, and
   activation satellites.
 
-The draft remains research material. No active specification, conformance
-case, compiler behavior, or runtime mapping changes until the owner selects
-D1 through D5 and approves activation of the resulting exact candidate.
+The draft remained research material through commit `13a93bdf`; the owner then
+selected D1 through D5 and authorized activation. Commit `b2a5d409` also made
+the work-branch rule explicit: all phases run to completion without another
+mid-run approval gate.
 
 ### Phase A acceptance audit
 
@@ -118,8 +142,8 @@ Mechanical checks over the completed draft establish:
 - `make repository-invariants` passes, and both new documents contain no
   trailing whitespace, personal home path, TODO, TBD, or FIXME marker.
 
-The only remaining Phase A acceptance item is the owner decision itself. That
-boundary is intentional evidence, not an implementation gap.
+The owner decision is complete. Activation and implementation now follow the
+approved candidate.
 
 ## Phase B evidence
 

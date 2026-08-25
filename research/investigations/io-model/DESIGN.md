@@ -390,6 +390,10 @@ tables, quarantine of late completions).
 
 ## 10. Decisions queued for the owner
 
+(Implementers: these never pause work. Adopt each recommendation, record
+the adoption as a flagged decision in the batch record, and keep going;
+the owner rules on all of them at the single final merge gate.)
+
 1. §3e: conservative-first order migration (recommended) vs declared
    weakening with a full trace law.
 2. §3f: the widened erroneous-execution clause (schedule also selects a

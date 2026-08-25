@@ -84,8 +84,8 @@ records; no verdict changes silently, `reject-syseff-declared-
 unexhibited` keeps testing the declared-but-unexhibited direction with
 a well-bound world row, the same-sink [EFF-5] runtime witness keeps
 passing under conservative aliasing, provenance-only cases keep their
-verdicts (the [PRV-1] `external` is a homonym — owner decision 5 covers
-its rename).
+verdicts (the [PRV-1] `external` is a homonym — flagged decision 5
+covers its rename; adopt the recommendation and continue).
 
 Acceptance: every sweep row dispositioned; a complete draft spec text;
 the conformance ledger; the compiler-side work sized (the EFF-2
@@ -111,8 +111,11 @@ state. Re-measure the directory-walk speedup whose recorded 2.83x
 carries a measurement-artifact caveat (the machine's security daemon;
 see `docs/current-plan.md` W2). Deliverable: the honest number, the
 overhead of serving completion from readiness, and any shape the loan
-machinery could not cover. The owner reads the number and decides
-whether the runtime batch proceeds.
+machinery could not cover — recorded in the batch record and carried in
+the final merge packet. Do not stop here: proceed directly into Phase C
+and the runtime batch regardless of the number; if the measurement
+argues against the direction, say so prominently in the packet and let
+the owner weigh it at the single final gate.
 
 ## Phase C — the full backend matrix (owner direction, 2026-08-25)
 
