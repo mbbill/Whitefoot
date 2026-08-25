@@ -143,25 +143,42 @@ inventory contains no fence operation, so one must be added, not
 presumed). **Recommendation: (1).** The eventual trace law must decide
 the linearization point explicitly; "order" without it is not a law.
 
-### 3f. Traps and world windows: the gate returns, scoped
+### 3f. Traps and world windows: the erroneous promise widens; permission
+does not narrow
 
-Convergent finding of both adversarial reviews, from opposite ends:
-[PAR-1] tolerates `claim`s in callee closures *only because* the blanket
-row gate guarantees a window performs no external effect; and the
-refused-lane lowering runs the first member after the last, so a window
-mixing a possible trap with a world write can publish bytes source order
-never publishes — before, or even after, the trap record. Ruling
-proposed for the first I/O batch:
+Both adversarial reviews found the same true fact from opposite ends:
+once windows may contain world writes, two current sentences become
+false — "no statement of a permitted overlap produces an external
+effect at all" and "which claim the record names is the only thing a
+schedule may select". Both reviews then proposed gating world-bearing
+windows on trap-free closures. That disposition is rejected, on the
+2026-08-23 claim ruling this project already made: a claim is a
+reviewed always-true lemma, a trapping execution is a defective
+program, and permission is never withheld from correct programs to
+stabilize a defective execution's observables. The gate would tax
+exactly the programs that can never trap.
 
-> A permitted overlap containing any world access requires a transitively
-> trap-free callable closure — compiler-derived releases and interposed
-> statements included. Otherwise the window stays sequential.
+The doctrine-consistent repair rewrites the erroneous-execution clause
+instead: the schedule selects two things for a defective execution —
+which false claim the single record names, and which world effects were
+performed before the abort. Everything else stands: one complete
+record, whole-process abort, no undefined behavior. The TCB obligations
+land on the trap path alone, which correct programs never execute: no
+new submission after the trap latch; already-submitted operations
+retain their family semantics ([TRAP-1]'s existing already-started
+clause, extended from "started" to "submitted" — the abort does not
+wait for terminal states, because a defective program must still die
+promptly); the diagnostic record is written through a TCB-serialized
+single write that in-flight program output cannot split.
 
-The claim-free eligibility gate deleted by batch 0078 thus returns for
-world-bearing windows only — compute windows keep the claim-conditional
-guarantee unchanged. The diagnostic channel is TCB-owned, record-
-serialized, and must never interleave with a source write that may alias
-its sink. This is an owner decision to flag at the spec batch.
+The nuance that made this look new, dissolved: compute-window
+divergence at an abort was externally invisible (the process dies with
+its memory), world-window divergence is visible (bytes in a file). But
+the language never promised a defective program's partial output a
+shape — a sequential defective program also leaves half its output
+before trapping. Overlap changes which garbage a defective run leaves,
+and garbage shape was never in the contract. Deterministic
+reproduction, as before, is free at `WF_WORKERS=0`.
 
 ### 3g. Residue the deletion must also settle
 
@@ -272,7 +289,7 @@ lanes exist; whether an I/O backend is initialized. Current code maps
 after the last member — so revision 1's claim that W=1 keeps source
 order was **false**; a W=1 overlapped world changes three observables
 (which claim an erroneous execution records; published bytes when traps
-and world writes could mix — mooted if §3f's gate lands; stack resource
+and world writes could mix — narrowed by §3f's widened erroneous clause; stack resource
 records, since overlapped clones spend 48 B/level against sequential
 16 B/level on the 0079 measurement). Each is a flagged decision at the
 batch that changes the mapping, with `WF_WORKERS=0` retained as the
@@ -372,8 +389,10 @@ tables, quarantine of late completions).
 
 1. §3e: conservative-first order migration (recommended) vs declared
    weakening with a full trace law.
-2. §3f: trap-free closures for world-bearing windows (the scoped return
-   of the claim gate).
+2. §3f: the widened erroneous-execution clause (schedule also selects a
+   defective run's pre-abort world effects; [TRAP-1]'s already-started
+   clause extends to submitted operations). Rewrites two [PAR-1]
+   sentences; gates nothing.
 3. §5: the WF_WORKERS mapping change and its three observable deltas.
 4. Whether `external`/`blocks` remain reserved spellings after deletion.
 5. The provenance rename (`boundary-derived`) riding the same batch or
