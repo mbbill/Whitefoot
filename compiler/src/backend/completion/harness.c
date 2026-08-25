@@ -80,9 +80,15 @@ static uint64_t harness_now_nanoseconds(void) {
 #if defined(_WIN32)
     LARGE_INTEGER frequency;
     LARGE_INTEGER counter;
+    uint64_t ticks;
+    uint64_t ticks_per_second;
     HARNESS_CHECK(QueryPerformanceFrequency(&frequency), "performance frequency unavailable");
     HARNESS_CHECK(QueryPerformanceCounter(&counter), "performance counter unavailable");
-    return (uint64_t)((counter.QuadPart * 1000000000ull) / frequency.QuadPart);
+    HARNESS_CHECK(frequency.QuadPart > 0 && counter.QuadPart >= 0, "invalid performance counter");
+    ticks = (uint64_t)counter.QuadPart;
+    ticks_per_second = (uint64_t)frequency.QuadPart;
+    return (ticks / ticks_per_second) * 1000000000ull
+        + ((ticks % ticks_per_second) * 1000000000ull) / ticks_per_second;
 #else
     struct timespec now;
     HARNESS_CHECK(clock_gettime(CLOCK_MONOTONIC, &now) == 0, "monotonic clock unavailable");

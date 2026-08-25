@@ -83,10 +83,15 @@ through the owner's eventual approval of the final exact revision.
 
 ### Parent behavior reproduced
 
-The branch was created from `main` at
-`eab81a335addfb0ae060735771d4e98891dec2ea`. The implementation baseline is
-the v0.36 work origin `fee335654d9dea027f4636bbad448d57a4e84d08`, after
-the handoff-only preparation commits and before any language/compiler change.
+The branch was created from the byte-exact v0.36 `main` revision
+`eab81a335addfb0ae060735771d4e98891dec2ea`; every parent reproduction below
+uses that revision. Commit `13a93bdf` adds only the candidate and batch record.
+Commit `fee33565` then performs the initial work-branch v0.37 activation and
+archives the outgoing v0.36 bytes while also removing the last handoff pause.
+That commit is the compiler/conformance comparison origin because it changes
+neither compiler nor corpus bytes, but its active specification is already the
+initial v0.37 text. The implementation later completes and rehashes those
+active specification bytes together with the compiler and corpus migration.
 
 - Case-insensitive word-boundary counts in `spec/kernel-spec.md` reproduce the
   review exactly: 136 `external` occurrences, 31 `blocks` occurrences, on 117
@@ -172,9 +177,16 @@ the fixed pool.
 
 The controlled directory corpus contains 5,461 directories and 4,096 empty
 leaf files. Every run starts inside that tree, while its `out` entry is a
-symbolic link to a directory outside the traversed tree. The parent v0.36
-compiler is built from `fee33565`; the current compiler is built from this
-worktree. Sequential and `--par` executables are measured with the existing
+symbolic link to a directory outside the traversed tree. The measured parent
+v0.36 compiler is built from `fee33565`; the current compiler is built from
+this worktree. An independent release rebuild at the true v0.36 `main` origin
+`eab81a33` emits byte-identical directory-walk LLVM to the `fee33565` compiler:
+SHA-256 `643fe3d632fc1019398ca8a40c83f1db517aa90cad65844656579f0d5a3c5284`
+for the sequential module and
+`b9971c5a01a391176cd12c96e6d366e3dc0d6cfb3e54e54c360a0b26f75fcf40`
+for `--par`. The timing baseline therefore names the same executable program
+as the byte-exact main origin despite the earlier branch-only specification
+activation. Sequential and `--par` executables are measured with the existing
 native `research/investigations/proof-derived-parallelism/bench/timeit.zsh`
 interleaved min/max timer for nine rounds per cell.
 
@@ -257,7 +269,13 @@ submission failure, classifies one stale and one duplicate publication, forces
 a real park, bounds help depth at one, and tests mixed compute/completion
 progress. Strict local C11 builds use `-Wall -Wextra -Wpedantic -Werror`.
 macOS and both Linux modes run successfully; the Windows sources cross-compile
-with the same warning policy to a PE32+ x86-64 executable.
+with the same warning policy to a PE32+ x86-64 executable. The final source
+audit found that the Windows timing helper multiplied the process-lifetime QPC
+tick count by one billion before division, allowing an old-enough host counter
+to wrap and corrupt only the reported timing. It now converts the quotient and
+remainder separately. The repaired source passes the macOS harness, both Linux
+modes, and the strict Windows cross-compile; hosted Windows execution remains
+the matrix item below.
 
 The compiler embeds the shared/platform sources and headers and links them
 whenever emitted LLVM names a native completion adapter or the parallel ABI.
