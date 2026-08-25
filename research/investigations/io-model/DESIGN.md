@@ -383,7 +383,10 @@ tables, quarantine of late completions).
    daemon). Success gates any runtime batch.
 3. **Unified-parking probe (Linux).** POLL_ADD-on-eventfd multishot,
    re-arm discipline, mixed load; verify no lost wakeup against the §4
-   law, and measure against the condvar path.
+   law, and measure against the condvar path. Runs in CI on a Linux
+   runner (owner direction: all three host backends — kqueue, io_uring,
+   IOCP — are written against one contract, tested locally on macOS and
+   cross-checked on GitHub Actions).
 
 ## 10. Decisions queued for the owner
 

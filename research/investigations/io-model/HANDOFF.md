@@ -106,11 +106,31 @@ overhead of serving completion from readiness, and any shape the loan
 machinery could not cover. The owner reads the number and decides
 whether the runtime batch proceeds.
 
-## Phase C — optional, Linux only (falsifier 3)
+## Phase C — the full backend matrix (owner direction, 2026-08-25)
 
-The unified-parking probe: POLL_ADD-on-eventfd multishot with re-arm
-discipline under mixed compute/I-O load, against DESIGN §4's park law;
-measure against the condvar path. Skip if no Linux machine is at hand.
+Not optional and not Linux-gated. Write the completion backend for all
+three hosts against one shared contract:
+
+- **macOS / kqueue** — the Phase B implementation, finished to
+  production shape.
+- **Linux / io_uring** — per-lane rings, POLL_ADD-on-eventfd multishot
+  with re-arm discipline, the unified single parking point; this is
+  where DESIGN §9's falsifier 3 runs (park law under mixed load,
+  measured against the condvar path).
+- **Windows / IOCP** — the same contract over a completion port.
+
+Development and the full local test pass happen on this macOS machine;
+Linux and Windows are exercised through GitHub Actions: add a workflow
+that builds the runtime translation units and a C-level harness driving
+the shared contract (submit/complete, park/wake state machine, mailbox
+invariants, in-flight loan discipline) on `macos`, `ubuntu`, and
+`windows` runners. Where the compiler does not yet qualify a target
+(check `compiler/src/backend/qualification.rs` — target rows are
+per-triple and review-gated), the CI still compiles and tests the
+backend C against the harness, so the code is proven before the target
+row lands; extending target qualification is its own reviewed step, not
+a CI side effect. The backend selection is a build/TCB matter and never
+appears in the language.
 
 ## Standing cautions
 
