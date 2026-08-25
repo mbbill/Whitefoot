@@ -1,8 +1,13 @@
 # I/O model — implementation handoff
 
 For a fresh agent with zero prior context. Everything you need is named
-here; read in the order given, then start Phase A. Delete this file in
-the change that completes or supersedes the last phase.
+here; read in the order given, then start Phase A. **Run all phases to
+completion in one pass — A, its activation and implementation, B, C —
+without stopping for mid-run approval. The single owner gate is the
+final merge into `main`: present the finished, `make check`-green
+revision with every flagged decision listed, and wait only there.**
+Delete this file in the change that completes or supersedes the last
+phase.
 
 ## Read first, in this order
 
@@ -18,8 +23,10 @@ the change that completes or supersedes the last phase.
    pre-refuted.
 3. `research/investigations/io-model/DESIGN.md` (this directory) — the
    design, revision 2. It is the authority for what you build. §10
-   lists five decisions that belong to the owner: prepare material for
-   them, never decide them yourself.
+   lists five flagged decisions: adopt the RECOMMENDED option for each,
+   record the adoption in your batch record as a flagged decision, and
+   keep going — the owner's merge approval of the final exact revision
+   is the approval for all of them. Never stop to ask mid-run.
 4. `research/investigations/io-model/reviews/` — the three adversarial
    reviews behind revision 2. `spec-sweep.md`'s per-sentence table is
    your Phase A working material. Note the header of each: the
@@ -83,9 +90,10 @@ its rename).
 Acceptance: every sweep row dispositioned; a complete draft spec text;
 the conformance ledger; the compiler-side work sized (the EFF-2
 projection extension and the capability world-region representation are
-the two real pieces, DESIGN §3a/§3d). Present to the owner with the
-five §10 decisions laid out. Do not activate or merge anything without
-the owner's approval.
+the two real pieces, DESIGN §3a/§3d). Then continue straight into
+activation and implementation: activating the spec on your work branch
+is ordinary branch work under the four rules — only the merge into
+`main` waits for the owner.
 
 ## Phase B — the kqueue prototype (DESIGN §4, falsifier 2)
 
