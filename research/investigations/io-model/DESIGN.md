@@ -1,278 +1,380 @@
-# The Whitefoot I/O model — foundation record
+# The Whitefoot I/O model — foundation record, revision 2
 
-Status: DESIGN, pre-implementation. Distilled from four owner design rounds
-of 2026-08-24/25, superseding nothing; W2 of `docs/current-plan.md` is the
-workstream this document grounds. It authorizes no execution and changes no
-rule; every language change it sketches lands, if at all, through its own
-specification batch with owner approval at merge.
+Status: DESIGN, pre-implementation. Revision 2 folds in the three
+adversarial reviews of 2026-08-25 (`spec-sweeper`, `runtime-attacker`,
+`blindspot-scout`, reports under the operator's scratch directory
+`wf-io/out/`; every load-bearing anchor re-verified by the lead). It
+authorizes no execution and changes no rule; every language change it
+sketches lands, if at all, through its own specification batch with owner
+approval at merge.
+
+Revision 1's two defects, named rather than smoothed over: it claimed
+distinct capability values imply world disjointness (false — the spec's
+own stdout/stderr same-sink conformance witness refutes it), and it
+claimed the per-contact-point narrowing of [EFF-5] "becomes a theorem"
+(false — v0.36's order promise spans different resources, so any
+narrowing is a versioned semantic decision, not a derivation).
 
 Owner's chartering frame, verbatim (2026-08-24): "我希望外部io设计最好不要被
 posix限制了,其实最好不要被任何传统系统API限制思维。我设计wf的初衷之一就是
-自下而上构建完整的软件系统,包括操作系统。所以语言是在操作系统以下的" — and
-the method: derive from first principles what syscalls and external I/O are
-for, ask which constraints shaped today's designs, and check whether those
-constraints survive a rebuilt lower stack, down to bare-metal register and
-interrupt access.
+自下而上构建完整的软件系统,包括操作系统。所以语言是在操作系统以下的。"
 
 ## 1. First principles: what external interaction is
 
-Strip every API away. A program is a state transformer on memory it owns.
-External interaction is contact with state it does not own, and only two
-physical facts distinguish that from computation:
-
-1. The outside world has its own clock. Packet arrival, disk completion,
-   timer expiry happen at times the program does not choose.
-2. The outside world's state is shared. Effects on it are observable by
-   third parties, which is why order out there is a real observable.
-
-Everything reducible to these two facts fits two primitives:
+A program is a state transformer on memory it owns. External interaction
+is contact with state it does not own, and only two physical facts
+distinguish that from computation: the outside world has its own clock,
+and the outside world's state is shared, so order out there is a real
+observable. Everything reducible to these facts fits two primitives:
 
 - **submit** — the program, on its own clock, deposits a request into
   shared state (a device register write, a DMA descriptor, a queue entry).
-- **complete** — the world, on its clock, announces that something
-  happened (an interrupt, a completion-queue entry, a flag).
+- **complete** — the world, on its clock, announces an outcome (an
+  interrupt, a completion-queue entry, a flag).
 
-Evidence that this is the natural shape rather than a fashion: the bottom
-of the stack (NVMe queue pairs, NIC descriptor rings) and the top
-(io_uring, Windows IOCP) have independently converged on paired
-submission/completion queues in shared memory. Only the middle — POSIX
-`read`/`write` plus blocking threads — still carries the 1970s shape.
+The bottom of the stack (NVMe queue pairs, NIC descriptor rings) and the
+top (io_uring, IOCP) independently converged on paired queues in shared
+memory; only the POSIX middle still carries the 1970s shape. Of the three
+constraints that shaped that shape — protection domains, the blocking
+thread, interrupt-as-preemption — the first dissolves for proven code
+(its *containment* function survives, §8), the second was a
+representation choice, and the third reduces to completion delivery (an
+interrupt runs no user code; it wakes an executor — Embassy's shape).
 
-### The three constraints that shaped the old shape, audited
+One amendment from review: **not every completion answers a submit.**
+Signals, device hot-unplug, file-change notification, and child exit
+arrive unrequested. The model therefore has a third element: an **event
+source** — a capability armed by the program, with a contract fixing
+arming, pending/coalescing, drop, and fatal behavior. Writers still call
+ordinary operations; no handler or callback construct exists.
 
-- **Protection domains.** The syscall is a controlled gate because
-  untrusted code shares the machine. Whitefoot's premise (machine-checked
-  memory and type safety, no unsafe escape) dissolves the *mechanism* for
-  proven code — Singularity demonstrated software-isolated processes where
-  the gate becomes a call. It does NOT dissolve the *function* of
-  protection: see §7.
-- **The blocking thread.** A suspended thread per outstanding operation is
-  a representation choice, not physics; the async-I/O movement is the
-  industry backing out of it. Whitefoot never adopted it and need not.
-- **Interrupt versus poll.** On bare metal the world's clock arrives as an
-  interrupt. Embedded Rust (Embassy) shows the clean reduction: the
-  interrupt runs no user code, it only wakes an executor — an interrupt is
-  a completion delivery. Same shape again.
+## 2. One mode: completion; readiness is a backend
 
-Conclusion: design against the two queues, not against any system API.
+Readiness (select/poll/epoll/kqueue) delivers state, not results; it
+exists because POSIX `read` is indivisible; it cannot express ordinary
+file reads at all (a regular file is always "ready" and the read still
+blocks on the disk — disqualifying for wfgrep's disk-bound workload). A
+completion surface can be served from a readiness host by a runtime that
+performs the middle steps; the reverse is contorted. The language-facing
+model is completion; readiness, thread pools, and bare-metal interrupts
+are host backends.
 
-## 2. One mode: completion, with readiness demoted to a backend
+## 3. The language surface: the world becomes regions — under proof, not
+by capability equality
 
-Readiness (select/poll/epoll/kqueue) delivers *state* ("this descriptor
-would not block"); the operation and its copy remain the caller's,
-performed synchronously afterward. It exists because POSIX `read` is
-indivisible. Three structural defects: two trips per operation; the state
-can lie by the time the operation runs; and it cannot express ordinary
-file reads at all — a regular file is always "ready" and the read still
-blocks on the disk, which is why epoll-era servers kept thread pools and
-why wfgrep's disk-dominated workload cannot live on readiness.
+No new construct; the writer's program stays sequential; overlap is
+permission read off proofs, as [PAR-1] did for compute. The refinement
+replaces the `external`/`blocks` row atoms with world-region vocabulary.
+The sweep of all 136 `external` / 31 `blocks` occurrences in the active
+spec found a mechanical rewrite for most and a missing semantic rule
+behind the rest; those rules are this section.
 
-Completion (io_uring/IOCP/NVMe/Embassy) delivers *results*: the operation
-itself is submitted, the buffer is on loan while in flight, and the
-completion carries the outcome. Disk, network, and timers are uniform;
-batching is native. The subsumption is one-directional — a runtime can
-serve a completion surface on a readiness host by performing the middle
-steps itself, while the reverse is contorted — so the language-facing
-model is completion, and readiness is one host backend among several.
+### 3a. Two region kinds; identity lives in the capability's type
 
-## 3. The language surface: no async, no external row — the world becomes
-regions
+Memory regions are [OWN-3] lexical lifetimes. World regions are effect
+and alias identities. They are distinct kinds: `&uniq 'b Output<'w>`
+carries memory-loan region `'b` and world region `'w`, and neither
+substitutes for the other. `own` stays a payload-free mode; each
+capability family declares the world-region vector its *type* carries,
+and system nominal identity keys on the family plus that vector. (The
+main representation cost of the whole design; nothing in `CheckedMode`
+carries this today.)
 
-The writer-facing design adds no construct. The program stays sequential;
-dataflow already records dependence; overlap is permission read off
-proofs, exactly as [PAR-1] did for compute. Two existing mechanisms are
-refined instead:
+### 3b. Disjointness is proven, never inferred from values
 
-### 3a. Capabilities are already the marker
+> Different capability values are never by themselves evidence of world
+> disjointness. Two world regions are disjoint only when a TCB minting
+> rule or a checked generativity derivation proves that every state facet
+> the two footprints name cannot alias. Absent that proof, they overlap.
 
-System resources are already affine capability values threaded through
-signatures (`command.stdout as out: own Output`; no ambient authority
-exists). The owner's observation: a globally-unique writable object whose
-use requires holding it exclusively gives atomicity and per-object
-ordering through the loan machinery of batch 0081 with no effect
-annotation at all — `external`/`blocks` are effect *coloring* doing work
-the type system does better.
+Consequences fixed now, not deferred: stdout and stderr are conservatively
+may-alias (the spec's own same-sink witness); separate opens, equal or
+distinct paths, and hard links prove nothing about file content
+disjointness; `dup` preserves every source region; a handle's lifetime
+region is distinct from the persistent object's region; a
+capability-producing operation may mint a fresh result region only for
+state its contract proves fresh, and a compile-time identity stands for a
+may-alias class across executions unless separation is proven. On a
+Whitefoot OS the arbiter mints capabilities it can prove disjoint — the
+full-stack ambition is what eventually makes the type-level story sound
+outright; on POSIX the near-term policy is conservative: one file-object
+alias domain per target unless proven otherwise, network connections
+fresh only when the TCB mints them, all `Output` values may-alias.
 
-### 3b. The objection that improved the design
+### 3c. World reads are not free; consuming reads are writes
 
-Possession is not use: `fn discard(output: own Output, ...) -> unit` and
-`fn emit(...)` that actually writes have identical signatures; ownership
-flow cannot distinguish them, and the written byte outlives the
-capability that wrote it. So the does-it-touch-the-world fact must live
-on the signature and be machine-checked — but the recorder need not be a
-dedicated atom. The repair: **give each capability a world-region
-identity and let the existing row vocabulary speak about it.**
+Two monotonic-clock samples overlapped can return t2 < t1 — no
+source-order execution produces that. So:
 
-```
-fn discard['o](output: own Output<'o>, ...) -> result: own unit pure
-    // no 'o in the row: holds the key, provably never opens the door
-fn emit['o](output: own Output<'o>, ...) -> result: own unit writes('o)
-    // write_once's own signature carries writes('o); [EFF-2] projection
-    // forces the caller to declare it; under-declaration already rejects
-```
+> Read/read overlap is admitted only when the operation's contract proves
+> source-order result attribution under overlap. An operation that
+> advances a cursor, consumes input, samples an ordered sequence, or
+> otherwise changes future observations *writes* its world region.
 
-What each of `external`/`blocks`'s current jobs maps to:
+Stdin consumption, entropy draws, `accept`, and cursor reads are
+world-region writes; genuinely idempotent snapshot reads may share.
 
-| current job | new owner |
-|---|---|
-| overlap atomicity/order (condition 3's blanket refusal) | loans on capability values + world-region write footprints, judged by the 0081 machinery, same matrix |
-| signature-level "does it touch the world" | `reads('o)`/`writes('o)` over world regions, [EFF-2]-checked |
-| trap law ("no external effect after the record") | "no write to any world region after the record" |
-| `blocks` (duration on the world's clock) | a TCB-known attribute of system operations; not a language fact |
+### 3d. Rows over world regions; does-ness stays checked
 
-Two dividends fall out. The per-contact-point order law stops being a
-decree: two writes through one capability are a write/write conflict on
-one world region (order preserved); through different capabilities they
-are disjoint (overlap permitted) — EFF-5's narrowing becomes a theorem of
-the footprint machinery. And world *reads* (stdin, clocks) become
-ordinary `reads('o)`, unlocking read/read overlap that the blanket
-refusal denies today.
+With the kinds in place, the row vocabulary extends: `reads('w)` /
+`writes('w)` over world regions, [EFF-2]-checked in both directions
+exactly as memory rows are, projected through call boundaries — which
+requires extending the projection to world-region occurrences in
+own-mode actuals, capability values nested in outcomes, and
+compiler-derived releases (a release that closes a file *writes* its
+handle-lifetime region; today's release rows carry `external, blocks`
+and the migration must keep their conformance verdicts). The
+possession/use split survives review intact: loans on capability values
+order what could happen; world rows state what does.
 
-### 3c. Honest costs and boundaries
+### 3e. The order law is a versioned decision with a conservative first
+step
 
-- Own-mode parameters do not carry regions today; `Output<'o>` needs real
-  representation work (the `allocates(arena 'r)` precedent is related but
-  not identical). This is the main implementation cost.
-- Capability identity approximates contact-point identity. On POSIX two
-  capabilities can alias one file; near-term policy: reads overlap
-  freely (a moving world races sequential execution too), network writes
-  overlap across connections (the network's own contract is
-  per-connection FIFO), file writes stay conservatively ordered. On a
-  Whitefoot OS the queue arbiter mints capabilities it can *prove*
-  disjoint — a capability becomes a loan issued by the world's owner —
-  and the type-level reasoning becomes sound outright. The full-stack
-  ambition is thus a soundness argument, not just a portability one.
-- Cross-region ordering, where wanted, is an explicit fence written as an
-  ordinary operation (fsync's shape), not new syntax.
+v0.36's [EFF-5] orders external calls across *different* resources; any
+per-region narrowing is a semantic weakening. Two honest migrations
+exist: (1) first land the vocabulary with one conservative global
+world-order domain joined to every former-`external` operation —
+preserving v0.36 order exactly, zero semantic change — then narrow
+family by family under evidence, each narrowing a flagged owner
+decision; or (2) declare the weakening at once with a complete trace law
+(what is ordered, at which linearization point — submission, completion,
+or remote observation — with fence semantics; the current SYS-2
+inventory contains no fence operation, so one must be added, not
+presumed). **Recommendation: (1).** The eventual trace law must decide
+the linearization point explicitly; "order" without it is not a law.
 
-## 4. The runtime: one scheduler, two work sources, no continuations
+### 3f. Traps and world windows: the gate returns, scoped
 
-The owner's summary is the design: a compute frame is self-runnable and
-worker-stealable; an I/O frame is runnable by nobody but the world.
+Convergent finding of both adversarial reviews, from opposite ends:
+[PAR-1] tolerates `claim`s in callee closures *only because* the blanket
+row gate guarantees a window performs no external effect; and the
+refused-lane lowering runs the first member after the last, so a window
+mixing a possible trap with a world write can publish bytes source order
+never publishes — before, or even after, the trap record. Ruling
+proposed for the first I/O batch:
 
-```
-              compute frame                  I/O frame
-published to  own lane's deque               the world's submission queue
-runnable by   owner (join fallback), any     only the world
-              stealing worker
-join fallback run it yourself                wait for it (completion queue)
-steal end     oldest (largest subtree)       n/a — the world takes all
-```
+> A permitted overlap containing any world access requires a transitively
+> trap-free callable closure — compiler-derived releases and interposed
+> statements included. Otherwise the window stays sequential.
 
-No suspendable stacks, no futures, no coloring: the hand-out protocol
-(claim/publish/join/release) is reused with two substitutions — publish
-submits the operation (SQE carrying the frame pointer), join checks a
-completion flag and, when unset, *works instead of waiting* (steal loop),
-parking only when nothing anywhere is runnable. A lane at a join is a
-worker, not a waiter. Structured windows make this sufficient: frames are
-preallocated, joins are local, completion is a flag flip.
+The claim-free eligibility gate deleted by batch 0078 thus returns for
+world-bearing windows only — compute windows keep the claim-conditional
+guarantee unchanged. The diagnostic channel is TCB-owned, record-
+serialized, and must never interleave with a source write that may alias
+its sink. This is an owner decision to flag at the spec batch.
 
-Host shapes:
+### 3g. Residue the deletion must also settle
 
-- **io_uring (Linux).** One queue pair per lane (mirroring
-  deque-per-lane). The idle path becomes: pop own deque → steal → reap
-  own CQ → park in `io_uring_enter`. The pool's compute wake is an
-  eventfd registered in each ring, so compute arrival is *also* a
-  completion — the condition variable disappears and each lane has
-  exactly one blocking point, the completion queue. This is the literal
-  form of "all I/O blocks at one point".
-- **kqueue/degraded (macOS, generic POSIX).** One waiter thread runs the
-  readiness loop (disk operations on a small blocking pool), posts
-  completions to an MPSC mailbox, pokes the existing wake path; the lane
-  idle path adds one drain step. Language and program unchanged.
-- **Bare metal.** submit = device registers/DMA descriptor; complete =
-  the interrupt service routine posting to the mailbox and waking the
-  executor (Embassy's shape). No OS anywhere in the contract.
+`blocks` generalizes to trusted completion/blocking metadata on *every*
+target action (operations, releases, close, waits), with a derived
+transitive summary for user wrappers, so no backend routes a blocking
+action onto a required compute lane. Whether the bare spellings stay
+reserved words is a META-5 accepted-set choice. [PRV-1]'s
+external-*input* provenance class is a homonym, untouched by effect
+migration (rename to `boundary-derived` to avoid confusion). Gated FFI
+signatures with unclassifiable world reach charge one conservative
+top-world domain — absence of a footprint never implies purity. The
+conformance migration is enumerable and enumerated: 42 case files
+mention the atoms, 7 manifest records are verdict-sensitive, the
+same-sink EFF-5 runtime witness must keep passing under conservative
+aliasing, and no verdict changes silently.
 
-Scope honesty: in-flight depth equals what windows expose. wfgrep-class
-workloads (bounded overlap of I/O with I/O and compute) fit; a
-10k-connection server whose concurrency is unrelated to program structure
-does not — that is the explicit-concurrency track's question, and it will
-land on this substrate rather than beside it.
+## 4. The runtime: one scheduler, two work sources — as a written state
+machine, not a slogan
 
-## 5. The two worlds, re-drawn
+The unification survives review; the sketch did not. A compute frame is
+self-runnable and stealable; an I/O frame is runnable only by the world;
+join's fallback is "run it" for compute and "wait for it" for I/O. What
+the reviews add:
 
-Today's boundary — sequential clones versus overlapped lowering, selected
-once by worker count — asks a CPU question. I/O overlap's parallelism
-lives in the world (disks, NICs), so it is profitable at one lane;
-mapping "one lane" to "blocking clones" throws away exactly the profit.
-The repair costs no third lowering:
+- **The park/wake state machine is the design.** Its one law: after
+  *any* progress — a reaped CQE, a consumed wake hint, a completed
+  frame — the lane returns to the top of the scheduling loop; it never
+  parks on the heels of progress. (The sketched loop had a
+  sleep-forever edge: reap the join target's completion, flip its flag,
+  park anyway.) Parking follows announce-then-recheck, the discipline
+  the existing condvar path already implements with its idle bit.
+- **Wake plumbing, corrected.** `io_uring`'s registered eventfd notifies
+  ring→fd, not fd→ring; a compute wake becomes a CQE only via a POLL_ADD
+  on the eventfd, one-shot unless multishot, re-armed after every
+  consumption. An eventfd read drains the whole count: one notification
+  means "scan all sources to quiescence, re-arm, announce, scan once
+  more, then park" — never "run one frame".
+- **Ring affinity follows the executing lane.** A stolen frame submits
+  on the thief's ring and joins on it; the compute slot's home-lane
+  field must not be reused as ring identity, or completions land on a
+  ring nobody waits on.
+- **Completions never enter compute deques.** Chase-Lev has one
+  producer; a completion writes results and a terminal state, full stop.
+  Dependent continuations are the C stack below the join — that is what
+  "no continuations" means operationally.
+- **Join helping is bounded.** An unbounded steal-while-joining both
+  inverts latency (the ready completion waits out an arbitrary stolen
+  frame) and nests frames on one lane stack (the 0079 audit already
+  established stolen calls do not start at stack bottom; the ledger
+  cannot see the scheduler layer). First version: a joining lane drains
+  its completions first, returns the instant its target is done, helps
+  only frames of its own window, and takes at most one unrelated steal
+  per round under a per-lane help-depth bound that the stack ledger
+  names.
+- **Fairness is stated, not assumed:** completion queues drained after
+  at most a bounded number of compute frames and vice versa; batches
+  bounded; a non-terminating frame voids latency guarantees and the
+  limitation is documented.
+- **The kqueue/waiter shape** keeps one never-blocking waiter (readiness,
+  dispatch, enqueue, wake) over a disk pool of fixed depth; completion
+  nodes are preallocated per frame so the mailbox can never be full;
+  the mailbox is an MPSC with release/acquire publication,
+  exactly-once terminal transitions, generation-tagged frames against
+  ABA, enqueue linearized before wake, and announce-then-recheck
+  consumers — each a named requirement, none assumed from the word
+  "MPSC". (The runtime has already paid once for a plain shared word;
+  the lane-count race of batch 0080 is the precedent.)
+- **In-flight loans run to terminal state.** From submission
+  linearization to the operation's terminal completion: the buffer
+  neither moves, frees, nor is reused; the frame stays out of the free
+  list; an exclusive input loan excludes the lane itself. A cancel
+  request is not a terminal state (its CQE and the operation's are
+  unordered; hardware operations may be uncancelable).
+- **Abort teardown is target qualification.** Hosted Linux: ring
+  teardown cancels what it can and holds references for what it cannot;
+  nothing user-side drains queues in a signal handler. Bare metal: DMA
+  may write after the CPU declares abort — the arbiter quiesces,
+  quarantines, or declares reset-before-reuse; the floor's
+  first-record-wins abort composes with this as TCB teardown, not
+  language cleanup. v0.36's abandoned-continuation sentence does not
+  cover asynchronous families; the I/O batch owes [TRAP-1] an
+  already-submitted-work clause.
+- **Cancellation, first version:** none at window exits. Every normal or
+  recoverable exit edge first observes terminal states for all submitted
+  operations of its window — the structure the current lowering already
+  has (join after the last member, before any exit edge). "Stop
+  waiting" without a terminal state is not sound; early-exit
+  cancellation waits for a design that can transfer buffer ownership to
+  a hidden reaper, and is deliberately not promised now.
 
-- `WF_WORKERS=0` — the sequential world, unchanged: no runtime, strict
-  source order, the deterministic reproduction anchor and the zero-runtime
-  embedded build.
-- `WF_WORKERS=1` — **meaning change, flagged as an owner decision at its
-  merge**: the overlapped world with one compute lane. Single-threaded
-  async: I/O overlaps, compute does not. Compute hand-outs self-erase
-  through the existing refusal path (`wf__par_claim` returns NULL; a
-  refused offer is the same call made inline), so the compute side costs
-  one predictable check while the world side runs at full depth.
-- `WF_WORKERS=N`/unset — the overlapped world at N lanes.
+## 5. The worlds, re-drawn on two axes
 
-Single-lane determinism survives I/O overlap because the world runs no
-writer code: program statements execute in source order on the one lane,
-`claim` statements cannot enter windows, and completions only flip flags
-consumed at joins. The re-drawn boundary is honestly named: not parallel
-versus serial, but *the machine alone* versus *the machine plus the
-world's clock*.
+Review dissolved revision 1's single axis twice over. The honest
+structure:
 
-## 6. What a syscall was for, and what remains
+- **Execution axis:** sequential (source-order schedule, no overlap) or
+  overlapped (permission-based).
+- **World-provider axis:** live world, or — named now, built later — a
+  recorded world for deterministic replay. `WF_WORKERS=0` alone is *not*
+  a full determinism anchor; a live filesystem, clock, or network varies
+  under it. Replay is a world backend, not a third lowering.
 
-- Protection against bad access → replaced by proof (the premise of the
-  language). The gate becomes a queue write.
-- Portability abstraction → a library concern, not a boundary concern.
-- Naming and authority → affine capability values; already the language's
-  shape; on a Whitefoot OS, minted by the arbiter, unforgeable by
-  construction.
-- Multiplexing shared devices → **irreducible**, but its shape is a queue
-  arbiter, not a function-call interface.
+Within the execution axis, three concepts the current bootstrap conflates
+must split: whether the overlapped world is selected; how many compute
+lanes exist; whether an I/O backend is initialized. Current code maps
+`WF_WORKERS<2` to "pool off" and the emitter defers a refused member to
+after the last member — so revision 1's claim that W=1 keeps source
+order was **false**; a W=1 overlapped world changes three observables
+(which claim an erroneous execution records; published bytes when traps
+and world writes could mix — mooted if §3f's gate lands; stack resource
+records, since overlapped clones spend 48 B/level against sequential
+16 B/level on the 0079 measurement). Each is a flagged decision at the
+batch that changes the mapping, with `WF_WORKERS=0` retained as the
+sequential world and the compute-claim refusal made an explicit
+`compute_lanes < 2` rule rather than a side effect of "pool off".
+Embedded terminology corrected: `WF_WORKERS=0` means no overlap and no
+worker pool, not "no I/O substrate"; a bare-metal build still carries
+the minimal driver/executor its targets qualify.
 
-## 7. Protection's second job survives (owner's correction, adopted)
+## 6. What any first spec batch must fix per operation (the minimal
+closure)
 
-Proof removes the *mechanism* of address-space isolation, not the
-*function* of containment. A logically wrong program — proven
-memory-safe, still looping, leaking, or flooding — must not sink its
-neighbors. The residual kernel of a full-Whitefoot stack is therefore:
-bootstrap, scheduler, and an **arbiter that keeps accounts** — quotas,
-fairness, revocation, kill. Affine capabilities make revocation tractable
-(the arbiter knows every key it minted; kill = reclaim). The process
-survives as a concept: no longer an address space, but the unit of
-containment and reclamation — which a trapping claim also needs, since an
-abort is per-process by design. This is the inter-process face of the
-exhaustion charter's principle: running out, or misbehaving, is a designed
-event.
+For every system operation (the current inventory is fifteen; the table
+rewrites as a whole, not by suffix):
 
-## 8. Falsifiers and next experiments, cheapest first
+1. authority inputs and capability mint/alias relations;
+2. world footprint and its commutativity class (§3c);
+3. submission, linearization, loan-release, and completion points —
+   "complete" names which of buffer-reuse, world-visibility, durability
+   (§ blindspot B5);
+4. outcome taxonomy: typed world outcome vs static rejection vs claim
+   trap vs TCB resource death vs target defect, keyed by semantic
+   source, never by errno spelling;
+5. progress contract (may wait forever vs eventually completes; device
+   removal completes everything; a lost completion is a target defect);
+6. protection, memory-order, and lifetime obligations for target
+   qualification;
+7. a stable operation identity for ledgers and conformance.
 
-1. **Paper sweep (no code).** List every specification sentence that
-   mentions `external` or `blocks` and rewrite each in world-region
-   vocabulary. Any sentence that resists rewriting is a fourth job the
-   refinement missed. Grep-bounded, one sitting.
-2. **kqueue prototype on this machine.** Hand-split `list_once`/
-   `read_once` into submit/complete inside the runtime, waiter thread +
-   mailbox + idle-path drain, and re-measure the directory-walk workload
-   whose recorded 2.83x carries a measurement-artifact caveat. Answers:
-   the honest speedup; the cost of serving a completion surface from a
-   readiness host; whether any in-flight-buffer shape escapes the loan
-   machinery.
-3. **Unified-parking probe (Linux).** Verify the eventfd-in-ring trick
-   gives one blocking point without lost wakeups under mixed compute/I/O
-   load, and measure it against the condvar path.
+Program kinds need root capability tables: today's `command` entry has
+no stdin (the word appears zero times in the spec) and bare metal has no
+args/cwd; each kind fixes its closed capability set and lifecycle.
+Conformance runs on three tiers: a scripted deterministic world for
+semantics across completion schedules; target qualification for real
+backends; performance strictly outside conformance. An `--io-ledger`
+sibling of `--par-ledger` shows sites, origin relations, footprints, and
+grants/denials at compile time.
 
-## 9. Open questions this record does not settle
+## 7. Structural backlog (shaped, not blocking)
 
-- Cancellation: an effect submitted to the world cannot be unsubmitted;
-  "cancel" is "stop waiting" plus a completed-or-not outcome — the
-  abandoned-continuation semantics v0.36 just fixed, generalized. What a
-  window exit owes an in-flight operation needs its own ruling.
-- Partial completions and short reads/writes: does the operation
-  vocabulary stay whole-operation (`read_once`) with the runtime looping,
-  or do partials surface? (Leaning: whole-operation stays; partials are a
-  POSIX-ism.)
-- Timeouts as first-class completions (a timer is the purest submit/
-  complete pair) and their interaction with `Result` routes.
-- Backpressure: submission-queue depth is a resource ceiling in the TCB
-  (WF_PAR_MAX_LANES's sibling); whether any program-visible signal is
-  ever warranted.
-- The world-region representation for own-mode capabilities (§3c) — the
-  main design-to-spec gap.
+From the blind-spot sweep, parked with owners: signal classification
+(SIGPIPE is an outcome, SIGCHLD a child-lifecycle completion, fatal
+faults stay with the floor); processes as capabilities (no writer fork/
+in-place exec; atomic spawn returning a completion-required Child; wait
+is a completion; ChildOutcome separate from ExitStatus); pipes with
+arbiter-owned history and Rx/Tx facets; filesystem namespace operations
+as multi-region footprints (rename writes two directories); file object
+vs cursor facets (positioned reads want per-range footprints only where
+targets prove them); mmap/MMIO never behind ordinary borrows (snapshot
+or arbiter-proved exclusive mappings only — optimizer facts break on
+externally mutable memory); clock domains (monotonic vs wall, opaque
+instants, deadline races arbiter-linearized); entropy as one seed
+operation feeding an owned local PRNG; network state machines
+(NetworkAuthority, Listener, connection type states; accept writes the
+listener's sequence region and mints fresh connection origins);
+stream Rx/Tx facets with per-direction FIFO and half-close as consuming
+transitions; datagram outcomes distinct from byte streams; resolver as
+explicit capability; variable-sized results on caller buffers or owned
+backing, never hidden allocation; visibility vs durability vs
+crash-atomicity as distinct resource families (fsync commits a file,
+not its directory entry). Distant, named: TLS placement, typed device
+control without an ioctl escape hatch, cross-program leases, zero-copy
+splice as dual-capability operations.
+
+## 8. What a syscall was for; what protection keeps
+
+Protection against bad access → replaced by proof; the gate becomes a
+queue write. Portability → a library concern. Naming and authority →
+affine capabilities, arbiter-minted on a Whitefoot OS. Multiplexing
+shared devices → irreducible, a queue arbiter. And the owner's
+correction stands as §7 of revision 1 stated: containment of *logic*
+errors survives proof — the residual kernel is bootstrap, scheduler,
+and an arbiter that keeps accounts (quotas, fairness, revocation, kill),
+with affine capabilities making revocation tractable and "process"
+surviving as the unit of containment and reclamation. Before a
+Whitefoot OS exists, target qualification names the protection each
+host actually provides (descriptor aliasing, generation-tagged handle
+tables, quarantine of late completions).
+
+## 9. Falsifiers and next experiments, cheapest first
+
+1. **The migration ledger (paper).** Amendments §3a–§3g enumerate the
+   spec surface (117 lines carrying the atoms; 42 conformance files; 7
+   verdict-sensitive records; the release table; the entry canonical
+   form). Write the conservative-first migration (§3e option 1) as a
+   draft delta and check every RESISTS sentence from the sweep resolves
+   against it. Any sentence still resisting is a missed rule.
+2. **kqueue prototype on this machine.** Waiter + preallocated-node
+   mailbox + bounded disk pool + the §4 state machine; re-measure the
+   directory-walk 2.83x (recorded caveat: measuring-machine security
+   daemon). Success gates any runtime batch.
+3. **Unified-parking probe (Linux).** POLL_ADD-on-eventfd multishot,
+   re-arm discipline, mixed load; verify no lost wakeup against the §4
+   law, and measure against the condvar path.
+
+## 10. Decisions queued for the owner
+
+1. §3e: conservative-first order migration (recommended) vs declared
+   weakening with a full trace law.
+2. §3f: trap-free closures for world-bearing windows (the scoped return
+   of the claim gate).
+3. §5: the WF_WORKERS mapping change and its three observable deltas.
+4. Whether `external`/`blocks` remain reserved spellings after deletion.
+5. The provenance rename (`boundary-derived`) riding the same batch or
+   a separate one.
