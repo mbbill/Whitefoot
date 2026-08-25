@@ -392,7 +392,9 @@ tables, quarantine of late completions).
 2. §3f: the widened erroneous-execution clause (schedule also selects a
    defective run's pre-abort world effects; [TRAP-1]'s already-started
    clause extends to submitted operations). Rewrites two [PAR-1]
-   sentences; gates nothing.
+   sentences; gates nothing; the rewrite carries constitution R7's
+   direction clause into the rule text, so the next reader under
+   pressure finds the yield direction beside the promise.
 3. §5: the WF_WORKERS mapping change and its three observable deltas.
 4. Whether `external`/`blocks` remain reserved spellings after deletion.
 5. The provenance rename (`boundary-derived`) riding the same batch or
