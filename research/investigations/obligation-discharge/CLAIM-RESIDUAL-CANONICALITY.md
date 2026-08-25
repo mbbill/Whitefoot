@@ -7,7 +7,7 @@ below do not describe the completed tree or impose a workflow. The implemented
 active v0.34 specification is `spec/kernel-spec.md`, SHA-256
 `cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`.
 Current status lives in `docs/roadmap.md`, `docs/current-plan.md`, and
-`docs/ongoing/0075-claim-residual-canonicality.md`.
+`docs/done/0075-claim-residual-canonicality.md`.
 
 ## 1. Conclusion
 

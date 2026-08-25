@@ -166,7 +166,7 @@ items, with their state at this branch tip:
    rather than inherited.
 3. *Bring the live roadmap and batch record to the same implemented state.*
    Done for main's program: roadmap revision 50 records claim locality as
-   landed, and `docs/ongoing/0075-claim-residual-canonicality.md` stays main's
+   landed, and `docs/done/0075-claim-residual-canonicality.md` stays main's
    own live record, untouched by this branch.
 4. *Freeze the exact ACTIVE branch revision and finish the specification and
    conformance before/after content.* Open, and now over v0.34 to v0.35:
