@@ -1,6 +1,6 @@
 # The Whitefoot Constitution
 
-Adopted 2026-07-05; amended 2026-07-05 (priority structure), 2026-07-07 (D2a), 2026-07-27 (W1 floor reframe), and 2026-08-01 (D17 proof-gated representation authority). This document supersedes and grounds the founding owner directives. Current project law is stated here, durable design choices live in `mcts_mem/`, and the original directive record and decision log live under `archive/governance/`.
+Adopted 2026-07-05; amended 2026-07-05 (priority structure), 2026-07-07 (D2a), 2026-07-27 (W1 floor reframe), 2026-08-01 (D17 proof-gated representation authority), and 2026-08-25 (R7 defective executions never tax correct programs). This document supersedes and grounds the founding owner directives. Current project law is stated here, durable design choices live in `mcts_mem/`, and the original directive record and decision log live under `archive/governance/`.
 
 
 Structured objective, in priority order:
@@ -21,7 +21,7 @@ Structured objective, in priority order:
 
 **BALANCE RULE:** W1/W2 and non-floor aspects of P0 trade off; no decision may claim to optimize all simultaneously. Evidence decides each case; where genuine conflict remains after evidence, P0 wins. Theorems stand while their premises stand — they are conclusions, not preferences, and are never traded against W1/W2 convenience.
 
-Decision rules R1-R6 remain in force under this ordering:
+Decision rules R1-R7 remain in force under this ordering:
 
 - **R1 — Earn your place.** A construct exists only if it serves P0 or P1. Serving human authorship counts for nothing.
 - **R2 — A cut that harms AI codegen is a wrong cut.** Simplicity is never a sufficient reason. Precedent: generics (round-2 checker-collapse); natural experiment: Go pre-1.18.
@@ -29,3 +29,4 @@ Decision rules R1-R6 remain in force under this ordering:
 - **R4 — Shift-left everything.** Unrepresentable > check-time rejection with rule-citing diagnostics > runtime trap > (forbidden) silent corruption.
 - **R5 — Human exceptions are explicit.** Readability is a non-goal; auditability of the trusted base (D0a) is the deliberate exception.
 - **R6 — The stack is negotiable long-horizon** (compiler, possibly self-improving; hardware); near-term, artifacts must not marry one backend or ISA.
+- **R7 — Defective executions never tax correct programs** (owner rulings 2026-08-23, reaffirmed 2026-08-25). A claim is a reviewed always-true lemma, so an execution that traps is a defective program, and there is no "should have trapped." No permission, optimization, or fast path is withheld from correct programs to make a defective execution's observables stable or reproducible. When a new capability makes a defective-execution observable schedule-dependent, the repair widens the erroneous-execution promise — the schedule may select that observable too — and never narrows permission; the trusted base may spend only on the trap path itself, which correct programs never execute; deterministic reproduction of a defect is the sequential world's job (`WF_WORKERS=0`). The claim-free eligibility gate was removed under this rule (batch 0078) and independently re-proposed by fresh reviewers during the I/O design round; a proposal with this shape starts from this rule, not from a blank page.
