@@ -38,7 +38,8 @@
 //! with a site requires re-deriving the gate from source, never relaxing it.
 //! The one row this touches is the publication count. `wfgrep` used to have
 //! five source `write_once` sites and now has one, reached from five source
-//! publications, so the count that was five emitted `@write` sites is now five
+//! publications, so the count that was five emitted `@wf__io_write` adapter
+//! sites is now five
 //! publication entries — two naming standard output and three naming standard
 //! error, exactly as before — counted in whichever of the two forms the
 //! inliner left each site in. Nothing became an inequality and no row lost its
@@ -54,7 +55,7 @@
 //! | raw argument bytes | `the_raw_byte_route_carries_no_unicode_gate` |
 //! | UTF-8 text conversion | absence side gated here; the presence side is the `run-syshost-copyutf8-*` conformance cases. The Windows column the row also names has no implementation in the first slice, so it is not inspectable and is not claimed. |
 //! | `RelativePath` construction | `relative_path_retypes_the_lease_without_allocating` |
-//! | `open_read` | `open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor` |
+//! | `open_read` | `open_read_is_one_completion_relative_open_on_the_capabilitys_own_descriptor` |
 //! | `read_once` / `write_once` | `each_transfer_is_one_host_call_with_a_cold_outcome_mapper` |
 //! | `DirectoryRead`/`ReadFile` release | `every_release_close_is_one_discarded_attempt` |
 //! | value releases | `releasing_a_value_or_an_output_reaches_no_host_facility` |
@@ -213,10 +214,10 @@ fn first_argument<'line>(line: &'line str, callee: &str) -> Option<&'line str> {
 /// A publication is one source `publish_all` call. In the emitted program each
 /// appears in exactly one of two forms: a call into the out-of-line
 /// `publish_all`, whose first argument is the descriptor, or — where the host
-/// inliner expanded that site — the `@write` of the expanded copy, carrying
-/// the same literal descriptor. The out-of-line body's own `@write` names the
-/// parameter instead of a literal and is not a publication site; it is the one
-/// transfer the one source `write_once` site emits.
+/// inliner expanded that site — the `@wf__io_write` of the expanded copy, carrying
+/// the same literal descriptor. The out-of-line body's own `@wf__io_write`
+/// names the parameter instead of a literal and is not a publication site; it
+/// is the one transfer the one source `write_once` site emits.
 fn publications() -> Vec<u32> {
     let mut descriptors = Vec::new();
     for line in program().lines() {
@@ -224,7 +225,7 @@ fn publications() -> Vec<u32> {
             continue;
         };
         let argument = match target {
-            "wf_publish_all" | "write" => first_argument(line, target),
+            "wf_publish_all" | "wf__io_write" => first_argument(line, target),
             _ => None,
         };
         let Some(argument) = argument else {
@@ -522,15 +523,17 @@ fn relative_path_retypes_the_lease_without_allocating() {
     }
 }
 
-/// §9.1 row 6 — `open_read` is one direct native open-relative operation on
-/// the capability's own descriptor.
+/// §9.1 row 6 — `open_read` is one completion-adapter open-relative operation
+/// on the capability's own descriptor.
 #[test]
-fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
+fn open_read_is_one_completion_relative_open_on_the_capabilitys_own_descriptor() {
     let row = approved_row(emitted(), "wf.sys.open_read.v1");
     // The directory descriptor is the capability's; the path pointer is the
     // lease itself. No concatenation, no ambient working-directory lookup.
     assert!(row.contains("%text = extractvalue { ptr, i64 } %path, 0"));
-    assert!(row.contains("call i32 (i32, ptr, i32, ...) @openat(i32 %root, ptr %text, i32 0)"));
+    assert!(
+        row.contains("call i32 (i32, ptr, i32, ...) @wf__io_openat(i32 %root, ptr %text, i32 0)")
+    );
     for forbidden in [
         "@calloc",
         "@malloc",
@@ -544,32 +547,33 @@ fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
             "the open path must not reach {forbidden}:\n{row}"
         );
     }
-    // In the finished program every source open site is one direct `openat`
-    // against a bound `DirectoryRead`, and the only other open is the
-    // bootstrap's one-time acquisition of the initial directory [QUAL-3].
+    // In the finished program every source open site is one direct invocation
+    // of the completion adapter against a bound `DirectoryRead`, and the only
+    // other open is the bootstrap's one-time acquisition of the initial
+    // directory [QUAL-3].
     // The search has exactly five open sites, derived from the source and not
     // from the module: `main` opens the search root with `open_directory` and,
     // when that root is not a directory, the same name with `open_read`;
     // `walk` opens one enumeration with `open_list`, each child directory with
     // `open_directory`, and each regular file with `open_file`.
-    assert_eq!(program().matches("@openat(").count(), 5);
+    assert_eq!(program().matches("@wf__io_openat(").count(), 5);
     assert_eq!(program().matches("@open(").count(), 1);
     assert!(program().contains("@open(ptr nonnull @.wf.sys.working.directory"));
-    let opening = basic_block(entry(), "@openat(");
+    let opening = basic_block(entry(), "@wf__io_openat(");
     let host_calls: Vec<_> = call_targets(opening)
         .into_iter()
         .filter(|target| !target.starts_with("llvm."))
         .collect();
     assert_eq!(
         host_calls,
-        vec!["openat"],
-        "the open is the only host call on its path:\n{opening}"
+        vec!["wf__io_openat"],
+        "the open adapter is the only target call on its path:\n{opening}"
     );
     // The entry's first open is the search root's, which the name route
     // reaches, so its block also holds the one bounded copy that terminates
     // the validated component for the facility [SYS-14]. That copy is an
-    // intrinsic over a fixed-size stack slot, not a second host call and not a
-    // copy of anything the open transfers.
+    // intrinsic over a fixed-size stack slot, not a second target call and not
+    // a copy of anything the open transfers.
     assert_eq!(
         opening.matches("@llvm.memcpy").count(),
         1,
@@ -583,14 +587,14 @@ fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
 }
 
 /// §9.1 row 7 — `read_once` and `write_once` consume statically authorized
-/// ranges, make at most one host transfer, sanitize one host count into an
-/// absolute endpoint, and use a cold outcome mapper.
+/// ranges, make at most one completion-adapter transfer, sanitize one host
+/// count into an absolute endpoint, and use a cold outcome mapper.
 #[test]
 fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     let module = emitted();
     for (operation, facility) in [
-        ("wf.sys.read_once.v1", "@read("),
-        ("wf.sys.write_once.v1", "@write("),
+        ("wf.sys.read_once.v1", "@wf__io_read("),
+        ("wf.sys.write_once.v1", "@wf__io_write("),
     ] {
         let row = approved_row(module, operation);
         // SYS-8's two source obligations authorize `sub nuw`; the wrapper has
@@ -600,12 +604,14 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
             !row.contains("@wf_trap"),
             "a system transfer must not retain a runtime range trap:\n{row}"
         );
-        // A zero-length range issues no host call at all.
+        // A zero-length range issues no adapter call at all.
         assert!(
             row.contains("%vacant = icmp eq i64 %extent, 0"),
             "{operation} must short-circuit an empty range:\n{row}"
         );
-        // Exactly one host transfer, and one check of the count it reported.
+        // Exactly one completion-adapter transfer, and one check of the count
+        // it reported. The adapter owns the corresponding single native
+        // attempt and the wait/completion protocol.
         assert_eq!(
             row.matches(facility).count(),
             1,
@@ -651,15 +657,15 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
         optimized().matches("@wf.sys.io.error(").count() > 1,
         "the mapper must still exist for the failure paths"
     );
-    // One host transfer per source operation. `wfgrep` writes `read_once` and
-    // `write_once` once each, so the emitted program holds one `@read` and one
-    // `@write` for each surviving copy of the body that holds them: the one
-    // source `read_once` site in `search_file`, and the one source
-    // `write_once` site in `publish_all`, whose out-of-line definition the
-    // inliner left standing.
-    assert_eq!(program.matches("@read(").count(), 1);
+    // One adapter transfer per source operation. `wfgrep` writes `read_once` and
+    // `write_once` once each, so the emitted program holds one
+    // `@wf__io_read` and one `@wf__io_write` for each surviving copy of the
+    // body that holds them: the one source `read_once` site in `search_file`,
+    // and the one source `write_once` site in `publish_all`, whose out-of-line
+    // definition the inliner left standing.
+    assert_eq!(program.matches("@wf__io_read(").count(), 1);
     assert_eq!(
-        program.matches("@write(").count(),
+        program.matches("@wf__io_write(").count(),
         1,
         "one transfer per surviving copy of the one source write_once site"
     );
@@ -678,7 +684,7 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     // bytes, takes a lock, or touches a signal disposition beside the transfer
     // [QUAL-3].
     for function in program_functions() {
-        for site in ["@read(", "@write("] {
+        for site in ["@wf__io_read(", "@wf__io_write("] {
             if !function.contains(site) {
                 continue;
             }
@@ -716,8 +722,8 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     }
 }
 
-/// §9.1 row 8 — a closing owner releases with at most one direct native close
-/// attempt, and an ambiguous close is never retried.
+/// §9.1 row 8 — a closing owner releases with at most one completion-adapter
+/// close attempt, and an ambiguous close is never retried.
 #[test]
 fn every_release_close_is_one_discarded_attempt() {
     // The three closing resource kinds close: `DirectoryRead`, `DirectoryList`,
@@ -726,7 +732,7 @@ fn every_release_close_is_one_discarded_attempt() {
     // cleanup paths, independently locked in `system.rs`; the host optimizer
     // tail-merges those paths into one physical close site in this whole
     // program. That site is distinguished below from resource releases.
-    let closes = program().matches("@close(").count();
+    let closes = program().matches("@wf__io_close(").count();
     assert!(
         closes >= 4,
         "three closing resource kinds and one tail-merged provisional cleanup must appear:\n{}",
@@ -743,7 +749,7 @@ fn every_release_close_is_one_discarded_attempt() {
     for function in program_functions() {
         for line in function.lines() {
             let trimmed = line.trim_start();
-            if !trimmed.contains("@close(") {
+            if !trimmed.contains("@wf__io_close(") {
                 continue;
             }
             let name = trimmed
@@ -787,8 +793,8 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
     // descriptors 1 and 2 here, and neither is ever closed or flushed —
     // operating-system process teardown owns them [SYS-12].
     for forbidden in [
-        "@close(i32 1)",
-        "@close(i32 2)",
+        "@wf__io_close(i32 1)",
+        "@wf__io_close(i32 2)",
         "@fflush",
         "@fclose",
         "@fsync",
@@ -835,9 +841,11 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // The bootstrap's one-time working-directory acquisition and
             // signal normalization [QUAL-3].
             "open" | "signal"
-            // The first slice's own host operations, including the [SYS-14]
-            // enumeration facility this target's [QUAL-1] row names.
-            | "openat" | "fstat" | "read" | "write" | "close" | "__getdirentries64"
+            // The first slice's completion adapters, including the [SYS-14]
+            // enumeration adapter this target's [QUAL-1] row names. Their C
+            // runtime owns platform dispatch and the one native attempt.
+            | "wf__io_openat" | "wf__io_fstat" | "wf__io_read" | "wf__io_write"
+            | "wf__io_close" | "wf__io_getdirentries64"
             // Darwin's native error-slot access on failed host operations.
             | "__error"
             // The lease length pass and the path NUL scan.
@@ -854,7 +862,7 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // module's own weak definitions: the claim refuses every lane and
             // the rest return, `wf__par_pool_active` answers that no pool
             // started — so that build runs its own sequential clone, which
-            // reaches no host facility either, and the four protocol entries
+            // reaches no host facility either, and the five protocol entries
             // go unused. That is a statement about the emitted module, not
             // about every link of it — with the parallel runtime linked,
             // `wf__par_pool_active` and `wf__par_claim` both reach
@@ -863,7 +871,8 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // like malloc's own internals. This row is a permission the
             // target may take, not an operation of the first slice, so no
             // §9.1 count moves with it.
-            | "wf__par_claim" | "wf__par_publish" | "wf__par_join" | "wf__par_release"
+            | "wf__par_claim" | "wf__par_publish" | "wf__par_publish_io"
+            | "wf__par_join" | "wf__par_release"
             | "wf__par_pool_active"
         ) || target.starts_with("wf__par_thunk_")
             // The sequential clone of a function on a path to a hand-out: the
@@ -956,7 +965,7 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
         );
     }
     // Allocation begins in each function's prologue: the first allocation a
-    // function makes precedes every host transfer it reaches, so no buffer is
+    // function makes precedes every target transfer it reaches, so no buffer is
     // first created in the drain, the match loop, or the flush.
     //
     // The stronger claim the argv-list version could make — that the *last*
@@ -972,7 +981,12 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
         let Some(first_allocation) = function.find("@calloc(") else {
             continue;
         };
-        for transfer in ["@openat(", "@read(", "@write(", "@__getdirentries64("] {
+        for transfer in [
+            "@wf__io_openat(",
+            "@wf__io_read(",
+            "@wf__io_write(",
+            "@wf__io_getdirentries64(",
+        ] {
             let Some(first) = function.find(transfer) else {
                 continue;
             };

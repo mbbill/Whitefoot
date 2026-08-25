@@ -121,7 +121,17 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // review admitted inside an overlap are no longer reachable from one at all,
 // and this table's overlap exposure is strictly smaller than the paragraph
 // above argues for.
-const REVIEWED_FOR: &str = "v0.36";
+//
+// v0.37 review (2026-08-25): the fifteen semantic IDs and all target
+// guarantees remain stable. Four capability families gain nominal world
+// vectors, and every world action gains explicit world reads/writes plus a
+// dispatch/host-wait/loan-end target-action record. Those additions strengthen
+// checked-program scheduling metadata without changing a native operation's
+// argument ABI, outcome mapping, host-string family, or release behavior.
+// The completion adapters actualize the same qualified semantic IDs; an absent
+// adapter is a lowering limitation, never a weaker qualification or a source
+// rejection.
+const REVIEWED_FOR: &str = "v0.37";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectoryList`.
@@ -183,7 +193,7 @@ impl HostFacilities {
     /// through.
     const fn close(self) -> &'static str {
         match self {
-            Self::Native => "close",
+            Self::Native => "wf__io_close",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_close",
         }
@@ -193,7 +203,7 @@ impl HostFacilities {
     /// [PATH-2].
     const fn file_open(self) -> &'static str {
         match self {
-            Self::Native => "openat",
+            Self::Native => "wf__io_openat",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_openat",
         }
@@ -201,9 +211,9 @@ impl HostFacilities {
 
     /// The descriptor-status facility used to validate that `open_file`
     /// produced the regular-file capability its semantic row promises.
-    const fn file_status(self, native: &'static str) -> &'static str {
+    const fn file_status(self, _native: &'static str) -> &'static str {
         match self {
-            Self::Native => native,
+            Self::Native => "wf__io_fstat",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_fstat",
         }
@@ -212,7 +222,7 @@ impl HostFacilities {
     /// The facility one `read_once` transfer attempt reaches.
     const fn read(self) -> &'static str {
         match self {
-            Self::Native => "read",
+            Self::Native => "wf__io_read",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_read",
         }
@@ -221,10 +231,14 @@ impl HostFacilities {
     /// The facility one `write_once` transfer attempt reaches.
     const fn write(self) -> &'static str {
         match self {
-            Self::Native => "write",
+            Self::Native => "wf__io_write",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_write",
         }
+    }
+
+    const fn uses_completion_runtime(self) -> bool {
+        matches!(self, Self::Native)
     }
 }
 
@@ -787,7 +801,15 @@ impl SystemTarget {
     /// Emission may read it directly only after qualification accepted the
     /// program, which is exactly when the enumeration guarantee held.
     pub(crate) const fn directory_enumeration(self) -> Option<DirectoryEnumeration> {
-        self.directory_enumeration
+        let mut enumeration = match self.directory_enumeration {
+            Some(enumeration) => enumeration,
+            None => return None,
+        };
+        if self.host.uses_completion_runtime() {
+            enumeration.symbol = "wf__io_getdirentries64";
+            enumeration.declaration = "declare i64 @wf__io_getdirentries64(i32, ptr, i64, ptr)";
+        }
+        Some(enumeration)
     }
 
     fn supplies(self, guarantee: TargetGuarantee) -> bool {
@@ -1287,13 +1309,24 @@ pub(crate) fn qualify_program(
         for block in function.blocks() {
             for instruction in block.instructions() {
                 let IrInstruction::Define {
-                    operation: IrOperation::SystemCall { operation, .. },
+                    operation:
+                        IrOperation::SystemCall {
+                            operation,
+                            target_action,
+                            ..
+                        },
                     ..
                 } = instruction
                 else {
                     continue;
                 };
                 let ordinal = operation.ordinal();
+                let catalog = crate::SYSTEM_OPERATIONS
+                    .get(usize::from(ordinal))
+                    .ok_or(BackendFailure::InvalidIr)?;
+                if *target_action != catalog.target_action {
+                    return Err(BackendFailure::InvalidIr);
+                }
                 let implementation = operation_row(ordinal, target, kind)
                     .map_err(BackendFailure::TargetQualification)?;
                 qualification.operations[usize::from(ordinal)] = Some(implementation);

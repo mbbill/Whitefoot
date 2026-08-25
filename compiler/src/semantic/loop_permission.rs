@@ -23,8 +23,9 @@
 //!    or that accumulator. An element write, a field of enclosing storage, a
 //!    callee row projecting onto enclosing storage, an arena append, and every
 //!    write this judgment cannot resolve all deny.
-//! 3. **Row gate.** No call in B carries `external` or `blocks`, and no
-//!    [SYS-2] operation is written in B. Rows gate; places prove.
+//! 3. **World footprint.** No iteration may conflict with another through a
+//!    normalized world read or write. Under the conservative `'q` policy,
+//!    every world-facing action therefore denies iteration overlap.
 //! 4. **No exit edge.** No `return`, `give`, `propagate` `Err` edge, or
 //!    `break` naming L or an enclosing loop leaves the loop, so every
 //!    iteration of the whole range runs.
@@ -241,14 +242,8 @@ pub(crate) enum LoopDenial {
     /// Condition 2, fail closed: a body statement form whose footprint this
     /// judgment does not compute.
     BodyForm { form: &'static str },
-    /// Condition 3: a call in the body carries `external` or `blocks`.
-    Row {
-        function: String,
-        external: bool,
-        blocks: bool,
-    },
-    /// Condition 3: a [SYS-2] operation is the external world itself.
-    SystemCall { call: NodePath },
+    /// Condition 3: two iterations reach the same written world facet.
+    WorldFootprint { call: NodePath },
     /// Condition 4: an edge leaves the loop.
     Exit { edge: &'static str },
 }
@@ -265,7 +260,7 @@ impl LoopDenial {
             | Self::Loan { .. }
             | Self::UnresolvedWrite { .. }
             | Self::BodyForm { .. } => 2,
-            Self::Row { .. } | Self::SystemCall { .. } => 3,
+            Self::WorldFootprint { .. } => 3,
             Self::Exit { .. } => 4,
         }
     }
@@ -355,8 +350,7 @@ fn judge<'check>(
         loan: None,
         unresolved: None,
         form: None,
-        row: None,
-        system_call: None,
+        world: None,
         exit: None,
     };
     survey.introduce(body);
@@ -390,8 +384,7 @@ struct Survey<'check, 'run> {
     loan: Option<NodePath>,
     unresolved: Option<NodePath>,
     form: Option<&'static str>,
-    row: Option<(String, bool, bool)>,
-    system_call: Option<NodePath>,
+    world: Option<NodePath>,
     exit: Option<&'static str>,
 }
 
@@ -574,6 +567,9 @@ impl<'check> Survey<'check, '_> {
                 Access::Arena { call, .. } => {
                     self.shared.get_or_insert(call.clone());
                 }
+                Access::World { call, .. } => {
+                    self.world.get_or_insert(call.clone());
+                }
             }
         }
         // [GRAM-9] makes a subscript an atom, so the offset reads storage and
@@ -693,32 +689,11 @@ impl<'check> Survey<'check, '_> {
     /// footprint by the shape of the statement that holds it.
     fn calls(&mut self, expression: &CheckedExpression) {
         match expression {
-            CheckedExpression::UserCall { function, .. } => {
+            CheckedExpression::UserCall { .. } | CheckedExpression::SystemCall { .. } => {
                 if let Some(projection) = call_projection(expression) {
                     let footprint = self.program.footprint(self.places, &projection);
                     self.record_writes(&footprint);
                 }
-                match self.program.signature(*function) {
-                    Some(signature) if signature.external || signature.blocks => {
-                        self.row.get_or_insert((
-                            self.program.function_name(*function),
-                            signature.external,
-                            signature.blocks,
-                        ));
-                    }
-                    // A callee this analysis cannot place has no readable row,
-                    // so it gates rather than being assumed clean.
-                    None => {
-                        self.row
-                            .get_or_insert((self.program.function_name(*function), true, true));
-                    }
-                    Some(_) => {}
-                }
-            }
-            // A [SYS-2] operation is the external world: it is the very thing
-            // condition 3's row gate keeps out of an overlapped execution.
-            CheckedExpression::SystemCall { call, .. } => {
-                self.system_call.get_or_insert(call.clone());
             }
             _ => {}
         }
@@ -764,6 +739,9 @@ impl<'check> Survey<'check, '_> {
                 // iteration-own and reaches the arm above.
                 Access::Arena { call, .. } => {
                     self.shared.get_or_insert(call.clone());
+                }
+                Access::World { call, .. } => {
+                    self.world.get_or_insert(call.clone());
                 }
             }
         }
@@ -845,15 +823,8 @@ impl<'check> Survey<'check, '_> {
                 argument: argument.clone(),
             });
         }
-        if let Some((function, external, blocks)) = &self.row {
-            return Some(LoopDenial::Row {
-                function: function.clone(),
-                external: *external,
-                blocks: *blocks,
-            });
-        }
-        if let Some(call) = &self.system_call {
-            return Some(LoopDenial::SystemCall { call: call.clone() });
+        if let Some(call) = &self.world {
+            return Some(LoopDenial::WorldFootprint { call: call.clone() });
         }
         self.exit.map(|edge| LoopDenial::Exit { edge })
     }

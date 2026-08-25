@@ -1,12 +1,12 @@
 # The Whitefoot I/O model — foundation record, revision 2
 
-Status: DESIGN, pre-implementation. Revision 2 folds in the three
-adversarial reviews of 2026-08-25 (`spec-sweeper`, `runtime-attacker`,
-`blindspot-scout`, reports under the operator's scratch directory
-`wf-io/out/`; every load-bearing anchor re-verified by the lead). It
-authorizes no execution and changes no rule; every language change it
-sketches lands, if at all, through its own specification batch with owner
-approval at merge.
+Status: IMPLEMENTED FOUNDATION. Revision 2 folds in the three adversarial
+reviews of 2026-08-25 (`spec-sweeper`, `runtime-attacker`,
+`blindspot-scout`; every load-bearing anchor was re-verified by the lead).
+Batch 0082 implements the conservative-first language migration and the
+three-host completion contract. This record preserves rationale and does not
+define workflow; branch work follows `AGENTS.md`, and only an exact revision's
+final merge into `main` has an approval boundary.
 
 Revision 1's two defects, named rather than smoothed over: it claimed
 distinct capability values imply world disjointness (false — the spec's
@@ -135,8 +135,8 @@ per-region narrowing is a semantic weakening. Two honest migrations
 exist: (1) first land the vocabulary with one conservative global
 world-order domain joined to every former-`external` operation —
 preserving v0.36 order exactly, zero semantic change — then narrow
-family by family under evidence, each narrowing a flagged owner
-decision; or (2) declare the weakening at once with a complete trace law
+family by family under evidence, recording each narrowing as a flagged
+decision that travels with its final merge packet; or (2) declare the weakening at once with a complete trace law
 (what is ordered, at which linearization point — submission, completion,
 or remote observation — with fence semantics; the current SYS-2
 inventory contains no fence operation, so one must be added, not
@@ -291,8 +291,8 @@ order was **false**; a W=1 overlapped world changes three observables
 (which claim an erroneous execution records; published bytes when traps
 and world writes could mix — narrowed by §3f's widened erroneous clause; stack resource
 records, since overlapped clones spend 48 B/level against sequential
-16 B/level on the 0079 measurement). Each is a flagged decision at the
-batch that changes the mapping, with `WF_WORKERS=0` retained as the
+16 B/level on the 0079 measurement). Each is recorded as a flagged decision
+in the batch that changes the mapping, with `WF_WORKERS=0` retained as the
 sequential world and the compute-claim refusal made an explicit
 `compute_lanes < 2` rule rather than a side effect of "pool off".
 Embedded terminology corrected: `WF_WORKERS=0` means no overlap and no
@@ -380,7 +380,8 @@ tables, quarantine of late completions).
 2. **kqueue prototype on this machine.** Waiter + preallocated-node
    mailbox + bounded disk pool + the §4 state machine; re-measure the
    directory-walk 2.83x (recorded caveat: measuring-machine security
-   daemon). Success gates any runtime batch.
+   daemon). Record the result honestly and continue into the required runtime
+   matrix whether it is favorable or adverse.
 3. **Unified-parking probe (Linux).** POLL_ADD-on-eventfd multishot,
    re-arm discipline, mixed load; verify no lost wakeup against the §4
    law, and measure against the condvar path. Runs in CI on a Linux
@@ -388,11 +389,11 @@ tables, quarantine of late completions).
    IOCP — are written against one contract, tested locally on macOS and
    cross-checked on GitHub Actions).
 
-## 10. Decisions queued for the owner
+## 10. Flagged decisions adopted by batch 0082
 
-(Implementers: these never pause work. Adopt each recommendation, record
-the adoption as a flagged decision in the batch record, and keep going;
-the owner rules on all of them at the single final merge gate.)
+(These never pause work. Batch 0082 adopted each recommendation and records
+it as a flagged decision; they travel with the exact revision to the single
+final merge gate.)
 
 1. §3e: conservative-first order migration (recommended) vs declared
    weakening with a full trace law.

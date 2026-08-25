@@ -482,18 +482,18 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
-/// Condition 3. The row gate refuses `external` before any place is
-/// consulted, even though the two consumed actuals are disjoint.
+/// Condition 2. The two resources are distinct caller values, but closing
+/// either one writes the shared command-order world facet. World identity,
+/// not owner identity, therefore refuses the overlap.
 #[test]
-fn an_external_row_callee_is_denied_by_condition_three() {
-    let source =
-        br#"fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {
+fn a_shared_world_facet_denies_disjoint_resource_releases() {
+    let source = br#"fn release_directory['q, 'h, 'd, 'f](directory: own DirectoryRead<'q, 'h, 'd, 'f>) -> result: own unit writes('q 'h) {
   return unit;
 }
 
-fn release_pair(first: own ReadFile, second: own ReadFile) -> result: own unit external, blocks {
-  let done_first = release_read_file(file: move first);
-  let done_second = release_read_file(file: move second);
+fn release_pair['q, 'h1, 'd1, 'f1, 'h2, 'd2, 'f2](first: own DirectoryRead<'q, 'h1, 'd1, 'f1>, second: own DirectoryRead<'q, 'h2, 'd2, 'f2>) -> result: own unit writes('q 'h1 'h2) {
+  let done_first = release_directory<'q, 'h1, 'd1, 'f1>(directory: move first);
+  let done_second = release_directory<'q, 'h2, 'd2, 'f2>(directory: move second);
   return unit;
 }
 
@@ -503,17 +503,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "release_pair");
-    let Denial::Row {
-        side,
-        external,
-        blocks,
-    } = denial(pair, 3)
-    else {
-        panic!("expected a row denial, got {:?}", pair.verdict);
-    };
-    assert_eq!(*side, PairSide::First);
-    assert!(*external);
-    assert!(*blocks);
+    assert!(matches!(denial(pair, 2), Denial::Footprint { .. }));
 }
 
 /// Condition 4. The first statement's `propagate` right-hand side has an
@@ -1273,14 +1263,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     };
 }
 
-/// [PAR-1]'s system-operation clause: no statement of the window evaluates
-/// one. The refusal is currently carried by the operand walk's fail-closed
-/// catch-all — a call it meets sets the unresolved marker — so this test
-/// names the denial that clause depends on; making that arm smarter without
-/// an explicit system-operation refusal would fail here rather than silently
-/// deleting the clause.
+/// A direct system operation follows the same footprint path as a user call.
+/// `relative_path` is pure, so it can join the two independent compute calls
+/// in one eligible run instead of acting as a blanket system-call barrier.
 #[test]
-fn an_interposed_system_operation_denies_the_window() {
+fn a_pure_system_operation_can_join_independent_compute() {
     let source = br#"fn quiet['c](cell: &uniq 'c u64) -> result: own u64 pure {
   return 3_u64;
 }
@@ -1309,9 +1296,18 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     let table = permission_of(source);
-    let pair = only_pair(&table, "interposed_pure_syscall");
-    assert!(matches!(
-        denial(pair, 2),
-        Denial::InterposedForm { .. } | Denial::UnresolvedFootprint { .. }
-    ));
+    let permissions = function_table(&table, "interposed_pure_syscall");
+    assert_eq!(
+        permissions.pairs.len(),
+        2,
+        "one pair on each side of the system operation"
+    );
+    assert!(
+        permissions
+            .pairs
+            .iter()
+            .all(|pair| pair.verdict == PermissionVerdict::PermittedEligible)
+    );
+    assert_eq!(permissions.runs.len(), 1);
+    assert_eq!(permissions.runs[0].sites.len(), 3);
 }

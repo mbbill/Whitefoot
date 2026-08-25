@@ -82,7 +82,10 @@ enum StableCheckedType {
         region: DeclarationId,
         content: Box<StableCheckedType>,
     },
-    System(u8),
+    System {
+        index: u8,
+        world_regions: Vec<DeclarationId>,
+    },
     Array {
         element: StableFlatElement,
         length: CheckedConst,
@@ -1109,10 +1112,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .cloned()
                     .flatten();
                 let prelude = self.prelude_types.get(id.0 as usize).cloned().flatten();
-                let system = self
-                    .system_nominals
-                    .iter()
-                    .find_map(|(index, candidate)| (*candidate == id).then_some(*index));
+                let system =
+                    self.system_nominals
+                        .iter()
+                        .find_map(|((index, world_regions), candidate)| {
+                            (*candidate == id).then_some((*index, world_regions.clone()))
+                        });
                 let kind = self
                     .nominals
                     .get(id.0 as usize)
@@ -1145,8 +1150,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return Ok(None);
                     };
                     StableCheckedType::Prelude(prelude)
-                } else if let Some(system) = system {
-                    StableCheckedType::System(system)
+                } else if let Some((index, world_regions)) = system {
+                    StableCheckedType::System {
+                        index,
+                        world_regions,
+                    }
                 } else {
                     match kind {
                         CheckedNominalKind::Box { referent } => {
@@ -1381,9 +1389,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let content = self.reify_concrete_type(content)?;
                 CheckedType::Nominal(self.intern_arena_nominal(*region, content)?)
             }
-            StableCheckedType::System(index) => {
-                CheckedType::Nominal(self.intern_system_nominal(*index)?)
-            }
+            StableCheckedType::System {
+                index,
+                world_regions,
+            } => CheckedType::Nominal(
+                self.intern_system_nominal_with(*index, world_regions.clone())?,
+            ),
             StableCheckedType::Array { element, length } => CheckedType::Array {
                 element: self.reify_flat_element(element)?,
                 length: *length,

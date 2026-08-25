@@ -8,7 +8,7 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.36 guidance.
+This document carries active v0.37 guidance.
 
 Capability boundary: the current backend emits no effect-derived attributes or
 alias metadata, performs no proof-driven check elision, has no termination
@@ -220,24 +220,24 @@ post-loop equality.
 Replaces: `let i`, `loop`, equality break, index-bound claim, and wrapping
 increment boilerplate for an exact half-open u64 walk.
 
-## P12. External constrained subject takes a value path
+## P12. Boundary-derived constrained subject takes a value path
 
 Problem: a protected storage access uses an offset derived from process or
 system input, so valid hostile input may falsify its bound. Test the relation
 with a real branch and return the domain's normal error value on the false
 edge. A `claim` or an ordinary callee requirement is not a repair: each turns
-expected external failure into a trap or an uncallable path. Main has no
+expected boundary failure into a trap or an uncallable path. Main has no
 contract and no process-entry wrapper check.
 
 Place the branch where the protected relation belongs. For a local protected
 access, branch in the function that owns that access. For a call rejection,
 branch in the rejecting caller before the call so its unasserted state proves
 the complete bridged goal; alternatively restructure the dataflow so the
-external value no longer reaches the callee's constrained subject. An internal
+boundary-derived value no longer reaches the callee's constrained subject. An internal
 constrained subject may still use an honest invariant `claim` under its
-ordinary lifecycle. External values used only as a bound, storage base,
+ordinary lifecycle. Boundary-derived values used only as a bound, storage base,
 write-address choice, or unrelated goal operand do not taint the constrained
-subject and need no repair merely for being external. This does not exempt a
+subject and need no repair merely for being boundary-derived. This does not exempt a
 write address's own protected offset obligation when that offset is itself the
 constrained subject.
 

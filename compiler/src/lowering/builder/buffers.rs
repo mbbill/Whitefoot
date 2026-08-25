@@ -21,7 +21,7 @@ impl IrBuilder<'_> {
         layout_ceiling: CheckedLayoutCeiling,
         target_domains: CheckedRuntimeTargetObligations,
     ) -> Result<IrValueId, LoweringFailure> {
-        let element = lower_flat_element(element)?;
+        let element = self.types.lower_flat_element(element)?;
         let length = self.expression(length)?;
         let value = self.expression(value)?;
         if self.value_type(length)?
@@ -54,7 +54,7 @@ impl IrBuilder<'_> {
         layout_ceiling: CheckedLayoutCeiling,
         target_domains: CheckedRuntimeTargetObligations,
     ) -> Result<IrValueId, LoweringFailure> {
-        let element = IrFlatElement::Nominal(IrNominalId(element.0));
+        let element = IrFlatElement::Nominal(self.types.nominal_id(element)?);
         let length = self.expression(length)?;
         if self.value_type(length)?
             != (IrType::Integer {
@@ -83,7 +83,7 @@ impl IrBuilder<'_> {
         target: &CheckedBufferSetTarget,
         value: &CheckedExpression,
     ) -> Result<IrValueId, LoweringFailure> {
-        let element = lower_flat_element(target.root.element)?;
+        let element = self.types.lower_flat_element(target.root.element)?;
         let buffer = self.project_buffer_root(root, &target.root)?;
         // The subscript's bounds obligation is discharged at the source
         // level [OP-4]; the offset is consumed directly with no runtime
@@ -168,7 +168,7 @@ impl IrBuilder<'_> {
         target: &CheckedBufferSetTarget,
         value: &CheckedExpression,
     ) -> Result<IrValueId, LoweringFailure> {
-        let element = lower_flat_element(target.root.element)?;
+        let element = self.types.lower_flat_element(target.root.element)?;
         let buffer = self.project_buffer_root(root, &target.root)?;
         // The subscript's bounds obligation is discharged at the source
         // level [OP-4]; the offset is consumed directly with no runtime
@@ -213,7 +213,7 @@ impl IrBuilder<'_> {
         };
         if self.value_type(value)?
             != (IrType::Buffer {
-                element: lower_flat_element(root.element)?,
+                element: self.types.lower_flat_element(root.element)?,
             })
         {
             return Err(LoweringFailure::InvalidCheckedProgram);

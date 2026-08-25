@@ -29,7 +29,7 @@ fn the_traversal_program_walks_a_real_tree_and_publishes_it_sorted() {
     assert!(llvm.contains("@wf.sys.open_list.v1"));
     assert!(llvm.contains("@wf.sys.list_once.v1"));
     assert!(llvm.contains("@wf.sys.open_directory.v1"));
-    assert!(llvm.contains("__getdirentries64"));
+    assert!(llvm.contains("@wf__io_getdirentries64"));
 
     let program = build_program(&llvm);
     let fixture = fixture_directory();
@@ -146,15 +146,15 @@ fn appending_open_file_leaves_every_traversal_program_byte_identical() {
 /// from ownership rather than from any traversal-specific rule.
 #[test]
 fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main['q, 'dh, 'd, 'fw, 'lh, 'lc, 'ow](command.cwd as cwd: own DirectoryRead<'q, 'dh, 'd, 'fw>, command.stdout as out: own Output<'q, 'ow>) -> status: own ExitStatus reads('dh 'd 'lh), writes('q 'dh 'lh 'lc), allocates(heap) {
   doc "Moves one enumeration handle and then uses the moved binding.";
   let scratch = buffer_new(64_u64, 0_u8);
   region 'listing {
-    match open_list<'listing>(directory: &'listing cwd) {
+    match open_list<'listing, 'q, 'dh, 'd, 'fw, 'lh, 'lc>(directory: &'listing cwd) {
       Ok(value: list) => {
         let taken = move list;
         region 'step {
-          match list_once<'step, 'step>(list: &uniq 'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
+          match list_once<'step, 'step, 'q, 'lh, 'lc, 'd>(list: &uniq 'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
             ListBytes(next: endpoint, entries: reported) => {
             }
             ListEnd() => {
@@ -183,7 +183,7 @@ fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
 /// even with the traversal surface admitted.
 #[test]
 fn program_bytes_still_cannot_become_a_path_value() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main['q, 'dh, 'd, 'fw, 'ow](command.cwd as cwd: own DirectoryRead<'q, 'dh, 'd, 'fw>, command.stdout as out: own Output<'q, 'ow>) -> status: own ExitStatus writes('q 'dh), allocates(heap) {
   doc "Attempts to construct a relative path from program bytes.";
   let name = buffer_new(8_u64, 97_u8);
   region 'attempt {
@@ -209,14 +209,14 @@ fn program_bytes_still_cannot_become_a_path_value() {
 /// missing arm is a rejection rather than a silent fallthrough.
 #[test]
 fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main['q, 'dh, 'd, 'fw, 'lh, 'lc, 'ow](command.cwd as cwd: own DirectoryRead<'q, 'dh, 'd, 'fw>, command.stdout as out: own Output<'q, 'ow>) -> status: own ExitStatus reads('dh 'd 'lh), writes('q 'dh 'lh 'lc), allocates(heap) {
   doc "Omits one enumeration outcome from an otherwise complete match.";
   let scratch = buffer_new(64_u64, 0_u8);
   region 'listing {
-    match open_list<'listing>(directory: &'listing cwd) {
+    match open_list<'listing, 'q, 'dh, 'd, 'fw, 'lh, 'lc>(directory: &'listing cwd) {
       Ok(value: list) => {
         region 'step {
-          match list_once<'step, 'step>(list: &uniq 'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
+          match list_once<'step, 'step, 'q, 'lh, 'lc, 'd>(list: &uniq 'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
             ListBytes(next: endpoint, entries: reported) => {
             }
             ListEnd() => {
@@ -238,13 +238,15 @@ fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
     );
 }
 
-/// The component-name validation precedes the host call, so a name that is
-/// not one path component is refused with no directory-relative open at all.
+/// The component-name validation precedes the target-adapter call, so a name
+/// that is not one path component is refused with no directory-relative open
+/// at all.
 ///
 /// This is structural evidence about the emitted implementation rather than a
 /// runtime observation: the rejection path is a separate block that
-/// constructs the portable class and returns, and the one `openat` call site
-/// is reachable only after the length and byte scan admitted the range.
+/// constructs the portable class and returns, and the one completion-adapter
+/// open call site is reachable only after the length and byte scan admitted
+/// the range.
 #[test]
 fn the_component_validation_precedes_every_host_call() {
     let llvm = compile_program_with_traversal_surface("dir_walk.wf");
@@ -261,14 +263,16 @@ fn the_component_validation_precedes_every_host_call() {
     assert!(shim.contains("%terminating = icmp eq i32 %byte.value, 0"));
 
     let open_block = shim.find("\nopen:\n").expect("the admitted-name block");
-    let host_call = shim.find("@openat").expect("the directory-relative open");
+    let adapter_call = shim
+        .find("@wf__io_openat")
+        .expect("the directory-relative open adapter");
     assert!(
-        host_call > open_block,
-        "the host call must be reachable only from the admitted-name block"
+        adapter_call > open_block,
+        "the target call must be reachable only from the admitted-name block"
     );
     let invalid_block = shim.find("\ninvalid:\n").expect("the rejection block");
     assert!(
-        !shim[invalid_block..].contains("@openat"),
-        "the rejection path must make no host call"
+        !shim[invalid_block..].contains("@wf__io_openat"),
+        "the rejection path must make no target call"
     );
 }

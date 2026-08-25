@@ -18,10 +18,11 @@ pub use engine::{resolve, resolve_with_inventory};
 
 pub use catalog::{
     Inventory, OPEN_BY_NAME, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
-    SystemConstructor, SystemEntity, SystemField, SystemNominal, SystemOperation, SystemParameter,
-    SystemParameterMode, SystemRelease, SystemReleaseAction, SystemReleaseRow,
-    SystemResourceBacking, SystemResourceContract, SystemResourceType, SystemResultPayload,
-    SystemTypeRef, TRAVERSAL_SURFACE, operation_region_effects, system_constructor_declaration,
+    SystemConstructor, SystemEntity, SystemField, SystemNominal, SystemOperation, SystemOriginKind,
+    SystemOriginRelation, SystemParameter, SystemParameterMode, SystemRelease, SystemReleaseAction,
+    SystemReleaseRow, SystemResourceBacking, SystemResourceContract, SystemResourceType,
+    SystemResultPayload, SystemTypeRef, TRAVERSAL_SURFACE, TargetAction, TargetDispatch,
+    TargetHostWait, TargetLoanEnd, operation_region_effects, system_constructor_declaration,
     system_constructor_index, system_constructors, system_entity, system_nominal_index,
     system_nominals, system_operation_index, system_operations, system_release_row,
     system_resource_contract,

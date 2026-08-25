@@ -189,7 +189,7 @@ fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s
   return target;
 }
 
-fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes('o), external, blocks contract {
+fn publish_all['o, 's, 'q, 'ow](output: &uniq 'o Output<'q, 'ow>, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes('o 'q 'ow) contract {
   define source_length = len(deref(source));
   requires ile(length, source_length);
 } {
@@ -202,7 +202,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
       break @publish;
     }
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+      match write_once<'attempt, 's, 'q, 'ow>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -311,7 +311,7 @@ fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64
   return end;
 }
 
-fn report_failure['e, 'r, 'n](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, path: &'n buffer<u8>, path_length: own u64, status: own u8) -> result: own unit reads('e 'r 'n), writes('e 'r), external, blocks {
+fn report_failure['e, 'r, 'n, 'q, 'ow](err: &uniq 'e Output<'q, 'ow>, report: &uniq 'r buffer<u8>, path: &'n buffer<u8>, path_length: own u64, status: own u8) -> result: own unit reads('e 'r 'n), writes('e 'r 'q 'ow) {
   doc "Assembles one `wfgrep: PATH: reason` diagnostic in the report buffer and publishes it with a single write, copying the caller's path bytes and clamping the assembled length against the report's capacity.";
   let length = 0_u64;
   region 'report_prefix {
@@ -412,7 +412,7 @@ fn report_failure['e, 'r, 'n](err: &uniq 'e Output, report: &uniq 'r buffer<u8>,
     }
   }
   region 'reason_write {
-    match publish_all<'reason_write, 'reason_write>(output: &uniq 'reason_write deref(err), source: &'reason_write deref(report), length: tail) {
+    match publish_all<'reason_write, 'reason_write, 'q, 'ow>(output: &uniq 'reason_write deref(err), source: &'reason_write deref(report), length: tail) {
       Ok(value: published) => {
       }
       Err(error: problem) => {
@@ -567,7 +567,7 @@ fn shift_input_tail['i](input: &uniq 'i buffer<u8>, available: own u64, scan: ow
   return move accepted;
 }
 
-fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>, pattern_length: own u64, path: &'n buffer<u8>, path_length: own u64, out: &uniq 'o Output) -> result: own u8 reads('f 'a 'n 'o), writes('f 'o), allocates(heap), external, blocks, traps {
+fn search_file['f, 'a, 'n, 'o, 'q, 'rh, 'rc, 'fw, 'ow](file: &uniq 'f ReadFile<'q, 'rh, 'rc, 'fw>, pattern: &'a buffer<u8>, pattern_length: own u64, path: &'n buffer<u8>, path_length: own u64, out: &uniq 'o Output<'q, 'ow>) -> result: own u8 reads('f 'a 'n 'o 'rh 'fw), writes('f 'o 'q 'rc 'ow), allocates(heap), traps {
   doc "Reads one open file and publishes `PATH:LINE:TEXT` for every line that holds the literal pattern bytes.";
   let input = buffer_new(4096_u64, 0_u8);
   let batch = buffer_new(8192_u64, 0_u8);
@@ -600,7 +600,7 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
     let available = 0_u64;
     let ended = 0_u8;
     region 'read_call {
-      match read_once<'read_call, 'read_call>(file: &uniq 'read_call deref(file), destination: &uniq 'read_call input, start: carry, end: 4096_u64) {
+      match read_once<'read_call, 'read_call, 'q, 'rh, 'rc, 'fw>(file: &uniq 'read_call deref(file), destination: &uniq 'read_call input, start: carry, end: 4096_u64) {
         ReadBytes(next: endpoint) => {
           set available = endpoint;
         }
@@ -668,7 +668,7 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
           let batch_fits = ile(filled, batch_room);
           if batch_fits {
             region 'batch_write {
-              match publish_all<'batch_write, 'batch_write>(output: &uniq 'batch_write deref(out), source: &'batch_write batch, length: filled) {
+              match publish_all<'batch_write, 'batch_write, 'q, 'ow>(output: &uniq 'batch_write deref(out), source: &'batch_write batch, length: filled) {
                 Ok(value: published) => {
                 }
                 Err(error: problem) => {
@@ -733,7 +733,7 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
     let final_fits = ile(filled, batch_room);
     if final_fits {
       region 'final_write {
-        match publish_all<'final_write, 'final_write>(output: &uniq 'final_write deref(out), source: &'final_write batch, length: filled) {
+        match publish_all<'final_write, 'final_write, 'q, 'ow>(output: &uniq 'final_write deref(out), source: &'final_write batch, length: filled) {
           Ok(value: published) => {
           }
           Err(error: problem) => {
@@ -754,7 +754,7 @@ fn search_file['f, 'a, 'n, 'o](file: &uniq 'f ReadFile, pattern: &'a buffer<u8>,
   return packed;
 }
 
-fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, pattern: &'a buffer<u8>, pattern_length: own u64, out: &uniq 'o Output, err: &uniq 'e Output) -> result: own u8 reads('c 'p 'a 'o 'e), writes('o 'e), allocates(heap), external, blocks, traps {
+fn walk['c, 'p, 'a, 'o, 'e, 'q, 'dh, 'd, 'fw, 'rh, 'rc, 'lh, 'lc, 'ow](dir: &'c DirectoryRead<'q, 'dh, 'd, 'fw>, prefix: &'p buffer<u8>, prefix_length: own u64, pattern: &'a buffer<u8>, pattern_length: own u64, out: &uniq 'o Output<'q, 'ow>, err: &uniq 'e Output<'q, 'ow>) -> result: own u8 reads('c 'p 'a 'o 'e 'dh 'd 'fw 'rh 'lh), writes('o 'e 'q 'rh 'rc 'lh 'lc 'ow), allocates(heap), traps {
   doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. The descent carries no depth cap of its own, and an exhausted stack is a reported resource death rather than a silent truncation. Two bounds remain and both are recorded as defects. One truncates silently: at most 64 entries per directory are retained, in the host's enumeration order, before sorting, and the walk returns normally, so that truncation is indistinguishable from a complete one. The other stops the descent: a display path past a thousand bytes refuses, which on a tree of one-byte directory names binds at roughly five hundred levels, and it reports by exit status alone with nothing on standard error.";
   let matched = 0_u8;
   let failed = 0_u8;
@@ -769,13 +769,13 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
   let child_room = len(child);
   let prefix_room = len(deref(prefix));
   let stored = 0_u64;
-  match open_list<'c>(directory: dir) {
+  match open_list<'c, 'q, 'dh, 'd, 'fw, 'lh, 'lc>(directory: dir) {
     Ok(value: list) => {
       loop @batches {
         let produced = 0_u64;
         let ended = 0_u8;
         region 'batch {
-          match list_once<'batch, 'batch>(list: &uniq 'batch list, destination: &uniq 'batch entries, start: 0_u64, end: 8192_u64) {
+          match list_once<'batch, 'batch, 'q, 'lh, 'lc, 'd>(list: &uniq 'batch list, destination: &uniq 'batch entries, start: 0_u64, end: 8192_u64) {
             ListBytes(next: endpoint, entries: reported) => {
               set produced = endpoint;
             }
@@ -1111,11 +1111,11 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
     if regular {
       let status = 0_u8;
       region 'open_call {
-        match open_file<'c, 'open_call>(root: dir, name: &'open_call names, start: name_at, end: name_end) {
+        match open_file<'c, 'open_call, 'q, 'dh, 'd, 'fw, 'rh, 'rc>(root: dir, name: &'open_call names, start: name_at, end: name_end) {
           Ok(value: file) => {
             let outcome = 0_u8;
             region 'search_call {
-              set outcome = search_file<'search_call, 'a, 'search_call, 'search_call>(file: &uniq 'search_call file, pattern: pattern, pattern_length: pattern_length, path: &'search_call child, path_length: cursor, out: &uniq 'search_call deref(out));
+              set outcome = search_file<'search_call, 'a, 'search_call, 'search_call, 'q, 'rh, 'rc, 'fw, 'ow>(file: &uniq 'search_call file, pattern: pattern, pattern_length: pattern_length, path: &'search_call child, path_length: cursor, out: &uniq 'search_call deref(out));
             }
             set status = iand(outcome, 15_u8);
             let found = iand(outcome, 16_u8);
@@ -1132,7 +1132,7 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
       if reportable {
         set failed = 1_u8;
         region 'report_call {
-          report_failure<'report_call, 'report_call, 'report_call>(err: &uniq 'report_call deref(err), report: &uniq 'report_call report, path: &'report_call child, path_length: cursor, status: status);
+          report_failure<'report_call, 'report_call, 'report_call, 'q, 'ow>(err: &uniq 'report_call deref(err), report: &uniq 'report_call report, path: &'report_call child, path_length: cursor, status: status);
         }
       }
     }
@@ -1140,11 +1140,11 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
     if descending {
       let status = 0_u8;
       region 'descend {
-        match open_directory<'c, 'descend>(root: dir, name: &'descend names, start: name_at, end: name_end) {
+        match open_directory<'c, 'descend, 'q, 'dh, 'd, 'fw, 'rh>(root: dir, name: &'descend names, start: name_at, end: name_end) {
           Ok(value: opened) => {
             let outcome = 0_u8;
             region 'child_walk {
-              set outcome = walk<'child_walk, 'child_walk, 'a, 'child_walk, 'child_walk>(dir: &'child_walk opened, prefix: &'child_walk child, prefix_length: cursor, pattern: pattern, pattern_length: pattern_length, out: &uniq 'child_walk deref(out), err: &uniq 'child_walk deref(err));
+              set outcome = walk<'child_walk, 'child_walk, 'a, 'child_walk, 'child_walk, 'q, 'rh, 'd, 'fw, 'rh, 'rc, 'lh, 'lc, 'ow>(dir: &'child_walk opened, prefix: &'child_walk child, prefix_length: cursor, pattern: pattern, pattern_length: pattern_length, out: &uniq 'child_walk deref(out), err: &uniq 'child_walk deref(err));
             }
             let found = iand(outcome, 1_u8);
             let broke = iand(outcome, 2_u8);
@@ -1164,7 +1164,7 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
       if reportable {
         set failed = 1_u8;
         region 'descend_report {
-          report_failure<'descend_report, 'descend_report, 'descend_report>(err: &uniq 'descend_report deref(err), report: &uniq 'descend_report report, path: &'descend_report child, path_length: cursor, status: status);
+          report_failure<'descend_report, 'descend_report, 'descend_report, 'q, 'ow>(err: &uniq 'descend_report deref(err), report: &uniq 'descend_report report, path: &'descend_report child, path_length: cursor, status: status);
         }
       }
     }
@@ -1183,7 +1183,7 @@ fn walk['c, 'p, 'a, 'o, 'e](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, pref
   return packed;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+command fn main['q, 'dh, 'd, 'fw, 'rh, 'rc, 'lh, 'lc, 'ow](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'q, 'dh, 'd, 'fw>, command.stdout as out: own Output<'q, 'ow>, command.stderr as err: own Output<'q, 'ow>) -> status: own ExitStatus reads('dh 'd 'fw 'rh 'lh), writes('q 'dh 'rh 'rc 'lh 'lc 'ow), allocates(heap), traps {
   doc "Searches one directory tree recursively and publishes `PATH:LINE:TEXT` for the lines holding the literal pattern bytes; 0 matched, 1 none, 2 error. The search is complete only within `walk`'s two remaining fixed bounds: 64 entries per directory, beyond which it truncates and still returns normally, and a thousand-byte display path, beyond which the descent stops and the run exits 2 with nothing on standard error.";
   let pattern = buffer_new(4096_u64, 0_u8);
   let root_name = buffer_new(256_u64, 0_u8);
@@ -1261,7 +1261,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       }
     }
     region 'startup_write {
-      match publish_all<'startup_write, 'startup_write>(output: &uniq 'startup_write err, source: &'startup_write report, length: length) {
+      match publish_all<'startup_write, 'startup_write, 'q, 'ow>(output: &uniq 'startup_write err, source: &'startup_write report, length: length) {
         Ok(value: published) => {
         }
         Err(error: problem) => {
@@ -1280,7 +1280,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       set length = append_slice<'root_length_view, 'root_length_view>(destination: &uniq 'root_length_view report, filled: length, text: move view);
     }
     region 'root_length_write {
-      match publish_all<'root_length_write, 'root_length_write>(output: &uniq 'root_length_write err, source: &'root_length_write report, length: length) {
+      match publish_all<'root_length_write, 'root_length_write, 'q, 'ow>(output: &uniq 'root_length_write err, source: &'root_length_write report, length: length) {
         Ok(value: published) => {
         }
         Err(error: problem) => {
@@ -1314,11 +1314,11 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let failed = 0_u8;
   let root_status = 0_u8;
   region 'root_open {
-    match open_directory<'root_open, 'root_open>(root: &'root_open cwd, name: &'root_open root_name, start: 0_u64, end: root_length) {
+    match open_directory<'root_open, 'root_open, 'q, 'dh, 'd, 'fw, 'rh>(root: &'root_open cwd, name: &'root_open root_name, start: 0_u64, end: root_length) {
       Ok(value: root) => {
         let outcome = 0_u8;
         region 'root_walk {
-          set outcome = walk<'root_walk, 'root_walk, 'root_walk, 'root_walk, 'root_walk>(dir: &'root_walk root, prefix: &'root_walk root_path, prefix_length: copied, pattern: &'root_walk pattern, pattern_length: pattern_length, out: &uniq 'root_walk out, err: &uniq 'root_walk err);
+          set outcome = walk<'root_walk, 'root_walk, 'root_walk, 'root_walk, 'root_walk, 'q, 'rh, 'd, 'fw, 'rh, 'rc, 'lh, 'lc, 'ow>(dir: &'root_walk root, prefix: &'root_walk root_path, prefix_length: copied, pattern: &'root_walk pattern, pattern_length: pattern_length, out: &uniq 'root_walk out, err: &uniq 'root_walk err);
         }
         let found = iand(outcome, 1_u8);
         let broke = iand(outcome, 2_u8);
@@ -1343,12 +1343,12 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           match relative_path(value: move text) {
             Ok(value: path) => {
               region 'open_call {
-                match open_read<'open_call, 'open_call>(root: &'open_call cwd, path: &'open_call path) {
+                match open_read<'open_call, 'open_call, 'q, 'dh, 'd, 'fw, 'rh, 'rc>(root: &'open_call cwd, path: &'open_call path) {
                   Ok(value: file) => {
                     set single = 1_u8;
                     let outcome = 0_u8;
                     region 'search_call {
-                      set outcome = search_file<'search_call, 'search_call, 'search_call, 'search_call>(file: &uniq 'search_call file, pattern: &'search_call pattern, pattern_length: pattern_length, path: &'search_call root_path, path_length: copied, out: &uniq 'search_call out);
+                      set outcome = search_file<'search_call, 'search_call, 'search_call, 'search_call, 'q, 'rh, 'rc, 'fw, 'ow>(file: &uniq 'search_call file, pattern: &'search_call pattern, pattern_length: pattern_length, path: &'search_call root_path, path_length: copied, out: &uniq 'search_call out);
                     }
                     set root_status = iand(outcome, 15_u8);
                     let found = iand(outcome, 16_u8);
@@ -1375,7 +1375,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   if reportable {
     set failed = 1_u8;
     region 'root_report {
-      report_failure<'root_report, 'root_report, 'root_report>(err: &uniq 'root_report err, report: &uniq 'root_report report, path: &'root_report root_path, path_length: copied, status: root_status);
+      report_failure<'root_report, 'root_report, 'root_report, 'q, 'ow>(err: &uniq 'root_report err, report: &uniq 'root_report report, path: &'root_report root_path, path_length: copied, status: root_status);
     }
   }
   if ieq(failed, 0_u8) {

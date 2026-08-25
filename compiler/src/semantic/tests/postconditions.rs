@@ -2493,7 +2493,7 @@ fn relay(value: own i32) -> result: own i32 pure contract {
 fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
   let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains derived from the position parameter and PRV-2 must reject its external actual";
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains derived from the position parameter and PRV-2 must reject its boundary-derived actual";
   return values[bounded_position];
 }
 

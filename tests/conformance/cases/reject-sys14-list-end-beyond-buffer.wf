@@ -1,11 +1,11 @@
-command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main['qw, 'dhw, 'dw, 'fw, 'lhw, 'lcw](command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw 'lhw), writes('qw 'dhw 'lhw 'lcw), allocates(heap) {
   doc "`list_once` carries SYS-8's two static range goals. End 4104 exceeds this 4096-byte destination, so compilation rejects the call before any host enumeration or runtime trap.";
   let entries = buffer_new(4096_u64, 0_u8);
   region 'c {
-    match open_list<'c>(directory: &'c cwd) {
+    match open_list<'c, 'qw, 'dhw, 'dw, 'fw, 'lhw, 'lcw>(directory: &'c cwd) {
       Ok(value: list) => {
         region 'b {
-          match list_once<'b, 'b>(list: &uniq 'b list, destination: &uniq 'b entries, start: 8_u64, end: 4104_u64) {
+          match list_once<'b, 'b, 'qw, 'lhw, 'lcw, 'dw>(list: &uniq 'b list, destination: &uniq 'b entries, start: 8_u64, end: 4104_u64) {
             ListBytes(next: bytes, entries: reported) => {
               return exit_status(code: 5_u8);
             }

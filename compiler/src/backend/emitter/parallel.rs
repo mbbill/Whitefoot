@@ -95,7 +95,7 @@ pub const PARALLEL_RUNTIME_SOURCE: &str = include_str!("../par_runtime.c");
 /// an option of the paths that want lanes, and would turn a program that
 /// merely *could* overlap into one that cannot be linked without it. The
 /// permission is never an obligation, so neither is its runtime.
-pub(crate) const PARALLEL_RUNTIME_FALLBACK: &str = "define weak ptr @wf__par_claim(i64 %bytes) {\nentry:\n  ret ptr null\n}\n\ndefine weak void @wf__par_publish(ptr %frame, ptr %fn) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_join(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_release(ptr %frame) {\nentry:\n  ret void\n}\n\n";
+pub(crate) const PARALLEL_RUNTIME_FALLBACK: &str = "define weak ptr @wf__par_claim(i64 %bytes) {\nentry:\n  ret ptr null\n}\n\ndefine weak void @wf__par_publish(ptr %frame, ptr %fn) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_publish_io(ptr %frame, ptr %fn) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_join(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__par_release(ptr %frame) {\nentry:\n  ret void\n}\n\n";
 
 /// The first line of [`PARALLEL_RUNTIME_FALLBACK`], and so the marker a link
 /// path reads: one definition, so the text a module carries and the text a
@@ -117,7 +117,7 @@ pub fn module_requires_parallel_runtime(module: &str) -> bool {
 /// The runtime's answer to "was this run asked for a pool", put once per
 /// process, and the module's own weak answer of "no".
 ///
-/// A module carries this for the same reason it carries the four entry points:
+/// A module carries this for the same reason it carries the five entry points:
 /// with no runtime linked, no pool can ever start, so the honest answer is a
 /// constant zero and the program is complete on its own. The query is not part
 /// of the lane protocol — it takes no frame, moves no work, and starts nothing
@@ -136,7 +136,7 @@ pub(crate) const PARALLEL_POOL_QUERY_FALLBACK: &str =
 ///
 /// It is a separate definition rather than a fifth lane-protocol entry point
 /// because it takes no frame, publishes nothing, and moves no work; keeping it
-/// apart also leaves the four protocol signatures' bytes exactly as they were.
+/// apart also leaves the five protocol signatures' bytes exactly as they were.
 pub(crate) const PARALLEL_SPLIT_BUDGET_FALLBACK: &str =
     "define weak i64 @wf__par_split_budget(i64 %span, i64 %weight) {\nentry:\n  ret i64 0\n}\n\n";
 
@@ -378,6 +378,11 @@ impl FunctionEmitter<'_, '_> {
         let frame_type = format!("{{ {} }}", field_types.join(", "));
 
         let callee = source_symbol(target.name());
+        let publish = if target.target_action().requires_completion() {
+            "wf__par_publish_io"
+        } else {
+            "wf__par_publish"
+        };
         let thunk = self.parallel.register(|symbol| {
             thunk_definition(symbol, &frame_type, &field_types, &callee, &result_type)
         })?;
@@ -404,7 +409,7 @@ impl FunctionEmitter<'_, '_> {
         }
         writeln!(
             self.output,
-            "  call void @wf__par_publish(ptr {frame}, ptr {thunk})\n  br label %{offered}\n{offered}:"
+            "  call void @{publish}(ptr {frame}, ptr {thunk})\n  br label %{offered}\n{offered}:"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         self.handed_out.push(HandedOut {

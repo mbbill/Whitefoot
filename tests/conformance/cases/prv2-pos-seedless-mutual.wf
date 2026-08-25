@@ -21,7 +21,7 @@ fn seedless_right(index: own u64, limit: own u64, remaining: own u64) -> return_
 }
 
 command fn main(command.args as args: own Args) -> return_value: own ExitStatus pure {
-  doc "A mutually recursive requirement cycle with no protected-leaf seed remains empty, so an external actual does not manufacture a PRV-2 target. Ordinary control, not a claim, establishes the input-dependent entry requirement.";
+  doc "A mutually recursive requirement cycle with no protected-leaf seed remains empty, so a boundary-derived actual does not manufacture a PRV-2 target. Ordinary control, not a claim, establishes the input-dependent entry requirement.";
   region 'a {
     let index = args_count<'a>(args: &'a args);
     let permitted = ile(index, 8_u64);

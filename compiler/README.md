@@ -23,12 +23,12 @@ ordered source bundle
   -> host executable
 ```
 
-The frontend targets the exact v0.36 bytes at `../spec/kernel-spec.md`,
+The frontend targets the exact v0.37 bytes at `../spec/kernel-spec.md`,
 SHA-256
+`f772f2aec5e0da963c1cb9d8607a9e87cd3ad03cb71f3b6532451404d4d07bb5`,
+in this revision. The outgoing exact v0.36 bytes, SHA-256
 `fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`,
-in this revision. The outgoing exact v0.33 bytes, SHA-256
-`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`,
-are preserved in the immutable flat archive; `main` remains on v0.33 until
+are preserved in the immutable flat archive; `main` remains on v0.36 until
 this exact revision is approved and merged.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same
@@ -55,30 +55,34 @@ must first extend this same native path rather than reviving an independent
 grammar engine.
 
 The system-interface surface parses, resolves, and checks through the normal
-semantic path: FN-7 admits exactly one uncallable `command fn main`, system operation calls
-type against the SYS-2 catalog signatures, and EFF-2 checks the
-`external`/`blocks` categories exactly — the exhibited row is the union of
-the syntactic contribution and the release contribution, the SYS-5 release
-rows of every compiler-derived release recorded on a normal control-flow
-edge, with `buffer`/`box`/arena/`const` reclamation contributing nothing
-(STOR-3).
+semantic path: FN-7 admits exactly one uncallable `command fn main`; system
+operation calls type against the SYS-2 catalog's kinded memory/world region
+signatures; and EFF-2 checks exact `reads`/`writes` projection in both
+directions. The exhibited row is the union of the syntactic contribution and
+the SYS-5 release contribution of every compiler-derived release on a normal
+control-flow edge. `buffer`/`box`/arena/`const` reclamation still contributes
+nothing (STOR-3), while capability release projects its world writes.
 
-Target-independent lowering then carries those facts into the typed IR. Each
-of the seven opaque types becomes one IR nominal holding its complete
-SYS-5/HOST-3 contract: the target-independent semantic identity QUAL-1 owns,
-the one release action (logical consume, native close attempt, or `Output`'s
-source detach), that action's row, and whether the value is an inline lease
-over command-lifetime argument backing — the HOST-3 lease fact is retained
-for auditing and lowering and refuses no program. A system operation call
-lowers to its SYS-2 inventory identity, never a source spelling. Every
+Target-independent lowering then carries those facts into the typed IR. The
+sixteen compiler-owned system nominals retain their complete SYS-5/HOST-3
+contracts and capability world vectors in the checked program. World and
+memory region parameters erase from the runtime ABI; a finite structural
+equivalence pass therefore maps region-only concrete instances to one IR
+nominal without merging distinct runtime layouts. Each resource keeps the
+target-independent semantic identity QUAL-1 owns, its release action (logical
+consume, native close attempt, or `Output` source detach), that action's
+kinded row, and any command-lifetime inline-lease fact. A system operation
+call lowers to its SYS-2 inventory identity plus its trusted target-action
+record, never a source spelling. Every
 compiler-derived release is an explicit IR record on the normal edge that
 carries it — a `Jump` or `Return` terminator, or a straight-line `Drop` —
 holding the released value's own action and the union of the rows it may run
 over owned content, in the checked program's reverse declaration order and in
-the position EFF-5 requires relative to surrounding calls; a failing `claim`
+the position EFF-5 requires relative to surrounding world actions; a failing `claim`
 has no edge that can carry one (TRAP-1). The IR also records the FN-7 command
-entry, its selected standard-input ordinals, and the SYS-12 stdout/stderr
-may-alias link, which nothing yet reads.
+entry, its selected standard-input ordinals, and the shared command-order
+world identity that conservatively preserves the SYS-12 stdout/stderr
+may-alias/order boundary.
 
 A semantically accepted system program then compiles, links, and runs. The
 QUAL-1 target-qualification table — fixed Rust data mapping `(specification
@@ -87,8 +91,9 @@ version and one private ABI symbol, plus per-type representation and release
 rows — is consulted once after target selection and before layout; an absent
 or incompatible row, or an unmet QUAL-2 guarantee, is a target-qualification
 failure that cites no language rule. The fifteen SYS-2 operations emit as
-`alwaysinline` private wrappers with one direct call per site: the argument
-and host-string cluster, `relative_path`, `exit_status`, and the I/O cluster.
+`alwaysinline` private wrappers with one statically selected target call per
+site: the argument and host-string cluster, `relative_path`, `exit_status`,
+and the I/O cluster.
 `open_read` and `open_file` resolve against the capability's own descriptor
 through the target's directory-relative facility, never a prefix concatenated
 onto a path (PATH-2). Each SYS-8 transfer takes a half-open `start, end` range;
@@ -101,8 +106,8 @@ exactly one of SYS-7's thirty portable classes, carrying the two-field inline
 detail (`code`, `origin`); a native error with no portable distinction in that
 set is `Other`. Releases emit per SYS-5: a logical consume and `Output`'s
 source detach emit no code, while `DirectoryRead`, `DirectoryList`, and
-`ReadFile` emit one direct close whose diagnostic is discarded and never
-retried. When `open_file` rejects a provisional descriptor after inspection,
+`ReadFile` call the one-attempt completion close adapter, whose diagnostic is
+discarded and never retried. When `open_file` rejects a provisional descriptor after inspection,
 it applies the same one-attempt policy and returns the already selected typed
 error unchanged. The macOS/Linux
 command bootstrap owns the process before entry: it establishes the QUAL-2
@@ -110,26 +115,39 @@ argument backing from the native vector (refusing startup otherwise), installs
 the ignored write-to-closed-pipe disposition once, opens `command.cwd`,
 supplies the two `Output` owners, invokes the entry once, and maps the
 returned `ExitStatus` onto the process status exactly. It evaluates no entry
-contract: main cannot carry one. QUAL-3's emitted shape
-is verified on the optimized module: the wrappers inline, one source transfer
-is one direct host call, and the transfer path carries no allocation, data
-copy, dispatch, lock, or per-call signal operation.
+contract: main cannot carry one. QUAL-3's emitted shape is verified on the
+optimized module: the wrappers inline, one source transfer is one direct,
+statically selected adapter call, and the adapter performs one native attempt
+without operation-ID dispatch, data copy, or per-call signal operation.
+
+Native file adapters share one completion contract. A caller-owned frame
+contains its intrusive mailbox node and generation; submission transfers its
+loans to terminal state, a fixed four-thread disk pool executes the one host
+attempt, and the executing lane observes release/acquire publication through
+its own park endpoint. macOS serves that contract with kqueue plus one waiter,
+Linux with a per-lane io_uring/eventfd poll (multishot or explicitly rearmed
+one-shot), and Windows with a per-lane IOCP port. The parallel runtime routes
+only target actions whose transitive summary requires completion through an
+I/O frame; nested adapters execute directly on the disk worker. `--io-ledger`
+reports stable operation identity, world origins and footprints, target
+action, permission, and the exact lowering decision.
 
 FN-7 entry validation reads finalized syntax and admits exactly one
 `command fn main`: it is nongeneric, source-uncallable, contract-free, returns
 one writer-named `ExitStatus`, and may select zero through four standard inputs
 in table order. SYS-3 reserves the complete system declaration domain in every
-unit, independently of entry validity. Resolution therefore admits the
-candidate's sixteen nominal types, forty-two enum-variant constructors, and
+unit, independently of entry validity. Resolution therefore admits the active
+specification's sixteen nominal types, forty-two enum-variant constructors, and
 fifteen operation signatures as one fixed declaration source beside source
 declarations and the prelude. A source declaration colliding with a system
 entry is the deterministic DIAG-1 rank-5 rejection at the source event, root
 and nested scopes alike, with a `(System, system_declaration_ordinal)` origin;
 there is no shadowing in either direction. Registered signature data
-(parameter names, modes, region parameters, named result types, and the fixed
-`external`/`blocks`/`traps` classifications, with `reads`/`writes` derived
-mechanically from parameter modes) lives in the resolution catalog for system
-semantic admission and effect attribution.
+(parameter names, modes, kinded region parameters, capability world vectors,
+named result types, exact world/memory footprints, origin relations, progress
+contracts, and target-action records) lives in the resolution catalog for
+system semantic admission, effect attribution, permission, auditing, and
+lowering.
 
 The resolver covers every active-specification declaration, lexical-use, and deferred
 owner/member role through one grammar-driven path, including exact scopes,
@@ -297,16 +315,17 @@ flags or check elision.
 Effect rows are checked as exact source-level summaries for every admitted
 function. `pure` is the empty effect row, not a termination claim. The
 implemented executable paths otherwise track `reads('r)`, `writes('r)`,
-`allocates(heap)`, `external`, `blocks`, and `traps`, union local expression
-effects, propagate callee heap, trap, and payload-free-category effects by
-presence, and substitute formal read and write regions onto actual
-borrowed-storage and slice origins. The exhibited row additionally unions the
-release contribution — the fixed SYS-5 rows of every compiler-derived release
-on a normal edge — and a mismatch a release alone explains is reported at the
-function's `effects` node, rendering the owning parameter or binding. The
+`allocates(heap)`, and `traps`, with each read/write region constrained to its
+memory or world kind. Local expressions and callee rows union normally;
+memory effects project through borrowed-storage and slice origins, while world
+effects substitute the actual capability vector directly. The exhibited row
+additionally unions the fixed SYS-5 contribution of every compiler-derived
+release on a normal edge. A mismatch explained only by release is reported at
+the function's `effects` node, rendering the owning parameter or binding. The
 computed row must equal the declared row, so both missing and superfluous
-capabilities reject under EFF-2. These facts currently stop at semantic
-checking and static-contract compatibility.
+capabilities reject under EFF-2. The same checked footprints feed overlap
+permission and `--io-ledger`; trusted completion/blocking metadata remains a
+separate target-action lattice rather than a source effect.
 The backend emits no effect-derived LLVM function attributes or alias metadata,
 licenses no check elision from an effect row, and never emits `willreturn`;
 Whitefoot currently has no termination checker.
@@ -344,7 +363,7 @@ requirement-to-protected-leaf bridge as one two-stratum provenance judgment.
 The first finite fixed point derives explicit-dataflow component pairs for
 values, whole storage roots, direct enum payload projections, user-call
 results, and writes. Command inputs and only the environment-origin cells in
-the closed system result/write table are unconditional external seeds. A place
+the closed system result/write table are unconditional boundary-derived seeds. A place
 read joins its root with every explicit subscript offset; `len` remains
 internal. After those pairs freeze, a second finite fixed point composes direct
 protected demands, S4
@@ -355,15 +374,15 @@ NodePath witnesses; no witness choice participates in either lattice.
 Existing acceptance keeps precedence. A complete-state local failure remains
 OP-4, and an unproved or refuted ordinary-call goal remains FN-8. After base
 success, PRV-3 rejects only a local protected subscript whose constrained
-offset is unconditionally external and whose relation needs a body `claim` or
+offset is unconditionally boundary-derived and whose relation needs a body `claim` or
 S4 requirement fact; PRV-2 owns the corresponding downstream call
 argument. A real branch/value outcome remains visible in the unasserted and
 S4-blinded states and is accepted. Main has no contract, so no entry wrapper
-can launder an external protected leaf.
+can launder a boundary-derived protected leaf.
 
 This gate is deliberately narrower than taint or noninterference. Control
 choice, write-address choice, path-sensitive storage, recursive payload paths,
-and implicit flow add no provenance edge. An external value used only as a
+and implicit flow add no provenance edge. A boundary-derived value used only as a
 bound, base, write address, or unrelated operand is outside the gate, and an
 internal constrained subject may still rely on an ordinary residual claim,
 but only when that predicate is independently true and passes its complete

@@ -37,6 +37,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::link_support::{add_embedded_runtimes, remove_embedded_runtimes};
 use whitefoot::{
     CompilationFailureKind, CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, SourceInput, compile,
 };
@@ -204,10 +205,10 @@ fn link(module: &str, directory: &Path) -> PathBuf {
     let assembly = directory.join("case.ll");
     let executable = directory.join("case");
     std::fs::write(&assembly, module).expect("write the case's emitted module");
-    let linked = Command::new("/usr/bin/clang")
-        .arg("-x")
-        .arg("ir")
-        .arg(&assembly)
+    let mut command = Command::new("/usr/bin/clang");
+    command.arg("-x").arg("ir").arg(&assembly);
+    let runtime_artifacts = add_embedded_runtimes(&mut command, module, directory);
+    let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
         .arg(&executable)
@@ -219,6 +220,7 @@ fn link(module: &str, directory: &Path) -> PathBuf {
         String::from_utf8_lossy(&linked.stderr)
     );
     std::fs::remove_file(&assembly).expect("remove the case's emitted module");
+    remove_embedded_runtimes(runtime_artifacts);
     executable
 }
 

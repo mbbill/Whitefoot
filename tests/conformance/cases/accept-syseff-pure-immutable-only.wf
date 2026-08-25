@@ -1,5 +1,5 @@
 fn count_arguments(args: own Args) -> result: own u64 pure {
-  doc "Args is an immutable value, not a resource: owning storage does not make it one [SYS-4], its release is a logical consume with no external effect [SYS-5], and args_count is total and leaves it live [SYS-9]. Reading through a borrow of a current-function own root contributes no region effect, so `pure` is exact.";
+  doc "Args is an immutable value, not a resource: owning storage does not make it one [SYS-4], its release is a logical consume with no world access [SYS-5], and args_count is total and leaves it live [SYS-9]. Reading through a borrow of a current-function own root contributes no region effect, so `pure` is exact.";
   region 'a {
     let total = args_count<'a>(args: &'a args);
     return total;

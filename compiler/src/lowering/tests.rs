@@ -12,8 +12,9 @@ use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
     OverlapLowering, ParseLimits, ParseOutcome, ResolutionOutcome, SYSTEM_OPERATIONS,
     SemanticOutcome, SourceBundle, SourceInput, SourceLimits, SystemReleaseAction,
-    SystemReleaseRow, SystemResourceBacking, SystemResourceType, TerminalLimits, TerminalOutcome,
-    audit_canonical, check_semantics, classify_terminals, finalize, parse, resolve,
+    SystemReleaseRow, SystemResourceBacking, SystemResourceType, TargetAction, TerminalLimits,
+    TerminalOutcome, audit_canonical, check_semantics, classify_terminals, finalize, parse,
+    resolve,
 };
 
 use super::{
@@ -275,8 +276,9 @@ fn assert_contract(
 }
 
 const CLOSE_ROW: SystemReleaseRow = SystemReleaseRow {
-    external: true,
-    blocks: true,
+    writes_command_order: true,
+    writes_handle_lifetime: true,
+    target_action: TargetAction::COMPLETION,
 };
 
 #[test]
@@ -289,10 +291,11 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
         "fn release_args(value: own Args) -> result: own unit pure {{\n  return unit;\n}}\n\n\
          fn release_host_string(value: own HostString) -> result: own unit pure {{\n  return unit;\n}}\n\n\
          fn release_relative_path(value: own RelativePath) -> result: own unit pure {{\n  return unit;\n}}\n\n\
-         fn release_directory_read(value: own DirectoryRead) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
-         fn release_read_file(value: own ReadFile) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
-         fn release_output(value: own Output) -> result: own unit pure {{\n  return unit;\n}}\n\n\
+         fn release_directory_read['q, 'h, 'd, 'f](value: own DirectoryRead<'q, 'h, 'd, 'f>) -> result: own unit writes('q 'h) {{\n  return unit;\n}}\n\n\
+         fn release_read_file['q, 'h, 'c, 'f](value: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {{\n  return unit;\n}}\n\n\
+         fn release_output['q, 'o](value: own Output<'q, 'o>) -> result: own unit pure {{\n  return unit;\n}}\n\n\
          fn release_exit_status(value: own ExitStatus) -> result: own unit pure {{\n  return unit;\n}}\n\n\
+         fn release_directory_list['q, 'h, 'c, 'd](value: own DirectoryList<'q, 'h, 'c, 'd>) -> result: own unit writes('q 'h) {{\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -352,6 +355,13 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
             SystemReleaseRow::EMPTY,
             Opaque,
         );
+        assert_contract(
+            program,
+            SystemResourceType::DirectoryList,
+            NativeCloseAttempt,
+            CLOSE_ROW,
+            Opaque,
+        );
 
         // Each helper carries exactly one release on its return edge, with
         // the action its type fixes. A logical consume is an explicit release
@@ -384,6 +394,11 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
                 SystemResourceType::ExitStatus,
                 LogicalConsume,
             ),
+            (
+                "release_directory_list",
+                SystemResourceType::DirectoryList,
+                NativeCloseAttempt,
+            ),
         ] {
             let function = function(program, name);
             let [drop] = return_drops(function) else {
@@ -409,7 +424,7 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
 #[test]
 fn a_move_keeps_the_resource_identity_and_its_release() {
     let source = format!(
-        "fn release_after_move(file: own ReadFile) -> result: own unit external, blocks {{\n  \
+        "fn release_after_move['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {{\n  \
          let moved = move file;\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -434,8 +449,8 @@ fn a_move_keeps_the_resource_identity_and_its_release() {
 #[test]
 fn a_struct_field_release_reaches_the_contained_resource() {
     let source = format!(
-        "struct Holder {{\n  file: ReadFile;\n}}\n\n\
-         fn release_holder(holder: own Holder) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
+        "struct Holder<T> {{\n  file: T;\n}}\n\n\
+         fn release_holder['q, 'h, 'c, 'f](holder: own Holder<ReadFile<'q, 'h, 'c, 'f>>) -> result: own unit writes('q 'h) {{\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -470,8 +485,8 @@ fn a_struct_field_release_reaches_the_contained_resource() {
 #[test]
 fn an_enum_release_carries_the_union_of_its_components_rows() {
     let source = format!(
-        "enum Holder {{\n  Empty();\n  Full(file: ReadFile);\n}}\n\n\
-         fn release_holder(holder: own Holder) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
+        "enum Holder<T> {{\n  Empty();\n  Full(file: T);\n}}\n\n\
+         fn release_holder['q, 'h, 'c, 'f](holder: own Holder<ReadFile<'q, 'h, 'c, 'f>>) -> result: own unit writes('q 'h) {{\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -491,8 +506,8 @@ fn an_enum_release_carries_the_union_of_its_components_rows() {
 #[test]
 fn one_match_arm_releases_its_binder_on_that_arms_normal_edge() {
     let source = format!(
-        "enum Holder {{\n  Empty();\n  Full(file: ReadFile);\n}}\n\n\
-         fn release_arm(holder: own Holder) -> result: own unit external, blocks {{\n  \
+        "enum Holder<T> {{\n  Empty();\n  Full(file: T);\n}}\n\n\
+         fn release_arm['q, 'h, 'c, 'f](holder: own Holder<ReadFile<'q, 'h, 'c, 'f>>) -> result: own unit writes('q 'h) {{\n  \
          match move holder {{\n    Empty() => {{\n    }}\n    Full(file: opened) => {{\n    }}\n  }}\n  \
          return unit;\n}}\n\n{COMMAND_ENTRY}"
     );
@@ -531,12 +546,12 @@ fn one_match_arm_releases_its_binder_on_that_arms_normal_edge() {
 #[test]
 fn returning_or_passing_an_owner_derives_no_release_here() {
     let source = format!(
-        "fn pass_through(file: own ReadFile) -> result: own ReadFile pure {{\n  return move file;\n}}\n\n\
-         fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
-         fn hand_off(file: own ReadFile) -> result: own unit external, blocks {{\n  \
-         release_read_file(file: move file);\n  return unit;\n}}\n\n\
-         fn receive(file: own ReadFile) -> result: own unit external, blocks {{\n  \
-         let received = pass_through(file: move file);\n  return unit;\n}}\n\n\
+        "fn pass_through['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own ReadFile<'q, 'h, 'c, 'f> pure {{\n  return move file;\n}}\n\n\
+         fn release_read_file['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {{\n  return unit;\n}}\n\n\
+         fn hand_off['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {{\n  \
+         release_read_file<'q, 'h, 'c, 'f>(file: move file);\n  return unit;\n}}\n\n\
+         fn receive['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {{\n  \
+         let received = pass_through<'q, 'h, 'c, 'f>(file: move file);\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -570,8 +585,8 @@ fn releases_keep_reverse_declaration_order_and_never_sit_on_a_trapping_edge() {
     let source = format!(
         "fn need_true(flag: own Bool) -> result: own unit pure contract {{\n  \
          requires flag;\n}} {{\n  return unit;\n}}\n\n\
-         fn ordered(first: own ReadFile, second: own ReadFile, ready: own Bool) \
-         -> result: own unit external, blocks, traps {{\n  \
+         fn ordered['q, 'h, 'c, 'f](first: own ReadFile<'q, 'h, 'c, 'f>, second: own ReadFile<'q, 'h, 'c, 'f>, ready: own Bool) \
+         -> result: own unit writes('q 'h), traps {{\n  \
          let not_ready = bnot(ready);\n  \
          let tautology = bor(ready, not_ready);\n  \
          claim ordering_probe: tautology because \"premises: ready is the current function's ordinary Bool parameter, not_ready is its Boolean negation, and tautology is their disjunction\\nderivation: every Bool is either true or false, so ready or its negation is always true\\nconclusion: tautology is true\\nchecker gap: ENT decomposes established Boolean expressions but does not synthesize excluded middle for an opaque Bool parameter\\nconsumers: the following need_true call requires this exact tautology\";\n  \
@@ -614,7 +629,7 @@ fn releases_keep_reverse_declaration_order_and_never_sit_on_a_trapping_edge() {
 
 #[test]
 fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
-    let source = "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus external, blocks {\n  return exit_status(code: 0_u8);\n}\n";
+    let source = "command fn main['q, 'dh, 'd, 'f, 'o](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'q, 'dh, 'd, 'f>, command.stdout as out: own Output<'q, 'o>, command.stderr as err: own Output<'q, 'o>) -> status: own ExitStatus writes('q 'dh) {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(source.as_bytes(), |program| {
         let main = function(program, "main");
         let block = only_block(main);
@@ -673,7 +688,7 @@ fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
 
 #[test]
 fn the_entry_retains_the_standard_input_rows_and_the_may_alias_pair() {
-    let both = "command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let both = "command fn main['q, 'o](command.stdout as out: own Output<'q, 'o>, command.stderr as err: own Output<'q, 'o>) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(both.as_bytes(), |program| {
         let IrEntry::Command { inputs, aliases } = program.entry();
         assert_eq!(inputs, &vec![2, 3]);
@@ -686,7 +701,7 @@ fn the_entry_retains_the_standard_input_rows_and_the_may_alias_pair() {
         assert_eq!((alias.left(), alias.right()), (2, 3));
     });
 
-    let one = "command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let one = "command fn main['q, 'o](command.stdout as out: own Output<'q, 'o>) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(one.as_bytes(), |program| {
         let IrEntry::Command { inputs, aliases } = program.entry();
         assert_eq!(inputs, &vec![2]);

@@ -6883,9 +6883,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn one_system_call_retains_two_independent_ordered_range_obligations() {
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads('o 's), writes('o), external, blocks {
+    let source = br#"fn publish['o, 's, 'qw, 'ow](output: &uniq 'o Output<'qw, 'ow>, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads('o 's), writes('o 'qw 'ow) {
   region 'attempt {
-    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end) {
+    match write_once<'attempt, 's, 'qw, 'ow>(output: &uniq 'attempt deref(output), source: source, start: start, end: end) {
       Ok(value: next) => {
       }
       Err(error: problem) => {
@@ -6895,7 +6895,7 @@ fn one_system_call_retains_two_independent_ordered_range_obligations() {
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {
+command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6932,12 +6932,12 @@ fn a_transfer_endpoint_is_bounded_by_end_and_not_beyond_it() {
     // so an endpoint equal to the table length proves nothing.
     let source = br#"const count: u64 = 4_u64;
 
-fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads('o 's), writes('o), external, blocks {
+fn under['o, 's, 'qw, 'ow](output: &uniq 'o Output<'qw, 'ow>, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads('o 's), writes('o 'qw 'ow) {
   let source_length = len(deref(source));
   let enough = ile(3_u64, source_length);
   if enough {
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 3_u64) {
+      match write_once<'attempt, 's, 'qw, 'ow>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 3_u64) {
         Ok(value: next) => {
           let sample = table[next];
         }
@@ -6949,12 +6949,12 @@ fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own arr
   return unit;
 }
 
-fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads('o 's), writes('o), external, blocks {
+fn exact['o, 's, 'qw, 'ow](output: &uniq 'o Output<'qw, 'ow>, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads('o 's), writes('o 'qw 'ow) {
   let source_length = len(deref(source));
   let enough = ile(4_u64, source_length);
   if enough {
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 4_u64) {
+      match write_once<'attempt, 's, 'qw, 'ow>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 4_u64) {
         Ok(value: next) => {
           let sample = table[next];
         }
@@ -6966,11 +6966,11 @@ fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own arr
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'ow), allocates(heap) {
   let batch = buffer_new(4_u64, 0_u8);
   let table = array_new<u8, count>(0_u8);
   region 'publication {
-    under<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, table: move table);
+    under<'publication, 'publication, 'qw, 'ow>(output: &uniq 'publication out, source: &'publication batch, table: move table);
   }
   return exit_status(code: 0_u8);
 }
@@ -7094,12 +7094,12 @@ fn a_let_bound_transfer_outcome_carries_the_same_endpoint_bound() {
     // path discipline as S7's checked-arithmetic origin.
     let source = br#"const count: u64 = 4_u64;
 
-fn deferred['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads('s), external, blocks contract {
+fn deferred['s, 'qw, 'ow](output: own Output<'qw, 'ow>, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads('s), writes('qw 'ow) contract {
   define capacity = len(deref(source));
   requires ile(3_u64, capacity);
 } {
   region 'attempt {
-    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt output, source: source, start: 0_u64, end: 3_u64);
+    let outcome = write_once<'attempt, 's, 'qw, 'ow>(output: &uniq 'attempt output, source: source, start: 0_u64, end: 3_u64);
     match outcome {
       Ok(value: written) => {
         let sample = table[written];
@@ -7111,12 +7111,12 @@ fn deferred['s](output: own Output, source: &'s buffer<u8>, table: own array<u8,
   return unit;
 }
 
-fn killed['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads('s), external, blocks contract {
+fn killed['s, 'qw, 'ow](output: own Output<'qw, 'ow>, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads('s), writes('qw 'ow) contract {
   define capacity = len(deref(source));
   requires ile(limit, capacity);
 } {
   region 'attempt {
-    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt output, source: source, start: 0_u64, end: limit);
+    let outcome = write_once<'attempt, 's, 'qw, 'ow>(output: &uniq 'attempt output, source: source, start: 0_u64, end: limit);
     set limit = 9_u64;
     match outcome {
       Ok(value: written) => {
@@ -7129,11 +7129,11 @@ fn killed['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, c
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'ow), allocates(heap) {
   let batch = buffer_new(3_u64, 0_u8);
   let table = array_new<u8, count>(0_u8);
   region 'publication {
-    deferred<'publication>(output: move out, source: &'publication batch, table: move table, limit: 3_u64);
+    deferred<'publication, 'qw, 'ow>(output: move out, source: &'publication batch, table: move table, limit: 3_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -7163,7 +7163,7 @@ fn a_read_once_endpoint_is_observed_on_its_own_outcome_variant() {
     // `Result`, so the observing arm is named per operation [ENT-3] S10.
     let source = br#"const count: u64 = 4_u64;
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main['qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw 'fw 'rhw), writes('qw 'dhw 'rhw 'rcw), allocates(heap) {
   let table = array_new<u8, count>(0_u8);
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
@@ -7172,12 +7172,12 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           Ok(value: path) => {
             region 'c {
               region 'p {
-                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
+                match open_read<'c, 'p, 'qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     let bytes = buffer_new(64_u64, 0_u8);
                     region 'f {
                       region 'd {
-                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 3_u64) {
+                        match read_once<'f, 'd, 'qw, 'rhw, 'rcw, 'fw>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 3_u64) {
                           ReadBytes(next: n) => {
                             let sample = table[n];
                           }

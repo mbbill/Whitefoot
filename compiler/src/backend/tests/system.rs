@@ -470,16 +470,16 @@ fn an_out_of_range_copy_is_a_static_sys8_rejection() {
 
 #[test]
 fn every_release_action_emits_exactly_its_contract() {
-    let source = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus external, blocks {
+    let source = br#"command fn main['qw, 'dhw, 'dw, 'fw, 'ow](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>, command.stdout as out: own Output<'qw, 'ow>, command.stderr as err: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'dhw) {
   return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
-    // The one native close attempt is the `DirectoryRead` release; `Args`,
-    // both `Output` owners, and the returned `ExitStatus` release with no host
-    // call at all [SYS-5].
-    assert_eq!(llvm.matches("call i32 @close(i32").count(), 1);
-    assert!(llvm.contains("declare i32 @close(i32)"));
+    // The one completion-adapter close attempt is the `DirectoryRead`
+    // release; `Args`, both `Output` owners, and the returned `ExitStatus`
+    // release with no target call at all [SYS-5].
+    assert_eq!(llvm.matches("call i32 @wf__io_close(i32").count(), 1);
+    assert!(llvm.contains("declare i32 @wf__io_close(i32)"));
     // A logical consume and a source detach are explicit releases that emit
     // no code; the drop marker is still present for each owner.
     assert_eq!(llvm.matches("  ; drop %v").count(), 4);
@@ -488,7 +488,7 @@ fn every_release_action_emits_exactly_its_contract() {
 #[test]
 fn the_command_bootstrap_normalizes_once_and_maps_the_returned_status_exactly() {
     let source =
-        br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {
+        br#"command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus pure {
   return exit_status(code: 42_u8);
 }
 "#;
@@ -630,11 +630,11 @@ fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
 
 #[test]
 fn a_target_without_directory_relative_resolution_rejects_component_opening() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main['qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw](command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw 'fw), writes('qw 'dhw 'rhw 'rcw), allocates(heap) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region 'n {
-      match open_file<'c, 'n>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
+      match open_file<'c, 'n, 'qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
         Ok(value: file) => {
         }
         Err(error: problem) => {
@@ -665,11 +665,11 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
     // selected and before any use of an operation is emitted, and it now has
     // an approved implementation for every [SYS-2] identity on this target.
     // The I/O cluster's own emission evidence is in `system_io.rs`.
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'ow), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -692,11 +692,11 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
 
 #[test]
 fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'ow), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 1_u64, end: 3_u64) {
+      match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s bytes, start: 1_u64, end: 3_u64) {
         Ok(value: next) => {
           if ieq(next, 3_u64) {
             return exit_status(code: 0_u8);
@@ -738,9 +738,9 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
 
 #[test]
 fn linux_enumeration_facility_without_an_abi_mapping_is_missing_mapping() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus external, blocks {
+    let source = br#"command fn main['qw, 'dhw, 'dw, 'fw, 'lhw, 'lcw](command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw), writes('qw 'dhw 'lhw 'lcw) {
   region 'c {
-    match open_list<'c>(directory: &'c cwd) {
+    match open_list<'c, 'qw, 'dhw, 'dw, 'fw, 'lhw, 'lcw>(directory: &'c cwd) {
       Ok(value: list) => {
       }
       Err(error: problem) => {
@@ -763,7 +763,7 @@ fn linux_enumeration_facility_without_an_abi_mapping_is_missing_mapping() {
 }
 
 #[test]
-fn component_open_flags_and_status_abis_are_target_exact() {
+fn component_open_flags_and_status_layouts_are_target_exact() {
     let cases = [
         (
             "aarch64-apple-darwin",
@@ -771,7 +771,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0010_0000,
             0x0010_0100,
             0x0000_0104,
-            "fstat",
+            "wf__io_fstat",
             144,
             4,
         ),
@@ -781,7 +781,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0010_0000,
             0x0010_0100,
             0x0000_0104,
-            "fstat$INODE64",
+            "wf__io_fstat",
             144,
             4,
         ),
@@ -791,7 +791,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0000_4000,
             0x0000_c000,
             0x0000_8800,
-            "fstat",
+            "wf__io_fstat",
             128,
             16,
         ),
@@ -801,7 +801,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0001_0000,
             0x0003_0000,
             0x0002_0800,
-            "fstat",
+            "wf__io_fstat",
             144,
             24,
         ),
@@ -839,7 +839,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
 
 #[test]
 fn command_entry_rejects_abi_equivalent_but_semantically_wrong_ir_types() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus external, blocks {
+    let source = br#"command fn main['qw, 'dhw, 'dw, 'fw, 'ow](command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>, command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'dhw) {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -871,11 +871,11 @@ fn command_entry_rejects_abi_equivalent_but_semantically_wrong_ir_types() {
 
 #[test]
 fn system_calls_reject_abi_equivalent_but_semantically_wrong_ir_arguments() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main['qw, 'dhw, 'dw, 'fw, 'ow](command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>, command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'dhw 'ow), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
         }
         Err(error: problem) => {
@@ -958,7 +958,7 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
         ));
     });
 
-    let composite = br#"command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let composite = br#"command fn main['qw, 'ow](command.args as args: own Args, command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'ow), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 0_u64) {
       Ok(value: text) => {
@@ -970,7 +970,7 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
         }
         Err(error: problem) => {
@@ -1020,11 +1020,11 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
 
 #[test]
 fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main['qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw](command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw 'fw), writes('qw 'dhw 'rhw 'rcw), allocates(heap) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region 'n {
-      match open_file<'c, 'n>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
+      match open_file<'c, 'n, 'qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
         Ok(value: file) => {
         }
         Err(error: problem) => {
@@ -1047,6 +1047,7 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
                 .expect("open_file must qualify and emit")
                 .into_string();
             let status = target.file_status_symbol();
+            let close = target.close_symbol();
             assert!(llvm.contains(&format!(
                 "call i32 @{status}(i32 %descriptor, ptr %file.status)"
             )));
@@ -1054,18 +1055,19 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
             assert!(llvm.contains("%regular = icmp eq i32 %file.kind, 32768"));
             assert!(llvm.contains("br i1 %regular, label %live, label %kind.failure"));
             assert_eq!(
-                llvm.matches("call i32 @close(i32 %descriptor)").count(),
+                llvm.matches(&format!("call i32 @{close}(i32 %descriptor)"))
+                    .count(),
                 2,
                 "each provisional-error path must make one close attempt"
             );
-            assert!(llvm.contains(
-                "%inspection.close = call i32 @close(i32 %descriptor)\n  \
+            assert!(llvm.contains(&format!(
+                "%inspection.close = call i32 @{close}(i32 %descriptor)\n  \
                  br label %inspection.error"
-            ));
-            assert!(llvm.contains(
-                "%kind.close = call i32 @close(i32 %descriptor)\n  \
+            )));
+            assert!(llvm.contains(&format!(
+                "%kind.close = call i32 @{close}(i32 %descriptor)\n  \
                  br label %kind.select"
-            ));
+            )));
             assert!(!llvm.contains("%inspection.released"));
             assert!(!llvm.contains("%kind.released"));
             assert!(!llvm.contains("tcb.defect:"));
@@ -1076,14 +1078,14 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
 
 #[test]
 fn darwin_list_once_keeps_range_and_record_extents_distinct_and_verifiable() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main['qw, 'dhw, 'dw, 'fw, 'lhw, 'lcw](command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw 'lhw), writes('qw 'dhw 'lhw 'lcw), allocates(heap) {
   let destination = buffer_new(64_u64, 0_u8);
   region 'c {
-    match open_list<'c>(directory: &'c cwd) {
+    match open_list<'c, 'qw, 'dhw, 'dw, 'fw, 'lhw, 'lcw>(directory: &'c cwd) {
       Ok(value: list) => {
         region 'l {
           region 'd {
-            let outcome = list_once<'l, 'd>(list: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
+            let outcome = list_once<'l, 'd, 'qw, 'lhw, 'lcw, 'dw>(list: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
           }
         }
       }
@@ -1119,5 +1121,5 @@ fn darwin_list_once_keeps_range_and_record_extents_distinct_and_verifiable() {
     assert!(llvm.contains("%copy.invalid = or i1 %copy.nul, %copy.separator"));
     assert!(llvm.contains("tcb.defect:\n  call void @abort()\n  unreachable"));
     let optimized = host_optimized_module(&llvm);
-    assert!(optimized.contains("@__getdirentries64"));
+    assert!(optimized.contains("@wf__io_getdirentries64"));
 }

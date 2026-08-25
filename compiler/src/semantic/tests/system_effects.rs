@@ -1,15 +1,16 @@
-//! [EFF-2] release attribution and the two payload-free categories.
+//! [EFF-2] world-row projection and compiler-derived release attribution.
 //!
 //! The exhibited row is the union of the syntactic contribution and the
 //! release contribution: the effect rows of every compiler-derived release
 //! that may run on a normal control-flow edge, scoped by [STOR-3] to the
 //! system resource families whose [SYS-5] contract fixes a nonempty row.
 
-use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
+use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, TargetAction};
 
 use super::{assert_rule, with_semantics};
 
-const RELEASE_FIX: &str = "declare the release effects of every resource this function may release, or move the owner out";
+const RELEASE_FIX: &str =
+    "declare the world effects of every resource this function may release, or move the owner out";
 
 fn assert_complete(source: &[u8]) {
     with_semantics(source, |outcome| {
@@ -21,7 +22,7 @@ fn assert_complete(source: &[u8]) {
 }
 
 /// Asserts an EFF-2 release-attributed rejection at the function's effects
-/// node, rendering the owner whose release contributed the category.
+/// node, rendering the owner whose release contributed the world access.
 fn assert_release_mismatch(source: &[u8], owner: &str, located: &[u8]) {
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
@@ -48,26 +49,25 @@ fn assert_release_mismatch(source: &[u8], owner: &str, located: &[u8]) {
     });
 }
 
-const CANONICAL_ACCEPT: &[u8] = b"fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const CANONICAL_ACCEPT: &[u8] = b"fn release_read_file['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
-const CANONICAL_REJECT: &[u8] = b"fn release_read_file(file: own ReadFile) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const CANONICAL_REJECT: &[u8] = b"fn release_read_file['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[test]
 fn the_canonical_release_case_holds_exactly() {
     // A nongeneric function whose only parameter is `own ReadFile` and whose
-    // complete body is exactly `return unit;` exhibits `external, blocks`:
-    // its whole row is the release contribution of that parameter's
-    // compiler-derived close attempt on the function-return edge
-    // [EFF-2, STOR-3, SYS-5].
+    // complete body is exactly `return unit;` exhibits `writes('q 'h)`:
+    // its whole row is the instantiated release contribution of that
+    // parameter's compiler-derived close attempt [EFF-2, STOR-3, SYS-5].
     assert_complete(CANONICAL_ACCEPT);
     // Declaring `pure` is an undeclared-but-exhibited rejection at that
     // function's `effects` node, rendering the owning parameter.
     assert_release_mismatch(CANONICAL_REJECT, "file", b"pure");
 }
 
-const BORROWED_ACCEPT: &[u8] = b"fn touch_read_file['f](file: &'f ReadFile) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const BORROWED_ACCEPT: &[u8] = b"fn touch_read_file['b, 'q, 'h, 'c, 'f](file: &'b ReadFile<'q, 'h, 'c, 'f>) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
-const BORROWED_REJECT: &[u8] = b"fn touch_read_file['f](file: &'f ReadFile) -> result: own unit external, blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const BORROWED_REJECT: &[u8] = b"fn touch_read_file['b, 'q, 'h, 'c, 'f](file: &'b ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[test]
 fn a_borrowed_resource_parameter_contributes_no_release_row() {
@@ -78,7 +78,7 @@ fn a_borrowed_resource_parameter_contributes_no_release_row() {
     // is therefore exactly `pure`.
     assert_complete(BORROWED_ACCEPT);
     // And exactly `pure`: declaring the owner's row over a borrow is
-    // declared-but-unexhibited. No release contributed the categories, so this
+    // declared-but-unexhibited. No release contributed the accesses, so this
     // is the ordinary mismatch rather than the release-attributed diagnostic.
     assert_rule(
         BORROWED_REJECT,
@@ -88,14 +88,15 @@ fn a_borrowed_resource_parameter_contributes_no_release_row() {
 }
 
 #[test]
-fn over_declaring_the_release_row_rejects_likewise() {
+fn over_declaring_a_world_row_rejects_likewise() {
     // The opposite direction: `Args` releases by logical consume with the
-    // empty row [SYS-5, SYS-9], and `args_count`'s own row carries neither
-    // category, so declaring `external, blocks` is declared-but-unexhibited.
-    // No release contributed the mismatching categories, so this is the
+    // empty row [SYS-5, SYS-9], and `args_count` has no world access, so a
+    // declared command-order write is declared-but-unexhibited. The Output
+    // parameter anchors the world kind but its source-detach release is pure.
+    // No release contributed the mismatching access, so this is the
     // ordinary EFF-2 mismatch, not the release-attributed diagnostic.
     assert_rule(
-        b"fn count_arguments(args: own Args) -> result: own u64 external, blocks {\n  region 'a {\n    let total = args_count<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn count_arguments['q, 'o](args: own Args, output: own Output<'q, 'o>) -> result: own u64 writes('q) {\n  region 'a {\n    let total = args_count<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
@@ -112,16 +113,16 @@ fn an_immutable_borrowing_helper_is_exactly_pure() {
     );
 }
 
-const CONDITIONAL_UNION_ACCEPT: &[u8] = b"fn dispose_open_outcome(outcome: own Result<ReadFile, IoError>) -> result: own unit external, blocks {\n  match outcome {\n    Ok(value: file) => {\n      return unit;\n    }\n    Err(error: problem) => {\n      return unit;\n    }\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const CONDITIONAL_UNION_ACCEPT: &[u8] = b"fn dispose_open_outcome['q, 'h, 'c, 'f](outcome: own Result<ReadFile<'q, 'h, 'c, 'f>, IoError>) -> result: own unit writes('q 'h) {\n  match outcome {\n    Ok(value: file) => {\n      return unit;\n    }\n    Err(error: problem) => {\n      return unit;\n    }\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
-const CONDITIONAL_UNION_REJECT: &[u8] = b"fn dispose_open_outcome(outcome: own Result<ReadFile, IoError>) -> result: own unit pure {\n  match outcome {\n    Ok(value: file) => {\n      return unit;\n    }\n    Err(error: problem) => {\n      return unit;\n    }\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const CONDITIONAL_UNION_REJECT: &[u8] = b"fn dispose_open_outcome['q, 'h, 'c, 'f](outcome: own Result<ReadFile<'q, 'h, 'c, 'f>, IoError>) -> result: own unit pure {\n  match outcome {\n    Ok(value: file) => {\n      return unit;\n    }\n    Err(error: problem) => {\n      return unit;\n    }\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[test]
 fn a_release_on_one_match_arm_contributes_its_row() {
     // The release contribution is the union over every normal edge of the
     // conservative structural graph [FN-1]: only the `Ok` arm ever holds a
     // `ReadFile`, and `IoError` has no release action [SYS-5], yet the
-    // one-arm release still contributes `external, blocks`.
+    // one-arm release still contributes `writes('q 'h)`.
     assert_complete(CONDITIONAL_UNION_ACCEPT);
     // Running on only some paths never weakens the contribution: omitting
     // the row is an undeclared-but-exhibited rejection naming the arm
@@ -130,19 +131,18 @@ fn a_release_on_one_match_arm_contributes_its_row() {
 }
 
 #[test]
-fn a_pure_contract_member_cannot_bind_a_release_effectful_function() {
-    // [FN-3] normalizes a row to six capabilities and compares `external`
-    // and `blocks` by presence exactly as `traps`: a `pure` member cannot
-    // bind a function that exhibits a category only through release.
+fn a_pure_contract_member_cannot_bind_a_world_release_function() {
+    // [FN-3] compares kinded rows and capability vectors after positional
+    // alpha-renaming: a pure member cannot bind a function whose release
+    // writes two world facets.
     assert_rule(
-        b"contract Disposer {\n  fn dispose(file: own ReadFile) -> result: own unit pure;\n}\n\nconform u64: Disposer {\n  dispose = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit external, blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"contract Disposer {\n  fn dispose['cq, 'ch, 'cc, 'cf](file: own ReadFile<'cq, 'ch, 'cc, 'cf>) -> result: own unit pure;\n}\n\nconform u64: Disposer {\n  dispose = release_read_file;\n}\n\nfn release_read_file['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn3,
         SemanticIssueKind::IncompatibleConformanceFunction,
     );
-    // The same member row binds the same function when both declare the two
-    // categories, so the presence comparison admits as well as rejects.
+    // The alpha-renamed world row and vector bind when both are exact.
     assert_complete(
-        b"contract Disposer {\n  fn dispose(file: own ReadFile) -> result: own unit external, blocks;\n}\n\nconform u64: Disposer {\n  dispose = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit external, blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"contract Disposer {\n  fn dispose['cq, 'ch, 'cc, 'cf](file: own ReadFile<'cq, 'ch, 'cc, 'cf>) -> result: own unit writes('cq 'ch);\n}\n\nconform u64: Disposer {\n  dispose = release_read_file;\n}\n\nfn release_read_file['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -164,46 +164,74 @@ fn memory_reclamation_contributes_no_release_row() {
 fn release_attribution_is_transitive_over_owned_content() {
     // Release of a value is release of its components [SYS-5]: a
     // `box<ReadFile>` drop frees the box with the empty row and releases the
-    // boxed `ReadFile` with its fixed `external, blocks` row, so the row is
+    // boxed `ReadFile` with its instantiated world row, so the row is
     // exhibited through the indirection.
     assert_complete(
-        b"fn stash(file: own ReadFile) -> result: own unit allocates(heap), external, blocks {\n  let boxed = box_new(move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn stash['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h), allocates(heap) {\n  let boxed = box_new(move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
 #[test]
-fn the_two_categories_keep_eff1_canonical_order_and_multiplicity() {
-    // `external` and `blocks` take fixed positions between `allocates` and
-    // `traps` [EFF-1]; out-of-order and repeated spellings are EFF-1
-    // rejections before any EFF-2 judgment.
+fn world_rows_keep_eff1_canonical_order_and_multiplicity() {
+    // Reads then writes is the fixed category order, and each category occurs
+    // at most once [EFF-1].
     assert_rule(
-        b"fn probe() -> result: own unit blocks, external {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe['q, 'o](output: own Output<'q, 'o>) -> result: own unit writes('q), reads('q) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         SemanticIssueKind::InvalidEffectRow,
     );
     assert_rule(
-        b"fn probe() -> result: own unit external, external {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe['q, 'o](output: own Output<'q, 'o>) -> result: own unit writes('q), writes('o) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         SemanticIssueKind::InvalidEffectRow,
     );
     assert_rule(
-        b"fn probe() -> result: own unit traps, blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe['q, 'o](output: own Output<'q, 'o>) -> result: own unit traps, writes('q) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         SemanticIssueKind::InvalidEffectRow,
     );
 }
 
 #[test]
-fn user_calls_transfer_the_two_categories_by_presence() {
-    // A call to a function whose row includes `external` or `blocks`
-    // syntactically exhibits that category at the caller [EFF-2]; the
-    // categories are payload-free, so no region projection applies.
+fn user_calls_substitute_world_rows_positionally() {
+    // A user call substitutes world formals directly through the capability
+    // vector and exposes the resulting row at its caller [EFF-2].
     assert_complete(
-        b"fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {\n  return unit;\n}\n\nfn forward(file: own ReadFile) -> result: own unit external, blocks {\n  release_read_file(file: move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn release_read_file['rq, 'rh, 'rc, 'rf](file: own ReadFile<'rq, 'rh, 'rc, 'rf>) -> result: own unit writes('rq 'rh) {\n  return unit;\n}\n\nfn forward['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {\n  release_read_file<'q, 'h, 'c, 'f>(file: move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
     assert_rule(
-        b"fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {\n  return unit;\n}\n\nfn forward(file: own ReadFile) -> result: own unit pure {\n  release_read_file(file: move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn release_read_file['rq, 'rh, 'rc, 'rf](file: own ReadFile<'rq, 'rh, 'rc, 'rf>) -> result: own unit writes('rq 'rh) {\n  return unit;\n}\n\nfn forward['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit pure {\n  release_read_file<'q, 'h, 'c, 'f>(file: move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
+}
+
+#[test]
+fn target_actions_close_transitively_over_calls_and_releases() {
+    let source = b"fn close_file['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {\n  return unit;\n}\n\nfn forward['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {\n  close_file<'q, 'h, 'c, 'f>(file: move file);\n  return unit;\n}\n\nfn outer['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {\n  forward<'q, 'h, 'c, 'f>(file: move file);\n  return unit;\n}\n\nfn local(value: own u64) -> result: own u64 pure {\n  return value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("target-action fixture must be accepted: {outcome:?}");
+        };
+        for name in ["close_file", "forward", "outer"] {
+            let function = program
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .unwrap_or_else(|| panic!("missing function {name}"));
+            assert_eq!(
+                function.target_action,
+                TargetAction::COMPLETION,
+                "{name} must inherit the native-close completion action"
+            );
+        }
+        let local = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "local")
+            .expect("local function");
+        assert_eq!(local.target_action, TargetAction::INLINE);
+    });
 }

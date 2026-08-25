@@ -15,7 +15,7 @@ fn copy_host['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>) ->
 }
 
 command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
-  doc "A selected place read joins every explicit subscript offset, so an externally selected internal stored value remains external when reused as a protected offset.";
+  doc "A selected place read joins every explicit subscript offset, so a boundary-selected internal stored value remains boundary-derived when reused as a protected offset.";
   let source = buffer_new(4_u64, 0_u8);
   region 'a {
     match arg_get<'a>(args: &'a args, position: 0_u64) {

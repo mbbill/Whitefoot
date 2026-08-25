@@ -37,7 +37,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let row = self.release_row_of_type(ty, &mut visited)?;
         let action = match ty {
             CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
-                CheckedNominalKind::SystemResource { nominal } => {
+                CheckedNominalKind::SystemResource { nominal, .. } => {
                     crate::system_resource_contract(*nominal).map(|contract| contract.action)
                 }
                 CheckedNominalKind::Struct { .. }
@@ -71,7 +71,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(SystemReleaseRow::EMPTY);
         }
         let component_types: Vec<CheckedType> = match &self.nominal(id)?.kind {
-            CheckedNominalKind::SystemResource { nominal } => {
+            CheckedNominalKind::SystemResource { nominal, .. } => {
                 return Ok(crate::system_release_row(*nominal));
             }
             CheckedNominalKind::Struct { fields } => fields.iter().map(|field| field.ty).collect(),
@@ -91,8 +91,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut row = SystemReleaseRow::EMPTY;
         for ty in component_types {
             let component = self.release_row_of_type(ty, visited)?;
-            row.external |= component.external;
-            row.blocks |= component.blocks;
+            row.writes_command_order |= component.writes_command_order;
+            row.writes_handle_lifetime |= component.writes_handle_lifetime;
+            row.target_action = row.target_action.union(component.target_action);
         }
         Ok(row)
     }
@@ -141,7 +142,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 CheckedStatement::DropExpression { value, release } => {
                     self.collect_expression_release_sites(value, sites)?;
-                    let effects = effects_of_row(release.row);
+                    let _ = release;
+                    let effects = self.release_effects_of_type(value.ty())?;
                     if effects != EffectSet::NONE {
                         sites.push(ReleaseSite {
                             owner: ReleaseOwner::ExpressionResult,
@@ -214,9 +216,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         sites: &mut Vec<ReleaseSite>,
     ) -> Result<(), CheckStop> {
         for drop in drops {
-            // The drop record already carries its [SYS-5] row, so attribution
-            // reads the checked program rather than rederiving it.
-            let effects = effects_of_row(drop.release.row);
+            let effects = self.release_effects_of_type(drop.ty)?;
             if effects != EffectSet::NONE {
                 sites.push(ReleaseSite {
                     owner: ReleaseOwner::Binding(drop.binding),
@@ -239,7 +239,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ..
             } => {
                 for drop in residual_drops {
-                    let effects = effects_of_row(drop.release.row);
+                    let effects = self.release_effects_of_type(drop.ty)?;
                     if effects != EffectSet::NONE {
                         sites.push(ReleaseSite {
                             owner: ReleaseOwner::Binding(*binding),
@@ -305,16 +305,66 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 }
 
-/// Projects one [SYS-5] release row onto the two payload-free [EFF-1]
-/// categories it can contribute.
-fn effects_of_row(row: SystemReleaseRow) -> EffectSet {
-    let mut effects = EffectSet::NONE;
-    effects.external = row.external;
-    effects.blocks = row.blocks;
-    effects
-}
-
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// Instantiates every nested capability release against its exact world
+    /// vector [EFF-2, SYS-5].
+    fn release_effects_of_type(&self, ty: CheckedType) -> Result<EffectSet, CheckStop> {
+        let mut visited = HashSet::new();
+        self.release_effects_of_type_inner(ty, &mut visited)
+    }
+
+    fn release_effects_of_type_inner(
+        &self,
+        ty: CheckedType,
+        visited: &mut HashSet<NominalId>,
+    ) -> Result<EffectSet, CheckStop> {
+        if let CheckedType::Buffer { element } = ty {
+            return self.release_effects_of_type_inner(element.ty(), visited);
+        }
+        let CheckedType::Nominal(id) = ty else {
+            return Ok(EffectSet::NONE);
+        };
+        if !visited.insert(id) {
+            return Ok(EffectSet::NONE);
+        }
+        let mut effects = EffectSet::NONE;
+        let components: Vec<CheckedType> = match &self.nominal(id)?.kind {
+            CheckedNominalKind::SystemResource {
+                nominal,
+                world_regions,
+            } => {
+                let row = crate::system_release_row(*nominal);
+                if row.writes_command_order {
+                    effects.add_write(
+                        *world_regions
+                            .first()
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                    );
+                }
+                if row.writes_handle_lifetime {
+                    effects.add_write(
+                        *world_regions
+                            .get(1)
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                    );
+                }
+                return Ok(effects);
+            }
+            CheckedNominalKind::Struct { fields } => fields.iter().map(|field| field.ty).collect(),
+            CheckedNominalKind::Enum { variants } => variants
+                .iter()
+                .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
+                .collect(),
+            CheckedNominalKind::Box { referent } => vec![*referent],
+            CheckedNominalKind::Arena { content, .. } => vec![*content],
+            CheckedNominalKind::ArenaStorage => Vec::new(),
+        };
+        for component in components {
+            effects = effects.union(self.release_effects_of_type_inner(component, visited)?);
+        }
+        Ok(effects)
+    }
+
     /// Attaches the [STOR-3] release record to each derived drop path, so
     /// every construction site records the same fact for the same type.
     pub(super) fn released_paths(

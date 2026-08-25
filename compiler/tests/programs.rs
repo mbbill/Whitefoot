@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 
+#[path = "support/link.rs"]
+mod link_support;
+
 mod programs {
     mod binary;
     mod generics;

@@ -776,6 +776,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<StatementResult, CheckStop> {
         let declaration = self.declaration_at(node, DeclarationRole::LocalRegion)?;
         let region = declaration.id();
+        // A lexical `region` statement is the memory-kind constructor
+        // [OWN-3]. World identities enter only through command roots and
+        // capability vectors; a local block can never mint one.
+        self.constrain_region_kind(node, region, super::super::model::CheckedRegionKind::Memory)?;
         let base_keys = bindings.keys().copied().collect::<HashSet<_>>();
         // A region block with arena allocations carries the compiler-owned
         // allocation list [STOR-3]: an ordinary hidden own binding keyed by
@@ -1001,8 +1005,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let effectful = !effects.writes.is_empty()
             || effects.allocates_heap
             || !effects.allocates_arenas.is_empty()
-            || effects.external
-            || effects.blocks
             || effects.traps;
         let invalid = if effectful {
             Some("the predicate has a forbidden effect")

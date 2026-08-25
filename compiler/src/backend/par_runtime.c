@@ -2,9 +2,10 @@
  *
  * The actualization half of the [PAR-1 candidate] permission judgment. The
  * compiler proves, before anything here runs, that the two statements of an
- * overlapped pair touch disjoint storage, carry no external or blocking row,
- * and reach no claim site; this file only decides where the work runs. It
- * never chooses what may overlap.
+ * overlapped pair have compatible complete memory, loan, exit, and kinded
+ * world footprints. This file only decides where the work runs. It never
+ * chooses what may overlap, and target-action metadata changes routing rather
+ * than permission.
  *
  * Contract with the emitted module, in the order the module uses it:
  *
@@ -19,6 +20,13 @@
  *       Offers `fn(frame)` to the pool by pushing the frame onto this thread's
  *       own deque. It hands the work to nobody: an idle thread takes it, or the
  *       joining thread takes it back. Only a frame a claim returned reaches it.
+ *
+ *   void wf__par_publish_io(void *frame, void (*fn)(void *))
+ *       Submits the same outlined call as an I/O frame. The call's arguments,
+ *       result slot, completion node, and in-flight loans remain in the lane
+ *       frame until join observes terminal completion. The submitting lane
+ *       continues to the inline sibling instead of putting this frame in a
+ *       compute deque.
  *
  *   void wf__par_join(void *frame)
  *       Returns once that task has run, after which the frame holds its result.
@@ -74,11 +82,14 @@
  * and it writes nothing to any output. WF_WORKERS selects the thread count.
  * Unset — the shape a `--par` binary is actually handed to somebody in — asks
  * for this machine's logical CPUs, so a program that was built for overlap
- * overlaps. An explicit `0`, `1`, or anything that does not parse leaves the
- * pool unstarted, so every claim returns NULL and every program runs exactly
- * the sequential schedule it runs today — and, since the module can ask,
- * exactly the sequential code as well.
+ * overlaps. An explicit `0` (or an invalid value) leaves the pool unstarted
+ * and selects the sequential module. `1` selects the overlapped module with
+ * the calling thread as its one compute lane and no stealing worker; that is
+ * the configuration in which an I/O frame can overlap its inline compute
+ * sibling without introducing compute parallelism.
  */
+
+#include "contract.h"
 
 #include <pthread.h>
 #include <sched.h>
@@ -178,6 +189,9 @@
 #define WF_PAR_SLOT_PENDING 1
 #define WF_PAR_SLOT_DONE 2
 
+#define WF_PAR_SLOT_COMPUTE 0
+#define WF_PAR_SLOT_IO 1
+
 struct wf__par_lane;
 
 /* One offer's storage. */
@@ -191,6 +205,11 @@ struct wf__par_slot {
     /* The outlined call over the frame. Written before the push that publishes
      * it, so a thief that sees the push sees this too. */
     void (*run)(void *);
+    /* The completion frame and its intrusive mailbox node. It is initialized
+     * once with the slot, reused only after the lane release, and therefore
+     * cannot be reclaimed while an I/O loan remains in flight. */
+    wf_io_frame io;
+    int kind;
     /* FREE / PENDING / DONE, atomic. Only a task some *other* thread took ever
      * has to report DONE, because a thread that runs its own offer at the join
      * is the only thread that could observe it. */
@@ -270,6 +289,12 @@ _Alignas(WF_PAR_CACHE_LINE) static unsigned long long wf__par_idle;
  * off the hot path by construction rather than by an accumulator: the number
  * of increments is the number of times the pool actually rebalanced. */
 _Alignas(WF_PAR_CACHE_LINE) unsigned long wf__par_grants;
+
+/* I/O frames published through the overlap lowering. Like the steal counter,
+ * this is developer/test evidence rather than a source-visible observation.
+ * It distinguishes `WF_WORKERS=1`'s completion-capable world from the
+ * sequential world even though one compute lane has no thief. */
+_Alignas(WF_PAR_CACHE_LINE) unsigned long wf__par_io_publications;
 
 /* This thread's lane, or NULL when it has none. */
 static _Thread_local struct wf__par_lane *wf__par_self;
@@ -450,6 +475,32 @@ static void wf__par_execute(struct wf__par_slot *slot) {
     }
 }
 
+/* One bounded help step offered by a lane waiting on world completion. Only
+ * an offer from that lane's own deque is eligible here. That keeps helping in
+ * the current window and bounds added stack depth to one frame per wait round;
+ * unrelated stealing remains the ordinary scheduler's job. */
+static int wf__par_help_completion(void *unused) {
+    struct wf__par_lane *lane = wf__par_self;
+    struct wf__par_slot *slot;
+    (void)unused;
+    if (lane == NULL) {
+        return 0;
+    }
+    slot = wf__par_pop(lane);
+    if (slot == NULL) {
+        return 0;
+    }
+    wf__par_execute(slot);
+    return 1;
+}
+
+static wf_io_result wf__par_io_work(void *opaque) {
+    struct wf__par_slot *slot = (struct wf__par_slot *)opaque;
+    wf_io_result result = { 0, 0 };
+    slot->run(slot->frame);
+    return result;
+}
+
 /* ------------------------------------------------------------------ waiting */
 
 /* Waits for a task another thread took, doing whatever work is available
@@ -569,6 +620,8 @@ static void wf__par_prepare(struct wf__par_lane *lane, int index) {
     for (slot = 0; slot < WF_PAR_LANE_SLOTS; slot += 1) {
         lane->slots[slot].home = lane;
         lane->slots[slot].state = WF_PAR_SLOT_FREE;
+        lane->slots[slot].kind = WF_PAR_SLOT_COMPUTE;
+        wf_io_frame_init(&lane->slots[slot].io);
         lane->slots[slot].waiter = NULL;
         lane->slots[slot].next_free = slot + 1;
     }
@@ -582,8 +635,9 @@ static void wf__par_prepare(struct wf__par_lane *lane, int index) {
  * `hw.logicalcpu` is the Darwin spelling and reports the cores this process may
  * be scheduled on right now, which is the number the pool wants; the portable
  * `_SC_NPROCESSORS_ONLN` answers on a host that has no such name. A machine
- * that reports fewer than two gets 0, which is what an explicit opt-out gets,
- * because one thread of execution is the sequential world either way.
+ * that reports one gets one overlapped compute lane: unlike the old mapping,
+ * one lane is observably distinct from the explicit sequential value zero
+ * because completion work can still overlap it.
  *
  * Naming every core rather than only the performance ones is a measured
  * choice, not an assumption: on the 4P+6E machine this was built on, the coarse
@@ -602,8 +656,8 @@ static int wf__par_default_lanes(void) {
     }
 #endif
     online = sysconf(_SC_NPROCESSORS_ONLN);
-    if (online < 2) {
-        return 0;
+    if (online < 1) {
+        return 1;
     }
     return (online > WF_PAR_MAX_LANES) ? WF_PAR_MAX_LANES : (int)online;
 }
@@ -616,7 +670,7 @@ static int wf__par_requested_lanes(void) {
         return wf__par_default_lanes();
     }
     requested = strtol(setting, &end, 10);
-    if (end == setting || *end != '\0' || requested < 2) {
+    if (end == setting || *end != '\0' || requested < 1) {
         return 0;
     }
     if (requested > WF_PAR_MAX_LANES) {
@@ -630,10 +684,28 @@ static void wf__par_start(void) {
     int requested = wf__par_requested_lanes();
     int started = 0;
     int index;
-    if (requested < 2) {
+    if (requested < 1) {
+        return;
+    }
+    for (index = 0; index < requested; index += 1) {
+        wf__par_prepare(&wf__par_lanes[index], index);
+    }
+    __atomic_store_n(&wf__par_lane_count, requested, __ATOMIC_RELAXED);
+    if (pthread_mutex_init(&wf__par_lanes[0].lock, NULL) != 0) {
+        __atomic_store_n(&wf__par_lane_count, 0, __ATOMIC_RELAXED);
+        return;
+    }
+    if (pthread_cond_init(&wf__par_lanes[0].signal, NULL) != 0) {
+        pthread_mutex_destroy(&wf__par_lanes[0].lock);
+        __atomic_store_n(&wf__par_lane_count, 0, __ATOMIC_RELAXED);
+        return;
+    }
+    wf_io_install_help_hook(wf__par_help_completion, NULL);
+    if (requested == 1) {
         return;
     }
     if (pthread_attr_init(&attributes) != 0) {
+        __atomic_store_n(&wf__par_lane_count, 0, __ATOMIC_RELAXED);
         return;
     }
     /* A refused stack request is a silent downgrade to the pthread default,
@@ -641,17 +713,14 @@ static void wf__par_start(void) {
      * pool instead: no lane is better than a lane that overflows. */
     if (pthread_attr_setstacksize(&attributes, wf__floor_stack_bytes()) != 0) {
         pthread_attr_destroy(&attributes);
+        __atomic_store_n(&wf__par_lane_count, 0, __ATOMIC_RELAXED);
         return;
     }
     pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
-    for (index = 0; index < requested; index += 1) {
-        wf__par_prepare(&wf__par_lanes[index], index);
-    }
     /* Lane 0 belongs to the thread that got here — the calling thread is
      * itself a lane, so `WF_WORKERS=2` means two threads of execution in
      * total. The count is published before the threads start so a worker's
      * first look sees the whole pool. */
-    __atomic_store_n(&wf__par_lane_count, requested, __ATOMIC_RELAXED);
     for (index = 1; index < requested; index += 1) {
         pthread_t thread;
         struct wf__par_lane *lane = &wf__par_lanes[index];
@@ -672,15 +741,6 @@ static void wf__par_start(void) {
     __atomic_store_n(&wf__par_lane_count, started + 1, __ATOMIC_RELAXED);
     pthread_attr_destroy(&attributes);
     if (started == 0) {
-        __atomic_store_n(&wf__par_lane_count, 0, __ATOMIC_RELAXED);
-        return;
-    }
-    if (pthread_mutex_init(&wf__par_lanes[0].lock, NULL) != 0) {
-        __atomic_store_n(&wf__par_lane_count, 0, __ATOMIC_RELAXED);
-        return;
-    }
-    if (pthread_cond_init(&wf__par_lanes[0].signal, NULL) != 0) {
-        pthread_mutex_destroy(&wf__par_lanes[0].lock);
         __atomic_store_n(&wf__par_lane_count, 0, __ATOMIC_RELAXED);
         return;
     }
@@ -747,6 +807,7 @@ void *wf__par_claim(unsigned long bytes) {
 void wf__par_publish(void *frame, void (*fn)(void *)) {
     struct wf__par_slot *slot = (struct wf__par_slot *)frame;
     slot->run = fn;
+    slot->kind = WF_PAR_SLOT_COMPUTE;
     __atomic_store_n(&slot->state, WF_PAR_SLOT_PENDING, __ATOMIC_RELAXED);
     wf__par_push(slot->home, slot);
     if (__atomic_load_n(&wf__par_idle, __ATOMIC_SEQ_CST) != 0) {
@@ -754,10 +815,28 @@ void wf__par_publish(void *frame, void (*fn)(void *)) {
     }
 }
 
+void wf__par_publish_io(void *frame, void (*fn)(void *)) {
+    struct wf__par_slot *slot = (struct wf__par_slot *)frame;
+    slot->run = fn;
+    slot->kind = WF_PAR_SLOT_IO;
+    __atomic_store_n(&slot->state, WF_PAR_SLOT_PENDING, __ATOMIC_RELAXED);
+    if (wf_io_submit(&slot->io, wf__par_io_work, slot) != 0) {
+        abort();
+    }
+    __atomic_add_fetch(&wf__par_io_publications, 1, __ATOMIC_RELAXED);
+}
+
 void wf__par_join(void *frame) {
     struct wf__par_slot *target = (struct wf__par_slot *)frame;
     struct wf__par_lane *lane = target->home;
-    struct wf__par_slot *slot = wf__par_pop(lane);
+    struct wf__par_slot *slot;
+
+    if (target->kind == WF_PAR_SLOT_IO) {
+        wf_io_wait(&target->io);
+        __atomic_store_n(&target->state, WF_PAR_SLOT_DONE, __ATOMIC_RELEASE);
+        return;
+    }
+    slot = wf__par_pop(lane);
 
     if (slot == target) {
         /* Nobody took it. This is the common case and the whole reason an
@@ -834,7 +913,7 @@ void wf__par_release(void *frame) {
  * schedule and exactly what such a run did before this question existed.
  */
 int wf__par_pool_active(void) {
-    return wf__par_requested_lanes() >= 2;
+    return wf__par_requested_lanes() >= 1;
 }
 
 /* The lane count, settled once per process.

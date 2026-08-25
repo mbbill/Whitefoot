@@ -1,13 +1,13 @@
 contract Disposer {
-  fn dispose(file: own ReadFile) -> function_result: own unit pure;
+  fn dispose['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> function_result: own unit pure;
 }
 
 conform u64: Disposer {
   dispose = release_read_file;
 }
 
-fn release_read_file(file: own ReadFile) -> function_result: own unit external, blocks {
-  doc "A fn_sig has no body and no compiler-derived release, so it declares these categories without an EFF-2 judgment of its own; a `pure` member cannot bind a function that exhibits a category only through release, and the mismatch is an FN-3 rejection rather than an EFF-2 one.";
+fn release_read_file['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> function_result: own unit writes('q 'h) {
+  doc "A fn_sig has no body and no compiler-derived release, so its `pure` row receives no EFF-2 judgment of its own; it cannot bind a function whose owned ReadFile release exhibits `writes('q 'h)`, and the mismatch is an FN-3 rejection rather than an EFF-2 one.";
   return unit;
 }
 

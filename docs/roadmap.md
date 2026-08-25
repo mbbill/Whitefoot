@@ -1,20 +1,19 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 50 (claim locality landed on `main`; proof-derived parallelism is
-the live direction; the v0.36 activation lands with the 0081 loan-column merge)
+Revision: 52 (batch 0082 implements the v0.37 world-region model and the
+three-host completion contract on its work branch)
 
-The active language authority is v0.36 at the stable path
+The active language authority is v0.37 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
-`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
+`f772f2aec5e0da963c1cb9d8607a9e87cd3ad03cb71f3b6532451404d4d07bb5`.
 Claim residual canonicality and claim locality are landed on `main`, not
 pending; revision 49 described them as awaiting merge and this revision
-records them as authority. Exact v0.8 through v0.33 are immutable flat
-archives. Branch `par/proof-derived-parallelism` carries a v0.35 CANDIDATE
-adding one rule, [PAR-1]; a candidate is not authority, and only the merge
-approval activates it. The execution plan at
-[`docs/current-plan.md`](current-plan.md) is PROPOSED (proof-derived
-parallelism) and authorizes no work until the owner approves it.
+records them as authority. Exact v0.8 through v0.36 are immutable flat
+archives. `main` remains at v0.36 until the exact batch-0082 revision passes
+the final merge boundary. The execution plan at
+[`docs/current-plan.md`](current-plan.md) records technical state and
+sequencing only; it neither authorizes nor pauses branch work.
 Project law is the [`Constitution`](constitution.md), and the operational
 process is [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -59,22 +58,26 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.34]` `[current: safe-Rust compiler]`
+`[current: spec v0.37]` `[current: safe-Rust compiler]`
+`[current: macOS/Linux compiler target plus three-host completion contract]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
 qualification, LLVM, and host execution on supported aarch64 and x86-64
-macOS/Linux targets. Valid language the compiler has not implemented stops as
-unsupported rather than invalid source.
+macOS/Linux targets. The compiler carries explicit world-region footprints,
+transitive target-action metadata, deterministic I/O ledgers, and a shared
+completion contract implemented by kqueue, io_uring, and IOCP. Valid language
+the compiler has not implemented stops as unsupported rather than invalid
+source.
 
 The compiler implements enough scalar, nominal, generic, storage, borrow,
-contract, cleanup, and program-level behavior to begin external validation, but
-not the entire active language. The exact implementation inventory and gaps
-belong in the [compiler README](../compiler/README.md); v0.33 on `main` remains
-semantic authority until the branch's linked ACTIVE v0.34 revision is merged.
-The first-slice system interface compiles and runs end-to-end on the native
-macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
-remain ahead of any performance claim.
+contract, cleanup, program-level, world-effect, and completion behavior to
+begin external validation, but not the entire active language. The exact
+implementation inventory and gaps belong in the
+[compiler README](../compiler/README.md). The first-slice system interface
+compiles and runs end to end on the native macOS/Linux command target; Windows
+qualification remains separate even though its IOCP contract is built and
+exercised by the cross-host C harness.
 Which gap matters next is selected by a project, never by checklist length.
 
 ## Dependency rules
@@ -264,7 +267,7 @@ creating writer trust or weakening the checked safety envelope.
   four focused producer-family consumers and the kill control pass, while the
   driver itself honestly has no natural current obligation that consumes it.
   Task 0041 then measured the held provenance rule on the four-file
-  boundary-fed DEFLATE unit: 18/33 obligation subjects are external, six prove
+  boundary-fed DEFLATE unit: 18/33 obligation subjects are boundary-derived, six prove
   without S2/S3, and 12 obligations under ten distinct claims would be rejected.
   The rule catches `order_slot_in_offsets` and `ordered_in_symbols` but launders
   `destination_in_symbols` through internal RHS values and an internal
@@ -275,11 +278,11 @@ creating writer trust or weakening the checked safety envelope.
   Task 0046 repaired the held design without adding implicit-flow analysis:
   a place read now joins every explicit subscript offset, and PRV-2 relates a
   finite parameter datum to a concrete protected leaf with a terminating,
-  deterministic witness. The frozen rewalk becomes 19/33 external subjects,
+  deterministic witness. The frozen rewalk becomes 19/33 boundary-derived subjects,
   six unasserted-state discharges, 13 rejected obligation nodes under eleven
   claims, and 14 internal subjects; the canonical result is 3/3 and the prior
   fifteen boundary-program claims remain ungated. The diagnostic projection is
-  fourteen rejecting calls and 24 external actual atoms. Direct enum payload
+  fourteen rejecting calls and 24 boundary-derived actual atoms. Direct enum payload
   projections preserve success/error provenance while nested payloads expand
   conservatively one level. The rule remains held design evidence: its explicit
   write-address/control-flow limitation is recorded and O3 still blocks
@@ -855,21 +858,25 @@ carries is counted-loop reduction permission, not intra-object disjointness.
 
 ### outline:PAR-4 — Runtime, allocation, and dynamic fan-out
 
-`[current: branch candidate]` `[current: measured]`
+`[current: compute and completion runtimes implemented]` `[current: measured]`
 
 - **Goal:** execute selected parallel forms without hiding serialization,
   unbounded overhead, or an unexplained trusted runtime.
-- **Current:** batch 0074's branch answers the archive audit's required
-  witness rather than deferring it. The lane pool is a runtime-count worker set
-  sized by `WF_WORKERS` whose workers share-read outer state, it allocates
-  nothing per offer, it never queues (a refused offer is an inline call), and
-  granted-lane counts are measured rather than assumed. Whether that shape
-  survives a second workload is still open, and the I/O lane will need a
-  different one.
-- **Missing / next:** re-measure allocation, scheduling, determinism, and
-  absolute wall time on a workload that is not the compute demo, and settle
-  the completion-based runtime the I/O lane needs; any OWN-11 change needs
-  hostile soundness review.
+- **Current:** the compute lane remains the allocation-free work-stealing
+  runtime selected by batches 0074–0080. Batch 0082 adds a second work source
+  behind the same overlap lowering: target actions marked for completion use
+  generation-tagged caller frames, a fixed disk pool, a release/acquire MPSC
+  mailbox, executing-lane affinity, progress-then-rescan parking, and bounded
+  join helping. kqueue, io_uring/eventfd, and IOCP implement one shared
+  contract; strict C harnesses cover publication, frame reuse, forced
+  submission failure, terminal loans, multi-lane affinity, mixed load, and
+  Linux one-shot rearming.
+- **Missing / next:** the controlled directory-walk did not expose an
+  actualizable world-I/O pair, so adapter overhead dominated and v0.37 was
+  24.2%–30.0% slower than v0.36 at the best observed times. A later project
+  must supply a workload whose world footprints actually prove useful overlap
+  before claiming end-to-end I/O speedup. No current evidence supports
+  narrowing the conservative global world-order domain.
 - **Facts:** [dynamic fan-out placement](../research/archive-promotion-audit.md#3-dynamic-fan-out-retained-as-a-parallel-design-witness) ·
   [measured lane grants and wall time](../research/investigations/proof-derived-parallelism/RESULTS.md).
 
@@ -880,7 +887,7 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### outline:BOUND-1 — System capabilities and host integration
 
-`[current: first slice complete end-to-end with standing cost gates]`
+`[current: v0.37 world-region slice complete end-to-end]`
 `[next: helper decomposition (system-type borrow parameters); later families on project pressure]`
 
 - **Goal:** give command, service, and embedded program instances a
@@ -888,38 +895,22 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   filesystems, data streams, clocks, randomness, networking, waiting and
   cancellation, and future threads or tasks without ambient mutable authority
   or writer-defined trust.
-- **Current:** the owner selected the dossier architecture on 2026-08-05 after
-  a 31-issue adversarial review: exact typed entry inputs under a declared
-  program kind, immutable values / shared capabilities / unique stateful
-  resources over ordinary `own`/`&`/`&uniq`, exact `external` and `blocks`
-  effects with conservative source ordering, operation-specific one-attempt
-  I/O with portable error classes, lossless target paths, compiler-owned
-  resource contracts with three completion policies, a Route C
-  system-declaration domain (with the recorded fallback to a prelude
-  extension if the syntactic conditional-visibility mechanism is declined),
-  and static target qualification. v0.17 itself still has a fixed no-argument
-  `main`, memory-only effect rows, and no compiler system path; the only
-  ordinary external-I/O call is a private trap diagnostic.
-- **Missing / next:** the first command slice is complete: v0.18/v0.19
-  active, the compiler implements the whole surface end-to-end on the native
-  macOS/Linux command target, sequential `wfgrep` passes its oracle, and the
-  dossier §9.1 rows are standing machine gates (task 0016). Named
-  implementation follow-up: borrow-mode parameters of system nominal types
-  are an unsupported specified capability (task-0015 finding) forcing
-  helper-free programs. Later families (clocks, network, async/wait,
-  threads, child processes) remain additive true subsets on their own
-  project pressure. Historically: v0.18 activated 2026-08-06 (`9768bae`)
-  with the exact
-  first-command-slice batch: 25 new rules, 13 modified, the Route C
-  declaration domain, and the promoted native grammar. The compiler parses
-  the whole surface and reports it as explicit unsupported capability;
-  implementation proceeds through the eleven planned tasks 0006-0016 (front
-  end, effects, checked IR, qualification and native lowering, deterministic
-  test target, conformance execution, sequential `wfgrep`, cost and hostile
-  gates), then returns to the frozen sequential `wfgrep` checkpoint. Later
-  families (clocks, network, async/wait, threads, child processes) remain
-  additive true subsets of the selected model and wait for their own project
-  pressure.
+- **Current:** v0.37 replaces the retired `external`/`blocks` effect atoms
+  with kinded world regions carried by capability types. Exact EFF-2
+  projection, release rows, origin relations, and conservative alias/order
+  identities now feed both permission and `--io-ledger`; different capability
+  values never prove disjointness. Trusted target-action records classify
+  dispatch, host wait, and loan terminal state for every system operation and
+  release, and a finite fixed point carries the conservative summary through
+  user wrappers. The existing one-attempt portable-I/O semantics and native
+  macOS/Linux command qualification remain intact.
+- **Missing / next:** later capability families (clocks, network,
+  async/events, threads, child processes) remain additive subsets selected by
+  project pressure. Windows compiler qualification is still absent and must
+  receive its own target-row review; IOCP harness success does not silently
+  add that target. Future order-domain narrowing needs an explicit trace law
+  and evidence, because batch 0082 deliberately preserves v0.36's global
+  world order.
 - **Facts:** v0.17 `FN-7`, `EFF-1/2`, `PROG-1/2`, `CAP-1`, `GATE-1`, and
   `LEDGER-1` · [architecture dossier](../research/investigations/system-capability-architecture/DOSSIER.md) ·
   [review decision record](../research/investigations/system-capability-architecture/decisions.json) ·

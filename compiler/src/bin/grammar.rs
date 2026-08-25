@@ -13,9 +13,9 @@ use whitefoot::{
 /// Minimal marked and unmarked entries plus counted-range and postcondition bodies.
 const PARSER_PROBES: [&[u8]; 6] = [
     b"fn probe() -> result: own unit pure {\n  return unit;\n}\n",
-    b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {\n  return exit_status(code: 0_u8);\n}\n",
+    b"command fn main['q, 'dh, 'd, 'f, 'o](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'q, 'dh, 'd, 'f>, command.stdout as out: own Output<'q, 'o>, command.stderr as err: own Output<'q, 'o>) -> status: own ExitStatus writes('q 'dh), allocates(heap), traps {\n  return exit_status(code: 0_u8);\n}\n",
     b"deny_claims fn probe() -> result: own unit pure {\n  return unit;\n}\n",
-    b"deny_claims command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {\n  return exit_status(code: 0_u8);\n}\n",
+    b"deny_claims command fn main['q, 'dh, 'd, 'f, 'o](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'q, 'dh, 'd, 'f>, command.stdout as out: own Output<'q, 'o>, command.stderr as err: own Output<'q, 'o>) -> status: own ExitStatus writes('q 'dh), allocates(heap), traps {\n  return exit_status(code: 0_u8);\n}\n",
     b"fn range(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index in lower..upper {\n    break @range;\n  }\n  return unit;\n}\n",
     b"fn checked(value: own i32) -> result: own Result<i32, i32> pure contract {\n  define admitted = ieq(value, value);\n  requires admitted;\n  ensures when Ok(value: returned): ieq(returned, value);\n} {\n  return Ok<i32, i32>(value: value);\n}\n",
 ];
@@ -392,7 +392,7 @@ mod tests {
         let report = verify_compiler_grammar().expect("compiler grammar data must be consistent");
         assert_eq!(report.productions, 74);
         assert_eq!(report.decisions, 93);
-        assert_eq!(report.terminals, 105);
+        assert_eq!(report.terminals, 103);
         run_parser_probes().expect("the compiler must parse its own probes");
     }
 
@@ -452,8 +452,8 @@ mod tests {
     fn changed_effect_order_fails_closed() {
         let active = std::str::from_utf8(ACTIVE_KERNEL_SPEC_BYTES).expect("active spec is UTF-8");
         let changed = active.replacen(
-            "| \"external\" | \"blocks\" | \"traps\"",
-            "| \"blocks\" | \"external\" | \"traps\"",
+            "| \"allocates\" \"(\" (\"heap\" | \"arena\" REGIONID)+ \")\" | \"traps\"",
+            "| \"traps\" | \"allocates\" \"(\" (\"heap\" | \"arena\" REGIONID)+ \")\"",
             1,
         );
         assert_ne!(changed, active);

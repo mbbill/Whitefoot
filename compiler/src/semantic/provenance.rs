@@ -43,28 +43,29 @@ pub(crate) struct ParameterDependencies {
 /// synthetic parameter datum, so substitution preserves bit-only terminals.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ProvenanceDependency {
-    pub(crate) unconditional_external: bool,
+    pub(crate) unconditionally_boundary_derived: bool,
     pub(crate) parameters: ParameterDependencies,
 }
 
 impl ProvenanceDependency {
     fn parameter(datum: ParameterDatum) -> Self {
         Self {
-            unconditional_external: false,
+            unconditionally_boundary_derived: false,
             parameters: ParameterDependencies::singleton(datum),
         }
     }
 
-    fn external() -> Self {
+    fn boundary_derived() -> Self {
         Self {
-            unconditional_external: true,
+            unconditionally_boundary_derived: true,
             parameters: ParameterDependencies::default(),
         }
     }
 
     fn union(&mut self, other: &Self) -> bool {
-        let changed = !self.unconditional_external && other.unconditional_external;
-        self.unconditional_external |= other.unconditional_external;
+        let changed =
+            !self.unconditionally_boundary_derived && other.unconditionally_boundary_derived;
+        self.unconditionally_boundary_derived |= other.unconditionally_boundary_derived;
         self.parameters.union(&other.parameters) | changed
     }
 }
@@ -144,10 +145,10 @@ impl ValueDependencies {
         value
     }
 
-    fn external(ty: CheckedType, nominals: &[CheckedNominal]) -> Self {
+    fn boundary_derived(ty: CheckedType, nominals: &[CheckedNominal]) -> Self {
         let mut value = Self::empty(ty, nominals);
         for component in &mut value.components {
-            component.dependency = ProvenanceDependency::external();
+            component.dependency = ProvenanceDependency::boundary_derived();
         }
         value
     }
@@ -414,7 +415,7 @@ pub(crate) struct ProvenanceAnalysis {
 /// recomputing the component fixed point from candidate entailment metadata.
 pub(crate) struct FrozenProvenanceDependencies {
     functions: Arc<[FunctionDependencies]>,
-    external_entry: Option<FunctionId>,
+    boundary_origin_entry: Option<FunctionId>,
 }
 
 impl ProvenanceAnalysis {
@@ -437,7 +438,7 @@ pub(crate) struct ProvenanceContext<'check> {
     pub(crate) nominals: &'check [CheckedNominal],
     /// The kind-declaring command entry; all of its labelled parameters are
     /// unconditional PRV-1 origins and have no caller-substitutable datum.
-    pub(crate) external_entry: Option<FunctionId>,
+    pub(crate) boundary_origin_entry: Option<FunctionId>,
 }
 
 #[derive(Clone, Debug)]
@@ -478,7 +479,7 @@ fn selectors(ty: CheckedType, nominals: &[CheckedNominal]) -> Vec<DatumSelector>
 }
 
 /// Which result components one system operation's [SYS-2] `wf-prov` row
-/// classifies as external.
+/// classifies as boundary-derived.
 ///
 /// The row is declaration data, so the classification is data too, named once
 /// here rather than spread through the dependency construction below. An
@@ -487,18 +488,18 @@ fn selectors(ty: CheckedType, nominals: &[CheckedNominal]) -> Vec<DatumSelector>
 /// bare numeric ordinals with nothing checking it.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum SystemResultProvenance {
-    /// Every component of the result carries an external class: a plain
-    /// external result, or both `Ok` and `Err` payloads.
-    AllExternal,
+    /// Every component of the result carries a boundary-derived class: a plain
+    /// boundary-derived result, or both `Ok` and `Err` payloads.
+    AllBoundaryDerived,
     /// `Ok(value:)` depends on the concrete call's `start` actual, while
-    /// `Err(error:)` is unconditionally external.
+    /// `Err(error:)` is unconditionally boundary-derived.
     OkDependent,
     /// The first variant's endpoint payload depends on the concrete call's
-    /// `start` actual, the third variant's error payload is external, and all
+    /// `start` actual, the third variant's error payload is boundary-derived, and all
     /// other payloads (including `ListBytes(entries:)`) are internal.
     EndpointDependent,
-    /// No component is external.
-    NoneExternal,
+    /// No component is boundary-derived.
+    NoneBoundaryDerived,
 }
 
 /// The `wf-prov` result-component class of each [SYS-2] operation, by its
@@ -512,13 +513,13 @@ pub(super) const fn system_result_provenance(operation: u8) -> Option<SystemResu
         // open_read, open_directory, open_list, and open_file:
         // every component of an opened capability or handle comes from
         // outside.
-        0 | 1 | 2 | 4 | 6 | 7 | 11 | 12 | 14 => SystemResultProvenance::AllExternal,
+        0 | 1 | 2 | 4 | 6 | 7 | 11 | 12 | 14 => SystemResultProvenance::AllBoundaryDerived,
         // host_copy_bytes, host_copy_utf8, write_once.
         3 | 5 | 9 => SystemResultProvenance::OkDependent,
         // read_once and list_once.
         8 | 13 => SystemResultProvenance::EndpointDependent,
         // exit_status.
-        10 => SystemResultProvenance::NoneExternal,
+        10 => SystemResultProvenance::NoneBoundaryDerived,
         _ => return None,
     })
 }
@@ -534,18 +535,18 @@ fn system_result_dependencies(
             .component_mut(DatumSelector::EnumPayload { variant, field })
             .ok_or(SemanticCompilerFailure::InvalidResolution)?
             .dependency
-            .unconditional_external = true;
+            .unconditionally_boundary_derived = true;
         Ok(())
     };
     match system_result_provenance(operation).ok_or(SemanticCompilerFailure::InvalidResolution)? {
-        SystemResultProvenance::AllExternal => {
+        SystemResultProvenance::AllBoundaryDerived => {
             for component in &mut value.components {
-                component.dependency.unconditional_external = true;
+                component.dependency.unconditionally_boundary_derived = true;
             }
         }
         SystemResultProvenance::OkDependent => mark(1, 0)?,
         SystemResultProvenance::EndpointDependent => mark(2, 0)?,
-        SystemResultProvenance::NoneExternal => {}
+        SystemResultProvenance::NoneBoundaryDerived => {}
     }
     Ok(value)
 }
@@ -569,8 +570,8 @@ fn system_endpoint_start(operation: u8) -> ProvenanceResult<Option<usize>> {
 }
 
 /// The `wf-prov` writable-`&uniq`-parameter column: the parameter ordinals one
-/// operation writes with an external class.
-pub(super) fn system_external_writes(operation: u8) -> ProvenanceResult<&'static [usize]> {
+/// operation writes with a boundary-derived class.
+pub(super) fn system_boundary_derived_writes(operation: u8) -> ProvenanceResult<&'static [usize]> {
     Ok(match operation {
         3 | 5 => &[1],
         // read_once and list_once: the handle advances and the
@@ -629,7 +630,7 @@ impl<'check> FunctionPass<'check> {
     fn new(
         function: &'check CheckedFunction,
         nominals: &'check [CheckedNominal],
-        entry_external: bool,
+        entry_boundary_derived: bool,
     ) -> ProvenanceResult<Self> {
         let slots = binding_slot_count(function);
         let mut pass = Self {
@@ -645,8 +646,8 @@ impl<'check> FunctionPass<'check> {
         for (ordinal, parameter) in function.parameters.iter().enumerate() {
             let ordinal =
                 u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-            let value = if entry_external {
-                ValueDependencies::external(parameter.ty, nominals)
+            let value = if entry_boundary_derived {
+                ValueDependencies::boundary_derived(parameter.ty, nominals)
             } else {
                 ValueDependencies::parameter(ordinal, parameter.ty, nominals)
             };
@@ -1140,7 +1141,7 @@ impl<'check> FunctionPass<'check> {
                     return Err(SemanticCompilerFailure::InvalidResolution);
                 }
                 for (ordinal, dependencies) in callee.writes.iter().enumerate() {
-                    if !dependencies.unconditional_external
+                    if !dependencies.unconditionally_boundary_derived
                         && dependencies.parameters.datums.is_empty()
                     {
                         continue;
@@ -1166,15 +1167,15 @@ impl<'check> FunctionPass<'check> {
                     .iter()
                     .map(|argument| self.expression(argument, summaries))
                     .collect::<ProvenanceResult<Vec<_>>>()?;
-                let external = ProvenanceDependency::external();
-                for ordinal in system_external_writes(*operation)? {
+                let boundary_derived = ProvenanceDependency::boundary_derived();
+                for ordinal in system_boundary_derived_writes(*operation)? {
                     let argument = arguments
                         .get(*ordinal)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     let root = self
                         .argument_root(argument)?
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    self.add_root_write(root, &external, true)?;
+                    self.add_root_write(root, &boundary_derived, true)?;
                 }
                 let mut value = system_result_dependencies(*operation, *result, self.nominals)?;
                 if let Some(start) = system_endpoint_start(*operation)? {
@@ -1388,7 +1389,7 @@ fn substitute_dependency(
     actuals: &[ValueDependencies],
 ) -> ProvenanceResult<ProvenanceDependency> {
     let mut substituted = ProvenanceDependency {
-        unconditional_external: dependencies.unconditional_external,
+        unconditionally_boundary_derived: dependencies.unconditionally_boundary_derived,
         parameters: ParameterDependencies::default(),
     };
     for datum in &dependencies.parameters.datums {
@@ -1478,22 +1479,27 @@ fn include_binding(maximum: &mut Option<u32>, binding: BindingId) {
 fn dependency_fixed_point(
     functions: &[CheckedFunction],
     nominals: &[CheckedNominal],
-    external_entry: Option<FunctionId>,
+    boundary_origin_entry: Option<FunctionId>,
 ) -> ProvenanceResult<Vec<FunctionDependencies>> {
     let mut summaries = functions
         .iter()
         .map(|function| {
-            Ok(
-                FunctionPass::new(function, nominals, external_entry == Some(function.id))?
-                    .metadata(),
-            )
+            Ok(FunctionPass::new(
+                function,
+                nominals,
+                boundary_origin_entry == Some(function.id),
+            )?
+            .metadata())
         })
         .collect::<ProvenanceResult<Vec<_>>>()?;
     loop {
         let previous = summaries.clone();
         for function in functions {
-            let mut pass =
-                FunctionPass::new(function, nominals, external_entry == Some(function.id))?;
+            let mut pass = FunctionPass::new(
+                function,
+                nominals,
+                boundary_origin_entry == Some(function.id),
+            )?;
             pass.scan_until_stable(&previous)?;
             let derived = pass.metadata();
             let summary = summaries
@@ -1514,8 +1520,11 @@ fn dependency_fixed_point(
     functions
         .iter()
         .map(|function| {
-            let mut pass =
-                FunctionPass::new(function, nominals, external_entry == Some(function.id))?;
+            let mut pass = FunctionPass::new(
+                function,
+                nominals,
+                boundary_origin_entry == Some(function.id),
+            )?;
             pass.scan_until_stable(&summaries)?;
             Ok(pass.metadata())
         })
@@ -2151,14 +2160,14 @@ impl CarrierRoute {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CarrierGoal {
-    External,
+    BoundaryDerived,
     Parameter(ParameterDatum),
 }
 
 impl CarrierGoal {
     fn is_present(self, dependency: &ProvenanceDependency) -> bool {
         match self {
-            Self::External => dependency.unconditional_external,
+            Self::BoundaryDerived => dependency.unconditionally_boundary_derived,
             Self::Parameter(datum) => dependency.parameters.datums.binary_search(&datum).is_ok(),
         }
     }
@@ -2222,7 +2231,7 @@ struct CarrierReconstructor<'check> {
     functions: &'check [CheckedFunction],
     summaries: &'check [FunctionDependencies],
     nominals: &'check [CheckedNominal],
-    external_entry: Option<FunctionId>,
+    boundary_origin_entry: Option<FunctionId>,
 }
 
 impl<'check> CarrierReconstructor<'check> {
@@ -2259,21 +2268,21 @@ impl<'check> CarrierReconstructor<'check> {
             .selected(selector)
     }
 
-    fn external_expression_route(
+    fn boundary_derived_expression_route(
         &self,
         function: FunctionId,
         expression: &CheckedExpression,
         selector: DatumSelector,
     ) -> ProvenanceResult<CarrierRoute> {
         let dependency = self.expression_dependency(function, expression, selector)?;
-        if !dependency.unconditional_external {
+        if !dependency.unconditionally_boundary_derived {
             return Err(SemanticCompilerFailure::InvalidResolution);
         }
         self.route_expression(
             function,
             expression,
             selector,
-            CarrierGoal::External,
+            CarrierGoal::BoundaryDerived,
             &mut Vec::new(),
         )?
         .ok_or(SemanticCompilerFailure::InvalidResolution)
@@ -2348,8 +2357,8 @@ impl<'check> CarrierReconstructor<'check> {
             } => {
                 let selected = system_result_dependencies(*operation, *result, self.nominals)?
                     .selected(selector)?;
-                let mut route = (matches!(goal, CarrierGoal::External)
-                    && selected.unconditional_external)
+                let mut route = (matches!(goal, CarrierGoal::BoundaryDerived)
+                    && selected.unconditionally_boundary_derived)
                     .then(|| {
                         CarrierRoute::call_terminal(
                             call.clone(),
@@ -2560,10 +2569,11 @@ impl<'check> CarrierReconstructor<'check> {
     ) -> ProvenanceResult<Option<CarrierRoute>> {
         let selected = self.summary(callee)?.result.selected(selector)?;
         let mut route = None;
-        if matches!(goal, CarrierGoal::External) && selected.unconditional_external {
+        if matches!(goal, CarrierGoal::BoundaryDerived) && selected.unconditionally_boundary_derived
+        {
             choose_carrier_route(
                 &mut route,
-                self.route_result(callee, selector, CarrierGoal::External, visited)?,
+                self.route_result(callee, selector, CarrierGoal::BoundaryDerived, visited)?,
             );
         }
         for datum in selected.parameters.datums {
@@ -2634,9 +2644,9 @@ impl<'check> CarrierReconstructor<'check> {
             let ordinal =
                 u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
             let is_seed = match goal {
-                CarrierGoal::External => self.external_entry == Some(function),
+                CarrierGoal::BoundaryDerived => self.boundary_origin_entry == Some(function),
                 CarrierGoal::Parameter(datum) => {
-                    self.external_entry != Some(function)
+                    self.boundary_origin_entry != Some(function)
                         && datum == (ParameterDatum { ordinal, selector })
                 }
             };
@@ -2938,7 +2948,7 @@ impl<'check> CarrierReconstructor<'check> {
             let ordinal =
                 u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
             match goal {
-                CarrierGoal::External if self.external_entry == Some(function) => {
+                CarrierGoal::BoundaryDerived if self.boundary_origin_entry == Some(function) => {
                     for selector in selectors(parameter.ty, self.nominals) {
                         choose_carrier_route(
                             &mut route,
@@ -2950,7 +2960,7 @@ impl<'check> CarrierReconstructor<'check> {
                     }
                 }
                 CarrierGoal::Parameter(datum)
-                    if self.external_entry != Some(function) && datum.ordinal == ordinal =>
+                    if self.boundary_origin_entry != Some(function) && datum.ordinal == ordinal =>
                 {
                     choose_carrier_route(
                         &mut route,
@@ -2960,7 +2970,7 @@ impl<'check> CarrierReconstructor<'check> {
                         )),
                     );
                 }
-                CarrierGoal::External | CarrierGoal::Parameter(_) => {}
+                CarrierGoal::BoundaryDerived | CarrierGoal::Parameter(_) => {}
             }
         }
         self.scan_storage_block(
@@ -3245,11 +3255,11 @@ impl<'check> CarrierReconstructor<'check> {
                 arguments,
                 ..
             } => {
-                for ordinal in system_external_writes(*operation)? {
+                for ordinal in system_boundary_derived_writes(*operation)? {
                     let argument = arguments
                         .get(*ordinal)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    if matches!(goal, CarrierGoal::External)
+                    if matches!(goal, CarrierGoal::BoundaryDerived)
                         && pass.argument_root(argument)? == Some(root)
                     {
                         let argument_node = argument_nodes
@@ -3296,10 +3306,12 @@ impl<'check> CarrierReconstructor<'check> {
             .get(parameter as usize)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let mut route = None;
-        if matches!(goal, CarrierGoal::External) && dependency.unconditional_external {
+        if matches!(goal, CarrierGoal::BoundaryDerived)
+            && dependency.unconditionally_boundary_derived
+        {
             choose_carrier_route(
                 &mut route,
-                self.route_write(callee, parameter, CarrierGoal::External, visited)?,
+                self.route_write(callee, parameter, CarrierGoal::BoundaryDerived, visited)?,
             );
         }
         for datum in &dependency.parameters.datums {
@@ -3678,11 +3690,14 @@ fn counterfactual_view(outcomes: &[&CallGoalCounterfactual]) -> BridgeGoalView {
     }
 }
 
-fn call_is_upstream_generator(call: &CallInventory, external_entry: Option<FunctionId>) -> bool {
+fn call_is_upstream_generator(
+    call: &CallInventory,
+    boundary_origin_entry: Option<FunctionId>,
+) -> bool {
     goal_view_discharged(&call.unasserted)
         && !goal_view_discharged(&call.blinded)
         && call.caller_requirement.is_some()
-        && external_entry != Some(call.site.caller)
+        && boundary_origin_entry != Some(call.site.caller)
 }
 
 fn goal_view_discharged(view: &BridgeGoalView) -> bool {
@@ -3917,7 +3932,7 @@ fn local_bridge_seeds(
             }
             // A true unconditional bit terminates locally under PRV-3.  Its
             // companion parameter datums are diagnostic explanations only.
-            if dependency.unconditional_external {
+            if dependency.unconditionally_boundary_derived {
                 continue;
             }
             insert_structural(
@@ -4003,16 +4018,17 @@ fn local_gate_seeds(
             for expression in &site.subjects {
                 subject.union(&pass.expression(expression, dependencies)?.aggregate());
             }
-            if subject.unconditional_external {
-                let entry_requirement =
-                    if reconstructor.external_entry == Some(function.id) && unasserted_discharged {
-                        Some(
-                            requirement_occurrence(function)
-                                .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-                        )
-                    } else {
-                        None
-                    };
+            if subject.unconditionally_boundary_derived {
+                let entry_requirement = if reconstructor.boundary_origin_entry == Some(function.id)
+                    && unasserted_discharged
+                {
+                    Some(
+                        requirement_occurrence(function)
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                    )
+                } else {
+                    None
+                };
                 local.push(LocalGateCandidate {
                     leaf: site.leaf,
                     subject,
@@ -4023,11 +4039,11 @@ fn local_gate_seeds(
                             if pass
                                 .expression(expression, dependencies)?
                                 .aggregate()
-                                .unconditional_external
+                                .unconditionally_boundary_derived
                             {
                                 choose_carrier_route(
                                     &mut route,
-                                    Some(reconstructor.external_expression_route(
+                                    Some(reconstructor.boundary_derived_expression_route(
                                         function.id,
                                         expression,
                                         DatumSelector::Plain,
@@ -4129,7 +4145,7 @@ fn bridge_fixed_point(
     calls: &[CallInventory],
     local_structural: &[StructuralKey],
     local_subjects: &[SubjectKey],
-    external_entry: Option<FunctionId>,
+    boundary_origin_entry: Option<FunctionId>,
 ) -> ProvenanceResult<(Vec<StructuralKey>, Vec<SubjectKey>)> {
     let mut structural = local_structural.to_vec();
     let mut subjects = local_subjects.to_vec();
@@ -4137,7 +4153,7 @@ fn bridge_fixed_point(
         let structural_before = structural.clone();
         let subjects_before = subjects.clone();
         for call in calls {
-            if !call_is_upstream_generator(call, external_entry) {
+            if !call_is_upstream_generator(call, boundary_origin_entry) {
                 continue;
             }
             let caller_requirement = call
@@ -4165,7 +4181,7 @@ fn bridge_fixed_point(
                     .get(downstream.subject.ordinal as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let selected = actual.selected(downstream.subject.selector)?;
-                if selected.unconditional_external {
+                if selected.unconditionally_boundary_derived {
                     continue;
                 }
                 for subject in selected.parameters.datums {
@@ -4211,7 +4227,7 @@ fn direct_demand_fixed_point(
                 .get(bridge.subject.ordinal as usize)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             let selected = actual.selected(bridge.subject.selector)?;
-            if selected.unconditional_external {
+            if selected.unconditionally_boundary_derived {
                 continue;
             }
             for subject in selected.parameters.datums {
@@ -4239,7 +4255,7 @@ fn direct_demand_fixed_point(
                     .get(downstream.subject.ordinal as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let selected = actual.selected(downstream.subject.selector)?;
-                if selected.unconditional_external {
+                if selected.unconditionally_boundary_derived {
                     continue;
                 }
                 for subject in selected.parameters.datums {
@@ -4265,7 +4281,7 @@ fn reconstruct_subject_routes(
     converged: &[SubjectKey],
     local: &[SubjectKey],
     calls: &[CallInventory],
-    external_entry: Option<FunctionId>,
+    boundary_origin_entry: Option<FunctionId>,
 ) -> ProvenanceResult<Vec<DemandRoute>> {
     let mut routes = vec![None; converged.len()];
     for key in local {
@@ -4277,7 +4293,7 @@ fn reconstruct_subject_routes(
     loop {
         let mut changed = false;
         for call in calls {
-            if !call_is_upstream_generator(call, external_entry) {
+            if !call_is_upstream_generator(call, boundary_origin_entry) {
                 continue;
             }
             let caller_requirement = call
@@ -4296,7 +4312,7 @@ fn reconstruct_subject_routes(
                     .get(downstream.subject.ordinal as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let selected = actual.selected(downstream.subject.selector)?;
-                if selected.unconditional_external {
+                if selected.unconditionally_boundary_derived {
                     continue;
                 }
                 let argument_node = call
@@ -4371,7 +4387,7 @@ fn reconstruct_direct_routes(
                     .get(bridge.subject.ordinal as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let selected = actual.selected(bridge.subject.selector)?;
-                if selected.unconditional_external {
+                if selected.unconditionally_boundary_derived {
                     continue;
                 }
                 let argument_node = call
@@ -4414,7 +4430,7 @@ fn reconstruct_direct_routes(
                     .get(downstream.subject.ordinal as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let selected = actual.selected(downstream.subject.selector)?;
-                if selected.unconditional_external {
+                if selected.unconditionally_boundary_derived {
                     continue;
                 }
                 let argument_node = call
@@ -4534,7 +4550,7 @@ fn build_call_events(
                 .get(demand.subject.ordinal as usize)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?
                 .selected(demand.subject.selector)?;
-            if !selected.unconditional_external {
+            if !selected.unconditionally_boundary_derived {
                 continue;
             }
             let argument_node = call
@@ -4547,7 +4563,7 @@ fn build_call_events(
                 .arguments
                 .get(demand.subject.ordinal as usize)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let carrier = reconstructor.external_expression_route(
+            let carrier = reconstructor.boundary_derived_expression_route(
                 call.site.caller,
                 argument,
                 demand.subject.selector,
@@ -4591,7 +4607,7 @@ fn build_call_events(
                 .get(bridge.subject.ordinal as usize)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?
                 .selected(bridge.subject.selector)?;
-            if !selected.unconditional_external {
+            if !selected.unconditionally_boundary_derived {
                 continue;
             }
             let argument_node = call
@@ -4604,7 +4620,7 @@ fn build_call_events(
                 .arguments
                 .get(bridge.subject.ordinal as usize)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let carrier = reconstructor.external_expression_route(
+            let carrier = reconstructor.boundary_derived_expression_route(
                 call.site.caller,
                 argument,
                 bridge.subject.selector,
@@ -4715,7 +4731,7 @@ fn reconstruct_structural_bridges(
     converged: &[StructuralKey],
     local: &[StructuralKey],
     calls: &[CallInventory],
-    external_entry: Option<FunctionId>,
+    boundary_origin_entry: Option<FunctionId>,
 ) -> ProvenanceResult<Vec<StructuralBridge>> {
     let mut distances = vec![None; converged.len()];
     let mut predecessors = vec![None; converged.len()];
@@ -4734,7 +4750,7 @@ fn reconstruct_structural_bridges(
     loop {
         let mut changed = false;
         for call in calls {
-            if !call_is_upstream_generator(call, external_entry) {
+            if !call_is_upstream_generator(call, boundary_origin_entry) {
                 continue;
             }
             let caller_requirement = call
@@ -4844,7 +4860,7 @@ fn build_call_links(
     calls: &[CallInventory],
     structural: &[StructuralKey],
     subjects: &[SubjectKey],
-    external_entry: Option<FunctionId>,
+    boundary_origin_entry: Option<FunctionId>,
 ) -> ProvenanceResult<Vec<BridgeCallLink>> {
     let mut links = Vec::new();
     for call in calls {
@@ -4873,8 +4889,8 @@ fn build_call_links(
                     .then_with(|| left.callee_subject.cmp(&right.callee_subject))
                     .then_with(|| {
                         left.caller_dependency
-                            .unconditional_external
-                            .cmp(&right.caller_dependency.unconditional_external)
+                            .unconditionally_boundary_derived
+                            .cmp(&right.caller_dependency.unconditionally_boundary_derived)
                             .then_with(|| {
                                 left.caller_dependency
                                     .parameters
@@ -4893,7 +4909,7 @@ fn build_call_links(
                 full: call.full.clone(),
                 unasserted: call.unasserted.clone(),
                 s4_blinded: call.blinded.clone(),
-                upstream_requirement: call_is_upstream_generator(call, external_entry)
+                upstream_requirement: call_is_upstream_generator(call, boundary_origin_entry)
                     .then(|| call.caller_requirement.clone())
                     .flatten(),
             });
@@ -4918,9 +4934,13 @@ pub(crate) fn freeze_program_provenance(
     context: &ProvenanceContext<'_>,
 ) -> ProvenanceResult<FrozenProvenanceDependencies> {
     Ok(FrozenProvenanceDependencies {
-        functions: dependency_fixed_point(functions, context.nominals, context.external_entry)?
-            .into(),
-        external_entry: context.external_entry,
+        functions: dependency_fixed_point(
+            functions,
+            context.nominals,
+            context.boundary_origin_entry,
+        )?
+        .into(),
+        boundary_origin_entry: context.boundary_origin_entry,
     })
 }
 
@@ -4933,7 +4953,7 @@ pub(crate) fn analyze_program_provenance_with_frozen(
     frozen: &FrozenProvenanceDependencies,
 ) -> ProvenanceResult<ProvenanceAnalysis> {
     let dependencies = frozen.functions.as_ref();
-    if frozen.external_entry != context.external_entry
+    if frozen.boundary_origin_entry != context.boundary_origin_entry
         || functions.len() != dependencies.len()
         || functions
             .iter()
@@ -4946,7 +4966,7 @@ pub(crate) fn analyze_program_provenance_with_frozen(
         functions,
         summaries: dependencies,
         nominals: context.nominals,
-        external_entry: context.external_entry,
+        boundary_origin_entry: context.boundary_origin_entry,
     };
     let unasserted = functions
         .iter()
@@ -4975,10 +4995,14 @@ pub(crate) fn analyze_program_provenance_with_frozen(
         &calls,
         &local_structural,
         &local_subjects,
-        context.external_entry,
+        context.boundary_origin_entry,
     )?;
-    let subject_routes =
-        reconstruct_subject_routes(&subjects, &local_subjects, &calls, context.external_entry)?;
+    let subject_routes = reconstruct_subject_routes(
+        &subjects,
+        &local_subjects,
+        &calls,
+        context.boundary_origin_entry,
+    )?;
     let direct_calls = build_direct_call_inventory(functions, dependencies, context.nominals)?;
     let (local_direct, local_rejections, local_leaf_dispositions) = local_gate_seeds(
         functions,
@@ -5012,10 +5036,15 @@ pub(crate) fn analyze_program_provenance_with_frozen(
         &structural,
         &local_structural,
         &calls,
-        context.external_entry,
+        context.boundary_origin_entry,
     )?;
     let subject_bridges = subject_bridges_from_routes(&subjects, &subject_routes, &local_subjects)?;
-    let calls = build_call_links(&calls, &structural, &subjects, context.external_entry)?;
+    let calls = build_call_links(
+        &calls,
+        &structural,
+        &subjects,
+        context.boundary_origin_entry,
+    )?;
 
     Ok(ProvenanceAnalysis {
         metadata: ProvenanceMetadata {

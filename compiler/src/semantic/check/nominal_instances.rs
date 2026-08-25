@@ -374,7 +374,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             ResolvedTarget::System(id) => {
                 if let Some(index) = crate::system_nominal_index(id, self.inventory()) {
-                    self.intern_system_nominal(index)?;
+                    let world_regions = self.system_nominal_world_arguments(node, index)?;
+                    self.intern_system_nominal_with(index, world_regions)?;
                 }
                 Ok(())
             }
@@ -483,10 +484,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let operation = crate::SYSTEM_OPERATIONS
                     .get(usize::from(index))
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let actual_regions = self.system_call_region_arguments(call, operation)?;
                 for parameter in operation.parameters {
-                    self.ensure_system_type(parameter.ty)?;
+                    let world_regions = parameter
+                        .world_regions
+                        .iter()
+                        .map(|index| {
+                            actual_regions
+                                .get(usize::from(*index))
+                                .copied()
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    self.ensure_system_type_with(parameter.ty, &world_regions)?;
                 }
-                self.ensure_system_type(operation.result)?;
+                let result_world_regions = operation
+                    .result_world_regions
+                    .iter()
+                    .map(|index| {
+                        actual_regions
+                            .get(usize::from(*index))
+                            .copied()
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                self.ensure_system_type_with(operation.result, &result_world_regions)?;
                 continue;
             }
             let spelling = self.tree.direct_spelling(callee)?;

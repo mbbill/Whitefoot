@@ -9,7 +9,9 @@ mod target;
 mod tests;
 
 pub use emitter::{
-    BackendFailure, FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES, PARALLEL_RUNTIME_SOURCE, emit_llvm,
-    module_requires_parallel_runtime,
+    BackendFailure, COMPLETION_CONTRACT_HEADER, COMPLETION_PLATFORM_FILE_NAME,
+    COMPLETION_PLATFORM_HEADER, COMPLETION_PLATFORM_SOURCE, COMPLETION_RUNTIME_SOURCE,
+    FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES, PARALLEL_RUNTIME_SOURCE, emit_llvm,
+    module_requires_completion_runtime, module_requires_parallel_runtime,
 };
 pub use stack_ledger::stack_ledger;

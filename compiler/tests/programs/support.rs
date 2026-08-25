@@ -5,16 +5,16 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::link_support::{add_embedded_runtimes, remove_embedded_runtimes};
 use whitefoot::{
-    CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_OPTIMIZATION_ARGUMENTS, Inventory, OverlapLowering,
-    PARALLEL_RUNTIME_SOURCE, SourceInput, compile, compile_with_inventory, compile_with_overlap,
-    compile_with_permission_ledger, module_requires_parallel_runtime,
+    CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, Inventory, OverlapLowering, SourceInput, compile,
+    compile_with_inventory, compile_with_overlap, compile_with_permission_ledger,
 };
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
 
-/// Links one emitted module into `executable`, adding the parallel runtime on
-/// exactly the condition the driver uses.
+/// Links one emitted module into `executable`, adding completion and parallel
+/// runtimes on exactly the conditions the driver uses.
 ///
 /// One definition serves both program-corpus link paths, so a program that
 /// overlaps nothing links nothing extra and no path can forget the runtime a
@@ -22,18 +22,7 @@ static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
 fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
     let mut command = Command::new("/usr/bin/clang");
     command.arg("-x").arg("ir").arg(module);
-    // The exhaustion floor joins every link the driver makes: every program can
-    // run out of stack, so every corpus program carries the unit that reports
-    // it and runs on the stack it sizes.
-    let floor_unit = directory.join("wf_floor.c");
-    std::fs::write(&floor_unit, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
-    command.arg("-pthread").arg("-x").arg("c").arg(&floor_unit);
-    let parallel_unit = module_requires_parallel_runtime(llvm).then(|| {
-        let path = directory.join("par_runtime.c");
-        std::fs::write(&path, PARALLEL_RUNTIME_SOURCE).expect("write the parallel runtime");
-        command.arg("-x").arg("c").arg(&path);
-        path
-    });
+    let runtime_artifacts = add_embedded_runtimes(&mut command, llvm, directory);
     let compilation = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
@@ -46,10 +35,7 @@ fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
         String::from_utf8_lossy(&compilation.stderr),
         llvm
     );
-    std::fs::remove_file(&floor_unit).expect("remove the floor runtime unit");
-    if let Some(path) = parallel_unit {
-        std::fs::remove_file(path).expect("remove the parallel runtime unit");
-    }
+    remove_embedded_runtimes(runtime_artifacts);
 }
 
 pub fn compile_program(name: &str) -> String {
@@ -262,27 +248,20 @@ pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
     ));
     std::fs::create_dir(&directory).expect("create unique grant-count directory");
     let module = directory.join("counted.ll");
-    let runtime = directory.join("par_runtime.c");
-    let floor = directory.join("wf_floor.c");
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
     std::fs::write(&module, llvm).expect("write the module");
-    std::fs::write(&runtime, PARALLEL_RUNTIME_SOURCE).expect("write the parallel runtime");
-    std::fs::write(&floor, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     std::fs::write(
         &observer,
         "#include <stdio.h>\nextern unsigned long wf__par_grants;\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants);\n}\n",
     )
     .expect("write the observer");
-    let linked = Command::new("/usr/bin/clang")
-        .arg("-pthread")
-        .arg("-x")
-        .arg("ir")
-        .arg(&module)
+    let mut link_command = Command::new("/usr/bin/clang");
+    link_command.arg("-x").arg("ir").arg(&module);
+    let _runtime_artifacts = add_embedded_runtimes(&mut link_command, llvm, &directory);
+    let linked = link_command
         .arg("-x")
         .arg("c")
-        .arg(&runtime)
-        .arg(&floor)
         .arg(&observer)
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
@@ -361,10 +340,11 @@ impl CompiledProgram {
     /// one built executable, because the difference under test is the execution
     /// and not the program.
     ///
-    /// In a `--par` build the default is a pool sized to the machine, so
-    /// `None` is a parallel execution and `Some("1")` is the sequential one. In
-    /// a default build no runtime is linked and neither spelling reaches
-    /// anything.
+    /// In a `--par` build the default is a pool sized to the machine;
+    /// `Some("0")` selects the sequential world, while `Some("1")` retains one
+    /// compute lane and completion overlap without a stealing worker. In a
+    /// default build no parallel runtime is linked and these spellings do not
+    /// select an overlap lowering.
     pub fn run_with_workers(&self, workers: Option<&str>) -> Output {
         let mut command = Command::new(&self.executable);
         command.current_dir(&self.directory);

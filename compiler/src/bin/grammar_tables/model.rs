@@ -135,8 +135,6 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("heap", "Heap"),
         ("traps", "Traps"),
         ("as", "As"),
-        ("external", "External"),
-        ("blocks", "Blocks"),
         ("claim", "Claim"),
         ("because", "Because"),
         // FLOOR-5 additions: `if` plus the twenty `infix_op` spellings.

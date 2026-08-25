@@ -22,7 +22,7 @@ fn mutual_right(bytes: own buffer<u8>, index: own u64, remaining: own u64) -> re
 }
 
 command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
-  doc "A protected-leaf seed in one member of a mutually recursive component reaches the other member and rejects its external entry actual under PRV-2.";
+  doc "A protected-leaf seed in one member of a mutually recursive component reaches the other member and rejects its boundary-derived entry actual under PRV-2.";
   region 'a {
     let raw_index = args_count<'a>(args: &'a args);
     let index = clamp_three(value: raw_index);

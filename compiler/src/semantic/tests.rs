@@ -784,19 +784,22 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
 }
 
 #[test]
-fn undeclared_system_effect_categories_reject_both_row_directions() {
-    // The two payload-free categories are checked exactly like every other
-    // category [EFF-1, EFF-2]. These internal bodies exhibit neither, so
-    // declaring either is declared-but-unexhibited.
+fn world_effect_rows_reject_both_mismatch_directions() {
+    // World regions are checked in both EFF-2 directions. A quiet body cannot
+    // over-declare a world write, while an owned file's release contribution
+    // cannot be hidden behind `pure`.
     assert_rule(
-        b"fn probe() -> result: own unit external {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe['q]() -> result: own unit writes('q) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
-        b"fn probe() -> result: own unit blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        SemanticIssueKind::ReleaseEffectMismatch {
+            owner: "file".to_owned(),
+            mechanical_fix: "declare the world effects of every resource this function may release, or move the owner out",
+        },
     );
 }
 

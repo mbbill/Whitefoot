@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus external, blocks {
+command fn main['qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw 'fw), writes('qw 'dhw 'rhw 'rcw) {
   doc "SYS-7: a native failure maps onto exactly one portable class, and the class is the sole portable discriminator that exhaustive control flow branches on [ERR-2]. Opening a name no object in the initial directory carries is NotFound; the case reads no detail field, because code and origin are diagnostic data and no portable semantics is defined in terms of them.";
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
@@ -7,7 +7,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           Ok(value: path) => {
             region 'c {
               region 'p {
-                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
+                match open_read<'c, 'p, 'qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     return exit_status(code: 10_u8);
                   }

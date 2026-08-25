@@ -161,6 +161,8 @@ pub struct SystemNominal {
     pub spelling: &'static str,
     /// `true` for the seven opaque types, `false` for the seven outcome enums.
     pub opaque: bool,
+    /// Owner-local world-region formals in exact vector order.
+    pub world_parameters: &'static [&'static str],
 }
 
 /// One [SYS-2] enum-variant constructor in normative table order.
@@ -190,14 +192,57 @@ pub struct SystemOperation {
     pub spelling: &'static str,
     /// Region parameters in declared order, complete sigiled spellings.
     pub regions: &'static [&'static str],
+    /// Region-parameter indices whose kind is world; every other index is
+    /// memory-kind.
+    pub world_regions: &'static [u8],
     /// Value parameters in declared order; owner-local, never in source lookup.
     pub parameters: &'static [SystemParameter],
     /// Result type; every [SYS-2] result mode is `own`.
     pub result: SystemTypeRef,
-    /// Fixed `external` classification from the written [SYS-2] row.
-    pub external: bool,
-    /// Fixed `blocks` classification from the written [SYS-2] row.
-    pub blocks: bool,
+    /// World-vector region indices for a world-bearing nominal nested in the
+    /// result, empty when the result carries no such capability.
+    pub result_world_regions: &'static [u8],
+    /// Exact normalized read-region entries from the written [SYS-2] row.
+    pub reads: &'static [u8],
+    /// Exact normalized write-region entries from the written [SYS-2] row.
+    pub writes: &'static [u8],
+    /// Trusted lowering summary, separate from the source effect row.
+    pub target_action: TargetAction,
+    /// Compiler-owned capability-origin relations in deterministic table
+    /// order. These are audit/lowering metadata, never source effects.
+    pub origin_relations: &'static [SystemOriginRelation],
+}
+
+/// One capability-origin relation fixed by a [SYS-2] operation row.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SystemOriginRelation {
+    /// Declared operation-region index whose instantiated identity is named.
+    pub region: u8,
+    /// How that identity relates to the operation's authority and result.
+    pub kind: SystemOriginKind,
+}
+
+/// The finite origin relation vocabulary used by system operation records.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SystemOriginKind {
+    /// A borrowed capability retains this input identity.
+    Preserve,
+    /// A result capability inherits this authority identity.
+    Inherit,
+    /// A successful result receives new state at this caller-supplied identity.
+    Fresh,
+}
+
+impl SystemOriginKind {
+    /// Stable developer-channel spelling.
+    #[must_use]
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            Self::Preserve => "preserve",
+            Self::Inherit => "inherit",
+            Self::Fresh => "fresh",
+        }
+    }
 }
 
 /// One owner-local [SYS-2] operation value parameter.
@@ -209,6 +254,136 @@ pub struct SystemParameter {
     pub mode: SystemParameterMode,
     /// Declared parameter type.
     pub ty: SystemTypeRef,
+    /// World-vector region indices for a world-bearing nominal parameter.
+    pub world_regions: &'static [u8],
+}
+
+/// Whether one target action returns on the executing lane or through a
+/// completion source.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TargetDispatch {
+    /// The action returns on the executing lane.
+    Inline,
+    /// The action terminates through a completion source.
+    Completion,
+}
+
+impl TargetDispatch {
+    /// Stable developer-channel spelling used by target-action ledgers.
+    #[must_use]
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            Self::Inline => "inline",
+            Self::Completion => "completion",
+        }
+    }
+}
+
+/// Whether the target adapter may block one host thread.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TargetHostWait {
+    /// The adapter never blocks a host thread.
+    Never,
+    /// The adapter may block one host thread while servicing the action.
+    MayBlock,
+}
+
+impl TargetHostWait {
+    /// Stable developer-channel spelling used by target-action ledgers.
+    #[must_use]
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            Self::Never => "never",
+            Self::MayBlock => "may-block",
+        }
+    }
+}
+
+/// The point at which transferred loans return to the caller.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TargetLoanEnd {
+    /// Transferred loans end when the call returns.
+    CallReturn,
+    /// Transferred loans end only at the action's terminal state.
+    Terminal,
+}
+
+impl TargetLoanEnd {
+    /// Stable developer-channel spelling used by target-action ledgers.
+    #[must_use]
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            Self::CallReturn => "call-return",
+            Self::Terminal => "terminal",
+        }
+    }
+}
+
+/// The compiler-owned target-action record replacing the source `blocks`
+/// effect atom [SYS-2].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TargetAction {
+    /// How the action delivers its terminal result.
+    pub dispatch: TargetDispatch,
+    /// Whether the target adapter may block a host thread.
+    pub host_wait: TargetHostWait,
+    /// When any loans transferred by the action end.
+    pub loan_end: TargetLoanEnd,
+}
+
+impl TargetAction {
+    /// An action completed directly on the executing lane.
+    pub const INLINE: Self = Self {
+        dispatch: TargetDispatch::Inline,
+        host_wait: TargetHostWait::Never,
+        loan_end: TargetLoanEnd::CallReturn,
+    };
+
+    /// An action completed through a target completion source.
+    pub const COMPLETION: Self = Self {
+        dispatch: TargetDispatch::Completion,
+        host_wait: TargetHostWait::MayBlock,
+        loan_end: TargetLoanEnd::Terminal,
+    };
+
+    /// Fail-closed summary used when a callable or release record cannot be
+    /// resolved. It is the componentwise top of this finite lattice.
+    pub const CONSERVATIVE: Self = Self::COMPLETION;
+
+    /// Whether this action needs a completion-frame route when an overlap is
+    /// actualized. This metadata never changes source acceptance.
+    #[must_use]
+    pub const fn requires_completion(self) -> bool {
+        matches!(self.dispatch, TargetDispatch::Completion)
+    }
+
+    #[must_use]
+    /// Returns the conservative transitive summary of two actions.
+    pub const fn union(self, other: Self) -> Self {
+        Self {
+            dispatch: if matches!(self.dispatch, TargetDispatch::Completion)
+                || matches!(other.dispatch, TargetDispatch::Completion)
+            {
+                TargetDispatch::Completion
+            } else {
+                TargetDispatch::Inline
+            },
+            host_wait: if matches!(self.host_wait, TargetHostWait::MayBlock)
+                || matches!(other.host_wait, TargetHostWait::MayBlock)
+            {
+                TargetHostWait::MayBlock
+            } else {
+                TargetHostWait::Never
+            },
+            loan_end: if matches!(self.loan_end, TargetLoanEnd::Terminal)
+                || matches!(other.loan_end, TargetLoanEnd::Terminal)
+            {
+                TargetLoanEnd::Terminal
+            } else {
+                TargetLoanEnd::CallReturn
+            },
+        }
+    }
 }
 
 /// A [SYS-2] parameter mode; borrow modes index the operation's region list.
@@ -381,22 +556,22 @@ const TRAVERSAL_OPERATIONS: usize = 14;
 /// additions and are admitted only under
 /// [`TRAVERSAL_SURFACE`].
 pub const SYSTEM_NOMINALS: [SystemNominal; 16] = [
-    nominal("Args", true),
-    nominal("HostString", true),
-    nominal("RelativePath", true),
-    nominal("DirectoryRead", true),
-    nominal("ReadFile", true),
-    nominal("Output", true),
-    nominal("ExitStatus", true),
-    nominal("ArgError", false),
-    nominal("Utf8Error", false),
-    nominal("CopyError", false),
-    nominal("Utf8CopyError", false),
-    nominal("PathError", false),
-    nominal("ReadOutcome", false),
-    nominal("IoError", false),
-    nominal("DirectoryList", true),
-    nominal("ListOutcome", false),
+    nominal("Args", true, &[]),
+    nominal("HostString", true, &[]),
+    nominal("RelativePath", true, &[]),
+    nominal("DirectoryRead", true, &["'q", "'h", "'d", "'f"]),
+    nominal("ReadFile", true, &["'q", "'h", "'c", "'f"]),
+    nominal("Output", true, &["'q", "'o"]),
+    nominal("ExitStatus", true, &[]),
+    nominal("ArgError", false, &[]),
+    nominal("Utf8Error", false, &[]),
+    nominal("CopyError", false, &[]),
+    nominal("Utf8CopyError", false, &[]),
+    nominal("PathError", false, &[]),
+    nominal("ReadOutcome", false, &[]),
+    nominal("IoError", false, &[]),
+    nominal("DirectoryList", true, &["'q", "'h", "'c", "'d"]),
+    nominal("ListOutcome", false, &[]),
 ];
 
 /// The [SYS-2] nominal types one inventory state admits.
@@ -417,8 +592,16 @@ pub fn system_operations(inventory: Inventory) -> &'static [SystemOperation] {
     &SYSTEM_OPERATIONS[..inventory.operations()]
 }
 
-const fn nominal(spelling: &'static str, opaque: bool) -> SystemNominal {
-    SystemNominal { spelling, opaque }
+const fn nominal(
+    spelling: &'static str,
+    opaque: bool,
+    world_parameters: &'static [&'static str],
+) -> SystemNominal {
+    SystemNominal {
+        spelling,
+        opaque,
+        world_parameters,
+    }
 }
 
 /// The exact inline detail carried by every [SYS-2] `IoError` class.
@@ -517,7 +700,26 @@ const fn parameter(
     mode: SystemParameterMode,
     ty: SystemTypeRef,
 ) -> SystemParameter {
-    SystemParameter { name, mode, ty }
+    SystemParameter {
+        name,
+        mode,
+        ty,
+        world_regions: &[],
+    }
+}
+
+const fn capability_parameter(
+    name: &'static str,
+    mode: SystemParameterMode,
+    nominal: u8,
+    world_regions: &'static [u8],
+) -> SystemParameter {
+    SystemParameter {
+        name,
+        mode,
+        ty: SystemTypeRef::Nominal(nominal),
+        world_regions,
+    }
 }
 
 const fn ok_nominal(ok: u8, err: u8) -> SystemTypeRef {
@@ -534,37 +736,83 @@ const fn ok_u64(err: u8) -> SystemTypeRef {
     }
 }
 
+const fn origin(region: u8, kind: SystemOriginKind) -> SystemOriginRelation {
+    SystemOriginRelation { region, kind }
+}
+
+const OPEN_READ_ORIGINS: [SystemOriginRelation; 6] = [
+    origin(2, SystemOriginKind::Inherit),
+    origin(3, SystemOriginKind::Preserve),
+    origin(4, SystemOriginKind::Preserve),
+    origin(5, SystemOriginKind::Inherit),
+    origin(6, SystemOriginKind::Fresh),
+    origin(7, SystemOriginKind::Fresh),
+];
+const READ_ONCE_ORIGINS: [SystemOriginRelation; 4] = [
+    origin(2, SystemOriginKind::Preserve),
+    origin(3, SystemOriginKind::Preserve),
+    origin(4, SystemOriginKind::Preserve),
+    origin(5, SystemOriginKind::Preserve),
+];
+const WRITE_ONCE_ORIGINS: [SystemOriginRelation; 2] = [
+    origin(2, SystemOriginKind::Preserve),
+    origin(3, SystemOriginKind::Preserve),
+];
+const OPEN_DIRECTORY_ORIGINS: [SystemOriginRelation; 5] = [
+    origin(2, SystemOriginKind::Inherit),
+    origin(3, SystemOriginKind::Preserve),
+    origin(4, SystemOriginKind::Inherit),
+    origin(5, SystemOriginKind::Inherit),
+    origin(6, SystemOriginKind::Fresh),
+];
+const OPEN_LIST_ORIGINS: [SystemOriginRelation; 6] = [
+    origin(1, SystemOriginKind::Inherit),
+    origin(2, SystemOriginKind::Preserve),
+    origin(3, SystemOriginKind::Inherit),
+    origin(4, SystemOriginKind::Preserve),
+    origin(5, SystemOriginKind::Fresh),
+    origin(6, SystemOriginKind::Fresh),
+];
+const LIST_ONCE_ORIGINS: [SystemOriginRelation; 4] = [
+    origin(2, SystemOriginKind::Preserve),
+    origin(3, SystemOriginKind::Preserve),
+    origin(4, SystemOriginKind::Preserve),
+    origin(5, SystemOriginKind::Preserve),
+];
+const OPEN_FILE_ORIGINS: [SystemOriginRelation; 6] = OPEN_READ_ORIGINS;
+
 /// The [SYS-2] operation signatures in normative table order.
 ///
 /// The first eleven are v0.31's; the next three are the [SYS-14] traversal
 /// surface's, admitted under [`TRAVERSAL_SURFACE`]; the last is the
 /// active v0.33 file-open-by-name addition, admitted under [`OPEN_BY_NAME`].
 ///
-/// Each row registers the declared region parameters, value parameters, result
-/// type, and the fixed `external`/`blocks` classification. System operations
-/// cannot exhibit the `traps` effect: their partial domains are static
-/// call-site obligations and fallible host results are explicit outcomes. The
-/// `reads`/`writes` region entries are not stored: [SYS-2] fixes them as a
-/// mechanical derivation from the parameter modes — every borrow of region
-/// `'r` contributes `reads('r)`, and every `&uniq 'r` parameter (each one is
-/// changed by its operation in this inventory) additionally contributes
-/// `writes('r)` — which [`operation_region_effects`] performs.
+/// Each row registers the declared region parameters and kinds, capability
+/// vectors, value parameters, result type, exact normalized effect row, and
+/// compiler-owned target action. System operations cannot exhibit `traps`:
+/// their partial domains are static call-site obligations and fallible host
+/// results are explicit outcomes.
 pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
     SystemOperation {
         spelling: "args_count",
         regions: &["'a"],
+        world_regions: &[],
         parameters: &[parameter(
             "args",
             SystemParameterMode::Borrow(0),
             SystemTypeRef::Nominal(ARGS),
         )],
         result: SystemTypeRef::U64,
-        external: false,
-        blocks: false,
+        result_world_regions: &[],
+        reads: &[0],
+        writes: &[],
+        target_action: TargetAction::INLINE,
+        origin_relations: &[],
     },
     SystemOperation {
         spelling: "arg_get",
         regions: &["'a"],
+        world_regions: &[],
         parameters: &[
             parameter(
                 "args",
@@ -574,24 +822,32 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("position", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_nominal(HOST_STRING, ARG_ERROR),
-        external: false,
-        blocks: false,
+        result_world_regions: &[],
+        reads: &[0],
+        writes: &[],
+        target_action: TargetAction::INLINE,
+        origin_relations: &[],
     },
     SystemOperation {
         spelling: "host_bytes_len",
         regions: &["'v"],
+        world_regions: &[],
         parameters: &[parameter(
             "value",
             SystemParameterMode::Borrow(0),
             SystemTypeRef::Nominal(HOST_STRING),
         )],
         result: SystemTypeRef::U64,
-        external: false,
-        blocks: false,
+        result_world_regions: &[],
+        reads: &[0],
+        writes: &[],
+        target_action: TargetAction::INLINE,
+        origin_relations: &[],
     },
     SystemOperation {
         spelling: "host_copy_bytes",
-        regions: &["'v", "'d"],
+        regions: &["'v", "'m"],
+        world_regions: &[],
         parameters: &[
             parameter(
                 "value",
@@ -607,24 +863,32 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_u64(COPY_ERROR),
-        external: false,
-        blocks: false,
+        result_world_regions: &[],
+        reads: &[0, 1],
+        writes: &[1],
+        target_action: TargetAction::INLINE,
+        origin_relations: &[],
     },
     SystemOperation {
         spelling: "host_utf8_len",
         regions: &["'v"],
+        world_regions: &[],
         parameters: &[parameter(
             "value",
             SystemParameterMode::Borrow(0),
             SystemTypeRef::Nominal(HOST_STRING),
         )],
         result: ok_u64(UTF8_ERROR),
-        external: false,
-        blocks: false,
+        result_world_regions: &[],
+        reads: &[0],
+        writes: &[],
+        target_action: TargetAction::INLINE,
+        origin_relations: &[],
     },
     SystemOperation {
         spelling: "host_copy_utf8",
-        regions: &["'v", "'d"],
+        regions: &["'v", "'m"],
+        world_regions: &[],
         parameters: &[
             parameter(
                 "value",
@@ -640,29 +904,38 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_u64(UTF8_COPY_ERROR),
-        external: false,
-        blocks: false,
+        result_world_regions: &[],
+        reads: &[0, 1],
+        writes: &[1],
+        target_action: TargetAction::INLINE,
+        origin_relations: &[],
     },
     SystemOperation {
         spelling: "relative_path",
         regions: &[],
+        world_regions: &[],
         parameters: &[parameter(
             "value",
             SystemParameterMode::Own,
             SystemTypeRef::Nominal(HOST_STRING),
         )],
         result: ok_nominal(RELATIVE_PATH, PATH_ERROR),
-        external: false,
-        blocks: false,
+        result_world_regions: &[],
+        reads: &[],
+        writes: &[],
+        target_action: TargetAction::INLINE,
+        origin_relations: &[],
     },
     SystemOperation {
         spelling: "open_read",
-        regions: &["'c", "'p"],
+        regions: &["'b", "'p", "'q", "'dh", "'d", "'f", "'rh", "'rc"],
+        world_regions: &[2, 3, 4, 5, 6, 7],
         parameters: &[
-            parameter(
+            capability_parameter(
                 "root",
                 SystemParameterMode::Borrow(0),
-                SystemTypeRef::Nominal(DIRECTORY_READ),
+                DIRECTORY_READ,
+                &[2, 3, 4, 5],
             ),
             parameter(
                 "path",
@@ -671,17 +944,22 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             ),
         ],
         result: ok_nominal(READ_FILE, IO_ERROR),
-        external: true,
-        blocks: true,
+        result_world_regions: &[2, 6, 7, 5],
+        reads: &[0, 1, 3, 4, 5],
+        writes: &[2, 6, 7],
+        target_action: TargetAction::COMPLETION,
+        origin_relations: &OPEN_READ_ORIGINS,
     },
     SystemOperation {
         spelling: "read_once",
-        regions: &["'f", "'d"],
+        regions: &["'b", "'m", "'q", "'h", "'c", "'f"],
+        world_regions: &[2, 3, 4, 5],
         parameters: &[
-            parameter(
+            capability_parameter(
                 "file",
                 SystemParameterMode::UniqueBorrow(0),
-                SystemTypeRef::Nominal(READ_FILE),
+                READ_FILE,
+                &[2, 3, 4, 5],
             ),
             parameter(
                 "destination",
@@ -692,17 +970,22 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: SystemTypeRef::Nominal(READ_OUTCOME),
-        external: true,
-        blocks: true,
+        result_world_regions: &[],
+        reads: &[0, 1, 3, 5],
+        writes: &[0, 1, 2, 4],
+        target_action: TargetAction::COMPLETION,
+        origin_relations: &READ_ONCE_ORIGINS,
     },
     SystemOperation {
         spelling: "write_once",
-        regions: &["'o", "'s"],
+        regions: &["'b", "'s", "'q", "'o"],
+        world_regions: &[2, 3],
         parameters: &[
-            parameter(
+            capability_parameter(
                 "output",
                 SystemParameterMode::UniqueBorrow(0),
-                SystemTypeRef::Nominal(OUTPUT),
+                OUTPUT,
+                &[2, 3],
             ),
             parameter(
                 "source",
@@ -713,30 +996,39 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_u64(IO_ERROR),
-        external: true,
-        blocks: true,
+        result_world_regions: &[],
+        reads: &[0, 1],
+        writes: &[0, 2, 3],
+        target_action: TargetAction::COMPLETION,
+        origin_relations: &WRITE_ONCE_ORIGINS,
     },
     SystemOperation {
         spelling: "exit_status",
         regions: &[],
+        world_regions: &[],
         parameters: &[parameter(
             "code",
             SystemParameterMode::Own,
             SystemTypeRef::U8,
         )],
         result: SystemTypeRef::Nominal(EXIT_STATUS),
-        external: false,
-        blocks: false,
+        result_world_regions: &[],
+        reads: &[],
+        writes: &[],
+        target_action: TargetAction::INLINE,
+        origin_relations: &[],
     },
     // The three traversal-surface candidate rows [SYS-14].
     SystemOperation {
         spelling: "open_directory",
-        regions: &["'c", "'n"],
+        regions: &["'b", "'n", "'q", "'dh", "'d", "'f", "'rh"],
+        world_regions: &[2, 3, 4, 5, 6],
         parameters: &[
-            parameter(
+            capability_parameter(
                 "root",
                 SystemParameterMode::Borrow(0),
-                SystemTypeRef::Nominal(DIRECTORY_READ),
+                DIRECTORY_READ,
+                &[2, 3, 4, 5],
             ),
             parameter(
                 "name",
@@ -747,29 +1039,39 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_nominal(DIRECTORY_READ, IO_ERROR),
-        external: true,
-        blocks: true,
+        result_world_regions: &[2, 6, 4, 5],
+        reads: &[0, 1, 3, 4],
+        writes: &[2, 6],
+        target_action: TargetAction::COMPLETION,
+        origin_relations: &OPEN_DIRECTORY_ORIGINS,
     },
     SystemOperation {
         spelling: "open_list",
-        regions: &["'c"],
-        parameters: &[parameter(
+        regions: &["'b", "'q", "'dh", "'d", "'f", "'lh", "'lc"],
+        world_regions: &[1, 2, 3, 4, 5, 6],
+        parameters: &[capability_parameter(
             "directory",
             SystemParameterMode::Borrow(0),
-            SystemTypeRef::Nominal(DIRECTORY_READ),
+            DIRECTORY_READ,
+            &[1, 2, 3, 4],
         )],
         result: ok_nominal(DIRECTORY_LIST, IO_ERROR),
-        external: true,
-        blocks: true,
+        result_world_regions: &[1, 5, 6, 3],
+        reads: &[0, 2, 3],
+        writes: &[1, 5, 6],
+        target_action: TargetAction::COMPLETION,
+        origin_relations: &OPEN_LIST_ORIGINS,
     },
     SystemOperation {
         spelling: "list_once",
-        regions: &["'l", "'d"],
+        regions: &["'b", "'m", "'q", "'h", "'c", "'d"],
+        world_regions: &[2, 3, 4, 5],
         parameters: &[
-            parameter(
+            capability_parameter(
                 "list",
                 SystemParameterMode::UniqueBorrow(0),
-                SystemTypeRef::Nominal(DIRECTORY_LIST),
+                DIRECTORY_LIST,
+                &[2, 3, 4, 5],
             ),
             parameter(
                 "destination",
@@ -780,20 +1082,25 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: SystemTypeRef::Nominal(LIST_OUTCOME),
-        external: true,
-        blocks: true,
+        result_world_regions: &[],
+        reads: &[0, 1, 3, 5],
+        writes: &[0, 1, 2, 4],
+        target_action: TargetAction::COMPLETION,
+        origin_relations: &LIST_ONCE_ORIGINS,
     },
     // The active file-open-by-name row [SYS-11]: `open_read`'s sibling
     // over a caller-owned single path component, taking exactly the name
     // range `open_directory` takes.
     SystemOperation {
         spelling: "open_file",
-        regions: &["'c", "'n"],
+        regions: &["'b", "'n", "'q", "'dh", "'d", "'f", "'rh", "'rc"],
+        world_regions: &[2, 3, 4, 5, 6, 7],
         parameters: &[
-            parameter(
+            capability_parameter(
                 "root",
                 SystemParameterMode::Borrow(0),
-                SystemTypeRef::Nominal(DIRECTORY_READ),
+                DIRECTORY_READ,
+                &[2, 3, 4, 5],
             ),
             parameter(
                 "name",
@@ -804,60 +1111,45 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 15] = [
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_nominal(READ_FILE, IO_ERROR),
-        external: true,
-        blocks: true,
+        result_world_regions: &[2, 6, 7, 5],
+        reads: &[0, 1, 3, 4, 5],
+        writes: &[2, 6, 7],
+        target_action: TargetAction::COMPLETION,
+        origin_relations: &OPEN_FILE_ORIGINS,
     },
 ];
 
-/// Derives one operation's `reads`/`writes` region entries from its modes.
+/// Returns one operation's exact written `reads`/`writes` entries.
 ///
 /// Returns the zero-based declared region-parameter indices carried by
 /// `reads` and by `writes`, each in declared region-parameter order — the
-/// mechanical [SYS-2] derivation, not a hand-curated table.
+/// normalized [SYS-2] table row. World effects are intentionally not inferred
+/// from parameter modes: capability projection contributes entries that no
+/// source loan mode alone can express.
 pub fn operation_region_effects(operation: &SystemOperation) -> (Vec<u8>, Vec<u8>) {
-    let mut reads = Vec::new();
-    let mut writes = Vec::new();
-    for region in 0..operation.regions.len() {
-        let Ok(region) = u8::try_from(region) else {
-            continue;
-        };
-        let borrowed = operation.parameters.iter().any(|parameter| {
-            matches!(
-                parameter.mode,
-                SystemParameterMode::Borrow(index) | SystemParameterMode::UniqueBorrow(index)
-                    if index == region
-            )
-        });
-        let written = operation.parameters.iter().any(|parameter| {
-            matches!(parameter.mode, SystemParameterMode::UniqueBorrow(index) if index == region)
-        });
-        if borrowed {
-            reads.push(region);
-        }
-        if written {
-            writes.push(region);
-        }
-    }
-    (reads, writes)
+    (operation.reads.to_vec(), operation.writes.to_vec())
 }
 
-/// One [SYS-5] release row: the fixed effect row of a type's compiler-derived
-/// release action, given as the presence of the two payload-free categories.
+/// One [SYS-5] release summary before a capability's world vector is
+/// instantiated.
 ///
 /// [STOR-3] makes this row the sole input to [EFF-2]'s release contribution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SystemReleaseRow {
-    /// The release action may observe or change state outside ordinary memory.
-    pub external: bool,
-    /// The release action may block its host thread.
-    pub blocks: bool,
+    /// Writes vector slot zero, the command-order facet.
+    pub writes_command_order: bool,
+    /// Writes vector slot one, the handle-lifetime facet.
+    pub writes_handle_lifetime: bool,
+    /// Compiler-owned dispatch/wait/loan summary.
+    pub target_action: TargetAction,
 }
 
 impl SystemReleaseRow {
     /// The empty release row: a logical consume or detach with no host call.
     pub const EMPTY: Self = Self {
-        external: false,
-        blocks: false,
+        writes_command_order: false,
+        writes_handle_lifetime: false,
+        target_action: TargetAction::INLINE,
     };
 }
 
@@ -1005,11 +1297,12 @@ pub fn system_resource_contract(nominal: u8) -> Option<SystemResourceContract> {
         _ => return None,
     };
     let row = match action {
-        // Only a native close attempt reaches the host; a logical consume and
-        // a source detach make no target call and perform no external effect.
+        // Native close writes the instantiated command-order and handle
+        // lifetime facets and completes through the target adapter.
         SystemReleaseAction::NativeCloseAttempt => SystemReleaseRow {
-            external: true,
-            blocks: true,
+            writes_command_order: true,
+            writes_handle_lifetime: true,
+            target_action: TargetAction::COMPLETION,
         },
         SystemReleaseAction::LogicalConsume | SystemReleaseAction::SourceDetach => {
             SystemReleaseRow::EMPTY
@@ -1025,9 +1318,9 @@ pub fn system_resource_contract(nominal: u8) -> Option<SystemResourceContract> {
 
 /// Returns one system nominal's exact [SYS-5] release row.
 ///
-/// `DirectoryRead`, `ReadFile`, and `DirectoryList` release with
-/// at most one native close attempt (`external, blocks`); every other system
-/// type — the remaining
+/// `DirectoryRead`, `ReadFile`, and `DirectoryList` release with at most one
+/// native close attempt carrying command-order and handle-lifetime world
+/// writes plus a completion target action; every other system type — the remaining
 /// opaque types' logical consume or detach and every outcome enum, which has
 /// no release action and takes no row in the [SYS-5] table — carries the
 /// empty row.
@@ -1042,19 +1335,34 @@ pub fn system_release_row(nominal: u8) -> SystemReleaseRow {
 /// Maps one lookup-class [SYS-2] declaration to its nominal-table index.
 #[must_use]
 pub fn system_nominal_index(id: SystemDeclarationId, inventory: Inventory) -> Option<u8> {
-    let ordinal = id.ordinal();
-    (usize::from(ordinal) < system_nominals(inventory).len()).then_some(ordinal)
+    let mut ordinal = usize::from(id.ordinal());
+    for (index, nominal) in system_nominals(inventory).iter().enumerate() {
+        if ordinal == 0 {
+            return u8::try_from(index).ok();
+        }
+        ordinal -= 1;
+        if ordinal < nominal.world_parameters.len() {
+            return None;
+        }
+        ordinal -= nominal.world_parameters.len();
+    }
+    None
 }
 
 /// Maps one lookup-class [SYS-2] declaration to its constructor-table index.
 #[must_use]
 pub fn system_constructor_index(id: SystemDeclarationId, inventory: Inventory) -> Option<u8> {
     let mut ordinal = usize::from(id.ordinal());
-    let nominals = system_nominals(inventory).len();
-    if ordinal < nominals {
-        return None;
+    for nominal in system_nominals(inventory) {
+        if ordinal == 0 {
+            return None;
+        }
+        ordinal -= 1;
+        if ordinal < nominal.world_parameters.len() {
+            return None;
+        }
+        ordinal -= nominal.world_parameters.len();
     }
-    ordinal -= nominals;
     for (index, constructor) in system_constructors(inventory).iter().enumerate() {
         if ordinal == 0 {
             return u8::try_from(index).ok();
@@ -1074,7 +1382,10 @@ pub fn system_constructor_declaration(
     index: u8,
     inventory: Inventory,
 ) -> Option<SystemDeclarationId> {
-    let mut ordinal = system_nominals(inventory).len();
+    let mut ordinal = system_nominals(inventory)
+        .iter()
+        .map(|nominal| 1 + nominal.world_parameters.len())
+        .sum::<usize>();
     for (constructor_index, constructor) in system_constructors(inventory).iter().enumerate() {
         if constructor_index == usize::from(index) {
             return u8::try_from(ordinal).ok().map(SystemDeclarationId::new);
@@ -1088,11 +1399,16 @@ pub fn system_constructor_declaration(
 #[must_use]
 pub fn system_operation_index(id: SystemDeclarationId, inventory: Inventory) -> Option<u8> {
     let mut ordinal = usize::from(id.ordinal());
-    let nominals = system_nominals(inventory).len();
-    if ordinal < nominals {
-        return None;
+    for nominal in system_nominals(inventory) {
+        if ordinal == 0 {
+            return None;
+        }
+        ordinal -= 1;
+        if ordinal < nominal.world_parameters.len() {
+            return None;
+        }
+        ordinal -= nominal.world_parameters.len();
     }
-    ordinal -= nominals;
     for constructor in system_constructors(inventory) {
         ordinal = ordinal.checked_sub(1 + constructor.fields.len())?;
     }
@@ -1111,16 +1427,14 @@ pub fn system_operation_index(id: SystemDeclarationId, inventory: Inventory) -> 
 }
 
 /// Builds the [SYS-2] declaration records in normative preorder: each nominal
-/// type in table order; then each constructor and its fields in declared
-/// order; then each operation, its region parameters, and its value
-/// parameters in declared order. Exactly the nominal types, constructors, and
-/// operations carry a lookup class; fields and parameters are owner-local
-/// records with none.
+/// type followed by its world parameters; then each constructor and its
+/// fields; then each operation, its region parameters, and its value
+/// parameters. Exactly nominal types, constructors, and operations carry a
+/// lookup class; every parameter and field is owner-local.
 ///
-/// The active specification's inventory is one hundred sixty-seven records;
-/// the traversal-surface candidate's is one hundred ninety-two.
+/// The active v0.37 inventory is exactly 246 records.
 pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclarationRecord> {
-    let mut records = Vec::with_capacity(192);
+    let mut records = Vec::with_capacity(246);
     let push = |spelling: &'static str, class: Option<DeclarationClass>, records: &mut Vec<_>| {
         let Ok(ordinal) = u8::try_from(records.len()) else {
             unreachable!("the closed SYS-2 inventory fits one byte of ordinals");
@@ -1137,6 +1451,9 @@ pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclaration
             Some(DeclarationClass::NominalType),
             &mut records,
         );
+        for region in nominal.world_parameters {
+            push(region, None, &mut records);
+        }
     }
     for constructor in system_constructors(inventory) {
         push(
@@ -1171,10 +1488,16 @@ pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclaration
 pub fn system_entity(id: SystemDeclarationId, inventory: Inventory) -> Option<SystemEntity> {
     let mut ordinal = usize::from(id.ordinal());
     let nominals = system_nominals(inventory);
-    if ordinal < nominals.len() {
-        return Some(SystemEntity::Nominal(&nominals[ordinal]));
+    for nominal in nominals {
+        if ordinal == 0 {
+            return Some(SystemEntity::Nominal(nominal));
+        }
+        ordinal -= 1;
+        if ordinal < nominal.world_parameters.len() {
+            return None;
+        }
+        ordinal -= nominal.world_parameters.len();
     }
-    ordinal -= nominals.len();
     for constructor in system_constructors(inventory) {
         if ordinal == 0 {
             return Some(SystemEntity::Constructor(constructor));
@@ -1224,16 +1547,16 @@ mod tests {
         DeclarationClass, Inventory, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS,
         ReservedNameClass, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
         SystemDeclarationId, SystemEntity, SystemParameterMode, SystemResultPayload, SystemTypeRef,
-        operation_region_effects, reserved_name, system_constructors, system_declarations,
-        system_entity, system_nominals, system_operations,
+        TargetAction, operation_region_effects, reserved_name, system_constructors,
+        system_declarations, system_entity, system_nominals, system_operations,
     };
 
     #[test]
     fn system_inventory_matches_the_sys2_counted_totals() {
-        // [SYS-2]: fourteen nominal types, thirty-nine enum-variant
-        // constructors, sixty-four variant fields, eleven operations,
-        // fourteen operation region parameters, twenty-five operation value
-        // parameters — one hundred sixty-seven records in preorder.
+        // The base surface under the active world-kind representation:
+        // fourteen nominal types, ten nominal world parameters, thirty-nine
+        // constructors, sixty-four fields, eleven operations, twenty-six
+        // operation region parameters, and twenty-five value parameters.
         let nominals = system_nominals(Inventory::Base);
         let constructors = system_constructors(Inventory::Base);
         let operations = system_operations(Inventory::Base);
@@ -1253,7 +1576,7 @@ mod tests {
                 .iter()
                 .map(|operation| operation.regions.len())
                 .sum::<usize>(),
-            14
+            26
         );
         assert_eq!(
             operations
@@ -1264,7 +1587,7 @@ mod tests {
         );
 
         let records = system_declarations(Inventory::Base);
-        assert_eq!(records.len(), 167);
+        assert_eq!(records.len(), 189);
         assert!(
             records
                 .iter()
@@ -1297,21 +1620,21 @@ mod tests {
                 .iter()
                 .filter(|record| record.lookup_class().is_none())
                 .count(),
-            103
+            125
         );
 
         // Deterministic preorder spot checks used by diagnostic origins.
         for (ordinal, spelling) in [
             (0, "Args"),
-            (6, "ExitStatus"),
-            (7, "ArgError"),
-            (13, "IoError"),
-            (14, "InvalidIndex"),
-            (27, "NotFound"),
-            (114, "Other"),
-            (117, "args_count"),
-            (146, "open_read"),
-            (165, "exit_status"),
+            (16, "ExitStatus"),
+            (17, "ArgError"),
+            (23, "IoError"),
+            (24, "InvalidIndex"),
+            (37, "NotFound"),
+            (124, "Other"),
+            (127, "args_count"),
+            (156, "open_read"),
+            (187, "exit_status"),
         ] {
             assert_eq!(records[ordinal].spelling(), spelling, "ordinal {ordinal}");
         }
@@ -1420,9 +1743,9 @@ mod tests {
         }
         assert_eq!(
             (nominals, constructors, operations, owner_local),
-            (14, 39, 11, 103)
+            (14, 39, 11, 125)
         );
-        assert!(system_entity(SystemDeclarationId::new(167), Inventory::Base).is_none());
+        assert!(system_entity(SystemDeclarationId::new(189), Inventory::Base).is_none());
         assert!(system_entity(SystemDeclarationId::new(u8::MAX), Inventory::Base).is_none());
     }
 
@@ -1453,7 +1776,7 @@ mod tests {
                 .iter()
                 .map(|operation| operation.regions.len())
                 .sum::<usize>(),
-            19
+            46
         );
         assert_eq!(
             operations
@@ -1464,7 +1787,7 @@ mod tests {
         );
 
         let records = system_declarations(Inventory::Traversal);
-        assert_eq!(records.len(), 192);
+        assert_eq!(records.len(), 233);
         assert!(
             records
                 .iter()
@@ -1472,18 +1795,18 @@ mod tests {
                 .all(|(index, record)| usize::from(record.id().ordinal()) == index)
         );
         for (ordinal, spelling) in [
-            (14, "DirectoryList"),
-            (15, "ListOutcome"),
-            (16, "InvalidIndex"),
-            (116, "Other"),
-            (119, "ListBytes"),
-            (122, "ListEnd"),
-            (123, "ListFailed"),
-            (125, "args_count"),
-            (173, "exit_status"),
-            (175, "open_directory"),
-            (182, "open_list"),
-            (185, "list_once"),
+            (24, "DirectoryList"),
+            (29, "ListOutcome"),
+            (30, "InvalidIndex"),
+            (130, "Other"),
+            (133, "ListBytes"),
+            (136, "ListEnd"),
+            (137, "ListFailed"),
+            (139, "args_count"),
+            (199, "exit_status"),
+            (201, "open_directory"),
+            (213, "open_list"),
+            (222, "list_once"),
         ] {
             assert_eq!(records[ordinal].spelling(), spelling, "ordinal {ordinal}");
         }
@@ -1519,9 +1842,9 @@ mod tests {
         }
         assert_eq!(
             (nominals, constructors, operations, owner_local),
-            (16, 42, 14, 120)
+            (16, 42, 14, 161)
         );
-        assert!(system_entity(SystemDeclarationId::new(192), Inventory::Traversal).is_none());
+        assert!(system_entity(SystemDeclarationId::new(233), Inventory::Traversal).is_none());
     }
 
     /// The active [SYS-11] file-open-by-name row's own counted totals.
@@ -1544,7 +1867,7 @@ mod tests {
                 .iter()
                 .map(|operation| operation.regions.len())
                 .sum::<usize>(),
-            21
+            54
         );
         assert_eq!(
             operations
@@ -1555,33 +1878,39 @@ mod tests {
         );
 
         let records = system_declarations(Inventory::OpenByName);
-        assert_eq!(records.len(), 199);
+        assert_eq!(records.len(), 246);
         // Every active-inventory record keeps its exact ordinal and spelling.
         for (ordinal, record) in system_declarations(Inventory::Traversal).iter().enumerate() {
             assert_eq!(records[ordinal].spelling(), record.spelling());
         }
         for (ordinal, spelling) in [
-            (192, "open_file"),
-            (193, "'c"),
-            (194, "'n"),
-            (195, "root"),
-            (196, "name"),
-            (197, "start"),
-            (198, "end"),
+            (233, "open_file"),
+            (234, "'b"),
+            (235, "'n"),
+            (236, "'q"),
+            (237, "'dh"),
+            (238, "'d"),
+            (239, "'f"),
+            (240, "'rh"),
+            (241, "'rc"),
+            (242, "root"),
+            (243, "name"),
+            (244, "start"),
+            (245, "end"),
         ] {
             assert_eq!(records[ordinal].spelling(), spelling, "ordinal {ordinal}");
         }
-        let open_file = SystemDeclarationId::new(192);
+        let open_file = SystemDeclarationId::new(233);
         let Some(SystemEntity::Operation(operation)) =
             system_entity(open_file, Inventory::OpenByName)
         else {
             panic!("the active ordinal must name the active operation");
         };
         assert_eq!(operation.spelling, "open_file");
-        assert_eq!((operation.external, operation.blocks), (true, true));
+        assert_eq!(operation.target_action, TargetAction::COMPLETION);
         // Off, the same ordinal is past the inventory and names nothing.
         assert!(system_entity(open_file, Inventory::Traversal).is_none());
-        assert!(system_entity(SystemDeclarationId::new(199), Inventory::OpenByName).is_none());
+        assert!(system_entity(SystemDeclarationId::new(246), Inventory::OpenByName).is_none());
     }
 
     #[test]
@@ -1746,12 +2075,24 @@ mod tests {
                         format!("&uniq {} ", operation.regions[usize::from(region)])
                     }
                 };
-                format!("{}: {mode}{}", parameter.name, render_type(parameter.ty))
+                format!(
+                    "{}: {mode}{}",
+                    parameter.name,
+                    render_type_with_world(
+                        parameter.ty,
+                        parameter.world_regions,
+                        operation.regions,
+                    )
+                )
             })
             .collect();
         rendered.push_str(&parameters.join(", "));
         rendered.push_str(") -> result: own ");
-        rendered.push_str(&render_type(operation.result));
+        rendered.push_str(&render_type_with_world(
+            operation.result,
+            operation.result_world_regions,
+            operation.regions,
+        ));
         let (reads, writes) = operation_region_effects(operation);
         let mut effects = Vec::new();
         if !reads.is_empty() {
@@ -1768,12 +2109,6 @@ mod tests {
                 .collect();
             effects.push(format!("writes({})", regions.join(" ")));
         }
-        if operation.external {
-            effects.push("external".to_owned());
-        }
-        if operation.blocks {
-            effects.push("blocks".to_owned());
-        }
         if effects.is_empty() {
             effects.push("pure".to_owned());
         }
@@ -1781,6 +2116,40 @@ mod tests {
         rendered.push_str(&effects.join(", "));
         rendered.push(';');
         rendered
+    }
+
+    fn render_type_with_world(
+        ty: SystemTypeRef,
+        world_regions: &[u8],
+        operation_regions: &[&str],
+    ) -> String {
+        let render_nominal = |nominal: u8| {
+            let mut rendered = SYSTEM_NOMINALS[usize::from(nominal)].spelling.to_owned();
+            if !world_regions.is_empty() {
+                let arguments = world_regions
+                    .iter()
+                    .map(|index| operation_regions[usize::from(*index)])
+                    .collect::<Vec<_>>();
+                rendered.push('<');
+                rendered.push_str(&arguments.join(", "));
+                rendered.push('>');
+            }
+            rendered
+        };
+        match ty {
+            SystemTypeRef::Nominal(nominal) => render_nominal(nominal),
+            SystemTypeRef::Result { ok, err } => {
+                let ok = match ok {
+                    SystemResultPayload::U64 => "u64".to_owned(),
+                    SystemResultPayload::Nominal(nominal) => render_nominal(nominal),
+                };
+                format!(
+                    "Result<{ok}, {}>",
+                    SYSTEM_NOMINALS[usize::from(err)].spelling
+                )
+            }
+            _ => render_type(ty),
+        }
     }
 
     #[test]

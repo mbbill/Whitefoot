@@ -249,7 +249,8 @@ pub fn compile_with_overlap(
     limits: CompilerLimits,
     overlap: crate::OverlapLowering,
 ) -> Result<String, CompilationFailure> {
-    compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap).map(|(module, _)| module)
+    compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
+        .map(|(module, _, _)| module)
 }
 
 /// [`compile_with_overlap`] plus the non-normative permission ledger for the
@@ -268,6 +269,31 @@ pub fn compile_with_permission_ledger(
     overlap: crate::OverlapLowering,
 ) -> Result<(String, Vec<String>), CompilationFailure> {
     compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
+        .map(|(module, permission, _)| (module, permission))
+}
+
+/// [`compile_with_overlap`] plus the deterministic non-normative I/O ledger.
+///
+/// Rows come from checked system calls, releases, user-wrapper summaries, and
+/// permission records. The only lowering datum added afterward is whether the
+/// exact compilation selected a source call into an overlap group.
+pub fn compile_with_io_ledger(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    overlap: crate::OverlapLowering,
+) -> Result<(String, Vec<String>), CompilationFailure> {
+    compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
+        .map(|(module, _, io)| (module, io))
+}
+
+/// One compilation returning both opt-in developer ledgers without running
+/// the compiler twice.
+pub fn compile_with_developer_ledgers(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    overlap: crate::OverlapLowering,
+) -> Result<(String, Vec<String>, Vec<String>), CompilationFailure> {
+    compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
 }
 
 /// [`compile`] against one named [SYS-2] inventory state.
@@ -284,7 +310,7 @@ pub fn compile_with_inventory(
     inventory: crate::Inventory,
 ) -> Result<String, CompilationFailure> {
     compile_reporting(inputs, limits, inventory, crate::OverlapLowering::Off)
-        .map(|(module, _)| module)
+        .map(|(module, _, _)| module)
 }
 
 /// The one compilation path, returning the module and the developer-channel
@@ -295,7 +321,7 @@ fn compile_reporting(
     limits: CompilerLimits,
     inventory: crate::Inventory,
     overlap: crate::OverlapLowering,
-) -> Result<(String, Vec<String>), CompilationFailure> {
+) -> Result<(String, Vec<String>, Vec<String>), CompilationFailure> {
     let bundle = SourceBundle::with_limits(inputs, limits.source).map_err(|failure| {
         CompilationFailure::new(
             CompilationStage::SourceEnvelope,
@@ -479,6 +505,7 @@ fn compile_reporting(
         }
     };
     let mut permission_ledger = checked.data.permission_ledger.clone();
+    let io_ledger = checked.data.io_ledger.clone();
     let ir = lower_checked(checked, overlap).map_err(|failure: LoweringFailure| {
         CompilationFailure::new(
             CompilationStage::Lowering,
@@ -491,8 +518,9 @@ fn compile_reporting(
     // without `--par`; these lines report an actualization, which only a
     // compilation that asked for one has.
     permission_ledger.extend_from_slice(ir.actualization_ledger());
+    let io_ledger = io_ledger.render(ir.io_actualized());
     emit_llvm(&ir)
-        .map(|module| (module.into_string(), permission_ledger))
+        .map(|module| (module.into_string(), permission_ledger, io_ledger))
         .map_err(|failure: BackendFailure| {
             let (stage, kind) = match failure {
                 BackendFailure::TargetLayout(_) => (
@@ -515,7 +543,7 @@ fn compile_reporting(
 #[cfg(test)]
 mod tests {
     use super::{
-        CompilationFailureKind, CompilationStage, CompilerLimits, compile,
+        CompilationFailureKind, CompilationStage, CompilerLimits, compile, compile_with_io_ledger,
         compile_with_permission_ledger,
     };
     use crate::{OverlapLowering, SourceInput};
@@ -534,6 +562,53 @@ mod tests {
         )
         .expect("a permission-ledger fixture must compile");
         ledger
+    }
+
+    #[test]
+    fn the_io_ledger_is_deterministic_and_observational() {
+        let source = include_bytes!("../../tests/programs/dir_walk.wf");
+        let inputs = [SourceInput::new("dir_walk.wf", source)];
+        let baseline = compile(&inputs, CompilerLimits::default())
+            .expect("the canonical directory walk must compile");
+        let (module, first) =
+            compile_with_io_ledger(&inputs, CompilerLimits::default(), OverlapLowering::Off)
+                .expect("the I/O ledger must compile the same source");
+        let (_, second) =
+            compile_with_io_ledger(&inputs, CompilerLimits::default(), OverlapLowering::Off)
+                .expect("the repeated I/O ledger run must compile");
+
+        assert_eq!(module, baseline, "asking for a ledger must not change LLVM");
+        assert_eq!(first, second, "I/O ledger rows must be byte-stable");
+        assert_eq!(
+            first.len(),
+            10,
+            "the fixture's calls and releases are closed"
+        );
+        assert!(
+            first.iter().any(|line| {
+                line.contains("id=sys.list_once")
+                    && line.contains("target=(completion,may-block,terminal)")
+                    && line.contains("lowering=sequential")
+            }),
+            "the checked list action and selected lowering must share one row: {first:#?}"
+        );
+        assert!(first.first().is_some_and(|line| line.contains(":73  ")));
+        assert!(first.last().is_some_and(|line| line.contains(":550  ")));
+    }
+
+    #[test]
+    fn a_program_without_world_actions_has_an_empty_io_ledger() {
+        let source = b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+        let (_, ledger) = compile_with_io_ledger(
+            &[SourceInput::new("pure.wf", source)],
+            CompilerLimits::default(),
+            OverlapLowering::On,
+        )
+        .expect("the pure fixture must compile");
+        assert!(
+            ledger.is_empty(),
+            "pure source has no I/O record: {ledger:#?}"
+        );
     }
 
     const TREE_PRELUDE: &str = "enum BoxNode {
@@ -715,16 +790,16 @@ command fn main() -> status: own ExitStatus pure {
             ]
         );
 
-        // Condition 3: the row gate, reported with the exact categories the
-        // refused row carries.
-        let external =
-            b"fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {
+        // Condition 2: a shared command-order world region makes the two
+        // release footprints conflict, and the ledger names that region.
+        let world =
+            b"fn release_read_file['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h) {
   return unit;
 }
 
-fn release_pair(first: own ReadFile, second: own ReadFile) -> result: own unit external, blocks {
-  let done_first = release_read_file(file: move first);
-  let done_second = release_read_file(file: move second);
+fn release_pair['q, 'h1, 'c1, 'f1, 'h2, 'c2, 'f2](first: own ReadFile<'q, 'h1, 'c1, 'f1>, second: own ReadFile<'q, 'h2, 'c2, 'f2>) -> result: own unit writes('q 'h1 'h2) {
+  let done_first = release_read_file<'q, 'h1, 'c1, 'f1>(file: move first);
+  let done_second = release_read_file<'q, 'h2, 'c2, 'f2>(file: move second);
   return unit;
 }
 
@@ -733,9 +808,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 ";
         assert_eq!(
-            ledger_of("row.wf", external),
+            ledger_of("row.wf", world),
             vec![
-                "PAR denied      row.wf:6  pair(release_read_file, release_read_file)  condition 3: the row of s1 carries external, blocks"
+                "PAR denied      row.wf:6  pair(release_read_file, release_read_file)  condition 2: the write of s1 overlaps the write of s2 at world region #DeclarationId(7) of release_read_file<'q, 'h1, 'c1, 'f1>(file: move first) vs world region #DeclarationId(7) of release_read_file<'q, 'h2, 'c2, 'f2>(file: move second)"
                     .to_owned()
             ]
         );
@@ -1297,11 +1372,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         // The canonical FN-7 command-entry header with a conforming body
         // and exact row: the entry admits, its system calls type against
         // the [SYS-2] catalog, and [EFF-2] attribution accepts the row —
-        // `external, blocks` from the DirectoryRead input's compiler-derived
+        // `writes('q 'dh)` from the DirectoryRead input's compiler-derived
         // close attempt on the return edge. [QUAL-1] qualification now maps
         // each identity to an approved implementation and the [QUAL-3]
         // bootstrap supplies the standard inputs, so the program emits.
-        let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus external, blocks {\n  return exit_status(code: 0_u8);\n}\n";
+        let kind_entry = b"command fn main['q, 'dh, 'd, 'f, 'o](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'q, 'dh, 'd, 'f>, command.stdout as out: own Output<'q, 'o>, command.stderr as err: own Output<'q, 'o>) -> status: own ExitStatus writes('q 'dh) {\n  return exit_status(code: 0_u8);\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry.wf", kind_entry)],
             CompilerLimits::default(),
@@ -1325,7 +1400,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         // interface: every [SYS-2] semantic identity now has an approved
         // implementation on this target, so no unsupported stop remains
         // between an accepted system program and its emitted module.
-        let writing =b"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
+        let writing =b"command fn main['q, 'ow](command.stdout as out: own Output<'q, 'ow>) -> status: own ExitStatus writes('q 'ow), allocates(heap) {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once<'o, 's, 'q, 'ow>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry.wf", writing)],
             CompilerLimits::default(),
@@ -1347,9 +1422,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         assert_eq!(failure.kind(), CompilationFailureKind::Source);
         assert_eq!(failure.rule_id(), Some("FN-7"));
 
-        // The `external` and `blocks` categories are checked, not stopped.
-        // These two internal bodies exhibit neither, so declaring either is
-        // an ordinary EFF-2 declared-but-unexhibited rejection.
+        // The retired effect atoms remain reserved under D4, so neither can
+        // fall through to an identifier-shaped effect or reach EFF-2.
         for source in [
             b"fn probe() -> result: own unit external {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n".as_slice(),
             b"fn probe() -> result: own unit blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
@@ -1358,10 +1432,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
                 &[SourceInput::new("rejected.wf", source)],
                 CompilerLimits::default(),
             )
-            .expect_err("an undeclarable category must reject citing EFF-2");
-            assert_eq!(failure.stage(), CompilationStage::Semantics);
+            .expect_err("a retired reserved effect atom must reject during classification");
+            assert_eq!(failure.stage(), CompilationStage::TerminalClassification);
             assert_eq!(failure.kind(), CompilationFailureKind::Source);
-            assert_eq!(failure.rule_id(), Some("EFF-2"));
+            assert_eq!(failure.rule_id(), Some("FORM-3"));
         }
     }
 

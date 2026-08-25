@@ -38,12 +38,13 @@ use super::goal::{
     CheckedCallRequirement, CheckedRequirement, ConcreteGoal, GoalDatum, GoalExpression,
     GoalOperation, GoalProjection, first_ephemeral_argument, render_goal,
 };
+use super::io_ledger::{IoLedgerSource, build_io_ledger};
 use super::model::{
     BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract,
     CheckedExpression, CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode,
-    CheckedNominal, CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedSliceOrigin,
-    CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId,
-    NominalId, ValueInitializerKind, evaluate_const_operation,
+    CheckedNominal, CheckedParameter, CheckedProgramData, CheckedRegionKind, CheckedSetTarget,
+    CheckedSliceOrigin, CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId,
+    FunctionId, NominalId, ValueInitializerKind, evaluate_const_operation,
 };
 use super::permission::{PermissionSignature, analyze_permission};
 use super::permission_ledger::{LedgerSource, render_ledger};
@@ -74,6 +75,25 @@ impl LedgerSource for PermissionLedgerSource<'_, '_, '_, '_, '_> {
 
     fn spelling(&self, path: &NodePath) -> Result<String, Self::Error> {
         self.tree.path_spelling(path)
+    }
+}
+
+impl IoLedgerSource for PermissionLedgerSource<'_, '_, '_, '_, '_> {
+    type Error = SemanticCompilerFailure;
+
+    fn location(&self, path: &NodePath) -> Result<(String, u64), Self::Error> {
+        self.tree.source_line(path)
+    }
+
+    fn declaration_location(
+        &self,
+        declaration: DeclarationId,
+    ) -> Result<(String, u64), Self::Error> {
+        self.tree.declaration_line(declaration)
+    }
+
+    fn region(&self, declaration: DeclarationId) -> Result<String, Self::Error> {
+        self.tree.region_identity(declaration)
     }
 }
 
@@ -273,7 +293,7 @@ struct NominalTemplate {
 }
 
 /// A nominal instance a derived type named, awaiting interning.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum PendingNominal {
     /// [STOR-2] a box over this referent.
     Box(CheckedType),
@@ -283,6 +303,11 @@ enum PendingNominal {
     ArenaStorage,
     /// A prelude instance, such as the `Result<T, E>` a checked row produces.
     Prelude(PreludeType),
+    /// One system capability specialized to a concrete world vector.
+    System(u8, Vec<DeclarationId>),
+    /// One source aggregate specialized after region substitution through a
+    /// nested capability type.
+    Source(usize, GenericSubstitution),
 }
 
 #[derive(Clone)]
@@ -425,8 +450,6 @@ struct EffectSet {
     writes: Vec<DeclarationId>,
     allocates_heap: bool,
     allocates_arenas: Vec<DeclarationId>,
-    external: bool,
-    blocks: bool,
     traps: bool,
 }
 
@@ -436,8 +459,6 @@ impl EffectSet {
         writes: Vec::new(),
         allocates_heap: false,
         allocates_arenas: Vec::new(),
-        external: false,
-        blocks: false,
         traps: false,
     };
     const TRAPS: Self = Self {
@@ -445,8 +466,6 @@ impl EffectSet {
         writes: Vec::new(),
         allocates_heap: false,
         allocates_arenas: Vec::new(),
-        external: false,
-        blocks: false,
         traps: true,
     };
     const ALLOCATES_HEAP: Self = Self {
@@ -454,8 +473,6 @@ impl EffectSet {
         writes: Vec::new(),
         allocates_heap: true,
         allocates_arenas: Vec::new(),
-        external: false,
-        blocks: false,
         traps: false,
     };
     fn union(mut self, other: Self) -> Self {
@@ -469,8 +486,6 @@ impl EffectSet {
         for region in other.allocates_arenas {
             self.add_arena_allocation(region);
         }
-        self.external |= other.external;
-        self.blocks |= other.blocks;
         self.traps |= other.traps;
         self
     }
@@ -541,7 +556,16 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// driver between attempts at one function.
     pending_nominals: RefCell<Vec<PendingNominal>>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
-    system_nominals: HashMap<u8, NominalId>,
+    /// System nominal instances are keyed by catalog row and exact world
+    /// vector. World identity is therefore preserved by ordinary nominal type
+    /// equality and cannot be relabelled at a call boundary [SYS-2].
+    system_nominals: HashMap<(u8, Vec<DeclarationId>), NominalId>,
+    /// Kind constraints collected from the complete signature and body.
+    /// Most parsing paths are read-only, so this monotone table uses interior
+    /// mutability; conflicting constraints reject at the second anchor.
+    region_kinds: RefCell<HashMap<DeclarationId, CheckedRegionKind>>,
+    /// Equality constraints contributed by user-call region substitution.
+    region_kind_links: RefCell<Vec<(DeclarationId, DeclarationId, NodeId)>>,
     prelude_types: Vec<Option<PreludeType>>,
     nominal_templates: Vec<NominalTemplate>,
     nominal_templates_by_declaration: HashMap<DeclarationId, usize>,
@@ -686,6 +710,140 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    fn constrain_region_kind(
+        &self,
+        node: NodeId,
+        region: DeclarationId,
+        required: CheckedRegionKind,
+    ) -> Result<(), CheckStop> {
+        let mut kinds = self.region_kinds.borrow_mut();
+        if let Some(first) = kinds.get(&region).copied() {
+            if first != required {
+                let spelling = self
+                    .resolved
+                    .declarations()
+                    .get(region.index())
+                    .map(|declaration| declaration.spelling().to_owned())
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                return self.issue_node(
+                    SemanticRule::Own3,
+                    node,
+                    SemanticIssueKind::RegionKindConflict {
+                        region: spelling,
+                        first: Self::region_kind_name(first),
+                        second: Self::region_kind_name(required),
+                    },
+                );
+            }
+            return Ok(());
+        }
+        kinds.insert(region, required);
+        Ok(())
+    }
+
+    fn region_kind(&self, region: DeclarationId) -> Option<CheckedRegionKind> {
+        if let Some(kind) = self.region_kinds.borrow().get(&region).copied() {
+            return Some(kind);
+        }
+        let links = self.region_kind_links.borrow();
+        let kinds = self.region_kinds.borrow();
+        let mut stack = vec![region];
+        let mut seen = Vec::new();
+        while let Some(current) = stack.pop() {
+            if seen.contains(&current) {
+                continue;
+            }
+            seen.push(current);
+            if let Some(kind) = kinds.get(&current).copied() {
+                return Some(kind);
+            }
+            for (left, right, _) in links.iter().copied() {
+                if left == current {
+                    stack.push(right);
+                } else if right == current {
+                    stack.push(left);
+                }
+            }
+        }
+        None
+    }
+
+    fn link_region_kinds(
+        &self,
+        node: NodeId,
+        formal: DeclarationId,
+        actual: DeclarationId,
+    ) -> Result<(), CheckStop> {
+        if !self
+            .region_kind_links
+            .borrow()
+            .iter()
+            .any(|(left, right, _)| {
+                (*left == formal && *right == actual) || (*left == actual && *right == formal)
+            })
+        {
+            self.region_kind_links
+                .borrow_mut()
+                .push((formal, actual, node));
+        }
+        match (self.region_kind(formal), self.region_kind(actual)) {
+            (Some(kind), None) => self.constrain_region_kind(node, actual, kind),
+            (None, Some(kind)) => self.constrain_region_kind(node, formal, kind),
+            (Some(left), Some(right)) if left != right => {
+                self.constrain_region_kind(node, actual, left)
+            }
+            _ => Ok(()),
+        }
+    }
+
+    const fn region_kind_name(kind: CheckedRegionKind) -> &'static str {
+        match kind {
+            CheckedRegionKind::Memory => "memory",
+            CheckedRegionKind::World => "world",
+        }
+    }
+
+    fn validate_region_kinds(&self) -> Result<(), CheckStop> {
+        loop {
+            let before = self.region_kinds.borrow().len();
+            let links = self.region_kind_links.borrow().clone();
+            for (left, right, node) in links {
+                match (self.region_kind(left), self.region_kind(right)) {
+                    (Some(kind), None) => self.constrain_region_kind(node, right, kind)?,
+                    (None, Some(kind)) => self.constrain_region_kind(node, left, kind)?,
+                    (Some(left_kind), Some(right_kind)) if left_kind != right_kind => {
+                        self.constrain_region_kind(node, right, left_kind)?;
+                    }
+                    _ => {}
+                }
+            }
+            if self.region_kinds.borrow().len() == before {
+                break;
+            }
+        }
+        for declaration in self.resolved.declarations() {
+            if !matches!(
+                declaration.role(),
+                DeclarationRole::RegionParameter | DeclarationRole::LocalRegion
+            ) || self.region_kind(declaration.id()).is_some()
+            {
+                continue;
+            }
+            let node = self
+                .tree
+                .node_with_path(declaration.origin().node())
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            return self.issue_node(
+                SemanticRule::Own3,
+                node,
+                SemanticIssueKind::UnresolvedRegionKind {
+                    region: declaration.spelling().to_owned(),
+                },
+            );
+        }
+        Ok(())
+    }
+
     /// Which [SYS-2] inventory this unit was resolved against.
     ///
     /// Every ordinal-to-index lookup must use the state the resolver built
@@ -790,6 +948,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             pending_nominals: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             system_nominals: HashMap::new(),
+            region_kinds: RefCell::new(HashMap::new()),
+            region_kind_links: RefCell::new(Vec::new()),
             prelude_types: Vec::new(),
             nominal_templates: Vec::new(),
             nominal_templates_by_declaration: HashMap::new(),
@@ -1017,7 +1177,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &phase_a_functions,
             &ProvenanceContext {
                 nominals: &self.nominals,
-                external_entry: Some(main),
+                boundary_origin_entry: Some(main),
             },
         )?;
         let mut functions = function_inventory
@@ -1026,7 +1186,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .collect::<Vec<_>>();
         let provenance_context = ProvenanceContext {
             nominals: &self.nominals,
-            external_entry: Some(main),
+            boundary_origin_entry: Some(main),
         };
         let mut provenance_analysis = analyze_program_provenance_with_frozen(
             &functions,
@@ -1145,6 +1305,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
         }
+        // [OWN-3] kind inference is complete only after every signature and
+        // body has contributed its anchors and call substitutions.
+        self.validate_region_kinds()?;
+        // Target actions are closed-world lowering metadata, not source
+        // effects. Compute their recursive least fixed point only after the
+        // concrete function inventory is complete and all bodies are final.
+        super::target_action::derive_target_actions(&mut functions);
         // [PAR-1 candidate] permission is a read-only legality table over the
         // completed checked program: callable-boundary rows, resolved places,
         // statement exit edges, and the concrete call graph. It reads no
@@ -1157,11 +1324,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 reads: signature.declared_effects.reads.clone(),
                 writes: signature.declared_effects.writes.clone(),
                 allocates_arenas: signature.declared_effects.allocates_arenas.clone(),
-                external: signature.declared_effects.external,
-                blocks: signature.declared_effects.blocks,
+                world_regions: signature
+                    .region_parameters
+                    .iter()
+                    .copied()
+                    .filter(|region| self.region_kind(*region) == Some(CheckedRegionKind::World))
+                    .collect(),
             })
             .collect::<Vec<_>>();
         let permission = analyze_permission(&functions, &permission_signatures);
+        let ledger_source = PermissionLedgerSource { tree: &self.tree };
+        let io_ledger = build_io_ledger(
+            &functions,
+            &self.nominals,
+            &permission_signatures,
+            &permission,
+            &ledger_source,
+        )?;
         // The ledger is rendered here because only the checker still holds the
         // syntax tree the citations name. It is pure presentation over the
         // table above and reaches no decision.
@@ -1170,7 +1349,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .any(|permissions| !permissions.pairs.is_empty() || !permissions.loops.is_empty())
         {
-            render_ledger(&permission, &PermissionLedgerSource { tree: &self.tree })?
+            render_ledger(&permission, &ledger_source)?
         } else {
             Vec::new()
         };
@@ -1198,6 +1377,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             claim_ledger,
             permission,
             permission_ledger,
+            io_ledger,
         })
     }
 
@@ -1495,6 +1675,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             PendingNominal::Prelude(ty) => {
                                 self.intern_prelude_nominal(ty)?;
                             }
+                            PendingNominal::System(index, world_regions) => {
+                                self.intern_system_nominal_with(index, world_regions)?;
+                            }
+                            PendingNominal::Source(template, substitution) => {
+                                self.ensure_source_nominal_instance(template, substitution)?;
+                            }
                         }
                     }
                     if self.nominals.len() == before {
@@ -1631,31 +1817,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let exhibited = syntactic.clone().union(release);
         if exhibited != signature.declared_effects {
-            // A category contributed only by the release contribution has
-            // no offending source occurrence; the diagnostic renders the
-            // owner whose release contributed it, selected by the
-            // deterministic traversal that collected the sites.
-            let release_only =
-                |exhibited_category: bool, declared_category: bool, syntactic_category: bool| {
-                    exhibited_category && !declared_category && !syntactic_category
-                };
-            let undeclared_external = release_only(
-                exhibited.external,
-                signature.declared_effects.external,
-                syntactic.external,
-            );
-            let undeclared_blocks = release_only(
-                exhibited.blocks,
-                signature.declared_effects.blocks,
-                syntactic.blocks,
-            );
-            if undeclared_external || undeclared_blocks {
+            // A world entry contributed only by release has no source call
+            // occurrence. Cite the first owner carrying such an entry.
+            let release_only = release_sites.iter().find(|site| {
+                site.effects.reads.iter().any(|region| {
+                    !signature.declared_effects.reads.contains(region)
+                        && !syntactic.reads.contains(region)
+                }) || site.effects.writes.iter().any(|region| {
+                    !signature.declared_effects.writes.contains(region)
+                        && !syntactic.writes.contains(region)
+                })
+            });
+            if let Some(site) = release_only {
                 let owner = release_sites
                     .iter()
-                    .find(|site| {
-                        (undeclared_external && site.effects.external)
-                            || (undeclared_blocks && site.effects.blocks)
-                    })
+                    .find(|candidate| std::ptr::eq(*candidate, site))
                     .map(|site| match &site.owner {
                         cleanup::ReleaseOwner::Binding(binding) => binding_names
                             .get(binding.0 as usize)
@@ -1671,7 +1847,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     signature.effects_node,
                     SemanticIssueKind::ReleaseEffectMismatch {
                         owner,
-                        mechanical_fix: "declare the release effects of every resource this function may release, or move the owner out",
+                        mechanical_fix: "declare the world effects of every resource this function may release, or move the owner out",
                     },
                 );
             }
@@ -1741,6 +1917,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             slice_return_ceiling: signature.slice_return_ceiling.clone(),
             declared_traps: signature.declared_effects.traps,
             declared_allocates_heap: signature.declared_effects.allocates_heap,
+            target_action: crate::TargetAction::INLINE,
             requirements,
             postconditions,
             body: checked.statements,
@@ -1878,7 +2055,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .collect::<Vec<_>>();
         let schema_provenance_context = ProvenanceContext {
             nominals: &self.nominals,
-            external_entry: None,
+            boundary_origin_entry: None,
         };
         let frozen_schema_provenance =
             freeze_program_provenance(&full_schema_functions, &schema_provenance_context)?;
@@ -3039,7 +3216,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         mask: &ClaimMask,
         full_provenance_failures: &ProvenanceFailures,
         frozen_provenance: &FrozenProvenanceDependencies,
-        external_entry: Option<FunctionId>,
+        boundary_origin_entry: Option<FunctionId>,
     ) -> Result<Option<ClaimCounterfactualWitness>, CheckStop> {
         let terminal_witness = Self::masked_terminal_witness(full, masked, mask)?;
         let masked_functions = masked
@@ -3050,7 +3227,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &masked_functions,
             &ProvenanceContext {
                 nominals: &self.nominals,
-                external_entry,
+                boundary_origin_entry,
             },
             frozen_provenance,
         )?;
@@ -4205,7 +4382,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             rejection.node_path().clone(),
             self.tree.coordinate(node)?,
         );
-        let restructure_alternative = "restructure the explicit dataflow so the external value no longer reaches the constrained-subject position";
+        let restructure_alternative = "restructure the explicit dataflow so the boundary-derived value no longer reaches the constrained-subject position";
         match rejection {
             Rejection::Local(leaf, dependency, requirement, carrier) => {
                 let function = functions
@@ -4236,7 +4413,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Ok(Some(SemanticIssue {
                     rule: SemanticRule::Prv3,
                     location,
-                    kind: SemanticIssueKind::ExternalProtectedSubject(Box::new(
+                    kind: SemanticIssueKind::BoundaryDerivedProtectedSubject(Box::new(
                         crate::ProvenanceGateDetail {
                             targets: vec![crate::ProvenanceTargetDetail {
                                 demand_kind: crate::ProvenanceDemandKind::LocalLeaf,
@@ -4284,7 +4461,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Ok(Some(SemanticIssue {
                     rule: SemanticRule::Prv2,
                     location,
-                    kind: SemanticIssueKind::ExternalProtectedCallArgument(Box::new(
+                    kind: SemanticIssueKind::BoundaryDerivedProtectedCallArgument(Box::new(
                         crate::ProvenanceGateDetail {
                             targets,
                             selected_target: event.selected_target,

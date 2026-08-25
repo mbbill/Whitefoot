@@ -33,12 +33,12 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.36 at the stable
+Kernel specification v0.37 at the stable
 [specification path](spec/kernel-spec.md), SHA-256
-`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`,
-is active in this exact revision. It supersedes v0.33, whose exact bytes at
-SHA-256 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`
-are preserved as an immutable flat archive. `main` remains on v0.33 until this
+`f772f2aec5e0da963c1cb9d8607a9e87cd3ad03cb71f3b6532451404d4d07bb5`,
+is active in this exact revision. It supersedes v0.36, whose exact bytes at
+SHA-256 `fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`
+are preserved as an immutable flat archive. `main` remains on v0.36 until this
 exact revision is approved and merged.
 
 The safe-Rust compiler currently implements one ordinary path:
@@ -56,7 +56,9 @@ ordered source bundle
   -> semantic and ownership checking
   -> private checked program
   -> target-independent typed control-flow IR
+  -> selected-host layout and target qualification
   -> conservative LLVM
+  -> embedded completion/parallel runtime units when the module names them
   -> host executable
 ```
 
@@ -89,13 +91,13 @@ make install-hooks   # once: enable immutable-archive pre-commit protection
 make check           # compiler, conformance, and specification identity gate
 ```
 
-The gate is deliberately small: the compiler builds and passes its tests; the
-conformance corpus has valid active-spec identity, structure, rule coverage,
-and expectations; and the stable file plus immutable archives match the
-recorded digest chain. The native compile-run adapter is invoked separately by
-`make conformance-run`; its current result is Pass=432, Fail=1,
-Skip=13 and is not silently counted as part of `make check`. A green result
-states only what the selected gate exercises and is not a completeness claim.
+The gate checks repository invariants and the specification digest chain,
+builds and tests the compiler, validates conformance structure and coverage,
+runs the strict native completion harness, runs the maintained research
+oracles, and drives every non-pending conformance case through the ordinary
+compiler/link/execute path. The current native tally is `Pass=500 Skip=1`.
+A green result states only what these gates exercise and is not a completeness
+claim.
 
 ## License
 

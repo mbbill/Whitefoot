@@ -2,8 +2,8 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
-the active v0.36 authority at SHA-256
-`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62` at
+the active v0.37 authority at SHA-256
+`f772f2aec5e0da963c1cb9d8607a9e87cd3ad03cb71f3b6532451404d4d07bb5` at
 `spec/kernel-spec.md`; released versioned files retain the superseded
 authorities. Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
@@ -12,9 +12,38 @@ exist; this form is minimality-selected and awaits its experiment),
 **underived** (no chain; may not ratify).
 
 **Statistics: 84 derived · 53 existence-only · 0 underived**
-(136 rules: v0.28's 132 plus the v0.29 CLM-3, v0.31 SET-2, and v0.32 SYS-14
+(137 rules: v0.28's 132 plus the v0.29 CLM-3, v0.31 SET-2, and v0.32 SYS-14
 additions; v0.33 and v0.34 add no numbered rule and change no status; the
-v0.35 adds PAR-1 and PAR-2 and changes no prior status).
+v0.35 adds PAR-1 and PAR-2; v0.36 and v0.37 change no rule count or status).
+
+## Active v0.37 amendment note
+
+The row-by-row ledger below is chronological evidence, so its v0.18 entries
+retain the then-live `external`/`blocks` wording rather than rewriting history.
+For the active authority, v0.37 supersedes those portions as follows:
+
+- EFF-1/EFF-2/EFF-5 and SYS-2/SYS-5/SYS-10..14 use kinded world regions
+  carried by capability vectors. Exact exhibits and release contributions
+  project world identities directly, while different capability values never
+  prove disjointness. One conservative command-wide order domain preserves
+  v0.36 behavior; the selection ground and full sentence ledger are the I/O
+  model design, its three adversarial reviews, and batch 0082.
+- `blocks` is replaced by compiler-owned target-action data for dispatch,
+  possible host wait, and terminal loan return. The finite user-call fixed
+  point is trusted lowering metadata rather than a writer effect claim.
+- PAR-1/PAR-2 compare complete memory, loan, exit, and world footprints. A
+  defective overlapping execution may select its false claim and pre-abort
+  world prefix; theorem T3 rules out narrowing correct-program permission to
+  stabilize that defective observation.
+- PRV-1's historical `external` provenance class is renamed
+  `boundary-derived`. Its seeds, lattice, and every conformance verdict remain
+  unchanged.
+
+The amendment changes no derivation status: the world vocabulary replaces an
+under-specified payload-free outside-effect atom with the identity and alias
+machinery required by the existing T1/W3 exactness and conservative-fallback
+chains. Target-specific readiness/completion mechanisms remain outside the
+language and cannot supply a source disjointness fact.
 
 ## Re-grounding priority queue (weakest chains)
 

@@ -4,7 +4,7 @@ enum PrvChoice {
 }
 
 command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
-  doc "An external enum payload seeds only its direct projection. The unseeded sibling binder stays internal and may carry a genuine same-function remainder residual to protect its subscript.";
+  doc "A boundary-derived enum payload seeds only its direct projection. The unseeded sibling binder stays internal and may carry a genuine same-function remainder residual to protect its subscript.";
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     let choice = PrvExternal(value: external_value);

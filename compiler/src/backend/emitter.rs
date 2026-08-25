@@ -9,6 +9,7 @@ mod array;
 mod boxes;
 mod buffer;
 mod cleanup;
+mod completion;
 mod conversion;
 mod floating;
 mod floor;
@@ -35,6 +36,10 @@ use crate::{
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
+pub use completion::{
+    COMPLETION_CONTRACT_HEADER, COMPLETION_PLATFORM_FILE_NAME, COMPLETION_PLATFORM_HEADER,
+    COMPLETION_PLATFORM_SOURCE, COMPLETION_RUNTIME_SOURCE, module_requires_completion_runtime,
+};
 use floor::FLOOR_RUNTIME_FALLBACK;
 pub use floor::FLOOR_RUNTIME_SOURCE;
 pub use floor::FLOOR_STACK_BYTES;
@@ -978,6 +983,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::SystemCall {
                 operation,
                 arguments,
+                ..
             } => self.emit_system_call(result, ty, *operation, arguments),
             IrOperation::Integer {
                 operation,

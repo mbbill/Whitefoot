@@ -1491,3 +1491,64 @@ ACTIVE-SPEC: v0.35 645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb
   `tests/conformance` content is added, modified, deleted, or renamed;
   coverage remains 137/137 with zero corpus delta.
 ACTIVE-SPEC: v0.36 fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62 645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769
+
+## 2026-08-25 — merge-time approval content: v0.37 world-region I/O completion
+
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. D1–D5 were selected before
+  implementation; specification activation on the work branch was ordinary
+  branch work. The final merge approval is rule 2's approval and rule 4's
+  approval of these exact bytes, with no separate approval step.
+- SPECIFICATION: activate Whitefoot v0.37 at exact SHA-256
+  `f772f2aec5e0da963c1cb9d8607a9e87cd3ad03cb71f3b6532451404d4d07bb5`.
+  It supersedes active v0.36 at SHA-256
+  `fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.36.md`. The rule and grammar-production counts remain
+  137 and 74. The exact META-5 delta is declared in the active specification's
+  header. Flagged decisions D1–D5 adopt the recommendations: conservative
+  command-wide world ordering, T3's widened erroneous-execution clause,
+  documented `WF_WORKERS` mapping, reservation of `external` and `blocks`, and
+  the provenance term `boundary-derived`.
+- CONFORMANCE BOUNDARY: relative to work origin `fee33565`, no conformance file
+  is added, deleted, or renamed. `tests/conformance/manifest.jsonl` changes
+  from SHA-256
+  `114a56c0a575d0dca2b97bfe6c9f0de873e237315646b640698956b90ed3cc0d` to
+  `929e9c6e5fa416b13ee801bf46314473007df86436d200e360733b593654a0c6`;
+  only the seven verdict-sensitive records named by the v0.37 candidate are
+  syntax-migrated, with no expectation, rule citation, status, arrangement, or
+  runtime-byte change. Exactly these 44 case sources are modified:
+  `accept-syseff-conditional-release-union.wf`,
+  `accept-syseff-pure-immutable-only.wf`,
+  `accept-sysentry-command-all-inputs.wf`,
+  `accept-sysrelease-return-unit-declared.wf`,
+  `prv1-pos-control-write-address-nontaint.wf`,
+  `prv1-pos-payload-sibling-isolation.wf`,
+  `prv2-neg-direct-system-result.wf`,
+  `prv2-neg-entry-system-result-bridge.wf`,
+  `prv2-neg-mutual-demand.wf`, `prv2-neg-recursive-demand.wf`,
+  `prv2-neg-two-hop-bridge.wf`, `prv2-pos-seedless-mutual.wf`,
+  `prv3-neg-external-claim-conjunction.wf`,
+  `prv3-neg-external-claim.wf`, `prv3-neg-read-offset-taint.wf`,
+  `prv3-pos-external-bound-only.wf`, `prv3-pos-external-branch.wf`,
+  `prv3-pos-internal-claim.wf`, `reject-sys14-list-end-beyond-buffer.wf`,
+  `reject-syseff-conditional-release-narrow.wf`,
+  `reject-syseff-declared-unexhibited.wf`,
+  `reject-syseff-pure-member-binds-release.wf`,
+  `reject-syseff-return-unit-pure.wf`,
+  `reject-sysentry-input-type-mismatch.wf`,
+  `reject-sysentry-label-out-of-order.wf`, `run-sysdir-open-notfound.wf`,
+  `run-sysfile-empty.wf`, `run-sysfile-exact.wf`,
+  `run-sysfile-multichunk.wf`, `run-sysfile-short.wf`,
+  `run-sysout-basic-write.wf`, `run-sysout-redirect-same-sink-order.wf`,
+  `sys14-directory-release.wf`, `sys14-entry-kind-closed.wf`,
+  `sys14-list-handle-affine.wf`, `sys14-list-handle-unique.wf`,
+  `sys14-list-outcome-exhaustive.wf`, `sys14-list-zero-range.wf`,
+  `sys14-no-path-from-bytes.wf`, `sys14-open-directory-component.wf`,
+  `sys14-open-directory-empty-name.wf`,
+  `sys14-open-directory-success.wf`, `v033-run-open-file-directory.wf`, and
+  `v033-run-open-file-regular.wf`. The planned 42-case set is unchanged; the
+  two additional `prv3-neg-external-claim*` files are D5 terminology-only
+  corrections found by the repository-wide mechanical scan. All case IDs and
+  verdicts remain stable.
+ACTIVE-SPEC: v0.37 f772f2aec5e0da963c1cb9d8607a9e87cd3ad03cb71f3b6532451404d4d07bb5 fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62

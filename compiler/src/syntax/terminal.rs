@@ -217,7 +217,7 @@ pub enum FixedTerminal {
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 97] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 95] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -312,8 +312,6 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 97] = [
     FixedTerminal::Writes,
     FixedTerminal::Allocates,
     FixedTerminal::Heap,
-    FixedTerminal::External,
-    FixedTerminal::Blocks,
     FixedTerminal::Traps,
 ];
 
@@ -498,21 +496,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 105] = {
-    let mut predicates = [TerminalPredicate::Identifier; 105];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 103] = {
+    let mut predicates = [TerminalPredicate::Identifier; 103];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[97] = TerminalPredicate::Identifier;
-    predicates[98] = TerminalPredicate::TypeIdentifier;
-    predicates[99] = TerminalPredicate::RegionIdentifier;
-    predicates[100] = TerminalPredicate::Label;
-    predicates[101] = TerminalPredicate::OperationName;
-    predicates[102] = TerminalPredicate::Literal;
-    predicates[103] = TerminalPredicate::String;
-    predicates[104] = TerminalPredicate::Digits;
+    predicates[95] = TerminalPredicate::Identifier;
+    predicates[96] = TerminalPredicate::TypeIdentifier;
+    predicates[97] = TerminalPredicate::RegionIdentifier;
+    predicates[98] = TerminalPredicate::Label;
+    predicates[99] = TerminalPredicate::OperationName;
+    predicates[100] = TerminalPredicate::Literal;
+    predicates[101] = TerminalPredicate::String;
+    predicates[102] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -590,11 +588,13 @@ fn lower_word(spelling: &[u8]) -> bool {
 }
 
 /// Tests active specification `IDENT` membership, including the fixed-word
-/// exclusion of every fixed lowercase spelling, `as`, `external`, `blocks`,
-/// `claim`, and `because` among them.
+/// exclusion of every fixed lowercase spelling and the retired reserved
+/// spellings `trap`, `external`, and `blocks` [FORM-3].
 #[must_use]
 pub fn is_identifier(spelling: &[u8]) -> bool {
-    lower_word(spelling) && spelling != b"trap" && FixedTerminal::from_spelling(spelling).is_none()
+    lower_word(spelling)
+        && !matches!(spelling, b"trap" | b"external" | b"blocks")
+        && FixedTerminal::from_spelling(spelling).is_none()
 }
 
 /// Tests active specification `TYPEID` membership.

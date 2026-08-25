@@ -40,13 +40,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
-    ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FLOOR_RUNTIME_SOURCE,
-    FinalizeLimits, FinalizeOutcome, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
-    PARALLEL_RUNTIME_SOURCE, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome,
-    SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical,
-    check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
+    ACTIVE_KERNEL_SPEC_HASH, COMPLETION_CONTRACT_HEADER, COMPLETION_PLATFORM_FILE_NAME,
+    COMPLETION_PLATFORM_HEADER, COMPLETION_PLATFORM_SOURCE, COMPLETION_RUNTIME_SOURCE,
+    CanonicalLimits, CanonicalOutcome, FLOOR_RUNTIME_SOURCE, FinalizeLimits, FinalizeOutcome,
+    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_RUNTIME_SOURCE, ParseLimits,
+    ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits,
+    TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
+    check_semantics_arithmetic_obligations, check_semantics_division_obligations,
     classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked,
-    module_requires_parallel_runtime, parse, resolve,
+    module_requires_completion_runtime, module_requires_parallel_runtime, parse, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -390,11 +392,29 @@ fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> 
     let floor_unit = directory.join("wf_floor.c");
     std::fs::write(&floor_unit, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     command.arg("-pthread").arg("-x").arg("c").arg(&floor_unit);
-    // The parallel runtime joins the link on exactly the condition the driver
-    // uses: the emitted module names its entry point. A test therefore cannot
-    // link a runtime a shipped build would not, and a module that overlaps
-    // nothing is linked here with nothing extra at all.
-    let parallel_unit = module_requires_parallel_runtime(llvm).then(|| {
+    // Completion joins when the emitted module names a native adapter, and
+    // also accompanies the parallel runtime because its I/O-frame publication
+    // entry is part of that runtime ABI. Tests therefore link exactly the
+    // translation units the driver links, from the same embedded bytes.
+    let needs_parallel = module_requires_parallel_runtime(llvm);
+    let completion_units =
+        (needs_parallel || module_requires_completion_runtime(llvm)).then(|| {
+            let header = directory.join("contract.h");
+            let platform_header = directory.join("platform.h");
+            let shared = directory.join("completion_runtime.c");
+            let platform = directory.join(COMPLETION_PLATFORM_FILE_NAME);
+            std::fs::write(&header, COMPLETION_CONTRACT_HEADER).expect("write completion contract");
+            std::fs::write(&platform_header, COMPLETION_PLATFORM_HEADER)
+                .expect("write completion platform contract");
+            std::fs::write(&shared, COMPLETION_RUNTIME_SOURCE).expect("write completion runtime");
+            std::fs::write(&platform, COMPLETION_PLATFORM_SOURCE)
+                .expect("write completion backend");
+            command.arg("-I").arg(directory);
+            command.arg("-x").arg("c").arg(&shared);
+            command.arg("-x").arg("c").arg(&platform);
+            (header, platform_header, shared, platform)
+        });
+    let parallel_unit = needs_parallel.then(|| {
         let path = directory.join("par_runtime.c");
         std::fs::write(&path, PARALLEL_RUNTIME_SOURCE).expect("write the parallel runtime");
         command.arg("-x").arg("c").arg(&path);
@@ -420,6 +440,12 @@ fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> 
     std::fs::remove_file(&floor_unit).expect("remove the floor runtime unit");
     if let Some(path) = parallel_unit {
         std::fs::remove_file(path).expect("remove the parallel runtime unit");
+    }
+    if let Some((header, platform_header, shared, platform)) = completion_units {
+        std::fs::remove_file(header).expect("remove completion contract");
+        std::fs::remove_file(platform_header).expect("remove completion platform contract");
+        std::fs::remove_file(shared).expect("remove completion runtime");
+        std::fs::remove_file(platform).expect("remove completion backend");
     }
     executable
 }

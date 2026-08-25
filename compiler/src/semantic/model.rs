@@ -375,7 +375,17 @@ pub(crate) enum CheckedNominalKind {
     /// compiler-derived release carries the fixed [SYS-5] row.
     SystemResource {
         nominal: u8,
+        /// Exact source world vector. It is part of nominal identity even
+        /// though lowering erases the identities from the runtime layout.
+        world_regions: Vec<DeclarationId>,
     },
+}
+
+/// The checked kind of one source region declaration [OWN-3].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum CheckedRegionKind {
+    Memory,
+    World,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -931,8 +941,15 @@ pub(crate) enum CheckedExpression {
     /// system operation catalog. Arguments follow declared parameter order.
     SystemCall {
         operation: u8,
+        /// The exact trusted catalog record selected for this occurrence.
+        /// Lowering carries this checked metadata rather than looking the
+        /// operation up again to decide how the action may execute.
+        target_action: crate::TargetAction,
         /// Exact source call occurrence and declared-order argument atoms.
         call: NodePath,
+        /// Concrete caller regions supplied for the system operation's
+        /// declared region parameters, in declaration order.
+        regions: Vec<DeclarationId>,
         argument_nodes: Vec<NodePath>,
         arguments: Vec<CheckedExpression>,
         result: CheckedType,
@@ -1478,6 +1495,11 @@ pub(crate) struct CheckedFunction {
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
     pub(crate) declared_traps: bool,
     pub(crate) declared_allocates_heap: bool,
+    /// Componentwise union of every target action reachable through direct
+    /// system calls, compiler-derived releases, and user-call edges. The
+    /// closed-world least fixed point is installed after the complete
+    /// concrete function inventory exists.
+    pub(crate) target_action: crate::TargetAction,
     /// Callable-boundary predicates in `requires_clause` source order.
     pub(crate) requirements: Vec<super::goal::CheckedRequirement>,
     /// Verified-relation surfaces in `ensures_clause` source order. H1
@@ -1521,8 +1543,6 @@ pub(crate) struct CheckedEffectCapabilities {
     pub(crate) writes: Vec<DeclarationId>,
     pub(crate) allocates_heap: bool,
     pub(crate) allocates_arenas: Vec<DeclarationId>,
-    pub(crate) external: bool,
-    pub(crate) blocks: bool,
     pub(crate) traps: bool,
 }
 
@@ -1760,6 +1780,9 @@ pub(crate) struct CheckedProgramData {
     /// hands it to `whitefootc --par-ledger`, and no mandatory record, no
     /// normative output, and no lowering decision reads it.
     pub(crate) permission_ledger: Vec<String>,
+    /// Structured checked records behind the deterministic `--io-ledger`.
+    /// Lowering supplies only the exact set of sites it selected.
+    pub(crate) io_ledger: super::io_ledger::IoLedger,
 }
 
 /// Every direct subexpression, for uniform recursion.

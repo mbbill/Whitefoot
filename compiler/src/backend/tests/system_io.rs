@@ -141,7 +141,7 @@ pub(super) fn class_arms(indent: usize, named: &[(&str, &str)], default: &str) -
 
 /// Opens one argument-named path under `command.cwd` and reads its first
 /// bytes, reporting the exact count.
-const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+const OPEN_AND_READ: &[u8] = br#"command fn main['qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw 'fw 'rhw), writes('qw 'dhw 'rhw 'rcw), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -149,12 +149,12 @@ const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args,
           Ok(value: path) => {
             region 'c {
               region 'p {
-                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
+                match open_read<'c, 'p, 'qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     let bytes = buffer_new(64_u64, 0_u8);
                     region 'f {
                       region 'd {
-                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 64_u64) {
+                        match read_once<'f, 'd, 'qw, 'rhw, 'rcw, 'fw>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 64_u64) {
                           ReadBytes(next: n) => {
                             let narrowed = cvt<u64, u8>(n);
                             match narrowed {
@@ -203,8 +203,8 @@ fn open_read_resolves_a_relative_path_through_the_targets_own_facility() {
     // against the capability's descriptor, never a prefix concatenated onto a
     // path and resolved against an ambient working directory.
     assert!(llvm.contains("; QUAL-1 semantic id 7 -> @wf.sys.open_read.v1"));
-    assert!(llvm.contains("declare i32 @openat(i32, ptr, i32, ...)"));
-    assert!(llvm.contains("@openat(i32 %root, ptr %text, i32 0)"));
+    assert!(llvm.contains("declare i32 @wf__io_openat(i32, ptr, i32, ...)"));
+    assert!(llvm.contains("@wf__io_openat(i32 %root, ptr %text, i32 0)"));
     for absent in ["@getcwd", "@chdir", "@realpath", "@strcat", "@snprintf"] {
         assert!(
             !llvm.contains(absent),
@@ -212,7 +212,7 @@ fn open_read_resolves_a_relative_path_through_the_targets_own_facility() {
         );
     }
     // The capability's own descriptor is the resolution root.
-    assert!(llvm.contains("%descriptor = call i32 (i32, ptr, i32, ...) @openat"));
+    assert!(llvm.contains("%descriptor = call i32 (i32, ptr, i32, ...) @wf__io_openat"));
 
     // A path naming a file in the initial directory opens and reads it; the
     // exact byte count reaches source.
@@ -250,7 +250,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
         "return exit_status(code: 199_u8);",
     );
     let source = format!(
-        r#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus external, blocks {{
+        r#"command fn main['qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw 'fw), writes('qw 'dhw 'rhw 'rcw) {{
   region 'a {{
     match arg_get<'a>(args: &'a args, position: 1_u64) {{
       Ok(value: text) => {{
@@ -258,7 +258,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
           Ok(value: path) => {{
             region 'c {{
               region 'p {{
-                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {{
+                match open_read<'c, 'p, 'qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw>(root: &'c cwd, path: &'p path) {{
                   Ok(value: file) => {{
                     return exit_status(code: 0_u8);
                   }}
@@ -345,7 +345,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
 }
 
 /// Drains one file in three-byte requests, reporting `total * 10 + requests`.
-pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+pub(super) const CHUNKED_READ: &[u8] = br#"command fn main['qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw 'fw 'rhw), writes('qw 'dhw 'rhw 'rcw), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -353,7 +353,7 @@ pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args:
           Ok(value: path) => {
             region 'c {
               region 'p {
-                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
+                match open_read<'c, 'p, 'qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     let bytes = buffer_new(3_u64, 0_u8);
                     let total = 0_u64;
@@ -362,7 +362,7 @@ pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args:
                     loop @drain {
                       region 'f {
                         region 'd {
-                          match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 3_u64) {
+                          match read_once<'f, 'd, 'qw, 'rhw, 'rcw, 'fw>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 3_u64) {
                             ReadBytes(next: n) => {
                               set total = total +wrap n;
                               set chunks = chunks +wrap 1_u64;
@@ -444,7 +444,7 @@ fn a_short_read_is_progress_and_only_the_observed_end_is_read_end() {
 }
 
 /// Reports a zero-length read's endpoint, then the following request's endpoint.
-const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+const VACANT_READ: &[u8] = br#"command fn main['qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw 'fw 'rhw), writes('qw 'dhw 'rhw 'rcw), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -452,13 +452,13 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
           Ok(value: path) => {
             region 'c {
               region 'p {
-                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
+                match open_read<'c, 'p, 'qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     let bytes = buffer_new(8_u64, 0_u8);
                     let vacant = 0_u64;
                     region 'f {
                       region 'd {
-                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 0_u64) {
+                        match read_once<'f, 'd, 'qw, 'rhw, 'rcw, 'fw>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 0_u64) {
                           ReadBytes(next: n) => {
                             set vacant = n;
                           }
@@ -477,7 +477,7 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
                     }
                     region 'g {
                       region 'e {
-                        match read_once<'g, 'e>(file: &uniq 'g file, destination: &uniq 'e bytes, start: 0_u64, end: 8_u64) {
+                        match read_once<'g, 'e, 'qw, 'rhw, 'rcw, 'fw>(file: &uniq 'g file, destination: &uniq 'e bytes, start: 0_u64, end: 8_u64) {
                           ReadBytes(next: n) => {
                             let narrowed = cvt<u64, u8>(n);
                             match narrowed {
@@ -545,7 +545,7 @@ fn a_zero_length_read_reports_no_bytes_without_issuing_a_host_transfer() {
 
 /// Reads three bytes into the middle of a sentinel buffer and digests the
 /// complete buffer afterwards.
-const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+const EXACT_PREFIX: &[u8] = br#"command fn main['qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw 'fw 'rhw), writes('qw 'dhw 'rhw 'rcw), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -553,12 +553,12 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
           Ok(value: path) => {
             region 'c {
               region 'p {
-                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
+                match open_read<'c, 'p, 'qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     let bytes = buffer_new(8_u64, 7_u8);
                     region 'f {
                       region 'd {
-                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 2_u64, end: 5_u64) {
+                        match read_once<'f, 'd, 'qw, 'rhw, 'rcw, 'fw>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 2_u64, end: 5_u64) {
                           ReadBytes(next: n) => {
                             if ieq(n, 5_u64) {
                             } else {
@@ -643,14 +643,14 @@ fn a_successful_read_changes_exactly_the_requested_prefix() {
 }
 
 /// Writes nothing, then the two-byte prefix at offset one.
-pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'ow), allocates(heap) {
   let bytes = buffer_new(4_u64, 119_u8);
   set bytes[1_u64] = 120_u8;
   set bytes[2_u64] = 121_u8;
   set bytes[3_u64] = 122_u8;
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 0_u64) {
+      match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 0_u64) {
         Ok(value: written) => {
           if ieq(written, 0_u64) {
           } else {
@@ -665,7 +665,7 @@ pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out
   }
   region 'p {
     region 't {
-      match write_once<'p, 't>(output: &uniq 'p out, source: &'t bytes, start: 1_u64, end: 3_u64) {
+      match write_once<'p, 't, 'qw, 'ow>(output: &uniq 'p out, source: &'t bytes, start: 1_u64, end: 3_u64) {
         Ok(value: written) => {
           let narrowed = cvt<u64, u8>(written);
           match narrowed {
@@ -703,11 +703,11 @@ fn write_once_publishes_the_requested_range_and_reports_its_absolute_endpoint() 
 }
 
 /// Requests a range that runs past the end of its source buffer.
-const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'ow), allocates(heap) {
   let bytes = buffer_new(4_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 1_u64, end: 9_u64) {
+      match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s bytes, start: 1_u64, end: 9_u64) {
         Ok(value: written) => {
           return exit_status(code: 10_u8);
         }
@@ -729,13 +729,13 @@ fn an_out_of_range_transfer_is_a_static_sys8_rejection() {
 
 /// Publishes one byte to standard output, one to standard error, then one
 /// more to standard output.
-const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+const ORDERED_WRITES: &[u8] = br#"command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>, command.stderr as err: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'ow), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: written) => {
         }
         Err(error: problem) => {
@@ -746,7 +746,7 @@ const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Out
   }
   region 'p {
     region 't {
-      match write_once<'p, 't>(output: &uniq 'p err, source: &'t bytes, start: 1_u64, end: 2_u64) {
+      match write_once<'p, 't, 'qw, 'ow>(output: &uniq 'p err, source: &'t bytes, start: 1_u64, end: 2_u64) {
         Ok(value: written) => {
         }
         Err(error: problem) => {
@@ -757,7 +757,7 @@ const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Out
   }
   region 'q {
     region 'u {
-      match write_once<'q, 'u>(output: &uniq 'q out, source: &'u bytes, start: 2_u64, end: 3_u64) {
+      match write_once<'q, 'u, 'qw, 'ow>(output: &uniq 'q out, source: &'u bytes, start: 2_u64, end: 3_u64) {
         Ok(value: written) => {
           return exit_status(code: 0_u8);
         }
@@ -774,7 +774,7 @@ const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Out
 fn sequential_writes_across_both_owners_preserve_source_order() {
     let llvm = compile(ORDERED_WRITES);
     let (status, bytes) = run_with_one_sink(&llvm);
-    // Sequential external calls retain source program order at every
+    // Sequential world calls retain source program order at every
     // optimization level, whether or not the two owners are the same sink
     // [EFF-5, SYS-12].
     assert_eq!(status.code(), Some(0));
@@ -789,7 +789,7 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
         "set status = 43_u8;",
     );
     let source = format!(
-        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {{
+        r#"command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'ow), allocates(heap) {{
   let bytes = buffer_new(1_u64, 65_u8);
   let attempts = 0_u64;
   let status = 44_u8;
@@ -800,7 +800,7 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
     set attempts = attempts +wrap 1_u64;
     region 'o {{
       region 's {{
-        match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {{
+        match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {{
           Ok(value: written) => {{
           }}
           Err(error: problem) => {{
@@ -832,7 +832,7 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
 }
 
 /// Drains one file through a reusable buffer and publishes one byte.
-const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+const TRANSFER_SHAPE: &[u8] = br#"command fn main['qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw, 'ow](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>, command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus reads('dhw 'dw 'fw 'rhw), writes('qw 'dhw 'rhw 'rcw 'ow), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -840,14 +840,14 @@ const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args
           Ok(value: path) => {
             region 'c {
               region 'p {
-                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
+                match open_read<'c, 'p, 'qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     let bytes = buffer_new(4096_u64, 0_u8);
                     let total = 0_u64;
                     loop @drain {
                       region 'f {
                         region 'd {
-                          match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 4096_u64) {
+                          match read_once<'f, 'd, 'qw, 'rhw, 'rcw, 'fw>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 4096_u64) {
                             ReadBytes(next: n) => {
                               set total = total +wrap n;
                             }
@@ -863,7 +863,7 @@ const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args
                     }
                     region 'o {
                       region 's {
-                        match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+                        match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
                           Ok(value: written) => {
                             let masked = iand(total, 255_u64);
                             let narrowed = cvt<u64, u8>(masked);
@@ -923,11 +923,12 @@ fn the_transfer_path_carries_no_allocation_copy_dispatch_or_lock() {
         !entry.contains("call") || !entry.contains("@wf.sys."),
         "no approved-implementation wrapper survives on the transfer path:\n{entry}"
     );
-    // One source transfer is at most one direct host call, and the loop makes
-    // no second call site.
-    assert_eq!(entry.matches("@read(").count(), 1, "{entry}");
-    assert_eq!(entry.matches("@write(").count(), 1, "{entry}");
-    assert_eq!(entry.matches("@openat(").count(), 1, "{entry}");
+    // One source transfer is at most one completion-adapter call, and the loop
+    // makes no second call site. The adapter owns platform dispatch and the
+    // corresponding single native attempt.
+    assert_eq!(entry.matches("@wf__io_read(").count(), 1, "{entry}");
+    assert_eq!(entry.matches("@wf__io_write(").count(), 1, "{entry}");
+    assert_eq!(entry.matches("@wf__io_openat(").count(), 1, "{entry}");
     // The transfer performs no heap allocation and copies no transferred
     // byte: the only allocation in the program is the source buffer the
     // writer asked for, reused across every read [QUAL-3].
@@ -969,13 +970,13 @@ fn the_transfer_path_carries_no_allocation_copy_dispatch_or_lock() {
 }
 
 #[test]
-fn an_opened_file_releases_with_one_direct_close_that_is_never_retried() {
+fn an_opened_file_releases_with_one_adapter_close_that_is_never_retried() {
     let llvm = compile(OPEN_AND_READ);
-    // `DirectoryRead` and `ReadFile` release with at most one native close
-    // attempt [SYS-5]; every release site is one direct call to the one
-    // declared close symbol.
-    assert!(llvm.contains("declare i32 @close(i32)"));
-    let releases = llvm.matches("call i32 @close(i32").count();
+    // `DirectoryRead` and `ReadFile` release with at most one completion-
+    // adapter close attempt [SYS-5]; every release site is one direct call to
+    // the one declared adapter symbol.
+    assert!(llvm.contains("declare i32 @wf__io_close(i32)"));
+    let releases = llvm.matches("call i32 @wf__io_close(i32").count();
     assert!(releases >= 2, "both closing owners must release:\n{llvm}");
     // The close diagnostic is discarded and an ambiguous close is never
     // retried: every release value is produced by a close, named once, and
@@ -986,8 +987,8 @@ fn an_opened_file_releases_with_one_direct_close_that_is_never_retried() {
             continue;
         };
         assert!(
-            line.contains("call i32 @close(i32"),
-            "a release value comes from one direct close:\n{line}"
+            line.contains("call i32 @wf__io_close(i32"),
+            "a release value comes from one adapter close:\n{line}"
         );
         let ordinal = rest
             .split_whitespace()
@@ -1009,7 +1010,7 @@ fn an_opened_file_releases_with_one_direct_close_that_is_never_retried() {
 /// routes, retypes it as a relative path, opens that path under the initial
 /// directory, copies the file to standard output through a reused buffer,
 /// echoes the argument to standard error, and returns a command code.
-const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main['qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw, 'ow](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>, command.stdout as out: own Output<'qw, 'ow>, command.stderr as err: own Output<'qw, 'ow>) -> status: own ExitStatus reads('dhw 'dw 'fw 'rhw), writes('qw 'dhw 'rhw 'rcw 'ow), allocates(heap) {
   let echo = buffer_new(64_u64, 0_u8);
   let name_length = 0_u64;
   region 'a {
@@ -1052,7 +1053,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
           Ok(value: path) => {
             region 'c {
               region 'p {
-                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
+                match open_read<'c, 'p, 'qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     let page = buffer_new(16_u64, 0_u8);
                     let total = 0_u64;
@@ -1061,7 +1062,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                       let chunk = 0_u64;
                       region 'f {
                         region 'g {
-                          match read_once<'f, 'g>(file: &uniq 'f file, destination: &uniq 'g page, start: 0_u64, end: 16_u64) {
+                          match read_once<'f, 'g, 'qw, 'rhw, 'rcw, 'fw>(file: &uniq 'f file, destination: &uniq 'g page, start: 0_u64, end: 16_u64) {
                             ReadBytes(next: n) => {
                               set chunk = n;
                             }
@@ -1083,7 +1084,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                       }
                       region 'o {
                         region 's {
-                          match write_once<'o, 's>(output: &uniq 'o out, source: &'s page, start: 0_u64, end: chunk) {
+                          match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s page, start: 0_u64, end: chunk) {
                             Ok(value: written) => {
                               set total = total +wrap written;
                             }
@@ -1107,7 +1108,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                     }
                     region 'x {
                       region 'y {
-                        match write_once<'x, 'y>(output: &uniq 'x err, source: &'y echo, start: 0_u64, end: name_length) {
+                        match write_once<'x, 'y, 'qw, 'ow>(output: &uniq 'x err, source: &'y echo, start: 0_u64, end: name_length) {
                           Ok(value: written) => {
                             let masked = iand(total, 255_u64);
                             let narrowed = cvt<u64, u8>(masked);

@@ -9,6 +9,7 @@ mod check;
 mod claim_locality;
 mod entailment;
 mod goal;
+mod io_ledger;
 mod loop_permission;
 mod model;
 pub(crate) mod permission;
@@ -16,6 +17,7 @@ mod permission_ledger;
 mod places;
 mod postcondition;
 mod provenance;
+mod target_action;
 mod tree;
 
 #[cfg(test)]
@@ -48,10 +50,11 @@ pub(crate) use model::{
     CheckedBufferRoot, CheckedBufferSetTarget, CheckedConstructor, CheckedDrop, CheckedEntryForm,
     CheckedEnumType, CheckedExpression, CheckedFlatElement, CheckedFloatOperation, CheckedFunction,
     CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
-    CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter,
-    CheckedProgramData, CheckedProjectedDrop, CheckedRuntimeTargetObligations, CheckedSetTarget,
-    CheckedSliceRoot, CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation,
-    CheckedType, CheckedValue, ClaimSite, NominalId, PropagationContext,
+    CheckedMatchArm, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedNumericType,
+    CheckedParameter, CheckedProgramData, CheckedProjectedDrop, CheckedRuntimeTargetObligations,
+    CheckedSetTarget, CheckedSliceRoot, CheckedSliceSource, CheckedStatement,
+    CheckedTargetDomainObligation, CheckedType, CheckedValue, ClaimSite, NominalId,
+    PropagationContext,
 };
 
 /// Master switch for the v0.31 candidate's gated semantic surface:
@@ -85,6 +88,8 @@ pub enum SemanticRule {
     Set2,
     /// Copy-versus-affine use spelling.
     Own1,
+    /// Complete memory/world region-kind inference and preservation.
+    Own3,
     /// Borrow liveness and region ordering.
     Own4,
     /// Live-loan access and exclusivity.
@@ -171,9 +176,9 @@ pub enum SemanticRule {
     Clm3,
     /// Counted endpoint admission to the closed term-or-constant vocabulary.
     Ent2,
-    /// External actual protecting one downstream constrained subject.
+    /// Boundary-derived actual protecting one downstream constrained subject.
     Prv2,
-    /// External local constrained subject authorized only by assertion state.
+    /// Boundary-derived local constrained subject authorized only by assertion state.
     Prv3,
 }
 
@@ -191,6 +196,7 @@ impl SemanticRule {
             Self::Set1 => "SET-1",
             Self::Set2 => "SET-2",
             Self::Own1 => "OWN-1",
+            Self::Own3 => "OWN-3",
             Self::Own4 => "OWN-4",
             Self::Own5 => "OWN-5",
             Self::Own6 => "OWN-6",
@@ -270,7 +276,8 @@ impl SemanticRule {
             Self::Set2 => Self::Const1,
             Self::Const1 => Self::Const2,
             Self::Const2 => Self::Own1,
-            Self::Own1 => Self::Own4,
+            Self::Own1 => Self::Own3,
+            Self::Own3 => Self::Own4,
             Self::Own4 => Self::Own5,
             Self::Own5 => Self::Own6,
             Self::Own6 => Self::Own10,
@@ -337,42 +344,43 @@ impl SemanticRule {
             Self::Const1 => 13,
             Self::Const2 => 14,
             Self::Own1 => 15,
-            Self::Own4 => 16,
-            Self::Own5 => 17,
-            Self::Own6 => 18,
-            Self::Own10 => 19,
-            Self::Own11 => 20,
-            Self::Own12 => 21,
-            Self::Own14 => 22,
-            Self::Stor1 => 23,
-            Self::Stor4 => 24,
-            Self::Stor5 => 25,
-            Self::Op1 => 26,
-            Self::Op2 => 27,
-            Self::Op4 => 28,
-            Self::Op5 => 29,
-            Self::Op6 => 30,
-            Self::Op9 => 31,
-            Self::Fn1 => 32,
-            Self::Fn2 => 33,
-            Self::Fn3 => 34,
-            Self::Fn4 => 35,
-            Self::Fn6 => 36,
-            Self::Fn7 => 37,
-            Self::Fn8 => 38,
-            Self::Fn9 => 39,
-            Self::Eff1 => 40,
-            Self::Eff2 => 41,
-            Self::Err2 => 42,
-            Self::Err3 => 43,
-            Self::Sys2 => 44,
-            Self::Sys8 => 45,
-            Self::Clm1 => 46,
-            Self::Clm2 => 47,
-            Self::Clm3 => 48,
-            Self::Ent2 => 49,
-            Self::Prv2 => 50,
-            Self::Prv3 => 51,
+            Self::Own3 => 16,
+            Self::Own4 => 17,
+            Self::Own5 => 18,
+            Self::Own6 => 19,
+            Self::Own10 => 20,
+            Self::Own11 => 21,
+            Self::Own12 => 22,
+            Self::Own14 => 23,
+            Self::Stor1 => 24,
+            Self::Stor4 => 25,
+            Self::Stor5 => 26,
+            Self::Op1 => 27,
+            Self::Op2 => 28,
+            Self::Op4 => 29,
+            Self::Op5 => 30,
+            Self::Op6 => 31,
+            Self::Op9 => 32,
+            Self::Fn1 => 33,
+            Self::Fn2 => 34,
+            Self::Fn3 => 35,
+            Self::Fn4 => 36,
+            Self::Fn6 => 37,
+            Self::Fn7 => 38,
+            Self::Fn8 => 39,
+            Self::Fn9 => 40,
+            Self::Eff1 => 41,
+            Self::Eff2 => 42,
+            Self::Err2 => 43,
+            Self::Err3 => 44,
+            Self::Sys2 => 45,
+            Self::Sys8 => 46,
+            Self::Clm1 => 47,
+            Self::Clm2 => 48,
+            Self::Clm3 => 49,
+            Self::Ent2 => 50,
+            Self::Prv2 => 51,
+            Self::Prv3 => 52,
         }
     }
 }
@@ -715,7 +723,7 @@ pub struct ProvenanceGateDetail {
     pub targets: Vec<ProvenanceTargetDetail>,
     /// Target whose deterministic witness and target-specific repair render.
     pub selected_target: u32,
-    /// Alternative common to every target: remove the external subject route.
+    /// Alternative common to every target: remove the boundary-derived subject route.
     pub restructure_alternative: &'static str,
 }
 
@@ -745,6 +753,14 @@ pub enum SemanticIssueKind {
     },
     /// Two exact written modes or types disagree.
     TypeMismatch,
+    /// One declaration was anchored as both memory and world kind [OWN-3].
+    RegionKindConflict {
+        region: String,
+        first: &'static str,
+        second: &'static str,
+    },
+    /// Complete signature/body collection left a region without a kind.
+    UnresolvedRegionKind { region: String },
     /// A constant was selected as an assignment target.
     ImmutableSetTarget,
     /// SET-1's closed writability relation did not admit the target root.
@@ -883,12 +899,12 @@ pub enum SemanticIssueKind {
     /// A demanded call or outside caller-to-marked-root boundary fails the
     /// existing unasserted U goal judgment [FN-8, CLM-3].
     StrictUndischargedCallRequirement(Box<StrictUndischargedCallRequirementDetail>),
-    /// A full-state-accepted call passes an unconditionally external actual
+    /// A full-state-accepted call passes an unconditionally boundary-derived actual
     /// into one or more protected downstream subjects [PRV-2].
-    ExternalProtectedCallArgument(Box<ProvenanceGateDetail>),
+    BoundaryDerivedProtectedCallArgument(Box<ProvenanceGateDetail>),
     /// A full-state-discharged local leaf relies on assertion state for an
-    /// unconditionally external constrained subject [PRV-3].
-    ExternalProtectedSubject(Box<ProvenanceGateDetail>),
+    /// unconditionally boundary-derived constrained subject [PRV-3].
+    BoundaryDerivedProtectedSubject(Box<ProvenanceGateDetail>),
     /// A counted endpoint produced `own u64` but was not itself one preceding
     /// ENT-2 term or constant.
     InvalidCountedEndpoint {

@@ -4,12 +4,9 @@
 //! [GRAM-11] arguments in declared order, explicit region arguments, borrow
 //! formation and overlap checking, and [EFF-2] call-boundary effect
 //! projection — except that its signature is the fixed catalog row rather
-//! than a source declaration. `external` and `blocks` transfer by presence;
-//! system operations never exhibit `traps`, and `reads`/`writes` region
-//! entries come from the mechanical
-//! [SYS-2] mode derivation and are projected through the actual borrow's
-//! ultimate storage origin, so a borrow of a current-function own root
-//! contributes no enclosing region effect.
+//! than a source declaration. System operations never exhibit `traps`.
+//! Memory entries project through loans and storage origins; world entries
+//! substitute directly through the written capability vector [EFF-2].
 
 use std::collections::HashMap;
 
@@ -25,6 +22,13 @@ use super::super::super::borrows::{AccessKind, BorrowInfo, BorrowKind, places_ov
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
 };
+
+struct SystemCallProjection<'a> {
+    actual_regions: &'a [DeclarationId],
+    borrows: &'a [Option<BorrowInfo>],
+    holders: &'a [Option<DeclarationId>],
+    bindings: &'a HashMap<DeclarationId, LocalBinding>,
+}
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn check_system_call(
@@ -69,8 +73,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             writes: Vec::new(),
             allocates_heap: false,
             allocates_arenas: Vec::new(),
-            external: operation.external,
-            blocks: operation.blocks,
             traps: false,
         };
         for (field, parameter) in fields.into_iter().zip(operation.parameters) {
@@ -126,7 +128,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?,
                 ),
             };
-            let expected_type = self.system_type(parameter.ty)?;
+            let world_regions = parameter
+                .world_regions
+                .iter()
+                .map(|index| {
+                    actual_regions
+                        .get(usize::from(*index))
+                        .copied()
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let expected_type = self.system_type_with(parameter.ty, &world_regions)?;
             if argument.expression.ty() != expected_type {
                 return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
             }
@@ -144,16 +156,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.project_system_call_effects(
             node,
             operation,
-            &checked_borrows,
-            &argument_holders,
-            bindings,
+            SystemCallProjection {
+                actual_regions: &actual_regions,
+                borrows: &checked_borrows,
+                holders: &argument_holders,
+                bindings,
+            },
             &mut effects,
         )?;
-        let result = self.system_type(operation.result)?;
+        let result_world_regions = operation
+            .result_world_regions
+            .iter()
+            .map(|index| {
+                actual_regions
+                    .get(usize::from(*index))
+                    .copied()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let result = self.system_type_with(operation.result, &result_world_regions)?;
         Ok(TypedExpression::owned(
             CheckedExpression::SystemCall {
                 operation: operation_index,
+                target_action: operation.target_action,
                 call: self.tree.path(node)?.clone(),
+                regions: actual_regions,
                 argument_nodes,
                 arguments,
                 result,
@@ -171,7 +198,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// arguments their rows fix". This is the system class, so its argument
     /// list is SYS-2's — the third clause, which had no representable rule
     /// until 2026-08-08 and therefore cited TYPE-5.
-    fn system_call_region_arguments(
+    pub(in crate::semantic::check) fn system_call_region_arguments(
         &self,
         node: NodeId,
         operation: &SystemOperation,
@@ -186,37 +213,61 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if arguments.len() != operation.regions.len() {
             return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::TypeMismatch);
         }
-        arguments
-            .into_iter()
-            .map(|argument| {
-                let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
-                match usage.target() {
-                    ResolvedTarget::Source {
-                        declaration,
-                        class: DeclarationClass::Region,
-                    } => Ok(declaration),
-                    _ => self.issue_node(
-                        SemanticRule::Sys2,
-                        argument,
-                        SemanticIssueKind::TypeMismatch,
-                    ),
-                }
-            })
-            .collect()
+        let mut actual = Vec::with_capacity(arguments.len());
+        for (index, argument) in arguments.into_iter().enumerate() {
+            let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
+            let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return self.issue_node(
+                    SemanticRule::Sys2,
+                    argument,
+                    SemanticIssueKind::TypeMismatch,
+                );
+            };
+            let kind = if operation.world_regions.contains(
+                &u8::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+            ) {
+                super::super::super::super::model::CheckedRegionKind::World
+            } else {
+                super::super::super::super::model::CheckedRegionKind::Memory
+            };
+            self.constrain_region_kind(argument, declaration, kind)?;
+            actual.push(declaration);
+        }
+        Ok(actual)
     }
 
     fn project_system_call_effects(
         &self,
         node: NodeId,
         operation: &SystemOperation,
-        borrows: &[Option<BorrowInfo>],
-        holders: &[Option<DeclarationId>],
-        bindings: &HashMap<DeclarationId, LocalBinding>,
+        projection: SystemCallProjection<'_>,
         effects: &mut EffectSet,
     ) -> Result<(), CheckStop> {
         let (reads, writes) = operation_region_effects(operation);
-        for (parameter, (borrow, holder)) in
-            operation.parameters.iter().zip(borrows.iter().zip(holders))
+        for (access, declared) in [(AccessKind::Read, &reads), (AccessKind::Write, &writes)] {
+            for index in declared
+                .iter()
+                .filter(|index| operation.world_regions.contains(index))
+            {
+                let region = *projection
+                    .actual_regions
+                    .get(usize::from(*index))
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                match access {
+                    AccessKind::Read => effects.add_read(region),
+                    AccessKind::Write => effects.add_write(region),
+                    _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+                }
+            }
+        }
+        for (parameter, (borrow, holder)) in operation
+            .parameters
+            .iter()
+            .zip(projection.borrows.iter().zip(projection.holders))
         {
             let mode_region = match parameter.mode {
                 SystemParameterMode::Own => continue,
@@ -228,10 +279,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if !declared.contains(&mode_region) {
                     continue;
                 }
+                if operation.world_regions.contains(&mode_region) {
+                    continue;
+                }
                 let borrow = borrow
                     .as_ref()
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                self.check_loan_access(bindings, *holder, &borrow.place, access, node)?;
+                self.check_loan_access(projection.bindings, *holder, &borrow.place, access, node)?;
                 if let Some(origin) = borrow.origin_region {
                     match access {
                         AccessKind::Read => effects.add_read(origin),

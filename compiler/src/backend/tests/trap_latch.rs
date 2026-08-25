@@ -205,9 +205,10 @@ fn a_racing_pair_of_false_claims_writes_exactly_one_record() {
 /// The sequential schedule is the reproduction path: it names one claim, the
 /// source-order first one, and its record bytes do not move.
 ///
-/// `WF_WORKERS=0` and `WF_WORKERS=1` both take the module's own sequential
-/// world, where nothing is handed out, so a writer handed a defective program
-/// has one setting that turns a schedule-selected report back into a fixed one.
+/// `WF_WORKERS=0` takes the module's own sequential world, where nothing is
+/// handed out, so a writer handed a defective program has one setting that
+/// turns a schedule-selected report back into a fixed one. `1` deliberately
+/// selects the overlapped world under D3.
 #[test]
 fn the_sequential_schedule_names_one_claim_every_run() {
     let module = emit_with_overlap_and_false_claims(
@@ -221,7 +222,7 @@ fn the_sequential_schedule_names_one_claim_every_run() {
     let executable = build_executable(&module, &directory);
 
     let mut reference: Option<Vec<u8>> = None;
-    for workers in ["0", "1"] {
+    for workers in ["0"] {
         for run in 0..8 {
             let (_, stderr) = trap_run(&executable, workers);
             let name = sole_record(&stderr)

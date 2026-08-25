@@ -1302,6 +1302,7 @@ fn an_intermediate_reborrow_holder_cannot_launder_a_boundary_result() {
         slice_return_ceiling: Vec::new(),
         declared_traps: true,
         declared_allocates_heap: false,
+        target_action: crate::TargetAction::INLINE,
         requirements: Vec::new(),
         postconditions: Vec::new(),
         body: vec![

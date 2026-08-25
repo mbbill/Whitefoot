@@ -2,7 +2,7 @@
 //!
 //! This analysis is deliberately separate from PRV provenance.  Every user or
 //! system call result starts a boundary-result authority, even when PRV proves
-//! that the result has no external origin.  The pass records the reaching value
+//! that the result has no boundary-derived origin.  The pass records the reaching value
 //! authority at each claim point; entailment can then query those frozen
 //! snapshots with its canonical goal supports.
 

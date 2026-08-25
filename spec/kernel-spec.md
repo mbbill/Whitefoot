@@ -1104,10 +1104,10 @@ Region parameters are permitted and are not a `generics` child.
 Its callable signature equals the member signature exactly: the two signatures have the same number of region parameters and value parameters; corresponding parameter modes and types, result mode and type, and normalized effect rows are equal after replacing every occurrence of the member's first, second, and later declared region parameters with the bound function's region parameters at those same zero-based ordinals.
 The two mandatory result-binder spellings are ignored by that equality.
 This replacement applies inside modes, types, and effect payloads; type components then use the preceding exact concrete-type identity recursively.
-After each signature's independently applicable EFF-1 judgment and the bound function declaration's EFF-2 judgment succeed, an effect row normalizes to six capabilities: the set of declared read regions, the set of declared write regions, the allocation set whose members are `heap` and each `arena` region, the presence or absence of `external`, the presence or absence of `blocks`, and the presence or absence of `traps`; `pure` is six empty capabilities.
+After each signature's independently applicable EFF-1 judgment and the bound function declaration's EFF-2 judgment succeed, an effect row normalizes to six capabilities: memory reads, memory writes, world reads, world writes, the allocation set whose members are `heap` and each memory-kind `arena` region, and the presence or absence of `traps`; `pure` is six empty capabilities.
 Region entries use their alpha-mapped declaration identities.
 Equality requires all six capabilities to be equal.
-`external` and `blocks` are compared by presence exactly as `traps` is, and a `fn_sig` member may declare either.
+Memory and world sets are compared after kind-preserving positional alpha-renaming; a region-kind mismatch is never equality.
 A `fn_sig` has no body and no compiler-derived release, so it declares these categories without an EFF-2 judgment of its own; the bound `fn_decl` must exhibit exactly the member's declared row under [EFF-2], including a category the bound function contributes only through release.
 A member declaring neither category therefore cannot bind a function that exhibits one, and a `pure` member cannot bind an externally effectful function.
 Source occurrence order and repeated occurrences do not affect this equality, but no capability may be omitted or added; there is no effect subtyping or semantic implication.
@@ -2414,7 +2414,7 @@ The exact operation names, signatures, buffer and range preconditions, and outco
 
 [HOST-3] The first system slice defines exactly one host-string type.
 Its value is an opaque inline lease — a private code-unit address and length carried in the value itself — over immutable backing supplied by the command invocation, and a relative path constructed from one retains that same inline representation [PATH-1].
-A lease owns no code-unit storage, several live leases may denote the same backing code units, and its compiler-derived release is a logical consume with no host call and no external effect [STOR-3].
+A lease owns no code-unit storage, several live leases may denote the same backing code units, and its compiler-derived release is a logical consume with no host call and no world effect [STOR-3].
 Its backing is the command-lifetime argument snapshot that [QUAL-2] requires of every qualified target.
 Because that backing strictly outlives every value derived from it, a lease denotes valid code units however it is bound, moved, matched, returned, passed, or stored, and no source-level rule relates a lease to its backing: a lease is neither a borrow nor a region-bearing type, so [STOR-5] places no restriction on storing one and [OWN-5] provenance does not describe it.
 That guarantee is a property of the target, enforced at qualification, and is not a judgment over source.
@@ -2450,6 +2450,11 @@ Qualification never narrows a semantic ID to what a target can supply, and no im
 An approved implementation may be replaced only within one semantic identity: a change to any element the record binds is a different semantic ID under a new specification version [META-5] and a compatibility review, never a target-code update.
 The table is compiler-internal data; the language defines no registry, negotiation protocol, dynamic loading, or plugin interface [PROG-1].
 
+The compiler's `--io-ledger` output is a deterministic diagnostic audit surface beside `--par-ledger`.
+For every world-bearing source call, compiler-derived release, and permission site it reports the stable semantic ID, instantiated world vector, inherited or generated origin relation, normalized world footprint, target-action summary, permission result, and whether lowering actualized the site or left it sequential.
+It reads no optimizer fact and changes neither source acceptance nor checked-program identity.
+Unresolved information is rendered as an explicit conservative denial rather than omitted.
+
 [QUAL-2] A target qualifies for a semantic ID exactly when it supplies every target guarantee that ID's record requires; when it cannot supply one, it fails qualification for that ID and compilation stops [QUAL-1] rather than admitting the operation under a weaker guarantee.
 Four guarantees are stated here because each is a property of the target with nothing in a program to check.
 The first is command-lifetime argument backing: a target qualified for the command entry and for argument access supplies immutable backing for every argument code unit that is valid from before entry until the command invocation ends, either as stable native argument backing or as one complete snapshot taken before any Whitefoot code runs.
@@ -2461,6 +2466,9 @@ The fourth is a directory-enumeration facility for the enumeration semantic IDs 
 A target with no such facility fails qualification for those IDs rather than emulating them, and in particular never substitutes a scan built out of other operations.
 A target that has such a facility but for which the table [QUAL-1] holds no approved implementation is a different stop with the same effect: compilation stops for an absent mapping, the target is not thereby declared unqualified, and no implementation is improvised for it in either case.
 Qualification failure and startup refusal both occur before entry [PROG-3], so neither is a source-returned status, a recoverable outcome, or a trap [TRAP-1].
+A gated foreign signature must name a complete typed capability/world footprint.
+When its reach cannot be classified, qualification charges it to one compiler-owned top-world domain that may alias every world region and writes the command-order domain; missing footprint data never implies purity or disjointness.
+The current kernel exposes no writer-callable gated foreign signature.
 
 [QUAL-3] For a natively compiled command, selection is static for the whole build: [QUAL-1] fixes the approved implementation of each semantic ID at compile time, and the emitted program contains no runtime operation-ID switch, target tag, per-call dispatch table, instance handle table, or handle lookup that selects among implementations.
 A transfer lowers after its required source and target checks [STOR-6] to the approved inline or completion adapter, one count or outcome check, and a cold outcome mapper reached only on failure.
@@ -2478,7 +2486,7 @@ Process-local memory, native descriptors, and every other process-local system o
 World effects already performed are not rolled back: bytes already written remain written, an object already created remains created, and a persistent object or submitted action retains the semantics its own family gives it.
 A single TCB-serialized host write emits the complete diagnostic record through a channel distinct from every source capability; a source write to the same host sink linearizes wholly before or wholly after it and cannot split or interleave its bytes.
 A host that requires a Whitefoot instance to fail without ending its process runs that instance in a separate process.
-Because a trap ends the owning process, no instance resource table, per-instance reaper, or pending-operation transfer is required, and none appears on a synchronous transfer path [QUAL-3].
+Because a trap ends the owning process, no source-visible instance resource table or recovery point exists; the trusted completion backend nevertheless retains submitted-frame references until host access to their buffers ends [QUAL-3].
 Host-surviving in-process trap containment is a DEFERRED language amendment with its own delta [META-5].
 
 [SYS-4] Each system type has exactly one kind, one `Sendable` judgment, and one `Shareable` judgment [CAP-1].
@@ -2518,7 +2526,7 @@ Under it, compiler-derived release is the complete language obligation for the t
 `Args`, `HostString`, `RelativePath`, `DirectoryRead`, `ReadFile`, `Output`, `ExitStatus`, and `DirectoryList` are all release-complete, so this specification defines no exact-use checking obligation.
 
 Two further policy classes are named and reserved without machinery.
-Explicitly-abandonable means the type exposes a consuming abandon operation whose contract permits loss of unfinished external work, so abandonment is a source action rather than an accidental affine discard.
+Explicitly-abandonable means the type exposes a consuming abandon operation whose contract permits loss of unfinished world work, so abandonment is a source action rather than an accidental affine discard.
 Completion-required means every normal or recoverable exit must consume the owner through a terminal transition.
 This specification declares no type under either class and defines no operation, checker obligation, or diagnostic for either; naming them fixes the vocabulary a later buffered output, atomic replacement, pending operation, or child process must use rather than silently inheriting release-complete [SYS-12].
 
@@ -2534,6 +2542,20 @@ Every normal or recoverable exit from a window observes terminal state for every
 From submission through terminal state, a borrowed buffer cannot move, free, or be reused, an exclusive input loan also excludes the submitting lane, and the frame plus generation-tagged completion node cannot return to a free list.
 A world operation may wait without a language deadline.
 A lost, duplicate, or malformed completion, impossible target count, or violated release/acquire publication is a target defect under [SCOPE-3], never `IoError`, a language trap, or a source rejection.
+
+The operation-specific points are:
+
+```wf-sys
+| semantic ID | linearization | terminal completion |
+|---|---|---|
+| `sys.open_read` | target fixes one provisional read handle or failure | result is published and any unpublished handle is cleaned up |
+| `sys.read_once` | target fixes the transferred prefix and file-cursor advance | bytes, result, and cursor state are published and both loans return |
+| `sys.write_once` | host accepts the returned prefix | result is published and both loans return |
+| `sys.open_directory` | target resolution fixes one provisional directory handle or failure | result is published and any unpublished handle is cleaned up |
+| `sys.open_list` | target fixes one provisional enumeration handle or failure | result is published and any unpublished handle is cleaned up |
+| `sys.list_once` | target fixes one complete portable record prefix and cursor advance | converted records, result, and cursor are published and both loans return |
+| `sys.open_file` | open plus required descriptor-status classification fixes one provisional read handle or failure | result is published and any unpublished handle is cleaned up |
+```
 
 The consuming release action of each system type is exactly:
 
@@ -2558,7 +2580,7 @@ Release of an outcome value is release of its components: `ArgError`, `Utf8Error
 
 A release action is compiler-derived and explicit in the checked program [STOR-3, DIAG-2].
 `flush`, `sync`, directory sync, atomic commit, and final handle release are different semantic operations; this specification declares none of them, and release is never a substitute for one.
-Whole-process abort performs no release: a trap runs no language cleanup and returns no status [PROG-3, EFF-4, SCOPE-4], and the operating system reclaims process-local memory and handles while external writes are not rolled back.
+Whole-process abort performs no release: a trap runs no language cleanup and returns no status [PROG-3, EFF-4, SCOPE-4], and the operating system reclaims process-local memory and handles while world writes are not rolled back.
 
 [SYS-6] Each system operation declares its own outcome type; there is no shared outcome union.
 An operation with exactly two outcomes returns a [PRE-1] `Result<T, E>` instantiation and declares no new constructor spelling.
@@ -2686,7 +2708,8 @@ Two `DirectoryRead` values may denote the same directory object, and nothing inf
 
 Its completion policy is release-complete [SYS-5], on the same ground as `ReadFile` [SYS-11]: losing a close diagnostic on a read-only directory capability cannot invalidate an already opened file and cannot promise durability.
 
-Any number of `open_read`, `open_file`, `open_directory`, and `open_list` calls may progress concurrently through shared borrows of one `DirectoryRead`, exposing no ordering relative to one another.
+The shared-borrow type permits any number of `open_read`, `open_file`, `open_directory`, and `open_list` calls, but their shared command-order region preserves source order under [EFF-5].
+They may overlap independent compute when [PAR-1] or [PAR-2] proves every memory, loan, exit, and world condition.
 Each either creates its own `ReadFile`, `DirectoryRead`, or `DirectoryList`, or fails, and none observes another's effect.
 
 Resolution, process-equivalence, the no-emulation qualification rule, and the deferred confined root are [PATH-2]; the `command.cwd` instance is shareable for open operations.
@@ -2708,7 +2731,7 @@ Whole-process abort relies on operating-system teardown [SYS-5].
 [SYS-12] `Output` is a stateful resource with one state.
 The standard output and standard error entry bindings supply separate affine `Output` owners; neither is a shared global sink and neither carries a lock.
 `write_once` performs at most one host output attempt [SYS-8], and an `Ok(next)` result means exactly that the host operation accepted the prefix `[start, next)`: it promises neither line atomicity nor storage durability.
-Sequential calls across either owner preserve source order by the ordering rule that governs every external call, not by any aliasing analysis.
+Sequential calls across either owner preserve source order through their shared command-order world region, not by any native-handle aliasing analysis.
 The checked program additionally retains the conservative fact that redirection may make the two owners the same sink [DIAG-2]; this specification defines no consumer of that fact, and it is retained so a later verified cross-resource reordering fact fails closed on this pair rather than treating two separate `Output` owners as disjoint sinks.
 
 The target implementation adds no hidden userspace buffering, so every failure the host write itself reports reaches `write_once`.
@@ -2726,7 +2749,7 @@ Terminal control, color, and console mode are separate capabilities that this sp
 The mandatory trap record uses its own runtime channel [SCOPE-4, DIAG-3]; it never flushes an `Output` and source code cannot reach it.
 
 [SYS-13] `ExitStatus` is an opaque immutable value carrying one portable command code.
-`exit_status(code)` is its one constructor: it is total and pure, every `u8` is a valid command code, so the closed code range is 0 through 255 and there is no failure outcome, no allocation, no host call, and no external effect.
+`exit_status(code)` is its one constructor: it is total and pure, every `u8` is a valid command code, so the closed code range is 0 through 255 and there is no failure outcome, no allocation, no host call, and no world effect.
 `ExitStatus` is release-complete and its release is a logical consume [SYS-5].
 
 The type is opaque rather than an alias for `u8`.
@@ -2777,7 +2800,7 @@ An exact-mode or exact-type failure cites CLM-1 at the selected `expr` node and 
 
 A claim proof predicate is one finite direct goal [ENT-2] whose evaluation is total, deterministic, observational, non-consuming, and ownership-neutral.
 It may contain typed literals, named constants, non-consuming reads of live copy places, fixed-length observations, and compiler-known total non-trapping integer, float, Boolean, conversion, reinterpretation, enum-equality, and allocation-fit predicate rows, recursively under the same restriction.
-It may not contain a user or system call, subscript, proof-required exact operation, checked-result operation, allocation, construction, write, move, borrow or reborrow, consuming projection, residual drop or cleanup, release, block, external operation, nested claim or trap, or any other partial, effectful, ownership-changing, or potentially nonterminating computation.
+It may not contain a user or system call, subscript, proof-required exact operation, checked-result operation, allocation, construction, write, move, borrow or reborrow, consuming projection, residual drop or cleanup, release, target action, world operation, nested claim or trap, or any other partial, effectful, ownership-changing, or potentially nonterminating computation.
 A rejected shape cites CLM-1 at the predicate `expr`; the checker never accepts it merely because its inferred effect row is `pure`.
 
 The decoded `because` STRING is exactly five LF-separated lines, with no leading or trailing extra line, in this order:
@@ -2929,7 +2952,7 @@ The fragment joins the trusted computing base exactly as the type and ownership 
 Version monotonicity of fact-source and closure strengthening preserves every already-discharged operation, call goal, or selected-return relation, but claims deliberately sit at the proof frontier.
 A later normative checker may newly derive a claim predicate, its negation, or one contribution component, or may make its S3 contribution unnecessary; CLM-2 must then reject that source as redundant, refuted, overlapping, or non-residual so the author removes or restructures it.
 This is an explicit source-upgrade rule, never authority for compiler or optimizer elision.
-Activating [PRV-2] or [PRV-3] for an already attached protected family, attaching a new protected family, changing a [SYS-2] component from internal to external, adding or removing a `BoundaryResult` seed or declassification, or adding a callable publication surface is an amendment-level accepted-set change, not implementation strengthening.
+Activating [PRV-2] or [PRV-3] for an already attached protected family, attaching a new protected family, changing a [SYS-2] component from internal to boundary-derived, adding or removing a `BoundaryResult` seed or declassification, or adding a callable publication surface is an amendment-level accepted-set change, not implementation strengthening.
 Beyond those classes, this specification adds only FN-9/S12, the two stated unsigned S7 relations, [ENT-6]'s exact integer-domain, allocation-fit, subscript-bounds, and system-range obligation families, and [ENT-5]'s value-if-only delivery, and retains the provenance gate.
 No implementation may activate, expand, or reclassify any such judgment independently, and apart from an explicit specification amendment of those kinds no other entailment-fragment judgment may tighten acceptance across versions.
 
@@ -3061,7 +3084,7 @@ Deeper const shapes establish nothing in this version.
 - S10 (boundary endpoint facts).
 For a `match_stmt` or `value_match` whose scrutinee is directly a call to `read_once`, `write_once`, `list_once`, `host_copy_bytes`, or `host_copy_utf8` [SYS-2, SYS-8], or a bare IDENT naming a `let` binding of that call's outcome type under the same no-kill, no-`set` path discipline as S7's checked-arithmetic origin: let s and e be the exact actuals bound to `start` and `end`, each read as a term or constant and still live at the match.
 The `ReadBytes(next: w)` arm of `read_once`, the `ListBytes(next: w, entries: n)` arm of `list_once`, and the `Ok(value: w)` arm of the other three independently establish `s <= w` and `w <= e` at arm entry; every other arm establishes neither endpoint fact.
-Each result endpoint's [PRV-1] dependency additionally includes the concrete start actual, so this relation never launders an external start into an internal result.
+Each result endpoint's [PRV-1] dependency additionally includes the concrete start actual, so this relation never launders a boundary-derived start into an internal result.
 These facts carry the same trust class as S6's allocation-length equality — a declared operation contract, never a writer statement.
 The remaining [SYS-9] relations are retained checked-program facts and are not L0 fact sources in this version.
 [ENT-3.S11]
@@ -3243,7 +3266,7 @@ Both complete-state goals must succeed before their protected-subject judgments 
 The first refuted or unproved goal is a SYS-8 rejection and creates no host call, runtime condition, effect, or trap.
 Failure of the first family's base judgment is the [OP-4] rejection, forms no provenance demand or event, and publishes no checked program; its diagnostic renders the residual as exactly: the offset atom's canonical source bytes, then ` < len(`, then the base place's canonical source bytes, then `)`.
 The mechanical fix for any unproved family is one dominating branch establishing its canonical goal, or a CLM-2-admissible residual claim only when the predicate is a universally true current-function-local theorem the normative checker cannot derive — for a subscript in canonical ANF, one `let` binding `len(P)` followed by one such local claim on, or `if` over, the admitted comparison [CLM-1, ENT-3].
-After complete-state success for a protected family, a [PRV-2] or [PRV-3] rejection makes the assertion-only route unavailable: the writer uses a dominating value branch whose false edge takes the domain outcome, or restructures so the external value no longer occupies the constrained-subject position.
+After complete-state success for a protected family, a [PRV-2] or [PRV-3] rejection makes the assertion-only route unavailable: the writer uses a dominating value branch whose false edge takes the domain outcome, or restructures so the boundary-derived value no longer occupies the constrained-subject position.
 For an offset atom that is itself a subscripted place — legal under [GRAM-5]'s place grammar but no term under [ENT-2] — the base fix first rebinds that inner read through one ordinary `let` (and, where the element type is narrower than u64, one total `cvt` [OP-6], both S5-tracked), making the offset a term whose own inner obligation is discharged the same way.
 With at most that one rebinding step per nested offset, the fallback makes the goal writable, at a per-site cost from zero where facts already prove the bound to one retained claim where the missing theorem is CLM-1-local; rebinding a user-call or system-call result never makes it local, and cross-function behavior instead requires a verified FN-9/S12 relation or ordinary control.
 The fallback does not by itself satisfy the provenance gate.
@@ -3280,7 +3303,7 @@ A counted binder receives its lower endpoint's dependency at initialization and 
 
 Each concrete function retains a result component and one write component per `&uniq` parameter in addition to the requirement-to-leaf relation below.
 Explicit returns union their plain or direct payload dependencies componentwise into the result, and a propagation error contributes its selected error component.
-A write component unions every right-hand side written to a root overlapping that formal, together with each callee write component whose [EFF-2] projection reaches it; a system write adds no parameter datum and seeds the destination component's unconditional-boundary bit exactly when [SYS-2]'s closed table classifies that writable parameter external.
+A write component unions every right-hand side written to a root overlapping that formal, together with each callee write component whose [EFF-2] projection reaches it; a system write adds no parameter datum and seeds the destination component's unconditional-boundary bit exactly when [SYS-2]'s closed table classifies that writable parameter boundary-derived.
 An ordinary user call substitutes the actual component dependencies into the callee's result and write components.
 A system result adds no formal parameter datum and seeds each plain or direct payload component's unconditional-boundary bit exactly as [SYS-2]'s closed table fixes; an internal component seeds no bit, while a dependent endpoint component additionally unions the concrete call's `start` actual dependency.
 Storage, result, write, and user-call component propagation are solved first to a least fixed point over the finite concrete instances and then frozen.
@@ -3295,9 +3318,9 @@ The component tree is structural and finite: a scalar or opaque value has one pl
 A uniform authority on a whole value applies to every existing or later-materialized descendant.
 Construction and projection are component-sensitive: a boundary field or payload does not taint an independent local sibling, while reading or operating on the whole aggregate joins all selected components.
 
-Every source parameter component, command-entry parameter component, literal, named const, and otherwise untainted local initializer begins `Local`; this judgment does not classify external input provenance.
+Every source parameter component, command-entry parameter component, literal, named const, and otherwise untainted local initializer begins `Local`; this judgment does not classify boundary-derived input provenance.
 Every result component of every ordinary user call and every system call begins `BoundaryResult`, including a scalar, tag, payload, aggregate field, length, element, box or arena content, borrow holder, and value read through that returned holder.
-This seed is unconditional: it does not inspect or substitute the callee body, arguments, effect row, [PRV-1] class, a system component's external/internal/dependent class, or an FN-9/S12 relation.
+This seed is unconditional: it does not inspect or substitute the callee body, arguments, effect row, [PRV-1] class, a system component's boundary-derived/internal/dependent class, or an FN-9/S12 relation.
 An `ensures` relation remains an independently verified fact for direct caller consumption and never declassifies any component of its returned value.
 
 Ordinary copy or move, conversion, reinterpretation, arithmetic, float, Boolean and enum operations, `imin`, wrapping identity operations, allocation-fit operations, and every other total value operation join the authority of the value components they read into the result components they produce.
@@ -3356,7 +3379,7 @@ If B discharges it, the chain ends at that evidence.
 Otherwise, if the selected actual component's unconditional bit is true, create the local call-argument candidate regardless of U and retain any parameter datums only as explanations; the bit and those datums do not propagate as a direct demand or another bridge.
 Only a selected component whose unconditional bit is false reaches the remaining bridge partition: if U does not discharge the goal, each caller parameter datum in that component becomes a direct caller demand; if U discharges it while B does not, an ordinary caller adds the structural bridge from its requirement occurrence to the inherited leaf, composes those parameter datums into bridge tuples, and retains the call and downstream requirement occurrence as witness predecessors.
 A `command` entry has no caller to continue the latter bridge, so a false-bit selected actual creates no local gate event there.
-No synthetic external parameter datum is introduced.
+No synthetic boundary-derived parameter datum is introduced.
 
 After the component stratum converges and freezes, take direct-demand, bridge, call-target, and event composition together to a second least fixed point over the finite concrete function instances, frozen component pairs, requirement occurrences, full-state-accepted calls, parameter datums, and protected leaves.
 Complete/U/B outcomes and every tested unconditional bit are fixed inputs to this stratum; its transfers only add set members, so a false-bit premise never later becomes true and requires no retraction.
@@ -3379,7 +3402,7 @@ A plain value binding and a whole resolved storage root each have one aggregate 
 A payload-carrying enum value binding instead has one component for each direct `(variant declaration ordinal, payload-field declaration ordinal)` projection and an aggregate defined as their join; storage has no payload, field, element, variant, or path projection.
 Every component carries the pair `(unconditionally boundary-derived, parameter datums)`, where the first member is one Boolean and the second is the finite [ENT-6] set.
 Join is Boolean disjunction and set union.
-Under a concrete assignment of classes to ordinary parameter datums, the component is **external** exactly when its Boolean is true or at least one member of its parameter set is external; otherwise it is **internal**.
+Under a concrete assignment of classes to ordinary parameter datums, the component is **boundary-derived** exactly when its Boolean is true or at least one member of its parameter set is boundary-derived; otherwise it is **internal**.
 An ordinary source parameter component begins with only its identity parameter datum.
 Each labelled `command` entry parameter instead begins unconditionally boundary-derived and creates no caller-substitutable sentinel.
 A [SYS-2] result or writable component begins with exactly its table-fixed unconditional bit and no formal parameter datum; a dependent endpoint result then joins the concrete call's `start` actual pair.
@@ -3399,7 +3422,7 @@ Once converged, every pair is frozen and retained in the [PRV-2] boundary column
 No branch, match arm, loop guard, variant tag, or other control choice contributes provenance merely by selecting a path.
 No target-address operand contributes merely by selecting a write.
 There is no path-sensitive storage, recursive payload path, implicit-flow analysis, integrity judgment, writer-spelled provenance annotation, trusted assertion, or optimizer assumption.
-An external value used only as a bound, base, target address, or unrelated goal operand therefore does not become a constrained subject by association.
+A boundary-derived value used only as a bound, base, target address, or unrelated goal operand therefore does not become a constrained subject by association.
 
 Every positive PRV-1 predecessor edge has exactly one carrier NodePath, fixed by this exhaustive mapping rather than implementation choice.
 An ordinary or labelled-entry seed uses its complete `param` node.
@@ -3410,7 +3433,7 @@ Delivery from an expression into an ordinary or propagated binding uses the owni
 The componentwise delivery from a `value_match` or `value_if` into its binding uses the owning `let_stmt`, after its contributing `give_stmt` edges.
 A counted binder's initialization edge uses the lower endpoint's `atom` node, and its compiler-owned dependency-preserving increment uses the owning `for_stmt` node.
 These cases cover every positive transfer enumerated by [ENT-6]; no control-only or address-only non-edge receives a carrier.
-External origins are the labelled-entry `param` carrier or the system-operation `call` carrier and, for a system write, its exact writable parameter and caller actual.
+Boundary-derived origins are the labelled-entry `param` carrier or the system-operation `call` carrier and, for a system write, its exact writable parameter and caller actual.
 Every predecessor tie, rendered payload, and origin coordinate in [PRV-2] and [PRV-3] uses this carrier mapping and the carrier node's complete checked half-open extent.
 
 [PRV-2] Every concrete [FN-2] function instance derives one caller-visible provenance column.
@@ -3454,7 +3477,7 @@ Reconstruction records visited complete demand-state identities, so `direct(F, d
 The event payload retains the complete ordered `Targets(c, q)` set, the selected leaf's [ENT-6] residual, and one rendered chain from that leaf backward through requirement occurrences, callee datums, and call boundaries to the rejecting actual, then through that actual's PRV-1 predecessors to its labelled-entry or [SYS-2] origin.
 For a direct demand, its legal repair is a real branch in the protected leaf's owning body that establishes the residual and takes the domain outcome on the false edge.
 For a requirement-bridge target, the branch instead establishes the complete bridged call goal in the rejecting caller's unasserted state before that call.
-Either kind may also be repaired by restructuring the route so the external value no longer reaches the protected constrained subject.
+Either kind may also be repaired by restructuring the route so the boundary-derived value no longer reaches the protected constrained subject.
 A `claim` is not a repair for an unconditionally boundary-derived constrained subject.
 
 [PRV-3] This rule owns only a local protected leaf, including a leaf local to a command entry.
@@ -3463,7 +3486,7 @@ If it fails, that family's owning rule is the sole rejection and no PRV-3 candid
 After success, inspect the closed constrained-subject list [ENT-6] in order.
 If B discharges the leaf, no provenance demand remains.
 If B does not discharge it and any subject's PRV-1 pair has a true unconditional-boundary bit, the leaf is one hard rejection citing PRV-3 with `SourceNode` at its existing obligation-owning `psuffix` or `call` node and `SourceCoordinate` equal to that node's complete checked half-open extent, regardless of U and regardless of whether the pair also carries parameter datums.
-All external subjects and companion datums remain ordered diagnostic explanations but create no direct demand, bridge tuple, or second event.
+All boundary-derived subjects and companion datums remain ordered diagnostic explanations but create no direct demand, bridge tuple, or second event.
 Only false-bit subject pairs reach the remaining partition.
 An empty parameter set is internal and creates no rejection or caller-visible target.
 With a nonempty parameter set, failure in U retains the direct demand for [PRV-2], while success in U followed by failure in B retains the complete ordered S4 requirement bridge for PRV-2; neither case is a local PRV-3 rejection.
@@ -3475,10 +3498,10 @@ This entry disposition adds no wrapper, foreign adapter, alternate error protoco
 
 The unasserted state removes exactly S3 claim establishment.
 S1 branches, every S4 requirement source, S5, S6, S7, S9, S10, S11, every kill and join, and [ENT-4] closure remain unchanged; B additionally removes every S4 source.
-Thus a `claim` may not authorize an external constrained subject, while an internal subject may use one only when CLM-2 also proves that exact occurrence and every contribution individually necessary for an allowed terminal root.
+Thus a `claim` may not authorize a boundary-derived constrained subject, while an internal subject may use one only when CLM-2 also proves that exact occurrence and every contribution individually necessary for an allowed terminal root.
 Provenance of a buffer base, `len(buffer)`, a comparison bound, a target address, a type/layout constant, or another non-subject goal operand does not gate the obligation.
 
-A PRV-3 payload contains the exact ENT-6 residual, the shortest post-convergence PRV-1 chain from the subject component to its labelled-entry or [SYS-2] origin, and the two legal repairs: a dominating real branch whose false edge takes the domain outcome, or a restructure in which the external value no longer occupies the constrained-subject position.
+A PRV-3 payload contains the exact ENT-6 residual, the shortest post-convergence PRV-1 chain from the subject component to its labelled-entry or [SYS-2] origin, and the two legal repairs: a dominating real branch whose false edge takes the domain outcome, or a restructure in which the boundary-derived value no longer occupies the constrained-subject position.
 An entry-bridge payload additionally retains the requirement occurrence and deterministic bridge predecessor.
 Component-edge count is minimized first; ties use complete predecessor NodePaths and selector order exactly as PRV-2.
 A local PRV-3 rejection never relocates to an upstream claim and never becomes a call-argument event.

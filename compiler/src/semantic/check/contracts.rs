@@ -9,11 +9,12 @@ use crate::{
 use super::super::model::{
     CheckedConformance, CheckedConformanceBinding, CheckedContract, CheckedContractLaw,
     CheckedContractLawKind, CheckedContractMember, CheckedContractParameter,
-    CheckedEffectCapabilities, CheckedExpression, CheckedFunction, CheckedIntegerOperation,
-    CheckedLawDerivation, CheckedLawIdentity, CheckedMode, CheckedStatement, CheckedType,
-    CheckedValue, ConformanceId, ContractId, IntegerType,
+    CheckedEffectCapabilities, CheckedExpression, CheckedFlatElement, CheckedFunction,
+    CheckedIntegerOperation, CheckedLawDerivation, CheckedLawIdentity, CheckedMode,
+    CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue, ConformanceId, ContractId,
+    IntegerType,
 };
-use super::generics::GenericSubstitution;
+use super::generics::{GenericArgument, GenericSubstitution};
 use super::{
     CheckStop, Checker, ContractInfo, EffectSet, FunctionSignature, ParameterSignature,
     derive_slice_return_ceiling,
@@ -36,18 +37,14 @@ enum NormalizedMode {
     Unique(usize),
 }
 
-/// One [FN-3] six-capability effect normalization: read regions, write
-/// regions, the allocation set, and the presence of `external`, `blocks`,
-/// and `traps`. Equality is derived, so every capability compares, and the
-/// three payload-free categories compare by presence.
+/// One [FN-3] effect normalization. Region-kind equality is checked beside
+/// these ordinal sets, and `traps` is the sole payload-free category.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct NormalizedEffects {
     reads: Vec<usize>,
     writes: Vec<usize>,
     allocates_heap: bool,
     allocates_arenas: Vec<usize>,
-    external: bool,
-    blocks: bool,
     traps: bool,
 }
 
@@ -434,7 +431,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .signatures
                     .get(function.0 as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                if !signatures_equal(
+                if !self.signatures_equal(
                     expected.ok_or(SemanticCompilerFailure::InvalidResolution)?,
                     signature,
                 )? {
@@ -537,8 +534,6 @@ fn checked_effects(effects: &EffectSet) -> CheckedEffectCapabilities {
         writes: effects.writes.clone(),
         allocates_heap: effects.allocates_heap,
         allocates_arenas: effects.allocates_arenas.clone(),
-        external: effects.external,
-        blocks: effects.blocks,
         traps: effects.traps,
     }
 }
@@ -554,66 +549,293 @@ fn law_member_shape(member: &ContractMemberInfo) -> bool {
         && first.ty == member.result
 }
 
-fn signatures_equal(
-    member: &ContractMemberInfo,
-    function: &FunctionSignature,
-) -> Result<bool, CheckStop> {
-    if member.region_parameters.len() != function.region_parameters.len()
-        || member.parameters.len() != function.parameters.len()
-        || !alpha_equivalent_type(
+impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    fn signatures_equal(
+        &self,
+        member: &ContractMemberInfo,
+        function: &FunctionSignature,
+    ) -> Result<bool, CheckStop> {
+        if member.region_parameters.len() != function.region_parameters.len()
+            || member.parameters.len() != function.parameters.len()
+        {
+            return Ok(false);
+        }
+        for (left, right) in member
+            .region_parameters
+            .iter()
+            .zip(&function.region_parameters)
+        {
+            if self.region_kind(*left) != self.region_kind(*right) {
+                return Ok(false);
+            }
+        }
+        if !self.alpha_equivalent_type(
             member.result,
             &member.region_parameters,
             function.result,
             &function.region_parameters,
-        )?
-    {
-        return Ok(false);
-    }
-    for (member_parameter, function_parameter) in member.parameters.iter().zip(&function.parameters)
-    {
-        if !alpha_equivalent_type(
-            member_parameter.ty,
-            &member.region_parameters,
-            function_parameter.ty,
-            &function.region_parameters,
-        )? || normalize_mode(member_parameter.mode, &member.region_parameters)?
-            != normalize_mode(function_parameter.mode, &function.region_parameters)?
+        )? {
+            return Ok(false);
+        }
+        for (member_parameter, function_parameter) in
+            member.parameters.iter().zip(&function.parameters)
+        {
+            if !self.alpha_equivalent_type(
+                member_parameter.ty,
+                &member.region_parameters,
+                function_parameter.ty,
+                &function.region_parameters,
+            )? || normalize_mode(member_parameter.mode, &member.region_parameters)?
+                != normalize_mode(function_parameter.mode, &function.region_parameters)?
+            {
+                return Ok(false);
+            }
+        }
+        if normalize_mode(member.result_mode, &member.region_parameters)?
+            != normalize_mode(function.result_mode, &function.region_parameters)?
         {
             return Ok(false);
         }
+        Ok(
+            normalize_effects(&member.effects, &member.region_parameters)?
+                == normalize_effects(&function.declared_effects, &function.region_parameters)?,
+        )
     }
-    if normalize_mode(member.result_mode, &member.region_parameters)?
-        != normalize_mode(function.result_mode, &function.region_parameters)?
-    {
-        return Ok(false);
+
+    fn alpha_equivalent_type(
+        &self,
+        left: CheckedType,
+        left_regions: &[DeclarationId],
+        right: CheckedType,
+        right_regions: &[DeclarationId],
+    ) -> Result<bool, CheckStop> {
+        match (left, right) {
+            (
+                CheckedType::Slice {
+                    region: left_region,
+                    element: left_element,
+                },
+                CheckedType::Slice {
+                    region: right_region,
+                    element: right_element,
+                },
+            ) => Ok(region_ordinal(left_region, left_regions)?
+                == region_ordinal(right_region, right_regions)?
+                && self.alpha_equivalent_flat(
+                    left_element,
+                    left_regions,
+                    right_element,
+                    right_regions,
+                )?),
+            (
+                CheckedType::Array {
+                    element: left_element,
+                    length: left_length,
+                },
+                CheckedType::Array {
+                    element: right_element,
+                    length: right_length,
+                },
+            ) => Ok(left_length == right_length
+                && self.alpha_equivalent_flat(
+                    left_element,
+                    left_regions,
+                    right_element,
+                    right_regions,
+                )?),
+            (
+                CheckedType::Buffer {
+                    element: left_element,
+                },
+                CheckedType::Buffer {
+                    element: right_element,
+                },
+            ) => {
+                self.alpha_equivalent_flat(left_element, left_regions, right_element, right_regions)
+            }
+            (CheckedType::Nominal(left), CheckedType::Nominal(right)) => {
+                self.alpha_equivalent_nominal(left, left_regions, right, right_regions)
+            }
+            _ => Ok(left == right),
+        }
     }
-    Ok(
-        normalize_effects(&member.effects, &member.region_parameters)?
-            == normalize_effects(&function.declared_effects, &function.region_parameters)?,
-    )
+
+    fn alpha_equivalent_flat(
+        &self,
+        left: CheckedFlatElement,
+        left_regions: &[DeclarationId],
+        right: CheckedFlatElement,
+        right_regions: &[DeclarationId],
+    ) -> Result<bool, CheckStop> {
+        match (left, right) {
+            (
+                CheckedFlatElement::TagOnlyNominal(left) | CheckedFlatElement::Nominal(left),
+                CheckedFlatElement::TagOnlyNominal(right) | CheckedFlatElement::Nominal(right),
+            ) => self.alpha_equivalent_nominal(left, left_regions, right, right_regions),
+            _ => Ok(left == right),
+        }
+    }
+
+    fn alpha_equivalent_nominal(
+        &self,
+        left: super::super::model::NominalId,
+        left_regions: &[DeclarationId],
+        right: super::super::model::NominalId,
+        right_regions: &[DeclarationId],
+    ) -> Result<bool, CheckStop> {
+        if left == right {
+            return Ok(true);
+        }
+        let left_nominal = self.nominal(left)?;
+        let right_nominal = self.nominal(right)?;
+        match (&left_nominal.kind, &right_nominal.kind) {
+            (
+                CheckedNominalKind::SystemResource {
+                    nominal: left_nominal,
+                    world_regions: left_world,
+                },
+                CheckedNominalKind::SystemResource {
+                    nominal: right_nominal,
+                    world_regions: right_world,
+                },
+            ) => Ok(left_nominal == right_nominal
+                && alpha_equivalent_region_vectors(
+                    left_world,
+                    left_regions,
+                    right_world,
+                    right_regions,
+                )?),
+            (
+                CheckedNominalKind::Box {
+                    referent: left_referent,
+                },
+                CheckedNominalKind::Box {
+                    referent: right_referent,
+                },
+            ) => self.alpha_equivalent_type(
+                *left_referent,
+                left_regions,
+                *right_referent,
+                right_regions,
+            ),
+            (
+                CheckedNominalKind::Arena {
+                    region: left_region,
+                    content: left_content,
+                },
+                CheckedNominalKind::Arena {
+                    region: right_region,
+                    content: right_content,
+                },
+            ) => Ok(region_ordinal(*left_region, left_regions)?
+                == region_ordinal(*right_region, right_regions)?
+                && self.alpha_equivalent_type(
+                    *left_content,
+                    left_regions,
+                    *right_content,
+                    right_regions,
+                )?),
+            (CheckedNominalKind::ArenaStorage, CheckedNominalKind::ArenaStorage) => Ok(true),
+            _ => {
+                if let (Some(left_prelude), Some(right_prelude)) =
+                    (self.prelude_type(left), self.prelude_type(right))
+                {
+                    return self.alpha_equivalent_prelude(
+                        left_prelude,
+                        left_regions,
+                        right_prelude,
+                        right_regions,
+                    );
+                }
+                let left_source = self
+                    .source_nominal_instances
+                    .get(left.0 as usize)
+                    .and_then(Option::as_ref);
+                let right_source = self
+                    .source_nominal_instances
+                    .get(right.0 as usize)
+                    .and_then(Option::as_ref);
+                let (
+                    Some((left_template, left_substitution)),
+                    Some((right_template, right_substitution)),
+                ) = (left_source, right_source)
+                else {
+                    return Ok(false);
+                };
+                if left_template != right_template
+                    || left_substitution.entries().len() != right_substitution.entries().len()
+                {
+                    return Ok(false);
+                }
+                for ((_, left_argument), (_, right_argument)) in left_substitution
+                    .entries()
+                    .iter()
+                    .zip(right_substitution.entries())
+                {
+                    match (left_argument, right_argument) {
+                        (GenericArgument::Type(left), GenericArgument::Type(right)) => {
+                            if !self.alpha_equivalent_type(
+                                *left,
+                                left_regions,
+                                *right,
+                                right_regions,
+                            )? {
+                                return Ok(false);
+                            }
+                        }
+                        (GenericArgument::Const(left), GenericArgument::Const(right))
+                            if left == right => {}
+                        _ => return Ok(false),
+                    }
+                }
+                Ok(true)
+            }
+        }
+    }
+
+    fn alpha_equivalent_prelude(
+        &self,
+        left: super::PreludeType,
+        left_regions: &[DeclarationId],
+        right: super::PreludeType,
+        right_regions: &[DeclarationId],
+    ) -> Result<bool, CheckStop> {
+        match (left, right) {
+            (super::PreludeType::Option(left), super::PreludeType::Option(right)) => {
+                self.alpha_equivalent_type(left, left_regions, right, right_regions)
+            }
+            (
+                super::PreludeType::Result(left_ok, left_error),
+                super::PreludeType::Result(right_ok, right_error),
+            ) => Ok(
+                self.alpha_equivalent_type(left_ok, left_regions, right_ok, right_regions)?
+                    && self.alpha_equivalent_type(
+                        left_error,
+                        left_regions,
+                        right_error,
+                        right_regions,
+                    )?,
+            ),
+            _ => Ok(left == right),
+        }
+    }
 }
 
-fn alpha_equivalent_type(
-    left: CheckedType,
+fn alpha_equivalent_region_vectors(
+    left: &[DeclarationId],
     left_regions: &[DeclarationId],
-    right: CheckedType,
+    right: &[DeclarationId],
     right_regions: &[DeclarationId],
 ) -> Result<bool, CheckStop> {
-    match (left, right) {
-        (
-            CheckedType::Slice {
-                region: left_region,
-                element: left_element,
-            },
-            CheckedType::Slice {
-                region: right_region,
-                element: right_element,
-            },
-        ) => Ok(left_element == right_element
-            && region_ordinal(left_region, left_regions)?
-                == region_ordinal(right_region, right_regions)?),
-        _ => Ok(left == right),
+    if left.len() != right.len() {
+        return Ok(false);
     }
+    for (left, right) in left.iter().zip(right) {
+        if region_ordinal(*left, left_regions)? != region_ordinal(*right, right_regions)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn region_ordinal(region: DeclarationId, regions: &[DeclarationId]) -> Result<usize, CheckStop> {
@@ -651,8 +873,6 @@ fn normalize_effects(
         writes: normalize_regions(&effects.writes, regions)?,
         allocates_heap: effects.allocates_heap,
         allocates_arenas: normalize_regions(&effects.allocates_arenas, regions)?,
-        external: effects.external,
-        blocks: effects.blocks,
         traps: effects.traps,
     })
 }

@@ -7,8 +7,9 @@ PY := python3 -B
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 RESEARCH_TEST_TMP := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-tmp
 RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-target
+COMPLETION_RUNTIME_DIR := compiler/src/backend/completion
 
-check: repository-invariants approval-history-integrity spec-append-only spec-archive-integrity spec-digest-sync conformance compiler research-tests conformance-run
+check: repository-invariants approval-history-integrity spec-append-only spec-archive-integrity spec-digest-sync conformance completion-runtime compiler research-tests conformance-run
 	@echo "== WHITEFOOT ALL TESTS GREEN =="
 
 # Both supported agent entry points carry exactly the same project rules.
@@ -250,6 +251,38 @@ conformance:
 	cd tests/conformance && $(PY) test_runner.py
 	$(PY) tests/conformance/runner.py coverage
 
+# The shared completion contract and this host's backend compile as strict C11,
+# then the adversarial harness exercises publication, generation reuse,
+# failure rollback, in-flight loans, bounded helping, mixed-load park/wake, and
+# the readiness-vs-condvar measurement. The three-host version of this same
+# command runs in .github/workflows/completion-runtime.yml.
+completion-runtime:
+	@mkdir -p "$(WHITEFOOT_SCRATCH_ROOT)"
+	@scratch="$$(mktemp -d "$(WHITEFOOT_SCRATCH_ROOT)/whitefoot-completion.XXXXXX")" || exit 1; \
+	trap 'rm -rf "$$scratch"' EXIT HUP INT TERM; \
+	case "$$(uname -s)" in \
+		Darwin) backend=kqueue.c ;; \
+		Linux) backend=io_uring.c ;; \
+		*) echo "completion runtime: unsupported canonical-check host $$(uname -s)" >&2; exit 1 ;; \
+	esac; \
+	$(CC) -std=c11 -Wall -Wextra -Wpedantic -Werror -pthread -DWF_IO_TESTING \
+		-I "$(COMPLETION_RUNTIME_DIR)" \
+		"$(COMPLETION_RUNTIME_DIR)/runtime.c" \
+		"$(COMPLETION_RUNTIME_DIR)/$$backend" \
+		"$(COMPLETION_RUNTIME_DIR)/harness.c" \
+		-o "$$scratch/completion-harness" || exit 1; \
+	"$$scratch/completion-harness" || exit 1; \
+	if test "$$backend" = io_uring.c; then \
+		$(CC) -std=c11 -Wall -Wextra -Wpedantic -Werror -pthread \
+			-DWF_IO_TESTING -DWF_IO_TEST_FORCE_ONESHOT \
+			-I "$(COMPLETION_RUNTIME_DIR)" \
+			"$(COMPLETION_RUNTIME_DIR)/runtime.c" \
+			"$(COMPLETION_RUNTIME_DIR)/$$backend" \
+			"$(COMPLETION_RUNTIME_DIR)/harness.c" \
+			-o "$$scratch/completion-harness-oneshot" || exit 1; \
+		"$$scratch/completion-harness-oneshot" || exit 1; \
+	fi
+
 compiler:
 	$(MAKE) -C compiler check
 
@@ -279,4 +312,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check repository-invariants approval-history-integrity spec-append-only spec-append-only-staged spec-archive-integrity spec-candidate-integrity spec-digest-sync conformance compiler research-tests conformance-run install-hooks
+.PHONY: check repository-invariants approval-history-integrity spec-append-only spec-append-only-staged spec-archive-integrity spec-candidate-integrity spec-digest-sync conformance completion-runtime compiler research-tests conformance-run install-hooks

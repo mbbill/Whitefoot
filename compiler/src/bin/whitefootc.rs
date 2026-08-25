@@ -5,13 +5,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use whitefoot::{
-    CompilerLimits, FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
-    OverlapLowering, PARALLEL_RUNTIME_SOURCE, SourceInput, compile_with_overlap,
-    compile_with_permission_ledger, module_requires_parallel_runtime, stack_ledger,
+    COMPLETION_CONTRACT_HEADER, COMPLETION_PLATFORM_FILE_NAME, COMPLETION_PLATFORM_HEADER,
+    COMPLETION_PLATFORM_SOURCE, COMPLETION_RUNTIME_SOURCE, CompilerLimits, FLOOR_RUNTIME_SOURCE,
+    FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_RUNTIME_SOURCE,
+    SourceInput, compile_with_developer_ledgers, compile_with_overlap,
+    module_requires_completion_runtime, module_requires_parallel_runtime, stack_ledger,
 };
 
-const USAGE: &str =
-    "usage: whitefootc [--emit-llvm] [--par] [--par-ledger] [--stack-ledger] [-o OUTPUT] SOURCE...";
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-ledger] [--io-ledger] [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 fn main() {
     if let Err(message) = run() {
@@ -42,7 +43,7 @@ fn run() -> Result<(), String> {
     } else {
         OverlapLowering::Off
     };
-    let module = if options.par_ledger {
+    let module = if options.par_ledger || options.io_ledger {
         // The permission ledger is developer output. It goes to stdout, which
         // `Options::parse` has already kept clear of the emitted module, and
         // never to the mandatory record channel. Its judgment lines are the
@@ -50,11 +51,18 @@ fn run() -> Result<(), String> {
         // actualization lines — what the lowering did with each permission it
         // was handed — exist only where actualization was asked for, so `--par`
         // adds lines to this ledger rather than changing any of them.
-        let (module, ledger) =
-            compile_with_permission_ledger(&inputs, CompilerLimits::default(), overlap)
+        let (module, permission_ledger, io_ledger) =
+            compile_with_developer_ledgers(&inputs, CompilerLimits::default(), overlap)
                 .map_err(|failure| failure.to_string())?;
-        for line in &ledger {
-            println!("{line}");
+        if options.par_ledger {
+            for line in &permission_ledger {
+                println!("{line}");
+            }
+        }
+        if options.io_ledger {
+            for line in &io_ledger {
+                println!("{line}");
+            }
         }
         module
     } else {
@@ -129,15 +137,38 @@ fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
 }
 
 fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
-    // The parallel runtime joins the link only when the module hands work to
-    // it. Its bytes travel inside this executable, so no installed path, no
-    // build directory, and no environment decides which runtime a program
-    // gets.
-    let runtime = if module_requires_parallel_runtime(llvm) {
-        let path = std::env::temp_dir().join(format!("whitefootc-par-{}.c", std::process::id()));
-        std::fs::write(&path, PARALLEL_RUNTIME_SOURCE)
-            .map_err(|error| format!("cannot write the parallel runtime: {error}"))?;
-        Some(path)
+    let needs_parallel = module_requires_parallel_runtime(llvm);
+    let needs_completion = needs_parallel || module_requires_completion_runtime(llvm);
+    // Completion and parallel runtime bytes travel inside this compiler. The
+    // transient directory gives their shared header one private include root;
+    // no installed path, build tree, environment, or source value selects the
+    // runtime or platform backend a program gets.
+    let runtime_directory = needs_completion
+        .then(|| std::env::temp_dir().join(format!("whitefootc-runtime-{}", std::process::id())));
+    let runtime_files = if let Some(directory) = runtime_directory.as_ref() {
+        std::fs::create_dir(directory)
+            .map_err(|error| format!("cannot create the runtime directory: {error}"))?;
+        let header = directory.join("contract.h");
+        let platform_header = directory.join("platform.h");
+        let shared = directory.join("completion_runtime.c");
+        let platform = directory.join(COMPLETION_PLATFORM_FILE_NAME);
+        std::fs::write(&header, COMPLETION_CONTRACT_HEADER)
+            .map_err(|error| format!("cannot write the completion contract: {error}"))?;
+        std::fs::write(&platform_header, COMPLETION_PLATFORM_HEADER)
+            .map_err(|error| format!("cannot write the completion platform contract: {error}"))?;
+        std::fs::write(&shared, COMPLETION_RUNTIME_SOURCE)
+            .map_err(|error| format!("cannot write the completion runtime: {error}"))?;
+        std::fs::write(&platform, COMPLETION_PLATFORM_SOURCE)
+            .map_err(|error| format!("cannot write the completion backend: {error}"))?;
+        let parallel = if needs_parallel {
+            let path = directory.join("par_runtime.c");
+            std::fs::write(&path, PARALLEL_RUNTIME_SOURCE)
+                .map_err(|error| format!("cannot write the parallel runtime: {error}"))?;
+            Some(path)
+        } else {
+            None
+        };
+        Some((shared, platform, parallel))
     } else {
         None
     };
@@ -150,13 +181,20 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
         .map_err(|error| format!("cannot write the floor runtime: {error}"))?;
     let mut command = Command::new("/usr/bin/clang");
     command.arg("-pthread").arg("-x").arg("c").arg(&floor);
-    if let Some(path) = runtime.as_ref() {
-        command.arg("-x").arg("c").arg(path);
+    if let (Some(directory), Some((shared, platform, parallel))) =
+        (runtime_directory.as_ref(), runtime_files.as_ref())
+    {
+        command.arg("-I").arg(directory);
+        command.arg("-x").arg("c").arg(shared);
+        command.arg("-x").arg("c").arg(platform);
+        if let Some(path) = parallel {
+            command.arg("-x").arg("c").arg(path);
+        }
     }
     let outcome = link(&mut command, llvm, output);
     let _ = std::fs::remove_file(floor);
-    if let Some(path) = runtime {
-        let _ = std::fs::remove_file(path);
+    if let Some(directory) = runtime_directory {
+        let _ = std::fs::remove_dir_all(directory);
     }
     outcome
 }
@@ -227,9 +265,11 @@ struct Options {
     /// for. Re-measured the same way, `fib(38)` reads 0.0810 s with the pool
     /// off against 0.0811 s for the default build, and the twelve
     /// paired-layout programs read 1.00x-1.01x of their own default builds at
-    /// one worker, where before they ranged 0.68x-1.02x. (Both readings are
-    /// taken at `WF_WORKERS=1`. An absent setting asks for a pool sized to the
-    /// machine, so it is not the pool-off spelling.)
+    /// the pool-off setting, where before they ranged 0.68x-1.02x. (Those
+    /// historical readings used `WF_WORKERS=1`; v0.37 assigns the exact
+    /// sequential/no-pool spelling to `0` and makes `1` the single-compute-lane
+    /// I/O-overlap setting. An absent setting asks for a pool sized to the
+    /// machine.)
     ///
     /// Two prices, both real. Code size, paid only by a `--par` build: 7% to
     /// 14% more machine code, which is 0.5% to 0.6% of the linked file. And a
@@ -245,11 +285,16 @@ struct Options {
     /// none of it and emits exactly the module it emitted before this path
     /// existed, with one world in it. `WF_WORKERS` remains the runtime knob
     /// for a program built this way: absent it asks for one lane per logical
-    /// CPU, which is what a binary handed to somebody gets, and `0`, `1`, or an
-    /// unparsable value is the opt-out that starts no pool at all.
+    /// CPU, which is what a binary handed to somebody gets. `0` is sequential
+    /// with no compute pool, `1` is one overlapped compute lane with no stealing
+    /// worker, values above one select that many lanes, and an unparsable value
+    /// is treated as the sequential opt-out.
     par: bool,
     /// Print the non-normative permission ledger on stdout.
     par_ledger: bool,
+    /// Print the checked world-call, release, target-action, permission, and
+    /// selected-lowering records on stdout.
+    io_ledger: bool,
     /// Print the non-normative stack ledger on stdout.
     ///
     /// What a writer cannot otherwise see: a frame size is a whole-program,
@@ -271,6 +316,7 @@ impl Options {
         let mut emit_llvm = false;
         let mut par = false;
         let mut par_ledger = false;
+        let mut io_ledger = false;
         let mut stack_ledger = false;
         let mut output = None;
         let mut sources = Vec::new();
@@ -280,6 +326,7 @@ impl Options {
                 "--emit-llvm" => emit_llvm = true,
                 "--par" => par = true,
                 "--par-ledger" => par_ledger = true,
+                "--io-ledger" => io_ledger = true,
                 "--stack-ledger" => stack_ledger = true,
                 "-o" => {
                     cursor += 1;
@@ -312,6 +359,12 @@ impl Options {
                     .to_owned(),
             );
         }
+        if io_ledger && emit_llvm && output.is_none() {
+            return Err(
+                "--io-ledger cannot share stdout with --emit-llvm: name a module output with -o"
+                    .to_owned(),
+            );
+        }
         if stack_ledger && emit_llvm && output.is_none() {
             return Err(
                 "--stack-ledger cannot share stdout with --emit-llvm: name a module output with -o"
@@ -322,6 +375,7 @@ impl Options {
             emit_llvm,
             par,
             par_ledger,
+            io_ledger,
             stack_ledger,
             output,
             sources,
@@ -357,6 +411,22 @@ mod tests {
             .expect("a named output separates the module from the ledger");
         assert!(options.par_ledger);
         assert!(options.emit_llvm);
+    }
+
+    #[test]
+    fn the_io_ledger_is_requested_by_its_own_option() {
+        let options = parse(&["value.wf"]).expect("one source is a complete invocation");
+        assert!(!options.io_ledger);
+
+        let options = parse(&["--io-ledger", "value.wf"]).expect("the option is accepted");
+        assert!(options.io_ledger);
+        assert!(!options.par, "reading the ledger must not enable lowering");
+
+        let message = parse(&["--io-ledger", "--emit-llvm", "value.wf"])
+            .err()
+            .expect("the two stdout streams must not be mixed");
+        assert!(message.contains("--io-ledger"), "{message}");
+        assert!(message.contains("-o"), "{message}");
     }
 
     /// The stack ledger is developer output on its own switch, and it is
@@ -428,6 +498,7 @@ mod tests {
             "--emit-llvm",
             "--par",
             "--par-ledger",
+            "--io-ledger",
             "--stack-ledger",
             "-o",
         ] {

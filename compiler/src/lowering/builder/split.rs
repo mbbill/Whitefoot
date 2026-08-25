@@ -131,7 +131,13 @@ pub(crate) struct Synthesis {
     base: u32,
     functions: Vec<Option<IrFunction>>,
     ledger: Vec<String>,
+    /// Source call sites selected into an overlap group by this exact
+    /// lowering. The I/O ledger consumes these keys after lowering; it never
+    /// predicts actualization from permission alone.
+    pub(super) io_actualized: Vec<(u32, NodePath)>,
 }
+
+type FinishedSynthesis = (Vec<IrFunction>, Vec<String>, Vec<(u32, NodePath)>);
 
 impl Synthesis {
     pub(crate) const fn new(base: u32) -> Self {
@@ -139,6 +145,7 @@ impl Synthesis {
             base,
             functions: Vec::new(),
             ledger: Vec::new(),
+            io_actualized: Vec::new(),
         }
     }
 
@@ -163,13 +170,13 @@ impl Synthesis {
     }
 
     /// The synthesized functions in ordinal order, and the ledger lines.
-    pub(crate) fn finish(self) -> Result<(Vec<IrFunction>, Vec<String>), LoweringFailure> {
+    pub(crate) fn finish(self) -> Result<FinishedSynthesis, LoweringFailure> {
         let functions = self
             .functions
             .into_iter()
             .collect::<Option<Vec<_>>>()
             .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        Ok((functions, self.ledger))
+        Ok((functions, self.ledger, self.io_actualized))
     }
 }
 
@@ -376,6 +383,7 @@ impl IrBuilder<'_> {
             accumulator_type,
             self.addressed_bindings.clone(),
             self.permissions,
+            self.function_id,
             self.function_name,
         )?;
         let seed = builder.new_parameter(accumulator_type)?;
@@ -406,7 +414,12 @@ impl IrBuilder<'_> {
         // it; a group whose members do not all land in this body resolves to
         // nothing, which is the narrowing `overlaps` already performs.
         let overlaps = builder.overlaps();
-        builder.finish(chunk_symbol(ordinal), overlaps, Some(IrSynthesis::Chunk))
+        builder.finish(
+            chunk_symbol(ordinal),
+            overlaps,
+            Some(IrSynthesis::Chunk),
+            crate::TargetAction::INLINE,
+        )
     }
 
     /// The recursive range splitter, whose two halves are one ordinary overlap
@@ -430,6 +443,7 @@ impl IrBuilder<'_> {
             accumulator_type,
             std::collections::HashSet::new(),
             None,
+            self.function_id,
             self.function_name,
         )?;
         let seed = builder.new_parameter(accumulator_type)?;
@@ -599,6 +613,7 @@ impl IrBuilder<'_> {
                 members: vec![left, right],
             }],
             Some(IrSynthesis::Splitter),
+            crate::TargetAction::INLINE,
         )
     }
 

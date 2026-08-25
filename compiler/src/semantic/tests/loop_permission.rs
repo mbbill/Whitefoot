@@ -681,17 +681,16 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 // ----------------------------------------------------------------------
-// Condition 3: the row gate
+// Condition 3: repeated world writes
 // ----------------------------------------------------------------------
 
-/// A callee whose row carries `external` and `blocks` refuses even when it
-/// writes no caller storage: rows gate, and no disjointness is ever derived
-/// from one.
+/// The wrapper's memory access is read-only, but every iteration writes the
+/// same command-order and result-capability world facets.
 #[test]
-fn an_external_row_in_the_body_is_denied_by_condition_three() {
+fn a_user_callee_with_a_world_write_is_denied_by_condition_three() {
     let source =
-        b"fn probe['c](root: &'c DirectoryRead) -> result: own u64 reads('c), external, blocks {
-  match open_list<'c>(directory: root) {
+        b"fn probe['b, 'q, 'dh, 'd, 'f, 'lh, 'lc](root: &'b DirectoryRead<'q, 'dh, 'd, 'f>) -> result: own u64 reads('b 'dh 'd), writes('q 'lh 'lc) {
+  match open_list<'b, 'q, 'dh, 'd, 'f, 'lh, 'lc>(directory: root) {
     Ok(value: listing) => {
       return 1_u64;
     }
@@ -701,41 +700,35 @@ fn an_external_row_in_the_body_is_denied_by_condition_three() {
   }
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus external, blocks {
+command fn main['q, 'dh, 'd, 'f, 'lh, 'lc](command.cwd as cwd: own DirectoryRead<'q, 'dh, 'd, 'f>) -> status: own ExitStatus reads('dh 'd), writes('q 'dh 'lh 'lc) {
   let total = 0_u64;
   for @scan i in 0_u64..4_u64 {
     region 'probe_call {
-      let seen = probe<'probe_call>(root: &'probe_call cwd);
+      let seen = probe<'probe_call, 'q, 'dh, 'd, 'f, 'lh, 'lc>(root: &'probe_call cwd);
       set total = total +wrap seen;
     }
   }
   return exit_status(code: 0_u8);
 }
 ";
-    let LoopDenial::Row {
-        function,
-        external,
-        blocks,
-    } = denied(source, "main", 3)
-    else {
-        panic!("expected a row denial");
-    };
-    assert_eq!(function, "probe");
-    assert!(external && blocks);
+    assert!(matches!(
+        denied(source, "main", 3),
+        LoopDenial::WorldFootprint { .. }
+    ));
 }
 
-/// A [SYS-2] operation written in the body is the external world itself.
+/// A direct [SYS-2] operation is judged by its exact world footprint. Every
+/// iteration writes the selected output's shared world facets.
 #[test]
 fn a_system_call_in_the_body_is_denied_by_condition_three() {
-    let source = b"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
-  let text = buffer_new(4_u64, 65_u8);
+    let source = b"command fn main['q, 'dh, 'd, 'f, 'lh, 'lc](command.cwd as cwd: own DirectoryRead<'q, 'dh, 'd, 'f>) -> status: own ExitStatus reads('dh 'd), writes('q 'dh 'lh 'lc) {
   let total = 0_u64;
-  for @emit i in 0_u64..4_u64 {
+  for @scan i in 0_u64..4_u64 {
     region 'attempt {
-      match write_once<'attempt, 'attempt>(output: &uniq 'attempt out, source: &'attempt text, start: 0_u64, end: 1_u64) {
-        Ok(value: next) => {
+      match open_list<'attempt, 'q, 'dh, 'd, 'f, 'lh, 'lc>(directory: &'attempt cwd) {
+        Ok(value: listing) => {
         }
-        Err(error: problem) => {
+        Err(error: refused) => {
         }
       }
     }
@@ -746,7 +739,7 @@ fn a_system_call_in_the_body_is_denied_by_condition_three() {
 ";
     assert!(matches!(
         denied(source, "main", 3),
-        LoopDenial::SystemCall { .. }
+        LoopDenial::WorldFootprint { .. }
     ));
 }
 

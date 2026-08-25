@@ -49,9 +49,9 @@ const fn input(tail: &'static str, written: &'static str, nominal: &'static str)
 /// `command.stdout` and `command.stderr` share one type and stay two inputs.
 const COMMAND_INPUTS: [StandardInput; 4] = [
     input("args", "own Args", "Args"),
-    input("cwd", "own DirectoryRead", "DirectoryRead"),
-    input("stdout", "own Output", "Output"),
-    input("stderr", "own Output", "Output"),
+    input("cwd", "own DirectoryRead<'q, 'dh, 'd, 'f>", "DirectoryRead"),
+    input("stdout", "own Output<'q, 'o>", "Output"),
+    input("stderr", "own Output<'q, 'o>", "Output"),
 ];
 
 /// The `command.stdout` and `command.stderr` table ordinals.
@@ -61,7 +61,7 @@ const COMMAND_STDERR: u8 = 3;
 const COMMAND_RESULT: &str = "own ExitStatus";
 const COMMAND_RESULT_NOMINAL: &str = "ExitStatus";
 const COMMAND_EFFECTS: &str =
-    "any subset of `allocates(heap), external, blocks, traps` in EFF-1 canonical order";
+    "the exact world reads/writes row, plus `allocates(heap)` and `traps` when exhibited";
 
 /// Returns the conservative alias links the entry's selected inputs carry.
 ///
@@ -96,7 +96,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if crate::syntax::unit_program_kind(self.tree.topology()) != entry_kind {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
-        self.reject_entry_polymorphism(entry)?;
+        self.check_entry_parameters(entry)?;
         if self
             .tree
             .first_child_with(entry, Production::ContractBlock)?
@@ -167,15 +167,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// Rejects a generic or region-parameter-bearing entry at its own child.
-    ///
-    /// [FN-7] states this before the form split, so one judgment serves both
-    /// entry shapes.
-    fn reject_entry_polymorphism(&self, entry: NodeId) -> Result<(), CheckStop> {
-        for production in [Production::Generics, Production::RegionParams] {
-            if let Some(child) = self.tree.first_child_with(entry, production)? {
-                return self.issue_node(SemanticRule::Fn7, child, SemanticIssueKind::InvalidMain);
-            }
+    /// Rejects type/const generics and establishes every entry region as
+    /// world-kind. Program start supplies those identities [FN-7].
+    fn check_entry_parameters(&self, entry: NodeId) -> Result<(), CheckStop> {
+        if let Some(child) = self.tree.first_child_with(entry, Production::Generics)? {
+            return self.issue_node(SemanticRule::Fn7, child, SemanticIssueKind::InvalidMain);
+        }
+        for region in self.parse_region_parameters(entry)? {
+            let declaration = self
+                .resolved
+                .declarations()
+                .get(region.index())
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let node = self
+                .tree
+                .node_with_path(declaration.origin().node())
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            self.constrain_region_kind(
+                node,
+                region,
+                super::super::model::CheckedRegionKind::World,
+            )?;
         }
         Ok(())
     }
@@ -226,6 +238,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(Vec::new());
         };
         let mut selected: Vec<u8> = Vec::new();
+        let mut command_order = None;
+        let mut output_identity = None;
         for parameter in self.tree.children_with(list, Production::Param)? {
             let Some(label) = self
                 .tree
@@ -253,7 +267,42 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // order is the one legal byte sequence [FORM-1, GRAM-8].
                 return self.invalid_label(label, &tail);
             }
-            self.check_standard_input_binding(parameter, &tail, ordinal)?;
+            let world = self.check_standard_input_binding(parameter, &tail, ordinal)?;
+            if let Some(region) = world.first().copied() {
+                if let Some(expected) = command_order {
+                    if region != expected {
+                        return self.issue_node(
+                            SemanticRule::Fn7,
+                            parameter,
+                            SemanticIssueKind::InvalidStandardInput {
+                                label: format!("command.{tail}"),
+                                declared: COMMAND_INPUTS[usize::from(ordinal)].written,
+                            },
+                        );
+                    }
+                } else {
+                    command_order = Some(region);
+                }
+            }
+            if matches!(ordinal, COMMAND_STDOUT | COMMAND_STDERR) {
+                let identity = *world
+                    .get(1)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                if let Some(expected) = output_identity {
+                    if identity != expected {
+                        return self.issue_node(
+                            SemanticRule::Fn7,
+                            parameter,
+                            SemanticIssueKind::InvalidStandardInput {
+                                label: format!("command.{tail}"),
+                                declared: COMMAND_INPUTS[usize::from(ordinal)].written,
+                            },
+                        );
+                    }
+                } else {
+                    output_identity = Some(identity);
+                }
+            }
             selected.push(ordinal);
         }
         Ok(selected)
@@ -266,7 +315,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         parameter: NodeId,
         tail: &str,
         ordinal: u8,
-    ) -> Result<(), CheckStop> {
+    ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
         let row = COMMAND_INPUTS
             .get(usize::from(ordinal))
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
@@ -279,7 +328,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .first_child_with(parameter, Production::Type)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if !self.has_fixed(mode, FixedTerminal::Own)?
-            || !self.resolves_to_system_nominal(ty, row.nominal)?
+            || self.system_nominal_identity(ty, row.nominal)?.is_none()
         {
             return self.issue_node(
                 SemanticRule::Fn7,
@@ -290,7 +339,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        Ok(())
+        self.system_nominal_identity(ty, row.nominal)?
+            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
     }
 
     /// Rejects an `input_label` anywhere outside the command entry's own
@@ -400,22 +450,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Reports whether every category written in a `command` entry's row is
     /// admitted by that kind row.
     ///
-    /// The admitted set is `allocates(heap)`, `external`, `blocks`, `traps`;
-    /// `pure` is the empty subset. No region-bearing effect is admitted, so a
-    /// `reads`, `writes`, or arena allocation entry fails here. Canonical
-    /// order and repetition stay [EFF-1]'s judgment.
+    /// Reads and writes are admitted only over the entry's world parameters;
+    /// allocation is heap-only, and `traps` is the sole payload-free flag.
     fn command_effects_admitted(&self, effects: NodeId) -> Result<bool, CheckStop> {
         if self.has_fixed(effects, FixedTerminal::Pure)? {
             return Ok(true);
         }
         for effect in self.tree.children_with(effects, Production::Effect)? {
-            let admitted = if self.has_fixed(effect, FixedTerminal::Allocates)? {
+            let admitted = if self.has_fixed(effect, FixedTerminal::Reads)?
+                || self.has_fixed(effect, FixedTerminal::Writes)?
+            {
+                for region in self.effect_regions(effect)? {
+                    if self.region_kind(region)
+                        != Some(super::super::model::CheckedRegionKind::World)
+                    {
+                        return Ok(false);
+                    }
+                }
+                true
+            } else if self.has_fixed(effect, FixedTerminal::Allocates)? {
                 self.has_fixed(effect, FixedTerminal::Heap)?
                     && !self.has_fixed(effect, FixedTerminal::Arena)?
             } else {
-                self.has_fixed(effect, FixedTerminal::External)?
-                    || self.has_fixed(effect, FixedTerminal::Blocks)?
-                    || self.has_fixed(effect, FixedTerminal::Traps)?
+                self.has_fixed(effect, FixedTerminal::Traps)?
             };
             if !admitted {
                 return Ok(false);
@@ -431,19 +488,61 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// bytes: a `targs` child, a non-nominal target, or any other system
     /// nominal fails.
     fn resolves_to_system_nominal(&self, ty: NodeId, nominal: &str) -> Result<bool, CheckStop> {
-        if self.tree.first_child_with(ty, Production::Targs)?.is_some() {
-            return Ok(false);
-        }
+        Ok(self.system_nominal_identity(ty, nominal)?.is_some())
+    }
+
+    /// Returns the exact world vector when a written type resolves to the
+    /// requested system nominal with its required arity.
+    fn system_nominal_identity(
+        &self,
+        ty: NodeId,
+        nominal: &str,
+    ) -> Result<Option<Vec<crate::DeclarationId>>, CheckStop> {
         let Ok(usage) = self.use_at(ty, LexicalUseRole::Type) else {
-            return Ok(false);
+            return Ok(None);
         };
         let ResolvedTarget::System(id) = usage.target() else {
-            return Ok(false);
+            return Ok(None);
         };
-        Ok(matches!(
-            system_entity(id, self.inventory()),
-            Some(SystemEntity::Nominal(entry)) if entry.spelling == nominal
-        ))
+        let Some(index) = crate::system_nominal_index(id, self.inventory()) else {
+            return Ok(None);
+        };
+        let Some(SystemEntity::Nominal(entry)) = system_entity(id, self.inventory()) else {
+            return Ok(None);
+        };
+        if entry.spelling != nominal {
+            return Ok(None);
+        }
+        let targs = self.tree.first_child_with(ty, Production::Targs)?;
+        if entry.world_parameters.is_empty() {
+            return Ok(targs.is_none().then(Vec::new));
+        }
+        let Some(targs) = targs else {
+            return Ok(None);
+        };
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
+        if arguments.len() != entry.world_parameters.len() {
+            return Ok(None);
+        }
+        let mut regions = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
+            let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return Ok(None);
+            };
+            self.constrain_region_kind(
+                argument,
+                declaration,
+                super::super::model::CheckedRegionKind::World,
+            )?;
+            regions.push(declaration);
+        }
+        let _ = index;
+        Ok(Some(regions))
     }
 
     /// Returns the writer-chosen tail IDENT of one fixed-command input label.

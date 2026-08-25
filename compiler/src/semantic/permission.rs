@@ -62,9 +62,11 @@
 //!    s2 out has already completed s1. The operand half is one-sided for s1
 //!    and two-sided for s2. Getting this wrong conservatively costs only
 //!    denials; getting it wrong permissively is a race.
-//! 3. **Row gate.** Neither callee's row carries `external` or `blocks`, and
-//!    neither does the row of any call written between them. Rows gate; places
-//!    prove. No disjointness is ever derived from a row.
+//! 3. **Complete target classification.** Every call has a declared-user or
+//!    direct-system target, a complete kinded world projection, and a closed
+//!    target-action record. Unknown class, world kind, footprint, origin, or
+//!    projection denies. Target action does not itself deny; it selects the
+//!    completion-frame route if the permitted window is actualized.
 //! 4. **No skipping exit.** No exit edge of s1 bypasses s2, and no statement
 //!    between them carries an exit edge at all: s1's only continuation is s2.
 //!    A `propagate` right-hand side has an `Err` edge to the function-return
@@ -102,9 +104,12 @@
 //! observables and it keeps the guarantee whole. For an erroneous execution
 //! the guarantee narrows to: the process traps with exactly one well-formed
 //! [DIAG-3] record naming *a* claim whose predicate evaluated false; memory
-//! safety, abort without unwinding, and the absence of external effects from
-//! an overlapped region hold unchanged; and *which* such claim the record
-//! names may depend on the schedule.
+//! and world safety and abort without unwinding hold unchanged; and the
+//! schedule may select both which false claim the record names and which
+//! family-valid, [EFF-5]-ordered world effects were performed before abort.
+//! No new submission follows the winning trap latch, while already-submitted
+//! work retains its family semantics and need not reach terminal state before
+//! the process dies.
 //!
 //! "Exactly one record under any interleaving" is a mechanism here rather than
 //! an argument: `wf_trap` takes a process-wide latch before it writes its
@@ -127,7 +132,7 @@ use super::model::{
     CheckedSliceSource, CheckedStatement, CheckedType, FunctionId, expression_children,
 };
 use super::places::{PlaceMap, PlaceRoot, PlaceTerm, ResolvedPlace};
-use crate::{DeclarationId, NodePath};
+use crate::{DeclarationId, NodePath, SYSTEM_OPERATIONS, SystemParameterMode, TargetAction};
 
 /// The declared effect row and region parameters of one concrete function, as
 /// P reads them. This is the callable boundary only: no body fact enters.
@@ -138,8 +143,8 @@ pub(crate) struct PermissionSignature {
     pub(crate) reads: Vec<DeclarationId>,
     pub(crate) writes: Vec<DeclarationId>,
     pub(crate) allocates_arenas: Vec<DeclarationId>,
-    pub(crate) external: bool,
-    pub(crate) blocks: bool,
+    /// Formal declarations established as world-kind [OWN-3].
+    pub(crate) world_regions: Vec<DeclarationId>,
 }
 
 /// Which statement of an analyzed window a denial cites: one of the two
@@ -194,6 +199,11 @@ pub(crate) enum Access {
     /// nothing reaches this gap; the arena lane must close it rather than
     /// inherit the projection.
     Arena {
+        region: DeclarationId,
+        call: NodePath,
+    },
+    /// One conservative outside-state facet after direct region substitution.
+    World {
         region: DeclarationId,
         call: NodePath,
     },
@@ -255,9 +265,11 @@ impl Access {
                 left.overlaps(right)
             }
             (Self::Arena { region: left, .. }, Self::Arena { region: right, .. }) => left == right,
-            (Self::Place { .. }, Self::Arena { .. }) | (Self::Arena { .. }, Self::Place { .. }) => {
-                false
-            }
+            (Self::World { region: left, .. }, Self::World { region: right, .. }) => left == right,
+            (Self::Place { .. }, Self::Arena { .. } | Self::World { .. })
+            | (Self::Arena { .. } | Self::World { .. }, Self::Place { .. })
+            | (Self::Arena { .. }, Self::World { .. })
+            | (Self::World { .. }, Self::Arena { .. }) => false,
         }
     }
 }
@@ -363,12 +375,6 @@ pub(crate) enum Denial {
         /// The form, as the ledger names it to the writer.
         form: &'static str,
     },
-    /// Condition 3: a callee row carries `external` or `blocks`.
-    Row {
-        side: PairSide,
-        external: bool,
-        blocks: bool,
-    },
     /// Condition 4: an exit edge of s1, or of a statement between the two,
     /// does not reach s2.
     SkippingExit { side: PairSide, kind: ExitKind },
@@ -384,7 +390,6 @@ impl Denial {
             | Self::Loan { .. }
             | Self::UnresolvedFootprint { .. }
             | Self::InterposedForm { .. } => 2,
-            Self::Row { .. } => 3,
             Self::SkippingExit { .. } => 4,
         }
     }
@@ -424,8 +429,11 @@ pub(crate) struct PermissionSite {
     pub(crate) binding: BindingId,
     /// The call occurrence inside it.
     pub(crate) call: NodePath,
-    pub(crate) callee: FunctionId,
     pub(crate) callee_name: String,
+    /// Closed target-action summary selected for this exact call. Permission
+    /// does not read it; actualization does, so a completion action is never
+    /// routed through an ordinary compute-only frame by accident.
+    pub(crate) target_action: TargetAction,
 }
 
 /// One ordered pair of adjacent call statements and its verdict.
@@ -529,32 +537,51 @@ struct Candidate<'check> {
 /// grows a second copy of the projection.
 pub(super) struct CallProjection<'check> {
     pub(super) call: &'check NodePath,
-    pub(super) callee: FunctionId,
+    pub(super) target: CallTarget,
     pub(super) arguments: &'check [CheckedExpression],
     pub(super) argument_nodes: &'check [NodePath],
     pub(super) regions: &'check [DeclarationId],
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum CallTarget {
+    User(FunctionId),
+    System(u8),
+}
+
 /// The call one expression is, or `None` for every other expression form.
 pub(super) fn call_projection(value: &CheckedExpression) -> Option<CallProjection<'_>> {
-    let CheckedExpression::UserCall {
-        function,
-        call,
-        argument_nodes,
-        arguments,
-        goal_regions,
-        ..
-    } = value
-    else {
-        return None;
-    };
-    Some(CallProjection {
-        call,
-        callee: *function,
-        arguments,
-        argument_nodes,
-        regions: goal_regions,
-    })
+    match value {
+        CheckedExpression::UserCall {
+            function,
+            call,
+            argument_nodes,
+            arguments,
+            goal_regions,
+            ..
+        } => Some(CallProjection {
+            call,
+            target: CallTarget::User(*function),
+            arguments,
+            argument_nodes,
+            regions: goal_regions,
+        }),
+        CheckedExpression::SystemCall {
+            operation,
+            call,
+            regions,
+            argument_nodes,
+            arguments,
+            ..
+        } => Some(CallProjection {
+            call,
+            target: CallTarget::System(*operation),
+            arguments,
+            argument_nodes,
+            regions,
+        }),
+        _ => None,
+    }
 }
 
 /// One statement written between the two judged calls, reduced to what the
@@ -565,10 +592,6 @@ struct Interposed {
     /// Every binding its own operands mention.
     uses: Vec<BindingId>,
     footprint: Footprint,
-    /// Its callee, when the statement is one call. A call between the two
-    /// members faces the same row gate they do and joins the eligibility
-    /// roots.
-    callee: Option<FunctionId>,
 }
 
 /// Why one interposed statement cannot be judged as written.
@@ -723,16 +746,23 @@ impl<'check> Program<'check> {
     }
 
     fn site(&self, candidate: &Candidate<'check>) -> PermissionSite {
+        let (callee_name, target_action) = match candidate.call.target {
+            CallTarget::User(function) => self
+                .functions
+                .get(function.0 as usize)
+                .map(|function| (function.name.clone(), function.target_action))
+                .unwrap_or_else(|| (String::new(), TargetAction::CONSERVATIVE)),
+            CallTarget::System(operation) => SYSTEM_OPERATIONS
+                .get(usize::from(operation))
+                .map(|operation| (operation.spelling.to_owned(), operation.target_action))
+                .unwrap_or_else(|| (String::new(), TargetAction::CONSERVATIVE)),
+        };
         PermissionSite {
             statement: candidate.statement.clone(),
             binding: candidate.binding,
             call: candidate.call.call.clone(),
-            callee: candidate.call.callee,
-            callee_name: self
-                .functions
-                .get(candidate.call.callee.0 as usize)
-                .map(|function| function.name.clone())
-                .unwrap_or_default(),
+            callee_name,
+            target_action,
         }
     }
 
@@ -858,40 +888,6 @@ impl<'check> Program<'check> {
             }
         }
 
-        // Condition 3: the row gate, over both members and every call between
-        // them. A row that gates the members gates a call written between them
-        // for the same reason: nothing about its reach is proved by places.
-        for (side, callee) in [
-            (PairSide::First, first.call.callee),
-            (PairSide::Second, second.call.callee),
-        ]
-        .into_iter()
-        .chain(
-            interposed
-                .iter()
-                .enumerate()
-                .filter_map(|(offset, record)| {
-                    record
-                        .callee
-                        .map(|callee| (PairSide::Between(offset), callee))
-                }),
-        ) {
-            let Some(signature) = self.signatures.get(callee.0 as usize) else {
-                return PermissionVerdict::Denied(Denial::Row {
-                    side,
-                    external: true,
-                    blocks: true,
-                });
-            };
-            if signature.external || signature.blocks {
-                return PermissionVerdict::Denied(Denial::Row {
-                    side,
-                    external: signature.external,
-                    blocks: signature.blocks,
-                });
-            }
-        }
-
         // Condition 4: no exit edge of s1 bypasses s2. An exit between them
         // denied during classification above.
         if let Some(kind) = first.exit {
@@ -939,7 +935,6 @@ impl<'check> Program<'check> {
                         defines: Some(*binding),
                         uses,
                         footprint: self.footprint(places, &candidate.call),
-                        callee: Some(candidate.call.callee),
                     });
                 }
                 // A written borrow's shared-or-uniq mode is erased from the
@@ -956,7 +951,6 @@ impl<'check> Program<'check> {
                     defines: Some(*binding),
                     uses,
                     footprint: value_footprint(places, value, node_path),
-                    callee: None,
                 })
             }
             CheckedStatement::Set {
@@ -976,7 +970,6 @@ impl<'check> Program<'check> {
                     defines: None,
                     uses,
                     footprint,
-                    callee: None,
                 })
             }
             // [SET-2]: one read of the previous value into the fresh binding
@@ -1007,7 +1000,6 @@ impl<'check> Program<'check> {
                     defines: Some(*binding),
                     uses,
                     footprint,
-                    callee: None,
                 })
             }
             // Exit-bearing forms: condition 4.
@@ -1044,10 +1036,24 @@ impl<'check> Program<'check> {
     /// The written and read footprints of one call, by [EFF-2] boundary
     /// projection onto the actuals' resolved places.
     pub(super) fn footprint(&self, places: &PlaceMap, candidate: &CallProjection<'_>) -> Footprint {
+        match candidate.target {
+            CallTarget::User(callee) => self.user_call_footprint(places, candidate, callee),
+            CallTarget::System(operation) => {
+                self.system_call_footprint(places, candidate, operation)
+            }
+        }
+    }
+
+    fn user_call_footprint(
+        &self,
+        places: &PlaceMap,
+        candidate: &CallProjection<'_>,
+        callee_id: FunctionId,
+    ) -> Footprint {
         let mut footprint = Footprint::default();
         let (Some(signature), Some(callee)) = (
-            self.signatures.get(candidate.callee.0 as usize),
-            self.functions.get(candidate.callee.0 as usize),
+            self.signatures.get(callee_id.0 as usize),
+            self.functions.get(callee_id.0 as usize),
         ) else {
             footprint.unresolved = Some(candidate.call.clone());
             return footprint;
@@ -1067,6 +1073,33 @@ impl<'check> Program<'check> {
                     call: candidate.call.clone(),
                 }),
                 None => footprint.unresolved = Some(candidate.call.clone()),
+            }
+        }
+
+        for (written, selected) in [(true, &signature.writes), (false, &signature.reads)] {
+            for formal in selected
+                .iter()
+                .filter(|formal| signature.world_regions.contains(formal))
+            {
+                match signature
+                    .region_parameters
+                    .iter()
+                    .position(|region| *region == *formal)
+                    .and_then(|index| candidate.regions.get(index))
+                {
+                    Some(region) => {
+                        let access = Access::World {
+                            region: *region,
+                            call: candidate.call.clone(),
+                        };
+                        if written {
+                            footprint.writes.push(access);
+                        } else {
+                            footprint.reads.push(access);
+                        }
+                    }
+                    None => footprint.unresolved = Some(candidate.call.clone()),
+                }
             }
         }
 
@@ -1110,8 +1143,11 @@ impl<'check> Program<'check> {
                 _ => None,
             };
             let carries = |declared: &[DeclarationId]| {
-                mode_region.is_some_and(|region| declared.contains(&region))
-                    || slice_region.is_some_and(|region| declared.contains(&region))
+                mode_region.is_some_and(|region| {
+                    declared.contains(&region) && !signature.world_regions.contains(&region)
+                }) || slice_region.is_some_and(|region| {
+                    declared.contains(&region) && !signature.world_regions.contains(&region)
+                })
             };
             let written = carries(&signature.writes);
             let read = carries(&signature.reads);
@@ -1159,18 +1195,119 @@ impl<'check> Program<'check> {
         footprint
     }
 
-    /// The declared row of one concrete function, or `None` when this
-    /// analysis does not hold one. A caller that cannot read a row denies.
-    pub(super) fn signature(&self, function: FunctionId) -> Option<&PermissionSignature> {
-        self.signatures.get(function.0 as usize)
-    }
+    fn system_call_footprint(
+        &self,
+        places: &PlaceMap,
+        candidate: &CallProjection<'_>,
+        operation_index: u8,
+    ) -> Footprint {
+        let mut footprint = Footprint::default();
+        let Some(operation) = SYSTEM_OPERATIONS.get(usize::from(operation_index)) else {
+            footprint.unresolved = Some(candidate.call.clone());
+            return footprint;
+        };
+        if operation.regions.len() != candidate.regions.len()
+            || operation.parameters.len() != candidate.arguments.len()
+        {
+            footprint.unresolved = Some(candidate.call.clone());
+            return footprint;
+        }
 
-    /// One concrete function's source name, for citation.
-    pub(super) fn function_name(&self, function: FunctionId) -> String {
-        self.functions
-            .get(function.0 as usize)
-            .map(|function| function.name.clone())
-            .unwrap_or_default()
+        // World-kind effects substitute region arguments directly. They are
+        // not projected through a value place: the capability vector is the
+        // nominal identity that authorizes this outside-state facet.
+        for (written, selected) in [(true, operation.writes), (false, operation.reads)] {
+            for formal_index in selected
+                .iter()
+                .filter(|formal| operation.world_regions.contains(formal))
+            {
+                let Some(region) = candidate.regions.get(usize::from(*formal_index)) else {
+                    footprint.unresolved = Some(candidate.call.clone());
+                    continue;
+                };
+                let access = Access::World {
+                    region: *region,
+                    call: candidate.call.clone(),
+                };
+                if written {
+                    footprint.writes.push(access);
+                } else {
+                    footprint.reads.push(access);
+                }
+            }
+        }
+
+        for (index, parameter) in operation.parameters.iter().enumerate() {
+            let Some(argument) = candidate.arguments.get(index) else {
+                footprint.unresolved = Some(candidate.call.clone());
+                return footprint;
+            };
+            let node = candidate
+                .argument_nodes
+                .get(index)
+                .unwrap_or(candidate.call);
+            let mode_region = match parameter.mode {
+                SystemParameterMode::Own => None,
+                SystemParameterMode::Borrow(region) | SystemParameterMode::UniqueBorrow(region) => {
+                    Some(region)
+                }
+            };
+            let strength = match parameter.mode {
+                SystemParameterMode::Own => None,
+                SystemParameterMode::Borrow(_) => Some(LoanStrength::Shared),
+                SystemParameterMode::UniqueBorrow(_) => Some(LoanStrength::Exclusive),
+            };
+            if let Some(strength) = strength {
+                match argument_place(places, argument) {
+                    Some(place) => footprint.loans.push(Loan {
+                        strength,
+                        place,
+                        argument: node.clone(),
+                    }),
+                    None => footprint.unresolved = Some(node.clone()),
+                }
+            }
+            let carries = |selected: &[u8]| {
+                mode_region.is_some_and(|region| {
+                    selected.contains(&region) && !operation.world_regions.contains(&region)
+                })
+            };
+            let written = carries(operation.writes);
+            let read = carries(operation.reads);
+            if written || read {
+                match argument_place(places, argument) {
+                    Some(place) => {
+                        let access = Access::Place {
+                            place,
+                            argument: node.clone(),
+                        };
+                        if written {
+                            footprint.writes.push(access.clone());
+                        }
+                        if read {
+                            footprint.reads.push(access);
+                        }
+                    }
+                    None => footprint.unresolved = Some(node.clone()),
+                }
+            } else if matches!(parameter.mode, SystemParameterMode::Own)
+                && let Some(place) = consumed_place(places, argument)
+            {
+                footprint.writes.push(Access::Place {
+                    place,
+                    argument: node.clone(),
+                });
+            }
+        }
+
+        for (index, argument) in candidate.arguments.iter().enumerate() {
+            let node = candidate
+                .argument_nodes
+                .get(index)
+                .unwrap_or(candidate.call);
+            collect_operand_reads(places, argument, node, &mut footprint);
+        }
+        footprint
     }
 }
 
@@ -1342,7 +1479,7 @@ fn loan_conflict(
             .filter_map(|(half, access)| match access {
                 Access::Place { place, argument } => Some((half, place, argument)),
                 // An arena region is not a place a borrow can claim.
-                Access::Arena { .. } => None,
+                Access::Arena { .. } | Access::World { .. } => None,
             })
             .collect::<Vec<_>>()
     }

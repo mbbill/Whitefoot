@@ -340,6 +340,30 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
         Ok((logical_path, line))
     }
 
+    /// Developer-channel location of one resolved source declaration.
+    pub(super) fn declaration_line(
+        &self,
+        declaration: crate::DeclarationId,
+    ) -> Result<(String, u64), SemanticCompilerFailure> {
+        let record = self
+            .resolved
+            .declaration(declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        self.source_line(record.origin().node())
+    }
+
+    /// Stable spelling plus dense identity of one checked source region.
+    pub(super) fn region_identity(
+        &self,
+        declaration: crate::DeclarationId,
+    ) -> Result<String, SemanticCompilerFailure> {
+        let record = self
+            .resolved
+            .declaration(declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Ok(format!("{}#{}", record.spelling(), declaration.index()))
+    }
+
     /// [`Self::source_spelling`] reached by node path rather than by node.
     pub(super) fn path_spelling(&self, path: &NodePath) -> Result<String, SemanticCompilerFailure> {
         let node = self

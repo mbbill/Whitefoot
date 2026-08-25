@@ -9,7 +9,7 @@ use super::super::provenance::{
     DatumDependencies, DatumSelector, FunctionDependencies, LocalLeafProvenanceDisposition,
     ParameterDatum, ProvenanceDependency, ProvenanceGoalObservation, StructuralPredecessor,
     SubjectPredecessor, SystemResultProvenance, ValueDependencies, carrier_route_cmp,
-    system_external_writes, system_result_provenance,
+    system_boundary_derived_writes, system_result_provenance,
 };
 use super::with_semantics;
 
@@ -82,12 +82,12 @@ fn prov_rows() -> Vec<ProvRow> {
 /// The operation column is locked to `SYSTEM_OPERATIONS` order, so the numeric
 /// ordinals the compiler dispatches on cannot drift from the row they name —
 /// the failure that a bare ordinal table makes silent, because a
-/// misattributed external class still produces a well-formed provenance
+/// misattributed boundary-derived class still produces a well-formed provenance
 /// judgment for some other operation.
 ///
 /// A green run establishes that each row's result class and writable-parameter
 /// class are the ones the compiler applies, and that the two orders coincide.
-/// It does not establish that an external class produces the right downstream
+/// It does not establish that a boundary-derived class produces the right downstream
 /// [PRV-2] demand; the provenance tests below cover that.
 #[test]
 fn every_wf_prov_row_decides_the_compilers_system_provenance() {
@@ -110,15 +110,18 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
 
         // The result-component cell's own vocabulary decides the class.
         let expected = match row.result_class.as_str() {
-            "plain result external" | "`Ok(value:)` external; `Err(error:)` external" => {
-                SystemResultProvenance::AllExternal
+            "plain result boundary-derived"
+            | "`Ok(value:)` boundary-derived; `Err(error:)` boundary-derived" => {
+                SystemResultProvenance::AllBoundaryDerived
             }
-            "`Ok(value:)` dependent; `Err(error:)` external" => SystemResultProvenance::OkDependent,
-            "`ReadBytes(next:)` dependent; `ReadFailed(error:)` external; `ReadEnd()` carries no result component"
-            | "`ListBytes(next:)` dependent; `ListBytes(entries:)` internal; `ListFailed(error:)` external; `ListEnd()` carries no result component" => {
+            "`Ok(value:)` dependent; `Err(error:)` boundary-derived" => {
+                SystemResultProvenance::OkDependent
+            }
+            "`ReadBytes(next:)` dependent; `ReadFailed(error:)` boundary-derived; `ReadEnd()` carries no result component"
+            | "`ListBytes(next:)` dependent; `ListBytes(entries:)` internal; `ListFailed(error:)` boundary-derived; `ListEnd()` carries no result component" => {
                 SystemResultProvenance::EndpointDependent
             }
-            "plain result internal" => SystemResultProvenance::NoneExternal,
+            "plain result internal" => SystemResultProvenance::NoneBoundaryDerived,
             other => panic!(
                 "{} writes an unmodelled result class {other}",
                 row.operation
@@ -147,7 +150,10 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
                     let (name, class) = entry
                         .split_once(' ')
                         .unwrap_or_else(|| panic!("{entry} names a parameter and a class"));
-                    assert_eq!(class, "external", "{entry} is not an external write");
+                    assert_eq!(
+                        class, "boundary-derived",
+                        "{entry} is not a boundary-derived write"
+                    );
                     let name = name.trim_matches('`');
                     declared
                         .iter()
@@ -160,7 +166,7 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
             ordinals
         };
         assert_eq!(
-            system_external_writes(index).expect("a declared operation ordinal"),
+            system_boundary_derived_writes(index).expect("a declared operation ordinal"),
             expected_writes.as_slice(),
             "{}'s writable-parameter class is written `{}`",
             row.operation,
@@ -177,7 +183,7 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
     // a class, in both directions the dispatch can be wrong.
     let past = u8::try_from(crate::SYSTEM_OPERATIONS.len()).expect("the inventory fits a u8");
     assert_eq!(system_result_provenance(past), None);
-    assert!(system_external_writes(past).is_err());
+    assert!(system_boundary_derived_writes(past).is_err());
 }
 
 fn checked(source: &[u8], run: impl FnOnce(&CheckedProgramData)) {
@@ -453,7 +459,7 @@ fn coordinate_bytes<'source>(
 }
 
 #[test]
-fn an_external_system_result_cannot_use_a_claim_to_authorize_a_local_subscript() {
+fn a_boundary_derived_system_result_cannot_use_a_claim_to_authorize_a_local_subscript() {
     let source =
         br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
   region 'a {
@@ -471,7 +477,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
   }
   let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains boundary-derived and PRV-3 must reject it";
   let selected = values[bounded_position];
   return exit_status(code: 0_u8);
 }
@@ -481,7 +487,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 }
 
 #[test]
-fn an_uninstantiated_generic_schema_cannot_use_a_claim_to_launder_external_provenance() {
+fn an_uninstantiated_generic_schema_cannot_use_a_claim_to_launder_boundary_derived_provenance() {
     let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
@@ -497,7 +503,7 @@ fn unused<T>(args: own Args, values: own array<u8, 4>) -> result: own u8 traps {
   }
   let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains boundary-derived and PRV-3 must reject it";
   return values[bounded_position];
 }
 
@@ -507,7 +513,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
 
     inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedSubject(detail) = kind else {
             panic!("expected structured schema PRV-3 detail: {kind:?}");
         };
         assert_eq!(detail.targets[0].protected_function, "unused");
@@ -516,7 +522,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn an_external_nested_give_reaches_the_outer_value_binding_and_is_rejected() {
+fn a_boundary_derived_nested_give_reaches_the_outer_value_binding_and_is_rejected() {
     let source =
         br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
   region 'a {
@@ -543,7 +549,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
   }
   let bounded_derived = imin(derived, 3_u64);
   let room = len(values);
-  claim bounded: ilt(bounded_derived, room) because "premises: bounded_derived is the current function's imin(derived, 3_u64) result and values has length 4\nderivation: bounded_derived is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_derived, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  claim bounded: ilt(bounded_derived, room) because "premises: bounded_derived is the current function's imin(derived, 3_u64) result and values has length 4\nderivation: bounded_derived is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_derived, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains boundary-derived and PRV-3 must reject it";
   let selected = values[bounded_derived];
   return exit_status(code: 0_u8);
 }
@@ -553,11 +559,11 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 }
 
 #[test]
-fn a_direct_parameter_demand_rejects_the_external_actual_at_its_argument() {
+fn a_direct_parameter_demand_rejects_the_boundary_derived_actual_at_its_argument() {
     let source = br#"fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
   let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains derived from the position parameter and PRV-2 must reject its external actual";
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains derived from the position parameter and PRV-2 must reject its boundary-derived actual";
   return values[bounded_position];
 }
 
@@ -630,7 +636,7 @@ fn a_bridge_converts_to_direct_and_crosses_a_requirement_free_call() {
 fn wrapper(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
   let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim wrapper_assertion: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following leaf requirement remains derived from the wrapper position parameter and PRV-2 must reject its external actual";
+  claim wrapper_assertion: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following leaf requirement remains derived from the wrapper position parameter and PRV-2 must reject its boundary-derived actual";
   return leaf(values: move values, position: bounded_position);
 }
 
@@ -645,7 +651,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 "#;
 
     inspect_provenance_issue(source, "PRV-2", b"position", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedCallArgument(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedCallArgument(detail) = kind else {
             panic!("expected structured PRV-2 detail: {kind:?}");
         };
         assert_eq!(detail.targets.len(), 1);
@@ -721,13 +727,13 @@ command fn main(command.args as args: own Args) -> return_value: own ExitStatus 
   let bytes = buffer_new(4_u64, 0_u8);
   let room = len(bytes);
   let inside = ilt(index, room);
-  claim entry_call_precondition: inside because "premises: index is the current function's imin(raw_index, 3_u64) result and bytes has length 4\nderivation: index is at most 3_u64 and therefore strictly less than room\nconclusion: inside is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: bridge_top's externally derived index actual reaches the protected bridge_leaf subscript and PRV-2 must reject it";
+  claim entry_call_precondition: inside because "premises: index is the current function's imin(raw_index, 3_u64) result and bytes has length 4\nderivation: index is at most 3_u64 and therefore strictly less than room\nconclusion: inside is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: bridge_top's boundary-derived index actual reaches the protected bridge_leaf subscript and PRV-2 must reject it";
   let value = bridge_top(bytes: move bytes, index: index);
   return exit_status(code: 0_u8);
 }
 "#;
     inspect_provenance_issue(source, "PRV-2", b"index", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedCallArgument(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedCallArgument(detail) = kind else {
             panic!("expected structured PRV-2 detail: {kind:?}");
         };
         let target = &detail.targets[detail.selected_target as usize];
@@ -784,13 +790,13 @@ command fn main(command.args as args: own Args) -> return_value: own ExitStatus 
   let bytes = buffer_new(4_u64, 0_u8);
   let room = len(bytes);
   let inside = ilt(index, room);
-  claim entry_call_precondition: inside because "premises: index is the current function's imin(raw_index, 3_u64) result and bytes has length 4\nderivation: index is at most 3_u64 and therefore strictly less than room\nconclusion: inside is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: required_read's externally derived index argument reaches the protected subscript and PRV-2 must reject it";
+  claim entry_call_precondition: inside because "premises: index is the current function's imin(raw_index, 3_u64) result and bytes has length 4\nderivation: index is at most 3_u64 and therefore strictly less than room\nconclusion: inside is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: required_read's boundary-derived index argument reaches the protected subscript and PRV-2 must reject it";
   let value = required_read(bytes: move bytes, index: index);
   return exit_status(code: 0_u8);
 }
 "#;
     inspect_provenance_issue(source, "PRV-2", b"index", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedCallArgument(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedCallArgument(detail) = kind else {
             panic!("expected structured PRV-2 detail: {kind:?}");
         };
         let target = &detail.targets[detail.selected_target as usize];
@@ -818,7 +824,7 @@ fn a_recursive_direct_route_uses_complete_state_identity_and_stays_finite() {
   } else {
     let bounded_current = imin(current, 3_u64);
     let room = len(values);
-    claim bounded: ilt(bounded_current, room) because "premises: bounded_current is the current invocation's imin(current, 3_u64) result and values has length 4\nderivation: bounded_current is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_current, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains derived from the permuted recursive parameter and PRV-2 must reject its external actual";
+    claim bounded: ilt(bounded_current, room) because "premises: bounded_current is the current invocation's imin(current, 3_u64) result and values has length 4\nderivation: bounded_current is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_current, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains derived from the permuted recursive parameter and PRV-2 must reject its boundary-derived actual";
     return values[bounded_current];
   }
 }
@@ -835,7 +841,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 "#;
 
     inspect_provenance_issue(source, "PRV-2", b"position", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedCallArgument(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedCallArgument(detail) = kind else {
             panic!("expected structured PRV-2 detail: {kind:?}");
         };
         let target = &detail.targets[detail.selected_target as usize];
@@ -882,14 +888,14 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
   }
   let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains boundary-derived and PRV-3 must reject it";
   let selected = values[bounded_position];
   return exit_status(code: selected);
 }
 "#;
 
     inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
         let target = &detail.targets[0];
@@ -950,14 +956,14 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus alloca
   let position = cvt<u8, u64>(raw);
   let bounded_position = imin(position, 3_u64);
   let room = len(bytes);
-  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and bytes has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally written and PRV-3 must reject it";
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and bytes has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains boundary-derived and PRV-3 must reject it";
   let selected = bytes[bounded_position];
   return exit_status(code: selected);
 }
 "#;
 
     inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
         let target = &detail.targets[0];
@@ -1031,14 +1037,14 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus alloca
   }
   let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains boundary-derived and PRV-3 must reject it";
   let selected = values[bounded_position];
   return exit_status(code: selected);
 }
 "#;
 
     inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
         let target = &detail.targets[0];
@@ -1078,7 +1084,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
     let bounded_position = imin(position, 3_u64);
     let values = array_new<u8, 4>(0_u8);
     let room = len(values);
-    claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+    claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains boundary-derived and PRV-3 must reject it";
     let selected = values[bounded_position];
     return exit_status(code: selected);
   }
@@ -1086,7 +1092,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 "#;
 
     inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
         let target = &detail.targets[0];
@@ -1134,7 +1140,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
         let bounded_index = imin(index, 3_u64);
         let values = array_new<u8, 4>(0_u8);
         let room = len(values);
-        claim bounded: ilt(bounded_index, room) because "premises: bounded_index is the current function's imin(index, 3_u64) result and values has length 4\nderivation: bounded_index is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_index, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+        claim bounded: ilt(bounded_index, room) because "premises: bounded_index is the current function's imin(index, 3_u64) result and values has length 4\nderivation: bounded_index is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_index, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains boundary-derived and PRV-3 must reject it";
         let value = values[bounded_index];
         return exit_status(code: value);
       }
@@ -1144,7 +1150,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 "#;
 
     inspect_provenance_issue(source, "PRV-3", b"[bounded_index]", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
         let target = &detail.targets[0];
@@ -1190,7 +1196,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
       let bounded_position = imin(position, 3_u64);
       let output = array_new<u8, count>(0_u8);
       let room = len(output);
-      claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and output has length count=4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+      claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and output has length count=4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains boundary-derived and PRV-3 must reject it";
       let value = output[bounded_position];
       give value;
     }
@@ -1200,7 +1206,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 "#;
 
     inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
         let target = &detail.targets[0];
@@ -1241,14 +1247,14 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
   }
   let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains boundary-derived and PRV-3 must reject it";
   let selected = values[bounded_position];
   return exit_status(code: selected);
 }
 "#;
 
     inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
         let target = &detail.targets[detail.selected_target as usize];
@@ -1294,14 +1300,14 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
   let position = saved;
   let bounded_position = imin(position, 3_u64);
   let room = len(values);
-  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+  claim bounded: ilt(bounded_position, room) because "premises: bounded_position is the current function's imin(position, 3_u64) result and values has length 4\nderivation: bounded_position is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_position, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains boundary-derived and PRV-3 must reject it";
   let selected = values[bounded_position];
   return exit_status(code: selected);
 }
 "#;
 
     inspect_provenance_issue(source, "PRV-3", b"[bounded_position]", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
         let target = &detail.targets[detail.selected_target as usize];
@@ -1340,7 +1346,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 }
 
 #[test]
-fn a_selected_payload_witness_never_uses_an_external_sibling_root_path() {
+fn a_selected_payload_witness_never_uses_an_boundary_derived_sibling_root_path() {
     let source = br#"enum Choice {
   First(value: u64);
   Second(value: u64);
@@ -1375,7 +1381,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
       let bounded_selected = imin(selected, 3_u64);
       let values = array_new<u8, 4>(0_u8);
       let room = len(values);
-      claim bounded: ilt(bounded_selected, room) because "premises: bounded_selected is the current function's imin(selected, 3_u64) result and values has length 4\nderivation: bounded_selected is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_selected, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+      claim bounded: ilt(bounded_selected, room) because "premises: bounded_selected is the current function's imin(selected, 3_u64) result and values has length 4\nderivation: bounded_selected is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_selected, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains boundary-derived and PRV-3 must reject it";
       let value = values[bounded_selected];
       return exit_status(code: value);
     }
@@ -1387,7 +1393,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 "#;
 
     inspect_provenance_issue(source, "PRV-3", b"[bounded_selected]", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
         let target = &detail.targets[0];
@@ -1407,7 +1413,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 }
 
 #[test]
-fn an_external_result_payload_keeps_selectors_through_value_delivery_and_outer_enum() {
+fn a_boundary_derived_result_payload_keeps_selectors_through_value_delivery_and_outer_enum() {
     let source = br#"enum Wrapped {
   Present(value: u64);
   Missing();
@@ -1440,7 +1446,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
       let bounded_selected = imin(selected, 3_u64);
       let values = array_new<u8, 4>(0_u8);
       let room = len(values);
-      claim bounded: ilt(bounded_selected, room) because "premises: bounded_selected is the current function's imin(selected, 3_u64) result and values has length 4\nderivation: bounded_selected is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_selected, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains externally derived and PRV-3 must reject it";
+      claim bounded: ilt(bounded_selected, room) because "premises: bounded_selected is the current function's imin(selected, 3_u64) result and values has length 4\nderivation: bounded_selected is at most 3_u64 and therefore strictly less than room\nconclusion: ilt(bounded_selected, room) is true\nchecker gap: ENT does not retain the local imin upper bound through this let binding\nconsumers: the following protected subscript remains boundary-derived and PRV-3 must reject it";
       let value = values[bounded_selected];
       return exit_status(code: value);
     }
@@ -1452,7 +1458,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 "#;
 
     inspect_provenance_issue(source, "PRV-3", b"[bounded_selected]", |kind| {
-        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+        let crate::SemanticIssueKind::BoundaryDerivedProtectedSubject(detail) = kind else {
             panic!("expected structured PRV-3 detail: {kind:?}");
         };
         let target = &detail.targets[0];
@@ -1478,7 +1484,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 }
 
 #[test]
-fn a_real_branch_discharges_the_same_external_subject_without_a_provenance_rejection() {
+fn a_real_branch_discharges_the_same_boundary_derived_subject_without_a_provenance_rejection() {
     let source =
         br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
   let values = array_new<u8, 4>(0_u8);
@@ -2331,12 +2337,12 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn system_results_and_writes_add_no_parameter_datum() {
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads('o 's), writes('o), external, blocks contract {
+    let source = br#"fn publish['o, 's, 'q, 'w](output: &uniq 'o Output<'q, 'w>, source: &'s buffer<u8>, count: own u64) -> result: own unit reads('o 's), writes('o 'q 'w) contract {
   define capacity = len(deref(source));
   requires ile(count, capacity);
 } {
   region 'attempt {
-    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: count) {
+    match write_once<'attempt, 's, 'q, 'w>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: count) {
       Ok(value: written) => {
       }
       Err(error: problem) => {
@@ -2346,10 +2352,10 @@ fn system_results_and_writes_add_no_parameter_datum() {
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main['q, 'w](command.stdout as out: own Output<'q, 'w>) -> status: own ExitStatus writes('q 'w), allocates(heap) {
   let batch = buffer_new(1_u64, 0_u8);
   region 'publication {
-    publish<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, count: 1_u64);
+    publish<'publication, 'publication, 'q, 'w>(output: &uniq 'publication out, source: &'publication batch, count: 1_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -2373,8 +2379,8 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
             "a system write does not derive the written resource from call arguments"
         );
         assert!(
-            dependencies.writes[0].unconditional_external,
-            "the SYS-2 write_once output component is unconditional external"
+            dependencies.writes[0].unconditionally_boundary_derived,
+            "the SYS-2 write_once output component is unconditional-boundary"
         );
         for arm in arms {
             for binder in &arm.binders {
@@ -2390,9 +2396,11 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
                     "a system result payload does not derive from call arguments"
                 );
                 assert_eq!(
-                    value.components[0].dependency.unconditional_external,
+                    value.components[0]
+                        .dependency
+                        .unconditionally_boundary_derived,
                     arm.tag == 1,
-                    "write_once Ok(value:) is internal and only Err(error:) is SYS-2 external"
+                    "write_once Ok(value:) is internal and only Err(error:) is SYS-2 boundary-derived"
                 );
             }
         }

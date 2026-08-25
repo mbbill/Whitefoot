@@ -148,6 +148,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             else {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             };
+            self.constrain_region_kind(
+                node,
+                region,
+                super::super::model::CheckedRegionKind::Memory,
+            )?;
             return self
                 .arena_nominals
                 .get(&(region, content))
@@ -164,6 +169,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             else {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             };
+            self.constrain_region_kind(
+                node,
+                region,
+                super::super::model::CheckedRegionKind::Memory,
+            )?;
             let element_node = self
                 .tree
                 .first_child_with(node, Production::Type)?
@@ -284,19 +294,62 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ResolvedTarget::System(id) => {
                     let index = crate::system_nominal_index(id, self.inventory())
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    if targs.is_some() {
-                        return self.issue_node(
-                            SemanticRule::Type5,
-                            node,
-                            SemanticIssueKind::TypeMismatch,
-                        );
-                    }
-                    return Ok(CheckedType::Nominal(self.system_nominal(index)?));
+                    let world_regions = self.system_nominal_world_arguments(node, index)?;
+                    return Ok(CheckedType::Nominal(
+                        self.system_nominal_with(index, &world_regions)?,
+                    ));
                 }
                 _ => {}
             }
         }
         self.unsupported(UnsupportedSemanticFeature::CompositeValues, node)
+    }
+
+    /// Parses the exact owner-local world vector of one [SYS-2] nominal.
+    pub(super) fn system_nominal_world_arguments(
+        &self,
+        node: NodeId,
+        index: u8,
+    ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
+        let nominal = crate::SYSTEM_NOMINALS
+            .get(usize::from(index))
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let targs = self.tree.first_child_with(node, Production::Targs)?;
+        if nominal.world_parameters.is_empty() {
+            if targs.is_some() {
+                return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::TypeMismatch);
+            }
+            return Ok(Vec::new());
+        }
+        let Some(targs) = targs else {
+            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::TypeMismatch);
+        };
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
+        if arguments.len() != nominal.world_parameters.len() {
+            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::TypeMismatch);
+        }
+        let mut world_regions = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
+            let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return self.issue_node(
+                    SemanticRule::Sys2,
+                    argument,
+                    SemanticIssueKind::TypeMismatch,
+                );
+            };
+            self.constrain_region_kind(
+                argument,
+                declaration,
+                super::super::model::CheckedRegionKind::World,
+            )?;
+            world_regions.push(declaration);
+        }
+        Ok(world_regions)
     }
 
     pub(super) fn reject_region_bearing_generic_argument(
@@ -458,18 +511,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                 }
                 for region in self.effect_regions(effect)? {
+                    if self.region_kind(region)
+                        == Some(super::super::model::CheckedRegionKind::World)
+                    {
+                        return self.issue_node(
+                            SemanticRule::Eff1,
+                            effect,
+                            SemanticIssueKind::InvalidEffectRow,
+                        );
+                    }
+                    self.constrain_region_kind(
+                        effect,
+                        region,
+                        super::super::model::CheckedRegionKind::Memory,
+                    )?;
                     declared.add_arena_allocation(region);
                 }
                 2
-            } else if self.has_fixed(effect, FixedTerminal::External)? {
-                declared.external = true;
-                3
-            } else if self.has_fixed(effect, FixedTerminal::Blocks)? {
-                declared.blocks = true;
-                4
             } else if self.has_fixed(effect, FixedTerminal::Traps)? {
                 declared.traps = true;
-                5
+                3
             } else {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             };
@@ -485,7 +546,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(declared)
     }
 
-    fn effect_regions(&self, node: NodeId) -> Result<Vec<crate::DeclarationId>, CheckStop> {
+    pub(in crate::semantic::check) fn effect_regions(
+        &self,
+        node: NodeId,
+    ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
         let path = self.tree.path(node)?;
         let mut uses = self
             .resolved

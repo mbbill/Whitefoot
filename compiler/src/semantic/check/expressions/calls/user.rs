@@ -8,12 +8,13 @@ use crate::{
 
 use super::super::super::super::goal::{GoalDatum, GoalExpression, GoalProjection};
 use super::super::super::super::model::{
-    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow, CheckedSliceOrigin,
-    CheckedType,
+    CheckedExpression, CheckedFlatElement, CheckedMode, CheckedNominalKind, CheckedResultBorrow,
+    CheckedSliceOrigin, CheckedType,
 };
 use super::super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, places_overlap, push_slice_origin,
 };
+use super::super::super::generics::{GenericArgument, GenericSubstitution};
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, ResultProvenance,
     TypedExpression, borrow_result_provenance,
@@ -87,6 +88,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(target.0 as usize)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let actual_regions = self.call_region_arguments(node, signature)?;
+        for (formal, actual) in signature.region_parameters.iter().zip(&actual_regions) {
+            self.link_region_kinds(node, *formal, *actual)?;
+        }
         let fields = if let Some(list) = self
             .tree
             .first_child_with(node, Production::FieldinitList)?
@@ -115,15 +119,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut goal_arguments = Vec::with_capacity(fields.len());
         let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
         let call = self.tree.path(node)?.clone();
-        // The payload-free categories transfer by presence at a call
-        // boundary [EFF-2]; only region entries are projected below.
         let mut effects = EffectSet {
             reads: Vec::new(),
             writes: Vec::new(),
             allocates_heap: signature.declared_effects.allocates_heap,
             allocates_arenas: Vec::new(),
-            external: signature.declared_effects.external,
-            blocks: signature.declared_effects.blocks,
             traps: signature.declared_effects.traps,
         };
         let result_candidate = self.result_borrow_candidate(signature);
@@ -575,19 +575,159 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         signature: &FunctionSignature,
         actual_regions: &[DeclarationId],
     ) -> Result<CheckedType, CheckStop> {
-        let CheckedType::Slice { region, element } = ty else {
-            return Ok(ty);
-        };
-        let index = signature
-            .region_parameters
-            .iter()
-            .position(|formal| *formal == region)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        Ok(CheckedType::Slice {
-            region: *actual_regions
+        let substitute_region = |region: DeclarationId| {
+            let index = signature
+                .region_parameters
+                .iter()
+                .position(|formal| *formal == region)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            actual_regions
                 .get(index)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-            element,
+                .copied()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)
+        };
+        Ok(match ty {
+            CheckedType::Slice { region, element } => CheckedType::Slice {
+                region: substitute_region(region)?,
+                element: self.substitute_flat_element(element, signature, actual_regions)?,
+            },
+            CheckedType::Array { element, length } => CheckedType::Array {
+                element: self.substitute_flat_element(element, signature, actual_regions)?,
+                length,
+            },
+            CheckedType::Buffer { element } => CheckedType::Buffer {
+                element: self.substitute_flat_element(element, signature, actual_regions)?,
+            },
+            CheckedType::Nominal(id) => match self.nominal(id)?.kind.clone() {
+                CheckedNominalKind::SystemResource {
+                    nominal,
+                    world_regions,
+                } => {
+                    let world_regions = world_regions
+                        .into_iter()
+                        .map(substitute_region)
+                        .collect::<Result<Vec<_>, _>>()?;
+                    CheckedType::Nominal(self.system_nominal_with(nominal, &world_regions)?)
+                }
+                CheckedNominalKind::Box { referent } => {
+                    let referent =
+                        self.substitute_parameter_type(referent, signature, actual_regions)?;
+                    let Some(id) = self.box_nominals.get(&referent).copied() else {
+                        self.pending_nominals
+                            .borrow_mut()
+                            .push(super::super::super::PendingNominal::Box(referent));
+                        return Err(CheckStop::DeferredNominal);
+                    };
+                    CheckedType::Nominal(id)
+                }
+                CheckedNominalKind::Arena { region, content } => {
+                    let region = substitute_region(region)?;
+                    let content =
+                        self.substitute_parameter_type(content, signature, actual_regions)?;
+                    let Some(id) = self.arena_nominals.get(&(region, content)).copied() else {
+                        self.pending_nominals
+                            .borrow_mut()
+                            .push(super::super::super::PendingNominal::Arena(region, content));
+                        return Err(CheckStop::DeferredNominal);
+                    };
+                    CheckedType::Nominal(id)
+                }
+                _ => {
+                    if let Some(prelude) = self.prelude_type(id) {
+                        let substituted = match prelude {
+                            super::super::super::PreludeType::Option(value) => {
+                                super::super::super::PreludeType::Option(
+                                    self.substitute_parameter_type(
+                                        value,
+                                        signature,
+                                        actual_regions,
+                                    )?,
+                                )
+                            }
+                            super::super::super::PreludeType::Result(ok, error) => {
+                                super::super::super::PreludeType::Result(
+                                    self.substitute_parameter_type(ok, signature, actual_regions)?,
+                                    self.substitute_parameter_type(
+                                        error,
+                                        signature,
+                                        actual_regions,
+                                    )?,
+                                )
+                            }
+                            other => other,
+                        };
+                        CheckedType::Nominal(self.prelude_nominal(substituted)?)
+                    } else if let Some((template_index, substitution)) = self
+                        .source_nominal_instances
+                        .get(id.0 as usize)
+                        .and_then(Clone::clone)
+                    {
+                        let bindings = substitution
+                            .entries()
+                            .iter()
+                            .map(|(declaration, argument)| {
+                                let argument = match argument {
+                                    GenericArgument::Type(ty) => {
+                                        GenericArgument::Type(self.substitute_parameter_type(
+                                            *ty,
+                                            signature,
+                                            actual_regions,
+                                        )?)
+                                    }
+                                    GenericArgument::Const(value) => GenericArgument::Const(*value),
+                                };
+                                Ok((*declaration, argument))
+                            })
+                            .collect::<Result<Vec<_>, CheckStop>>()?;
+                        let substitution = GenericSubstitution::from_bindings(bindings)?;
+                        let template = self
+                            .nominal_templates
+                            .get(template_index)
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                        let Some(id) =
+                            self.source_nominal_instance(template.declaration, &substitution)
+                        else {
+                            self.pending_nominals.borrow_mut().push(
+                                super::super::super::PendingNominal::Source(
+                                    template_index,
+                                    substitution,
+                                ),
+                            );
+                            return Err(CheckStop::DeferredNominal);
+                        };
+                        CheckedType::Nominal(id)
+                    } else {
+                        CheckedType::Nominal(id)
+                    }
+                }
+            },
+            other => other,
+        })
+    }
+
+    fn substitute_flat_element(
+        &self,
+        element: CheckedFlatElement,
+        signature: &FunctionSignature,
+        actual_regions: &[DeclarationId],
+    ) -> Result<CheckedFlatElement, CheckStop> {
+        let (nominal, tag_only) = match element {
+            CheckedFlatElement::TagOnlyNominal(nominal) => (nominal, true),
+            CheckedFlatElement::Nominal(nominal) => (nominal, false),
+            other => return Ok(other),
+        };
+        let CheckedType::Nominal(nominal) = self.substitute_parameter_type(
+            CheckedType::Nominal(nominal),
+            signature,
+            actual_regions,
+        )?
+        else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        Ok(if tag_only {
+            CheckedFlatElement::TagOnlyNominal(nominal)
+        } else {
+            CheckedFlatElement::Nominal(nominal)
         })
     }
 
@@ -711,6 +851,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?,
             );
         }
+        for (access, declared) in [
+            (AccessKind::Read, &signature.declared_effects.reads),
+            (AccessKind::Write, &signature.declared_effects.writes),
+        ] {
+            for formal in declared.iter().copied().filter(|formal| {
+                self.region_kind(*formal)
+                    == Some(super::super::super::super::model::CheckedRegionKind::World)
+            }) {
+                let index = signature
+                    .region_parameters
+                    .iter()
+                    .position(|region| *region == formal)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let actual = *actual_regions
+                    .get(index)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                match access {
+                    AccessKind::Read => effects.add_read(actual),
+                    AccessKind::Write => effects.add_write(actual),
+                    _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+                }
+            }
+        }
         for (parameter, ((borrow, slice), holder)) in signature
             .parameters
             .iter()
@@ -728,7 +891,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 (AccessKind::Read, &signature.declared_effects.reads),
                 (AccessKind::Write, &signature.declared_effects.writes),
             ] {
-                if mode_region.is_some_and(|region| declared.contains(&region)) {
+                if mode_region.is_some_and(|region| {
+                    declared.contains(&region)
+                        && self.region_kind(region)
+                            != Some(super::super::super::super::model::CheckedRegionKind::World)
+                }) {
                     let borrow = borrow
                         .as_ref()
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
@@ -741,7 +908,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                     }
                 }
-                if slice_region.is_some_and(|region| declared.contains(&region)) {
+                if slice_region.is_some_and(|region| {
+                    declared.contains(&region)
+                        && self.region_kind(region)
+                            != Some(super::super::super::super::model::CheckedRegionKind::World)
+                }) {
                     let slice = slice
                         .as_ref()
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;

@@ -3,8 +3,8 @@
 Branch: `codex/io-model-completion`, from `main` at
 `eab81a335addfb0ae060735771d4e98891dec2ea`.
 
-Status: IN PROGRESS. Phase A started 2026-08-25; activation authorized on the
-work branch on 2026-08-25.
+Status: IN PROGRESS. Phase A started 2026-08-25; v0.37 was activated as
+ordinary work-branch work on 2026-08-25.
 
 ## Charter
 
@@ -49,6 +49,13 @@ trap-free gate.
   and IOCP remain backend and trusted-base choices.
 - Phase C covers macOS, Linux, and Windows against one shared C contract.
 - No active source, test, tool, or build path may depend on `archive/`.
+- Phase B measurements are evidence rather than a gate. Favorable or adverse
+  results are recorded honestly and implementation proceeds directly to Phase
+  C; adverse evidence is highlighted in the final merge packet.
+- Before delivering any document that directs another agent, mechanically
+  scan it for `approval`, `owner`, `批准`, `present`, `wait`, and `decide`.
+  Every match must have a stated non-pausing reason, followed by a literal
+  reader pass asking where the most literal implementer could stop.
 
 ## Flagged decisions
 
@@ -76,8 +83,10 @@ through the owner's eventual approval of the final exact revision.
 
 ### Parent behavior reproduced
 
-The Phase A baseline is the branch parent, specification v0.36 at
-`eab81a335addfb0ae060735771d4e98891dec2ea`.
+The branch was created from `main` at
+`eab81a335addfb0ae060735771d4e98891dec2ea`. The implementation baseline is
+the v0.36 work origin `fee335654d9dea027f4636bbad448d57a4e84d08`, after
+the handoff-only preparation commits and before any language/compiler change.
 
 - Case-insensitive word-boundary counts in `spec/kernel-spec.md` reproduce the
   review exactly: 136 `external` occurrences, 31 `blocks` occurrences, on 117
@@ -118,10 +127,11 @@ includes:
   syntax, catalog, release, permission, entry, provenance, lowering, and
   activation satellites.
 
-The draft remained research material through commit `13a93bdf`; the owner then
-selected D1 through D5 and authorized activation. Commit `b2a5d409` also made
-the work-branch rule explicit: all phases run to completion without another
-mid-run approval gate.
+The draft remained research material through commit `13a93bdf`; D1 through
+D5 were then selected. Activation was ordinary work-branch work. Commits
+`b2a5d409` and `fee33565` make the continuous sequence explicit: adverse data
+and flagged decisions are recorded while work continues, and the only
+repository gate is the final exact merge revision.
 
 ### Phase A acceptance audit
 
@@ -142,21 +152,135 @@ Mechanical checks over the completed draft establish:
 - `make repository-invariants` passes, and both new documents contain no
   trailing whitespace, personal home path, TODO, TBD, or FIXME marker.
 
-The owner decision is complete. Activation and implementation now follow the
-approved candidate.
+The flagged selections are complete. Activation, implementation, and
+verification proceed continuously on this branch.
 
 ## Phase B evidence
 
-Pending: kqueue prototype, directory-walk measurement, readiness-service
-overhead, and loan-shape findings.
+### Prototype and controlled workload
+
+The prototype became the production shared contract rather than a separate
+source-shaped path. `compiler/src/backend/completion/` contains caller-owned
+generation-tagged frames, preallocated intrusive MPSC nodes, release/acquire
+publication, a fixed four-thread blocking disk pool, executing-lane mailbox
+affinity, progress-then-rescan and announce-then-recheck parking, bounded
+helping, submission rollback, and loan states that remain in flight through
+terminal completion. Native `openat`, `read`, `write`, `fstat`, `close`, and
+macOS directory-enumeration adapters use that contract; a nested adapter on a
+disk worker performs its one native attempt directly rather than deadlocking
+the fixed pool.
+
+The controlled directory corpus contains 5,461 directories and 4,096 empty
+leaf files. Every run starts inside that tree, while its `out` entry is a
+symbolic link to a directory outside the traversed tree. The parent v0.36
+compiler is built from `fee33565`; the current compiler is built from this
+worktree. Sequential and `--par` executables are measured with the existing
+native `research/investigations/proof-derived-parallelism/bench/timeit.zsh`
+interleaved min/max timer for nine rounds per cell.
+
+An earlier trial started from the benchmark parent, so the timer's output
+files were themselves discovered by later traversals; changing output sizes
+and hashes exposed the mistake. That trial is excluded in full. The corrected
+experiment has 72/72 successful runs and exactly one full output SHA-256:
+`583d8775eda989cf1d4159f046e2274864bdd662e24398fcdfbc98d4030fae50`.
+
+| Executable | Best | Worst | Spread |
+|---|---:|---:|---:|
+| v0.36 sequential | 0.9196 s | 1.0239 s | 11.3% |
+| v0.36 `--par`, W0 | 0.9492 s | 0.9996 s | 5.3% |
+| v0.36 `--par`, W1 | 0.9488 s | 1.0181 s | 7.3% |
+| v0.36 `--par`, W4 | 0.9304 s | 0.9973 s | 7.2% |
+| v0.37 sequential | 1.1955 s | 1.6186 s | 35.4% |
+| v0.37 `--par`, W0 | 1.1787 s | 1.4670 s | 24.5% |
+| v0.37 `--par`, W1 | 1.1863 s | 1.2377 s | 4.3% |
+| v0.37 `--par`, W4 | 1.1911 s | 1.3328 s | 11.9% |
+
+The result is adverse and material. At the best observed times, v0.37 is
+30.0% slower sequentially and 24.2%, 25.0%, and 28.0% slower at W0, W1, and
+W4 respectively than the corresponding v0.36 executable. Within v0.37, W1 is
+0.6% slower and W4 is 1.1% slower than W0. The current `--par-ledger` and
+`--io-ledger` explain the shape: every world-bearing system/wrapper call in
+`dir_walk.wf` has `lowering=sequential`; only unrelated pure stored-byte pairs
+are permitted. This workload therefore exposes no I/O overlap and pays only
+the adapter/service cost. The old caveated 2.83x observation is not
+reproduced and must not be used as a current performance claim.
+
+### Completion-service overhead and sanitizer evidence
+
+The harness measures 128 generation-reuse completion round trips against 128
+condition-variable round trips. Eleven final-code repetitions give paired
+ratios rather than a ratio selected from separate best values:
+
+| Host | Paired median | Range | Median completion | Median condvar |
+|---|---:|---:|---:|---:|
+| macOS kqueue | 1.917x | 1.079x–2.592x | 5,648 ns | 2,960 ns |
+| Linux io_uring | 0.659x | 0.109x–0.895x | 13,367 ns | 25,438 ns |
+
+The macOS readiness-served path is slower and noisy; the Linux completion
+park path is faster in this microbenchmark. Every mixed-load run makes compute
+progress and observes completion before draining the ten-million-step backlog.
+
+ThreadSanitizer found two defects during the adversarial pass: the kqueue
+waiter read a non-atomic lane-initialized flag, and a completion thread reread
+`owner_lane` after publishing a reusable frame. The repair makes initialization
+atomic and captures the owner before the release publication; the shared
+state-machine harness then runs with zero macOS TSan reports. macOS and Linux
+ASan/UBSan runs pass. GCC TSan cannot initialize inside the Colima VM because
+it rejects the io_uring mmap address layout before `main`; this is recorded as
+a tool/environment limit rather than reported as runtime evidence.
+
+No uncovered first-version loan shape remains in the implemented surface:
+borrowed buffers, capability owners, aggregate releases, submission failure,
+late/duplicate publication classification, frame reuse, and nested disk-worker
+adapters all have direct tests. Cancellation and hidden-reaper ownership are
+explicitly outside v0.37; normal and recoverable exits wait for terminal state.
 
 ## Phase C evidence
 
-Pending: shared contract, production backends, C harness, cross-host CI, and
-target-qualification boundary verification.
+### Shared contract and backend implementations
+
+- **macOS:** kqueue carries per-lane EVFILT_USER wake hints through one waiter
+  thread to lane conditions; disk work never executes on that waiter.
+- **Linux:** every executing lane owns one io_uring and eventfd. POLL_ADD
+  multishot is used when accepted; `-EINVAL` falls back to one-shot, and every
+  consumed terminal CQE explicitly rearms it. A test-only forced-one-shot build
+  observes more than one poll arm (155 in the latest local strict run), while
+  the default multishot build observes one arm per lane (4).
+- **Windows:** every executing lane owns one IOCP port, and queued completion
+  status is the same lossless park/wake endpoint used by the shared mailbox
+  state machine.
+
+The harness starts three concurrent submitter lanes and proves distinct owner
+endpoints, races 257 frames from four disk workers into one mailbox, crosses
+the 64-node drain bound, reuses one frame for 128 generations, injects one
+submission failure, classifies one stale and one duplicate publication, forces
+a real park, bounds help depth at one, and tests mixed compute/completion
+progress. Strict local C11 builds use `-Wall -Wextra -Wpedantic -Werror`.
+macOS and both Linux modes run successfully; the Windows sources cross-compile
+with the same warning policy to a PE32+ x86-64 executable.
+
+The compiler embeds the shared/platform sources and headers and links them
+whenever emitted LLVM names a native completion adapter or the parallel ABI.
+All executable integration-test paths use one shared runtime-link helper after
+the native conformance adapter exposed and drove the repair of an omitted
+completion unit. A real program test actualizes a world-bearing wrapper beside
+pure compute and executes W0/W1/W4. D3 tests pin the sequential W0 mapping,
+the one-compute-lane completion-capable W1 mapping, and larger compute-lane
+counts. Optimized program integration is 56/56 green; the default and `--par`
+whole-corpus paths both link and execute.
+
+Target qualification remains exact and per triple. The v0.37 review note pins
+the unchanged fifteen semantic IDs and target guarantees, validates each IR
+target-action record against its catalog row, and maps only already-qualified
+native macOS/Linux operations to completion adapters. IOCP CI coverage does
+not add Windows compiler qualification.
+
+Pending: record the GitHub-hosted macOS/Ubuntu/Windows matrix result on the
+committed branch revision.
 
 ## Closure
 
-Pending. On closure this record moves to `docs/done/`, the handoff file is
-deleted, and the exact branch revision passes `make check`. Closure does not
+Pending cross-host CI, final document scan, and canonical exact-revision
+`make check`. Closure moves this record to `docs/done/`, deletes the superseded
+handoff and candidate draft, and prepares one merge packet. Closure does not
 merge the revision into `main`.

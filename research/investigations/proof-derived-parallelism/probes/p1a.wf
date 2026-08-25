@@ -86,7 +86,7 @@ fn measure_band['w](words: &'w buffer<f64>, count: own u64, font: own f64) -> re
       break @scan;
     }
     let in_range = ilt(k, room);
-    claim band_index_in_range: in_range because "the caller passes a count no larger than the metric table";
+    claim band_index_in_range: in_range because "premises: bounded_count is the minimum of the requested count and room, room is the metric table's length, k starts at zero, and the loop breaks before the body whenever k has reached bounded_count\nderivation: a minimum is at most either operand, so bounded_count is at most room; induction over reached iterations keeps k below bounded_count, and therefore below room\nconclusion: ilt(k, room) is true\nchecker gap: ENT does not publish the result range of imin and carries no induction over k across this ordinary-loop backedge\nconsumers: the following deref(words)[k] read requires this exact bound";
     let raw = deref(words)[k];
     let scaled = fmul.strict(raw, font);
     let above = fgt(scaled, widest);
@@ -100,7 +100,7 @@ fn measure_band['w](words: &'w buffer<f64>, count: own u64, font: own f64) -> re
 }
 
 fn layout['b, 'w](node: &uniq 'b box<LNode>, words: &'w buffer<f64>, inh: own f64) -> result: own f64 reads('b 'w), writes('b) {
-  doc "Folds the box tree, writing each node's resolved height into its own slot. The two child calls are the permitted and actualizable pair: neither reads what the other defines, their written footprints are the disjoint sibling subtrees, neither row is external or blocking, and no exit of the first skips the second.";
+  doc "Folds the box tree, writing each node's resolved height into its own slot. The two child calls are the permitted and actualizable pair: neither reads what the other defines, their written footprints are the disjoint sibling subtrees, neither has a world footprint or target action, and no exit of the first skips the second.";
   match deref(deref(node)) {
     Leaf(w: lw, h: lh, out: lslot) => {
       let v = cascade(inh: inh, w: deref(lw), h: deref(lh));
@@ -190,7 +190,7 @@ fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) 
   return limit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+command fn main['q, 'ow](command.stdout as out: own Output<'q, 'ow>) -> status: own ExitStatus writes('q 'ow), allocates(heap), traps {
   doc "Lays out one box tree many times, then publishes the exact bits of both folds as hexadecimal so any difference between two executions is a difference in the published bytes.";
   let tree = build(depth: 6_u64, w: 512.0_f64);
   let words = buffer_new(8192_u64, 0.25_f64);
@@ -256,7 +256,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
   }
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 34_u64) {
+      match write_once<'o, 's, 'q, 'ow>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 34_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }

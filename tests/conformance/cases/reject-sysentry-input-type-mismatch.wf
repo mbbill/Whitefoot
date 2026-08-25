@@ -1,4 +1,4 @@
-command fn main(command.args as args: own DirectoryRead) -> status: own ExitStatus external, blocks {
-  doc "A selected parameter's written mode and type must equal its table row exactly, with no conversion, default, or inferred mode; `command.args` written as `own DirectoryRead` is a hard error citing FN-7 at that complete param node.";
+command fn main['q, 'h, 'd, 'f](command.args as args: own DirectoryRead<'q, 'h, 'd, 'f>) -> status: own ExitStatus writes('q 'h) {
+  doc "A selected parameter's written mode and type must equal its table row exactly, with no conversion, default, or inferred mode; `command.args` written as `own DirectoryRead<'q, 'h, 'd, 'f>` is a hard error citing FN-7 at that complete param node.";
   return exit_status(code: 0_u8);
 }

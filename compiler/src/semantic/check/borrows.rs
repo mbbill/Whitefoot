@@ -232,6 +232,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         else {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         };
+        self.constrain_region_kind(
+            node,
+            declaration,
+            super::super::model::CheckedRegionKind::Memory,
+        )?;
         Ok(if self.has_fixed(node, crate::FixedTerminal::Uniq)? {
             CheckedMode::Unique(declaration)
         } else {

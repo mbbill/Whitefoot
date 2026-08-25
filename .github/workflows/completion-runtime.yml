@@ -1,0 +1,66 @@
+name: completion-runtime
+
+on:
+  push:
+    paths:
+      - ".github/workflows/completion-runtime.yml"
+      - "compiler/src/backend/completion/**"
+  pull_request:
+    paths:
+      - ".github/workflows/completion-runtime.yml"
+      - "compiler/src/backend/completion/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  harness:
+    name: ${{ matrix.os }} shared-contract harness
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run the Unix backend
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime=compiler/src/backend/completion
+          case "${RUNNER_OS}" in
+            macOS) backend=kqueue.c ;;
+            Linux) backend=io_uring.c ;;
+            *) echo "unexpected Unix runner ${RUNNER_OS}" >&2; exit 1 ;;
+          esac
+          output="${RUNNER_TEMP}/whitefoot-completion-harness"
+          cc -std=c11 -Wall -Wextra -Wpedantic -Werror -pthread \
+            -DWF_IO_TESTING -I "${runtime}" \
+            "${runtime}/runtime.c" "${runtime}/${backend}" "${runtime}/harness.c" \
+            -o "${output}"
+          "${output}"
+          if [[ "${RUNNER_OS}" == Linux ]]; then
+            oneshot="${RUNNER_TEMP}/whitefoot-completion-harness-oneshot"
+            cc -std=c11 -Wall -Wextra -Wpedantic -Werror -pthread \
+              -DWF_IO_TESTING -DWF_IO_TEST_FORCE_ONESHOT -I "${runtime}" \
+              "${runtime}/runtime.c" "${runtime}/${backend}" "${runtime}/harness.c" \
+              -o "${oneshot}"
+            "${oneshot}"
+          fi
+
+      - name: Build and run the IOCP backend
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $runtime = "compiler/src/backend/completion"
+          $output = Join-Path $env:RUNNER_TEMP "whitefoot-completion-harness.exe"
+          clang -std=c11 -Wall -Wextra -Wpedantic -Werror -DWF_IO_TESTING `
+            -I $runtime `
+            "$runtime/runtime.c" "$runtime/iocp.c" "$runtime/harness.c" `
+            -o $output
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $output
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

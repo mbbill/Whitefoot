@@ -441,7 +441,7 @@ pub(super) fn run_emitted_on_deterministic_host(
 /// status, so its only host activity is the [SYS-5] release of one
 /// `DirectoryRead`.
 const RELEASES_ONE_DIRECTORY: &[u8] =
-    br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus external, blocks {
+    br#"command fn main['qw, 'dhw, 'dw, 'fw](command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus writes('qw 'dhw) {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -469,13 +469,13 @@ const READS_ITS_ARGUMENTS: &[u8] =
 /// while also binding the initial working directory so exactly one resource
 /// in the program releases with a close.
 const WRITES_THEN_RELEASES_BOTH: &[u8] =
-    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    br#"command fn main['qw, 'dhw, 'dw, 'fw, 'ow](command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>, command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'dhw 'ow), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 3_u64) {
+      match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 3_u64) {
         Ok(value: written) => {
           let narrowed = cvt<u64, u8>(written);
           match narrowed {
@@ -503,11 +503,11 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
 fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
     let arms = class_arms(12, named, default);
     format!(
-        r#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {{
+        r#"command fn main['qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw](command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw 'fw), writes('qw 'dhw 'rhw 'rcw), allocates(heap) {{
   let name = buffer_new(1_u64, 65_u8);
   region 'c {{
     region 'n {{
-      match open_file<'c, 'n>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {{
+      match open_file<'c, 'n, 'qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw>(root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {{
         Ok(value: file) => {{
           return exit_status(code: 24_u8);
         }}
@@ -576,18 +576,18 @@ fn only_the_host_facing_rows_differ_between_the_two_targets() {
     let native = super::compile(RELEASES_ONE_DIRECTORY);
     let deterministic = emit_for_deterministic_target(RELEASES_ONE_DIRECTORY);
 
-    assert!(native.contains("declare i32 @close(i32)"));
+    assert!(native.contains("declare i32 @wf__io_close(i32)"));
     assert!(native.contains("declare i32 @open(ptr, i32, ...)"));
     assert!(!native.contains("wf_test"));
 
     assert!(deterministic.contains("declare i32 @wf_test_close(i32)"));
     assert!(deterministic.contains("declare i32 @wf_test_open(ptr, i32, ...)"));
     // The redirect is complete: no use site keeps calling the native facility.
-    assert!(!deterministic.contains("@close(i32 "));
+    assert!(!deterministic.contains("@wf__io_close(i32 "));
     assert!(!deterministic.contains("@open(ptr "));
 
     // One release, one close attempt, on either target [SYS-5].
-    assert_eq!(native.matches("call i32 @close(i32").count(), 1);
+    assert_eq!(native.matches("call i32 @wf__io_close(i32").count(), 1);
     assert_eq!(
         deterministic.matches("call i32 @wf_test_close(i32").count(),
         1
@@ -596,12 +596,19 @@ fn only_the_host_facing_rows_differ_between_the_two_targets() {
     // The rest of the module is identical, so a condition forced on the
     // deterministic host is forced on the same lowering the native target
     // emits.
-    assert_eq!(
-        native
-            .replace("@close", "@wf_test_close")
-            .replace("@open", "@wf_test_open"),
-        deterministic
-    );
+    let redirected = native
+        .replace("@wf__io_close", "@wf_test_close")
+        .replace("@open", "@wf_test_open")
+        // Native emission declares the bootstrap facility before completion
+        // adapters; the deterministic target has one uniform facility table
+        // and declares close before open. Declaration order has no semantic
+        // or ABI force, so normalize that sole ordering difference before the
+        // byte-for-byte body comparison.
+        .replace(
+            "declare i32 @wf_test_open(ptr, i32, ...)\ndeclare i32 @wf_test_close(i32)",
+            "declare i32 @wf_test_close(i32)\ndeclare i32 @wf_test_open(ptr, i32, ...)",
+        );
+    assert_eq!(redirected, deterministic);
 }
 
 #[test]
@@ -871,7 +878,7 @@ fn the_trap_record_writer_stays_native_on_the_deterministic_target() {
     // facility, but only the operation row has a target column: the record
     // writer is the compiler's own and must never be scriptable, or a forced
     // short write could truncate a trap record. One module declares both.
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+    let source = br#"command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'ow), allocates(heap), traps {
   let bytes = buffer_new(1_u64, 65_u8);
   let bounded = 0_u64;
   let step = 0_u64;
@@ -886,7 +893,7 @@ fn the_trap_record_writer_stays_native_on_the_deterministic_target() {
   let successor = bounded + 1_u64;
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
         }
         Err(error: problem) => {
@@ -903,10 +910,17 @@ fn the_trap_record_writer_stays_native_on_the_deterministic_target() {
     assert!(module.contains("%written = call i64 @write(i32 2, ptr %cursor"));
     assert!(module.contains("%accepted = call i64 @wf_test_write(i32 %output"));
 
-    // And the native target still declares exactly one `@write` for both.
+    // The native target keeps the mandatory claim record on raw `@write`, but
+    // sends the source `write_once` through the completion adapter.
     let native = super::compile(source);
     assert_eq!(
         native.matches("declare i64 @write(i32, ptr, i64)").count(),
+        1
+    );
+    assert_eq!(
+        native
+            .matches("declare i64 @wf__io_write(i32, ptr, i64)")
+            .count(),
         1
     );
 }
@@ -933,11 +947,11 @@ fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
         "return exit_status(code: 199_u8);",
     );
     let source = format!(
-        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {{
+        r#"command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'ow), allocates(heap) {{
   let bytes = buffer_new(2_u64, 119_u8);
   region 'o {{
     region 's {{
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 2_u64) {{
+      match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 2_u64) {{
         Ok(value: written) => {{
           let narrowed = cvt<u64, u8>(written);
           match narrowed {{

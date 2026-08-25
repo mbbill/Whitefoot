@@ -459,16 +459,16 @@ fn repeated_classification_is_deterministic() {
 fn active_contract_reserves_every_recent_fixed_spelling() {
     let inputs = [SourceInput::new(
         "reserved.wf",
-        b"as external blocks for in ..",
+        b"as for in .. 'external @blocks",
     )];
     let Ok(bundle) = source_bundle(&inputs) else {
         panic!("test source bundle must be constructible");
     };
-    let Ok(lexed) = lexed(&bundle) else {
+    let Ok(reserved_lexed) = lexed(&bundle) else {
         panic!("reserved spellings must lex");
     };
     let TerminalOutcome::Complete(classified) = classify_terminals(
-        &lexed,
+        &reserved_lexed,
         ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits { max_tokens: 6 },
     ) else {
@@ -476,22 +476,38 @@ fn active_contract_reserves_every_recent_fixed_spelling() {
     };
     let expected = [
         b"as".as_slice(),
-        b"external",
-        b"blocks",
         b"for",
         b"in",
         b"..",
+        b"'external",
+        b"@blocks",
     ];
     assert_eq!(classified.tokens().len(), expected.len());
     for (token, spelling) in classified.tokens().iter().zip(expected) {
-        let terminal = FixedTerminal::from_spelling(spelling)
-            .unwrap_or_else(|| panic!("missing fixed terminal for {spelling:?}"));
-        assert!(
-            token
-                .terminals()
-                .contains(TerminalPredicate::Fixed(terminal))
-        );
+        let expected = match spelling {
+            b"'external" => TerminalPredicate::RegionIdentifier,
+            b"@blocks" => TerminalPredicate::Label,
+            _ => TerminalPredicate::Fixed(
+                FixedTerminal::from_spelling(spelling)
+                    .unwrap_or_else(|| panic!("missing fixed terminal for {spelling:?}")),
+            ),
+        };
+        assert!(token.terminals().contains(expected));
         assert!(!token.terminals().contains(TerminalPredicate::Identifier));
         assert_eq!(token.terminals().len(), 1);
+    }
+
+    for retired in [b"external".as_slice(), b"blocks"] {
+        let inputs = [SourceInput::new("retired.wf", retired)];
+        let bundle = source_bundle(&inputs).expect("retired spelling bundle");
+        let lexed = lexed(&bundle).expect("retired spelling lexes");
+        let TerminalOutcome::SourceIssue(issue) = classify_terminals(
+            &lexed,
+            ACTIVE_KERNEL_SPEC_HASH,
+            TerminalLimits { max_tokens: 1 },
+        ) else {
+            panic!("a bare retired spelling must be reserved");
+        };
+        assert_eq!(issue.owner(), TerminalIssueOwner::Form3);
     }
 }

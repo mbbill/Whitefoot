@@ -18,8 +18,10 @@ use std::path::Path;
 use std::process::Command;
 
 use super::{
-    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_RUNTIME_SOURCE, build_executable, compile_and_run, emit,
-    emit_with_overlap, module_requires_parallel_runtime, test_directory,
+    COMPLETION_CONTRACT_HEADER, COMPLETION_PLATFORM_FILE_NAME, COMPLETION_PLATFORM_HEADER,
+    COMPLETION_PLATFORM_SOURCE, COMPLETION_RUNTIME_SOURCE, HOST_OPTIMIZATION_ARGUMENTS,
+    PARALLEL_RUNTIME_SOURCE, build_executable, compile_and_run, emit, emit_with_overlap,
+    module_requires_parallel_runtime, test_directory,
 };
 
 /// A claim-free recursive fold over a heap tree, the smallest shape that has
@@ -115,7 +117,7 @@ fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> r
   return at +wrap 8_u64;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'ow), allocates(heap) {
   let t0 = oct(a: 1_u64, b: 2_u64, c: 3_u64, d: 4_u64, e: 5_u64, f: 6_u64, g: 7_u64, h: 8_u64);
   let t1 = oct(a: 9_u64, b: 10_u64, c: 11_u64, d: 12_u64, e: 13_u64, f: 14_u64, g: 15_u64, h: 16_u64);
   let t2 = oct(a: 17_u64, b: 18_u64, c: 19_u64, d: 20_u64, e: 21_u64, f: 22_u64, g: 23_u64, h: 24_u64);
@@ -132,7 +134,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
   }
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
+      match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -156,6 +158,48 @@ command fn main() -> status: own ExitStatus pure {
   let second = twice(v: first);
   let total = imax(first, second);
   return exit_status(code: 0_u8);
+}
+"#;
+
+/// A world-writing wrapper beside independent computation. The first call is
+/// eligible under [PAR-1], carries the transitive completion target action of
+/// `write_once`, and therefore must enter the completion source immediately
+/// when the overlap lowering actualizes the pair.
+const IO_AND_COMPUTE_SIBLINGS: &[u8] = br#"fn publish_one['o, 's, 'q, 'w](output: &uniq 'o Output<'q, 'w>, source: &'s buffer<u8>) -> result: own u64 reads('o 's), writes('o 'q 'w) contract {
+  define source_length = len(deref(source));
+  requires ile(1_u64, source_length);
+} {
+  match write_once<'o, 's, 'q, 'w>(output: move output, source: source, start: 0_u64, end: 1_u64) {
+    Ok(value: next) => {
+      return next;
+    }
+    Err(error: problem) => {
+      return 0_u64;
+    }
+  }
+}
+
+fn local_work(v: own u64) -> result: own u64 pure {
+  let rotated = irotl(v, 7_u32);
+  return irotr(rotated, 7_u32);
+}
+
+command fn main['q, 'w](command.stdout as out: own Output<'q, 'w>) -> status: own ExitStatus writes('q 'w), allocates(heap) {
+  let bytes = buffer_new(1_u64, 65_u8);
+  region 'o {
+    region 's {
+      let written = publish_one<'o, 's, 'q, 'w>(output: &uniq 'o out, source: &'s bytes);
+      let computed = local_work(v: 7_u64);
+      let write_ok = ieq(written, 1_u64);
+      let compute_ok = ieq(computed, 7_u64);
+      if write_ok {
+        if compute_ok {
+          return exit_status(code: 0_u8);
+        }
+      }
+      return exit_status(code: 1_u8);
+    }
+  }
 }
 "#;
 
@@ -254,6 +298,7 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
     for weak in [
         "define weak ptr @wf__par_claim(i64 %bytes) #0 {",
         "define weak void @wf__par_publish(ptr %frame, ptr %fn) #0 {",
+        "define weak void @wf__par_publish_io(ptr %frame, ptr %fn) #0 {",
         "define weak void @wf__par_join(ptr %frame) #0 {",
         "define weak void @wf__par_release(ptr %frame) #0 {",
     ] {
@@ -335,6 +380,75 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
         body[read..].contains(" = phi i64 [ "),
         "the joined value must be the phi of the two edges:\n{body}"
     );
+}
+
+/// Target-action metadata must affect scheduling, not merely the ledger. A
+/// permitted user wrapper reaching a completion operation is published to the
+/// completion source before its independent compute sibling runs, including
+/// in the one-compute-lane world selected by `WF_WORKERS=1`.
+#[test]
+fn a_world_wrapper_is_actualized_as_an_io_frame() {
+    let inputs = [crate::SourceInput::new(
+        "io-and-compute.wf",
+        IO_AND_COMPUTE_SIBLINGS,
+    )];
+    let (module, ledger) = crate::compile_with_io_ledger(
+        &inputs,
+        crate::CompilerLimits::default(),
+        crate::OverlapLowering::On,
+    )
+    .expect("the I/O overlap fixture must compile");
+
+    let entry = function_body(&module, "@wf_main");
+    assert!(
+        entry.contains("call void @wf__par_publish_io(ptr"),
+        "the world wrapper must use the I/O publication path:\n{entry}"
+    );
+    assert!(
+        entry.contains("call i64 @wf_local_work("),
+        "the independent compute sibling must remain inline:\n{entry}"
+    );
+    assert!(
+        ledger.iter().any(|line| {
+            line.contains("function=main")
+                && line.contains("id=fn.publish_one")
+                && line.contains("target=(completion,may-block,terminal)")
+                && line.contains("permission=permitted")
+                && line.contains("lowering=actualized")
+        }),
+        "the checked action, permission, and selected lowering must share one record: {ledger:#?}"
+    );
+
+    let directory = test_directory();
+    let (sequential_grants, sequential) = run_counting_grants(&module, &directory, Some("0"));
+    assert_eq!(sequential.status.code(), Some(0));
+    assert_eq!(sequential.stdout, b"A");
+    assert_eq!(sequential_grants, 0);
+    assert_eq!(
+        io_publications(&sequential),
+        0,
+        "the sequential world hands no frame out"
+    );
+
+    let (single_grants, single) = run_counting_grants(&module, &directory, Some("1"));
+    assert_eq!(single.status.code(), Some(0));
+    assert_eq!(single.stdout, sequential.stdout);
+    assert_eq!(single_grants, 0, "one compute lane still has no thief");
+    assert!(
+        io_publications(&single) > 0,
+        "the one-lane overlapped world must publish the wrapper as an I/O frame: {}",
+        String::from_utf8_lossy(&single.stderr)
+    );
+
+    let (_, many) = run_counting_grants(&module, &directory, Some("4"));
+    assert_eq!(many.status.code(), Some(0));
+    assert_eq!(many.stdout, sequential.stdout);
+    assert!(
+        io_publications(&many) > 0,
+        "the many-lane world must retain the I/O route"
+    );
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
 /// A recursion that hands one of its two calls out at every level, spelled at
@@ -588,7 +702,7 @@ fn the_sequential_clone_is_the_sequential_lowering() {
 /// signal this design exists to avoid — the shared word that took the
 /// fine-grain oracle cell from 0.4905 s to 0.9254 s when it was measured.
 ///
-/// The query is a separate weak definition, so the four entry points of the
+/// The query is a separate weak definition, so the five entry points of the
 /// lane protocol are exactly the bytes they were; a link that reads them, and
 /// the cases that pin them, cannot be disturbed by it.
 #[test]
@@ -709,7 +823,7 @@ fn spell['d](destination: &uniq 'd buffer<u8>, value: own u64) -> result: own u6
   return cursor;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main['qw, 'ow](command.stdout as out: own Output<'qw, 'ow>) -> status: own ExitStatus writes('qw 'ow), allocates(heap) {
   let total = spine(depth: DEPTH_u64, v: 1.0009765625_f64);
   let bits = reinterpret<f64, u64>(total);
   let report = buffer_new(8_u64, 0_u8);
@@ -718,7 +832,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
   }
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
+      match write_once<'o, 's, 'qw, 'ow>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -917,17 +1031,23 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
         "the runtime granted no lane, so nothing was overlapped"
     );
 
-    // And the explicit opt-out: one lane of execution is the calling thread
-    // alone, so the pool never starts and every offer is refused.
-    let (opted_out, quiet) = run_counting_grants(&module, &directory, Some("1"));
-    assert_eq!(quiet.stdout, sequential.stdout);
-    assert_eq!(opted_out, 0, "WF_WORKERS=1 must never start the pool");
+    // One is the overlapped world with the calling thread as its sole compute
+    // lane. It has no stealing worker, so a compute-only fixture grants no
+    // lane even though the bootstrap selected that world. I/O-frame coverage
+    // separately proves what this setting can overlap.
+    let (single_lane_grants, single_lane) = run_counting_grants(&module, &directory, Some("1"));
+    assert_eq!(single_lane.stdout, sequential.stdout);
+    assert_eq!(single_lane_grants, 0, "one compute lane has no thief");
+    assert!(
+        String::from_utf8_lossy(&single_lane.stderr).contains("active=1"),
+        "WF_WORKERS=1 must select the overlapped world"
+    );
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
 /// The shipped default is a pool: a `--par` binary run with `WF_WORKERS`
-/// absent grants lanes, and only an explicit opt-out refuses them.
+/// absent grants lanes, while zero, one, and many retain distinct meanings.
 ///
 /// This is the whole of the default-behavior change, and it needs its own case
 /// because every other case here names a worker count. Before it, an unset
@@ -943,7 +1063,7 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
 /// not a request for lanes, and reading it as one would be the runtime
 /// inventing a count the caller did not ask for.
 #[test]
-fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
+fn zero_one_and_many_worker_settings_select_their_exact_worlds() {
     let module = emit_with_overlap(OVERLAPPING_FOLD);
     let directory = test_directory();
 
@@ -956,12 +1076,25 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     );
 
     let mut runs = vec![("WF_WORKERS absent".to_owned(), published.stdout)];
-    for setting in ["0", "1", "abc"] {
+    let (single_grants, single) = run_counting_grants(&module, &directory, Some("1"));
+    assert_eq!(single.status.code(), Some(0));
+    assert_eq!(single_grants, 0, "one compute lane has no stealing worker");
+    assert!(
+        String::from_utf8_lossy(&single.stderr).contains("active=1"),
+        "WF_WORKERS=1 must select the overlapped world"
+    );
+    runs.push(("WF_WORKERS=1".to_owned(), single.stdout));
+
+    for setting in ["0", "abc"] {
         let (granted, output) = run_counting_grants(&module, &directory, Some(setting));
         assert_eq!(output.status.code(), Some(0), "WF_WORKERS={setting}");
         assert_eq!(
             granted, 0,
             "WF_WORKERS={setting} is an opt-out and must never start the pool"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("active=0"),
+            "WF_WORKERS={setting} must select the sequential world"
         );
         runs.push((format!("WF_WORKERS={setting}"), output.stdout));
     }
@@ -1180,7 +1313,58 @@ pub(super) fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
     Ok(())
 }
 
-/// Links one module with no runtime at all, whatever its own predicate says.
+struct CompletionUnits {
+    header: std::path::PathBuf,
+    platform_header: std::path::PathBuf,
+    shared: std::path::PathBuf,
+    platform: std::path::PathBuf,
+}
+
+impl CompletionUnits {
+    fn write(directory: &Path, prefix: &str) -> Self {
+        let header = directory.join("contract.h");
+        let platform_header = directory.join("platform.h");
+        let shared = directory.join(format!("{prefix}_completion.c"));
+        let platform = directory.join(format!("{prefix}_{COMPLETION_PLATFORM_FILE_NAME}"));
+        std::fs::write(&header, COMPLETION_CONTRACT_HEADER).expect("write completion contract");
+        std::fs::write(&platform_header, COMPLETION_PLATFORM_HEADER)
+            .expect("write completion platform contract");
+        std::fs::write(&shared, COMPLETION_RUNTIME_SOURCE).expect("write completion runtime");
+        std::fs::write(&platform, COMPLETION_PLATFORM_SOURCE).expect("write completion backend");
+        Self {
+            header,
+            platform_header,
+            shared,
+            platform,
+        }
+    }
+
+    fn add_to(&self, command: &mut Command, directory: &Path) {
+        command
+            .arg("-I")
+            .arg(directory)
+            .arg("-x")
+            .arg("c")
+            .arg(&self.shared)
+            .arg("-x")
+            .arg("c")
+            .arg(&self.platform);
+    }
+
+    fn remove(self) {
+        for path in [
+            self.header,
+            self.platform_header,
+            self.shared,
+            self.platform,
+        ] {
+            std::fs::remove_file(path).expect("remove a completion runtime artifact");
+        }
+    }
+}
+
+/// Links one module without the parallel runtime, whatever its own predicate
+/// says. Native system calls still receive the completion runtime they name.
 pub(super) fn build_executable_without_runtime(
     module: &str,
     directory: &Path,
@@ -1188,10 +1372,11 @@ pub(super) fn build_executable_without_runtime(
     let assembly = directory.join("alone.ll");
     let executable = directory.join("alone");
     std::fs::write(&assembly, module).expect("write the module");
-    let linked = Command::new("/usr/bin/clang")
-        .arg("-x")
-        .arg("ir")
-        .arg(&assembly)
+    let completion = CompletionUnits::write(directory, "alone");
+    let mut command = Command::new("/usr/bin/clang");
+    command.arg("-pthread").arg("-x").arg("ir").arg(&assembly);
+    completion.add_to(&mut command, directory);
+    let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
         .arg(&executable)
@@ -1199,10 +1384,11 @@ pub(super) fn build_executable_without_runtime(
         .expect("invoke host clang");
     assert!(
         linked.status.success(),
-        "a module that hands work out must link with no runtime:\n{}",
+        "a module that hands work out must link with no parallel runtime:\n{}",
         String::from_utf8_lossy(&linked.stderr)
     );
     std::fs::remove_file(&assembly).expect("remove the module");
+    completion.remove();
     executable
 }
 
@@ -1269,19 +1455,19 @@ fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
     let executable = directory.join("counted");
     std::fs::write(&assembly, module).expect("write the module");
     std::fs::write(&runtime, PARALLEL_RUNTIME_SOURCE).expect("write the runtime");
+    let completion = CompletionUnits::write(directory, "counted");
     // The floor joins every link the driver makes, and a lane's per-thread arm
     // lives in it, so this harness links what a shipped program links.
     std::fs::write(&floor, super::FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     std::fs::write(
         &observer,
-        "#include <stdio.h>\nextern unsigned long wf__par_grants;\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants);\n}\n",
+        "#include <stdio.h>\nextern unsigned long wf__par_grants;\nextern unsigned long wf__par_io_publications;\nextern int wf__par_pool_active(void);\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\nio_publications=%lu\\nactive=%d\\n\", wf__par_grants, wf__par_io_publications, wf__par_pool_active());\n}\n",
     )
     .expect("write the observer");
-    let linked = Command::new("/usr/bin/clang")
-        .arg("-pthread")
-        .arg("-x")
-        .arg("ir")
-        .arg(&assembly)
+    let mut command = Command::new("/usr/bin/clang");
+    command.arg("-pthread").arg("-x").arg("ir").arg(&assembly);
+    completion.add_to(&mut command, directory);
+    let linked = command
         .arg("-x")
         .arg("c")
         .arg(&runtime)
@@ -1300,6 +1486,7 @@ fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
     for path in [assembly, runtime, observer] {
         std::fs::remove_file(path).expect("remove a counted-run artifact");
     }
+    completion.remove();
     executable
 }
 
@@ -1318,6 +1505,15 @@ fn counted_run(executable: &Path, workers: Option<&str>) -> (u64, std::process::
         .and_then(|count| count.trim().parse::<u64>().ok())
         .unwrap_or_else(|| panic!("the observer must report a grant count, got {report:?}"));
     (granted, output)
+}
+
+fn io_publications(output: &std::process::Output) -> u64 {
+    let report = String::from_utf8_lossy(&output.stderr);
+    report
+        .lines()
+        .find_map(|line| line.strip_prefix("io_publications="))
+        .and_then(|count| count.trim().parse::<u64>().ok())
+        .unwrap_or_else(|| panic!("the observer must report I/O publications, got {report:?}"))
 }
 
 /// Every sequential clone the module defines, by symbol.

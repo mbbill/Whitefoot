@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main['qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw](command.args as args: own Args, command.cwd as cwd: own DirectoryRead<'qw, 'dhw, 'dw, 'fw>) -> status: own ExitStatus reads('dhw 'dw 'fw 'rhw), writes('qw 'dhw 'rhw 'rcw), allocates(heap) {
   doc "SYS-8: on a zero-byte file the first read_once over a nonempty range is ReadEnd, never ReadBytes(next: start), because ReadBytes is returned only for an endpoint greater than start. This is the empty member of the empty, short, exact, and multichunk file-shape family.";
   let page = buffer_new(8_u64, 0_u8);
   region 'a {
@@ -8,11 +8,11 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           Ok(value: path) => {
             region 'c {
               region 'p {
-                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
+                match open_read<'c, 'p, 'qw, 'dhw, 'dw, 'fw, 'rhw, 'rcw>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     region 'f {
                       region 'd {
-                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd page, start: 0_u64, end: 8_u64) {
+                        match read_once<'f, 'd, 'qw, 'rhw, 'rcw, 'fw>(file: &uniq 'f file, destination: &uniq 'd page, start: 0_u64, end: 8_u64) {
                           ReadBytes(next: n) => {
                             return exit_status(code: 10_u8);
                           }

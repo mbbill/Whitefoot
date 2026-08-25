@@ -7,9 +7,9 @@
 
 use crate::semantic::{
     CheckedBooleanOperation, CheckedEnumType, CheckedFlatElement, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedNumericType,
-    CheckedProgram, CheckedRuntimeTargetObligations, CheckedTargetDomainObligation, CheckedType,
-    ClaimSite,
+    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedNominal,
+    CheckedNominalKind, CheckedNumericType, CheckedProgram, CheckedRuntimeTargetObligations,
+    CheckedTargetDomainObligation, CheckedType, ClaimSite, NominalId,
 };
 use crate::{SystemRelease, SystemResourceContract};
 
@@ -206,6 +206,342 @@ fn lower_type(value: CheckedType) -> Result<IrType, LoweringFailure> {
         CheckedType::Slice { element, .. } => IrType::Slice {
             element: lower_flat_element(element)?,
         },
+    })
+}
+
+/// The runtime nominal identity map.
+///
+/// Memory lifetimes and world identities are part of checked source types but
+/// have no runtime representation. Two concrete nominal instances that differ
+/// only in those erased parameters must therefore lower to one IR nominal;
+/// otherwise a caller-substituted capability would acquire a different ABI
+/// type from the callee declaration, and the system catalog would no longer
+/// have one unique runtime type per opaque family.
+#[derive(Clone, Debug)]
+struct TypeLowering {
+    nominal_ids: Vec<IrNominalId>,
+    representatives: Vec<usize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ErasedNominalSeed {
+    Struct(String),
+    Enum(String),
+    Box,
+    Arena,
+    ArenaStorage,
+    SystemResource(u8),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ErasedTypeShape {
+    Unit,
+    Bool,
+    Integer {
+        width: u8,
+        signed: bool,
+    },
+    Float {
+        width: u8,
+    },
+    Nominal(u32),
+    Array {
+        element: ErasedFlatShape,
+        length: u64,
+    },
+    Buffer(ErasedFlatShape),
+    Slice(ErasedFlatShape),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ErasedFlatShape {
+    Unit,
+    Bool,
+    Integer { width: u8, signed: bool },
+    Float { width: u8 },
+    TagOnlyNominal(u32),
+    Nominal(u32),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ErasedNominalShape {
+    Struct {
+        fields: Vec<ErasedTypeShape>,
+    },
+    Enum {
+        variants: Vec<(u32, Vec<ErasedTypeShape>)>,
+    },
+    Box {
+        referent: ErasedTypeShape,
+    },
+    Arena {
+        content: ErasedTypeShape,
+    },
+    ArenaStorage,
+    SystemResource(u8),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ErasedNominalSignature {
+    prior_class: u32,
+    seed: ErasedNominalSeed,
+    shape: ErasedNominalShape,
+}
+
+impl TypeLowering {
+    fn new(nominals: &[CheckedNominal]) -> Result<Self, LoweringFailure> {
+        for (index, nominal) in nominals.iter().enumerate() {
+            if nominal.id.0 as usize != index {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
+        }
+
+        let seeds = nominals.iter().map(erased_seed).collect::<Vec<_>>();
+        let mut classes = equivalence_classes(&seeds)?;
+        loop {
+            let signatures = nominals
+                .iter()
+                .enumerate()
+                .map(|(index, nominal)| {
+                    Ok(ErasedNominalSignature {
+                        prior_class: *classes
+                            .get(index)
+                            .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                        seed: seeds
+                            .get(index)
+                            .cloned()
+                            .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                        shape: erased_nominal_shape(nominal, &classes)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, LoweringFailure>>()?;
+            let refined = equivalence_classes(&signatures)?;
+            if refined == classes {
+                break;
+            }
+            classes = refined;
+        }
+
+        let class_count = classes
+            .iter()
+            .copied()
+            .max()
+            .map_or(0_u32, |maximum| maximum.saturating_add(1));
+        let mut representatives = vec![None; class_count as usize];
+        let mut nominal_ids = Vec::with_capacity(classes.len());
+        for (index, class) in classes.into_iter().enumerate() {
+            let slot = representatives
+                .get_mut(class as usize)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            if slot.is_none() {
+                *slot = Some(index);
+            }
+            nominal_ids.push(IrNominalId(class));
+        }
+        let representatives = representatives
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        Ok(Self {
+            nominal_ids,
+            representatives,
+        })
+    }
+
+    fn nominal_id(&self, id: NominalId) -> Result<IrNominalId, LoweringFailure> {
+        self.nominal_ids
+            .get(id.0 as usize)
+            .copied()
+            .ok_or(LoweringFailure::InvalidCheckedProgram)
+    }
+
+    fn lower_flat_element(
+        &self,
+        value: CheckedFlatElement,
+    ) -> Result<IrFlatElement, LoweringFailure> {
+        Ok(match value {
+            CheckedFlatElement::Unit => IrFlatElement::Unit,
+            CheckedFlatElement::Bool => IrFlatElement::Bool,
+            CheckedFlatElement::Integer(integer) => IrFlatElement::Integer {
+                width: integer.width(),
+                signed: integer.signed(),
+            },
+            CheckedFlatElement::Float(float) => IrFlatElement::Float {
+                width: float.width(),
+            },
+            CheckedFlatElement::GenericInt(_) | CheckedFlatElement::GenericFloat(_) => {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
+            CheckedFlatElement::TagOnlyNominal(id) => {
+                IrFlatElement::TagOnlyNominal(self.nominal_id(id)?)
+            }
+            CheckedFlatElement::Nominal(id) => IrFlatElement::Nominal(self.nominal_id(id)?),
+        })
+    }
+
+    fn lower_type(&self, value: CheckedType) -> Result<IrType, LoweringFailure> {
+        Ok(match value {
+            CheckedType::Unit => IrType::Unit,
+            CheckedType::Bool => IrType::Bool,
+            CheckedType::Integer(integer) => IrType::Integer {
+                width: integer.width(),
+                signed: integer.signed(),
+            },
+            CheckedType::Float(float) => IrType::Float {
+                width: float.width(),
+            },
+            CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
+            CheckedType::Nominal(id) => IrType::Nominal(self.nominal_id(id)?),
+            CheckedType::Array { element, length } => IrType::Array {
+                element: self.lower_flat_element(element)?,
+                length: length
+                    .value()
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+            },
+            CheckedType::Buffer { element } => IrType::Buffer {
+                element: self.lower_flat_element(element)?,
+            },
+            CheckedType::Slice { element, .. } => IrType::Slice {
+                element: self.lower_flat_element(element)?,
+            },
+        })
+    }
+}
+
+fn equivalence_classes<Value: Eq>(values: &[Value]) -> Result<Vec<u32>, LoweringFailure> {
+    let mut representatives: Vec<&Value> = Vec::new();
+    let mut classes = Vec::with_capacity(values.len());
+    for value in values {
+        let class = match representatives.iter().position(|known| *known == value) {
+            Some(index) => index,
+            None => {
+                representatives.push(value);
+                representatives.len() - 1
+            }
+        };
+        classes.push(u32::try_from(class).map_err(|_| LoweringFailure::CounterOverflow)?);
+    }
+    Ok(classes)
+}
+
+fn erased_seed(nominal: &CheckedNominal) -> ErasedNominalSeed {
+    match &nominal.kind {
+        CheckedNominalKind::Struct { .. } => ErasedNominalSeed::Struct(nominal.name.clone()),
+        CheckedNominalKind::Enum { .. } => ErasedNominalSeed::Enum(nominal.name.clone()),
+        CheckedNominalKind::Box { .. } => ErasedNominalSeed::Box,
+        CheckedNominalKind::Arena { .. } => ErasedNominalSeed::Arena,
+        CheckedNominalKind::ArenaStorage => ErasedNominalSeed::ArenaStorage,
+        CheckedNominalKind::SystemResource { nominal, .. } => {
+            ErasedNominalSeed::SystemResource(*nominal)
+        }
+    }
+}
+
+fn erased_nominal_shape(
+    nominal: &CheckedNominal,
+    classes: &[u32],
+) -> Result<ErasedNominalShape, LoweringFailure> {
+    Ok(match &nominal.kind {
+        CheckedNominalKind::Struct { fields } => ErasedNominalShape::Struct {
+            fields: fields
+                .iter()
+                .map(|field| erased_type_shape(field.ty, classes))
+                .collect::<Result<Vec<_>, _>>()?,
+        },
+        CheckedNominalKind::Enum { variants } => ErasedNominalShape::Enum {
+            variants: variants
+                .iter()
+                .map(|variant| {
+                    Ok((
+                        variant.tag,
+                        variant
+                            .fields
+                            .iter()
+                            .map(|field| erased_type_shape(field.ty, classes))
+                            .collect::<Result<Vec<_>, LoweringFailure>>()?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, LoweringFailure>>()?,
+        },
+        CheckedNominalKind::Box { referent } => ErasedNominalShape::Box {
+            referent: erased_type_shape(*referent, classes)?,
+        },
+        CheckedNominalKind::Arena { content, .. } => ErasedNominalShape::Arena {
+            content: erased_type_shape(*content, classes)?,
+        },
+        CheckedNominalKind::ArenaStorage => ErasedNominalShape::ArenaStorage,
+        CheckedNominalKind::SystemResource { nominal, .. } => {
+            ErasedNominalShape::SystemResource(*nominal)
+        }
+    })
+}
+
+fn erased_type_shape(
+    value: CheckedType,
+    classes: &[u32],
+) -> Result<ErasedTypeShape, LoweringFailure> {
+    Ok(match value {
+        CheckedType::Unit => ErasedTypeShape::Unit,
+        CheckedType::Bool => ErasedTypeShape::Bool,
+        CheckedType::Integer(integer) => ErasedTypeShape::Integer {
+            width: integer.width(),
+            signed: integer.signed(),
+        },
+        CheckedType::Float(float) => ErasedTypeShape::Float {
+            width: float.width(),
+        },
+        CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        CheckedType::Nominal(id) => ErasedTypeShape::Nominal(
+            *classes
+                .get(id.0 as usize)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+        ),
+        CheckedType::Array { element, length } => ErasedTypeShape::Array {
+            element: erased_flat_shape(element, classes)?,
+            length: length
+                .value()
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+        },
+        CheckedType::Buffer { element } => {
+            ErasedTypeShape::Buffer(erased_flat_shape(element, classes)?)
+        }
+        CheckedType::Slice { element, .. } => {
+            ErasedTypeShape::Slice(erased_flat_shape(element, classes)?)
+        }
+    })
+}
+
+fn erased_flat_shape(
+    value: CheckedFlatElement,
+    classes: &[u32],
+) -> Result<ErasedFlatShape, LoweringFailure> {
+    Ok(match value {
+        CheckedFlatElement::Unit => ErasedFlatShape::Unit,
+        CheckedFlatElement::Bool => ErasedFlatShape::Bool,
+        CheckedFlatElement::Integer(integer) => ErasedFlatShape::Integer {
+            width: integer.width(),
+            signed: integer.signed(),
+        },
+        CheckedFlatElement::Float(float) => ErasedFlatShape::Float {
+            width: float.width(),
+        },
+        CheckedFlatElement::GenericInt(_) | CheckedFlatElement::GenericFloat(_) => {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        CheckedFlatElement::TagOnlyNominal(id) => ErasedFlatShape::TagOnlyNominal(
+            *classes
+                .get(id.0 as usize)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+        ),
+        CheckedFlatElement::Nominal(id) => ErasedFlatShape::Nominal(
+            *classes
+                .get(id.0 as usize)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+        ),
     })
 }
 
@@ -719,6 +1055,9 @@ pub enum IrOperation {
     /// value arguments in declared parameter order.
     SystemCall {
         operation: IrSystemOperation,
+        /// Trusted target-action metadata carried from the checked call.
+        /// Target qualification verifies it against the same semantic row.
+        target_action: crate::TargetAction,
         arguments: Vec<IrValueId>,
     },
     Integer {
@@ -1121,6 +1460,7 @@ pub enum IrSynthesis {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrFunction {
     name: String,
+    target_action: crate::TargetAction,
     parameters: Vec<(IrValueId, IrType)>,
     result: IrType,
     values: Vec<IrType>,
@@ -1132,6 +1472,11 @@ pub struct IrFunction {
 impl IrFunction {
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Closed target-action summary carried from the checked function.
+    pub const fn target_action(&self) -> crate::TargetAction {
+        self.target_action
     }
 
     /// Why this function exists, or `None` for a source function.
@@ -1225,6 +1570,7 @@ pub struct IrProgram<'classified, 'lexed, 'source> {
     main: u32,
     entry: IrEntry,
     actualization: Vec<String>,
+    io_actualized: Vec<(u32, crate::NodePath)>,
 }
 
 impl IrProgram<'_, '_, '_> {
@@ -1316,6 +1662,13 @@ impl IrProgram<'_, '_, '_> {
     /// participates in acceptance or in any mandatory [DIAG-3] record.
     pub fn actualization_ledger(&self) -> &[String] {
         &self.actualization
+    }
+
+    /// Exact source-call keys selected into overlap groups by this lowering.
+    /// I/O ledger rendering consumes these after lowering rather than
+    /// predicting selection from permission alone.
+    pub(crate) fn io_actualized(&self) -> &[(u32, crate::NodePath)] {
+        &self.io_actualized
     }
 
     /// Test-only malformed-IR probe: retypes one command parameter while

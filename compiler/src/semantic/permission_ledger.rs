@@ -230,24 +230,6 @@ fn denied_detail<Source: LedgerSource>(
         Denial::InterposedForm { side, form } => {
             format!("{} between s1 and s2 is {form}", statement_name(*side))
         }
-        Denial::Row {
-            side,
-            external,
-            blocks,
-        } => {
-            let mut categories = Vec::new();
-            if *external {
-                categories.push("external");
-            }
-            if *blocks {
-                categories.push("blocks");
-            }
-            format!(
-                "the row of {} carries {}",
-                statement_name(*side),
-                categories.join(", ")
-            )
-        }
         Denial::SkippingExit { side, kind } => {
             let edge = match kind {
                 ExitKind::PropagateError => "Err edge",
@@ -313,23 +295,9 @@ fn loop_denied_detail<Source: LedgerSource>(
         // reported here rather than passed over silently, so the writer sees
         // the statement that costs the overlap.
         LoopDenial::BodyForm { form } => format!("the body contains {form}"),
-        LoopDenial::Row {
-            function,
-            external,
-            blocks,
-        } => {
-            let mut categories = Vec::new();
-            if *external {
-                categories.push("external");
-            }
-            if *blocks {
-                categories.push("blocks");
-            }
-            format!("the row of {function} carries {}", categories.join(", "))
-        }
-        LoopDenial::SystemCall { call } => {
+        LoopDenial::WorldFootprint { call } => {
             format!(
-                "the body performs a [SYS-2] operation, at {}",
+                "the body performs a [SYS-2] operation with a conflicting world footprint, at {}",
                 source.spelling(call)?
             )
         }
@@ -345,6 +313,11 @@ fn access<Source: LedgerSource>(access: &Access, source: &Source) -> Result<Stri
         // An arena row reaches its region through no actual, so the citation
         // is the call that allocates into it.
         Access::Arena { call, .. } => Ok(format!("the arena of {}", source.spelling(call)?)),
+        Access::World { region, call } => Ok(format!(
+            "world region #{:?} of {}",
+            region,
+            source.spelling(call)?
+        )),
     }
 }
 
