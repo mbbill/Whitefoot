@@ -141,6 +141,7 @@ enum wf_completion_claim_result wf_completion_claim(
     wf_completion_token *token
 ) {
     size_t offset;
+    size_t index;
     size_t start;
 
     if (runtime == NULL || token == NULL || runtime->slots == NULL
@@ -152,8 +153,8 @@ enum wf_completion_claim_result wf_completion_claim(
         1,
         memory_order_relaxed
     );
+    index = start % runtime->slot_count;
     for (offset = 0; offset < runtime->slot_count; ++offset) {
-        size_t index = (start + offset) % runtime->slot_count;
         wf_completion_slot *slot = &runtime->slots[index];
         uint64_t generation;
         unsigned phase;
@@ -162,6 +163,7 @@ enum wf_completion_claim_result wf_completion_claim(
         phase = atomic_load_explicit(&slot->phase, memory_order_relaxed);
         if (phase != WF_COMPLETION_FREE) {
             (void)pthread_mutex_unlock(&slot->publication_lock);
+            index = index + 1 == runtime->slot_count ? 0 : index + 1;
             continue;
         }
         generation = atomic_load_explicit(&slot->generation, memory_order_relaxed);
@@ -172,6 +174,7 @@ enum wf_completion_claim_result wf_completion_claim(
                 memory_order_release
             );
             (void)pthread_mutex_unlock(&slot->publication_lock);
+            index = index + 1 == runtime->slot_count ? 0 : index + 1;
             continue;
         }
         generation += 1;
@@ -414,6 +417,7 @@ size_t wf_completion_drain(
     size_t scanned = 0;
     size_t produced = 0;
     size_t cursor;
+    size_t index;
 
     if (runtime == NULL || runtime->slots == NULL || events == NULL
         || event_capacity == 0 || scan_budget == 0) {
@@ -424,11 +428,13 @@ size_t wf_completion_drain(
         scan_budget,
         memory_order_relaxed
     );
+    index = cursor % runtime->slot_count;
     while (scanned < scan_budget && produced < event_capacity) {
-        size_t index = (cursor + scanned) % runtime->slot_count;
-        wf_completion_slot *slot = &runtime->slots[index];
+        size_t slot_index = index;
+        wf_completion_slot *slot = &runtime->slots[slot_index];
         unsigned pending = 1;
         scanned += 1;
+        index = index + 1 == runtime->slot_count ? 0 : index + 1;
         if (!atomic_compare_exchange_strong_explicit(
                 &slot->event_pending,
                 &pending,
@@ -440,7 +446,7 @@ size_t wf_completion_drain(
         }
 
         (void)pthread_mutex_lock(&slot->publication_lock);
-        events[produced].token.slot = (uint32_t)index;
+        events[produced].token.slot = (uint32_t)slot_index;
         events[produced].token.generation = atomic_load_explicit(
             &slot->generation,
             memory_order_relaxed
