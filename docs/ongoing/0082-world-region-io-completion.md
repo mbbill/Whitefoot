@@ -160,6 +160,50 @@ Mechanical checks over the completed draft establish:
 The flagged selections are complete. Activation, implementation, and
 verification proceed continuously on this branch.
 
+### Post-implementation semantic audit
+
+The completed implementation audit found and closed three specification-facing
+gaps rather than treating the first green implementation as final:
+
+- `reads` and `writes` now consume an already established kind without
+  inventing one. A complete resolved-unit prepass collects direct anchors
+  before propagating user-call edges, reports the first conflicting occurrence
+  in canonical source order, rejects unanchored cycles, and preserves FN-2,
+  SYS-2, FN-7, and EFF-1 ownership for their wrong-kind occurrences.
+- Unequal world-region declarations no longer act as a disjointness proof.
+  World/world read, write, and release footprints conservatively conflict in
+  the absence of the TCB minting or checked generativity fact v0.37 does not
+  provide.
+- The first current-corpus rerun caught a diagnostic-order regression in
+  `x-eff-dup-reads-effect`: the prepass reported a later FN-2 call-shape error
+  before the declaration's duplicate EFF-1 row. Effect-row formation now
+  remains on its one ordinary parser path in the prepass timeline, and a unit
+  regression pins EFF-1 as the earlier result.
+
+The added normative sentence changes the final active v0.37 bytes to SHA-256
+`6ace763ae2c2d20127f9218ed93ef8865312f68e62d40a23dbc4757d40160c6b`.
+The generated identity, activation chain, compiler literal, and all six prose
+anchors name those exact bytes; the outgoing v0.36 archive remains unchanged.
+
+The old/new verdict comparison is keyed by stable case ID and never feeds new
+syntax to the old compiler:
+
+- `runner.py verdicts fee335654d9dea027f4636bbad448d57a4e84d08`
+  reports 0 moved, 0 removed, and 0 added among 501 declarations;
+- the detached `fee33565` compiler with its own v0.36 corpus reaches
+  `Pass=500  Skip=1`;
+- the source diff contains the 42 ledgered cases plus the two D5-only
+  `prv3-neg-external-claim*` corrections, while all seven verdict-sensitive
+  manifest rows retain their expectation and rule; and
+- after the diagnostic-order repair, the current compiler with the migrated
+  corpus also reaches `Pass=500  Skip=1`, including the same-sink runtime case
+  whose declared observable is the exact `AABB` byte sequence.
+
+Because both independent endpoint runs reach every nonpending declaration and
+the declaration map is unchanged, their actual verdicts equal the same
+case-ID-keyed map. The comparison therefore establishes no verdict drift
+without depending on source compatibility across the language versions.
+
 ## Phase B evidence
 
 ### Prototype and controlled workload

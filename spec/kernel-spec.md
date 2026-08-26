@@ -543,6 +543,7 @@ One declaration may not occur in both kinds.
 Kind constraints are solved over the complete resolved unit, including call edges, before ordinary body checking; a forwarding cycle with no direct anchor is unresolved and rejected.
 A mixed declaration is rejected at the first conflicting occurrence in canonical source order, and an unanchored parameter is rejected at its declaration.
 The diagnostic names the region, both required kinds, and the restructuring `split the memory lifetime and world identity into two region parameters`.
+A `reads` or `writes` occurrence consumes the declaration's already established kind and does not by itself establish one.
 
 `region 'r { ... }` introduces memory region `'r`; `region_params` introduce caller-supplied memory or world regions according to their complete uses.
 Region identifiers are unique within a function (parameters included), independent of kind.

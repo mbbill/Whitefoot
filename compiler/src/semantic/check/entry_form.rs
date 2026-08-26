@@ -24,7 +24,7 @@ use crate::{
 };
 
 use super::super::model::{CheckedEntryForm, CheckedResourceAlias};
-use super::{CheckStop, Checker};
+use super::{CheckStop, Checker, RegionKindConflictOwner};
 
 /// One row of [FN-7]'s closed standard-input table for kind `command`.
 struct StandardInput {
@@ -167,8 +167,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// Rejects type/const generics and establishes every entry region as
-    /// world-kind. Program start supplies those identities [FN-7].
+    /// Rejects type/const generics and records every entry region for the
+    /// complete-unit [FN-7] kind check. Program start supplies only identities
+    /// that the ordinary OWN-3 inference establishes as world-kind.
     fn check_entry_parameters(&self, entry: NodeId) -> Result<(), CheckStop> {
         if let Some(child) = self.tree.first_child_with(entry, Production::Generics)? {
             return self.issue_node(SemanticRule::Fn7, child, SemanticIssueKind::InvalidMain);
@@ -183,11 +184,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .node_with_path(declaration.origin().node())
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            self.constrain_region_kind(
-                node,
-                region,
-                super::super::model::CheckedRegionKind::World,
-            )?;
+            self.entry_region_parameters
+                .borrow_mut()
+                .push((region, node));
         }
         Ok(())
     }
@@ -460,13 +459,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let admitted = if self.has_fixed(effect, FixedTerminal::Reads)?
                 || self.has_fixed(effect, FixedTerminal::Writes)?
             {
-                for region in self.effect_regions(effect)? {
-                    if self.region_kind(region)
-                        != Some(super::super::model::CheckedRegionKind::World)
-                    {
-                        return Ok(false);
-                    }
-                }
+                // OWN-3 deliberately does not infer a kind from a row. Every
+                // entry row region is an entry parameter by resolution; the
+                // complete-unit pass later rejects a memory-kind parameter
+                // under FN-7 and an unanchored one under OWN-3.
+                let _ = self.effect_regions(effect)?;
                 true
             } else if self.has_fixed(effect, FixedTerminal::Allocates)? {
                 self.has_fixed(effect, FixedTerminal::Heap)?
@@ -534,10 +531,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             else {
                 return Ok(None);
             };
-            self.constrain_region_kind(
+            self.constrain_region_kind_for_rule(
                 argument,
                 declaration,
                 super::super::model::CheckedRegionKind::World,
+                RegionKindConflictOwner::Sys2,
             )?;
             regions.push(declaration);
         }

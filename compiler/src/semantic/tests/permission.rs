@@ -506,6 +506,55 @@ command fn main() -> status: own ExitStatus pure {
     assert!(matches!(denial(pair, 2), Denial::Footprint { .. }));
 }
 
+/// Condition 2 with no equal world spelling. Distinct source declarations and
+/// distinct capability vectors do not prove outside-state disjointness; this
+/// version carries no TCB minting or checked generativity fact that could make
+/// either release independent [PAR-1].
+#[test]
+fn unequal_unproved_world_vectors_deny_resource_releases() {
+    let source = br#"fn release_directory['q, 'h, 'd, 'f](directory: own DirectoryRead<'q, 'h, 'd, 'f>) -> result: own unit writes('q 'h) {
+  return unit;
+}
+
+fn release_pair['q1, 'h1, 'd1, 'f1, 'q2, 'h2, 'd2, 'f2](first: own DirectoryRead<'q1, 'h1, 'd1, 'f1>, second: own DirectoryRead<'q2, 'h2, 'd2, 'f2>) -> result: own unit writes('q1 'h1 'q2 'h2) {
+  let done_first = release_directory<'q1, 'h1, 'd1, 'f1>(directory: move first);
+  let done_second = release_directory<'q2, 'h2, 'd2, 'f2>(directory: move second);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "release_pair");
+    let Denial::Footprint {
+        kind,
+        left,
+        right,
+        sides,
+    } = denial(pair, 2)
+    else {
+        panic!("expected a world-footprint denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(
+        *kind,
+        ConflictKind {
+            earlier: FootprintHalf::Write,
+            later: FootprintHalf::Write,
+        }
+    );
+    assert!(matches!(
+        left,
+        super::super::permission::Access::World { .. }
+    ));
+    assert!(matches!(
+        right,
+        super::super::permission::Access::World { .. }
+    ));
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
+}
+
 /// Condition 4. The first statement's `propagate` right-hand side has an
 /// `Err` edge straight to the function-return sink [ERR-3]; overlapping it
 /// with the following write would run a write the sequential execution skips.

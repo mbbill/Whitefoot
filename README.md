@@ -35,7 +35,7 @@ priorities and repository discipline.
 
 Kernel specification v0.37 at the stable
 [specification path](spec/kernel-spec.md), SHA-256
-`f772f2aec5e0da963c1cb9d8607a9e87cd3ad03cb71f3b6532451404d4d07bb5`,
+`6ace763ae2c2d20127f9218ed93ef8865312f68e62d40a23dbc4757d40160c6b`,
 is active in this exact revision. It supersedes v0.36, whose exact bytes at
 SHA-256 `fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`
 are preserved as an immutable flat archive. `main` remains on v0.36 until this

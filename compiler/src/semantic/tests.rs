@@ -34,6 +34,7 @@ mod options;
 mod permission;
 mod postconditions;
 mod provenance;
+mod region_kinds;
 mod reinterpret;
 mod replace;
 mod requires;
@@ -785,11 +786,12 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
 
 #[test]
 fn world_effect_rows_reject_both_mismatch_directions() {
-    // World regions are checked in both EFF-2 directions. A quiet body cannot
-    // over-declare a world write, while an owned file's release contribution
-    // cannot be hidden behind `pure`.
+    // World regions are checked in both EFF-2 directions. The pure-release
+    // Output parameter establishes world kind — an effect row does not — so
+    // the quiet body reaches the intended over-declared-world-write boundary.
+    // An owned file's release contribution cannot be hidden behind `pure`.
     assert_rule(
-        b"fn probe['q]() -> result: own unit writes('q) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe['q, 'o](output: own Output<'q, 'o>) -> result: own unit writes('q) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );

@@ -7,6 +7,7 @@
 
 use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, TargetAction};
 
+use super::super::model::CheckedType;
 use super::{assert_rule, with_semantics};
 
 const RELEASE_FIX: &str =
@@ -63,6 +64,21 @@ fn the_canonical_release_case_holds_exactly() {
     // Declaring `pure` is an undeclared-but-exhibited rejection at that
     // function's `effects` node, rendering the owning parameter.
     assert_release_mismatch(CANONICAL_REJECT, "file", b"pure");
+}
+
+#[test]
+fn all_three_native_close_families_instantiate_the_exact_world_row() {
+    for family in ["DirectoryRead", "ReadFile", "DirectoryList"] {
+        let accepted = format!(
+            "fn dispose['q, 'h, 'x, 'y](resource: own {family}<'q, 'h, 'x, 'y>) -> result: own unit writes('q 'h) {{\n  return unit;\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_complete(accepted.as_bytes());
+
+        let rejected = format!(
+            "fn dispose['q, 'h, 'x, 'y](resource: own {family}<'q, 'h, 'x, 'y>) -> result: own unit pure {{\n  return unit;\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_release_mismatch(rejected.as_bytes(), "resource", b"pure");
+    }
 }
 
 const BORROWED_ACCEPT: &[u8] = b"fn touch_read_file['b, 'q, 'h, 'c, 'f](file: &'b ReadFile<'q, 'h, 'c, 'f>) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
@@ -169,6 +185,69 @@ fn release_attribution_is_transitive_over_owned_content() {
     assert_complete(
         b"fn stash['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own unit writes('q 'h), allocates(heap) {\n  let boxed = box_new(move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
+}
+
+#[test]
+fn capability_vectors_survive_every_admitted_nested_owner() {
+    for source in [
+        &b"fn dispose['q, 'h, 'c, 'f](value: own Option<ReadFile<'q, 'h, 'c, 'f>>) -> result: own unit writes('q 'h) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
+        &b"fn dispose['q, 'h, 'c, 'f](value: own Result<ReadFile<'q, 'h, 'c, 'f>, IoError>) -> result: own unit writes('q 'h) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
+        &b"struct Holder<T> {\n  value: T;\n}\n\nfn dispose['q, 'h, 'c, 'f](value: own Holder<ReadFile<'q, 'h, 'c, 'f>>) -> result: own unit writes('q 'h) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
+        &b"fn dispose['q, 'h, 'c, 'f](value: own box<ReadFile<'q, 'h, 'c, 'f>>) -> result: own unit writes('q 'h) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
+        &b"fn dispose['q, 'h, 'c, 'f](value: own buffer<ReadFile<'q, 'h, 'c, 'f>>) -> result: own unit writes('q 'h) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
+    ] {
+        assert_complete(source);
+    }
+}
+
+#[test]
+fn equal_world_vectors_reuse_one_nominal_and_ordered_vectors_do_not() {
+    let source = br#"fn compare['a, 'b, 'c, 'q, 'h1, 'c1, 'f1, 'h2, 'c2, 'f2](first: &'a ReadFile<'q, 'h1, 'c1, 'f1>, same: &'b ReadFile<'q, 'h1, 'c1, 'f1>, different: &'c ReadFile<'q, 'h2, 'c2, 'f2>) -> result: own unit pure {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("world-vector identity fixture must check: {outcome:?}");
+        };
+        let function = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "compare")
+            .expect("compare function");
+        let ids = function
+            .parameters
+            .iter()
+            .map(|parameter| match parameter.ty {
+                CheckedType::Nominal(id) => id,
+                other => panic!("ReadFile parameter must be nominal, got {other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(ids[0], ids[1]);
+        assert_ne!(ids[0], ids[2]);
+    });
+}
+
+#[test]
+fn a_user_call_cannot_relabel_a_capability_world_vector() {
+    let source = br#"fn identity['q, 'h, 'c, 'f](file: own ReadFile<'q, 'h, 'c, 'f>) -> result: own ReadFile<'q, 'h, 'c, 'f> pure {
+  return move file;
+}
+
+fn relabel['q1, 'h1, 'c1, 'f1, 'q2, 'h2, 'c2, 'f2](file: own ReadFile<'q1, 'h1, 'c1, 'f1>, anchor: own ReadFile<'q2, 'h2, 'c2, 'f2>) -> result: own ReadFile<'q2, 'h2, 'c2, 'f2> writes('q2 'h2) {
+  return identity<'q2, 'h2, 'c2, 'f2>(file: move file);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule(source, SemanticRule::Type5, SemanticIssueKind::TypeMismatch);
 }
 
 #[test]

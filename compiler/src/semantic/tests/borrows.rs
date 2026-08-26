@@ -760,6 +760,20 @@ command fn main['q, 'w](command.stdout as out: own Output<'q, 'w>) -> status: ow
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
+
+    // World projection is mode-independent. Omitting only the Output's two
+    // world writes from this `&uniq` path is the opposite EFF-2 direction
+    // from the over-declared shared-resource case in `system_effects`.
+    let mut world_narrowed = source.to_vec();
+    world_narrowed.splice(
+        at..at + declared.len(),
+        b"reads('o 's), writes('o)".iter().copied(),
+    );
+    assert_rule(
+        &world_narrowed,
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
+    );
 }
 
 /// General borrow-mode parameters and `let` borrows: scalar and enum content

@@ -758,8 +758,9 @@ pub enum SemanticIssueKind {
         region: String,
         first: &'static str,
         second: &'static str,
+        mechanical_fix: &'static str,
     },
-    /// Complete signature/body collection left a region without a kind.
+    /// The complete resolved-unit prepass left a region without a kind.
     UnresolvedRegionKind { region: String },
     /// A constant was selected as an assignment target.
     ImmutableSetTarget,

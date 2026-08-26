@@ -203,6 +203,11 @@ pub(crate) enum Access {
         call: NodePath,
     },
     /// One conservative outside-state facet after direct region substitution.
+    ///
+    /// The declaration is retained for diagnostics. It is not a
+    /// disjointness fact: this version carries no TCB minting or checked
+    /// generativity proof into permission analysis, so unequal world-region
+    /// declarations still may alias [EFF-2, PAR-1].
     World {
         region: DeclarationId,
         call: NodePath,
@@ -265,7 +270,10 @@ impl Access {
                 left.overlaps(right)
             }
             (Self::Arena { region: left, .. }, Self::Arena { region: right, .. }) => left == right,
-            (Self::World { region: left, .. }, Self::World { region: right, .. }) => left == right,
+            // Equality implies may-alias, and inequality proves nothing. A
+            // later disjointness implementation must replace this with a
+            // checked TCB/generativity proof, not declaration inequality.
+            (Self::World { .. }, Self::World { .. }) => true,
             (Self::Place { .. }, Self::Arena { .. } | Self::World { .. })
             | (Self::Arena { .. } | Self::World { .. }, Self::Place { .. })
             | (Self::Arena { .. }, Self::World { .. })
@@ -1423,6 +1431,26 @@ fn footprint_conflict(
                     kind,
                     left: read.clone(),
                     right: write.clone(),
+                    sides: (earlier_side, later_side),
+                });
+            }
+        }
+    }
+    // No operation contract in this version carries the source-attribution
+    // proof that would admit two may-alias world reads. D1's common command
+    // write already catches every migrated action, but [PAR-1] also states
+    // the read/read rule directly, so keep it explicit rather than relying on
+    // that inventory accident. Memory read/read remains non-conflicting.
+    for earlier_read in &earlier.reads {
+        if !matches!(earlier_read, Access::World { .. }) {
+            continue;
+        }
+        for later_read in &later.reads {
+            if matches!(later_read, Access::World { .. }) && earlier_read.conflicts(later_read) {
+                return Some(Denial::Footprint {
+                    kind: ConflictKind::new(FootprintHalf::Read, FootprintHalf::Read),
+                    left: earlier_read.clone(),
+                    right: later_read.clone(),
                     sides: (earlier_side, later_side),
                 });
             }

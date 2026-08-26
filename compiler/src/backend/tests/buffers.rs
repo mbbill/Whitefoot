@@ -578,6 +578,35 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
 }
 
 #[test]
+fn capability_element_buffers_release_each_resource_then_free_storage() {
+    let source = br#"fn release_files['q, 'h, 'c, 'f](files: own buffer<ReadFile<'q, 'h, 'c, 'f>>) -> result: own unit writes('q 'h) {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    let helper_start = llvm
+        .find("define private void @wf.drop.buffer.t")
+        .expect("a resource element derives the buffer drop loop");
+    let helper_end = llvm[helper_start..]
+        .find("\n}\n")
+        .map(|offset| helper_start + offset)
+        .expect("resource buffer drop helper must be complete");
+    let helper = &llvm[helper_start..helper_end];
+
+    // The helper's one textual close sits in the per-element loop, so every
+    // live ReadFile receives exactly one native close attempt before the one
+    // storage free. The vector-bearing nominal reached the backend intact.
+    assert_eq!(helper.matches("call i32 @wf__io_close(i32").count(), 1);
+    assert_eq!(helper.matches("call void @free").count(), 1);
+    let release = emitted_function(&llvm, "release_files");
+    assert!(release.contains("call void @wf.drop.buffer.t"));
+}
+
+#[test]
 fn trivially_droppable_affine_elements_keep_the_single_free() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let slots = buffer_vacant<u32>(4_u64);

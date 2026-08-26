@@ -1500,7 +1500,7 @@ ACTIVE-SPEC: v0.36 fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995
   branch work. The final merge approval is rule 2's approval and rule 4's
   approval of these exact bytes, with no separate approval step.
 - SPECIFICATION: activate Whitefoot v0.37 at exact SHA-256
-  `f772f2aec5e0da963c1cb9d8607a9e87cd3ad03cb71f3b6532451404d4d07bb5`.
+  `6ace763ae2c2d20127f9218ed93ef8865312f68e62d40a23dbc4757d40160c6b`.
   It supersedes active v0.36 at SHA-256
   `fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`;
   those outgoing bytes are preserved byte-for-byte as
@@ -1551,4 +1551,4 @@ ACTIVE-SPEC: v0.36 fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995
   two additional `prv3-neg-external-claim*` files are D5 terminology-only
   corrections found by the repository-wide mechanical scan. All case IDs and
   verdicts remain stable.
-ACTIVE-SPEC: v0.37 f772f2aec5e0da963c1cb9d8607a9e87cd3ad03cb71f3b6532451404d4d07bb5 fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62
+ACTIVE-SPEC: v0.37 6ace763ae2c2d20127f9218ed93ef8865312f68e62d40a23dbc4757d40160c6b fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62

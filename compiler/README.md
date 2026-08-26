@@ -25,7 +25,7 @@ ordered source bundle
 
 The frontend targets the exact v0.37 bytes at `../spec/kernel-spec.md`,
 SHA-256
-`f772f2aec5e0da963c1cb9d8607a9e87cd3ad03cb71f3b6532451404d4d07bb5`,
+`6ace763ae2c2d20127f9218ed93ef8865312f68e62d40a23dbc4757d40160c6b`,
 in this revision. The outgoing exact v0.36 bytes, SHA-256
 `fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`,
 are preserved in the immutable flat archive; `main` remains on v0.36 until

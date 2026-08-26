@@ -20,7 +20,8 @@ use crate::{
 use super::super::super::super::model::{CheckedExpression, CheckedMode};
 use super::super::super::borrows::{AccessKind, BorrowInfo, BorrowKind, places_overlap};
 use super::super::super::{
-    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
+    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, RegionKindConflictOwner,
+    TypedExpression,
 };
 
 struct SystemCallProjection<'a> {
@@ -234,7 +235,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } else {
                 super::super::super::super::model::CheckedRegionKind::Memory
             };
-            self.constrain_region_kind(argument, declaration, kind)?;
+            self.constrain_region_kind_for_rule(
+                argument,
+                declaration,
+                kind,
+                RegionKindConflictOwner::Sys2,
+            )?;
             actual.push(declaration);
         }
         Ok(actual)

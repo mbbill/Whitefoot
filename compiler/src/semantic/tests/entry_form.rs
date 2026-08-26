@@ -58,10 +58,11 @@ fn an_unmarked_main_is_not_an_alternate_entry_form() {
 }
 
 #[test]
-fn the_no_input_command_entry_admits_every_kinded_effect_subset() {
-    // [FN-7] admits every canonical subset of the remaining command effects. A
-    // body that does not exhibit a declared row is [EFF-2]'s rejection, not
-    // FN-7's, so this asserts only that the entry judgment lets each through.
+fn the_command_entry_form_admits_every_effect_category_subset() {
+    // [FN-7] admits every canonical subset of the remaining command effects.
+    // This tests only that entry-form judgment: an effect-only region remains
+    // unanchored under OWN-3, while an anchored but unexhibited row reaches
+    // EFF-2 later.
     for (regions, row) in [
         (&b""[..], &b"pure"[..]),
         (&b""[..], &b"allocates(heap)"[..]),
@@ -160,15 +161,16 @@ fn a_missing_command_marker_outranks_legacy_signature_details() {
 #[test]
 fn admitted_but_unexhibited_entry_effects_reach_eff2() {
     // World reads and writes are ordinary members of the command entry row.
-    // These bodies do not exhibit them, so they pass
-    // FN-7 and are rejected later by EFF-2.
+    // The selected Output anchors both declarations as world-kind, but these
+    // bodies do not exhibit the declared access, so they pass FN-7 and are
+    // rejected later by EFF-2.
     assert_rule(
-        b"command fn main['q]() -> status: own ExitStatus reads('q) {\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main['q, 'o](command.stdout as out: own Output<'q, 'o>) -> status: own ExitStatus reads('q) {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
-        b"command fn main['q]() -> status: own ExitStatus writes('q) {\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main['q, 'o](command.stdout as out: own Output<'q, 'o>) -> status: own ExitStatus writes('q) {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );

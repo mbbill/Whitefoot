@@ -12,7 +12,9 @@ use super::super::model::{
 };
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
-use super::{CheckStop, Checker, EffectSet, ParameterSignature, PreludeType};
+use super::{
+    CheckStop, Checker, EffectSet, ParameterSignature, PreludeType, RegionKindConflictOwner,
+};
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn parse_parameters_with(
@@ -342,10 +344,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     SemanticIssueKind::TypeMismatch,
                 );
             };
-            self.constrain_region_kind(
+            self.constrain_region_kind_for_rule(
                 argument,
                 declaration,
                 super::super::model::CheckedRegionKind::World,
+                RegionKindConflictOwner::Sys2,
             )?;
             world_regions.push(declaration);
         }

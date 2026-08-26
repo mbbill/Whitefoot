@@ -6,7 +6,7 @@ three-host completion contract on its work branch)
 
 The active language authority is v0.37 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
-`f772f2aec5e0da963c1cb9d8607a9e87cd3ad03cb71f3b6532451404d4d07bb5`.
+`6ace763ae2c2d20127f9218ed93ef8865312f68e62d40a23dbc4757d40160c6b`.
 Claim residual canonicality and claim locality are landed on `main`, not
 pending; revision 49 described them as awaiting merge and this revision
 records them as authority. Exact v0.8 through v0.36 are immutable flat

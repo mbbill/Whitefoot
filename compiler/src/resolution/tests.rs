@@ -1111,7 +1111,8 @@ fn every_comparison_name_is_reserved_from_source_declarations() {
 
 #[test]
 fn region_names_are_unique_across_the_complete_function() {
-    let source = br#"fn nested() -> result: own unit pure {
+    for source in [
+        &br#"fn nested() -> result: own unit pure {
   region 'r {
     give unit;
   }
@@ -1119,17 +1120,25 @@ fn region_names_are_unique_across_the_complete_function() {
     give unit;
   }
 }
-"#;
-    with_one_resolution(source, |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("repeated function region must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), ResolutionRule::Own3);
-        assert!(matches!(
-            issue.kind(),
-            ResolutionIssueKind::RepeatedRegion { spelling, .. } if spelling == "'r"
-        ));
-    });
+"#[..],
+        &br#"fn nested['r, 'o](output: own Output<'r, 'o>) -> result: own unit pure {
+  region 'r {
+    give unit;
+  }
+}
+"#[..],
+    ] {
+        with_one_resolution(source, |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("repeated function region must reject: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Own3);
+            assert!(matches!(
+                issue.kind(),
+                ResolutionIssueKind::RepeatedRegion { spelling, .. } if spelling == "'r"
+            ));
+        });
+    }
 }
 
 #[test]

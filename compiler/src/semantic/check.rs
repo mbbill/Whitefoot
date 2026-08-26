@@ -61,6 +61,9 @@ use borrows::{BorrowInfo, BorrowKind, SliceInfo, SliceLoan};
 use control::{ControlCounters, ControlScope};
 use generics::{GenericArgument, GenericParameter, GenericSubstitution, PendingGenericRequirement};
 
+const REGION_KIND_SPLIT_FIX: &str =
+    "split the memory lifetime and world identity into two region parameters";
+
 /// The syntax tree, as the permission ledger's citations reach it.
 struct PermissionLedgerSource<'view, 'unit, 'classified, 'lexed, 'source> {
     tree: &'view TreeView<'unit, 'classified, 'lexed, 'source>,
@@ -122,6 +125,59 @@ struct FunctionSignature {
     effects_node: NodeId,
     declared_effects: EffectSet,
     substitution: GenericSubstitution,
+}
+
+#[derive(Clone, Copy)]
+struct RegionKindConstraint {
+    kind: CheckedRegionKind,
+    node: NodeId,
+    owner: RegionKindConflictOwner,
+}
+
+#[derive(Clone, Copy)]
+enum RegionKindConflictOwner {
+    Own3,
+    Fn2,
+    Sys2,
+    Eff1,
+}
+
+impl RegionKindConflictOwner {
+    const fn rule(self) -> SemanticRule {
+        match self {
+            Self::Own3 => SemanticRule::Own3,
+            Self::Fn2 => SemanticRule::Fn2,
+            Self::Sys2 => SemanticRule::Sys2,
+            Self::Eff1 => SemanticRule::Eff1,
+        }
+    }
+}
+
+enum RegionKindPrepassEvent {
+    EffectRow {
+        node: NodeId,
+    },
+    Constraint {
+        node: NodeId,
+        region: DeclarationId,
+        kind: CheckedRegionKind,
+        owner: RegionKindConflictOwner,
+    },
+    UserCall {
+        node: NodeId,
+        declaration: DeclarationId,
+    },
+    SystemCall {
+        node: NodeId,
+        operation: u8,
+    },
+    SystemNominal {
+        node: NodeId,
+        nominal: u8,
+    },
+    ArenaNew {
+        node: NodeId,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -560,12 +616,17 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// vector. World identity is therefore preserved by ordinary nominal type
     /// equality and cannot be relabelled at a call boundary [SYS-2].
     system_nominals: HashMap<(u8, Vec<DeclarationId>), NominalId>,
-    /// Kind constraints collected from the complete signature and body.
+    /// Kind constraints collected by the complete resolved-unit prepass.
     /// Most parsing paths are read-only, so this monotone table uses interior
-    /// mutability; conflicting constraints reject at the second anchor.
-    region_kinds: RefCell<HashMap<DeclarationId, CheckedRegionKind>>,
+    /// mutability; conflicts reject at the first conflicting occurrence in
+    /// canonical source order, independently of checker traversal order.
+    region_kinds: RefCell<HashMap<DeclarationId, RegionKindConstraint>>,
     /// Equality constraints contributed by user-call region substitution.
     region_kind_links: RefCell<Vec<(DeclarationId, DeclarationId, NodeId)>>,
+    /// Region parameters written on the command entry. The resolved-unit
+    /// prepass infers their kinds before ordinary body checking, then [FN-7]
+    /// admits only world-kind entries.
+    entry_region_parameters: RefCell<Vec<(DeclarationId, NodeId)>>,
     prelude_types: Vec<Option<PreludeType>>,
     nominal_templates: Vec<NominalTemplate>,
     nominal_templates_by_declaration: HashMap<DeclarationId, usize>,
@@ -716,34 +777,92 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         region: DeclarationId,
         required: CheckedRegionKind,
     ) -> Result<(), CheckStop> {
+        self.constrain_region_kind_owned(node, region, required, RegionKindConflictOwner::Own3)
+    }
+
+    fn constrain_region_kind_owned(
+        &self,
+        node: NodeId,
+        region: DeclarationId,
+        required: CheckedRegionKind,
+        owner: RegionKindConflictOwner,
+    ) -> Result<(), CheckStop> {
         let mut kinds = self.region_kinds.borrow_mut();
         if let Some(first) = kinds.get(&region).copied() {
-            if first != required {
-                let spelling = self
-                    .resolved
-                    .declarations()
-                    .get(region.index())
-                    .map(|declaration| declaration.spelling().to_owned())
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                return self.issue_node(
-                    SemanticRule::Own3,
+            if first.kind != required {
+                drop(kinds);
+                let current = RegionKindConstraint {
+                    kind: required,
                     node,
-                    SemanticIssueKind::RegionKindConflict {
-                        region: spelling,
-                        first: Self::region_kind_name(first),
-                        second: Self::region_kind_name(required),
+                    owner,
+                };
+                let first_path = self.tree.path(first.node)?;
+                let current_path = self.tree.path(current.node)?;
+                let (earlier, later) = if first_path.components() <= current_path.components() {
+                    (first, current)
+                } else {
+                    (current, first)
+                };
+                return match later.owner {
+                    RegionKindConflictOwner::Fn2 | RegionKindConflictOwner::Sys2 => self
+                        .issue_node(
+                            later.owner.rule(),
+                            later.node,
+                            SemanticIssueKind::TypeMismatch,
+                        ),
+                    RegionKindConflictOwner::Own3 => {
+                        let spelling = self
+                            .resolved
+                            .declarations()
+                            .get(region.index())
+                            .map(|declaration| declaration.spelling().to_owned())
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                        self.issue_node(
+                            SemanticRule::Own3,
+                            later.node,
+                            SemanticIssueKind::RegionKindConflict {
+                                region: spelling,
+                                first: Self::region_kind_name(earlier.kind),
+                                second: Self::region_kind_name(later.kind),
+                                mechanical_fix: REGION_KIND_SPLIT_FIX,
+                            },
+                        )
+                    }
+                    RegionKindConflictOwner::Eff1 => self.issue_node(
+                        SemanticRule::Eff1,
+                        later.node,
+                        SemanticIssueKind::InvalidEffectRow,
+                    ),
+                };
+            }
+            let first_path = self.tree.path(first.node)?;
+            let current_path = self.tree.path(node)?;
+            if current_path.components() < first_path.components() {
+                kinds.insert(
+                    region,
+                    RegionKindConstraint {
+                        kind: required,
+                        node,
+                        owner,
                     },
                 );
             }
             return Ok(());
         }
-        kinds.insert(region, required);
+        kinds.insert(
+            region,
+            RegionKindConstraint {
+                kind: required,
+                node,
+                owner,
+            },
+        );
         Ok(())
     }
 
     fn region_kind(&self, region: DeclarationId) -> Option<CheckedRegionKind> {
-        if let Some(kind) = self.region_kinds.borrow().get(&region).copied() {
-            return Some(kind);
+        if let Some(constraint) = self.region_kinds.borrow().get(&region).copied() {
+            return Some(constraint.kind);
         }
         let links = self.region_kind_links.borrow();
         let kinds = self.region_kinds.borrow();
@@ -754,8 +873,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 continue;
             }
             seen.push(current);
-            if let Some(kind) = kinds.get(&current).copied() {
-                return Some(kind);
+            if let Some(constraint) = kinds.get(&current).copied() {
+                return Some(constraint.kind);
             }
             for (left, right, _) in links.iter().copied() {
                 if left == current {
@@ -768,32 +887,101 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         None
     }
 
+    /// Returns the region declarations joined to `root` by call substitution
+    /// edges that have already been admitted in canonical call order.
+    fn region_kind_component(&self, root: DeclarationId) -> Vec<DeclarationId> {
+        let links = self.region_kind_links.borrow();
+        let mut pending = vec![root];
+        let mut component = Vec::new();
+        while let Some(current) = pending.pop() {
+            if component.contains(&current) {
+                continue;
+            }
+            component.push(current);
+            for (left, right, _) in links.iter().copied() {
+                if left == current {
+                    pending.push(right);
+                } else if right == current {
+                    pending.push(left);
+                }
+            }
+        }
+        component
+    }
+
+    /// Returns the one kind already fixed in a substitution component.
+    ///
+    /// `link_region_kinds` writes an inferred kind to every member as soon as
+    /// a component reaches a direct anchor, so observing both kinds here is
+    /// an internal violation of that incremental invariant.
+    fn region_kind_component_kind(
+        &self,
+        component: &[DeclarationId],
+    ) -> Result<Option<CheckedRegionKind>, CheckStop> {
+        let kinds = self.region_kinds.borrow();
+        let mut kind = None;
+        for region in component {
+            let Some(constraint) = kinds.get(region).copied() else {
+                continue;
+            };
+            if kind.is_some_and(|current| current != constraint.kind) {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+            kind = Some(constraint.kind);
+        }
+        Ok(kind)
+    }
+
     fn link_region_kinds(
         &self,
         node: NodeId,
         formal: DeclarationId,
         actual: DeclarationId,
     ) -> Result<(), CheckStop> {
-        if !self
-            .region_kind_links
-            .borrow()
-            .iter()
-            .any(|(left, right, _)| {
-                (*left == formal && *right == actual) || (*left == actual && *right == formal)
-            })
-        {
-            self.region_kind_links
-                .borrow_mut()
-                .push((formal, actual, node));
+        let formal_component = self.region_kind_component(formal);
+        if formal_component.contains(&actual) {
+            return Ok(());
         }
-        match (self.region_kind(formal), self.region_kind(actual)) {
-            (Some(kind), None) => self.constrain_region_kind(node, actual, kind),
-            (None, Some(kind)) => self.constrain_region_kind(node, formal, kind),
-            (Some(left), Some(right)) if left != right => {
-                self.constrain_region_kind(node, actual, left)
+        let actual_component = self.region_kind_component(actual);
+        let formal_kind = self.region_kind_component_kind(&formal_component)?;
+        let actual_kind = self.region_kind_component_kind(&actual_component)?;
+        if matches!((formal_kind, actual_kind), (Some(left), Some(right)) if left != right) {
+            return self.issue_node(SemanticRule::Fn2, node, SemanticIssueKind::TypeMismatch);
+        }
+
+        self.region_kind_links
+            .borrow_mut()
+            .push((formal, actual, node));
+        if let Some(kind) = formal_kind.or(actual_kind) {
+            for region in formal_component.into_iter().chain(actual_component) {
+                if self.region_kinds.borrow().contains_key(&region) {
+                    continue;
+                }
+                self.constrain_region_kind_for_rule(
+                    node,
+                    region,
+                    kind,
+                    RegionKindConflictOwner::Fn2,
+                )?;
             }
-            _ => Ok(()),
         }
+        Ok(())
+    }
+
+    /// Applies a kind requirement owned by a rule more specific than OWN-3.
+    ///
+    /// A system capability or operation argument that is already known to be
+    /// memory-kind is a SYS-2 wrong-kind argument, not a generic mixed-kind
+    /// declaration. Unknown declarations still acquire the requested kind so
+    /// complete-unit inference can propagate it normally.
+    fn constrain_region_kind_for_rule(
+        &self,
+        node: NodeId,
+        region: DeclarationId,
+        required: CheckedRegionKind,
+        owner: RegionKindConflictOwner,
+    ) -> Result<(), CheckStop> {
+        self.constrain_region_kind_owned(node, region, required, owner)
     }
 
     const fn region_kind_name(kind: CheckedRegionKind) -> &'static str {
@@ -803,24 +991,294 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
-    fn validate_region_kinds(&self) -> Result<(), CheckStop> {
-        loop {
-            let before = self.region_kinds.borrow().len();
-            let links = self.region_kind_links.borrow().clone();
-            for (left, right, node) in links {
-                match (self.region_kind(left), self.region_kind(right)) {
-                    (Some(kind), None) => self.constrain_region_kind(node, right, kind)?,
-                    (None, Some(kind)) => self.constrain_region_kind(node, left, kind)?,
-                    (Some(left_kind), Some(right_kind)) if left_kind != right_kind => {
-                        self.constrain_region_kind(node, right, left_kind)?;
-                    }
-                    _ => {}
-                }
+    /// Collects the complete OWN-3 constraint graph before ordinary body
+    /// checking can report a downstream borrow, type, or operation result.
+    ///
+    /// Resolution already identifies every region occurrence. This pass adds
+    /// the kind implied by its grammar role, catalog slot, or user-call edge
+    /// in canonical source order, without checking value flow or lowering.
+    fn collect_region_kind_constraints(&self) -> Result<(), CheckStop> {
+        let mut events = Vec::<(NodePath, u32, RegionKindPrepassEvent)>::new();
+        let mut push = |node: NodeId, ordinal: u32, event: RegionKindPrepassEvent| {
+            let path = self.tree.path(node)?.clone();
+            events.push((path, ordinal, event));
+            Ok::<(), SemanticCompilerFailure>(())
+        };
+
+        for declaration in self.resolved.declarations() {
+            if declaration.role() != DeclarationRole::LocalRegion {
+                continue;
             }
-            if self.region_kinds.borrow().len() == before {
-                break;
+            let node = self
+                .tree
+                .node_with_path(declaration.origin().node())
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            push(
+                node,
+                declaration.origin().role_ordinal(),
+                RegionKindPrepassEvent::Constraint {
+                    node,
+                    region: declaration.id(),
+                    kind: CheckedRegionKind::Memory,
+                    owner: RegionKindConflictOwner::Own3,
+                },
+            )?;
+        }
+        for usage in self.resolved.lexical_uses() {
+            let node = self
+                .tree
+                .node_with_path(usage.origin().node())
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let source_region = match usage.target() {
+                crate::ResolvedTarget::Source {
+                    declaration,
+                    class: crate::DeclarationClass::Region,
+                } => Some(declaration),
+                _ => None,
+            };
+            let direct = match (usage.role(), source_region) {
+                (
+                    crate::LexicalUseRole::TypeRegion
+                    | crate::LexicalUseRole::ModeRegion
+                    | crate::LexicalUseRole::BorrowRegion,
+                    Some(region),
+                ) => Some((region, RegionKindConflictOwner::Own3)),
+                (crate::LexicalUseRole::EffectRegion, Some(region))
+                    if self.has_fixed(node, crate::FixedTerminal::Allocates)?
+                        && self.has_fixed(node, crate::FixedTerminal::Arena)? =>
+                {
+                    Some((region, RegionKindConflictOwner::Eff1))
+                }
+                _ => None,
+            };
+            if let Some((region, owner)) = direct {
+                push(
+                    node,
+                    usage.origin().role_ordinal(),
+                    RegionKindPrepassEvent::Constraint {
+                        node,
+                        region,
+                        kind: CheckedRegionKind::Memory,
+                        owner,
+                    },
+                )?;
+            }
+            if usage.role() == crate::LexicalUseRole::Type
+                && let crate::ResolvedTarget::System(id) = usage.target()
+                && let Some(nominal) = crate::system_nominal_index(id, self.inventory())
+            {
+                push(
+                    node,
+                    usage.origin().role_ordinal(),
+                    RegionKindPrepassEvent::SystemNominal { node, nominal },
+                )?;
             }
         }
+
+        // Signature effect rows are formed before ordinary bodies in the
+        // established diagnostic order. Keep their one normal parser on the
+        // prepass timeline so an invalid row is not masked by a later call
+        // edge or by the unresolved-kind check that follows collection.
+        for node in self
+            .tree
+            .descendants_with(self.tree.root(), Production::Effects)?
+        {
+            push(node, 0, RegionKindPrepassEvent::EffectRow { node })?;
+        }
+
+        for node in self
+            .tree
+            .descendants_with(self.tree.root(), Production::Call)?
+        {
+            if self.call_is_inside_postcondition(node)? {
+                // Postcondition calls are template expressions substituted
+                // and checked in their own concrete pass, not ordinary body
+                // call edges. Their declaration kinds still come from the
+                // signatures scanned above; their substituted FN-2 edge is
+                // checked when that concrete template is admitted.
+                continue;
+            }
+            let callee = self
+                .tree
+                .first_child_with(node, Production::Callee)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let usage = self.use_at_roles(
+                callee,
+                &[
+                    crate::LexicalUseRole::IdentifierCallee,
+                    crate::LexicalUseRole::OperationCallee,
+                ],
+            )?;
+            let event = match usage.target() {
+                crate::ResolvedTarget::Source {
+                    declaration,
+                    class: crate::DeclarationClass::Function,
+                } => RegionKindPrepassEvent::UserCall { node, declaration },
+                crate::ResolvedTarget::System(id) => {
+                    let operation = crate::system_operation_index(id, self.inventory())
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    RegionKindPrepassEvent::SystemCall { node, operation }
+                }
+                crate::ResolvedTarget::Operation(operation)
+                    if crate::operation_family_spelling(operation) == Some("arena_new") =>
+                {
+                    RegionKindPrepassEvent::ArenaNew { node }
+                }
+                crate::ResolvedTarget::Operation(_) => continue,
+                _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+            };
+            push(node, 0, event)?;
+        }
+
+        events.sort_by(|left, right| {
+            left.0
+                .components()
+                .cmp(right.0.components())
+                .then(left.1.cmp(&right.1))
+        });
+        let mut user_calls = Vec::new();
+        for (_, _, event) in events {
+            match event {
+                RegionKindPrepassEvent::EffectRow { node } => {
+                    let _ = self.parse_effects(node)?;
+                }
+                RegionKindPrepassEvent::Constraint {
+                    node,
+                    region,
+                    kind,
+                    owner,
+                } => self.constrain_region_kind_owned(node, region, kind, owner)?,
+                RegionKindPrepassEvent::UserCall { node, declaration } => {
+                    user_calls.push((node, declaration));
+                }
+                RegionKindPrepassEvent::SystemCall { node, operation } => {
+                    let operation = crate::SYSTEM_OPERATIONS
+                        .get(usize::from(operation))
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    let _ = self.system_call_region_arguments(node, operation)?;
+                }
+                RegionKindPrepassEvent::SystemNominal { node, nominal } => {
+                    let _ = self.system_nominal_world_arguments(node, nominal)?;
+                }
+                RegionKindPrepassEvent::ArenaNew { node } => {
+                    self.collect_arena_new_region_constraint(node)?;
+                }
+            }
+        }
+
+        // Direct anchors from the entire unit are complete before any call
+        // edge propagates a kind. This prevents a forward call from assigning
+        // its actual's kind to a callee formal whose later declaration fixes
+        // the opposite kind. Edges are then joined in canonical call order,
+        // so the first edge connecting unlike components owns FN-2.
+        for (node, declaration) in user_calls {
+            for (formal, actual) in self.user_call_region_links(node, declaration)? {
+                self.link_region_kinds(node, formal, actual)?;
+            }
+        }
+        self.validate_region_kind_links()?;
+        Ok(())
+    }
+
+    fn user_call_region_links(
+        &self,
+        call: NodeId,
+        declaration: DeclarationId,
+    ) -> Result<Vec<(DeclarationId, DeclarationId)>, CheckStop> {
+        let declaration = self
+            .resolved
+            .declarations()
+            .get(declaration.index())
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let function = self
+            .tree
+            .node_with_path(declaration.origin().node())
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let formals = self.parse_region_parameters(function)?;
+        if formals.is_empty() {
+            return Ok(Vec::new());
+        }
+        let generic_count = self
+            .tree
+            .first_child_with(function, Production::Generics)?
+            .map(|generics| self.tree.children_with(generics, Production::Gparam))
+            .transpose()?
+            .map_or(0, |parameters| parameters.len());
+        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+            return self.issue_node(SemanticRule::Fn2, call, SemanticIssueKind::TypeMismatch);
+        };
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
+        let expected = generic_count
+            .checked_add(formals.len())
+            .ok_or(SemanticCompilerFailure::CounterOverflow)?;
+        if arguments.len() != expected {
+            return self.issue_node(SemanticRule::Fn2, call, SemanticIssueKind::TypeMismatch);
+        }
+        formals
+            .into_iter()
+            .zip(arguments.into_iter().skip(generic_count))
+            .map(|(formal, argument)| {
+                let usage = self.use_at(argument, crate::LexicalUseRole::TypeArgumentRegion)?;
+                let crate::ResolvedTarget::Source {
+                    declaration: actual,
+                    class: crate::DeclarationClass::Region,
+                } = usage.target()
+                else {
+                    return self.issue_node(
+                        SemanticRule::Fn2,
+                        argument,
+                        SemanticIssueKind::TypeMismatch,
+                    );
+                };
+                Ok((formal, actual))
+            })
+            .collect()
+    }
+
+    fn collect_arena_new_region_constraint(&self, call: NodeId) -> Result<(), CheckStop> {
+        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+            return Ok(());
+        };
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
+        let [region_argument, _] = arguments.as_slice() else {
+            return Ok(());
+        };
+        if self
+            .tree
+            .first_child_with(*region_argument, Production::Type)?
+            .is_some()
+        {
+            return Ok(());
+        }
+        let usage = self.use_at(*region_argument, crate::LexicalUseRole::TypeArgumentRegion)?;
+        let crate::ResolvedTarget::Source {
+            declaration,
+            class: crate::DeclarationClass::Region,
+        } = usage.target()
+        else {
+            return Ok(());
+        };
+        self.constrain_region_kind(*region_argument, declaration, CheckedRegionKind::Memory)
+    }
+
+    fn validate_region_kind_links(&self) -> Result<(), CheckStop> {
+        for (left, right, node) in self.region_kind_links.borrow().iter().copied() {
+            match (self.region_kind(left), self.region_kind(right)) {
+                (Some(left_kind), Some(right_kind)) if left_kind != right_kind => {
+                    return self.issue_node(
+                        SemanticRule::Fn2,
+                        node,
+                        SemanticIssueKind::TypeMismatch,
+                    );
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_region_kinds(&self) -> Result<(), CheckStop> {
+        self.validate_region_kind_links()?;
         for declaration in self.resolved.declarations() {
             if !matches!(
                 declaration.role(),
@@ -840,6 +1298,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     region: declaration.spelling().to_owned(),
                 },
             );
+        }
+        for (region, node) in self.entry_region_parameters.borrow().iter().copied() {
+            if self.region_kind(region) != Some(CheckedRegionKind::World) {
+                return self.issue_node(SemanticRule::Fn7, node, SemanticIssueKind::InvalidMain);
+            }
         }
         Ok(())
     }
@@ -950,6 +1413,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             system_nominals: HashMap::new(),
             region_kinds: RefCell::new(HashMap::new()),
             region_kind_links: RefCell::new(Vec::new()),
+            entry_region_parameters: RefCell::new(Vec::new()),
             prelude_types: Vec::new(),
             nominal_templates: Vec::new(),
             nominal_templates_by_declaration: HashMap::new(),
@@ -993,6 +1457,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Err(stop) => return Err(self.reject_missing_main_last(&items, stop)),
         };
         self.check_system_call_arguments()?;
+        self.collect_region_kind_constraints()?;
+        self.validate_region_kinds()?;
         self.declare_nominals(&items)?;
         self.collect_constants(&items)?;
         self.complete_nominals()?;
@@ -1305,8 +1771,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
         }
-        // [OWN-3] kind inference is complete only after every signature and
-        // body has contributed its anchors and call substitutions.
+        // Revalidate the resolved-unit [OWN-3] result after the ordinary
+        // paths. No body checker may introduce a new kind or incompatible
+        // substitution after the prepass admitted the unit.
         self.validate_region_kinds()?;
         // Target actions are closed-world lowering metadata, not source
         // effects. Compute their recursive least fixed point only after the
@@ -1617,6 +2084,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let salvage = (|| -> Result<(), CheckStop> {
             self.check_system_call_arguments()?;
+            self.collect_region_kind_constraints()?;
+            self.validate_region_kinds()?;
             self.declare_nominals(items)?;
             self.collect_constants(items)?;
             self.complete_nominals()?;
