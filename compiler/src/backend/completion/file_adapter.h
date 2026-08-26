@@ -1,0 +1,176 @@
+#ifndef WHITEFOOT_COMPLETION_FILE_ADAPTER_H
+#define WHITEFOOT_COMPLETION_FILE_ADAPTER_H
+
+/*
+ * Bounded POSIX file fallback adapter.
+ *
+ * A queue entry is a closed, typed descriptor.  There is no callback or
+ * writer thunk in this interface.  Helper threads execute only the switch in
+ * file_adapter.c, publish a terminal result into the completion core, and
+ * return to the target queue.  A configuration with zero helpers is valid:
+ * the scheduler advances the same queue with wf_file_adapter_progress.
+ */
+
+#include "contract.h"
+
+#include <pthread.h>
+#include <stdatomic.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
+#define WF_FILE_STATUS_CAPACITY 192u
+
+enum wf_file_operation_kind {
+    WF_FILE_OPEN_AT = 1,
+    WF_FILE_READ = 2,
+    WF_FILE_WRITE = 3,
+    WF_FILE_PREAD = 4,
+    WF_FILE_PWRITE = 5,
+    WF_FILE_STATUS = 6,
+    WF_FILE_CLOSE = 7,
+#if defined(__APPLE__)
+    WF_FILE_GETDIRENTRIES64 = 8,
+#endif
+};
+
+typedef struct wf_file_request {
+    enum wf_file_operation_kind kind;
+    union {
+        struct {
+            int directory;
+            const char *path;
+            int flags;
+            unsigned mode;
+            unsigned has_mode;
+        } open_at;
+        struct {
+            int descriptor;
+            void *buffer;
+            size_t count;
+        } read;
+        struct {
+            int descriptor;
+            const void *buffer;
+            size_t count;
+        } write;
+        struct {
+            int descriptor;
+            void *buffer;
+            size_t count;
+            int64_t offset;
+        } pread;
+        struct {
+            int descriptor;
+            const void *buffer;
+            size_t count;
+            int64_t offset;
+        } pwrite;
+        struct {
+            int descriptor;
+        } status;
+        struct {
+            int descriptor;
+        } close;
+#if defined(__APPLE__)
+        struct {
+            int descriptor;
+            void *buffer;
+            size_t count;
+            int64_t *position;
+        } getdirentries64;
+#endif
+    } operation;
+} wf_file_request;
+
+typedef struct wf_file_result {
+    enum wf_file_operation_kind kind;
+    int64_t value;
+    int error_code;
+    size_t status_size;
+    unsigned char status[WF_FILE_STATUS_CAPACITY];
+} wf_file_result;
+
+typedef struct wf_file_work {
+    wf_completion_token token;
+    wf_file_request request;
+} wf_file_work;
+
+enum wf_file_submit_result {
+    WF_FILE_TARGET_OWNS = 0,
+    WF_FILE_WAIT_CAPACITY = 1,
+    WF_FILE_SUBMIT_STALE = 2,
+    WF_FILE_SUBMIT_INVALID = 3,
+    WF_FILE_ADAPTER_STOPPING = 4
+};
+
+typedef struct wf_file_adapter_statistics {
+    uint64_t submissions;
+    uint64_t capacity_waits;
+    uint64_t helper_executions;
+    uint64_t scheduler_executions;
+    uint64_t publication_failures;
+} wf_file_adapter_statistics;
+
+typedef struct wf_file_adapter {
+    wf_completion_runtime *runtime;
+    wf_file_work *queue;
+    size_t queue_capacity;
+    size_t queue_head;
+    size_t queue_tail;
+    size_t queue_count;
+    pthread_t *helpers;
+    size_t helper_count;
+    pthread_mutex_t queue_lock;
+    pthread_cond_t queue_available;
+    unsigned stopping;
+    unsigned initialized;
+
+    _Atomic uint64_t stat_submissions;
+    _Atomic uint64_t stat_capacity_waits;
+    _Atomic uint64_t stat_helper_executions;
+    _Atomic uint64_t stat_scheduler_executions;
+    _Atomic uint64_t stat_publication_failures;
+} wf_file_adapter;
+
+/* The caller owns queue_storage and helper_storage until shutdown completes.
+ * helper_count is policy, not a fixed architecture constant; zero selects
+ * scheduler-driven single-thread progress. */
+int wf_file_adapter_init(
+    wf_file_adapter *adapter,
+    wf_completion_runtime *runtime,
+    wf_file_work *queue_storage,
+    size_t queue_capacity,
+    pthread_t *helper_storage,
+    size_t helper_count
+);
+
+enum wf_file_submit_result wf_file_adapter_submit(
+    wf_file_adapter *adapter,
+    wf_completion_token token,
+    const wf_file_request *request
+);
+
+/* Executes at most `budget` typed requests on the calling scheduler thread.
+ * It never runs a Whitefoot continuation. */
+size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget);
+
+size_t wf_file_adapter_queued(const wf_file_adapter *adapter);
+
+/* Stops admission and drains accepted queue entries before joining helpers.
+ * With zero helpers, the calling thread performs the bounded typed work one
+ * entry at a time until the accepted queue is empty. */
+int wf_file_adapter_shutdown(wf_file_adapter *adapter);
+
+wf_file_adapter_statistics wf_file_adapter_statistics_snapshot(
+    const wf_file_adapter *adapter
+);
+
+#if defined(__cplusplus)
+}
+#endif
+
+#endif
