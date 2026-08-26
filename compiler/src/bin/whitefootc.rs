@@ -5,9 +5,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use whitefoot::{
+    COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
+    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
+    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
     CompilerLimits, FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
-    OverlapLowering, PARALLEL_RUNTIME_SOURCE, SourceInput, compile_with_overlap,
-    compile_with_permission_ledger, module_requires_parallel_runtime, stack_ledger,
+    OverlapLowering, PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, SourceInput,
+    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, compile_with_overlap,
+    compile_with_permission_ledger, module_requires_completion_runtime,
+    module_requires_parallel_runtime, stack_ledger,
 };
 
 const USAGE: &str =
@@ -40,7 +45,7 @@ fn run() -> Result<(), String> {
     let overlap = if options.par {
         OverlapLowering::On
     } else {
-        OverlapLowering::Off
+        OverlapLowering::Completion
     };
     let module = if options.par_ledger {
         // The permission ledger is developer output. It goes to stdout, which
@@ -129,13 +134,19 @@ fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
 }
 
 fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
+    let completion_required = module_requires_completion_runtime(llvm);
     // The parallel runtime joins the link only when the module hands work to
     // it. Its bytes travel inside this executable, so no installed path, no
     // build directory, and no environment decides which runtime a program
     // gets.
     let runtime = if module_requires_parallel_runtime(llvm) {
         let path = std::env::temp_dir().join(format!("whitefootc-par-{}.c", std::process::id()));
-        std::fs::write(&path, PARALLEL_RUNTIME_SOURCE)
+        let source = if completion_required {
+            PARALLEL_COMPLETION_RUNTIME_SOURCE
+        } else {
+            PARALLEL_RUNTIME_SOURCE
+        };
+        std::fs::write(&path, source)
             .map_err(|error| format!("cannot write the parallel runtime: {error}"))?;
         Some(path)
     } else {
@@ -153,10 +164,55 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
     if let Some(path) = runtime.as_ref() {
         command.arg("-x").arg("c").arg(path);
     }
+    let completion = if completion_required {
+        let directory =
+            std::env::temp_dir().join(format!("whitefootc-completion-{}", std::process::id()));
+        std::fs::create_dir_all(&directory)
+            .map_err(|error| format!("cannot create completion runtime directory: {error}"))?;
+        for (name, source) in [
+            ("contract.h", COMPLETION_CONTRACT_HEADER),
+            ("file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
+            ("bridge.h", COMPLETION_BRIDGE_HEADER),
+            ("writer_scheduler.h", WRITER_SCHEDULER_HEADER),
+            ("linux_io_uring.h", COMPLETION_LINUX_IO_URING_HEADER),
+            ("runtime.c", COMPLETION_RUNTIME_SOURCE),
+            ("file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
+            ("bridge.c", COMPLETION_BRIDGE_SOURCE),
+            ("writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
+            ("linux_io_uring.c", COMPLETION_LINUX_IO_URING_SOURCE),
+        ] {
+            std::fs::write(directory.join(name), source)
+                .map_err(|error| format!("cannot write completion runtime {name}: {error}"))?;
+        }
+        command
+            .arg("-I")
+            .arg(&directory)
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("runtime.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("file_adapter.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("bridge.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("writer_scheduler.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("linux_io_uring.c"));
+        Some(directory)
+    } else {
+        None
+    };
     let outcome = link(&mut command, llvm, output);
     let _ = std::fs::remove_file(floor);
     if let Some(path) = runtime {
         let _ = std::fs::remove_file(path);
+    }
+    if let Some(directory) = completion {
+        let _ = std::fs::remove_dir_all(directory);
     }
     outcome
 }
@@ -213,7 +269,9 @@ struct Options {
     emit_llvm: bool,
     /// Actualize the permission judgment's eligible groups on worker lanes.
     ///
-    /// Off by default, and free when it is on and no pool is asked for.
+    /// Compute outlining is off by default; compiler-owned completion I/O
+    /// remains enabled independently. The compute path is free when requested
+    /// and no pool is asked for.
     ///
     /// Outlining a call is not free — it passes its arguments through a memory
     /// frame, is reached through a function pointer, and rejoins its two edges

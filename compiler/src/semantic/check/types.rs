@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::syntax::NodeId;
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::{
@@ -7,12 +9,36 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConst, CheckedConstant, CheckedConstantId, CheckedFlatElement, CheckedMode, CheckedType,
-    CheckedValue, ConstOperation, FloatType, IntegerType, evaluate_const_operation,
+    BindingId, CheckedCapabilityOrigins, CheckedConst, CheckedConstant, CheckedConstantId,
+    CheckedExpression, CheckedFlatElement, CheckedMatchArm, CheckedMode, CheckedNominalKind,
+    CheckedParameter, CheckedResultAuthorityOrigin, CheckedSetTarget, CheckedStatement,
+    CheckedType, CheckedValue, ConstOperation, FloatType, IntegerType, NominalId,
+    evaluate_const_operation,
 };
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
-use super::{CheckStop, Checker, EffectSet, ParameterSignature, PreludeType};
+use super::{
+    CheckStop, Checker, EffectSet, LocalBinding, ParameterSignature, PreludeType, TypedExpression,
+};
+
+#[derive(Clone, Debug)]
+enum CapabilityOriginResolution {
+    Absent,
+    Finite(CheckedCapabilityOrigins),
+    Unknown(crate::NodePath),
+}
+
+impl CapabilityOriginResolution {
+    fn union(&mut self, other: Self) {
+        match (&mut *self, other) {
+            (Self::Unknown(_), _) => {}
+            (_, Self::Unknown(path)) => *self = Self::Unknown(path),
+            (Self::Absent, finite @ Self::Finite(_)) => *self = finite,
+            (Self::Finite(left), Self::Finite(right)) => left.union(&right),
+            (Self::Absent, Self::Absent) | (Self::Finite(_), Self::Absent) => {}
+        }
+    }
+}
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn parse_parameters_with(
@@ -433,7 +459,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(None)
     }
 
-    pub(super) fn parse_effects(&self, node: NodeId) -> Result<EffectSet, CheckStop> {
+    pub(super) fn parse_effects(
+        &self,
+        node: NodeId,
+        parameters: &[ParameterSignature],
+    ) -> Result<EffectSet, CheckStop> {
         if self.has_fixed(node, FixedTerminal::Pure)? {
             return Ok(EffectSet::NONE);
         }
@@ -443,12 +473,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for effect in effects {
             let ordinal = if self.has_fixed(effect, FixedTerminal::Reads)? {
                 for region in self.effect_regions(effect)? {
-                    declared.add_read(region);
+                    declared.add_region_read(region);
+                }
+                for capability in self.effect_capabilities(effect, parameters)? {
+                    declared.add_capability_read(capability);
                 }
                 0
             } else if self.has_fixed(effect, FixedTerminal::Writes)? {
                 for region in self.effect_regions(effect)? {
-                    declared.add_write(region);
+                    declared.add_region_write(region);
+                }
+                for capability in self.effect_capabilities(effect, parameters)? {
+                    declared.add_capability_write(capability);
                 }
                 1
             } else if self.has_fixed(effect, FixedTerminal::Allocates)? {
@@ -461,15 +497,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declared.add_arena_allocation(region);
                 }
                 2
-            } else if self.has_fixed(effect, FixedTerminal::External)? {
-                declared.external = true;
-                3
-            } else if self.has_fixed(effect, FixedTerminal::Blocks)? {
-                declared.blocks = true;
-                4
             } else if self.has_fixed(effect, FixedTerminal::Traps)? {
                 declared.traps = true;
-                5
+                3
             } else {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             };
@@ -505,6 +535,644 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 _ => Err(SemanticCompilerFailure::InvalidResolution.into()),
             })
             .collect()
+    }
+
+    fn effect_capabilities(
+        &self,
+        node: NodeId,
+        parameters: &[ParameterSignature],
+    ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
+        let path = self.tree.path(node)?;
+        let mut uses = self
+            .resolved
+            .lexical_uses()
+            .iter()
+            .filter(|usage| {
+                usage.role() == LexicalUseRole::EffectCapability && usage.origin().node() == path
+            })
+            .collect::<Vec<_>>();
+        uses.sort_by_key(|usage| usage.origin().role_ordinal());
+        let mut capabilities = Vec::with_capacity(uses.len());
+        for usage in uses {
+            let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Value,
+            } = usage.target()
+            else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            let Some(parameter) = parameters
+                .iter()
+                .find(|parameter| parameter.declaration == declaration)
+            else {
+                return self.issue_node(
+                    SemanticRule::Eff1,
+                    node,
+                    SemanticIssueKind::InvalidEffectRow,
+                );
+            };
+            if !self.type_carries_one_capability(parameter.ty)? {
+                return self.issue_node(
+                    SemanticRule::Eff1,
+                    node,
+                    SemanticIssueKind::InvalidEffectRow,
+                );
+            }
+            capabilities.push(declaration);
+        }
+        Ok(capabilities)
+    }
+
+    /// EFF-1 admits a direct formal only when its complete type carries one
+    /// unambiguous system authority root. The count is capped at two because
+    /// only zero, exactly one, and ambiguous-many affect this judgment.
+    pub(super) fn type_carries_one_capability(&self, ty: CheckedType) -> Result<bool, CheckStop> {
+        Ok(self.type_capability_root_count(ty)? == 1)
+    }
+
+    pub(super) fn type_capability_root_count(&self, ty: CheckedType) -> Result<u8, CheckStop> {
+        Ok(self.type_capability_cardinality(ty)?.1)
+    }
+
+    pub(super) fn type_capability_cardinality(
+        &self,
+        ty: CheckedType,
+    ) -> Result<(u8, u8), CheckStop> {
+        let mut visiting = HashSet::new();
+        self.capability_cardinality(ty, &mut visiting)
+    }
+
+    /// Follows a checked value through moves, borrows, and closed-world call
+    /// summaries to every direct formal which may supply its one runtime root.
+    pub(super) fn capability_origins_of_value(
+        &self,
+        value: &TypedExpression,
+        bindings: &HashMap<crate::DeclarationId, LocalBinding>,
+    ) -> Result<Option<CheckedCapabilityOrigins>, CheckStop> {
+        let (_, maximum) = self.type_capability_cardinality(value.expression.ty())?;
+        if maximum != 1 {
+            return Ok(None);
+        }
+        let root = value
+            .borrow
+            .as_ref()
+            .map(|borrow| borrow.place.root)
+            .or(value.holder)
+            .or_else(|| value.accesses.first().map(|access| access.place.root));
+        let rooted = root.and_then(|root| {
+            bindings
+                .get(&root)
+                .and_then(|binding| binding.capability_origins.clone())
+        });
+        let origins = rooted.map_or_else(
+            || self.expression_capability_origins(&value.expression),
+            CapabilityOriginResolution::Finite,
+        );
+        self.finish_capability_origins(
+            origins,
+            value.expression.ty(),
+            value.expression.carrier().cloned(),
+        )
+    }
+
+    pub(super) fn give_capability_origins(
+        &self,
+        arms: &[CheckedMatchArm],
+        result_type: CheckedType,
+    ) -> Result<Option<CheckedCapabilityOrigins>, CheckStop> {
+        let mut origins = CapabilityOriginResolution::Absent;
+        let mut fallback = None;
+        for arm in arms {
+            self.collect_give_capability_origins(&arm.body, &mut origins, &mut fallback);
+        }
+        self.finish_capability_origins(origins, result_type, fallback)
+    }
+
+    fn collect_give_capability_origins(
+        &self,
+        statements: &[CheckedStatement],
+        origins: &mut CapabilityOriginResolution,
+        fallback: &mut Option<crate::NodePath>,
+    ) {
+        for statement in statements {
+            match statement {
+                CheckedStatement::Give { value, .. } => {
+                    if fallback.is_none() {
+                        *fallback = value.carrier().cloned();
+                    }
+                    origins.union(self.expression_capability_origins(value));
+                }
+                CheckedStatement::Match { arms, .. } => {
+                    for arm in arms {
+                        self.collect_give_capability_origins(&arm.body, origins, fallback);
+                    }
+                }
+                // A nested value initializer owns its own give set.
+                CheckedStatement::ValueMatchLet { .. } => {}
+                CheckedStatement::Loop { body, .. }
+                | CheckedStatement::CountedRange { body, .. }
+                | CheckedStatement::Region { body, .. } => {
+                    self.collect_give_capability_origins(body, origins, fallback);
+                }
+                CheckedStatement::Let { .. }
+                | CheckedStatement::PropagateLet { .. }
+                | CheckedStatement::Set { .. }
+                | CheckedStatement::Replace { .. }
+                | CheckedStatement::Evaluate(_)
+                | CheckedStatement::DropExpression { .. }
+                | CheckedStatement::Claim { .. }
+                | CheckedStatement::Return { .. }
+                | CheckedStatement::Break { .. } => {}
+            }
+        }
+    }
+
+    fn finish_capability_origins(
+        &self,
+        origins: CapabilityOriginResolution,
+        ty: CheckedType,
+        fallback: Option<crate::NodePath>,
+    ) -> Result<Option<CheckedCapabilityOrigins>, CheckStop> {
+        let (minimum, maximum) = self.type_capability_cardinality(ty)?;
+        if maximum == 0 {
+            return Ok(None);
+        }
+        if maximum != 1 {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        match origins {
+            CapabilityOriginResolution::Absent if minimum == 0 => {
+                Ok(Some(CheckedCapabilityOrigins {
+                    may_absent: true,
+                    may_fresh: false,
+                    formals: Vec::new(),
+                }))
+            }
+            CapabilityOriginResolution::Absent => {
+                let path = fallback.ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let node = self
+                    .tree
+                    .node_with_path(&path)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                self.unsupported(UnsupportedSemanticFeature::CapabilityResultOrigin, node)
+            }
+            CapabilityOriginResolution::Finite(mut origins) => {
+                origins.may_absent &= minimum == 0;
+                if minimum == 0 {
+                    origins.may_absent = true;
+                }
+                Ok(Some(origins))
+            }
+            CapabilityOriginResolution::Unknown(path) if self.deriving_result_authority.get() => {
+                let _ = path;
+                Ok(Some(CheckedCapabilityOrigins::fresh()))
+            }
+            CapabilityOriginResolution::Unknown(path) => {
+                let node = self
+                    .tree
+                    .node_with_path(&path)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                self.unsupported(UnsupportedSemanticFeature::CapabilityResultOrigin, node)
+            }
+        }
+    }
+
+    fn expression_capability_origins(
+        &self,
+        expression: &CheckedExpression,
+    ) -> CapabilityOriginResolution {
+        match expression {
+            CheckedExpression::Binding {
+                capability_origins, ..
+            }
+            | CheckedExpression::Project {
+                capability_origins, ..
+            }
+            | CheckedExpression::BorrowSystemResource {
+                capability_origins, ..
+            } => capability_origins.clone().map_or(
+                CapabilityOriginResolution::Absent,
+                CapabilityOriginResolution::Finite,
+            ),
+            CheckedExpression::SystemCall {
+                operation,
+                arguments,
+                call,
+                ..
+            } => match crate::SYSTEM_OPERATIONS
+                .get(usize::from(*operation))
+                .map(|operation| operation.result_authority)
+            {
+                Some(crate::SystemResultAuthority::None) => CapabilityOriginResolution::Absent,
+                Some(crate::SystemResultAuthority::Fresh) => {
+                    CapabilityOriginResolution::Finite(CheckedCapabilityOrigins::fresh())
+                }
+                Some(crate::SystemResultAuthority::Parameter(ordinal)) => {
+                    arguments.get(usize::from(ordinal)).map_or_else(
+                        || CapabilityOriginResolution::Unknown(call.clone()),
+                        |argument| self.expression_capability_origins(argument),
+                    )
+                }
+                None => CapabilityOriginResolution::Unknown(call.clone()),
+            },
+            CheckedExpression::UserCall {
+                function,
+                arguments,
+                call,
+                ..
+            } => match self
+                .result_authority_origins
+                .borrow()
+                .get(function.0 as usize)
+                .cloned()
+            {
+                Some(CheckedResultAuthorityOrigin::NoCapability) => {
+                    CapabilityOriginResolution::Absent
+                }
+                Some(CheckedResultAuthorityOrigin::Finite {
+                    may_absent,
+                    may_fresh,
+                    formals,
+                }) => {
+                    let finite = CheckedCapabilityOrigins {
+                        may_absent,
+                        may_fresh,
+                        formals: Vec::new(),
+                    };
+                    let mut resolved = CapabilityOriginResolution::Finite(finite);
+                    for formal in formals {
+                        let Some(argument) = arguments.get(formal as usize) else {
+                            return CapabilityOriginResolution::Unknown(call.clone());
+                        };
+                        resolved.union(self.expression_capability_origins(argument));
+                    }
+                    resolved
+                }
+                Some(CheckedResultAuthorityOrigin::Unknown) | None => {
+                    CapabilityOriginResolution::Unknown(call.clone())
+                }
+            },
+            _ => {
+                let mut origins = CapabilityOriginResolution::Absent;
+                for child in super::super::model::expression_children(expression) {
+                    origins.union(self.expression_capability_origins(child));
+                }
+                origins
+            }
+        }
+    }
+
+    fn capability_cardinality(
+        &self,
+        ty: CheckedType,
+        visiting: &mut HashSet<NominalId>,
+    ) -> Result<(u8, u8), CheckStop> {
+        let CheckedType::Nominal(id) = ty else {
+            return Ok(match ty {
+                CheckedType::Buffer { element } => {
+                    // A buffer can hold arbitrarily many elements. Even when
+                    // its element type carries one root, the complete buffer
+                    // type does not identify one direct capability.
+                    if self.capability_cardinality(element.ty(), visiting)?.1 == 0 {
+                        (0, 0)
+                    } else {
+                        (0, 2)
+                    }
+                }
+                CheckedType::Unit
+                | CheckedType::Bool
+                | CheckedType::Integer(_)
+                | CheckedType::Float(_)
+                | CheckedType::Generic(_)
+                | CheckedType::GenericInt(_)
+                | CheckedType::GenericFloat(_)
+                | CheckedType::Array { .. }
+                | CheckedType::Slice { .. } => (0, 0),
+                CheckedType::Nominal(_) => unreachable!(),
+            });
+        };
+        if !visiting.insert(id) {
+            let mut reachable = HashSet::new();
+            return Ok(
+                if self.type_reaches_system_capability(ty, &mut reachable)? {
+                    (0, 2)
+                } else {
+                    (0, 0)
+                },
+            );
+        }
+        let cardinality = match &self.nominal(id)?.kind {
+            CheckedNominalKind::SystemResource { nominal } => {
+                if crate::system_resource_contract(*nominal)
+                    .is_some_and(|contract| contract.resource.carries_authority())
+                {
+                    (1, 1)
+                } else {
+                    (0, 0)
+                }
+            }
+            CheckedNominalKind::Struct { fields } => {
+                self.capability_fields_cardinality(fields.iter().map(|field| field.ty), visiting)?
+            }
+            CheckedNominalKind::Enum { variants } => {
+                let mut minimum = 2_u8;
+                let mut maximum = 0_u8;
+                for variant in variants {
+                    let (variant_minimum, variant_maximum) = self.capability_fields_cardinality(
+                        variant.fields.iter().map(|field| field.ty),
+                        visiting,
+                    )?;
+                    minimum = minimum.min(variant_minimum);
+                    maximum = maximum.max(variant_maximum);
+                }
+                if variants.is_empty() {
+                    (0, 0)
+                } else {
+                    (minimum, maximum)
+                }
+            }
+            CheckedNominalKind::Box { referent } => {
+                self.capability_cardinality(*referent, visiting)?
+            }
+            CheckedNominalKind::Arena { content, .. } => {
+                if self.capability_cardinality(*content, visiting)?.1 == 0 {
+                    (0, 0)
+                } else {
+                    (0, 2)
+                }
+            }
+            CheckedNominalKind::ArenaStorage => (0, 0),
+        };
+        visiting.remove(&id);
+        Ok(cardinality)
+    }
+
+    /// Graph reachability used only to classify a recursive cardinality
+    /// cycle. A pure recursive SCC contributes no capability merely because
+    /// it is recursive; a cycle which can reach a real system authority stays
+    /// conservatively many until per-leaf recursive origins exist.
+    fn type_reaches_system_capability(
+        &self,
+        ty: CheckedType,
+        visited: &mut HashSet<NominalId>,
+    ) -> Result<bool, CheckStop> {
+        if let CheckedType::Buffer { element } = ty {
+            return self.type_reaches_system_capability(element.ty(), visited);
+        }
+        let CheckedType::Nominal(id) = ty else {
+            return Ok(false);
+        };
+        if !visited.insert(id) {
+            return Ok(false);
+        }
+        match &self.nominal(id)?.kind {
+            CheckedNominalKind::SystemResource { nominal } => {
+                Ok(crate::system_resource_contract(*nominal)
+                    .is_some_and(|contract| contract.resource.carries_authority()))
+            }
+            CheckedNominalKind::Struct { fields } => {
+                for field in fields {
+                    if self.type_reaches_system_capability(field.ty, visited)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            CheckedNominalKind::Enum { variants } => {
+                for field in variants.iter().flat_map(|variant| &variant.fields) {
+                    if self.type_reaches_system_capability(field.ty, visited)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            CheckedNominalKind::Box { referent } => {
+                self.type_reaches_system_capability(*referent, visited)
+            }
+            CheckedNominalKind::Arena { content, .. } => {
+                self.type_reaches_system_capability(*content, visited)
+            }
+            CheckedNominalKind::ArenaStorage => Ok(false),
+        }
+    }
+
+    fn capability_fields_cardinality(
+        &self,
+        fields: impl Iterator<Item = CheckedType>,
+        visiting: &mut HashSet<NominalId>,
+    ) -> Result<(u8, u8), CheckStop> {
+        let mut minimum = 0_u8;
+        let mut maximum = 0_u8;
+        for field in fields {
+            let (field_minimum, field_maximum) = self.capability_cardinality(field, visiting)?;
+            minimum = minimum.saturating_add(field_minimum).min(2);
+            maximum = maximum.saturating_add(field_maximum).min(2);
+            if minimum == 2 && maximum == 2 {
+                return Ok((2, 2));
+            }
+        }
+        Ok((minimum, maximum))
+    }
+
+    /// First source carrier whose runtime value may contain several logical
+    /// capability roots. This is a final capability checkpoint, not a source
+    /// judgment; callers run it only after all ordinary source checks.
+    pub(super) fn first_multi_capability_expression(
+        &self,
+        statements: &[CheckedStatement],
+    ) -> Result<Option<crate::NodePath>, CheckStop> {
+        for statement in statements {
+            let mut expressions = Vec::new();
+            match statement {
+                CheckedStatement::Let { value, .. }
+                | CheckedStatement::Evaluate(value)
+                | CheckedStatement::DropExpression { value, .. }
+                | CheckedStatement::Claim {
+                    condition: value, ..
+                }
+                | CheckedStatement::Return { value, .. }
+                | CheckedStatement::Give { value, .. } => expressions.push(value),
+                CheckedStatement::PropagateLet { scrutinee, .. }
+                | CheckedStatement::Match { scrutinee, .. }
+                | CheckedStatement::ValueMatchLet { scrutinee, .. } => {
+                    expressions.push(scrutinee);
+                }
+                CheckedStatement::Set { target, value, .. }
+                | CheckedStatement::Replace { target, value, .. } => {
+                    match target {
+                        CheckedSetTarget::Place(_) => {}
+                        CheckedSetTarget::ArrayIndex(target) => {
+                            expressions.push(&target.offset);
+                        }
+                        CheckedSetTarget::BufferIndex(target) => {
+                            expressions.push(&target.offset);
+                        }
+                    }
+                    expressions.push(value);
+                }
+                CheckedStatement::CountedRange { lower, upper, .. } => {
+                    expressions.push(lower);
+                    expressions.push(upper);
+                }
+                CheckedStatement::Loop { .. }
+                | CheckedStatement::Break { .. }
+                | CheckedStatement::Region { .. } => {}
+            }
+            for expression in expressions {
+                if let Some(path) = self.first_multi_capability_child(expression)? {
+                    return Ok(Some(path));
+                }
+            }
+            match statement {
+                CheckedStatement::Match { arms, .. }
+                | CheckedStatement::ValueMatchLet { arms, .. } => {
+                    for arm in arms {
+                        if let Some(path) = self.first_multi_capability_expression(&arm.body)? {
+                            return Ok(Some(path));
+                        }
+                    }
+                }
+                CheckedStatement::Loop { body, .. }
+                | CheckedStatement::CountedRange { body, .. }
+                | CheckedStatement::Region { body, .. } => {
+                    if let Some(path) = self.first_multi_capability_expression(body)? {
+                        return Ok(Some(path));
+                    }
+                }
+                CheckedStatement::Let { .. }
+                | CheckedStatement::PropagateLet { .. }
+                | CheckedStatement::Set { .. }
+                | CheckedStatement::Replace { .. }
+                | CheckedStatement::Evaluate(_)
+                | CheckedStatement::DropExpression { .. }
+                | CheckedStatement::Claim { .. }
+                | CheckedStatement::Return { .. }
+                | CheckedStatement::Give { .. }
+                | CheckedStatement::Break { .. } => {}
+            }
+        }
+        Ok(None)
+    }
+
+    fn first_multi_capability_child(
+        &self,
+        expression: &CheckedExpression,
+    ) -> Result<Option<crate::NodePath>, CheckStop> {
+        if self.type_capability_cardinality(expression.ty())?.1 > 1 {
+            return expression
+                .carrier()
+                .cloned()
+                .map(Some)
+                .ok_or(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        for child in super::super::model::expression_children(expression) {
+            if let Some(path) = self.first_multi_capability_child(child)? {
+                return Ok(Some(path));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Exact binding identities whose complete runtime value may carry more
+    /// than one capability root. Release attribution uses this only to keep
+    /// preliminary scratch failure-atomic until the final unsupported stop;
+    /// it never licenses a checked function for publication.
+    pub(super) fn multi_capability_bindings(
+        &self,
+        parameters: &[CheckedParameter],
+        statements: &[CheckedStatement],
+    ) -> Result<HashSet<BindingId>, CheckStop> {
+        let mut bindings = HashSet::new();
+        for parameter in parameters {
+            self.record_multi_capability_binding(&mut bindings, parameter.binding, parameter.ty)?;
+        }
+        self.collect_multi_capability_bindings(statements, &mut bindings)?;
+        Ok(bindings)
+    }
+
+    fn record_multi_capability_binding(
+        &self,
+        bindings: &mut HashSet<BindingId>,
+        binding: BindingId,
+        ty: CheckedType,
+    ) -> Result<(), CheckStop> {
+        if self.type_capability_cardinality(ty)?.1 > 1 {
+            bindings.insert(binding);
+        }
+        Ok(())
+    }
+
+    fn collect_multi_capability_bindings(
+        &self,
+        statements: &[CheckedStatement],
+        bindings: &mut HashSet<BindingId>,
+    ) -> Result<(), CheckStop> {
+        for statement in statements {
+            match statement {
+                CheckedStatement::Let { binding, value, .. } => {
+                    self.record_multi_capability_binding(bindings, *binding, value.ty())?;
+                }
+                CheckedStatement::PropagateLet {
+                    binding, ok_type, ..
+                } => {
+                    self.record_multi_capability_binding(bindings, *binding, *ok_type)?;
+                }
+                CheckedStatement::Replace {
+                    binding, target, ..
+                } => {
+                    self.record_multi_capability_binding(bindings, *binding, target.ty())?;
+                }
+                CheckedStatement::ValueMatchLet {
+                    binding,
+                    result_type,
+                    ..
+                } => {
+                    self.record_multi_capability_binding(bindings, *binding, *result_type)?;
+                }
+                CheckedStatement::Set { .. }
+                | CheckedStatement::Evaluate(_)
+                | CheckedStatement::DropExpression { .. }
+                | CheckedStatement::Claim { .. }
+                | CheckedStatement::Return { .. }
+                | CheckedStatement::Give { .. }
+                | CheckedStatement::Break { .. }
+                | CheckedStatement::CountedRange { .. }
+                | CheckedStatement::Loop { .. }
+                | CheckedStatement::Match { .. }
+                | CheckedStatement::Region { .. } => {}
+            }
+            match statement {
+                CheckedStatement::Match { arms, .. }
+                | CheckedStatement::ValueMatchLet { arms, .. } => {
+                    for arm in arms {
+                        for binder in &arm.binders {
+                            self.record_multi_capability_binding(
+                                bindings,
+                                binder.binding,
+                                binder.ty,
+                            )?;
+                        }
+                        self.collect_multi_capability_bindings(&arm.body, bindings)?;
+                    }
+                }
+                CheckedStatement::Loop { body, .. }
+                | CheckedStatement::CountedRange { body, .. }
+                | CheckedStatement::Region { body, .. } => {
+                    self.collect_multi_capability_bindings(body, bindings)?;
+                }
+                CheckedStatement::Let { .. }
+                | CheckedStatement::PropagateLet { .. }
+                | CheckedStatement::Set { .. }
+                | CheckedStatement::Replace { .. }
+                | CheckedStatement::Evaluate(_)
+                | CheckedStatement::DropExpression { .. }
+                | CheckedStatement::Claim { .. }
+                | CheckedStatement::Return { .. }
+                | CheckedStatement::Give { .. }
+                | CheckedStatement::Break { .. } => {}
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn parse_const_expression_with(

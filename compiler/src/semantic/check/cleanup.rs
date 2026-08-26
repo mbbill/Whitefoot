@@ -91,8 +91,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut row = SystemReleaseRow::EMPTY;
         for ty in component_types {
             let component = self.release_row_of_type(ty, visited)?;
-            row.external |= component.external;
-            row.blocks |= component.blocks;
+            row = row.union(component);
         }
         Ok(row)
     }
@@ -106,19 +105,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         statements: &[CheckedStatement],
         sites: &mut Vec<ReleaseSite>,
+        multi_root_bindings: &HashSet<BindingId>,
     ) -> Result<(), CheckStop> {
         for statement in statements {
             match statement {
                 CheckedStatement::Let { value, .. } => {
-                    self.collect_expression_release_sites(value, sites)?;
+                    self.collect_expression_release_sites(value, sites, multi_root_bindings)?;
                 }
                 CheckedStatement::PropagateLet {
                     scrutinee,
                     error_drops,
                     ..
                 } => {
-                    self.collect_expression_release_sites(scrutinee, sites)?;
-                    self.collect_drop_release_sites(error_drops, sites)?;
+                    self.collect_expression_release_sites(scrutinee, sites, multi_root_bindings)?;
+                    self.collect_drop_release_sites(error_drops, sites, multi_root_bindings)?;
                 }
                 CheckedStatement::Set { target, value, .. }
                 | CheckedStatement::Replace { target, value, .. } => {
@@ -128,20 +128,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     match target {
                         CheckedSetTarget::Place(_) => {}
                         CheckedSetTarget::ArrayIndex(target) => {
-                            self.collect_expression_release_sites(&target.offset, sites)?;
+                            self.collect_expression_release_sites(
+                                &target.offset,
+                                sites,
+                                multi_root_bindings,
+                            )?;
                         }
                         CheckedSetTarget::BufferIndex(target) => {
-                            self.collect_expression_release_sites(&target.offset, sites)?;
+                            self.collect_expression_release_sites(
+                                &target.offset,
+                                sites,
+                                multi_root_bindings,
+                            )?;
                         }
                     }
-                    self.collect_expression_release_sites(value, sites)?;
+                    self.collect_expression_release_sites(value, sites, multi_root_bindings)?;
                 }
                 CheckedStatement::Evaluate(value) => {
-                    self.collect_expression_release_sites(value, sites)?;
+                    self.collect_expression_release_sites(value, sites, multi_root_bindings)?;
                 }
-                CheckedStatement::DropExpression { value, release } => {
-                    self.collect_expression_release_sites(value, sites)?;
-                    let effects = effects_of_row(release.row);
+                CheckedStatement::DropExpression {
+                    value,
+                    capability_origins,
+                    release,
+                } => {
+                    self.collect_expression_release_sites(value, sites, multi_root_bindings)?;
+                    let effects = self.effects_of_row(
+                        release.row,
+                        capability_origins.as_ref(),
+                        self.type_capability_cardinality(value.ty())?.1 > 1,
+                    )?;
                     if effects != EffectSet::NONE {
                         sites.push(ReleaseSite {
                             owner: ReleaseOwner::ExpressionResult,
@@ -150,11 +166,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                 }
                 CheckedStatement::Claim { condition, .. } => {
-                    self.collect_expression_release_sites(condition, sites)?;
+                    self.collect_expression_release_sites(condition, sites, multi_root_bindings)?;
                 }
                 CheckedStatement::Return { value, drops, .. } => {
-                    self.collect_expression_release_sites(value, sites)?;
-                    self.collect_drop_release_sites(drops, sites)?;
+                    self.collect_expression_release_sites(value, sites, multi_root_bindings)?;
+                    self.collect_drop_release_sites(drops, sites, multi_root_bindings)?;
                 }
                 CheckedStatement::Match {
                     scrutinee, arms, ..
@@ -162,23 +178,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedStatement::ValueMatchLet {
                     scrutinee, arms, ..
                 } => {
-                    self.collect_expression_release_sites(scrutinee, sites)?;
+                    self.collect_expression_release_sites(scrutinee, sites, multi_root_bindings)?;
                     for arm in arms {
-                        self.collect_release_sites(&arm.body, sites)?;
-                        self.collect_drop_release_sites(&arm.fallthrough_drops, sites)?;
+                        self.collect_release_sites(&arm.body, sites, multi_root_bindings)?;
+                        self.collect_drop_release_sites(
+                            &arm.fallthrough_drops,
+                            sites,
+                            multi_root_bindings,
+                        )?;
                     }
                 }
                 CheckedStatement::Give { value, drops, .. } => {
-                    self.collect_expression_release_sites(value, sites)?;
-                    self.collect_drop_release_sites(drops, sites)?;
+                    self.collect_expression_release_sites(value, sites, multi_root_bindings)?;
+                    self.collect_drop_release_sites(drops, sites, multi_root_bindings)?;
                 }
                 CheckedStatement::Loop {
                     body,
                     backedge_drops,
                     ..
                 } => {
-                    self.collect_release_sites(body, sites)?;
-                    self.collect_drop_release_sites(backedge_drops, sites)?;
+                    self.collect_release_sites(body, sites, multi_root_bindings)?;
+                    self.collect_drop_release_sites(backedge_drops, sites, multi_root_bindings)?;
                 }
                 CheckedStatement::CountedRange {
                     lower,
@@ -187,21 +207,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     backedge_drops,
                     ..
                 } => {
-                    self.collect_expression_release_sites(lower, sites)?;
-                    self.collect_expression_release_sites(upper, sites)?;
-                    self.collect_release_sites(body, sites)?;
-                    self.collect_drop_release_sites(backedge_drops, sites)?;
+                    self.collect_expression_release_sites(lower, sites, multi_root_bindings)?;
+                    self.collect_expression_release_sites(upper, sites, multi_root_bindings)?;
+                    self.collect_release_sites(body, sites, multi_root_bindings)?;
+                    self.collect_drop_release_sites(backedge_drops, sites, multi_root_bindings)?;
                 }
                 CheckedStatement::Break { drops, .. } => {
-                    self.collect_drop_release_sites(drops, sites)?;
+                    self.collect_drop_release_sites(drops, sites, multi_root_bindings)?;
                 }
                 CheckedStatement::Region {
                     body,
                     fallthrough_drops,
                     ..
                 } => {
-                    self.collect_release_sites(body, sites)?;
-                    self.collect_drop_release_sites(fallthrough_drops, sites)?;
+                    self.collect_release_sites(body, sites, multi_root_bindings)?;
+                    self.collect_drop_release_sites(fallthrough_drops, sites, multi_root_bindings)?;
                 }
             }
         }
@@ -212,11 +232,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         drops: &[CheckedDrop],
         sites: &mut Vec<ReleaseSite>,
+        multi_root_bindings: &HashSet<BindingId>,
     ) -> Result<(), CheckStop> {
         for drop in drops {
             // The drop record already carries its [SYS-5] row, so attribution
             // reads the checked program rather than rederiving it.
-            let effects = effects_of_row(drop.release.row);
+            let effects = self.effects_of_row(
+                drop.release.row,
+                drop.capability_origins.as_ref(),
+                multi_root_bindings.contains(&drop.binding),
+            )?;
             if effects != EffectSet::NONE {
                 sites.push(ReleaseSite {
                     owner: ReleaseOwner::Binding(drop.binding),
@@ -231,6 +256,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         expression: &CheckedExpression,
         sites: &mut Vec<ReleaseSite>,
+        multi_root_bindings: &HashSet<BindingId>,
     ) -> Result<(), CheckStop> {
         match expression {
             CheckedExpression::Project {
@@ -239,7 +265,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ..
             } => {
                 for drop in residual_drops {
-                    let effects = effects_of_row(drop.release.row);
+                    let effects = self.effects_of_row(
+                        drop.release.row,
+                        drop.capability_origins.as_ref(),
+                        multi_root_bindings.contains(binding),
+                    )?;
                     if effects != EffectSet::NONE {
                         sites.push(ReleaseSite {
                             owner: ReleaseOwner::Binding(*binding),
@@ -261,7 +291,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 fields: arguments, ..
             } => {
                 for argument in arguments {
-                    self.collect_expression_release_sites(argument, sites)?;
+                    self.collect_expression_release_sites(argument, sites, multi_root_bindings)?;
                 }
             }
             CheckedExpression::NumericConversion { value, .. }
@@ -272,20 +302,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ArenaNew { value, .. }
             | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
-                self.collect_expression_release_sites(value, sites)?;
+                self.collect_expression_release_sites(value, sites, multi_root_bindings)?;
             }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. }
             | CheckedExpression::SliceIndex { offset, .. } => {
-                self.collect_expression_release_sites(offset, sites)?;
+                self.collect_expression_release_sites(offset, sites, multi_root_bindings)?;
             }
             CheckedExpression::BufferFill { length, value, .. } => {
-                self.collect_expression_release_sites(length, sites)?;
-                self.collect_expression_release_sites(value, sites)?;
+                self.collect_expression_release_sites(length, sites, multi_root_bindings)?;
+                self.collect_expression_release_sites(value, sites, multi_root_bindings)?;
             }
             CheckedExpression::BufferVacant { length, .. }
             | CheckedExpression::BufferFits { length, .. } => {
-                self.collect_expression_release_sites(length, sites)?;
+                self.collect_expression_release_sites(length, sites, multi_root_bindings)?;
             }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
@@ -305,16 +335,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 }
 
-/// Projects one [SYS-5] release row onto the two payload-free [EFF-1]
-/// categories it can contribute.
-fn effects_of_row(row: SystemReleaseRow) -> EffectSet {
-    let mut effects = EffectSet::NONE;
-    effects.external = row.external;
-    effects.blocks = row.blocks;
-    effects
-}
-
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// Releases carry target execution metadata, not source effect atoms. A
+    /// missing origin is tolerated only for a multi-root value which the
+    /// final capability checkpoint will stop before publication; a one-root
+    /// missing origin is an internal inconsistency, never an empty effect.
+    fn effects_of_row(
+        &self,
+        row: SystemReleaseRow,
+        origins: Option<&super::super::model::CheckedCapabilityOrigins>,
+        unresolved_multi_root: bool,
+    ) -> Result<EffectSet, CheckStop> {
+        let mut effects = EffectSet::NONE;
+        if row.capability_write {
+            let Some(origins) = origins else {
+                return if unresolved_multi_root {
+                    Ok(effects)
+                } else {
+                    Err(SemanticCompilerFailure::InvalidResolution.into())
+                };
+            };
+            for capability in &origins.formals {
+                effects.add_capability_write(*capability);
+            }
+        }
+        Ok(effects)
+    }
+
     /// Attaches the [STOR-3] release record to each derived drop path, so
     /// every construction site records the same fact for the same type.
     pub(super) fn released_paths(

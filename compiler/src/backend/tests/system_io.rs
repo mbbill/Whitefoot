@@ -1,5 +1,5 @@
 //! Emitted-shape and behaviour evidence for the native I/O cluster of the
-//! qualified [SYS-2] system interface: `open_read`, `read_once`,
+//! qualified [SYS-2] system interface: `open_read`, `read_at`,
 //! `write_once`, and the [SYS-7] class mapping they share.
 //!
 //! The behaviour cases compile, link, and run each program against real
@@ -12,7 +12,6 @@
 //! establishes the required emitted shape: inspection of emitted code and
 //! symbols, not a machine-checked language judgment.
 
-use std::io::Read;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
@@ -75,29 +74,6 @@ fn run_with_closed_output(llvm: &str) -> ExitStatus {
     status
 }
 
-/// Runs one emitted module with both standard output and standard error on
-/// one destination, which is how call order across the two owners is
-/// observed [EFF-5, SYS-12].
-fn run_with_one_sink(llvm: &str) -> (ExitStatus, Vec<u8>) {
-    let directory = test_directory();
-    let executable = build_executable(llvm, &directory);
-    let sink = directory.join("sink");
-    let file = std::fs::File::create(&sink).expect("create the shared sink");
-    let status = Command::new(&executable)
-        .current_dir(&directory)
-        .stdout(Stdio::from(file.try_clone().expect("duplicate the sink")))
-        .stderr(Stdio::from(file))
-        .status()
-        .expect("run backend test executable");
-    let mut bytes = Vec::new();
-    std::fs::File::open(&sink)
-        .expect("reopen the shared sink")
-        .read_to_end(&mut bytes)
-        .expect("read the shared sink");
-    std::fs::remove_dir_all(&directory).expect("remove backend test directory");
-    (status, bytes)
-}
-
 /// The [SYS-2] `IoError` class spellings in declared order.
 ///
 /// The corpus reads the inventory rather than restating it, so an exhaustive
@@ -114,7 +90,7 @@ fn io_error_classes() -> Vec<&'static str> {
         .collect()
 }
 
-/// Renders an exhaustive match over the closed thirty-class set.
+/// Renders an exhaustive match over the closed twenty-eight-class set.
 ///
 /// `named` gives the arm body of the classes a case distinguishes and
 /// `default` the body of every other class; `indent` is the column the arms
@@ -141,7 +117,7 @@ pub(super) fn class_arms(indent: usize, named: &[(&str, &str)], default: &str) -
 
 /// Opens one argument-named path under `command.cwd` and reads its first
 /// bytes, reporting the exact count.
-const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(args cwd), writes(cwd), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -154,7 +130,7 @@ const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args,
                     let bytes = buffer_new(64_u64, 0_u8);
                     region 'f {
                       region 'd {
-                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 64_u64) {
+                        match read_at<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
                           ReadBytes(next: n) => {
                             let narrowed = cvt<u64, u8>(n);
                             match narrowed {
@@ -250,7 +226,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
         "return exit_status(code: 199_u8);",
     );
     let source = format!(
-        r#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus external, blocks {{
+        r#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(args cwd), writes(cwd) {{
   region 'a {{
     match arg_get<'a>(args: &'a args, position: 1_u64) {{
       Ok(value: text) => {{
@@ -309,7 +285,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
             "{label} is not a declared class"
         );
     }
-    assert!(mapped.len() >= 30, "the mapper carries the target's table");
+    assert!(mapped.len() >= 28, "the mapper carries the target's table");
 
     let fixtures: &[(&str, &[u8])] = &[("fixture.txt", b"hello")];
     // A present file opens.
@@ -345,7 +321,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
 }
 
 /// Drains one file in three-byte requests, reporting `total * 10 + requests`.
-pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(args cwd), writes(cwd), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -362,7 +338,7 @@ pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args:
                     loop @drain {
                       region 'f {
                         region 'd {
-                          match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 3_u64) {
+                          match read_at<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: total, start: 0_u64, end: 3_u64) {
                             ReadBytes(next: n) => {
                               set total = total +wrap n;
                               set chunks = chunks +wrap 1_u64;
@@ -444,7 +420,7 @@ fn a_short_read_is_progress_and_only_the_observed_end_is_read_end() {
 }
 
 /// Reports a zero-length read's endpoint, then the following request's endpoint.
-const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(args cwd), writes(cwd), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -458,7 +434,7 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
                     let vacant = 0_u64;
                     region 'f {
                       region 'd {
-                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 0_u64) {
+                        match read_at<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 0_u64, end: 0_u64) {
                           ReadBytes(next: n) => {
                             set vacant = n;
                           }
@@ -477,7 +453,7 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
                     }
                     region 'g {
                       region 'e {
-                        match read_once<'g, 'e>(file: &uniq 'g file, destination: &uniq 'e bytes, start: 0_u64, end: 8_u64) {
+                        match read_at<'g, 'e>(file: &'g file, destination: &uniq 'e bytes, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
                           ReadBytes(next: n) => {
                             let narrowed = cvt<u64, u8>(n);
                             match narrowed {
@@ -545,7 +521,7 @@ fn a_zero_length_read_reports_no_bytes_without_issuing_a_host_transfer() {
 
 /// Reads three bytes into the middle of a sentinel buffer and digests the
 /// complete buffer afterwards.
-const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(args cwd), writes(cwd), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -558,7 +534,7 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
                     let bytes = buffer_new(8_u64, 7_u8);
                     region 'f {
                       region 'd {
-                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 2_u64, end: 5_u64) {
+                        match read_at<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 2_u64, end: 5_u64) {
                           ReadBytes(next: n) => {
                             if ieq(n, 5_u64) {
                             } else {
@@ -643,14 +619,14 @@ fn a_successful_read_changes_exactly_the_requested_prefix() {
 }
 
 /// Writes nothing, then the two-byte prefix at offset one.
-pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
   let bytes = buffer_new(4_u64, 119_u8);
   set bytes[1_u64] = 120_u8;
   set bytes[2_u64] = 121_u8;
   set bytes[3_u64] = 122_u8;
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 0_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 0_u64) {
         Ok(value: written) => {
           if ieq(written, 0_u64) {
           } else {
@@ -665,7 +641,7 @@ pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out
   }
   region 'p {
     region 't {
-      match write_once<'p, 't>(output: &uniq 'p out, source: &'t bytes, start: 1_u64, end: 3_u64) {
+      match write_once<'p, 't>(output: &'p out, source: &'t bytes, start: 1_u64, end: 3_u64) {
         Ok(value: written) => {
           let narrowed = cvt<u64, u8>(written);
           match narrowed {
@@ -703,11 +679,11 @@ fn write_once_publishes_the_requested_range_and_reports_its_absolute_endpoint() 
 }
 
 /// Requests a range that runs past the end of its source buffer.
-const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
   let bytes = buffer_new(4_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 1_u64, end: 9_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 1_u64, end: 9_u64) {
         Ok(value: written) => {
           return exit_status(code: 10_u8);
         }
@@ -727,15 +703,14 @@ fn an_out_of_range_transfer_is_a_static_sys8_rejection() {
     assert!(failure.detail().contains("9_u64 <= len(buffer)"));
 }
 
-/// Publishes one byte to standard output, one to standard error, then one
-/// more to standard output.
-const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+/// Publishes three reservations through one Output root.
+const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: written) => {
         }
         Err(error: problem) => {
@@ -746,7 +721,7 @@ const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Out
   }
   region 'p {
     region 't {
-      match write_once<'p, 't>(output: &uniq 'p err, source: &'t bytes, start: 1_u64, end: 2_u64) {
+      match write_once<'p, 't>(output: &'p out, source: &'t bytes, start: 1_u64, end: 2_u64) {
         Ok(value: written) => {
         }
         Err(error: problem) => {
@@ -757,7 +732,7 @@ const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Out
   }
   region 'q {
     region 'u {
-      match write_once<'q, 'u>(output: &uniq 'q out, source: &'u bytes, start: 2_u64, end: 3_u64) {
+      match write_once<'q, 'u>(output: &'q out, source: &'u bytes, start: 2_u64, end: 3_u64) {
         Ok(value: written) => {
           return exit_status(code: 0_u8);
         }
@@ -771,14 +746,14 @@ const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Out
 "#;
 
 #[test]
-fn sequential_writes_across_both_owners_preserve_source_order() {
+fn ordered_reservations_on_one_output_preserve_source_order() {
     let llvm = compile(ORDERED_WRITES);
-    let (status, bytes) = run_with_one_sink(&llvm);
-    // Sequential external calls retain source program order at every
-    // optimization level, whether or not the two owners are the same sink
-    // [EFF-5, SYS-12].
-    assert_eq!(status.code(), Some(0));
-    assert_eq!(bytes, b"ABC");
+    let output = run_in_directory(&llvm, &[], &[]);
+    // One logical Output root assigns all three reservations before target
+    // completion can race. Environment aliasing is deliberately irrelevant
+    // to this ordering oracle [EFF-5, SYS-12].
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, b"ABC");
 }
 
 #[test]
@@ -789,7 +764,7 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
         "set status = 43_u8;",
     );
     let source = format!(
-        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {{
+        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {{
   let bytes = buffer_new(1_u64, 65_u8);
   let attempts = 0_u64;
   let status = 44_u8;
@@ -800,7 +775,7 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
     set attempts = attempts +wrap 1_u64;
     region 'o {{
       region 's {{
-        match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {{
+        match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {{
           Ok(value: written) => {{
           }}
           Err(error: problem) => {{
@@ -832,7 +807,7 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
 }
 
 /// Drains one file through a reusable buffer and publishes one byte.
-const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(args cwd), writes(cwd out), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -847,7 +822,7 @@ const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args
                     loop @drain {
                       region 'f {
                         region 'd {
-                          match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, start: 0_u64, end: 4096_u64) {
+                          match read_at<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: total, start: 0_u64, end: 4096_u64) {
                             ReadBytes(next: n) => {
                               set total = total +wrap n;
                             }
@@ -863,7 +838,7 @@ const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args
                     }
                     region 'o {
                       region 's {
-                        match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+                        match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
                           Ok(value: written) => {
                             let masked = iand(total, 255_u64);
                             let narrowed = cvt<u64, u8>(masked);
@@ -911,7 +886,7 @@ fn the_transfer_path_carries_no_allocation_copy_dispatch_or_lock() {
     // operation-ID switch, target tag, per-call dispatch table, or handle
     // lookup [QUAL-1, QUAL-3].
     assert!(llvm.contains("; QUAL-1 semantic id 7 -> @wf.sys.open_read.v1"));
-    assert!(llvm.contains("; QUAL-1 semantic id 8 -> @wf.sys.read_once.v1"));
+    assert!(llvm.contains("; QUAL-1 semantic id 8 -> @wf.sys.read_at.v1"));
     assert!(llvm.contains("; QUAL-1 semantic id 9 -> @wf.sys.write_once.v1"));
     assert!(!llvm.contains("@wf.sys.dispatch"));
 
@@ -923,10 +898,19 @@ fn the_transfer_path_carries_no_allocation_copy_dispatch_or_lock() {
         !entry.contains("call") || !entry.contains("@wf.sys."),
         "no approved-implementation wrapper survives on the transfer path:\n{entry}"
     );
-    // One source transfer is at most one direct host call, and the loop makes
-    // no second call site.
-    assert_eq!(entry.matches("@read(").count(), 1, "{entry}");
-    assert_eq!(entry.matches("@write(").count(), 1, "{entry}");
+    // One source transfer is one call into the compiler-owned progress
+    // adapter. EINTR/readiness retries remain inside that call and only its
+    // first progress-producing or terminal answer reaches this path.
+    assert_eq!(
+        entry.matches("@wf__completion_file_pread_direct(").count(),
+        1,
+        "{entry}"
+    );
+    assert_eq!(
+        entry.matches("@wf__completion_file_write_direct(").count(),
+        1,
+        "{entry}"
+    );
     assert_eq!(entry.matches("@openat(").count(), 1, "{entry}");
     // The transfer performs no heap allocation and copies no transferred
     // byte: the only allocation in the program is the source buffer the
@@ -1009,7 +993,7 @@ fn an_opened_file_releases_with_one_direct_close_that_is_never_retried() {
 /// routes, retypes it as a relative path, opens that path under the initial
 /// directory, copies the file to standard output through a reused buffer,
 /// echoes the argument to standard error, and returns a command code.
-const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(args cwd), writes(cwd out err), allocates(heap) {
   let echo = buffer_new(64_u64, 0_u8);
   let name_length = 0_u64;
   region 'a {
@@ -1056,14 +1040,16 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                   Ok(value: file) => {
                     let page = buffer_new(16_u64, 0_u8);
                     let total = 0_u64;
+                    let file_offset = 0_u64;
                     let failed = 0_u8;
                     loop @copy {
                       let chunk = 0_u64;
                       region 'f {
                         region 'g {
-                          match read_once<'f, 'g>(file: &uniq 'f file, destination: &uniq 'g page, start: 0_u64, end: 16_u64) {
+                          match read_at<'f, 'g>(file: &'f file, destination: &uniq 'g page, file_offset: file_offset, start: 0_u64, end: 16_u64) {
                             ReadBytes(next: n) => {
                               set chunk = n;
+                              set file_offset = file_offset +wrap n;
                             }
                             ReadEnd() => {
                               break @copy;
@@ -1083,7 +1069,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                       }
                       region 'o {
                         region 's {
-                          match write_once<'o, 's>(output: &uniq 'o out, source: &'s page, start: 0_u64, end: chunk) {
+                          match write_once<'o, 's>(output: &'o out, source: &'s page, start: 0_u64, end: chunk) {
                             Ok(value: written) => {
                               set total = total +wrap written;
                             }
@@ -1107,7 +1093,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                     }
                     region 'x {
                       region 'y {
-                        match write_once<'x, 'y>(output: &uniq 'x err, source: &'y echo, start: 0_u64, end: name_length) {
+                        match write_once<'x, 'y>(output: &'x err, source: &'y echo, start: 0_u64, end: name_length) {
                           Ok(value: written) => {
                             let masked = iand(total, 255_u64);
                             let narrowed = cvt<u64, u8>(masked);
@@ -1174,7 +1160,7 @@ fn every_portable_class_is_mapped_exactly_once_in_inventory_order() {
     use crate::backend::qualification::SystemTarget;
 
     let declared = io_error_classes();
-    assert_eq!(declared.len(), 30);
+    assert_eq!(declared.len(), 28);
     for triple in [
         "aarch64-apple-darwin",
         "x86_64-apple-darwin",

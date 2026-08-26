@@ -1,15 +1,15 @@
-command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {
   doc "One entry record is one kind byte, one little-endian u16 name length, and exactly that many name bytes [SYS-14]. The kind set is closed at `0` unknown, `1` regular file, `2` directory, `3` symbolic link, and `4` other, a name is never empty, and `ListBytes` reports the exact number of records its portable prefix holds. The program walks the batch and exits nonzero on any violation.";
   let entries = buffer_new(4096_u64, 0_u8);
   let room = len(entries);
   let status = 0_u8;
   region 'c {
-    match open_list<'c>(directory: &'c cwd) {
+    match open_directory_source<'c>(directory: &'c cwd) {
       Ok(value: list) => {
         let produced = 0_u64;
         let announced = 0_u64;
         region 'b {
-          match list_once<'b, 'b>(list: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 4096_u64) {
+          match directory_next<'b, 'b>(source: &'b list, destination: &uniq 'b entries, start: 0_u64, end: 4096_u64) {
             ListBytes(next: bytes, entries: reported) => {
               set produced = bytes;
               set announced = reported;

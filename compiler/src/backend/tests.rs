@@ -6,6 +6,7 @@ mod arrays;
 mod base64;
 mod buffers;
 mod checked_division;
+mod completion;
 mod cost_shape;
 mod counted_ranges;
 mod deterministic_target;
@@ -28,6 +29,7 @@ mod requires;
 mod resource_enums;
 mod slices;
 mod stack_ledger;
+mod stackless;
 mod system;
 mod system_io;
 mod trap_latch;
@@ -40,13 +42,17 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
-    ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FLOOR_RUNTIME_SOURCE,
-    FinalizeLimits, FinalizeOutcome, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
+    ACTIVE_KERNEL_SPEC_HASH, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE,
+    COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
+    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
+    CanonicalLimits, CanonicalOutcome, FLOOR_RUNTIME_SOURCE, FinalizeLimits, FinalizeOutcome,
+    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_COMPLETION_RUNTIME_SOURCE,
     PARALLEL_RUNTIME_SOURCE, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome,
-    SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical,
-    check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
+    SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome,
+    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, audit_canonical, check_semantics,
+    check_semantics_arithmetic_obligations, check_semantics_division_obligations,
     classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked,
-    module_requires_parallel_runtime, parse, resolve,
+    module_requires_completion_runtime, module_requires_parallel_runtime, parse, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -93,8 +99,9 @@ const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
 
 static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
 
-/// The shipped default compilation: no overlap group is actualized, so this is
-/// the module a compiler without that lowering emits.
+/// The shipped default compilation: only eligible compiler-owned completion
+/// operations are actualized; pure compute still emits the exact sequential
+/// reference bytes.
 ///
 /// It is also the only *non-outlined* reference on the parallel path. Every
 /// comparison that links one emitted module two ways has a defect in the
@@ -103,7 +110,7 @@ static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
 /// "changes nothing observable" claim a statement about the lowering rather
 /// than about the linker.
 fn emit(source: &[u8]) -> String {
-    emit_lowered(source, OverlapLowering::Off)
+    emit_lowered(source, OverlapLowering::Completion)
 }
 
 /// [`emit`] with the [PAR-1 candidate] overlap lowering switched on, which is
@@ -363,6 +370,54 @@ fn build_executable(llvm: &str, directory: &Path) -> PathBuf {
     build_linked_executable(llvm, None, directory)
 }
 
+/// Adds the compiler-owned completion units to one test link on the exact
+/// condition used by the driver. Custom parallel/floor observers use this too,
+/// so none can accidentally test a link shape the shipped compiler never
+/// produces.
+pub(super) fn append_completion_runtime(
+    command: &mut Command,
+    llvm: &str,
+    directory: &Path,
+) -> Option<Vec<&'static str>> {
+    if !module_requires_completion_runtime(llvm) {
+        return None;
+    }
+    let units = [
+        ("contract.h", COMPLETION_CONTRACT_HEADER),
+        ("file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
+        ("bridge.h", COMPLETION_BRIDGE_HEADER),
+        ("writer_scheduler.h", WRITER_SCHEDULER_HEADER),
+        ("linux_io_uring.h", COMPLETION_LINUX_IO_URING_HEADER),
+        ("completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
+        ("file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
+        ("completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
+        ("writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
+        ("linux_io_uring.c", COMPLETION_LINUX_IO_URING_SOURCE),
+    ];
+    for (name, source) in units {
+        std::fs::write(directory.join(name), source).expect("write completion runtime unit");
+    }
+    command
+        .arg("-I")
+        .arg(directory)
+        .arg("-x")
+        .arg("c")
+        .arg(directory.join("completion_runtime.c"))
+        .arg("-x")
+        .arg("c")
+        .arg(directory.join("file_adapter.c"))
+        .arg("-x")
+        .arg("c")
+        .arg(directory.join("completion_bridge.c"))
+        .arg("-x")
+        .arg("c")
+        .arg(directory.join("writer_scheduler.c"))
+        .arg("-x")
+        .arg("c")
+        .arg(directory.join("linux_io_uring.c"));
+    Some(units.into_iter().map(|(name, _)| name).collect())
+}
+
 /// Links one emitted module, optionally with one host translation unit, into
 /// an executable inside `directory`.
 ///
@@ -394,12 +449,19 @@ fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> 
     // uses: the emitted module names its entry point. A test therefore cannot
     // link a runtime a shipped build would not, and a module that overlaps
     // nothing is linked here with nothing extra at all.
+    let completion_required = module_requires_completion_runtime(llvm);
     let parallel_unit = module_requires_parallel_runtime(llvm).then(|| {
         let path = directory.join("par_runtime.c");
-        std::fs::write(&path, PARALLEL_RUNTIME_SOURCE).expect("write the parallel runtime");
+        let source = if completion_required {
+            PARALLEL_COMPLETION_RUNTIME_SOURCE
+        } else {
+            PARALLEL_RUNTIME_SOURCE
+        };
+        std::fs::write(&path, source).expect("write the parallel runtime");
         command.arg("-x").arg("c").arg(&path);
         path
     });
+    let completion_units = append_completion_runtime(&mut command, llvm, directory);
     let compile = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
@@ -420,6 +482,11 @@ fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> 
     std::fs::remove_file(&floor_unit).expect("remove the floor runtime unit");
     if let Some(path) = parallel_unit {
         std::fs::remove_file(path).expect("remove the parallel runtime unit");
+    }
+    if let Some(names) = completion_units {
+        for name in names {
+            std::fs::remove_file(directory.join(name)).expect("remove completion runtime unit");
+        }
     }
     executable
 }

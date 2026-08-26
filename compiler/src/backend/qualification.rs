@@ -62,7 +62,7 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // endpoints and return absolute success endpoints. Their wrapper arity, scalar
 // widths, aggregate result layouts, host facilities, and resource rows are
 // unchanged; the statically discharged obligations leave no runtime trap.
-// `list_once` now normalizes one kind byte plus a little-endian u16 name length,
+// `directory_next` now normalizes one kind byte plus a little-endian u16 name length,
 // and the target record fixes the Darwin-family component limit at 1023 and
 // the Linux-family limit at 255 while retaining the reviewed Darwin record
 // offsets and fail-closed missing Linux enumeration mapping. The new
@@ -88,43 +88,33 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // reviewed and each remains statically selected implementation version 1, now
 // under the v0.35 semantic-ID key.
 //
-// The one question [PAR-1] raises here is which qualified operations a
-// permitted overlap can reach. Its row gate refuses any callee whose row
-// carries `external` or `blocks`, and [EFF-2] propagates both categories out of
-// every body that calls them, so `open_read`, `read_once`, `write_once`,
-// `open_directory`, `open_list`, `list_once`, and `open_file` are unreachable
-// from an overlapped statement at any call depth, and [EFF-5]'s external order
-// is never consulted concurrently. The eight remaining operations —
-// `args_count`, `arg_get`, `host_bytes_len`, `host_copy_bytes`,
-// `host_utf8_len`, `host_copy_utf8`, `relative_path`, and `exit_status` — may
-// appear inside one, and each is admitted for that use with no row change: it
-// reaches no host facility, holds no process-global state, reads only its own
-// scalar operands or the argument backing [QUAL-2] guarantees stable for the
-// whole run, and writes only into places [PAR-1]'s disjointness condition
-// proves the sibling statement neither reads nor writes. [QUAL-3]'s
-// bootstrap-owned one-time normalization runs before entry and therefore
-// before any overlap exists.
+// [PAR-1] may now include a direct system operation. Static qualification
+// still selects only the target implementation of that semantic identity;
+// permission separately proves ordinary memory, loans, capability fragments,
+// dataflow, and exits. A `may-suspend` record selects completion lowering only
+// when the backend has a typed adapter for the exact operation. Otherwise the
+// valid source retains its sequential qualified call or reports unsupported
+// target capability; no row is fabricated and no source rejection changes.
 //
-// The overlap runtime is outside this table by construction: its worker pool
-// and the outlined thunks carry no semantic ID, occupy no target row, and are
-// reached through no [SYS-2] declaration, so qualification neither admits nor
-// narrows them.
-//
-// v0.36 review (2026-08-24): the delta amends [PAR-1] and [PAR-2] only — the
-// loans half of the disjointness condition, the window-statement conditions,
-// and the combination-tree sentences. It adds no system operation, resource
-// type, semantic ID, target guarantee, host facility, representation, release
-// action, private machine ABI record, or entry contract, so every row above
-// stands as reviewed under the v0.36 semantic-ID key. The one relevant motion
-// runs the other way: [PAR-1] now states that no statement of a permitted
-// window evaluates a system operation, so the eight operations the v0.35
-// review admitted inside an overlap are no longer reachable from one at all,
-// and this table's overlap exposure is strictly smaller than the paragraph
-// above argues for.
-const REVIEWED_FOR: &str = "v0.36";
+// Runtime queues, operation slots, and scheduler frames carry no semantic ID
+// of their own. A file helper accepts a closed typed target descriptor, never
+// an outlined writer function. Native completion and the bounded helper
+// fallback therefore implement rows selected here without becoming alternate
+// system declarations or a second qualification path.
+// v0.37 review (2026-08-26): source effects now name concrete capability
+// parameters while target suspension remains compiler-owned; this changes no
+// native representation. The three renamed operations retain ordinals 8, 12,
+// and 13. Ordinal 8 adds one u64 file offset and binds to pread instead of
+// cursor-mutating read. DirectorySource keeps the descriptor representation
+// and close release of the former traversal source. Interrupted and WouldBlock
+// leave the portable IoError set: no-progress interruption and readiness
+// refusal remain target progress and are not passed to the portable error
+// mapper. Completion dispatch is an emitted execution choice after this
+// static target qualification and adds no dynamic operation mapping.
+const REVIEWED_FOR: &str = "v0.37";
 
 /// The number of [SYS-2] opaque resource types, including the
-/// traversal-surface candidate's `DirectoryList`.
+/// traversal-surface candidate's `DirectorySource`.
 const RESOURCE_COUNT: usize = 8;
 
 /// The [HOST-1] code-unit family a qualified target's host strings belong to.
@@ -209,19 +199,19 @@ impl HostFacilities {
         }
     }
 
-    /// The facility one `read_once` transfer attempt reaches.
-    const fn read(self) -> &'static str {
+    /// The facility one positioned `read_at` transfer attempt reaches.
+    const fn pread(self) -> &'static str {
         match self {
-            Self::Native => "read",
+            Self::Native => "wf__completion_file_pread_direct",
             #[cfg(test)]
-            Self::DeterministicTest => "wf_test_read",
+            Self::DeterministicTest => "wf_test_pread",
         }
     }
 
     /// The facility one `write_once` transfer attempt reaches.
     const fn write(self) -> &'static str {
         match self {
-            Self::Native => "write",
+            Self::Native => "wf__completion_file_write_direct",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_write",
         }
@@ -238,7 +228,7 @@ pub(crate) enum ProgramKind {
 /// One portable [SYS-7] class and the native error codes a target maps onto
 /// it.
 ///
-/// A target's table is the complete closed thirty-class set in [SYS-2]
+/// A target's table is the complete closed twenty-eight-class set in [SYS-2]
 /// declared order: a class no native facility of that target produces keeps
 /// its row with an empty code list rather than disappearing, so the table
 /// states the whole portable vocabulary and narrows nothing by omission. A
@@ -258,7 +248,7 @@ const fn class(class: &'static str, codes: &'static [i32]) -> PortableErrorClass
 }
 
 /// The Darwin-family mapping of native `errno` values onto [SYS-7] classes.
-const DARWIN_ERROR_CLASSES: [PortableErrorClass; 30] = [
+const DARWIN_ERROR_CLASSES: [PortableErrorClass; 28] = [
     class("NotFound", &[2]),
     class("PermissionDenied", &[1, 13]),
     class("AlreadyExists", &[17]),
@@ -270,8 +260,6 @@ const DARWIN_ERROR_CLASSES: [PortableErrorClass; 30] = [
     class("InvalidInput", &[22]),
     class("InvalidPath", &[62, 63]),
     class("Unsupported", &[45, 78, 102]),
-    class("Interrupted", &[4]),
-    class("WouldBlock", &[35]),
     class("TimedOut", &[60]),
     class("BrokenPipe", &[32]),
     // No native code produces these two: `WriteZero` is [SYS-8]'s own
@@ -299,7 +287,7 @@ const DARWIN_ERROR_CLASSES: [PortableErrorClass; 30] = [
 ///
 /// The two families share the first thirty-four codes and diverge above
 /// them, so this is a separate table rather than a diff of the first.
-const LINUX_ERROR_CLASSES: [PortableErrorClass; 30] = [
+const LINUX_ERROR_CLASSES: [PortableErrorClass; 28] = [
     class("NotFound", &[2]),
     class("PermissionDenied", &[1, 13]),
     class("AlreadyExists", &[17]),
@@ -311,8 +299,6 @@ const LINUX_ERROR_CLASSES: [PortableErrorClass; 30] = [
     class("InvalidInput", &[22]),
     class("InvalidPath", &[36, 40]),
     class("Unsupported", &[38, 95]),
-    class("Interrupted", &[4]),
-    class("WouldBlock", &[11]),
     class("TimedOut", &[110]),
     class("BrokenPipe", &[32]),
     class("WriteZero", &[]),
@@ -359,16 +345,18 @@ pub(crate) enum TargetGuarantee {
     /// The target's own directory-relative resolution facility [PATH-2],
     /// never a prefix concatenated onto a path.
     DirectoryRelativeResolution,
-    /// The target's own directory-enumeration facility [SYS-14]: one host
-    /// call that reports a bounded batch of entry records against an open
-    /// directory descriptor and advances that descriptor's own position.
+    /// The target's own directory-enumeration facility [SYS-14]: one
+    /// progress-producing transfer reports a bounded batch of entry records
+    /// against an open directory descriptor and advances that descriptor's
+    /// own position. Interruption and readiness refusal remain target
+    /// scheduling state and may repeat before that transfer.
     DirectoryEnumeration,
 }
 
 /// One target's directory-enumeration facility and the exact record layout it
 /// fills [SYS-14, QUAL-1].
 ///
-/// Every field is target data read only by the `list_once` implementation:
+/// Every field is target data read only by the `directory_next` implementation:
 /// the emitted shim walks the native records this facility wrote and
 /// normalizes them into the portable
 /// `[kind][little-endian u16 name length][name bytes]` form
@@ -377,7 +365,7 @@ pub(crate) enum TargetGuarantee {
 /// them with a directory-reading loop of its own.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct DirectoryEnumeration {
-    /// The one host call a `list_once` attempt makes.
+    /// The native facility behind one admitted `directory_next` operation.
     symbol: &'static str,
     /// That symbol's declaration.
     declaration: &'static str,
@@ -401,7 +389,7 @@ pub(crate) struct DirectoryEnumeration {
 }
 
 impl DirectoryEnumeration {
-    /// The one host call a `list_once` attempt makes.
+    /// The native facility behind one admitted `directory_next` operation.
     pub(crate) const fn symbol(self) -> &'static str {
         self.symbol
     }
@@ -665,13 +653,21 @@ pub(crate) struct SystemTarget {
     native_file_status_symbol: &'static str,
     errno_location: &'static str,
     errno_declaration: &'static str,
-    error_classes: &'static [PortableErrorClass; 30],
+    error_classes: &'static [PortableErrorClass; 28],
     broken_pipe_signal: i32,
     ignored_disposition: i64,
     invalid_disposition: i64,
 }
 
 impl SystemTarget {
+    /// Whether this target's qualified read/write facilities are the POSIX
+    /// descriptor operations implemented by the first typed completion
+    /// adapter.  Scripted deterministic targets keep their own direct
+    /// implementation and therefore never enter the native adapter.
+    pub(crate) const fn supports_posix_file_completion(self) -> bool {
+        matches!(self.host, HostFacilities::Native)
+    }
+
     /// The single code unit sequence a Unix-family target resolves against a
     /// filesystem root, and therefore the complete [PATH-1] target-root prefix
     /// set of this family: one leading separator.
@@ -737,7 +733,7 @@ impl SystemTarget {
     }
 
     /// The target's complete [SYS-7] class mapping, in [SYS-2] declared order.
-    pub(crate) const fn error_classes(self) -> &'static [PortableErrorClass; 30] {
+    pub(crate) const fn error_classes(self) -> &'static [PortableErrorClass; 28] {
         self.error_classes
     }
 
@@ -753,9 +749,9 @@ impl SystemTarget {
         self.host.file_open()
     }
 
-    /// The host facility one `read_once` transfer attempt reaches [SYS-8].
-    pub(crate) const fn read_symbol(self) -> &'static str {
-        self.host.read()
+    /// The host facility one positioned `read_at` attempt reaches [SYS-8].
+    pub(crate) const fn pread_symbol(self) -> &'static str {
+        self.host.pread()
     }
 
     /// The host facility one `write_once` transfer attempt reaches [SYS-8].
@@ -1049,7 +1045,7 @@ pub(crate) const fn qualified_representation(
         SystemResourceType::DirectoryRead
         | SystemResourceType::ReadFile
         | SystemResourceType::Output
-        | SystemResourceType::DirectoryList => ResourceRepresentation::Descriptor,
+        | SystemResourceType::DirectorySource => ResourceRepresentation::Descriptor,
         SystemResourceType::ExitStatus => ResourceRepresentation::CommandCode,
     }
 }
@@ -1063,7 +1059,7 @@ const fn resource_index(resource: SystemResourceType) -> usize {
         SystemResourceType::ReadFile => 4,
         SystemResourceType::Output => 5,
         SystemResourceType::ExitStatus => 6,
-        SystemResourceType::DirectoryList => 7,
+        SystemResourceType::DirectorySource => 7,
     }
 }
 
@@ -1094,10 +1090,10 @@ fn operation_guarantees(operation: u8) -> &'static [TargetGuarantee] {
         // facility [SYS-14], and `open_file` resolves one
         // component name for a file through it [SYS-11].
         11 | 14 => DIRECTORY,
-        // `open_list` and `list_once` additionally require the target's own
+        // `open_directory_source` and `directory_next` additionally require the target's own
         // enumeration facility [SYS-14].
         12 | 13 => ENUMERATION,
-        // `read_once`, `write_once`, and `exit_status` require neither.
+        // `read_at`, `write_once`, and `exit_status` require neither.
         _ => &[],
     }
 }
@@ -1119,7 +1115,7 @@ fn resource_guarantees(resource: SystemResourceType) -> &'static [TargetGuarante
         // An enumeration handle names one directory object it was opened
         // against, so it inherits the same directory-relative guarantee
         // [PATH-2, SYS-14].
-        SystemResourceType::DirectoryList => DIRECTORY,
+        SystemResourceType::DirectorySource => DIRECTORY,
         SystemResourceType::ReadFile
         | SystemResourceType::Output
         | SystemResourceType::ExitStatus => &[],
@@ -1162,12 +1158,12 @@ fn operation_row(
         5 => "wf.sys.host_copy_utf8.v1",
         6 => "wf.sys.relative_path.v1",
         7 => "wf.sys.open_read.v1",
-        8 => "wf.sys.read_once.v1",
+        8 => "wf.sys.read_at.v1",
         9 => "wf.sys.write_once.v1",
         10 => "wf.sys.exit_status.v1",
         11 => "wf.sys.open_directory.v1",
-        12 => "wf.sys.open_list.v1",
-        13 => "wf.sys.list_once.v1",
+        12 => "wf.sys.open_directory_source.v1",
+        13 => "wf.sys.directory_next.v1",
         14 => "wf.sys.open_file.v1",
         // The ordinal bound above admits no other value.
         _ => return Err(QualificationFailure::MissingMapping(facility)),
@@ -1202,7 +1198,7 @@ fn resource_row(
         // [SYS-12], and every other type releases with a logical consume.
         SystemResourceType::DirectoryRead
         | SystemResourceType::ReadFile
-        | SystemResourceType::DirectoryList => {
+        | SystemResourceType::DirectorySource => {
             ReleaseImplementation::NativeClose(target.host.close())
         }
         SystemResourceType::Args

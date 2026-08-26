@@ -154,6 +154,12 @@ enum wf_file_submit_result wf_file_adapter_submit(
     const wf_file_request *request
 );
 
+/* Executes one typed request to its first terminal host answer. EINTR and
+ * read/write/directory readiness refusal are adapter progress; close is never
+ * retried because one ambiguous close attempt has already consumed authority.
+ * Other non-transfer operations remain exactly one host attempt. */
+wf_file_result wf_file_execute_direct(const wf_file_request *request);
+
 /* Executes at most `budget` typed requests on the calling scheduler thread.
  * It never runs a Whitefoot continuation. */
 size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget);

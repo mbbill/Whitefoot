@@ -681,17 +681,16 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 // ----------------------------------------------------------------------
-// Condition 3: the row gate
+// Completion actualization boundary
 // ----------------------------------------------------------------------
 
-/// A callee whose row carries `external` and `blocks` refuses even when it
-/// writes no caller storage: rows gate, and no disjointness is ever derived
-/// from one.
+/// A may-suspend wrapper does not invalidate the loop permission. The current
+/// splitter has no stackless continuation for the loop body, so it records the
+/// permission and deliberately supplies no actualization payload.
 #[test]
-fn an_external_row_in_the_body_is_denied_by_condition_three() {
-    let source =
-        b"fn probe['c](root: &'c DirectoryRead) -> result: own u64 reads('c), external, blocks {
-  match open_list<'c>(directory: root) {
+fn a_may_suspend_wrapper_keeps_permission_but_declines_actualization() {
+    let source = b"fn probe['c](root: &'c DirectoryRead) -> result: own u64 reads('c root) {
+  match open_directory_source<'c>(directory: root) {
     Ok(value: listing) => {
       return 1_u64;
     }
@@ -701,7 +700,7 @@ fn an_external_row_in_the_body_is_denied_by_condition_three() {
   }
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus external, blocks {
+command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd) {
   let total = 0_u64;
   for @scan i in 0_u64..4_u64 {
     region 'probe_call {
@@ -712,30 +711,27 @@ command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus
   return exit_status(code: 0_u8);
 }
 ";
-    let LoopDenial::Row {
-        function,
-        external,
-        blocks,
-    } = denied(source, "main", 3)
-    else {
-        panic!("expected a row denial");
-    };
-    assert_eq!(function, "probe");
-    assert!(external && blocks);
+    let judged = permitted(source, "main");
+    assert!(
+        judged.actualization.is_none(),
+        "the current loop splitter must not run a may-suspend body on a compute thunk"
+    );
 }
 
-/// A [SYS-2] operation written in the body is the external world itself.
+/// A direct may-suspend system operation follows the same boundary. Direct
+/// system calls participate in permission; lack of stackless loop lowering
+/// narrows only actualization.
 #[test]
-fn a_system_call_in_the_body_is_denied_by_condition_three() {
-    let source = b"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
-  let text = buffer_new(4_u64, 65_u8);
+fn a_direct_may_suspend_system_call_keeps_permission_but_declines_actualization() {
+    let source =
+        b"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd) {
   let total = 0_u64;
-  for @emit i in 0_u64..4_u64 {
+  for @scan i in 0_u64..4_u64 {
     region 'attempt {
-      match write_once<'attempt, 'attempt>(output: &uniq 'attempt out, source: &'attempt text, start: 0_u64, end: 1_u64) {
-        Ok(value: next) => {
+      match open_directory_source<'attempt>(directory: &'attempt cwd) {
+        Ok(value: listing) => {
         }
-        Err(error: problem) => {
+        Err(error: refused) => {
         }
       }
     }
@@ -744,10 +740,11 @@ fn a_system_call_in_the_body_is_denied_by_condition_three() {
   return exit_status(code: 0_u8);
 }
 ";
-    assert!(matches!(
-        denied(source, "main", 3),
-        LoopDenial::SystemCall { .. }
-    ));
+    let judged = permitted(source, "main");
+    assert!(
+        judged.actualization.is_none(),
+        "direct completion work needs stackless loop continuation support"
+    );
 }
 
 // ----------------------------------------------------------------------

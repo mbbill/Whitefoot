@@ -7,15 +7,30 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <poll.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#if !defined(WF_COMPLETION_POLL)
+#define WF_COMPLETION_POLL poll
+#else
+extern int WF_COMPLETION_POLL(struct pollfd *, nfds_t, int);
+#endif
+
 #if defined(__APPLE__)
 /* libSystem exports the exact facility used by the qualified Darwin target;
  * it is intentionally not replaced with an opendir/readdir loop. */
-extern ssize_t __getdirentries64(int, void *, size_t, int64_t *);
+#if !defined(WF_COMPLETION_GETDIRENTRIES64)
+#define WF_COMPLETION_GETDIRENTRIES64 __getdirentries64
+#endif
+extern ssize_t WF_COMPLETION_GETDIRENTRIES64(
+    int,
+    void *,
+    size_t,
+    int64_t *
+);
 #endif
 
 _Static_assert(
@@ -60,7 +75,7 @@ static int wf_file_request_valid(const wf_file_request *request) {
     }
 }
 
-static wf_file_result wf_file_execute(const wf_file_request *request) {
+static wf_file_result wf_file_execute_once(const wf_file_request *request) {
     wf_file_result result;
     memset(&result, 0, sizeof(result));
     result.kind = request->kind;
@@ -107,8 +122,9 @@ static wf_file_result wf_file_execute(const wf_file_request *request) {
         break;
     }
 
-    /* Each case is one qualified host attempt.  In particular, Interrupted
-     * remains a typed result rather than an invisible retry. */
+    /* Each pass is one qualified host attempt. No-progress interruption and
+     * readiness refusal are absorbed by wf_file_execute_direct below and
+     * never become writer-visible outcomes. */
     switch (request->kind) {
     case WF_FILE_OPEN_AT:
         if (request->operation.open_at.has_mode != 0) {
@@ -170,7 +186,7 @@ static wf_file_result wf_file_execute(const wf_file_request *request) {
         break;
 #if defined(__APPLE__)
     case WF_FILE_GETDIRENTRIES64:
-        result.value = __getdirentries64(
+        result.value = WF_COMPLETION_GETDIRENTRIES64(
             request->operation.getdirentries64.descriptor,
             request->operation.getdirentries64.buffer,
             request->operation.getdirentries64.count,
@@ -188,14 +204,102 @@ static wf_file_result wf_file_execute(const wf_file_request *request) {
     return result;
 }
 
+static int wf_file_wait_ready(const wf_file_request *request) {
+    struct pollfd descriptor;
+    int waited;
+    memset(&descriptor, 0, sizeof(descriptor));
+    switch (request->kind) {
+    case WF_FILE_READ:
+        descriptor.fd = request->operation.read.descriptor;
+        descriptor.events = POLLIN;
+        break;
+    case WF_FILE_PREAD:
+        descriptor.fd = request->operation.pread.descriptor;
+        descriptor.events = POLLIN;
+        break;
+#if defined(__APPLE__)
+    case WF_FILE_GETDIRENTRIES64:
+        descriptor.fd = request->operation.getdirentries64.descriptor;
+        descriptor.events = POLLIN;
+        break;
+#endif
+    case WF_FILE_WRITE:
+        descriptor.fd = request->operation.write.descriptor;
+        descriptor.events = POLLOUT;
+        break;
+    case WF_FILE_PWRITE:
+        descriptor.fd = request->operation.pwrite.descriptor;
+        descriptor.events = POLLOUT;
+        break;
+    default:
+        return EINVAL;
+    }
+    do {
+        waited = WF_COMPLETION_POLL(&descriptor, 1, -1);
+    } while (waited < 0 && errno == EINTR);
+    return waited > 0 ? 0 : errno;
+}
+
+wf_file_result wf_file_execute_direct(const wf_file_request *request) {
+    wf_file_result result;
+    if (!wf_file_request_valid(request)) {
+        memset(&result, 0, sizeof(result));
+        result.kind = request == NULL ? 0 : request->kind;
+        result.value = -1;
+        result.error_code = EINVAL;
+        return result;
+    }
+    for (;;) {
+        int readiness_error;
+        result = wf_file_execute_once(request);
+        if (result.value >= 0 || result.error_code == 0) {
+            return result;
+        }
+        switch (request->kind) {
+        case WF_FILE_READ:
+        case WF_FILE_WRITE:
+        case WF_FILE_PREAD:
+        case WF_FILE_PWRITE:
+#if defined(__APPLE__)
+        case WF_FILE_GETDIRENTRIES64:
+#endif
+            break;
+        default:
+            return result;
+        }
+        if (result.error_code == EINTR) {
+            continue;
+        }
+        if (result.error_code != EAGAIN
+#if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
+            && result.error_code != EWOULDBLOCK
+#endif
+        ) {
+            return result;
+        }
+        readiness_error = wf_file_wait_ready(request);
+        if (readiness_error != 0) {
+            result.error_code = readiness_error;
+            return result;
+        }
+    }
+}
+
 static int wf_file_take_work(wf_file_adapter *adapter, wf_file_work *work) {
     int present = 0;
     int released_capacity = 0;
     (void)pthread_mutex_lock(&adapter->queue_lock);
     if (adapter->queue_count != 0) {
         released_capacity = adapter->queue_count == adapter->queue_capacity;
-        *work = adapter->queue[adapter->queue_head];
-        adapter->queue_head = (adapter->queue_head + 1) % adapter->queue_capacity;
+        /* The scheduler is the only progress source when helper_count is
+         * zero. Take the newest independent request so a blocked earlier host
+         * facility cannot hide every later free operation behind it. Helper
+         * threads take the oldest request below, so multiple target contexts
+         * naturally spread across both ends of the bounded queue. */
+        adapter->queue_tail = adapter->queue_tail == 0
+            ? adapter->queue_capacity - 1
+            : adapter->queue_tail - 1;
+        *work = adapter->queue[adapter->queue_tail];
         adapter->queue_count -= 1;
         present = 1;
     }
@@ -211,7 +315,7 @@ static void wf_file_run_work(
     const wf_file_work *work,
     int helper
 ) {
-    wf_file_result result = wf_file_execute(&work->request);
+    wf_file_result result = wf_file_execute_direct(&work->request);
     wf_completion_publication publication = {
         .milestones = WF_COMPLETION_OWNERSHIP_COMPLETE,
         .terminal_kind = result.error_code == 0 ? 1u : 2u,

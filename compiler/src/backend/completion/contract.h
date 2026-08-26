@@ -10,9 +10,11 @@
  * decides which saved Whitefoot frame becomes runnable.
  *
  * All storage is supplied by the embedding runtime.  Claiming an operation can
- * therefore return WAIT_CAPACITY, but can never grow a hidden queue.  A token
- * names both a slot and its generation.  The generation is checked while the
- * slot publication lock is held and before any result byte is written.
+ * therefore ask the scheduler to retry after real slot-capacity release or
+ * after a short all-or-none batch-admission gate reopens, but can never grow a
+ * hidden queue.  A token names both a slot and its generation.  The generation
+ * is checked while the slot publication lock is held and before any result
+ * byte is written.
  */
 
 #include <pthread.h>
@@ -60,7 +62,8 @@ typedef struct wf_completion_token {
 enum wf_completion_claim_result {
     WF_COMPLETION_CLAIMED = 0,
     WF_COMPLETION_CLAIM_WAIT_CAPACITY = 1,
-    WF_COMPLETION_CLAIM_INVALID = 2
+    WF_COMPLETION_CLAIM_WAIT_ADMISSION = 2,
+    WF_COMPLETION_CLAIM_INVALID = 3
 };
 
 enum wf_completion_transition_result {
@@ -88,6 +91,30 @@ enum wf_completion_consume_result {
     WF_COMPLETION_CONSUME_INVALID_ARGUMENT = 5
 };
 
+enum wf_completion_consume_wait_result {
+    WF_COMPLETION_CONSUME_READY = 0,
+    WF_COMPLETION_CONSUME_WAIT_REGISTERED = 1,
+    WF_COMPLETION_CONSUME_WAIT_STALE = 2
+};
+
+enum wf_completion_depend_result {
+    WF_COMPLETION_DEPEND_REGISTERED = 0,
+    WF_COMPLETION_DEPEND_ALREADY_READY = 1,
+    WF_COMPLETION_DEPEND_STALE = 2,
+    WF_COMPLETION_DEPEND_DUPLICATE = 3,
+    WF_COMPLETION_DEPEND_INVALID_ARGUMENT = 4
+};
+
+/* Runtime-wide scheduler injection. It accepts only an opaque ready frame and
+ * never names or invokes writer code. */
+
+/* Compiler-owned host-wait notification.  This is separate from ready-frame
+ * injection: every epoch change (compute, completion, or released capacity)
+ * reaches the callback so a target adapter can join the core's wake source to
+ * its native completion wait set.  The callback may only announce a host wait
+ * endpoint; it must not run a writer continuation. */
+typedef void (*wf_completion_wake_callback)(void *context);
+
 enum wf_completion_park_result {
     WF_COMPLETION_PARK_WOKEN = 0,
     WF_COMPLETION_PARK_EPOCH_CHANGED = 1,
@@ -112,6 +139,7 @@ typedef struct wf_completion_event {
 typedef struct wf_completion_outcome {
     uint32_t milestones;
     uint32_t terminal_kind;
+    uint32_t adapter_tag;
     size_t result_size;
 } wf_completion_outcome;
 
@@ -124,8 +152,14 @@ typedef struct wf_completion_slot {
     _Atomic uint32_t milestones;
     _Atomic unsigned event_pending;
     _Atomic unsigned event_drained;
+    /* Protected by publication_lock. A token owner sets this only across the
+     * final recheck-to-park handshake; the drainer clears and wakes it. */
+    unsigned consume_waiting;
     uint32_t terminal_kind;
+    uint32_t adapter_tag;
     size_t result_size;
+    void *dependent_frame;
+    uint32_t dependent_requirement;
     union {
         max_align_t alignment;
         unsigned char bytes[WF_COMPLETION_RESULT_CAPACITY];
@@ -135,6 +169,7 @@ typedef struct wf_completion_slot {
 typedef struct wf_completion_statistics {
     uint64_t claims;
     uint64_t claim_capacity_waits;
+    uint64_t claim_admission_waits;
     uint64_t target_capacity_waits;
     uint64_t publications;
     uint64_t stale_publications;
@@ -144,7 +179,9 @@ typedef struct wf_completion_statistics {
     uint64_t parks;
     uint64_t wake_signals;
     uint64_t compute_notifications;
+    uint64_t target_notifications;
     uint64_t capacity_notifications;
+    uint64_t admission_notifications;
 } wf_completion_statistics;
 
 typedef struct wf_completion_runtime {
@@ -154,6 +191,14 @@ typedef struct wf_completion_runtime {
     _Atomic size_t drain_cursor;
     _Atomic size_t ready_events;
 
+    /* Batch admission closes its gate, waits for the short single-claimer
+     * critical sections already in progress, then reserves all requested
+     * slots or none. `batch_claiming` also carries one conservative bit saying
+     * a single claimant observed the closed gate. Ordinary claims never take
+     * this mutex. */
+    pthread_mutex_t batch_claim_lock;
+    _Atomic unsigned batch_claiming;
+    _Atomic unsigned single_claimers;
     pthread_mutex_t wake_lock;
     pthread_cond_t wake_condition;
     _Atomic uint64_t wake_epoch;
@@ -161,6 +206,7 @@ typedef struct wf_completion_runtime {
 
     _Atomic uint64_t stat_claims;
     _Atomic uint64_t stat_claim_capacity_waits;
+    _Atomic uint64_t stat_claim_admission_waits;
     _Atomic uint64_t stat_target_capacity_waits;
     _Atomic uint64_t stat_publications;
     _Atomic uint64_t stat_stale_publications;
@@ -170,7 +216,11 @@ typedef struct wf_completion_runtime {
     _Atomic uint64_t stat_parks;
     _Atomic uint64_t stat_wake_signals;
     _Atomic uint64_t stat_compute_notifications;
+    _Atomic uint64_t stat_target_notifications;
     _Atomic uint64_t stat_capacity_notifications;
+    _Atomic uint64_t stat_admission_notifications;
+    wf_completion_wake_callback wake_callback;
+    void *wake_context;
 } wf_completion_runtime;
 
 /* Returns zero on success.  `slots` is the complete operation and completion
@@ -185,9 +235,26 @@ int wf_completion_runtime_init(
  * exists.  It returns zero on success and EBUSY/EINVAL otherwise. */
 int wf_completion_runtime_destroy(wf_completion_runtime *runtime);
 
+/* Installs the target's host-wait announcer before any scheduler can park.
+ * At most one announcer may be installed. */
+int wf_completion_set_wake_callback(
+    wf_completion_runtime *runtime,
+    wf_completion_wake_callback wake,
+    void *context
+);
+
 enum wf_completion_claim_result wf_completion_claim(
     wf_completion_runtime *runtime,
     wf_completion_token *token
+);
+
+/* Claims exactly `count` slots or none. Batch claimers serialize only with
+ * other batches; a short atomic gate drains in-progress single claimers before
+ * the all-or-none scan, so independent single operations pay no global mutex. */
+enum wf_completion_claim_result wf_completion_claim_many(
+    wf_completion_runtime *runtime,
+    wf_completion_token *tokens,
+    size_t count
 );
 
 /* Adapter handoff protocol.  begin accepts READY or WAIT_CAPACITY.  A target
@@ -205,6 +272,14 @@ enum wf_completion_transition_result wf_completion_mark_wait_capacity(
 enum wf_completion_transition_result wf_completion_target_accepted(
     wf_completion_runtime *runtime,
     wf_completion_token token
+);
+
+/* Binds target-adapter decoding metadata to this exact slot generation. It is
+ * read and cleared by consume while reuse remains excluded. */
+enum wf_completion_transition_result wf_completion_set_adapter_tag(
+    wf_completion_runtime *runtime,
+    wf_completion_token token,
+    uint32_t adapter_tag
 );
 
 /* The asynchronous terminal route is valid only after target acceptance. */
@@ -242,6 +317,17 @@ enum wf_completion_transition_result wf_completion_observe(
     unsigned *phase
 );
 
+/* Registers one exact frame requirement before target handoff. The scheduler
+ * injects that opaque frame at most once, outside the publication lock, after
+ * the requirement is satisfied and this exact completion event is drained.
+ * A resumed frame can therefore consume its result immediately. */
+enum wf_completion_depend_result wf_completion_depend(
+    wf_completion_runtime *runtime,
+    wf_completion_token token,
+    uint32_t requirement,
+    void *frame
+);
+
 /* Consumption transfers the result and recycles the slot.  The completion
  * event must first have been drained so a reused slot can never leave an old
  * event in the scheduler's ready set. */
@@ -253,6 +339,13 @@ enum wf_completion_consume_result wf_completion_consume(
     wf_completion_outcome *outcome
 );
 
+/* Atomically performs a token owner's final consumability recheck and, when
+ * still unavailable, registers the exact drain transition which must wake it. */
+enum wf_completion_consume_wait_result wf_completion_wait_to_consume(
+    wf_completion_runtime *runtime,
+    wf_completion_token token
+);
+
 /* One epoch covers both compute publication and target completion.  Scheduler
  * protocol is: process/drain/progress; snapshot the epoch; recheck all sources;
  * then park_if_unchanged.  The park function announces sleep under the same
@@ -260,6 +353,8 @@ enum wf_completion_consume_result wf_completion_consume(
  * wakes.  UINT32_MAX requests an unbounded wait. */
 uint64_t wf_completion_wake_epoch(const wf_completion_runtime *runtime);
 void wf_completion_notify_compute(wf_completion_runtime *runtime);
+/* Newly runnable bounded target work uses the same epoch and host endpoint. */
+void wf_completion_notify_target(wf_completion_runtime *runtime);
 /* A released operation slot or target-queue credit is scheduler progress too.
  * It shares the same epoch and park endpoint as compute and completion. */
 void wf_completion_notify_capacity(wf_completion_runtime *runtime);
@@ -275,6 +370,9 @@ unsigned wf_completion_parked_scheduler_count(
 wf_completion_statistics wf_completion_statistics_snapshot(
     const wf_completion_runtime *runtime
 );
+
+_Static_assert(sizeof(wf_completion_token) == 16u, "completion token ABI");
+_Static_assert(alignof(wf_completion_token) >= alignof(uint64_t), "completion token alignment");
 
 #if defined(__cplusplus)
 }

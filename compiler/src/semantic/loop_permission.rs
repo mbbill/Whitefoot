@@ -23,8 +23,11 @@
 //!    or that accumulator. An element write, a field of enclosing storage, a
 //!    callee row projecting onto enclosing storage, an arena append, and every
 //!    write this judgment cannot resolve all deny.
-//! 3. **Row gate.** No call in B carries `external` or `blocks`, and no
-//!    [SYS-2] operation is written in B. Rows gate; places prove.
+//! 3. **Complete target and family summaries.** Every call and derived release
+//!    in B identifies its target action and family-owned authority fragments.
+//!    Unknown or exclusive cross-iteration fragment pairs deny. A may-suspend
+//!    target keeps the permission but requires a completion-capable loop
+//!    actualizer; this version otherwise leaves the loop sequential.
 //! 4. **No exit edge.** No `return`, `give`, `propagate` `Err` edge, or
 //!    `break` naming L or an enclosing loop leaves the loop, so every
 //!    iteration of the whole range runs.
@@ -241,14 +244,6 @@ pub(crate) enum LoopDenial {
     /// Condition 2, fail closed: a body statement form whose footprint this
     /// judgment does not compute.
     BodyForm { form: &'static str },
-    /// Condition 3: a call in the body carries `external` or `blocks`.
-    Row {
-        function: String,
-        external: bool,
-        blocks: bool,
-    },
-    /// Condition 3: a [SYS-2] operation is the external world itself.
-    SystemCall { call: NodePath },
     /// Condition 4: an edge leaves the loop.
     Exit { edge: &'static str },
 }
@@ -265,7 +260,6 @@ impl LoopDenial {
             | Self::Loan { .. }
             | Self::UnresolvedWrite { .. }
             | Self::BodyForm { .. } => 2,
-            Self::Row { .. } | Self::SystemCall { .. } => 3,
             Self::Exit { .. } => 4,
         }
     }
@@ -355,8 +349,7 @@ fn judge<'check>(
         loan: None,
         unresolved: None,
         form: None,
-        row: None,
-        system_call: None,
+        may_suspend: false,
         exit: None,
     };
     survey.introduce(body);
@@ -390,8 +383,9 @@ struct Survey<'check, 'run> {
     loan: Option<NodePath>,
     unresolved: Option<NodePath>,
     form: Option<&'static str>,
-    row: Option<(String, bool, bool)>,
-    system_call: Option<NodePath>,
+    /// Permission remains recorded, but this loop actualizer has no stackless
+    /// continuation path yet and therefore must stay sequential.
+    may_suspend: bool,
     exit: Option<&'static str>,
 }
 
@@ -698,27 +692,14 @@ impl<'check> Survey<'check, '_> {
                     let footprint = self.program.footprint(self.places, &projection);
                     self.record_writes(&footprint);
                 }
-                match self.program.signature(*function) {
-                    Some(signature) if signature.external || signature.blocks => {
-                        self.row.get_or_insert((
-                            self.program.function_name(*function),
-                            signature.external,
-                            signature.blocks,
-                        ));
-                    }
-                    // A callee this analysis cannot place has no readable row,
-                    // so it gates rather than being assumed clean.
-                    None => {
-                        self.row
-                            .get_or_insert((self.program.function_name(*function), true, true));
-                    }
-                    Some(_) => {}
-                }
+                self.may_suspend |= self.program.target_action(*function).may_suspend();
             }
-            // A [SYS-2] operation is the external world: it is the very thing
-            // condition 3's row gate keeps out of an overlapped execution.
-            CheckedExpression::SystemCall { call, .. } => {
-                self.system_call.get_or_insert(call.clone());
+            CheckedExpression::SystemCall { target_action, .. } => {
+                if let Some(projection) = call_projection(expression) {
+                    let footprint = self.program.footprint(self.places, &projection);
+                    self.record_writes(&footprint);
+                }
+                self.may_suspend |= target_action.may_suspend();
             }
             _ => {}
         }
@@ -803,8 +784,8 @@ impl<'check> Survey<'check, '_> {
         // exactly where the verdict below is `PermittedEligible` and the body
         // combines something: a permitted loop that carries nothing has no fold
         // to distribute.
-        let actualization = match (&denial, self.accumulates.first()) {
-            (None, Some(accumulate)) => Some(LoopActualization {
+        let actualization = match (&denial, self.may_suspend, self.accumulates.first()) {
+            (None, false, Some(accumulate)) => Some(LoopActualization {
                 accumulator: accumulate.binding,
                 combine: accumulate.combine,
             }),
@@ -844,16 +825,6 @@ impl<'check> Survey<'check, '_> {
             return Some(LoopDenial::UnresolvedWrite {
                 argument: argument.clone(),
             });
-        }
-        if let Some((function, external, blocks)) = &self.row {
-            return Some(LoopDenial::Row {
-                function: function.clone(),
-                external: *external,
-                blocks: *blocks,
-            });
-        }
-        if let Some(call) = &self.system_call {
-            return Some(LoopDenial::SystemCall { call: call.clone() });
         }
         self.exit.map(|edge| LoopDenial::Exit { edge })
     }

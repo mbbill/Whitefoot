@@ -69,6 +69,120 @@ fn denial(pair: &PermissionPair, condition: u8) -> &Denial {
 // Grants
 // ----------------------------------------------------------------------
 
+/// Direct system operations are ordinary permission candidates. Their
+/// compiler-owned execution contract is retained for lowering, but authority
+/// overlap is decided solely from the concrete actual places.
+#[test]
+fn independent_direct_output_operations_are_permitted() {
+    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(out err), allocates(heap) {
+  let bytes = buffer_new(2_u64, 65_u8);
+  region 'out {
+    region 'err {
+      region 'source {
+        let first = write_once<'out, 'source>(output: &'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
+        let second = write_once<'err, 'source>(output: &'err err, source: &'source bytes, start: 1_u64, end: 2_u64);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    assert_eq!(pair.first.callee_name, "write_once");
+    assert_eq!(pair.second.callee_name, "write_once");
+    assert_eq!(pair.first.target_action, crate::TargetAction::MAY_SUSPEND);
+    assert_eq!(pair.second.target_action, crate::TargetAction::MAY_SUSPEND);
+    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
+}
+
+/// Two output reservations may coexist on one root. Their family-defined
+/// ordered relation contributes an explicit source-order edge.
+#[test]
+fn direct_output_operations_on_one_capability_are_ordered() {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+  let bytes = buffer_new(2_u64, 65_u8);
+  region 'out {
+    region 'source {
+      let first = write_once<'out, 'source>(output: &'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
+      let second = write_once<'out, 'source>(output: &'out out, source: &'source bytes, start: 1_u64, end: 2_u64);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
+    assert_eq!(pair.authority_order.len(), 1);
+}
+
+/// The family contract, not capability identity alone, can admit two
+/// reservations on the same logical root. Directory lookup is explicitly
+/// free, and the shared memory loans also coexist.
+#[test]
+fn free_directory_authority_can_overlap_on_one_capability() {
+    let source =
+        br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd) {
+  region 'directory {
+    let first = open_directory_source<'directory>(directory: &'directory cwd);
+    let second = open_directory_source<'directory>(directory: &'directory cwd);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
+}
+
+/// Positioned reads reserve free fragments on the same file root. Shared
+/// file loans coexist, while the two destination loans remain disjoint.
+#[test]
+fn positioned_reads_on_one_file_with_disjoint_destinations_are_permitted() {
+    let source = br#"fn probe(file: own ReadFile) -> result: own unit reads(file), writes(file), allocates(heap) {
+  let left = buffer_new(1_u64, 0_u8);
+  let right = buffer_new(1_u64, 0_u8);
+  region 'file {
+    region 'left {
+      region 'right {
+        let first = read_at<'file, 'left>(file: &'file file, destination: &uniq 'left left, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+        let second = read_at<'file, 'right>(file: &'file file, destination: &uniq 'right right, file_offset: 1_u64, start: 0_u64, end: 1_u64);
+      }
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "probe");
+    assert_eq!(pair.first.callee_name, "read_at");
+    assert_eq!(pair.second.callee_name, "read_at");
+    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
+    assert!(pair.authority_order.is_empty());
+}
+
+/// A direct inline system operation is not mistaken for an unknown call and
+/// therefore needs neither a wrapper nor a special source marker.
+#[test]
+fn direct_inline_system_operations_form_an_eligible_pair() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  let first = exit_status(code: 0_u8);
+  let second = exit_status(code: 1_u8);
+  return move second;
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    assert_eq!(pair.first.target_action, crate::TargetAction::INLINE);
+    assert_eq!(pair.second.target_action, crate::TargetAction::INLINE);
+    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
+}
+
 /// The two-child unique tree fold: each recursive sibling reaches storage
 /// only through its own `&uniq` payload binder, and [OWN-13] makes the two
 /// binders disjoint. This is the shape a parallel fold is written in.
@@ -482,16 +596,15 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(*sides, (PairSide::First, PairSide::Second));
 }
 
-/// Condition 3. The row gate refuses `external` before any place is
-/// consulted, even though the two consumed actuals are disjoint.
+/// Target suspension is not a permission denial. Two calls consuming distinct
+/// capabilities remain eligible; lowering chooses the completion route.
 #[test]
-fn an_external_row_callee_is_denied_by_condition_three() {
-    let source =
-        br#"fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {
+fn may_suspend_release_wrappers_on_distinct_capabilities_are_permitted() {
+    let source = br#"fn release_read_file(file: own ReadFile) -> result: own unit writes(file) {
   return unit;
 }
 
-fn release_pair(first: own ReadFile, second: own ReadFile) -> result: own unit external, blocks {
+fn release_pair(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first second) {
   let done_first = release_read_file(file: move first);
   let done_second = release_read_file(file: move second);
   return unit;
@@ -503,17 +616,9 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let table = permission_of(source);
     let pair = only_pair(&table, "release_pair");
-    let Denial::Row {
-        side,
-        external,
-        blocks,
-    } = denial(pair, 3)
-    else {
-        panic!("expected a row denial, got {:?}", pair.verdict);
-    };
-    assert_eq!(*side, PairSide::First);
-    assert!(*external);
-    assert!(*blocks);
+    assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
+    assert_eq!(pair.first.target_action, crate::TargetAction::MAY_SUSPEND);
+    assert_eq!(pair.second.target_action, crate::TargetAction::MAY_SUSPEND);
 }
 
 /// Condition 4. The first statement's `propagate` right-hand side has an
@@ -1273,14 +1378,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     };
 }
 
-/// [PAR-1]'s system-operation clause: no statement of the window evaluates
-/// one. The refusal is currently carried by the operand walk's fail-closed
-/// catch-all — a call it meets sets the unresolved marker — so this test
-/// names the denial that clause depends on; making that arm smarter without
-/// an explicit system-operation refusal would fail here rather than silently
-/// deleting the clause.
+/// Direct system operations are candidates under the same ordinary call
+/// permission judgment. An inline, authority-free operation therefore forms
+/// the two adjacent eligible pairs rather than becoming opaque interposition.
 #[test]
-fn an_interposed_system_operation_denies_the_window() {
+fn an_inline_system_operation_forms_ordinary_adjacent_windows() {
     let source = br#"fn quiet['c](cell: &uniq 'c u64) -> result: own u64 pure {
   return 3_u64;
 }
@@ -1309,9 +1411,14 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     let table = permission_of(source);
-    let pair = only_pair(&table, "interposed_pure_syscall");
-    assert!(matches!(
-        denial(pair, 2),
-        Denial::InterposedForm { .. } | Denial::UnresolvedFootprint { .. }
-    ));
+    let permissions = function_table(&table, "interposed_pure_syscall");
+    assert_eq!(permissions.pairs.len(), 2);
+    assert_eq!(permissions.pairs[0].second.callee_name, "relative_path");
+    assert_eq!(permissions.pairs[1].first.callee_name, "relative_path");
+    assert!(
+        permissions
+            .pairs
+            .iter()
+            .all(|pair| pair.verdict == PermissionVerdict::PermittedEligible)
+    );
 }

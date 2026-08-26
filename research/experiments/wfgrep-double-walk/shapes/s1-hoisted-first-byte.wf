@@ -1,28 +1,28 @@
-const usage_text: array<u8, 30> = [117_u8, 115_u8, 97_u8, 103_u8, 101_u8, 58_u8, 32_u8, 119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 32_u8, 80_u8, 65_u8, 84_u8, 84_u8, 69_u8, 82_u8, 78_u8, 32_u8, 70_u8, 73_u8, 76_u8, 69_u8, 46_u8, 46_u8, 46_u8, 10_u8];
+const usage_text: array<u8, 30> =[117_u8, 115_u8, 97_u8, 103_u8, 101_u8, 58_u8, 32_u8, 119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 32_u8, 80_u8, 65_u8, 84_u8, 84_u8, 69_u8, 82_u8, 78_u8, 32_u8, 70_u8, 73_u8, 76_u8, 69_u8, 46_u8, 46_u8, 46_u8, 10_u8];
 
-const error_prefix: array<u8, 8> = [119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8];
+const error_prefix: array<u8, 8> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8];
 
-const error_separator: array<u8, 2> = [58_u8, 32_u8];
+const error_separator: array<u8, 2> =[58_u8, 32_u8];
 
-const reason_missing: array<u8, 26> = [110_u8, 111_u8, 32_u8, 115_u8, 117_u8, 99_u8, 104_u8, 32_u8, 102_u8, 105_u8, 108_u8, 101_u8, 32_u8, 111_u8, 114_u8, 32_u8, 100_u8, 105_u8, 114_u8, 101_u8, 99_u8, 116_u8, 111_u8, 114_u8, 121_u8, 10_u8];
+const reason_missing: array<u8, 26> =[110_u8, 111_u8, 32_u8, 115_u8, 117_u8, 99_u8, 104_u8, 32_u8, 102_u8, 105_u8, 108_u8, 101_u8, 32_u8, 111_u8, 114_u8, 32_u8, 100_u8, 105_u8, 114_u8, 101_u8, 99_u8, 116_u8, 111_u8, 114_u8, 121_u8, 10_u8];
 
-const reason_denied: array<u8, 18> = [112_u8, 101_u8, 114_u8, 109_u8, 105_u8, 115_u8, 115_u8, 105_u8, 111_u8, 110_u8, 32_u8, 100_u8, 101_u8, 110_u8, 105_u8, 101_u8, 100_u8, 10_u8];
+const reason_denied: array<u8, 18> =[112_u8, 101_u8, 114_u8, 109_u8, 105_u8, 115_u8, 115_u8, 105_u8, 111_u8, 110_u8, 32_u8, 100_u8, 101_u8, 110_u8, 105_u8, 101_u8, 100_u8, 10_u8];
 
-const reason_directory: array<u8, 15> = [105_u8, 115_u8, 32_u8, 97_u8, 32_u8, 100_u8, 105_u8, 114_u8, 101_u8, 99_u8, 116_u8, 111_u8, 114_u8, 121_u8, 10_u8];
+const reason_directory: array<u8, 15> =[105_u8, 115_u8, 32_u8, 97_u8, 32_u8, 100_u8, 105_u8, 114_u8, 101_u8, 99_u8, 116_u8, 111_u8, 114_u8, 121_u8, 10_u8];
 
-const reason_invalid_path: array<u8, 22> = [105_u8, 110_u8, 118_u8, 97_u8, 108_u8, 105_u8, 100_u8, 32_u8, 114_u8, 101_u8, 108_u8, 97_u8, 116_u8, 105_u8, 118_u8, 101_u8, 32_u8, 112_u8, 97_u8, 116_u8, 104_u8, 10_u8];
+const reason_invalid_path: array<u8, 22> =[105_u8, 110_u8, 118_u8, 97_u8, 108_u8, 105_u8, 100_u8, 32_u8, 114_u8, 101_u8, 108_u8, 97_u8, 116_u8, 105_u8, 118_u8, 101_u8, 32_u8, 112_u8, 97_u8, 116_u8, 104_u8, 10_u8];
 
-const reason_long_line: array<u8, 14> = [108_u8, 105_u8, 110_u8, 101_u8, 32_u8, 116_u8, 111_u8, 111_u8, 32_u8, 108_u8, 111_u8, 110_u8, 103_u8, 10_u8];
+const reason_long_line: array<u8, 14> =[108_u8, 105_u8, 110_u8, 101_u8, 32_u8, 116_u8, 111_u8, 111_u8, 32_u8, 108_u8, 111_u8, 110_u8, 103_u8, 10_u8];
 
-const reason_unreadable: array<u8, 12> = [99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 114_u8, 101_u8, 97_u8, 100_u8, 10_u8];
+const reason_unreadable: array<u8, 12> =[99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 114_u8, 101_u8, 97_u8, 100_u8, 10_u8];
 
-const reason_broken_pipe: array<u8, 20> = [119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 98_u8, 114_u8, 111_u8, 107_u8, 101_u8, 110_u8, 32_u8, 112_u8, 105_u8, 112_u8, 101_u8, 10_u8];
+const reason_broken_pipe: array<u8, 20> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 98_u8, 114_u8, 111_u8, 107_u8, 101_u8, 110_u8, 32_u8, 112_u8, 105_u8, 112_u8, 101_u8, 10_u8];
 
-const reason_write_error: array<u8, 20> = [119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 119_u8, 114_u8, 105_u8, 116_u8, 101_u8, 32_u8, 101_u8, 114_u8, 114_u8, 111_u8, 114_u8, 10_u8];
+const reason_write_error: array<u8, 20> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 119_u8, 114_u8, 105_u8, 116_u8, 101_u8, 32_u8, 101_u8, 114_u8, 114_u8, 111_u8, 114_u8, 10_u8];
 
-const reason_pattern_too_long: array<u8, 25> = [119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 112_u8, 97_u8, 116_u8, 116_u8, 101_u8, 114_u8, 110_u8, 32_u8, 116_u8, 111_u8, 111_u8, 32_u8, 108_u8, 111_u8, 110_u8, 103_u8, 10_u8];
+const reason_pattern_too_long: array<u8, 25> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 112_u8, 97_u8, 116_u8, 116_u8, 101_u8, 114_u8, 110_u8, 32_u8, 116_u8, 111_u8, 111_u8, 32_u8, 108_u8, 111_u8, 110_u8, 103_u8, 10_u8];
 
-fn io_class(error: own IoError) -> own u8 pure {
+fn io_class(error: own IoError) -> result: own u8 pure {
   doc "Reduces one portable IoError class to the distinctions wfgrep reports.";
   match error {
     NotFound(code: c, origin: o) => {
@@ -56,12 +56,6 @@ fn io_class(error: own IoError) -> own u8 pure {
       return 9_u8;
     }
     Unsupported(code: c, origin: o) => {
-      return 9_u8;
-    }
-    Interrupted(code: c, origin: o) => {
-      return 9_u8;
-    }
-    WouldBlock(code: c, origin: o) => {
       return 9_u8;
     }
     TimedOut(code: c, origin: o) => {
@@ -118,179 +112,211 @@ fn io_class(error: own IoError) -> own u8 pure {
   }
 }
 
-fn append_slice ['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> own u64 reads('d 'm), writes('d), traps {
+fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> result: own u64 reads('d 'm), writes('d) contract {
+  define capacity = len(deref(destination));
+  ensures ile(result, capacity);
+} {
   doc "Appends as much of one static message as the destination still holds.";
-  let capacity: own u64 = len<u8>(deref(destination));
-  let length: own u64 = len<u8>(text);
-  let at: own u64 = filled;
-  let taken: own u64 = 0_u64;
-  loop @append {
-    let done: own Bool = ige<u64>(taken, length);
-    match done {
-      True() => {
-        break @append;
+  let capacity = len(deref(destination));
+  let admitted = ile(filled, capacity);
+  let length = len(text);
+  if admitted {
+    for @append at in filled..capacity {
+      let taken = at -wrap filled;
+      let done = ige(taken, length);
+      if done {
+        return at;
       }
-      False() => {
-      }
+      let byte = text[taken];
+      set deref(destination)[at] = byte;
     }
-    let room: own Bool = ilt<u64>(at, capacity);
-    match room {
-      True() => {
-      }
-      False() => {
-        break @append;
-      }
-    }
-    let byte: own u8 = index<u8>(text, taken);
-    set index<u8>(deref(destination), at) = byte;
-    set at = iadd.wrap<u64>(at, 1_u64);
-    set taken = iadd.wrap<u64>(taken, 1_u64);
+    return capacity;
+  } else {
+    return capacity;
   }
-  return at;
 }
 
-fn copy_range ['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> own u64 reads('s), writes('d), traps {
+fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads('d 's), writes('d) contract {
+  define destination_room = len(deref(destination));
+  ensures ile(result, destination_room);
+} {
   doc "Copies one half-open source range into the destination at one offset.";
-  let target: own u64 = at;
-  let cursor: own u64 = from;
+  let source_room = len(deref(source));
+  let destination_room = len(deref(destination));
+  let admitted = ile(at, destination_room);
+  if admitted {
+  } else {
+    return destination_room;
+  }
+  let target = at;
+  let cursor = from;
   loop @copy {
-    let done: own Bool = ige<u64>(cursor, to);
-    match done {
-      True() => {
-        break @copy;
-      }
-      False() => {
+    let done = ige(cursor, to);
+    if done {
+      break @copy;
+    }
+    let read_ok = ilt(cursor, source_room);
+    if read_ok {
+    } else {
+      let target_fits = ile(target, destination_room);
+      if target_fits {
+        return target;
+      } else {
+        return destination_room;
       }
     }
-    let byte: own u8 = index<u8>(deref(source), cursor);
-    set index<u8>(deref(destination), target) = byte;
-    set target = iadd.wrap<u64>(target, 1_u64);
-    set cursor = iadd.wrap<u64>(cursor, 1_u64);
+    let byte = deref(source)[cursor];
+    let write_ok = ilt(target, destination_room);
+    if write_ok {
+    } else {
+      return destination_room;
+    }
+    set deref(destination)[target] = byte;
+    set target = target +wrap 1_u64;
+    set cursor = cursor +wrap 1_u64;
   }
-  return target;
+  let target_fits = ile(target, destination_room);
+  if target_fits {
+    return target;
+  } else {
+    return destination_room;
+  }
 }
 
-fn line_matches ['s, 'p](source: &'s buffer<u8>, start: own u64, stop: own u64, pattern: &'p buffer<u8>, length: own u64) -> own Bool reads('s 'p), traps {
+fn line_matches['s, 'p](source: &'s buffer<u8>, start: own u64, stop: own u64, pattern: &'p buffer<u8>, length: own u64) -> result: own Bool reads('s 'p) {
   doc "Reports whether the literal pattern bytes occur in one line's byte range.";
-  let empty: own Bool = ieq<u64>(length, 0_u64);
-  match empty {
-    True() => {
-      return True();
-    }
-    False() => {
-    }
+  let source_room = len(deref(source));
+  let pattern_room = len(deref(pattern));
+  let ordered = ile(start, stop);
+  if ordered {
+  } else {
+    return False();
   }
-  let span: own u64 = isub.wrap<u64>(stop, start);
-  let fits: own Bool = ige<u64>(span, length);
-  match fits {
-    True() => {
+  let source_fits = ile(stop, source_room);
+  if source_fits {
+  } else {
+    return False();
+  }
+  let pattern_fits = ile(length, pattern_room);
+  if pattern_fits {
+  } else {
+    return False();
+  }
+  let empty = ieq(length, 0_u64);
+  if empty {
+    return True();
+  }
+  let span = stop -wrap start;
+  let fits = ige(span, length);
+  if fits {
+  } else {
+    return False();
+  }
+  let first = deref(pattern)[0_u64];
+  let last = span -wrap length;
+  let offset = 0_u64;
+  loop @candidates {
+    let past = igt(offset, last);
+    if past {
+      break @candidates;
     }
-    False() => {
+    let base = start +wrap offset;
+    let base_ok = ilt(base, source_room);
+    if base_ok {
+    } else {
       return False();
     }
-  }
-  let first: own u8 = index<u8>(deref(pattern), 0_u64);
-  let last: own u64 = isub.wrap<u64>(span, length);
-  let offset: own u64 = 0_u64;
-  loop @candidates {
-    let past: own Bool = igt<u64>(offset, last);
-    match past {
-      True() => {
-        break @candidates;
+    let head = deref(source)[base];
+    let lead = ieq(head, first);
+    if lead {
+      let probe = 1_u64;
+      let same = True();
+      loop @compare {
+        let done = ige(probe, length);
+        if done {
+          break @compare;
+        }
+        let position = base +wrap probe;
+        let position_ok = ilt(position, source_room);
+        if position_ok {
+        } else {
+          set same = False();
+          break @compare;
+        }
+        let probe_ok = ilt(probe, pattern_room);
+        if probe_ok {
+        } else {
+          set same = False();
+          break @compare;
+        }
+        let left = deref(source)[position];
+        let right = deref(pattern)[probe];
+        let equal = ieq(left, right);
+        if equal {
+        } else {
+          set same = False();
+          break @compare;
+        }
+        set probe = probe +wrap 1_u64;
       }
-      False() => {
+      if same {
+        return True();
       }
     }
-    let base: own u64 = iadd.wrap<u64>(start, offset);
-    let head: own u8 = index<u8>(deref(source), base);
-    let lead: own Bool = ieq<u8>(head, first);
-    match lead {
-      True() => {
-        let probe: own u64 = 1_u64;
-        let same: own Bool = True();
-        loop @compare {
-          let done: own Bool = ige<u64>(probe, length);
-          match done {
-            True() => {
-              break @compare;
-            }
-            False() => {
-            }
-          }
-          let position: own u64 = iadd.wrap<u64>(base, probe);
-          let left: own u8 = index<u8>(deref(source), position);
-          let right: own u8 = index<u8>(deref(pattern), probe);
-          let equal: own Bool = ieq<u8>(left, right);
-          match equal {
-            True() => {
-            }
-            False() => {
-              set same = False();
-              break @compare;
-            }
-          }
-          set probe = iadd.wrap<u64>(probe, 1_u64);
-        }
-        match same {
-          True() => {
-            return True();
-          }
-          False() => {
-          }
-        }
-      }
-      False() => {
-      }
-    }
-    set offset = iadd.wrap<u64>(offset, 1_u64);
+    set offset = offset +wrap 1_u64;
   }
   return False();
 }
 
-fn publish_all ['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
+fn publish_all['o, 's](output: &'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes(output) contract {
+  define source_length = len(deref(source));
+  requires ile(length, source_length);
+} {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
-  let sent: own u64 = 0_u64;
+  let sent = 0_u64;
   loop @publish {
-    let pending: own Bool = ilt<u64>(sent, length);
-    match pending {
-      True() => {
-      }
-      False() => {
-        break @publish;
-      }
+    let pending = ilt(sent, length);
+    if pending {
+    } else {
+      break @publish;
     }
-    let remaining: own u64 = isub.wrap<u64>(length, sent);
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: sent, count: remaining) {
+      match write_once<'attempt, 's>(output: &'attempt deref(output), source: source, start: sent, end: length) {
         Ok(value: written) => {
-          set sent = iadd.wrap<u64>(sent, written);
+          set sent = written;
         }
         Err(error: problem) => {
-          return Err(error: move problem);
+          return Err<unit, IoError>(error: move problem);
         }
       }
     }
   }
-  return Ok(value: unit);
+  return Ok<unit, IoError>(value: unit);
 }
 
-fn report_failure ['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uniq 'r buffer<u8>, status: own u8, position: own u64) -> own unit reads('a 'e 'r), writes('e 'r), external, blocks, traps {
+fn report_failure['a, 'e, 'r](args: &'a Args, err: &'e Output, report: &uniq 'r buffer<u8>, status: own u8, position: own u64) -> result: own unit reads('a 'e 'r args), writes('r err) contract {
+  define report_room = len(deref(report));
+  requires ile(256_u64, report_room);
+} {
   doc "Assembles one `wfgrep: NAME: reason` diagnostic in the reusable report buffer and publishes it to standard error.";
-  let length: own u64 = 0_u64;
+  let length = 0_u64;
   region 'report_prefix {
-    let view: own slice<'report_prefix, u8> = slice_of<'report_prefix, u8>(&'report_prefix error_prefix);
+    let view = slice_of(&'report_prefix error_prefix);
     region 'prefix_append {
       set length = append_slice<'prefix_append, 'report_prefix>(destination: &uniq 'prefix_append deref(report), filled: length, text: move view);
     }
   }
   match arg_get<'a>(args: args, position: position) {
     Ok(value: text) => {
-      region 'report_name {
-        match host_copy_bytes<'report_name, 'report_name>(value: &'report_name text, destination: &uniq 'report_name deref(report), offset: length, capacity: 256_u64) {
-          Ok(value: copied) => {
-            set length = iadd.wrap<u64>(length, copied);
-          }
-          Err(error: too_small) => {
+      let name_start_ok = ile(length, 256_u64);
+      if name_start_ok {
+        region 'report_name {
+          match host_copy_bytes<'report_name, 'report_name>(value: &'report_name text, destination: &uniq 'report_name deref(report), start: length, end: 256_u64) {
+            Ok(value: copied) => {
+              set length = copied;
+            }
+            Err(error: too_small) => {
+            }
           }
         }
       }
@@ -299,91 +325,67 @@ fn report_failure ['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &un
     }
   }
   region 'report_separator {
-    let view: own slice<'report_separator, u8> = slice_of<'report_separator, u8>(&'report_separator error_separator);
+    let view = slice_of(&'report_separator error_separator);
     region 'separator_append {
       set length = append_slice<'separator_append, 'report_separator>(destination: &uniq 'separator_append deref(report), filled: length, text: move view);
     }
   }
-  let named: own u8 = 0_u8;
-  match ieq<u8>(status, 1_u8) {
-    True() => {
-      set named = 1_u8;
-      region 'reason_missing_view {
-        let view: own slice<'reason_missing_view, u8> = slice_of<'reason_missing_view, u8>(&'reason_missing_view reason_missing);
-        region 'reason_missing_append {
-          set length = append_slice<'reason_missing_append, 'reason_missing_view>(destination: &uniq 'reason_missing_append deref(report), filled: length, text: move view);
-        }
+  let named = 0_u8;
+  if ieq(status, 1_u8) {
+    set named = 1_u8;
+    region 'reason_missing_view {
+      let view = slice_of(&'reason_missing_view reason_missing);
+      region 'reason_missing_append {
+        set length = append_slice<'reason_missing_append, 'reason_missing_view>(destination: &uniq 'reason_missing_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
-  match ieq<u8>(status, 2_u8) {
-    True() => {
-      set named = 1_u8;
-      region 'reason_denied_view {
-        let view: own slice<'reason_denied_view, u8> = slice_of<'reason_denied_view, u8>(&'reason_denied_view reason_denied);
-        region 'reason_denied_append {
-          set length = append_slice<'reason_denied_append, 'reason_denied_view>(destination: &uniq 'reason_denied_append deref(report), filled: length, text: move view);
-        }
+  if ieq(status, 2_u8) {
+    set named = 1_u8;
+    region 'reason_denied_view {
+      let view = slice_of(&'reason_denied_view reason_denied);
+      region 'reason_denied_append {
+        set length = append_slice<'reason_denied_append, 'reason_denied_view>(destination: &uniq 'reason_denied_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
-  match ieq<u8>(status, 3_u8) {
-    True() => {
-      set named = 1_u8;
-      region 'reason_directory_view {
-        let view: own slice<'reason_directory_view, u8> = slice_of<'reason_directory_view, u8>(&'reason_directory_view reason_directory);
-        region 'reason_directory_append {
-          set length = append_slice<'reason_directory_append, 'reason_directory_view>(destination: &uniq 'reason_directory_append deref(report), filled: length, text: move view);
-        }
+  if ieq(status, 3_u8) {
+    set named = 1_u8;
+    region 'reason_directory_view {
+      let view = slice_of(&'reason_directory_view reason_directory);
+      region 'reason_directory_append {
+        set length = append_slice<'reason_directory_append, 'reason_directory_view>(destination: &uniq 'reason_directory_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
-  match ieq<u8>(status, 5_u8) {
-    True() => {
-      set named = 1_u8;
-      region 'reason_path_view {
-        let view: own slice<'reason_path_view, u8> = slice_of<'reason_path_view, u8>(&'reason_path_view reason_invalid_path);
-        region 'reason_path_append {
-          set length = append_slice<'reason_path_append, 'reason_path_view>(destination: &uniq 'reason_path_append deref(report), filled: length, text: move view);
-        }
+  if ieq(status, 5_u8) {
+    set named = 1_u8;
+    region 'reason_path_view {
+      let view = slice_of(&'reason_path_view reason_invalid_path);
+      region 'reason_path_append {
+        set length = append_slice<'reason_path_append, 'reason_path_view>(destination: &uniq 'reason_path_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
-  match ieq<u8>(status, 6_u8) {
-    True() => {
-      set named = 1_u8;
-      region 'reason_long_view {
-        let view: own slice<'reason_long_view, u8> = slice_of<'reason_long_view, u8>(&'reason_long_view reason_long_line);
-        region 'reason_long_append {
-          set length = append_slice<'reason_long_append, 'reason_long_view>(destination: &uniq 'reason_long_append deref(report), filled: length, text: move view);
-        }
+  if ieq(status, 6_u8) {
+    set named = 1_u8;
+    region 'reason_long_view {
+      let view = slice_of(&'reason_long_view reason_long_line);
+      region 'reason_long_append {
+        set length = append_slice<'reason_long_append, 'reason_long_view>(destination: &uniq 'reason_long_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
-  match ieq<u8>(named, 0_u8) {
-    True() => {
-      region 'reason_other_view {
-        let view: own slice<'reason_other_view, u8> = slice_of<'reason_other_view, u8>(&'reason_other_view reason_unreadable);
-        region 'reason_other_append {
-          set length = append_slice<'reason_other_append, 'reason_other_view>(destination: &uniq 'reason_other_append deref(report), filled: length, text: move view);
-        }
+  if ieq(named, 0_u8) {
+    region 'reason_other_view {
+      let view = slice_of(&'reason_other_view reason_unreadable);
+      region 'reason_other_append {
+        set length = append_slice<'reason_other_append, 'reason_other_view>(destination: &uniq 'reason_other_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
   region 'report_write {
-    match publish_all<'report_write, 'report_write>(output: &uniq 'report_write deref(err), source: &'report_write deref(report), length: length) {
+    match publish_all<'report_write, 'report_write>(output: &'report_write deref(err), source: &'report_write deref(report), length: length) {
       Ok(value: published) => {
       }
       Err(error: problem) => {
@@ -393,91 +395,79 @@ fn report_failure ['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &un
   return unit;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(args cwd), writes(cwd out err), allocates(heap) {
   doc "Publishes every line of every named file that contains the literal pattern bytes; 0 matched, 1 none, 2 error.";
-  let input: own buffer<u8> = buffer_new<u8>(4096_u64, 0_u8);
-  let batch: own buffer<u8> = buffer_new<u8>(4096_u64, 0_u8);
-  let pattern: own buffer<u8> = buffer_new<u8>(4096_u64, 0_u8);
-  let report: own buffer<u8> = buffer_new<u8>(512_u64, 0_u8);
-  let arguments: own u64 = 0_u64;
+  let input = buffer_new(4096_u64, 0_u8);
+  let batch = buffer_new(4096_u64, 0_u8);
+  let pattern = buffer_new(4096_u64, 0_u8);
+  let report = buffer_new(512_u64, 0_u8);
+  let arguments = 0_u64;
   region 'invocation {
     set arguments = args_count<'invocation>(args: &'invocation args);
   }
-  let startup: own u8 = 0_u8;
-  let pattern_length: own u64 = 0_u64;
-  let usable: own Bool = ige<u64>(arguments, 3_u64);
-  match usable {
-    True() => {
-      region 'pattern_lease {
-        match arg_get<'pattern_lease>(args: &'pattern_lease args, position: 1_u64) {
-          Ok(value: text) => {
-            region 'pattern_copy {
-              match host_copy_bytes<'pattern_copy, 'pattern_copy>(value: &'pattern_copy text, destination: &uniq 'pattern_copy pattern, offset: 0_u64, capacity: 4096_u64) {
-                Ok(value: copied) => {
-                  set pattern_length = copied;
-                }
-                Err(error: too_small) => {
-                  set startup = 2_u8;
-                }
+  let startup = 0_u8;
+  let pattern_length = 0_u64;
+  let usable = ige(arguments, 3_u64);
+  if usable {
+    region 'pattern_lease {
+      match arg_get<'pattern_lease>(args: &'pattern_lease args, position: 1_u64) {
+        Ok(value: text) => {
+          region 'pattern_copy {
+            match host_copy_bytes<'pattern_copy, 'pattern_copy>(value: &'pattern_copy text, destination: &uniq 'pattern_copy pattern, start: 0_u64, end: 4096_u64) {
+              Ok(value: copied) => {
+                set pattern_length = copied;
+              }
+              Err(error: too_small) => {
+                set startup = 2_u8;
               }
             }
           }
-          Err(error: absent) => {
-            set startup = 1_u8;
-          }
+        }
+        Err(error: absent) => {
+          set startup = 1_u8;
         }
       }
     }
-    False() => {
-      set startup = 1_u8;
-    }
+  } else {
+    set startup = 1_u8;
   }
-  match ieq<u8>(startup, 0_u8) {
-    True() => {
+  if ieq(startup, 0_u8) {
+  } else {
+    let length = 0_u64;
+    if ieq(startup, 1_u8) {
+      region 'startup_usage {
+        let view = slice_of(&'startup_usage usage_text);
+        set length = append_slice<'startup_usage, 'startup_usage>(destination: &uniq 'startup_usage report, filled: length, text: move view);
+      }
+    } else {
+      region 'startup_pattern {
+        let view = slice_of(&'startup_pattern reason_pattern_too_long);
+        set length = append_slice<'startup_pattern, 'startup_pattern>(destination: &uniq 'startup_pattern report, filled: length, text: move view);
+      }
     }
-    False() => {
-      let length: own u64 = 0_u64;
-      match ieq<u8>(startup, 1_u8) {
-        True() => {
-          region 'startup_usage {
-            let view: own slice<'startup_usage, u8> = slice_of<'startup_usage, u8>(&'startup_usage usage_text);
-            set length = append_slice<'startup_usage, 'startup_usage>(destination: &uniq 'startup_usage report, filled: length, text: move view);
-          }
+    region 'startup_write {
+      match publish_all<'startup_write, 'startup_write>(output: &'startup_write err, source: &'startup_write report, length: length) {
+        Ok(value: published) => {
         }
-        False() => {
-          region 'startup_pattern {
-            let view: own slice<'startup_pattern, u8> = slice_of<'startup_pattern, u8>(&'startup_pattern reason_pattern_too_long);
-            set length = append_slice<'startup_pattern, 'startup_pattern>(destination: &uniq 'startup_pattern report, filled: length, text: move view);
-          }
+        Err(error: problem) => {
         }
       }
-      region 'startup_write {
-        match publish_all<'startup_write, 'startup_write>(output: &uniq 'startup_write err, source: &'startup_write report, length: length) {
-          Ok(value: published) => {
-          }
-          Err(error: problem) => {
-          }
-        }
-      }
-      return exit_status(code: 2_u8);
     }
+    return exit_status(code: 2_u8);
   }
-  let failed: own u8 = 0_u8;
-  let matched: own u8 = 0_u8;
-  let filled: own u64 = 0_u64;
-  let write_failed: own u8 = 0_u8;
-  let write_class: own u8 = 0_u8;
-  let position: own u64 = 2_u64;
+  let failed = 0_u8;
+  let matched = 0_u8;
+  let filled = 0_u64;
+  let write_failed = 0_u8;
+  let write_class = 0_u8;
+  let position = 2_u64;
   loop @files {
-    let more: own Bool = ilt<u64>(position, arguments);
-    match more {
-      True() => {
-      }
-      False() => {
-        break @files;
-      }
+    let more = ilt(position, arguments);
+    if more {
+    } else {
+      break @files;
     }
-    let status: own u8 = 0_u8;
+    let status = 0_u8;
     region 'file_lease {
       match arg_get<'file_lease>(args: &'file_lease args, position: position) {
         Ok(value: text) => {
@@ -486,24 +476,29 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
               region 'open_call {
                 match open_read<'open_call, 'open_call>(root: &'open_call cwd, path: &'open_call path) {
                   Ok(value: file) => {
-                    let carry: own u64 = 0_u64;
+                    let carry = 0_u64;
+                    let file_offset = 0_u64;
                     loop @chunks {
-                      let room: own u64 = isub.wrap<u64>(4096_u64, carry);
-                      let overlong: own Bool = ieq<u64>(room, 0_u64);
-                      match overlong {
-                        True() => {
-                          set status = 6_u8;
-                          break @chunks;
-                        }
-                        False() => {
-                        }
+                      let carry_fits = ilt(carry, 4096_u64);
+                      if carry_fits {
+                      } else {
+                        set status = 6_u8;
+                        break @chunks;
                       }
-                      let available: own u64 = 0_u64;
-                      let ended: own u8 = 0_u8;
+                      let room = 4096_u64 -wrap carry;
+                      let overlong = ieq(room, 0_u64);
+                      if overlong {
+                        set status = 6_u8;
+                        break @chunks;
+                      }
+                      let available = 0_u64;
+                      let ended = 0_u8;
                       region 'read_call {
-                        match read_once<'read_call, 'read_call>(file: &uniq 'read_call file, destination: &uniq 'read_call input, offset: carry, capacity: room) {
-                          ReadBytes(count: taken) => {
-                            set available = iadd.wrap<u64>(carry, taken);
+                        match read_at<'read_call, 'read_call>(file: &'read_call file, destination: &uniq 'read_call input, file_offset: file_offset, start: carry, end: 4096_u64) {
+                          ReadBytes(next: taken) => {
+                            set available = taken;
+                            let delivered = taken -wrap carry;
+                            set file_offset = file_offset +wrap delivered;
                           }
                           ReadEnd() => {
                             set ended = 1_u8;
@@ -514,127 +509,106 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           }
                         }
                       }
-                      match ieq<u8>(ended, 2_u8) {
-                        True() => {
-                          break @chunks;
-                        }
-                        False() => {
+                      if ieq(ended, 2_u8) {
+                        break @chunks;
+                      }
+                      if ieq(ended, 1_u8) {
+                        let trailing = igt(carry, 0_u64);
+                        if trailing {
+                          set input[carry] = 10_u8;
+                          set available = carry +wrap 1_u64;
                         }
                       }
-                      match ieq<u8>(ended, 1_u8) {
-                        True() => {
-                          let trailing: own Bool = igt<u64>(carry, 0_u64);
-                          match trailing {
-                            True() => {
-                              set index<u8>(input, carry) = 10_u8;
-                              set available = iadd.wrap<u64>(carry, 1_u64);
-                            }
-                            False() => {
-                            }
-                          }
-                        }
-                        False() => {
-                        }
+                      let available_fits = ile(available, 4096_u64);
+                      if available_fits {
+                      } else {
+                        set status = 6_u8;
+                        break @chunks;
                       }
-                      let scan: own u64 = 0_u64;
+                      let scan = 0_u64;
                       loop @lines {
-                        let terminator: own u64 = available;
-                        let probe: own u64 = scan;
+                        let terminator = available;
+                        let probe = scan;
                         loop @find {
-                          let done: own Bool = ige<u64>(probe, available);
-                          match done {
-                            True() => {
-                              break @find;
-                            }
-                            False() => {
-                            }
+                          let done = ige(probe, available);
+                          if done {
+                            break @find;
                           }
-                          let byte: own u8 = index<u8>(input, probe);
-                          let newline: own Bool = ieq<u8>(byte, 10_u8);
-                          match newline {
-                            True() => {
-                              set terminator = probe;
-                              break @find;
-                            }
-                            False() => {
-                            }
+                          let byte = input[probe];
+                          let newline = ieq(byte, 10_u8);
+                          if newline {
+                            set terminator = probe;
+                            break @find;
                           }
-                          set probe = iadd.wrap<u64>(probe, 1_u64);
+                          set probe = probe +wrap 1_u64;
                         }
-                        let complete: own Bool = ilt<u64>(terminator, available);
-                        match complete {
-                          True() => {
-                          }
-                          False() => {
-                            break @lines;
-                          }
+                        let complete = ilt(terminator, available);
+                        if complete {
+                        } else {
+                          break @lines;
                         }
-                        let hit: own Bool = False();
+                        let hit = False();
                         region 'match_call {
                           set hit = line_matches<'match_call, 'match_call>(source: &'match_call input, start: scan, stop: terminator, pattern: &'match_call pattern, length: pattern_length);
                         }
-                        match hit {
-                          True() => {
-                            set matched = 1_u8;
-                            let stop: own u64 = iadd.wrap<u64>(terminator, 1_u64);
-                            let span: own u64 = isub.wrap<u64>(stop, scan);
-                            let need: own u64 = iadd.wrap<u64>(filled, span);
-                            let overfull: own Bool = igt<u64>(need, 4096_u64);
-                            match overfull {
-                              True() => {
-                                region 'batch_write {
-                                  match publish_all<'batch_write, 'batch_write>(output: &uniq 'batch_write out, source: &'batch_write batch, length: filled) {
-                                    Ok(value: published) => {
-                                    }
-                                    Err(error: problem) => {
-                                      set write_failed = 1_u8;
-                                      set write_class = io_class(error: move problem);
-                                    }
+                        if hit {
+                          set matched = 1_u8;
+                          let stop = terminator +wrap 1_u64;
+                          let span = stop -wrap scan;
+                          let need = filled +wrap span;
+                          let overfull = igt(need, 4096_u64);
+                          if overfull {
+                            let filled_fits = ile(filled, 4096_u64);
+                            if filled_fits {
+                              region 'batch_write {
+                                match publish_all<'batch_write, 'batch_write>(output: &'batch_write out, source: &'batch_write batch, length: filled) {
+                                  Ok(value: published) => {
+                                  }
+                                  Err(error: problem) => {
+                                    set write_failed = 1_u8;
+                                    set write_class = io_class(error: move problem);
                                   }
                                 }
-                                set filled = 0_u64;
                               }
-                              False() => {
-                              }
+                            } else {
+                              set write_failed = 1_u8;
                             }
-                            match ieq<u8>(write_failed, 0_u8) {
-                              True() => {
-                                region 'emit_line {
-                                  set filled = copy_range<'emit_line, 'emit_line>(destination: &uniq 'emit_line batch, at: filled, source: &'emit_line input, from: scan, to: stop);
-                                }
-                              }
-                              False() => {
-                                break @files;
-                              }
-                            }
+                            set filled = 0_u64;
                           }
-                          False() => {
+                          if ieq(write_failed, 0_u8) {
+                            region 'emit_line {
+                              set filled = copy_range<'emit_line, 'emit_line>(destination: &uniq 'emit_line batch, at: filled, source: &'emit_line input, from: scan, to: stop);
+                            }
+                          } else {
+                            break @files;
                           }
                         }
-                        set scan = iadd.wrap<u64>(terminator, 1_u64);
+                        set scan = terminator +wrap 1_u64;
                       }
-                      match ieq<u8>(ended, 1_u8) {
-                        True() => {
-                          break @chunks;
-                        }
-                        False() => {
-                        }
+                      if ieq(ended, 1_u8) {
+                        break @chunks;
                       }
-                      let tail: own u64 = isub.wrap<u64>(available, scan);
-                      let moved: own u64 = 0_u64;
+                      let tail = available -wrap scan;
+                      let moved = 0_u64;
                       loop @shift {
-                        let done: own Bool = ige<u64>(moved, tail);
-                        match done {
-                          True() => {
-                            break @shift;
-                          }
-                          False() => {
-                          }
+                        let done = ige(moved, tail);
+                        if done {
+                          break @shift;
                         }
-                        let source_index: own u64 = iadd.wrap<u64>(scan, moved);
-                        let byte: own u8 = index<u8>(input, source_index);
-                        set index<u8>(input, moved) = byte;
-                        set moved = iadd.wrap<u64>(moved, 1_u64);
+                        let source_index = scan +wrap moved;
+                        let source_fits = ilt(source_index, 4096_u64);
+                        let target_fits = ilt(moved, 4096_u64);
+                        if source_fits {
+                        } else {
+                          break @shift;
+                        }
+                        if target_fits {
+                        } else {
+                          break @shift;
+                        }
+                        let byte = input[source_index];
+                        set input[moved] = byte;
+                        set moved = moved +wrap 1_u64;
                       }
                       set carry = tail;
                     }
@@ -655,23 +629,20 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         }
       }
     }
-    let reportable: own Bool = ine<u8>(status, 0_u8);
-    match reportable {
-      True() => {
-        set failed = 1_u8;
-        region 'report_call {
-          report_failure<'report_call, 'report_call, 'report_call>(args: &'report_call args, err: &uniq 'report_call err, report: &uniq 'report_call report, status: status, position: position);
-        }
-      }
-      False() => {
+    let reportable = ine(status, 0_u8);
+    if reportable {
+      set failed = 1_u8;
+      region 'report_call {
+        report_failure<'report_call, 'report_call, 'report_call>(args: &'report_call args, err: &'report_call err, report: &uniq 'report_call report, status: status, position: position);
       }
     }
-    set position = iadd.wrap<u64>(position, 1_u64);
+    set position = position +wrap 1_u64;
   }
-  match ieq<u8>(write_failed, 0_u8) {
-    True() => {
+  if ieq(write_failed, 0_u8) {
+    let filled_fits = ile(filled, 4096_u64);
+    if filled_fits {
       region 'final_write {
-        match publish_all<'final_write, 'final_write>(output: &uniq 'final_write out, source: &'final_write batch, length: filled) {
+        match publish_all<'final_write, 'final_write>(output: &'final_write out, source: &'final_write batch, length: filled) {
           Ok(value: published) => {
           }
           Err(error: problem) => {
@@ -680,53 +651,40 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           }
         }
       }
-    }
-    False() => {
+    } else {
+      set write_failed = 1_u8;
     }
   }
-  match ieq<u8>(write_failed, 0_u8) {
-    True() => {
-    }
-    False() => {
-      set failed = 1_u8;
-      let length: own u64 = 0_u64;
-      match ieq<u8>(write_class, 4_u8) {
-        True() => {
-          region 'fail_pipe_view {
-            let view: own slice<'fail_pipe_view, u8> = slice_of<'fail_pipe_view, u8>(&'fail_pipe_view reason_broken_pipe);
-            set length = append_slice<'fail_pipe_view, 'fail_pipe_view>(destination: &uniq 'fail_pipe_view report, filled: length, text: move view);
-          }
-        }
-        False() => {
-          region 'fail_write_view {
-            let view: own slice<'fail_write_view, u8> = slice_of<'fail_write_view, u8>(&'fail_write_view reason_write_error);
-            set length = append_slice<'fail_write_view, 'fail_write_view>(destination: &uniq 'fail_write_view report, filled: length, text: move view);
-          }
-        }
+  if ieq(write_failed, 0_u8) {
+  } else {
+    set failed = 1_u8;
+    let length = 0_u64;
+    if ieq(write_class, 4_u8) {
+      region 'fail_pipe_view {
+        let view = slice_of(&'fail_pipe_view reason_broken_pipe);
+        set length = append_slice<'fail_pipe_view, 'fail_pipe_view>(destination: &uniq 'fail_pipe_view report, filled: length, text: move view);
       }
-      region 'fail_write {
-        match publish_all<'fail_write, 'fail_write>(output: &uniq 'fail_write err, source: &'fail_write report, length: length) {
-          Ok(value: published) => {
-          }
-          Err(error: problem) => {
-          }
+    } else {
+      region 'fail_write_view {
+        let view = slice_of(&'fail_write_view reason_write_error);
+        set length = append_slice<'fail_write_view, 'fail_write_view>(destination: &uniq 'fail_write_view report, filled: length, text: move view);
+      }
+    }
+    region 'fail_write {
+      match publish_all<'fail_write, 'fail_write>(output: &'fail_write err, source: &'fail_write report, length: length) {
+        Ok(value: published) => {
+        }
+        Err(error: problem) => {
         }
       }
     }
   }
-  match ieq<u8>(failed, 0_u8) {
-    True() => {
-    }
-    False() => {
-      return exit_status(code: 2_u8);
-    }
+  if ieq(failed, 0_u8) {
+  } else {
+    return exit_status(code: 2_u8);
   }
-  match ieq<u8>(matched, 0_u8) {
-    True() => {
-      return exit_status(code: 1_u8);
-    }
-    False() => {
-    }
+  if ieq(matched, 0_u8) {
+    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

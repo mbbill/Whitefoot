@@ -1,5 +1,5 @@
-fn count_arguments(args: own Args) -> function_result: own u64 external, blocks {
-  doc "Args is an immutable value whose release is a logical consume with no external effect [SYS-5, SYS-9], and args_count's own row carries neither new category, so declaring `external, blocks` is declared-but-unexhibited and is rejected citing EFF-2.";
+fn count_arguments(args: own Args) -> function_result: own u64 pure {
+  doc "args_count reads the explicit Args capability, so omitting reads(args) is an undeclared capability effect rejected by EFF-2.";
   region 'a {
     let total = args_count<'a>(args: &'a args);
     return total;

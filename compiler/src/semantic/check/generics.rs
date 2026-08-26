@@ -799,7 +799,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(template.node, Production::Effects)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let declared_effects = self.parse_effects(effects)?;
+        let declared_effects = self.parse_effects(effects, &parameters)?;
         let symbol = if template.generic_parameters.is_empty() {
             template.name.clone()
         } else {
@@ -871,6 +871,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // zero, so it must build and later discard its own selector table
         // rather than aliasing the real concrete entries by accident.
         self.admit_postcondition_selectors()?;
+        self.derive_result_authority_origins()?;
         let mut phase_a = Vec::with_capacity(self.signatures.len());
         for index in 0..self.signatures.len() {
             // Symbolic generic validation may discover a derived box or

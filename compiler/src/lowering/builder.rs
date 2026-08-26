@@ -50,7 +50,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     // compilation asked for overlap lowering, so the default emits the same
     // module a compiler with no such lowering emits.
     let permission = match overlap {
-        OverlapLowering::On => Some(&checked.data.permission),
+        OverlapLowering::On | OverlapLowering::Completion => Some(&checked.data.permission),
         OverlapLowering::Off => None,
     };
     // Where a synthesized function's ordinal starts. A [PAR-2] split appends
@@ -74,6 +74,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
                 function,
                 context,
                 permission.and_then(|table| table.of(function.id)),
+                overlap,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -111,20 +112,11 @@ struct LoweringContext<'program> {
 ///
 /// [PROG-3] starts an instance by supplying exactly the standard inputs the
 /// entry declares and invoking it once. Target-independent lowering records
-/// which inputs those are and the conservative alias links [SYS-12] fixes
-/// between them; constructing the values and mapping the returned
+/// which inputs those are; constructing the values and mapping the returned
 /// `ExitStatus` belongs to the target stage.
 fn lower_entry(entry: &CheckedEntryForm) -> IrEntry {
     IrEntry::Command {
         inputs: entry.inputs.clone(),
-        aliases: entry
-            .aliases
-            .iter()
-            .map(|alias| IrResourceAlias {
-                left: alias.left,
-                right: alias.right,
-            })
-            .collect(),
     }
 }
 
@@ -302,6 +294,7 @@ fn lower_function<'program>(
     function: &crate::semantic::CheckedFunction,
     context: LoweringContext<'program>,
     permissions: Option<&'program FunctionPermissions>,
+    overlap: OverlapLowering,
 ) -> Result<IrFunction, LoweringFailure> {
     let uninhabited = matches!(
         function.body_disposition,
@@ -325,6 +318,7 @@ fn lower_function<'program>(
         result,
         addressed_bindings,
         permissions,
+        overlap,
         &function.symbol,
     )?;
     for parameter in &function.parameters {
@@ -340,8 +334,15 @@ fn lower_function<'program>(
     } else {
         builder.lower_statements(&function.body, None)?;
     }
+    let authority_orders = builder.authority_orders();
     let overlaps = builder.overlaps();
-    builder.finish(function.symbol.clone(), overlaps, None)
+    builder.finish(
+        function.symbol.clone(),
+        overlaps,
+        authority_orders,
+        None,
+        function.target_action,
+    )
 }
 
 fn lower_parameter_type(
@@ -418,6 +419,9 @@ struct IrBuilder<'program> {
     /// own statements and a pair inside them is permitted exactly as it was
     /// before the loop was split.
     permissions: Option<&'program FunctionPermissions>,
+    /// Which subset of the pure permission judgment this compilation may
+    /// actualize.
+    overlap: OverlapLowering,
     /// Where a split's synthesized halves are filed, shared with every builder
     /// this one creates.
     synthesis: &'program SynthesisCell,
@@ -438,6 +442,7 @@ impl<'program> IrBuilder<'program> {
         result: IrType,
         addressed_bindings: std::collections::HashSet<BindingId>,
         permissions: Option<&'program FunctionPermissions>,
+        overlap: OverlapLowering,
         function_name: &'program str,
     ) -> Result<Self, LoweringFailure> {
         let LoweringContext {
@@ -460,6 +465,7 @@ impl<'program> IrBuilder<'program> {
             function_results,
             call_results: HashMap::new(),
             permissions,
+            overlap,
             synthesis,
             function_name,
         };
@@ -493,7 +499,9 @@ impl<'program> IrBuilder<'program> {
         self,
         name: String,
         overlaps: Vec<IrOverlap>,
+        authority_orders: Vec<IrAuthorityOrder>,
         synthesis: Option<IrSynthesis>,
+        target_action: crate::TargetAction,
     ) -> Result<IrFunction, LoweringFailure> {
         if self.current.is_some() || self.blocks.iter().any(|block| block.terminator.is_none()) {
             return Err(LoweringFailure::InvalidCheckedProgram);
@@ -517,7 +525,9 @@ impl<'program> IrBuilder<'program> {
                 })
                 .collect::<Result<Vec<_>, LoweringFailure>>()?,
             overlaps,
+            authority_orders,
             synthesis,
+            target_action,
         })
     }
 
@@ -603,6 +613,22 @@ impl<'program> IrBuilder<'program> {
         };
         let mut overlaps = Vec::new();
         for run in &permissions.runs {
+            // OutputSequence is the first ordered family this lowering can
+            // carry. Its bounded batch actualizer reserves every member before
+            // commit. Other ordered families stay explicit in authority_orders
+            // but form no overlap.
+            let ordered_attribution = if run.authority_order.is_empty() {
+                None
+            } else if run.ordered_members_only
+                && run.sites.len() <= ORDERED_OUTPUT_BATCH_MEMBERS
+                && run.authority_order.iter().all(|order| {
+                    order.edge.attribution == crate::SystemAuthorityAttribution::OutputBytes
+                })
+            {
+                Some(crate::SystemAuthorityAttribution::OutputBytes)
+            } else {
+                continue;
+            };
             let mut members = Vec::new();
             let mut home = None;
             for site in &run.sites {
@@ -620,10 +646,87 @@ impl<'program> IrBuilder<'program> {
                 }
             }
             if members.len() >= 2 {
-                overlaps.push(IrOverlap { members });
+                if self.overlap == OverlapLowering::Completion
+                    && members[..members.len() - 1]
+                        .iter()
+                        .any(|member| !self.direct_may_suspend_system_call(*member))
+                {
+                    continue;
+                }
+                overlaps.push(IrOverlap {
+                    members,
+                    ordered_attribution,
+                    dispatch_last: false,
+                });
             }
         }
         overlaps
+    }
+
+    fn direct_may_suspend_system_call(&self, value: IrValueId) -> bool {
+        self.blocks.iter().any(|block| {
+            block.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    IrInstruction::Define {
+                        result,
+                        operation: IrOperation::SystemCall { target_action, .. },
+                        ..
+                    } if *result == value && target_action.may_suspend()
+                )
+            })
+        })
+    }
+
+    fn authority_orders(&self) -> Vec<IrAuthorityOrder> {
+        let Some(permissions) = self.permissions else {
+            return Vec::new();
+        };
+        let mut orders = Vec::new();
+        for pair in &permissions.pairs {
+            let (Some((_, earlier)), Some((_, later))) = (
+                self.call_results.get(&pair.first.binding),
+                self.call_results.get(&pair.second.binding),
+            ) else {
+                continue;
+            };
+            for edge in &pair.authority_order {
+                let lowered = IrAuthorityOrder {
+                    earlier: *earlier,
+                    later: *later,
+                    family: edge.earlier.family,
+                    earlier_fragment: edge.earlier.fragment,
+                    later_fragment: edge.later.fragment,
+                    attribution: edge.attribution,
+                };
+                if !orders.contains(&lowered) {
+                    orders.push(lowered);
+                }
+            }
+        }
+        for run in &permissions.runs {
+            for order in &run.authority_order {
+                let (Some((_, earlier)), Some((_, later))) = (
+                    self.call_results.get(&order.earlier),
+                    self.call_results.get(&order.later),
+                ) else {
+                    continue;
+                };
+                let edge = &order.edge;
+                let lowered = IrAuthorityOrder {
+                    earlier: *earlier,
+                    later: *later,
+                    family: edge.earlier.family,
+                    earlier_fragment: edge.earlier.fragment,
+                    later_fragment: edge.later.fragment,
+                    attribution: edge.attribution,
+                };
+                if !orders.contains(&lowered) {
+                    orders.push(lowered);
+                }
+            }
+        }
+        orders
     }
 
     fn lower_statements(
@@ -648,7 +751,10 @@ impl<'program> IrBuilder<'program> {
                     if self.bindings.insert(*binding, value).is_some() {
                         return Err(LoweringFailure::InvalidCheckedProgram);
                     }
-                    if matches!(expression, CheckedExpression::UserCall { .. }) {
+                    if matches!(
+                        expression,
+                        CheckedExpression::UserCall { .. } | CheckedExpression::SystemCall { .. }
+                    ) {
                         self.call_results.insert(*binding, (block, value));
                     }
                     self.promote_binding_if_needed(*binding)?;
@@ -686,6 +792,7 @@ impl<'program> IrBuilder<'program> {
                 CheckedStatement::DropExpression {
                     value: expression,
                     release,
+                    ..
                 } => {
                     let value = self.expression(expression)?;
                     let drop = IrDrop {
@@ -1029,6 +1136,7 @@ impl<'program> IrBuilder<'program> {
             // semantic identity [QUAL-1]; no source spelling reaches the IR.
             CheckedExpression::SystemCall {
                 operation,
+                target_action,
                 arguments,
                 result,
                 ..
@@ -1041,6 +1149,7 @@ impl<'program> IrBuilder<'program> {
                     lower_type(*result)?,
                     IrOperation::SystemCall {
                         operation: IrSystemOperation(*operation),
+                        target_action: *target_action,
                         arguments,
                     },
                 )

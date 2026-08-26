@@ -1,7 +1,7 @@
-command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus external, blocks {
-  doc "`DirectoryList` is release-complete [SYS-5, SYS-14]: the value bound in the Ok arm leaves scope at the arm's end and compiler-derived release is the complete language obligation, so the program needs no terminal operation and declares none. This specification declares no separate explicit-close operation at all.";
+command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd) {
+  doc "`DirectorySource` is release-complete [SYS-5, SYS-14]: the value bound in the Ok arm leaves scope at the arm's end and compiler-derived release is the complete language obligation, so the program needs no terminal operation and declares none. This specification declares no separate explicit-close operation at all.";
   region 'c {
-    match open_list<'c>(directory: &'c cwd) {
+    match open_directory_source<'c>(directory: &'c cwd) {
       Ok(value: list) => {
       }
       Err(error: problem) => {

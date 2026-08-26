@@ -55,9 +55,32 @@ pub(super) fn with_ir_for<ResultValue>(
     with_mutated_ir_for(source, inventory, |program| run(program))
 }
 
+pub(super) fn with_ir_overlap<ResultValue>(
+    source: &[u8],
+    overlap: OverlapLowering,
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        &IrProgram<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    with_mutated_ir_for_overlap(source, crate::Inventory::ACTIVE, overlap, |program| {
+        run(program)
+    })
+}
+
 fn with_mutated_ir_for<ResultValue>(
     source: &[u8],
     inventory: crate::Inventory,
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        &mut IrProgram<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    with_mutated_ir_for_overlap(source, inventory, OverlapLowering::Off, run)
+}
+
+fn with_mutated_ir_for_overlap<ResultValue>(
+    source: &[u8],
+    inventory: crate::Inventory,
+    overlap: OverlapLowering,
     run: impl for<'classified, 'lexed, 'source> FnOnce(
         &mut IrProgram<'classified, 'lexed, 'source>,
     ) -> ResultValue,
@@ -92,8 +115,7 @@ fn with_mutated_ir_for<ResultValue>(
     let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
         panic!("system test source must check");
     };
-    let mut ir =
-        lower_checked(*checked, OverlapLowering::Off).expect("checked system program must lower");
+    let mut ir = lower_checked(*checked, overlap).expect("checked system program must lower");
     run(&mut ir)
 }
 
@@ -133,7 +155,7 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> resul
   }
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -160,7 +182,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus alloca
 fn the_argument_lease_path_allocates_nothing_and_dispatches_on_nothing() {
     // Only the lease operations: no buffer, no copy, no text route.
     let source =
-        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region 'a {
     let total = args_count<'a>(args: &'a args);
     match arg_get<'a>(args: &'a args, position: total) {
@@ -248,7 +270,7 @@ fn a_non_utf8_argument_round_trips_its_exact_bytes() {
 #[test]
 fn args_count_reports_the_complete_invocation_vector() {
     let source =
-        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region 'a {
     let total = args_count<'a>(args: &'a args);
     let narrowed = cvt<u64, u8>(total);
@@ -277,7 +299,7 @@ fn args_count_reports_the_complete_invocation_vector() {
 #[test]
 fn relative_path_admits_by_construction_and_never_normalizes() {
     let source =
-        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -323,7 +345,7 @@ fn relative_path_admits_by_construction_and_never_normalizes() {
 #[test]
 fn the_text_route_validates_completely_and_reports_the_exact_encoded_length() {
     let source =
-        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -380,7 +402,7 @@ fn the_text_route_validates_completely_and_reports_the_exact_encoded_length() {
 
 #[test]
 fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
-    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -438,7 +460,7 @@ fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
 
 #[test]
 fn an_out_of_range_copy_is_a_static_sys8_rejection() {
-    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -470,7 +492,7 @@ fn an_out_of_range_copy_is_a_static_sys8_rejection() {
 
 #[test]
 fn every_release_action_emits_exactly_its_contract() {
-    let source = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus external, blocks {
+    let source = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(cwd) {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -569,7 +591,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
     let source =
-        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region 'a {
     let total = args_count<'a>(args: &'a args);
     return exit_status(code: 0_u8);
@@ -604,7 +626,7 @@ fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
 
     // The same lossy target fails for a program that leases code units.
     let leases =
-        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 0_u64) {
       Ok(value: text) => {
@@ -630,7 +652,7 @@ fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
 
 #[test]
 fn a_target_without_directory_relative_resolution_rejects_component_opening() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region 'n {
@@ -665,11 +687,11 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
     // selected and before any use of an operation is emitted, and it now has
     // an approved implementation for every [SYS-2] identity on this target.
     // The I/O cluster's own emission evidence is in `system_io.rs`.
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -692,11 +714,11 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
 
 #[test]
 fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 1_u64, end: 3_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 1_u64, end: 3_u64) {
         Ok(value: next) => {
           if ieq(next, 3_u64) {
             return exit_status(code: 0_u8);
@@ -738,9 +760,9 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
 
 #[test]
 fn linux_enumeration_facility_without_an_abi_mapping_is_missing_mapping() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus external, blocks {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd) {
   region 'c {
-    match open_list<'c>(directory: &'c cwd) {
+    match open_directory_source<'c>(directory: &'c cwd) {
       Ok(value: list) => {
       }
       Err(error: problem) => {
@@ -839,7 +861,7 @@ fn component_open_flags_and_status_abis_are_target_exact() {
 
 #[test]
 fn command_entry_rejects_abi_equivalent_but_semantically_wrong_ir_types() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus external, blocks {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus writes(cwd) {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -871,11 +893,11 @@ fn command_entry_rejects_abi_equivalent_but_semantically_wrong_ir_types() {
 
 #[test]
 fn system_calls_reject_abi_equivalent_but_semantically_wrong_ir_arguments() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus writes(cwd out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
         }
         Err(error: problem) => {
@@ -936,7 +958,7 @@ fn system_calls_reject_abi_equivalent_but_semantically_wrong_ir_arguments() {
 #[test]
 fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
     let scalar =
-        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region 'a {
     let count = args_count<'a>(args: &'a args);
   }
@@ -958,7 +980,7 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
         ));
     });
 
-    let composite = br#"command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let composite = br#"command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args), writes(out), allocates(heap) {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 0_u64) {
       Ok(value: text) => {
@@ -970,7 +992,7 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
         }
         Err(error: problem) => {
@@ -1020,7 +1042,7 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
 
 #[test]
 fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region 'n {
@@ -1075,15 +1097,15 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
 }
 
 #[test]
-fn darwin_list_once_keeps_range_and_record_extents_distinct_and_verifiable() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {
   let destination = buffer_new(64_u64, 0_u8);
   region 'c {
-    match open_list<'c>(directory: &'c cwd) {
+    match open_directory_source<'c>(directory: &'c cwd) {
       Ok(value: list) => {
         region 'l {
           region 'd {
-            let outcome = list_once<'l, 'd>(list: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
+            let outcome = directory_next<'l, 'd>(source: &'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
           }
         }
       }
@@ -1098,7 +1120,7 @@ fn darwin_list_once_keeps_range_and_record_extents_distinct_and_verifiable() {
         let darwin = SystemTarget::for_triple("aarch64-apple-darwin")
             .expect("Darwin is a recognized system target");
         emit_llvm_for_target(program, darwin)
-            .expect("Darwin must qualify and emit list_once")
+            .expect("Darwin must qualify and emit directory_next")
             .into_string()
     });
     assert_eq!(llvm.matches("%record.extent = zext").count(), 1);
@@ -1118,6 +1140,8 @@ fn darwin_list_once_keeps_range_and_record_extents_distinct_and_verifiable() {
     assert!(llvm.contains("%target.name = getelementptr inbounds i8, ptr %target.record, i64 3"));
     assert!(llvm.contains("%copy.invalid = or i1 %copy.nul, %copy.separator"));
     assert!(llvm.contains("tcb.defect:\n  call void @abort()\n  unreachable"));
+    assert!(llvm.contains("@wf__completion_directory_next_direct"));
+    assert!(!llvm.contains("call i64 @__getdirentries64"));
     let optimized = host_optimized_module(&llvm);
-    assert!(optimized.contains("@__getdirentries64"));
+    assert!(optimized.contains("@wf__completion_directory_next_direct"));
 }

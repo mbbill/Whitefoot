@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus reads(args), allocates(heap), traps {
   doc "External provenance in a buffer length is handled by ordinary control. A genuine residual constrains only a same-function offset, and the two facts jointly protect the external-length subscript.";
   region 'a {
     let external_length = args_count<'a>(args: &'a args);

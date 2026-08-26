@@ -273,7 +273,7 @@ command fn main() -> status: own ExitStatus pure {{
 #[test]
 fn a_system_call_result_is_never_local_claim_authority() {
     let source = format!(
-        r#"command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {{
+        r#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap), traps {{
   region 'arguments {{
     let position = args_count<'arguments>(args: &'arguments args);
     let values = buffer_new(4_u64, 0_u8);
@@ -1269,8 +1269,8 @@ fn an_intermediate_reborrow_holder_cannot_launder_a_boundary_result() {
     use super::super::entailment::FunctionEntailment;
     use super::super::model::{
         BindingId, CheckedBodyDisposition, CheckedExpression, CheckedFunction, CheckedMode,
-        CheckedParameter, CheckedResultBorrow, CheckedStatement, CheckedType, CheckedValue,
-        FunctionId, IntegerType,
+        CheckedParameter, CheckedResultAuthorityOrigin, CheckedResultBorrow, CheckedStatement,
+        CheckedType, CheckedValue, FunctionId, IntegerType,
     };
     use crate::{DeclarationId, NodePath};
 
@@ -1291,6 +1291,7 @@ fn an_intermediate_reborrow_holder_cannot_launder_a_boundary_result() {
         deny_claims_marker: None,
         parameters: vec![CheckedParameter {
             name: "actual".to_owned(),
+            declaration: DeclarationId::from_index(1).expect("the test declaration fits"),
             node_path: path(0),
             binding: BindingId(0),
             mode: CheckedMode::Own,
@@ -1299,9 +1300,13 @@ fn an_intermediate_reborrow_holder_cannot_launder_a_boundary_result() {
         }],
         result_mode: CheckedMode::Own,
         result: CheckedType::Unit,
+        result_authority_origin: CheckedResultAuthorityOrigin::NoCapability,
         slice_return_ceiling: Vec::new(),
         declared_traps: true,
         declared_allocates_heap: false,
+        declared_capability_writes: Vec::new(),
+        target_action: crate::TargetAction::INLINE,
+        authority_summary: Default::default(),
         requirements: Vec::new(),
         postconditions: Vec::new(),
         body: vec![

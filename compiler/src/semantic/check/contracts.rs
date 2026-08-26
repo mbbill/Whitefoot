@@ -36,18 +36,17 @@ enum NormalizedMode {
     Unique(usize),
 }
 
-/// One [FN-3] six-capability effect normalization: read regions, write
-/// regions, the allocation set, and the presence of `external`, `blocks`,
-/// and `traps`. Equality is derived, so every capability compares, and the
-/// three payload-free categories compare by presence.
+/// One [FN-3] effect normalization. Capability-parameter operands join this
+/// record in the capability-effect step; this slice keeps the four existing
+/// memory/allocation/trap components exact.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct NormalizedEffects {
-    reads: Vec<usize>,
-    writes: Vec<usize>,
+    region_reads: Vec<usize>,
+    region_writes: Vec<usize>,
+    capability_reads: Vec<usize>,
+    capability_writes: Vec<usize>,
     allocates_heap: bool,
     allocates_arenas: Vec<usize>,
-    external: bool,
-    blocks: bool,
     traps: bool,
 }
 
@@ -176,7 +175,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Effects)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let effects = self.parse_effects(effects_node)?;
+        let effects = self.parse_effects(effects_node, &parameters)?;
         Ok(ContractMemberInfo {
             name,
             region_parameters,
@@ -533,12 +532,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
 fn checked_effects(effects: &EffectSet) -> CheckedEffectCapabilities {
     CheckedEffectCapabilities {
-        reads: effects.reads.clone(),
-        writes: effects.writes.clone(),
+        region_reads: effects.region_reads.clone(),
+        region_writes: effects.region_writes.clone(),
+        capability_reads: effects.capability_reads.clone(),
+        capability_writes: effects.capability_writes.clone(),
         allocates_heap: effects.allocates_heap,
         allocates_arenas: effects.allocates_arenas.clone(),
-        external: effects.external,
-        blocks: effects.blocks,
         traps: effects.traps,
     }
 }
@@ -587,10 +586,15 @@ fn signatures_equal(
     {
         return Ok(false);
     }
-    Ok(
-        normalize_effects(&member.effects, &member.region_parameters)?
-            == normalize_effects(&function.declared_effects, &function.region_parameters)?,
-    )
+    Ok(normalize_effects(
+        &member.effects,
+        &member.region_parameters,
+        &member.parameters,
+    )? == normalize_effects(
+        &function.declared_effects,
+        &function.region_parameters,
+        &function.parameters,
+    )?)
 }
 
 fn alpha_equivalent_type(
@@ -645,16 +649,34 @@ fn normalize_mode(
 fn normalize_effects(
     effects: &EffectSet,
     regions: &[DeclarationId],
+    parameters: &[ParameterSignature],
 ) -> Result<NormalizedEffects, CheckStop> {
     Ok(NormalizedEffects {
-        reads: normalize_regions(&effects.reads, regions)?,
-        writes: normalize_regions(&effects.writes, regions)?,
+        region_reads: normalize_regions(&effects.region_reads, regions)?,
+        region_writes: normalize_regions(&effects.region_writes, regions)?,
+        capability_reads: normalize_capabilities(&effects.capability_reads, parameters)?,
+        capability_writes: normalize_capabilities(&effects.capability_writes, parameters)?,
         allocates_heap: effects.allocates_heap,
         allocates_arenas: normalize_regions(&effects.allocates_arenas, regions)?,
-        external: effects.external,
-        blocks: effects.blocks,
         traps: effects.traps,
     })
+}
+
+fn normalize_capabilities(
+    selected: &[DeclarationId],
+    parameters: &[ParameterSignature],
+) -> Result<Vec<usize>, CheckStop> {
+    let mut normalized = selected
+        .iter()
+        .map(|selected| {
+            parameters
+                .iter()
+                .position(|parameter| parameter.declaration == *selected)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    normalized.sort_unstable();
+    Ok(normalized)
 }
 
 fn normalize_regions(

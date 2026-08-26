@@ -600,6 +600,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
                 Some(BorrowInfo { place, ..parent })
             };
+            let capability_origins = self.capability_origins_of_value(scrutinee, bindings)?;
             if bindings
                 .insert(
                     declaration.id(),
@@ -608,6 +609,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         declaration: declaration.id(),
                         mode,
                         ty: field.ty,
+                        capability_origins: self
+                            .type_carries_one_capability(field.ty)?
+                            .then(|| capability_origins.clone())
+                            .flatten(),
                         live: true,
                         loop_depth,
                         compiler_updated: false,

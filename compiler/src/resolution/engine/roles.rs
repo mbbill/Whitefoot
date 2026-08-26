@@ -452,11 +452,14 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::Effect if !names.is_empty() => add_all(
+        Production::Effect if !names.is_empty() => add_names_by_predicate(
             classified,
             owner,
             &names,
+            TerminalPredicate::RegionIdentifier,
             RawRoleKind::LexicalUse(LexicalUseRole::EffectRegion),
+            TerminalPredicate::Identifier,
+            RawRoleKind::LexicalUse(LexicalUseRole::EffectCapability),
             roles,
             complete_counts,
         )?,

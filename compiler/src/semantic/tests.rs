@@ -40,6 +40,7 @@ mod requires;
 mod slices;
 mod strict;
 mod system_effects;
+mod target_action;
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
@@ -785,16 +786,15 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
 
 #[test]
 fn undeclared_system_effect_categories_reject_both_row_directions() {
-    // The two payload-free categories are checked exactly like every other
-    // category [EFF-1, EFF-2]. These internal bodies exhibit neither, so
-    // declaring either is declared-but-unexhibited.
+    // Capability effects are checked in both directions [EFF-1, EFF-2].
+    // First an unexhibited declaration, then an undeclared exhibited read.
     assert_rule(
-        b"fn probe() -> result: own unit external {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
-        b"fn probe() -> result: own unit blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(args: own Args) -> result: own u64 pure {\n  region 'a {\n    let total = args_count<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );

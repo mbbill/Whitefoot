@@ -535,7 +535,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     atoms[0],
                 )?;
                 if let Some(region) = buffer.origin_region {
-                    effects.add_read(region);
+                    effects.add_region_read(region);
                 }
             }
             CheckedIndexedPlace::Slice(slice) => {
@@ -548,7 +548,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         atoms[0],
                     )?;
                     if let Some(region) = descriptor.origin_region {
-                        effects.add_read(region);
+                        effects.add_region_read(region);
                     }
                 }
                 for (place, _) in slice.slice.source_places() {
@@ -561,7 +561,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     )?;
                 }
                 for region in slice.slice.effect_regions() {
-                    effects.add_read(region);
+                    effects.add_region_read(region);
                 }
             }
         }
@@ -725,7 +725,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             CheckedIndexedPlace::Buffer(buffer) => {
                 if let Some(region) = buffer.origin_region {
-                    effects.add_read(region);
+                    effects.add_region_read(region);
                 }
                 CheckedExpression::BufferIndex {
                     carrier: self.tree.path(use_node)?.clone(),
@@ -739,10 +739,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if let Some(descriptor) = &slice.descriptor
                     && let Some(region) = descriptor.origin_region
                 {
-                    effects.add_read(region);
+                    effects.add_region_read(region);
                 }
                 for region in slice.slice.effect_regions() {
-                    effects.add_read(region);
+                    effects.add_region_read(region);
                 }
                 CheckedExpression::SliceIndex {
                     carrier: self.tree.path(use_node)?.clone(),
@@ -874,11 +874,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedIndexedPlace::Buffer(buffer) => {
                 if let Some(region) = buffer.origin_region {
-                    effects.add_write(region);
+                    effects.add_region_write(region);
                     if for_replace {
                         // [SET-2, EFF-2]: one read and one write of the
                         // target's ultimate storage origin.
-                        effects.add_read(region);
+                        effects.add_region_read(region);
                     }
                 }
                 (

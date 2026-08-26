@@ -96,7 +96,7 @@ fn inflate_status(error: own InflateError) -> result: own u8 pure {
   }
 }
 
-fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes('o), external, blocks contract {
+fn publish_all['o, 's](output: &'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes(output) contract {
   define source_length = len(deref(source));
   requires ile(length, source_length);
 } {
@@ -109,7 +109,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
       break @publish;
     }
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+      match write_once<'attempt, 's>(output: &'attempt deref(output), source: source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -122,7 +122,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
   return Ok<unit, IoError>(value: unit);
 }
 
-fn publish_reason['e, 'r](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, reason: own u8) -> result: own unit reads('e 'r), writes('e 'r), external, blocks {
+fn publish_reason['e, 'r](err: &'e Output, report: &uniq 'r buffer<u8>, reason: own u8) -> result: own unit reads('e 'r), writes('r err) {
   doc "Publishes the static diagnostic that names one boundary outcome, selected by the status the outcome carries.";
   let length = 0_u64;
   if ieq(reason, 1_u8) {
@@ -190,7 +190,7 @@ fn publish_reason['e, 'r](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, rea
     }
   }
   region 'reason_write {
-    match publish_all<'reason_write, 'reason_write>(output: &uniq 'reason_write deref(err), source: &'reason_write deref(report), length: length) {
+    match publish_all<'reason_write, 'reason_write>(output: &'reason_write deref(err), source: &'reason_write deref(report), length: length) {
       Ok(value: published) => {
       }
       Err(error: problem) => {
@@ -200,7 +200,7 @@ fn publish_reason['e, 'r](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, rea
   return unit;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(args cwd), writes(cwd out err), allocates(heap), traps {
   doc "Reads one raw DEFLATE file named on the command line through the system read path; every boundary outcome reaches its own status.";
   let scratch = buffer_new(4097_u64, 0_u8);
   let report = buffer_new(128_u64, 0_u8);
@@ -212,12 +212,13 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   if named {
   } else {
     region 'usage_report {
-      publish_reason<'usage_report, 'usage_report>(err: &uniq 'usage_report err, report: &uniq 'usage_report report, reason: 1_u8);
+      publish_reason<'usage_report, 'usage_report>(err: &'usage_report err, report: &uniq 'usage_report report, reason: 1_u8);
     }
     return exit_status(code: 1_u8);
   }
   let status = 0_u8;
   let filled = 0_u64;
+  let file_offset = 0_u64;
   region 'path_lease {
     match arg_get<'path_lease>(args: &'path_lease args, position: 1_u64) {
       Ok(value: text) => {
@@ -240,8 +241,10 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                       break @chunks;
                     }
                     region 'read_call {
-                      match read_once<'read_call, 'read_call>(file: &uniq 'read_call file, destination: &uniq 'read_call scratch, start: filled, end: 4097_u64) {
+                      match read_at<'read_call, 'read_call>(file: &'read_call file, destination: &uniq 'read_call scratch, file_offset: file_offset, start: filled, end: 4097_u64) {
                         ReadBytes(next: endpoint) => {
+                          let received = endpoint -wrap filled;
+                          set file_offset = file_offset +wrap received;
                           set filled = endpoint;
                         }
                         ReadEnd() => {
@@ -278,21 +281,21 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   }
   if ine(status, 0_u8) {
     region 'read_report {
-      publish_reason<'read_report, 'read_report>(err: &uniq 'read_report err, report: &uniq 'read_report report, reason: status);
+      publish_reason<'read_report, 'read_report>(err: &'read_report err, report: &uniq 'read_report report, reason: status);
     }
     return exit_status(code: status);
   }
   let empty = ieq(filled, 0_u64);
   if empty {
     region 'empty_report {
-      publish_reason<'empty_report, 'empty_report>(err: &uniq 'empty_report err, report: &uniq 'empty_report report, reason: 3_u8);
+      publish_reason<'empty_report, 'empty_report>(err: &'empty_report err, report: &uniq 'empty_report report, reason: 3_u8);
     }
     return exit_status(code: 3_u8);
   }
   let too_large = igt(filled, 4096_u64);
   if too_large {
     region 'too_large_report {
-      publish_reason<'too_large_report, 'too_large_report>(err: &uniq 'too_large_report err, report: &uniq 'too_large_report report, reason: 4_u8);
+      publish_reason<'too_large_report, 'too_large_report>(err: &'too_large_report err, report: &uniq 'too_large_report report, reason: 4_u8);
     }
     return exit_status(code: 4_u8);
   }
@@ -314,7 +317,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   }
   if ine(status, 0_u8) {
     region 'decode_report {
-      publish_reason<'decode_report, 'decode_report>(err: &uniq 'decode_report err, report: &uniq 'decode_report report, reason: status);
+      publish_reason<'decode_report, 'decode_report>(err: &'decode_report err, report: &uniq 'decode_report report, reason: status);
     }
     return exit_status(code: status);
   }
@@ -323,12 +326,12 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   if decoded_fits {
   } else {
     region 'decoded_length_report {
-      publish_reason<'decoded_length_report, 'decoded_length_report>(err: &uniq 'decoded_length_report err, report: &uniq 'decoded_length_report report, reason: 7_u8);
+      publish_reason<'decoded_length_report, 'decoded_length_report>(err: &'decoded_length_report err, report: &uniq 'decoded_length_report report, reason: 7_u8);
     }
     return exit_status(code: 7_u8);
   }
   region 'decoded_write {
-    match publish_all<'decoded_write, 'decoded_write>(output: &uniq 'decoded_write out, source: &'decoded_write decoded, length: decoded_length) {
+    match publish_all<'decoded_write, 'decoded_write>(output: &'decoded_write out, source: &'decoded_write decoded, length: decoded_length) {
       Ok(value: published) => {
       }
       Err(error: problem) => {
@@ -338,7 +341,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   }
   if ine(status, 0_u8) {
     region 'write_report {
-      publish_reason<'write_report, 'write_report>(err: &uniq 'write_report err, report: &uniq 'write_report report, reason: status);
+      publish_reason<'write_report, 'write_report>(err: &'write_report err, report: &uniq 'write_report report, reason: status);
     }
     return exit_status(code: status);
   }

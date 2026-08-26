@@ -780,7 +780,7 @@ const REFUSED_ALLOCATION: &[u8] = br#"fn giant(i: own u8) -> result: own u8 allo
   return element;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   let count = 0_u64;
   region 'invocation {
     set count = args_count<'invocation>(args: &'invocation args);
@@ -904,7 +904,7 @@ const PAST_THE_TARGET_CEILING: &[u8] = br#"fn giant(i: own u8) -> result: own u8
   return element;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   let count = 0_u64;
   region 'invocation {
     set count = args_count<'invocation>(args: &'invocation args);
@@ -1065,7 +1065,7 @@ const LARGE_FRAME_SPINE: &[u8] =
   return a +wrap b;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   let count = 0_u64;
   region 'invocation {
     set count = args_count<'invocation>(args: &'invocation args);

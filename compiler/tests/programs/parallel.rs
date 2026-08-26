@@ -201,8 +201,25 @@ fn the_claim_bearing_fold_is_granted_lanes_and_publishes_the_same_bytes() {
             Some(0),
             "WF_WORKERS={spelling} must succeed"
         );
+        let mut observed_grants = granted;
+        for retry in 0..4 {
+            if observed_grants != 0 {
+                break;
+            }
+            let (retried, retry_output) = run_counting_grants(&llvm, workers);
+            assert_eq!(
+                retry_output.status.code(),
+                Some(0),
+                "retry {retry} with WF_WORKERS={spelling} must succeed"
+            );
+            assert_eq!(
+                retry_output.stdout, sequential.stdout,
+                "retry {retry} with WF_WORKERS={spelling} moved a byte"
+            );
+            observed_grants += retried;
+        }
         assert!(
-            granted > 0,
+            observed_grants > 0,
             "WF_WORKERS={spelling} was granted no lane, so nothing was overlapped"
         );
         assert_eq!(

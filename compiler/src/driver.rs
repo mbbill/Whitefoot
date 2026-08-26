@@ -228,8 +228,9 @@ impl std::error::Error for CompilationFailure {}
 
 /// Compiles one ordered closed source bundle to conservative textual LLVM.
 ///
-/// This is the shipped default, and it performs no overlap lowering: see
-/// [`compile_with_overlap`] for the compilation `whitefootc --par` performs.
+/// This is the shipped completion-only default: eligible direct finite target
+/// operations may overlap, while compute-call outlining remains opt-in through
+/// [`compile_with_overlap`] and `whitefootc --par`.
 pub fn compile(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
@@ -283,8 +284,13 @@ pub fn compile_with_inventory(
     limits: CompilerLimits,
     inventory: crate::Inventory,
 ) -> Result<String, CompilationFailure> {
-    compile_reporting(inputs, limits, inventory, crate::OverlapLowering::Off)
-        .map(|(module, _)| module)
+    compile_reporting(
+        inputs,
+        limits,
+        inventory,
+        crate::OverlapLowering::Completion,
+    )
+    .map(|(module, _)| module)
 }
 
 /// The one compilation path, returning the module and the developer-channel
@@ -715,14 +721,15 @@ command fn main() -> status: own ExitStatus pure {
             ]
         );
 
-        // Condition 3: the row gate, reported with the exact categories the
-        // refused row carries.
-        let external =
-            b"fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {
+        // Completion and outside authority no longer form a global row gate.
+        // Distinct release capabilities are therefore reported as one
+        // eligible pair and chain rather than a synthetic condition-3 denial.
+        let capability_releases =
+            b"fn release_read_file(file: own ReadFile) -> result: own unit writes(file) {
   return unit;
 }
 
-fn release_pair(first: own ReadFile, second: own ReadFile) -> result: own unit external, blocks {
+fn release_pair(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first second) {
   let done_first = release_read_file(file: move first);
   let done_second = release_read_file(file: move second);
   return unit;
@@ -733,10 +740,10 @@ command fn main() -> status: own ExitStatus pure {
 }
 ";
         assert_eq!(
-            ledger_of("row.wf", external),
+            ledger_of("row.wf", capability_releases),
             vec![
-                "PAR denied      row.wf:6  pair(release_read_file, release_read_file)  condition 3: the row of s1 carries external, blocks"
-                    .to_owned()
+                "PAR permitted   row.wf:6  pair(release_read_file, release_read_file)  eligible".to_owned(),
+                "PAR chain       row.wf:6  run(release_read_file, release_read_file)  2 members through line 7".to_owned(),
             ]
         );
 
@@ -1297,11 +1304,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         // The canonical FN-7 command-entry header with a conforming body
         // and exact row: the entry admits, its system calls type against
         // the [SYS-2] catalog, and [EFF-2] attribution accepts the row —
-        // `external, blocks` from the DirectoryRead input's compiler-derived
-        // close attempt on the return edge. [QUAL-1] qualification now maps
+        // `writes(cwd)` from the DirectoryRead input's compiler-derived close
+        // attempt on the return edge. [QUAL-1] qualification now maps
         // each identity to an approved implementation and the [QUAL-3]
         // bootstrap supplies the standard inputs, so the program emits.
-        let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus external, blocks {\n  return exit_status(code: 0_u8);\n}\n";
+        let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry.wf", kind_entry)],
             CompilerLimits::default(),
@@ -1321,11 +1328,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         .expect("a command entry selecting no input must emit");
         assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv)"));
 
-        // `open_read`, `read_once`, and `write_once` complete the qualified
+        // `open_read`, `read_at`, and `write_once` complete the qualified
         // interface: every [SYS-2] semantic identity now has an approved
         // implementation on this target, so no unsupported stop remains
         // between an accepted system program and its emitted module.
-        let writing =b"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
+        let writing =b"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry.wf", writing)],
             CompilerLimits::default(),
@@ -1347,12 +1354,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         assert_eq!(failure.kind(), CompilationFailureKind::Source);
         assert_eq!(failure.rule_id(), Some("FN-7"));
 
-        // The `external` and `blocks` categories are checked, not stopped.
-        // These two internal bodies exhibit neither, so declaring either is
-        // an ordinary EFF-2 declared-but-unexhibited rejection.
+        // Capability rows are checked in both directions. These two bodies
+        // exhibit no authority action, so each declaration is an ordinary
+        // EFF-2 declared-but-unexhibited rejection.
         for source in [
-            b"fn probe() -> result: own unit external {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n".as_slice(),
-            b"fn probe() -> result: own unit blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n".as_slice(),
+            b"fn probe['f](file: &'f ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         ] {
             let failure = compile(
                 &[SourceInput::new("rejected.wf", source)],

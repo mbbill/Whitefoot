@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(args cwd), writes(cwd), allocates(heap) {
   doc "SYS-8: a short success is not end of input. A file shorter than the requested range yields ReadBytes(next) with start < next < end, and only the next call, which observes no available byte, states ReadEnd. Exactly [start, next) may have changed and the rest of the buffer is unchanged.";
   let page = buffer_new(8_u64, 90_u8);
   region 'a {
@@ -12,7 +12,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                   Ok(value: file) => {
                     region 'f {
                       region 'd {
-                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd page, start: 0_u64, end: 8_u64) {
+                        match read_at<'f, 'd>(file: &'f file, destination: &uniq 'd page, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
                           ReadBytes(next: n) => {
                             let short = ieq(n, 3_u64);
                             if short {
@@ -37,7 +37,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                     }
                     region 'g {
                       region 'e {
-                        match read_once<'g, 'e>(file: &uniq 'g file, destination: &uniq 'e page, start: 0_u64, end: 8_u64) {
+                        match read_at<'g, 'e>(file: &'g file, destination: &uniq 'e page, file_offset: 3_u64, start: 0_u64, end: 8_u64) {
                           ReadBytes(next: more) => {
                             return exit_status(code: 14_u8);
                           }

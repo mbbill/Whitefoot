@@ -33,13 +33,12 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.36 at the stable
-[specification path](spec/kernel-spec.md), SHA-256
-`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`,
-is active in this exact revision. It supersedes v0.33, whose exact bytes at
-SHA-256 `fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`
-are preserved as an immutable flat archive. `main` remains on v0.33 until this
-exact revision is approved and merged.
+Kernel specification v0.36 remains the active language authority, SHA-256
+`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
+On this work branch the stable [specification path](spec/kernel-spec.md)
+contains a v0.37 CANDIDATE at SHA-256
+`0cd75e5846986c583fb6453d861a6f3f72170d2b05b1cd2540f6850ab587f4c0`.
+It is valid branch work and not a merge-ready ACTIVE identity.
 
 The safe-Rust compiler currently implements one ordinary path:
 
@@ -56,6 +55,7 @@ ordered source bundle
   -> semantic and ownership checking
   -> private checked program
   -> target-independent typed control-flow IR
+  -> proof-selected compute and completion lowering
   -> conservative LLVM
   -> host executable
 ```
@@ -89,13 +89,16 @@ make install-hooks   # once: enable immutable-archive pre-commit protection
 make check           # compiler, conformance, and specification identity gate
 ```
 
-The gate is deliberately small: the compiler builds and passes its tests; the
-conformance corpus has valid active-spec identity, structure, rule coverage,
-and expectations; and the stable file plus immutable archives match the
-recorded digest chain. The native compile-run adapter is invoked separately by
-`make conformance-run`; its current result is Pass=432, Fail=1,
-Skip=13 and is not silently counted as part of `make check`. A green result
-states only what the selected gate exercises and is not a completeness claim.
+The gate builds and tests the compiler, exercises the native completion
+harness, validates conformance structure and rule coverage, runs every
+non-pending conformance case through the native compile-run adapter, checks the
+maintained research fixtures, and verifies the specification/archive identity
+chain. On this candidate branch the current native conformance result is
+Pass=500, Skip=1. Canonical `make check` deliberately rejects `CANDIDATE`
+status at the archive-identity step; branch work uses
+`make spec-candidate-integrity`, while a merge revision must carry the exact
+owner-approved ACTIVE identity and outgoing archive. A green result states
+only what the selected gate exercises and is not a completeness claim.
 
 ## License
 

@@ -45,7 +45,9 @@ fn prov_rows() -> Vec<ProvRow> {
     let mut lines = body.lines();
     assert_eq!(
         lines.next(),
-        Some("| operation | result component class | writable `&uniq` parameter component class |"),
+        Some(
+            "| operation | result component class | writable `&uniq` or capability-write parameter component class |"
+        ),
         "the first row of a wf-prov fence is its column schema"
     );
     assert_eq!(lines.next(), Some("|---|---|---|"));
@@ -169,8 +171,9 @@ fn every_wf_prov_row_decides_the_compilers_system_provenance() {
     }
 
     // All four result classes appear, so a table that collapsed to one class
-    // would not pass the loop vacuously. [SYS-14] adds a fifth writing row:
-    // `list_once` writes both its destination buffer and its list handle.
+    // would not pass the loop vacuously. The five writing rows include
+    // `read_at` and `directory_next`, whose external memory write is only the
+    // destination; capability authority is classified separately.
     assert_eq!(result_classes.len(), 4);
     assert_eq!(writing_rows, 5);
     // An ordinal past every inventory fails closed rather than defaulting to
@@ -455,7 +458,7 @@ fn coordinate_bytes<'source>(
 #[test]
 fn an_external_system_result_cannot_use_a_claim_to_authorize_a_local_subscript() {
     let source =
-        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -463,7 +466,7 @@ fn an_external_system_result_cannot_use_a_claim_to_authorize_a_local_subscript()
   return unit;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let values = array_new<u8, 4>(0_u8);
   let position = 0_u64;
   region 'write {
@@ -482,7 +485,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 
 #[test]
 fn an_uninstantiated_generic_schema_cannot_use_a_claim_to_launder_external_provenance() {
-    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -490,7 +493,7 @@ fn an_uninstantiated_generic_schema_cannot_use_a_claim_to_launder_external_prove
   return unit;
 }
 
-fn unused<T>(args: own Args, values: own array<u8, 4>) -> result: own u8 traps {
+fn unused<T>(args: own Args, values: own array<u8, 4>) -> result: own u8 reads(args), traps {
   let position = 0_u64;
   region 'write {
     store_count<'write>(output: &uniq 'write position, args: move args);
@@ -518,7 +521,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_external_nested_give_reaches_the_outer_value_binding_and_is_rejected() {
     let source =
-        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -526,7 +529,7 @@ fn an_external_nested_give_reaches_the_outer_value_binding_and_is_rejected() {
   return unit;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let values = array_new<u8, 4>(0_u8);
   let position = 0_u64;
   region 'write {
@@ -561,7 +564,7 @@ fn a_direct_parameter_demand_rejects_the_external_actual_at_its_argument() {
   return values[bounded_position];
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -577,7 +580,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 #[test]
 fn base_op4_precedes_a_local_prv3_candidate() {
     let source =
-        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -600,7 +603,7 @@ fn base_fn8_precedes_a_call_argument_prv2_candidate() {
   return values[position];
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -634,7 +637,7 @@ fn wrapper(values: own array<u8, 4>, position: own u64) -> result: own u8 traps 
   return leaf(values: move values, position: bounded_position);
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -678,7 +681,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 
 #[test]
 fn a_two_hop_bridge_diagnostic_retains_every_boundary_and_terminal_origin() {
-    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -712,7 +715,7 @@ fn bridge_top(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 pur
   return value;
 }
 
-command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus reads(args), allocates(heap), traps {
   let raw_index = 0_u64;
   region 'write {
     store_count<'write>(output: &uniq 'write raw_index, args: move args);
@@ -759,7 +762,7 @@ command fn main(command.args as args: own Args) -> return_value: own ExitStatus 
 
 #[test]
 fn a_command_entry_bridge_terminates_at_its_call_argument_without_upstream_continuation() {
-    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -775,7 +778,7 @@ fn required_read(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 
   return bytes[index];
 }
 
-command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus reads(args), allocates(heap), traps {
   let raw_index = 0_u64;
   region 'write {
     store_count<'write>(output: &uniq 'write raw_index, args: move args);
@@ -823,7 +826,7 @@ fn a_recursive_direct_route_uses_complete_state_identity_and_stays_finite() {
   }
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -861,20 +864,20 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 
 #[test]
 fn a_cross_function_system_result_retains_every_result_and_let_carrier() {
-    let source = br#"fn count_arguments(args: own Args) -> result: own u64 pure {
+    let source = br#"fn count_arguments(args: own Args) -> result: own u64 reads(args) {
   region 'a {
     let total = args_count<'a>(args: &'a args);
     return total;
   }
 }
 
-fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
   let position = count_arguments(args: move args);
   set deref(output) = position;
   return unit;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let values = array_new<u8, 4>(0_u8);
   let position = 0_u64;
   region 'write {
@@ -931,7 +934,7 @@ fn a_cross_function_system_write_keeps_write_context_before_the_true_origin() {
   }
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap), traps {
   let bytes = buffer_new(4_u64, 0_u8);
   region 'a {
     match arg_get<'a>(args: &'a args, position: 0_u64) {
@@ -1010,7 +1013,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus alloca
 
 #[test]
 fn an_alias_whole_place_write_taints_the_resolved_owner_and_retains_its_set_carrier() {
-    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+    let source = br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -1018,7 +1021,7 @@ fn an_alias_whole_place_write_taints_the_resolved_owner_and_retains_its_set_carr
   return unit;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap), traps {
   let values = buffer_new(4_u64, 0_u8);
   let position = 0_u64;
   let external_value = 0_u64;
@@ -1059,7 +1062,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus alloca
 #[test]
 fn a_simple_borrow_holder_route_keeps_the_holder_let_and_borrow_atom() {
     let source =
-        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+        br#"fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -1067,7 +1070,7 @@ fn a_simple_borrow_holder_route_keeps_the_holder_let_and_borrow_atom() {
   return unit;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let raw = 0_u64;
   region 'write {
     store_count<'write>(output: &uniq 'write raw, args: move args);
@@ -1112,7 +1115,7 @@ fn a_borrowed_match_payload_deref_reconstructs_a_prv3_carrier() {
   Item(value: u64);
 }
 
-fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -1120,7 +1123,7 @@ fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit wri
   return unit;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let raw = 0_u64;
   region 'write {
     store_count<'write>(output: &uniq 'write raw, args: move args);
@@ -1169,7 +1172,7 @@ enum Wrap {
   Data(values: array<u64, count>);
 }
 
-fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -1177,7 +1180,7 @@ fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit wri
   return unit;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let raw = 0_u64;
   region 'write {
     store_count<'write>(output: &uniq 'write raw, args: move args);
@@ -1230,7 +1233,7 @@ fn store_relay['r](output: &uniq 'r u64, outside: own u64) -> result: own unit w
   return unit;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let values = array_new<u8, 4>(0_u8);
   let position = 0_u64;
   region 'a {
@@ -1282,7 +1285,7 @@ fn a_parameter_backed_user_write_keeps_distinct_write_and_substitution_edges() {
   return unit;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let values = array_new<u8, 4>(0_u8);
   let saved = 0_u64;
   region 'a {
@@ -1346,7 +1349,7 @@ fn a_selected_payload_witness_never_uses_an_external_sibling_root_path() {
   Second(value: u64);
 }
 
-fn store_two['f, 's](first_output: &uniq 'f u64, second_output: &uniq 's u64, args: own Args) -> result: own unit writes('f 's) {
+fn store_two['f, 's](first_output: &uniq 'f u64, second_output: &uniq 's u64, args: own Args) -> result: own unit reads(args), writes('f 's) {
   region 'a {
     let first = args_count<'a>(args: &'a args);
     let second = args_count<'a>(args: &'a args);
@@ -1356,7 +1359,7 @@ fn store_two['f, 's](first_output: &uniq 'f u64, second_output: &uniq 's u64, ar
   return unit;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let first = 0_u64;
   let second = 0_u64;
   region 'first_write {
@@ -1413,7 +1416,7 @@ fn an_external_result_payload_keeps_selectors_through_value_delivery_and_outer_e
   Missing();
 }
 
-fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit writes('r) {
+fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit reads(args), writes('r) {
   region 'a {
     let external_value = args_count<'a>(args: &'a args);
     set deref(output) = external_value;
@@ -1421,7 +1424,7 @@ fn store_count['r](output: &uniq 'r u64, args: own Args) -> result: own unit wri
   return unit;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let raw = 0_u64;
   region 'write {
     store_count<'write>(output: &uniq 'write raw, args: move args);
@@ -1480,7 +1483,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus traps 
 #[test]
 fn a_real_branch_discharges_the_same_external_subject_without_a_provenance_rejection() {
     let source =
-        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);
@@ -2331,12 +2334,12 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn system_results_and_writes_add_no_parameter_datum() {
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads('o 's), writes('o), external, blocks contract {
+    let source = br#"fn publish['o, 's](output: &'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads('o 's), writes(output) contract {
   define capacity = len(deref(source));
   requires ile(count, capacity);
 } {
   region 'attempt {
-    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: count) {
+    match write_once<'attempt, 's>(output: &'attempt deref(output), source: source, start: 0_u64, end: count) {
       Ok(value: written) => {
       }
       Err(error: problem) => {
@@ -2346,10 +2349,10 @@ fn system_results_and_writes_add_no_parameter_datum() {
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
   let batch = buffer_new(1_u64, 0_u8);
   region 'publication {
-    publish<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, count: 1_u64);
+    publish<'publication, 'publication>(output: &'publication out, source: &'publication batch, count: 1_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -2374,7 +2377,8 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
         );
         assert!(
             dependencies.writes[0].unconditional_external,
-            "the SYS-2 write_once output component is unconditional external"
+            "the SYS-2 write_once output component is unconditional external: dependencies={dependencies:#?} authority={:#?}",
+            publish.authority_summary
         );
         for arm in arms {
             for binder in &arm.binders {

@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap) {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus reads(args), allocates(heap) {
   doc "A real branch may establish the bounds relation for an external constrained subject; PRV-3 removes claim evidence, not S1 branch facts.";
   region 'a {
     let index = args_count<'a>(args: &'a args);

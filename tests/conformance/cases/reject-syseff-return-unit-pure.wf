@@ -1,5 +1,5 @@
 fn release_read_file(file: own ReadFile) -> function_result: own unit pure {
-  doc "The omission direction of the EFF-2 canonical case: the body has no syntactic effect at all, but the owned ReadFile's release contributes `external, blocks` on the return edge, so declaring `pure` is an undeclared-but-exhibited rejection at the effects node.";
+  doc "The omission direction of the EFF-2 canonical case: the owned ReadFile's release contributes writes(file), so declaring pure is rejected at the effects node.";
   return unit;
 }
 

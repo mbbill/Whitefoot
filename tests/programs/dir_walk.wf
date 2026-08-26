@@ -57,7 +57,7 @@ fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(
   return unit;
 }
 
-fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes('o), external, blocks contract {
+fn publish_all['o, 's](output: &'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes(output) contract {
   define source_length = len(deref(source));
   requires ile(length, source_length);
 } {
@@ -70,7 +70,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
       break @publish;
     }
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+      match write_once<'attempt, 's>(output: &'attempt deref(output), source: source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -224,7 +224,7 @@ fn record_entry['r, 'p](records: &uniq 'r ByteString, path: &'p buffer<u8>, leng
   return unit;
 }
 
-fn walk['c, 'p, 'r](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, records: &uniq 'r ByteString, used: own u64, depth: own u64) -> result: own u64 reads('c 'p 'r), writes('r), allocates(heap), external, blocks {
+fn walk['c, 'p, 'r](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, records: &uniq 'r ByteString, used: own u64, depth: own u64) -> result: own u64 reads('c 'p 'r dir), writes('r), allocates(heap) {
   doc "Enumerates one directory, records every entry's relative path, and descends into every subdirectory it names.";
   let count = used;
   let too_deep = ige(depth, 8_u64);
@@ -236,13 +236,13 @@ fn walk['c, 'p, 'r](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_lengt
   let prefix_room = len(deref(prefix));
   let entries_room = len(entries);
   let child_room = len(child);
-  match open_list<'c>(directory: dir) {
+  match open_directory_source<'c>(directory: dir) {
     Ok(value: list) => {
       loop @batches {
         let produced = 0_u64;
         let ended = 0_u8;
         region 'batch {
-          match list_once<'batch, 'batch>(list: &uniq 'batch list, destination: &uniq 'batch entries, start: 0_u64, end: 4096_u64) {
+          match directory_next<'batch, 'batch>(source: &'batch list, destination: &uniq 'batch entries, start: 0_u64, end: 4096_u64) {
             ListBytes(next: endpoint, entries: reported) => {
               set produced = endpoint;
             }
@@ -433,7 +433,7 @@ fn walk['c, 'p, 'r](dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_lengt
   return count;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(cwd), writes(cwd out), allocates(heap) {
   doc "Walks the invocation directory recursively and publishes every entry's kind and relative path in sorted order.";
   let records = bs_new();
   let root_prefix = buffer_new(1_u64, 0_u8);
@@ -530,7 +530,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     let length_fits = ile(length, line_room);
     if length_fits {
       region 'publish {
-        match publish_all<'publish, 'publish>(output: &uniq 'publish out, source: &'publish line, length: length) {
+        match publish_all<'publish, 'publish>(output: &'publish out, source: &'publish line, length: length) {
           Ok(value: published) => {
           }
           Err(error: problem) => {

@@ -4,12 +4,12 @@
 //! [GRAM-11] arguments in declared order, explicit region arguments, borrow
 //! formation and overlap checking, and [EFF-2] call-boundary effect
 //! projection — except that its signature is the fixed catalog row rather
-//! than a source declaration. `external` and `blocks` transfer by presence;
-//! system operations never exhibit `traps`, and `reads`/`writes` region
-//! entries come from the mechanical
-//! [SYS-2] mode derivation and are projected through the actual borrow's
-//! ultimate storage origin, so a borrow of a current-function own root
-//! contributes no enclosing region effect.
+//! than a source declaration. `reads`/`writes` region entries come from the
+//! mechanical [SYS-2] mode derivation and are projected through the actual
+//! borrow's ultimate storage origin, so a borrow of a current-function own
+//! root contributes no enclosing region effect. Capability operands name the
+//! actual owned authority directly. Compiler-owned target-action and family
+//! fragment metadata stay outside the source effect row.
 
 use std::collections::HashMap;
 
@@ -20,7 +20,7 @@ use crate::{
     operation_region_effects,
 };
 
-use super::super::super::super::model::{CheckedExpression, CheckedMode};
+use super::super::super::super::model::{CheckedCapabilityOrigins, CheckedExpression, CheckedMode};
 use super::super::super::borrows::{AccessKind, BorrowInfo, BorrowKind, places_overlap};
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
@@ -63,14 +63,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut argument_nodes = Vec::with_capacity(fields.len());
         let mut checked_borrows = Vec::with_capacity(fields.len());
         let mut argument_holders = Vec::with_capacity(fields.len());
+        let mut capability_origins = Vec::with_capacity(fields.len());
         let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
         let mut effects = EffectSet {
-            reads: Vec::new(),
-            writes: Vec::new(),
+            region_reads: Vec::new(),
+            region_writes: Vec::new(),
+            capability_reads: Vec::new(),
+            capability_writes: Vec::new(),
             allocates_heap: false,
             allocates_arenas: Vec::new(),
-            external: operation.external,
-            blocks: operation.blocks,
             traps: false,
         };
         for (field, parameter) in fields.into_iter().zip(operation.parameters) {
@@ -131,6 +132,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
             }
             let passed_borrow = self.borrow_for_destination(expected_mode, &argument, atom)?;
+            capability_origins.push(self.capability_origins_of_value(&argument, bindings)?);
             if explicit_borrow && let Some(borrow) = &argument.borrow {
                 call_scoped_borrows.push(borrow.clone());
             }
@@ -144,8 +146,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.project_system_call_effects(
             node,
             operation,
-            &checked_borrows,
-            &argument_holders,
+            SystemEffectActuals {
+                borrows: &checked_borrows,
+                holders: &argument_holders,
+                capability_origins: &capability_origins,
+            },
             bindings,
             &mut effects,
         )?;
@@ -153,7 +158,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(TypedExpression::owned(
             CheckedExpression::SystemCall {
                 operation: operation_index,
+                target_action: operation.target_action,
                 call: self.tree.path(node)?.clone(),
+                regions: actual_regions,
                 argument_nodes,
                 arguments,
                 result,
@@ -209,14 +216,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
         operation: &SystemOperation,
-        borrows: &[Option<BorrowInfo>],
-        holders: &[Option<DeclarationId>],
+        actuals: SystemEffectActuals<'_>,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         effects: &mut EffectSet,
     ) -> Result<(), CheckStop> {
+        for (access, declared) in [
+            (AccessKind::Read, operation.capability_reads),
+            (AccessKind::Write, operation.capability_writes),
+        ] {
+            for ordinal in declared {
+                let origins = actuals
+                    .capability_origins
+                    .get(usize::from(*ordinal))
+                    .and_then(Option::as_ref)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                for origin in &origins.formals {
+                    match access {
+                        AccessKind::Read => effects.add_capability_read(*origin),
+                        AccessKind::Write => effects.add_capability_write(*origin),
+                        _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+                    }
+                }
+            }
+        }
         let (reads, writes) = operation_region_effects(operation);
-        for (parameter, (borrow, holder)) in
-            operation.parameters.iter().zip(borrows.iter().zip(holders))
+        for (parameter, (borrow, holder)) in operation
+            .parameters
+            .iter()
+            .zip(actuals.borrows.iter().zip(actuals.holders))
         {
             let mode_region = match parameter.mode {
                 SystemParameterMode::Own => continue,
@@ -234,8 +261,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.check_loan_access(bindings, *holder, &borrow.place, access, node)?;
                 if let Some(origin) = borrow.origin_region {
                     match access {
-                        AccessKind::Read => effects.add_read(origin),
-                        AccessKind::Write => effects.add_write(origin),
+                        AccessKind::Read => effects.add_region_read(origin),
+                        AccessKind::Write => effects.add_region_write(origin),
                         _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
                     }
                 }
@@ -254,4 +281,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .collect(),
         }
     }
+}
+
+struct SystemEffectActuals<'a> {
+    borrows: &'a [Option<BorrowInfo>],
+    holders: &'a [Option<DeclarationId>],
+    capability_origins: &'a [Option<CheckedCapabilityOrigins>],
 }

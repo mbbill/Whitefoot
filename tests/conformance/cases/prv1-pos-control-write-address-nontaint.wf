@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap) {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus reads(args), allocates(heap) {
   doc "External control and a write target address add no provenance edge: only the internal right-hand side reaches storage, and an ordinary bounds branch admits the later subscript without claiming a system-controlled value.";
   region 'a {
     let external_offset = args_count<'a>(args: &'a args);

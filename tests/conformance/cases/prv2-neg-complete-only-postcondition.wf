@@ -14,7 +14,7 @@ fn protected_read(values: own array<u8, 4>, index: own u64) -> return_value: own
   return values[index];
 }
 
-command fn main(command.args as args: own Args) -> return_value: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus reads(args), traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let source_count = args_count<'a>(args: &'a args);

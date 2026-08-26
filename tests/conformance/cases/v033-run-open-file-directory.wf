@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {
   let name = buffer_new(4_u64, 0_u8);
   set name[0_u64] = 105_u8;
   set name[1_u64] = 116_u8;
@@ -51,12 +51,6 @@ command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus
               return exit_status(code: 3_u8);
             }
             Unsupported(code: native_code, origin: native_origin) => {
-              return exit_status(code: 3_u8);
-            }
-            Interrupted(code: native_code, origin: native_origin) => {
-              return exit_status(code: 3_u8);
-            }
-            WouldBlock(code: native_code, origin: native_origin) => {
               return exit_status(code: 3_u8);
             }
             TimedOut(code: native_code, origin: native_origin) => {

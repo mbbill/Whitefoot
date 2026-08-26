@@ -62,9 +62,13 @@
 //!    s2 out has already completed s1. The operand half is one-sided for s1
 //!    and two-sided for s2. Getting this wrong conservatively costs only
 //!    denials; getting it wrong permissively is a race.
-//! 3. **Row gate.** Neither callee's row carries `external` or `blocks`, and
-//!    neither does the row of any call written between them. Rows gate; places
-//!    prove. No disjointness is ever derived from a row.
+//! 3. **Complete target and family summaries.** Every call and derived release
+//!    in the window identifies the target action and each family-owned
+//!    authority fragment it can use. An unknown or exclusive fragment pair
+//!    denies; an ordered pair records the edge its actualizer must preserve.
+//!    A may-suspend target does not deny permission: it selects completion
+//!    lowering when one exists, otherwise the permitted window stays
+//!    sequential.
 //! 4. **No skipping exit.** No exit edge of s1 bypasses s2, and no statement
 //!    between them carries an exit edge at all: s1's only continuation is s2.
 //!    A `propagate` right-hand side has an `Err` edge to the function-return
@@ -102,9 +106,9 @@
 //! observables and it keeps the guarantee whole. For an erroneous execution
 //! the guarantee narrows to: the process traps with exactly one well-formed
 //! [DIAG-3] record naming *a* claim whose predicate evaluated false; memory
-//! safety, abort without unwinding, and the absence of external effects from
-//! an overlapped region hold unchanged; and *which* such claim the record
-//! names may depend on the schedule.
+//! safety, abort without unwinding, and family-valid outside actions hold
+//! unchanged; and *which* such claim the record names may depend on the
+//! schedule.
 //!
 //! "Exactly one record under any interleaving" is a mechanism here rather than
 //! an argument: `wf_trap` takes a process-wide latch before it writes its
@@ -127,7 +131,11 @@ use super::model::{
     CheckedSliceSource, CheckedStatement, CheckedType, FunctionId, expression_children,
 };
 use super::places::{PlaceMap, PlaceRoot, PlaceTerm, ResolvedPlace};
-use crate::{DeclarationId, NodePath};
+use crate::{
+    DeclarationId, NodePath, SYSTEM_OPERATIONS, SystemAuthorityAttribution, SystemAuthorityFamily,
+    SystemAuthorityFragment, SystemAuthorityPairRelation, SystemParameterMode, TargetAction,
+    operation_region_effects, system_authority_pair_relation,
+};
 
 /// The declared effect row and region parameters of one concrete function, as
 /// P reads them. This is the callable boundary only: no body fact enters.
@@ -137,9 +145,11 @@ pub(crate) struct PermissionSignature {
     pub(crate) region_parameters: Vec<DeclarationId>,
     pub(crate) reads: Vec<DeclarationId>,
     pub(crate) writes: Vec<DeclarationId>,
+    /// Direct formal capability subjects declared read by the callable row.
+    pub(crate) capability_reads: Vec<DeclarationId>,
+    /// Direct formal capability subjects declared written by the callable row.
+    pub(crate) capability_writes: Vec<DeclarationId>,
     pub(crate) allocates_arenas: Vec<DeclarationId>,
-    pub(crate) external: bool,
-    pub(crate) blocks: bool,
 }
 
 /// Which statement of an analyzed window a denial cites: one of the two
@@ -213,6 +223,28 @@ pub(crate) struct Loan {
     pub(crate) place: ResolvedPlace,
     /// The actual's source node, for citation.
     pub(crate) argument: NodePath,
+}
+
+/// One family-defined authority reservation projected onto its concrete
+/// caller capability. Logical capability identity is the resolved place;
+/// environment aliasing is deliberately outside this judgment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AuthorityAccess {
+    pub(crate) place: ResolvedPlace,
+    pub(crate) family: SystemAuthorityFamily,
+    pub(crate) fragment: SystemAuthorityFragment,
+    /// The capability actual's source node, for diagnostics.
+    pub(crate) argument: NodePath,
+}
+
+/// One source-order reservation edge required by an `ordered` family
+/// relation. Permission records it even when the current lowering declines to
+/// actualize the pair.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AuthorityOrderEdge {
+    pub(crate) earlier: AuthorityAccess,
+    pub(crate) later: AuthorityAccess,
+    pub(crate) attribution: SystemAuthorityAttribution,
 }
 
 /// The two borrow modes [OWN-2], as [OWN-5] grades their exclusion.
@@ -349,6 +381,13 @@ pub(crate) enum Denial {
         right: NodePath,
         sides: (PairSide, PairSide),
     },
+    /// Condition 2: two reservations of one logical authority fragment cannot
+    /// coexist under the family contract available to this lowering.
+    Authority {
+        left: AuthorityAccess,
+        right: AuthorityAccess,
+        sides: (PairSide, PairSide),
+    },
     /// Condition 2, fail-closed: the row projects an access through an actual
     /// whose caller place this analysis cannot resolve, or an operand reads
     /// storage it cannot resolve.
@@ -363,12 +402,6 @@ pub(crate) enum Denial {
         /// The form, as the ledger names it to the writer.
         form: &'static str,
     },
-    /// Condition 3: a callee row carries `external` or `blocks`.
-    Row {
-        side: PairSide,
-        external: bool,
-        blocks: bool,
-    },
     /// Condition 4: an exit edge of s1, or of a statement between the two,
     /// does not reach s2.
     SkippingExit { side: PairSide, kind: ExitKind },
@@ -382,9 +415,9 @@ impl Denial {
             Self::Dataflow { .. } => 1,
             Self::Footprint { .. }
             | Self::Loan { .. }
+            | Self::Authority { .. }
             | Self::UnresolvedFootprint { .. }
             | Self::InterposedForm { .. } => 2,
-            Self::Row { .. } => 3,
             Self::SkippingExit { .. } => 4,
         }
     }
@@ -424,8 +457,10 @@ pub(crate) struct PermissionSite {
     pub(crate) binding: BindingId,
     /// The call occurrence inside it.
     pub(crate) call: NodePath,
-    pub(crate) callee: FunctionId,
     pub(crate) callee_name: String,
+    /// Compiler-owned execution summary selected for this call. The
+    /// permission judgment does not use it as an alias fact.
+    pub(crate) target_action: TargetAction,
 }
 
 /// One ordered pair of adjacent call statements and its verdict.
@@ -434,6 +469,7 @@ pub(crate) struct PermissionPair {
     pub(crate) first: PermissionSite,
     pub(crate) second: PermissionSite,
     pub(crate) verdict: PermissionVerdict,
+    pub(crate) authority_order: Vec<AuthorityOrderEdge>,
 }
 
 /// A maximal chain of at least two adjacent call statements every ordered
@@ -442,6 +478,20 @@ pub(crate) struct PermissionPair {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PermissionRun {
     pub(crate) sites: Vec<PermissionSite>,
+    /// Complete source-order authority edges inside this run. A nonempty set
+    /// is permission to overlap only for an actualizer that honors them.
+    pub(crate) authority_order: Vec<PermissionRunAuthorityOrder>,
+    /// False when an authority-bearing interposed statement is not itself a
+    /// run member. Permission still holds, but a member-only batch cannot
+    /// actualize the complete ordered window.
+    pub(crate) ordered_members_only: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PermissionRunAuthorityOrder {
+    pub(crate) earlier: BindingId,
+    pub(crate) later: BindingId,
+    pub(crate) edge: AuthorityOrderEdge,
 }
 
 /// Every analyzed pair and eligible chain of one concrete function, in source
@@ -529,32 +579,52 @@ struct Candidate<'check> {
 /// grows a second copy of the projection.
 pub(super) struct CallProjection<'check> {
     pub(super) call: &'check NodePath,
-    pub(super) callee: FunctionId,
+    pub(super) target: CallTarget,
     pub(super) arguments: &'check [CheckedExpression],
     pub(super) argument_nodes: &'check [NodePath],
     pub(super) regions: &'check [DeclarationId],
 }
 
+/// The closed callable classes the overlap judgment can project.
+#[derive(Clone, Copy)]
+pub(super) enum CallTarget {
+    User(FunctionId),
+    System(u8),
+}
+
 /// The call one expression is, or `None` for every other expression form.
 pub(super) fn call_projection(value: &CheckedExpression) -> Option<CallProjection<'_>> {
-    let CheckedExpression::UserCall {
-        function,
-        call,
-        argument_nodes,
-        arguments,
-        goal_regions,
-        ..
-    } = value
-    else {
-        return None;
-    };
-    Some(CallProjection {
-        call,
-        callee: *function,
-        arguments,
-        argument_nodes,
-        regions: goal_regions,
-    })
+    match value {
+        CheckedExpression::UserCall {
+            function,
+            call,
+            argument_nodes,
+            arguments,
+            goal_regions,
+            ..
+        } => Some(CallProjection {
+            call,
+            target: CallTarget::User(*function),
+            arguments,
+            argument_nodes,
+            regions: goal_regions,
+        }),
+        CheckedExpression::SystemCall {
+            operation,
+            call,
+            regions,
+            argument_nodes,
+            arguments,
+            ..
+        } => Some(CallProjection {
+            call,
+            target: CallTarget::System(*operation),
+            arguments,
+            argument_nodes,
+            regions,
+        }),
+        _ => None,
+    }
 }
 
 /// One statement written between the two judged calls, reduced to what the
@@ -565,10 +635,6 @@ struct Interposed {
     /// Every binding its own operands mention.
     uses: Vec<BindingId>,
     footprint: Footprint,
-    /// Its callee, when the statement is one call. A call between the two
-    /// members faces the same row gate they do and joins the eligibility
-    /// roots.
-    callee: Option<FunctionId>,
 }
 
 /// Why one interposed statement cannot be judged as written.
@@ -678,10 +744,16 @@ impl<'check> Program<'check> {
         };
         for ordinal in 0..windows.candidates.len() - 1 {
             let verdict = self.judge(&windows, ordinal, ordinal + 1);
+            let authority_order = if verdict.is_eligible() {
+                self.window_authority_order(&windows, ordinal, ordinal + 1)
+            } else {
+                Vec::new()
+            };
             permissions.pairs.push(PermissionPair {
                 first: self.site(&windows.candidates[ordinal]),
                 second: self.site(&windows.candidates[ordinal + 1]),
                 verdict,
+                authority_order,
             });
         }
         self.collect_runs(&windows, permissions);
@@ -709,11 +781,47 @@ impl<'check> Program<'check> {
                 end += 1;
             }
             if end > start {
+                let mut authority_order = Vec::new();
+                for later in start + 1..=end {
+                    for earlier in start..later {
+                        authority_order.extend(
+                            authority_order_edges(
+                                &windows.footprints[earlier],
+                                &windows.footprints[later],
+                            )
+                            .into_iter()
+                            .map(|edge| PermissionRunAuthorityOrder {
+                                earlier: group[earlier].binding,
+                                later: group[later].binding,
+                                edge,
+                            }),
+                        );
+                    }
+                }
+                let member_indices = group[start..=end]
+                    .iter()
+                    .map(|candidate| candidate.index)
+                    .collect::<Vec<_>>();
+                let ordered_members_only = windows
+                    .statements
+                    .get(group[start].index..=group[end].index)
+                    .unwrap_or_default()
+                    .iter()
+                    .enumerate()
+                    .all(|(offset, statement)| {
+                        let index = group[start].index + offset;
+                        member_indices.contains(&index)
+                            || statement
+                                .as_ref()
+                                .is_ok_and(|statement| statement.footprint.authorities.is_empty())
+                    });
                 permissions.runs.push(PermissionRun {
                     sites: group[start..=end]
                         .iter()
                         .map(|candidate| self.site(candidate))
                         .collect(),
+                    authority_order,
+                    ordered_members_only,
                 });
                 start = end + 1;
             } else {
@@ -722,17 +830,48 @@ impl<'check> Program<'check> {
         }
     }
 
+    fn window_authority_order(
+        &self,
+        windows: &BlockWindows<'check>,
+        first_ordinal: usize,
+        second_ordinal: usize,
+    ) -> Vec<AuthorityOrderEdge> {
+        let first = &windows.candidates[first_ordinal];
+        let second = &windows.candidates[second_ordinal];
+        let left = &windows.footprints[first_ordinal];
+        let right = &windows.footprints[second_ordinal];
+        let mut edges = authority_order_edges(left, right);
+        for record in windows
+            .statements
+            .get(first.index + 1..second.index)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|classified| classified.as_ref().ok())
+        {
+            edges.extend(authority_order_edges(left, &record.footprint));
+            edges.extend(authority_order_edges(&record.footprint, right));
+        }
+        edges
+    }
+
     fn site(&self, candidate: &Candidate<'check>) -> PermissionSite {
+        let (callee_name, target_action) = match candidate.call.target {
+            CallTarget::User(function) => self
+                .functions
+                .get(function.0 as usize)
+                .map(|function| (function.name.clone(), function.target_action))
+                .unwrap_or_else(|| (String::new(), TargetAction::CONSERVATIVE)),
+            CallTarget::System(operation) => SYSTEM_OPERATIONS
+                .get(usize::from(operation))
+                .map(|row| (row.spelling.to_owned(), row.target_action))
+                .unwrap_or_else(|| (String::new(), TargetAction::CONSERVATIVE)),
+        };
         PermissionSite {
             statement: candidate.statement.clone(),
             binding: candidate.binding,
             call: candidate.call.call.clone(),
-            callee: candidate.call.callee,
-            callee_name: self
-                .functions
-                .get(candidate.call.callee.0 as usize)
-                .map(|function| function.name.clone())
-                .unwrap_or_default(),
+            callee_name,
+            target_action,
         }
     }
 
@@ -858,40 +997,6 @@ impl<'check> Program<'check> {
             }
         }
 
-        // Condition 3: the row gate, over both members and every call between
-        // them. A row that gates the members gates a call written between them
-        // for the same reason: nothing about its reach is proved by places.
-        for (side, callee) in [
-            (PairSide::First, first.call.callee),
-            (PairSide::Second, second.call.callee),
-        ]
-        .into_iter()
-        .chain(
-            interposed
-                .iter()
-                .enumerate()
-                .filter_map(|(offset, record)| {
-                    record
-                        .callee
-                        .map(|callee| (PairSide::Between(offset), callee))
-                }),
-        ) {
-            let Some(signature) = self.signatures.get(callee.0 as usize) else {
-                return PermissionVerdict::Denied(Denial::Row {
-                    side,
-                    external: true,
-                    blocks: true,
-                });
-            };
-            if signature.external || signature.blocks {
-                return PermissionVerdict::Denied(Denial::Row {
-                    side,
-                    external: signature.external,
-                    blocks: signature.blocks,
-                });
-            }
-        }
-
         // Condition 4: no exit edge of s1 bypasses s2. An exit between them
         // denied during classification above.
         if let Some(kind) = first.exit {
@@ -939,7 +1044,6 @@ impl<'check> Program<'check> {
                         defines: Some(*binding),
                         uses,
                         footprint: self.footprint(places, &candidate.call),
-                        callee: Some(candidate.call.callee),
                     });
                 }
                 // A written borrow's shared-or-uniq mode is erased from the
@@ -956,7 +1060,6 @@ impl<'check> Program<'check> {
                     defines: Some(*binding),
                     uses,
                     footprint: value_footprint(places, value, node_path),
-                    callee: None,
                 })
             }
             CheckedStatement::Set {
@@ -976,7 +1079,6 @@ impl<'check> Program<'check> {
                     defines: None,
                     uses,
                     footprint,
-                    callee: None,
                 })
             }
             // [SET-2]: one read of the previous value into the fresh binding
@@ -1007,7 +1109,6 @@ impl<'check> Program<'check> {
                     defines: Some(*binding),
                     uses,
                     footprint,
-                    callee: None,
                 })
             }
             // Exit-bearing forms: condition 4.
@@ -1044,10 +1145,24 @@ impl<'check> Program<'check> {
     /// The written and read footprints of one call, by [EFF-2] boundary
     /// projection onto the actuals' resolved places.
     pub(super) fn footprint(&self, places: &PlaceMap, candidate: &CallProjection<'_>) -> Footprint {
+        match candidate.target {
+            CallTarget::User(callee) => self.user_call_footprint(places, candidate, callee),
+            CallTarget::System(operation) => {
+                self.system_call_footprint(places, candidate, operation)
+            }
+        }
+    }
+
+    fn user_call_footprint(
+        &self,
+        places: &PlaceMap,
+        candidate: &CallProjection<'_>,
+        callee_id: FunctionId,
+    ) -> Footprint {
         let mut footprint = Footprint::default();
         let (Some(signature), Some(callee)) = (
-            self.signatures.get(candidate.callee.0 as usize),
-            self.functions.get(candidate.callee.0 as usize),
+            self.signatures.get(callee_id.0 as usize),
+            self.functions.get(callee_id.0 as usize),
         ) else {
             footprint.unresolved = Some(candidate.call.clone());
             return footprint;
@@ -1067,6 +1182,39 @@ impl<'check> Program<'check> {
                     call: candidate.call.clone(),
                 }),
                 None => footprint.unresolved = Some(candidate.call.clone()),
+            }
+        }
+
+        if callee.authority_summary.unknown {
+            footprint.unresolved = Some(candidate.call.clone());
+        }
+        for usage in &callee.authority_summary.uses {
+            let index = usage.parameter as usize;
+            let Some(parameter) = callee.parameters.get(index) else {
+                footprint.unresolved = Some(candidate.call.clone());
+                continue;
+            };
+            if !signature.capability_reads.contains(&parameter.declaration)
+                && !signature.capability_writes.contains(&parameter.declaration)
+            {
+                footprint.unresolved = Some(candidate.call.clone());
+                continue;
+            }
+            let (Some(argument), Some(node)) = (
+                candidate.arguments.get(index),
+                candidate.argument_nodes.get(index),
+            ) else {
+                footprint.unresolved = Some(candidate.call.clone());
+                continue;
+            };
+            match argument_place(places, argument).or_else(|| consumed_place(places, argument)) {
+                Some(place) => footprint.authorities.push(AuthorityAccess {
+                    place,
+                    family: usage.family,
+                    fragment: usage.fragment,
+                    argument: node.clone(),
+                }),
+                None => footprint.unresolved = Some(node.clone()),
             }
         }
 
@@ -1159,18 +1307,117 @@ impl<'check> Program<'check> {
         footprint
     }
 
-    /// The declared row of one concrete function, or `None` when this
-    /// analysis does not hold one. A caller that cannot read a row denies.
-    pub(super) fn signature(&self, function: FunctionId) -> Option<&PermissionSignature> {
-        self.signatures.get(function.0 as usize)
+    /// Projects one direct system call through the same caller-place model as
+    /// a user call. The catalog's borrow modes are the complete authority
+    /// boundary: there is no synthetic global-world access.
+    fn system_call_footprint(
+        &self,
+        places: &PlaceMap,
+        candidate: &CallProjection<'_>,
+        operation_index: u8,
+    ) -> Footprint {
+        let mut footprint = Footprint::default();
+        let Some(operation) = SYSTEM_OPERATIONS.get(usize::from(operation_index)) else {
+            footprint.unresolved = Some(candidate.call.clone());
+            return footprint;
+        };
+        if operation.regions.len() != candidate.regions.len()
+            || operation.parameters.len() != candidate.arguments.len()
+            || operation.parameters.len() != candidate.argument_nodes.len()
+        {
+            footprint.unresolved = Some(candidate.call.clone());
+            return footprint;
+        }
+        let (reads, writes) = operation_region_effects(operation);
+
+        if let Some(authority) = operation.authority {
+            let index = usize::from(authority.parameter);
+            let (Some(argument), Some(node)) = (
+                candidate.arguments.get(index),
+                candidate.argument_nodes.get(index),
+            ) else {
+                footprint.unresolved = Some(candidate.call.clone());
+                return footprint;
+            };
+            match argument_place(places, argument) {
+                Some(place) => footprint.authorities.push(AuthorityAccess {
+                    place,
+                    family: authority.family,
+                    fragment: authority.fragment,
+                    argument: node.clone(),
+                }),
+                None => footprint.unresolved = Some(node.clone()),
+            }
+        }
+
+        for (index, parameter) in operation.parameters.iter().enumerate() {
+            let Some(argument) = candidate.arguments.get(index) else {
+                footprint.unresolved = Some(candidate.call.clone());
+                return footprint;
+            };
+            let Some(node) = candidate.argument_nodes.get(index) else {
+                footprint.unresolved = Some(candidate.call.clone());
+                return footprint;
+            };
+            let (mode_region, strength) = match parameter.mode {
+                SystemParameterMode::Own => (None, None),
+                SystemParameterMode::Borrow(region) => (Some(region), Some(LoanStrength::Shared)),
+                SystemParameterMode::UniqueBorrow(region) => {
+                    (Some(region), Some(LoanStrength::Exclusive))
+                }
+            };
+
+            if let Some(strength) = strength {
+                match argument_place(places, argument) {
+                    Some(place) => footprint.loans.push(Loan {
+                        strength,
+                        place,
+                        argument: node.clone(),
+                    }),
+                    None => footprint.unresolved = Some(node.clone()),
+                }
+            }
+
+            let written = mode_region.is_some_and(|region| writes.contains(&region));
+            let read = mode_region.is_some_and(|region| reads.contains(&region));
+            if written || read {
+                match argument_place(places, argument) {
+                    Some(place) => {
+                        let access = Access::Place {
+                            place,
+                            argument: node.clone(),
+                        };
+                        if written {
+                            footprint.writes.push(access.clone());
+                        }
+                        if read {
+                            footprint.reads.push(access);
+                        }
+                    }
+                    None => footprint.unresolved = Some(node.clone()),
+                }
+            } else if matches!(parameter.mode, SystemParameterMode::Own)
+                && let Some(place) = consumed_place(places, argument)
+            {
+                footprint.writes.push(Access::Place {
+                    place,
+                    argument: node.clone(),
+                });
+            }
+        }
+
+        for (argument, node) in candidate.arguments.iter().zip(candidate.argument_nodes) {
+            collect_operand_reads(places, argument, node, &mut footprint);
+        }
+        footprint
     }
 
-    /// One concrete function's source name, for citation.
-    pub(super) fn function_name(&self, function: FunctionId) -> String {
+    /// Conservative target summary of one concrete callee.
+    pub(super) fn target_action(&self, function: FunctionId) -> TargetAction {
         self.functions
             .get(function.0 as usize)
-            .map(|function| function.name.clone())
-            .unwrap_or_default()
+            .map(|function| function.target_action)
+            .unwrap_or(TargetAction::CONSERVATIVE)
     }
 }
 
@@ -1181,6 +1428,9 @@ pub(super) struct Footprint {
     /// The [OWN-5] loans this statement's argument borrows hold for the
     /// duration of its call, independent of what its callee's row declares.
     pub(super) loans: Vec<Loan>,
+    /// Family authority reservations held until the operation's declared
+    /// authority-release milestone.
+    pub(super) authorities: Vec<AuthorityAccess>,
     /// Storage this statement's own operand expressions read on the calling
     /// thread, before the call. An overlap moves some statement's operand
     /// evaluation across another's call, and which one moves is the
@@ -1220,6 +1470,9 @@ fn footprint_conflict(
     later_side: PairSide,
     earlier_operands: bool,
 ) -> Option<Denial> {
+    if let Some(denial) = authority_conflict(earlier, earlier_side, later, later_side) {
+        return Some(denial);
+    }
     if let Some(denial) = loan_conflict(earlier, earlier_side, later, later_side, earlier_operands)
     {
         return Some(denial);
@@ -1292,6 +1545,61 @@ fn footprint_conflict(
         }
     }
     None
+}
+
+/// Family authority is independent of ordinary memory and of borrow loans.
+/// Distinct logical capability places coexist. On one place the owning
+/// family's closed fragment-pair table decides Free, Ordered, or Exclusive;
+/// a family mismatch or invalid fragment pair is unknown and denies.
+fn authority_conflict(
+    earlier: &Footprint,
+    earlier_side: PairSide,
+    later: &Footprint,
+    later_side: PairSide,
+) -> Option<Denial> {
+    for left in &earlier.authorities {
+        for right in &later.authorities {
+            if !left.place.overlaps(&right.place) {
+                continue;
+            }
+            let relation = (left.family == right.family)
+                .then(|| system_authority_pair_relation(left.family, left.fragment, right.fragment))
+                .flatten();
+            let known_coexistence = matches!(
+                relation,
+                Some(SystemAuthorityPairRelation::Free | SystemAuthorityPairRelation::Ordered(_))
+            );
+            if !known_coexistence {
+                return Some(Denial::Authority {
+                    left: left.clone(),
+                    right: right.clone(),
+                    sides: (earlier_side, later_side),
+                });
+            }
+        }
+    }
+    None
+}
+
+fn authority_order_edges(earlier: &Footprint, later: &Footprint) -> Vec<AuthorityOrderEdge> {
+    let mut edges = Vec::new();
+    for left in &earlier.authorities {
+        for right in &later.authorities {
+            if !left.place.overlaps(&right.place) || left.family != right.family {
+                continue;
+            }
+            if let Some(SystemAuthorityPairRelation::Ordered(attribution)) =
+                system_authority_pair_relation(left.family, left.fragment, right.fragment)
+            {
+                edges.push(AuthorityOrderEdge {
+                    earlier: left.clone(),
+                    later: right.clone(),
+                    attribution,
+                });
+            }
+        }
+    }
+    edges
 }
 
 /// The loans half of the same condition: each statement's [OWN-5] loans

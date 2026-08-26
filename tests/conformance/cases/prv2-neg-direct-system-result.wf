@@ -9,7 +9,7 @@ fn claimed_read(bytes: own buffer<u8>, index: own u64) -> return_value: own u8 t
   return bytes[index];
 }
 
-command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus reads(args), allocates(heap), traps {
   doc "A direct protected-leaf demand composes to the external system-result actual and rejects once at that call argument under PRV-2.";
   region 'a {
     let raw_index = args_count<'a>(args: &'a args);

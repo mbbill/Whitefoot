@@ -600,11 +600,11 @@ fn every_unit_receives_the_system_domain_before_entry_validation() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("entry-invalid syntax must still resolve system names: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 199);
+        assert_eq!(resolved.system_declarations().len(), 194);
         for (role, spelling, ordinal) in [
             (LexicalUseRole::Type, "Args", 0),
             (LexicalUseRole::Type, "ExitStatus", 6),
-            (LexicalUseRole::IdentifierCallee, "exit_status", 173),
+            (LexicalUseRole::IdentifierCallee, "exit_status", 168),
         ] {
             let usage = resolved
                 .lexical_uses()
@@ -662,7 +662,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("an admitted requires block must reach system inventory: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 199);
+        assert_eq!(resolved.system_declarations().len(), 194);
     });
 }
 
@@ -679,7 +679,7 @@ fn a_kind_declaring_unit_resolves_the_complete_system_lookup_inventory() {
   return exit_status(code: 0_u8);
 }
 
-fn types(a: own Args, b: own HostString, c: own RelativePath, d: own DirectoryRead, e: own ReadFile, f: own Output, g: own ExitStatus, h: own ArgError, i: own Utf8Error, j: own CopyError, k: own Utf8CopyError, l: own PathError, m: own ReadOutcome, n: own IoError, o: own DirectoryList, p: own ListOutcome) -> result: own unit pure {
+fn types(a: own Args, b: own HostString, c: own RelativePath, d: own DirectoryRead, e: own ReadFile, f: own Output, g: own ExitStatus, h: own ArgError, i: own Utf8Error, j: own CopyError, k: own Utf8CopyError, l: own PathError, m: own ReadOutcome, n: own IoError, o: own DirectorySource, p: own ListOutcome) -> result: own unit pure {
   return unit;
 }
 
@@ -692,11 +692,11 @@ fn calls(x: own u64) -> result: own unit pure {
   host_copy_utf8(value: x, destination: x, start: x, end: x);
   relative_path(value: x);
   open_read(root: x, path: x);
-  read_once(file: x, destination: x, start: x, end: x);
+  read_at(file: x, destination: x, file_offset: x, start: x, end: x);
   write_once(output: x, source: x, start: x, end: x);
   open_directory(root: x, name: x, start: x, end: x);
-  open_list(directory: x);
-  list_once(list: x, destination: x, start: x, end: x);
+  open_directory_source(directory: x);
+  directory_next(source: x, destination: x, start: x, end: x);
   open_file(root: x, name: x, start: x, end: x);
   return unit;
 }
@@ -765,27 +765,27 @@ fn list_outcomes(m: own ListOutcome) -> result: own unit pure {
             ("PathError", 11),
             ("ReadOutcome", 12),
             ("IoError", 13),
-            ("DirectoryList", 14),
+            ("DirectorySource", 14),
             ("ListOutcome", 15),
         ] {
             expect(LexicalUseRole::Type, spelling, ordinal);
         }
         for (spelling, ordinal) in [
-            ("args_count", 125),
-            ("arg_get", 128),
-            ("host_bytes_len", 132),
-            ("host_copy_bytes", 135),
-            ("host_utf8_len", 142),
-            ("host_copy_utf8", 145),
-            ("relative_path", 152),
-            ("open_read", 154),
-            ("read_once", 159),
-            ("write_once", 166),
-            ("exit_status", 173),
-            ("open_directory", 175),
-            ("open_list", 182),
-            ("list_once", 185),
-            ("open_file", 192),
+            ("args_count", 119),
+            ("arg_get", 122),
+            ("host_bytes_len", 126),
+            ("host_copy_bytes", 129),
+            ("host_utf8_len", 136),
+            ("host_copy_utf8", 139),
+            ("relative_path", 146),
+            ("open_read", 148),
+            ("read_at", 153),
+            ("write_once", 161),
+            ("exit_status", 168),
+            ("open_directory", 170),
+            ("open_directory_source", 177),
+            ("directory_next", 180),
+            ("open_file", 187),
         ] {
             expect(LexicalUseRole::IdentifierCallee, spelling, ordinal);
         }
@@ -793,9 +793,9 @@ fn list_outcomes(m: own ListOutcome) -> result: own unit pure {
         expect(LexicalUseRole::ArmVariant, "ReadBytes", 24);
         expect(LexicalUseRole::ArmVariant, "ReadEnd", 26);
         expect(LexicalUseRole::ArmVariant, "ReadFailed", 27);
-        expect(LexicalUseRole::ArmVariant, "ListBytes", 119);
-        expect(LexicalUseRole::ArmVariant, "ListEnd", 122);
-        expect(LexicalUseRole::ArmVariant, "ListFailed", 123);
+        expect(LexicalUseRole::ArmVariant, "ListBytes", 113);
+        expect(LexicalUseRole::ArmVariant, "ListEnd", 116);
+        expect(LexicalUseRole::ArmVariant, "ListFailed", 117);
     });
 }
 
@@ -822,7 +822,7 @@ fn system_names_are_reserved_even_without_a_valid_entry() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 125
+            DeclarationOrigin::System(id) if id.ordinal() == 119
         ));
     });
 }
@@ -857,7 +857,7 @@ fn system_collisions_reject_deterministically_in_both_directions() {
             assert_eq!(conflicts[0].class(), DeclarationClass::Function);
             assert!(matches!(
                 conflicts[0].origin(),
-                DeclarationOrigin::System(id) if id.ordinal() == 125
+                DeclarationOrigin::System(id) if id.ordinal() == 119
             ));
         });
     }
@@ -937,7 +937,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 132
+            DeclarationOrigin::System(id) if id.ordinal() == 126
         ));
     });
 }
@@ -1021,7 +1021,7 @@ fn system_resolution_is_deterministic_across_repeated_runs_and_paths() {
         first,
         vec![
             ("ExitStatus".to_owned(), 6),
-            ("exit_status".to_owned(), 173)
+            ("exit_status".to_owned(), 168)
         ]
     );
     assert_eq!(first, targets("first.wf"));
@@ -1546,7 +1546,7 @@ fn user<T: Bound, const n: i32>['call](arg: &'call T) -> result: &'call T reads(
   return arg;
 }
 
-fn viewer['v](values: own slice<'v, i32>) -> result: own unit reads('v) {
+fn viewer['v](values: own slice<'v, i32>, capability: own Args) -> result: own unit reads('v capability) {
   return unit;
 }
 
@@ -1646,6 +1646,7 @@ fn probe() -> result: own unit traps {
             LexicalUseRole::ModeRegion,
             LexicalUseRole::TypeArgumentRegion,
             LexicalUseRole::EffectRegion,
+            LexicalUseRole::EffectCapability,
             LexicalUseRole::BorrowRegion,
             LexicalUseRole::BreakLabel,
             LexicalUseRole::Const,
@@ -1701,6 +1702,61 @@ fn probe() -> result: own unit traps {
         assert_eq!(shared_argument.origin().subtoken_ordinal(), 0);
         assert_eq!(shared_suffix.origin().subtoken_ordinal(), 1);
     });
+}
+
+#[test]
+fn effect_capability_operands_resolve_to_the_exact_formal_parameter() {
+    let source =
+        b"fn publish(output: own Output) -> result: own unit writes(output) {\n  return unit;\n}\n";
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("a direct capability formal must resolve: {outcome:?}");
+        };
+        let parameter = resolved
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.role() == DeclarationRole::Parameter)
+            .expect("the parameter declaration exists");
+        let usage = resolved
+            .lexical_uses()
+            .iter()
+            .find(|usage| usage.role() == LexicalUseRole::EffectCapability)
+            .expect("the effect capability use exists");
+        assert_eq!(usage.spelling(), "output");
+        assert_eq!(
+            usage.target(),
+            ResolvedTarget::Source {
+                declaration: parameter.id(),
+                class: DeclarationClass::Value,
+            }
+        );
+    });
+}
+
+#[test]
+fn unresolved_and_body_local_effect_targets_reject_under_eff1() {
+    for source in [
+        &b"fn probe() -> result: own unit reads(missing) {\n  return unit;\n}\n"[..],
+        &b"fn probe() -> result: own unit reads(local) {\n  let local = 0_u64;\n  return unit;\n}\n"[..],
+    ] {
+        with_one_resolution(source, |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("a non-formal effect target must reject in resolution: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Eff1);
+            assert!(matches!(
+                issue.kind(),
+                ResolutionIssueKind::UnresolvedUse {
+                    role: LexicalUseRole::EffectCapability,
+                    ..
+                }
+                    | ResolutionIssueKind::InvisibleUse {
+                        role: LexicalUseRole::EffectCapability,
+                        ..
+                    }
+            ));
+        });
+    }
 }
 
 #[test]
@@ -2191,18 +2247,20 @@ fn system_index_helpers_agree_with_the_preorder_entity_map() {
         assert_eq!(operations, system_operations(surface).len());
     }
 
-    // The [SYS-5] release table: exactly DirectoryRead, ReadFile, and the
-    // DirectoryList release with `external, blocks`; every other
-    // system nominal's row is empty.
+    // Exactly native resource closes may suspend; logical releases are inline.
     for (index, nominal) in SYSTEM_NOMINALS.iter().enumerate() {
         let index = u8::try_from(index).expect("nominal table fits u8");
         let row = system_release_row(index);
         let expected = matches!(
             nominal.spelling,
-            "DirectoryRead" | "ReadFile" | "DirectoryList"
+            "DirectoryRead" | "ReadFile" | "DirectorySource"
         );
-        assert_eq!(row.external, expected, "external for {}", nominal.spelling);
-        assert_eq!(row.blocks, expected, "blocks for {}", nominal.spelling);
+        assert_eq!(
+            row.target_action.may_suspend(),
+            expected,
+            "release suspension for {}",
+            nominal.spelling
+        );
     }
 }
 
@@ -2264,8 +2322,8 @@ fn the_system_resource_contracts_equal_the_release_and_backing_tables() {
         // stateful resource whose release is one native close attempt, on the
         // same ground as `ReadFile` [SYS-14].
         (
-            "DirectoryList",
-            SystemResourceType::DirectoryList,
+            "DirectorySource",
+            SystemResourceType::DirectorySource,
             SystemReleaseAction::NativeCloseAttempt,
             SystemResourceBacking::Opaque,
         ),
@@ -2299,10 +2357,9 @@ fn the_system_resource_contracts_equal_the_release_and_backing_tables() {
         // The row is a function of the action, and the two views agree.
         assert_eq!(contract.row, system_release_row(index));
         assert_eq!(
-            contract.row.external,
+            contract.row.target_action.may_suspend(),
             row.2 == SystemReleaseAction::NativeCloseAttempt
         );
-        assert_eq!(contract.row.blocks, contract.row.external);
     }
     assert_eq!(covered, expected.len());
 }

@@ -14,9 +14,9 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 #[test]
 fn complete_inventory_is_pinned() {
     assert_eq!(productions().len(), 74);
-    assert_eq!(DECISIONS.len(), 93);
-    assert_eq!(SELECT_ROWS.len(), 3_725);
-    assert_eq!(diagnostic_terminal_order().len(), 105);
+    assert_eq!(DECISIONS.len(), 95);
+    assert_eq!(SELECT_ROWS.len(), 3_679);
+    assert_eq!(diagnostic_terminal_order().len(), 103);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[12], Production::ContractDefine);
     assert_eq!(productions()[13], Production::RequiresClause);
@@ -45,14 +45,8 @@ fn complete_inventory_is_pinned() {
 fn active_inventory_carries_the_system_interface_grammar() {
     assert!(productions().contains(&Production::ProgramKind));
     assert!(productions().contains(&Production::InputLabel));
-    for terminal in [
-        FixedTerminal::As,
-        FixedTerminal::External,
-        FixedTerminal::Blocks,
-    ] {
-        let predicate = LookaheadPredicate::Terminal(TerminalPredicate::Fixed(terminal));
-        assert!(diagnostic_terminal_order().contains(&predicate));
-    }
+    let predicate = LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::As));
+    assert!(diagnostic_terminal_order().contains(&predicate));
 }
 
 #[test]
@@ -77,7 +71,7 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 93);
+    assert_eq!(decisions, 95);
 }
 
 #[test]
@@ -163,7 +157,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 93);
+    assert_eq!(DECISIONS.len(), 95);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -207,6 +201,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
             }
         }
     }
-    assert_eq!(total_rows, 3_725);
+    assert_eq!(total_rows, 3_679);
     assert!(saw_atom_only);
 }

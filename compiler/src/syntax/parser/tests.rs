@@ -501,7 +501,7 @@ const zero: i32 = 0_i32;
 const alias: i32 = zero;
 const table: array<i32, 2> =[0_i32, zero];
 command fn entry(command.args as arguments: own i32, command.cwd as directory: own i32)
--> result: own unit external, blocks
+-> result: own unit traps
 {
 return unit;
 }
@@ -594,15 +594,15 @@ fn main() -> result: own unit pure {}
     assert!(finalized.node_count() >= productions().len());
 }
 
-const KIND_DECLARING_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {\n  return unit;\n}\n";
+const KIND_DECLARING_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus allocates(heap), traps {\n  return unit;\n}\n";
 
 const EXTERNAL_EFFECT_ROW: &[u8] =
     b"fn probe() -> result: own unit external {\n  return unit;\n}\n";
 
 const BLOCKS_EFFECT_ROW: &[u8] = b"fn probe() -> result: own unit blocks {\n  return unit;\n}\n";
 
-const RESERVED_SPELLINGS_AS_IDENTIFIERS: &[u8] =
-    b"fn external() -> result: own unit pure {\n  let as = blocks;\n  return unit;\n}\n";
+const FREED_SPELLINGS_AS_IDENTIFIERS: &[u8] =
+    b"fn external(blocks: own unit) -> result: own unit pure {\n  return blocks;\n}\n";
 
 const CLAIM_STATEMENT: &[u8] = b"fn probe() -> result: own unit traps {\n  let flag = True();\n  claim held: flag because \"premises: flag is constructed as True() in this parser-only fixture\\nderivation: normalization proves flag without any written theorem authority\\nconclusion: this occurrence is checker-proved and therefore semantically non-residual\\nchecker gap: none; semantic checking must reject it after the parser derives ClaimStmt\\nconsumers: no admissible consumer exists because this fixture covers parsing only\";\n  return unit;\n}\n";
 
@@ -656,12 +656,12 @@ fn active_contract_parses_the_kind_declaring_entry() {
 }
 
 #[test]
-fn active_contract_parses_the_external_and_blocks_effect_rows() {
+fn active_contract_rejects_external_and_blocks_as_effect_atoms() {
     for source in [EXTERNAL_EFFECT_ROW, BLOCKS_EFFECT_ROW] {
         let outcome = parse_active("effects.wf", source);
         assert!(
-            matches!(outcome, ParseOutcome::Complete(_)),
-            "the active tables must derive the system effect row: {outcome:?}"
+            matches!(outcome, ParseOutcome::SourceIssue(_)),
+            "{outcome:?}"
         );
     }
 }
@@ -765,12 +765,9 @@ fn active_contract_parses_definitions_and_clauses_as_direct_children() {
 }
 
 #[test]
-fn active_contract_reserves_the_new_fixed_spellings() {
-    let outcome = parse_active("identifiers.wf", RESERVED_SPELLINGS_AS_IDENTIFIERS);
-    let ParseOutcome::SourceIssue(issue) = outcome else {
-        panic!("as/external/blocks must be reserved spellings excluded from IDENT: {outcome:?}");
-    };
-    assert_eq!(issue.rule(), SyntaxRule::Form3);
+fn active_contract_frees_external_and_blocks_as_identifiers() {
+    let outcome = parse_active("identifiers.wf", FREED_SPELLINGS_AS_IDENTIFIERS);
+    assert!(matches!(outcome, ParseOutcome::Complete(_)), "{outcome:?}");
 }
 
 #[test]

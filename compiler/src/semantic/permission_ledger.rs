@@ -219,6 +219,29 @@ fn denied_detail<Source: LedgerSource>(
                 source.spelling(right)?
             )
         }
+        Denial::Authority { left, right, sides } => {
+            let relation = (left.family == right.family)
+                .then(|| {
+                    crate::system_authority_pair_relation(
+                        left.family,
+                        left.fragment,
+                        right.fragment,
+                    )
+                })
+                .flatten()
+                .map_or("unknown", crate::SystemAuthorityPairRelation::spelling);
+            format!(
+                "the {relation} {}:{} reservation pair of {} and {}:{} of {} conflicts at {} vs {}",
+                left.family.spelling(),
+                left.fragment.spelling(),
+                statement_name(sides.0),
+                right.family.spelling(),
+                right.fragment.spelling(),
+                statement_name(sides.1),
+                source.spelling(&left.argument)?,
+                source.spelling(&right.argument)?
+            )
+        }
         Denial::UnresolvedFootprint { side, argument } => format!(
             "unresolved footprint through {} of {}",
             source.spelling(argument)?,
@@ -229,24 +252,6 @@ fn denied_detail<Source: LedgerSource>(
         // writer sees the statement that costs the overlap.
         Denial::InterposedForm { side, form } => {
             format!("{} between s1 and s2 is {form}", statement_name(*side))
-        }
-        Denial::Row {
-            side,
-            external,
-            blocks,
-        } => {
-            let mut categories = Vec::new();
-            if *external {
-                categories.push("external");
-            }
-            if *blocks {
-                categories.push("blocks");
-            }
-            format!(
-                "the row of {} carries {}",
-                statement_name(*side),
-                categories.join(", ")
-            )
         }
         Denial::SkippingExit { side, kind } => {
             let edge = match kind {
@@ -313,26 +318,6 @@ fn loop_denied_detail<Source: LedgerSource>(
         // reported here rather than passed over silently, so the writer sees
         // the statement that costs the overlap.
         LoopDenial::BodyForm { form } => format!("the body contains {form}"),
-        LoopDenial::Row {
-            function,
-            external,
-            blocks,
-        } => {
-            let mut categories = Vec::new();
-            if *external {
-                categories.push("external");
-            }
-            if *blocks {
-                categories.push("blocks");
-            }
-            format!("the row of {function} carries {}", categories.join(", "))
-        }
-        LoopDenial::SystemCall { call } => {
-            format!(
-                "the body performs a [SYS-2] operation, at {}",
-                source.spelling(call)?
-            )
-        }
         LoopDenial::Exit { edge } => format!("{edge} leaves the loop"),
     };
     Ok(format!("condition {condition}: {reason}"))

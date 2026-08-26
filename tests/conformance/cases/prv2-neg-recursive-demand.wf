@@ -16,7 +16,7 @@ fn recursive_read(bytes: own buffer<u8>, index: own u64, remaining: own u64) -> 
   }
 }
 
-command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus reads(args), allocates(heap), traps {
   doc "A recursive demand fixed point terminates and preserves the protected-leaf demand until the external actual at the entry call is rejected under PRV-2.";
   region 'a {
     let raw_index = args_count<'a>(args: &'a args);

@@ -455,10 +455,10 @@ fn the_search_source_is_admitted_only_by_the_declaring_inventory() {
     // The approved implementations, by symbol rather than by any source name
     // [QUAL-1].
     assert!(llvm.contains("@wf.sys.open_file.v1"));
-    assert!(llvm.contains("@wf.sys.open_list.v1"));
-    assert!(llvm.contains("@wf.sys.list_once.v1"));
+    assert!(llvm.contains("@wf.sys.open_directory_source.v1"));
+    assert!(llvm.contains("@wf.sys.directory_next.v1"));
     assert!(llvm.contains("@wf.sys.open_directory.v1"));
-    assert!(llvm.contains("@wf.sys.read_once.v1"));
+    assert!(llvm.contains("@wf.sys.read_at.v1"));
 
     let failure = compile_program_rejection_with("wfgrep.wf", Inventory::Traversal);
     assert!(

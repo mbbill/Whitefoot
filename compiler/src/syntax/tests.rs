@@ -456,7 +456,7 @@ fn repeated_classification_is_deterministic() {
 }
 
 #[test]
-fn active_contract_reserves_every_recent_fixed_spelling() {
+fn active_contract_reserves_fixed_spellings_and_frees_retired_effect_words() {
     let inputs = [SourceInput::new(
         "reserved.wf",
         b"as external blocks for in ..",
@@ -484,14 +484,19 @@ fn active_contract_reserves_every_recent_fixed_spelling() {
     ];
     assert_eq!(classified.tokens().len(), expected.len());
     for (token, spelling) in classified.tokens().iter().zip(expected) {
-        let terminal = FixedTerminal::from_spelling(spelling)
-            .unwrap_or_else(|| panic!("missing fixed terminal for {spelling:?}"));
-        assert!(
-            token
-                .terminals()
-                .contains(TerminalPredicate::Fixed(terminal))
-        );
-        assert!(!token.terminals().contains(TerminalPredicate::Identifier));
+        if matches!(spelling, b"external" | b"blocks") {
+            assert!(token.terminals().contains(TerminalPredicate::Identifier));
+            assert!(FixedTerminal::from_spelling(spelling).is_none());
+        } else {
+            let terminal = FixedTerminal::from_spelling(spelling)
+                .unwrap_or_else(|| panic!("missing fixed terminal for {spelling:?}"));
+            assert!(
+                token
+                    .terminals()
+                    .contains(TerminalPredicate::Fixed(terminal))
+            );
+            assert!(!token.terminals().contains(TerminalPredicate::Identifier));
+        }
         assert_eq!(token.terminals().len(), 1);
     }
 }

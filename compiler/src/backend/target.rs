@@ -166,6 +166,7 @@ fn validate_function(
     }
 
     let mut frame_size = 0_u64;
+    let mut defined_values = HashSet::new();
     for block in function.blocks() {
         for (_, ty) in block.parameters() {
             layouts.layout(*ty)?;
@@ -174,9 +175,15 @@ fn validate_function(
             if let Some(site) = instruction_claim(instruction) {
                 validate_claim_record(layouts.target, site)?;
             }
-            let IrInstruction::Define { ty, operation, .. } = instruction else {
+            let IrInstruction::Define {
+                result,
+                ty,
+                operation,
+            } = instruction
+            else {
                 continue;
             };
+            defined_values.insert(*result);
             layouts.layout(*ty)?;
             validate_target_obligation(layouts, function, *ty, operation)?;
             for slot in emitted_stack_slots(function, *ty, operation)? {
@@ -185,6 +192,29 @@ fn validate_function(
                     .map_err(|failure| as_object(failure, TargetObject::StackFrame))?;
                 frame_size = add_frame_slot(layouts.target, frame_size, layout)?;
             }
+        }
+    }
+    for edge in function.authority_orders() {
+        let actualized = function.overlaps().iter().find(|overlap| {
+            let contains = |value| overlap.dispatched().contains(&value);
+            contains(edge.earlier()) && contains(edge.later())
+        });
+        if edge.earlier().ordinal() >= edge.later().ordinal()
+            || !defined_values.contains(&edge.earlier())
+            || !defined_values.contains(&edge.later())
+            || crate::system_authority_pair_relation(
+                edge.family(),
+                edge.earlier_fragment(),
+                edge.later_fragment(),
+            ) != Some(crate::SystemAuthorityPairRelation::Ordered(
+                edge.attribution(),
+            ))
+            || actualized.is_some_and(|overlap| {
+                edge.attribution() != crate::SystemAuthorityAttribution::OutputBytes
+                    || overlap.ordered_attribution() != Some(edge.attribution())
+            })
+        {
+            return Err(TargetLayoutFailure::InvalidIr);
         }
     }
     if frame_size > layouts.target.address_index_max() {

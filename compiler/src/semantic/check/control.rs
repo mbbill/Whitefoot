@@ -165,8 +165,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     CheckedStatement::Evaluate(value.expression)
                 } else {
                     let release = self.release_of_type(value.expression.ty())?;
+                    let capability_origins = self.capability_origins_of_value(&value, bindings)?;
                     CheckedStatement::DropExpression {
                         value: value.expression,
+                        capability_origins,
                         release,
                     }
                 };
@@ -530,6 +532,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // rejection could be reached. It now lives at the delivery site,
             // in `reject_slice_valued_delivery`, so the rule has one home and
             // no capability stop stands in front of it.
+            let capability_origins = self
+                .type_carries_one_capability(expected)?
+                .then(|| self.give_capability_origins(&matched.arms, expected))
+                .transpose()?
+                .flatten();
             if matched.can_continue
                 && bindings
                     .insert(
@@ -539,6 +546,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             declaration: declaration_id,
                             mode,
                             ty: expected,
+                            capability_origins,
                             live: true,
                             loop_depth: scope.loops.len(),
                             compiler_updated: false,
@@ -651,6 +659,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let borrow = self.borrow_for_destination(mode, &value, node)?;
+        let capability_origins = self.capability_origins_of_value(&value, bindings)?;
         if bindings
             .insert(
                 declaration_id,
@@ -659,6 +668,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration: declaration_id,
                     mode,
                     ty: expected,
+                    capability_origins,
                     live: true,
                     loop_depth: scope.loops.len(),
                     compiler_updated: false,
@@ -732,6 +742,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
+        let replacement_origins = self.capability_origins_of_value(&value, bindings)?;
+        let previous_origins = bindings
+            .get(&target_declaration)
+            .and_then(|binding| binding.capability_origins.clone());
         // The moved-out value's sole owner is the fresh ordinary binding;
         // the target root stays live [SET-2, OWN-1].
         if bindings
@@ -742,6 +756,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration: declaration_id,
                     mode: CheckedMode::Own,
                     ty: target.ty(),
+                    capability_origins: previous_origins,
                     live: true,
                     loop_depth: scope.loops.len(),
                     compiler_updated: false,
@@ -754,6 +769,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .is_some()
         {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        if self.type_carries_one_capability(target.ty())? {
+            bindings
+                .get_mut(&target_declaration)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .capability_origins = replacement_origins;
         }
         Ok(Self::continuing_statement(
             CheckedStatement::Replace {
@@ -796,6 +817,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         declaration: region,
                         mode: CheckedMode::Own,
                         ty: CheckedType::Nominal(storage),
+                        capability_origins: None,
                         live: true,
                         loop_depth: scope.loops.len(),
                         compiler_updated: false,
@@ -926,6 +948,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         binding: local.binding,
                         fields,
                         ty,
+                        capability_origins: local.capability_origins.clone(),
                         release,
                     });
                 }
@@ -998,11 +1021,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         expression: &CheckedExpression,
         effects: &EffectSet,
     ) -> Result<(), CheckStop> {
-        let effectful = !effects.writes.is_empty()
+        let effectful = !effects.region_writes.is_empty()
+            || !effects.capability_reads.is_empty()
+            || !effects.capability_writes.is_empty()
             || effects.allocates_heap
             || !effects.allocates_arenas.is_empty()
-            || effects.external
-            || effects.blocks
             || effects.traps;
         let invalid = if effectful {
             Some("the predicate has a forbidden effect")

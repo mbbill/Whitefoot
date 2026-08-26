@@ -8,7 +8,8 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.36 guidance.
+This document carries active v0.36 guidance plus the v0.37 work-branch
+candidate's capability-effect and completion-I/O forms.
 
 Capability boundary: the current backend emits no effect-derived attributes or
 alias metadata, performs no proof-driven check elision, has no termination

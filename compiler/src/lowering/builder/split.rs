@@ -295,6 +295,9 @@ impl IrBuilder<'_> {
     /// The actualization payload of the permitted loop at this statement, when
     /// this compilation asked for overlap lowering at all.
     fn permitted_loop(&self, node_path: &NodePath) -> Option<LoopActualization> {
+        if self.overlap != crate::OverlapLowering::On {
+            return None;
+        }
         self.permissions?
             .loops
             .iter()
@@ -376,6 +379,7 @@ impl IrBuilder<'_> {
             accumulator_type,
             self.addressed_bindings.clone(),
             self.permissions,
+            self.overlap,
             self.function_name,
         )?;
         let seed = builder.new_parameter(accumulator_type)?;
@@ -405,8 +409,15 @@ impl IrBuilder<'_> {
         // costing the parallelism the window judgment already granted inside
         // it; a group whose members do not all land in this body resolves to
         // nothing, which is the narrowing `overlaps` already performs.
+        let authority_orders = builder.authority_orders();
         let overlaps = builder.overlaps();
-        builder.finish(chunk_symbol(ordinal), overlaps, Some(IrSynthesis::Chunk))
+        builder.finish(
+            chunk_symbol(ordinal),
+            overlaps,
+            authority_orders,
+            Some(IrSynthesis::Chunk),
+            crate::TargetAction::INLINE,
+        )
     }
 
     /// The recursive range splitter, whose two halves are one ordinary overlap
@@ -430,6 +441,7 @@ impl IrBuilder<'_> {
             accumulator_type,
             std::collections::HashSet::new(),
             None,
+            self.overlap,
             self.function_name,
         )?;
         let seed = builder.new_parameter(accumulator_type)?;
@@ -597,8 +609,12 @@ impl IrBuilder<'_> {
             splitter_symbol(ordinal),
             vec![IrOverlap {
                 members: vec![left, right],
+                ordered_attribution: None,
+                dispatch_last: false,
             }],
+            Vec::new(),
             Some(IrSynthesis::Splitter),
+            crate::TargetAction::INLINE,
         )
     }
 

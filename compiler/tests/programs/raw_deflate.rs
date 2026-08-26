@@ -137,7 +137,7 @@ fn stored_fixed_and_dynamic_blocks_execute_with_data_failures() {
 ///
 /// `tests/programs/raw_deflate_boundary.wf` names its input on the command
 /// line, resolves it against the command's working-directory capability, and
-/// reads it with `read_once`, so every table index the decoder computes derives
+/// reads it with `read_at`, so every table index the decoder computes derives
 /// from bytes that entered through the boundary. The compressed bytes and the
 /// expected output both come from the recorded correctness corpus, so this case
 /// checks the decoder against that oracle and not against itself.

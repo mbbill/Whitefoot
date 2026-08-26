@@ -497,12 +497,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedExpression::BorrowSystemResource {
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
+                    capability_origins: local.capability_origins.clone(),
                     nominal,
                 }
             }
             CheckedType::Slice { .. } if fields.is_empty() => CheckedExpression::Binding {
                 carrier: self.tree.path(carrier)?.clone(),
                 binding: local.binding,
+                capability_origins: local.capability_origins.clone(),
                 ty,
                 slice_origins: slice
                     .as_ref()
@@ -860,6 +862,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedExpression::BorrowSystemResource {
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
+                    capability_origins: local.capability_origins.clone(),
                     nominal,
                 }
             }

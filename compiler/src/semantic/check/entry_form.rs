@@ -23,7 +23,7 @@ use crate::{
     SystemEntity, system_entity,
 };
 
-use super::super::model::{CheckedEntryForm, CheckedResourceAlias};
+use super::super::model::CheckedEntryForm;
 use super::{CheckStop, Checker};
 
 /// One row of [FN-7]'s closed standard-input table for kind `command`.
@@ -54,32 +54,10 @@ const COMMAND_INPUTS: [StandardInput; 4] = [
     input("stderr", "own Output", "Output"),
 ];
 
-/// The `command.stdout` and `command.stderr` table ordinals.
-const COMMAND_STDOUT: u8 = 2;
-const COMMAND_STDERR: u8 = 3;
-
 const COMMAND_RESULT: &str = "own ExitStatus";
 const COMMAND_RESULT_NOMINAL: &str = "ExitStatus";
-const COMMAND_EFFECTS: &str =
-    "any subset of `allocates(heap), external, blocks, traps` in EFF-1 canonical order";
-
-/// Returns the conservative alias links the entry's selected inputs carry.
-///
-/// [SYS-12] fixes exactly one: when the entry selects both `command.stdout`
-/// and `command.stderr`, redirection may make those two `Output` owners the
-/// same sink. The link is a retained fact only [DIAG-2] — it decides no
-/// judgment here and refuses no program — and the first slice declares no
-/// duplicate, split, or attenuation operation, so no other pair of system
-/// values can alias and nothing beyond ordinary move tracking is needed.
-fn command_resource_aliases(inputs: &[u8]) -> Vec<CheckedResourceAlias> {
-    if inputs.contains(&COMMAND_STDOUT) && inputs.contains(&COMMAND_STDERR) {
-        return vec![CheckedResourceAlias {
-            left: COMMAND_STDOUT,
-            right: COMMAND_STDERR,
-        }];
-    }
-    Vec::new()
-}
+const COMMAND_EFFECTS: &str = "capability-parameter reads/writes over selected command inputs, \
+     `allocates(heap)`, and `traps` in EFF-1 canonical order";
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     /// Admits the unit's [FN-7] entry and returns the form it admitted.
@@ -110,8 +88,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let inputs = self.check_command_entry(entry, kind)?;
         self.reject_foreign_input_labels(entry)?;
         self.reject_calls_to_entry(entry)?;
-        let aliases = command_resource_aliases(&inputs);
-        Ok(CheckedEntryForm { inputs, aliases })
+        Ok(CheckedEntryForm { inputs })
     }
 
     /// Selects the unique top-level `fn_decl` named `main`.
@@ -400,22 +377,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Reports whether every category written in a `command` entry's row is
     /// admitted by that kind row.
     ///
-    /// The admitted set is `allocates(heap)`, `external`, `blocks`, `traps`;
-    /// `pure` is the empty subset. No region-bearing effect is admitted, so a
-    /// `reads`, `writes`, or arena allocation entry fails here. Canonical
-    /// order and repetition stay [EFF-1]'s judgment.
+    /// The admitted set is capability-parameter `reads`/`writes`,
+    /// `allocates(heap)`, and `traps`; `pure` is the empty subset. A memory
+    /// region entry and an arena allocation still fail here. EFF-1 separately
+    /// resolves every IDENT to an exact capability-bearing formal.
     fn command_effects_admitted(&self, effects: NodeId) -> Result<bool, CheckStop> {
         if self.has_fixed(effects, FixedTerminal::Pure)? {
             return Ok(true);
         }
         for effect in self.tree.children_with(effects, Production::Effect)? {
-            let admitted = if self.has_fixed(effect, FixedTerminal::Allocates)? {
+            let admitted = if self.has_fixed(effect, FixedTerminal::Reads)?
+                || self.has_fixed(effect, FixedTerminal::Writes)?
+            {
+                let path = self.tree.path(effect)?;
+                !self.resolved.lexical_uses().iter().any(|usage| {
+                    usage.role() == LexicalUseRole::EffectRegion && usage.origin().node() == path
+                })
+            } else if self.has_fixed(effect, FixedTerminal::Allocates)? {
                 self.has_fixed(effect, FixedTerminal::Heap)?
                     && !self.has_fixed(effect, FixedTerminal::Arena)?
             } else {
-                self.has_fixed(effect, FixedTerminal::External)?
-                    || self.has_fixed(effect, FixedTerminal::Blocks)?
-                    || self.has_fixed(effect, FixedTerminal::Traps)?
+                self.has_fixed(effect, FixedTerminal::Traps)?
             };
             if !admitted {
                 return Ok(false);

@@ -1,7 +1,7 @@
 //! Derives `src/syntax/grammar/generated.rs` from the active specification's
 //! normative EBNF.
 //!
-//! The committed strong-LL(2) tables are not hand-editable: 622 nodes, 91
+//! The committed strong-LL(2) tables are not hand-editable: 669 nodes, 95
 //! decisions and roughly three thousand provenance-retaining SELECT rows. They
 //! have always been produced by a generator, but each grammar task built one
 //! offline and deleted it, so nothing checked that the committed tables were

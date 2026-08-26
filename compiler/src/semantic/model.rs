@@ -837,6 +837,71 @@ pub(crate) enum CheckedSliceOrigin {
     },
 }
 
+/// The finite set of caller-formal capability roots a checked value may carry.
+///
+/// `may_fresh` is independent of the formal set: a control-flow join may
+/// select either a newly minted invocation-local root or one of the listed
+/// caller roots. An empty formal set therefore does not by itself mean that
+/// the value's type carries no capability.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct CheckedCapabilityOrigins {
+    pub(crate) may_absent: bool,
+    pub(crate) may_fresh: bool,
+    pub(crate) formals: Vec<DeclarationId>,
+}
+
+impl CheckedCapabilityOrigins {
+    pub(crate) fn fresh() -> Self {
+        Self {
+            may_absent: false,
+            may_fresh: true,
+            formals: Vec::new(),
+        }
+    }
+
+    pub(crate) fn formal(formal: DeclarationId) -> Self {
+        Self {
+            may_absent: false,
+            may_fresh: false,
+            formals: vec![formal],
+        }
+    }
+
+    pub(crate) fn with_may_absent(mut self, may_absent: bool) -> Self {
+        self.may_absent = may_absent;
+        self
+    }
+
+    pub(crate) fn union(&mut self, other: &Self) {
+        self.may_absent |= other.may_absent;
+        self.may_fresh |= other.may_fresh;
+        for formal in &other.formals {
+            if !self.formals.contains(formal) {
+                self.formals.push(*formal);
+            }
+        }
+        self.formals.sort();
+    }
+}
+
+/// Closed-world origin summary for one concrete function result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedResultAuthorityOrigin {
+    /// The complete result type carries no logical capability root.
+    NoCapability,
+    /// Every result capability comes from this finite origin set.
+    Finite {
+        /// At least one returning route carries no capability root.
+        may_absent: bool,
+        /// At least one returning route may mint a fresh invocation-local root.
+        may_fresh: bool,
+        /// Zero-based formal ordinals which may supply the returned root.
+        formals: Vec<u32>,
+    },
+    /// The current compiler could not close the result-origin equation.
+    Unknown,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedSliceSource {
     Array {
@@ -894,6 +959,7 @@ pub(crate) enum CheckedExpression {
     Binding {
         carrier: NodePath,
         binding: BindingId,
+        capability_origins: Option<CheckedCapabilityOrigins>,
         ty: CheckedType,
         slice_origins: Vec<CheckedSliceOrigin>,
         /// The owning checker admitted this occurrence as an affine consume.
@@ -931,8 +997,14 @@ pub(crate) enum CheckedExpression {
     /// system operation catalog. Arguments follow declared parameter order.
     SystemCall {
         operation: u8,
+        /// Exact compiler-owned execution metadata selected with the catalog
+        /// row. It is not a source effect.
+        target_action: crate::TargetAction,
         /// Exact source call occurrence and declared-order argument atoms.
         call: NodePath,
+        /// Concrete caller regions supplied for the operation's borrow
+        /// parameters, in declaration order.
+        regions: Vec<DeclarationId>,
         argument_nodes: Vec<NodePath>,
         arguments: Vec<CheckedExpression>,
         result: CheckedType,
@@ -1096,6 +1168,7 @@ pub(crate) enum CheckedExpression {
     BorrowSystemResource {
         carrier: NodePath,
         binding: BindingId,
+        capability_origins: Option<CheckedCapabilityOrigins>,
         nominal: NominalId,
     },
     /// The same address, taken from a binding that already holds one: a borrow
@@ -1127,6 +1200,7 @@ pub(crate) enum CheckedExpression {
     Project {
         carrier: NodePath,
         binding: BindingId,
+        capability_origins: Option<CheckedCapabilityOrigins>,
         fields: Vec<u32>,
         ty: CheckedType,
         consume_root: bool,
@@ -1274,6 +1348,7 @@ pub(crate) struct CheckedDrop {
     pub(crate) binding: BindingId,
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
+    pub(crate) capability_origins: Option<CheckedCapabilityOrigins>,
     pub(crate) release: crate::SystemRelease,
 }
 
@@ -1281,6 +1356,7 @@ pub(crate) struct CheckedDrop {
 pub(crate) struct CheckedProjectedDrop {
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
+    pub(crate) capability_origins: Option<CheckedCapabilityOrigins>,
     pub(crate) release: crate::SystemRelease,
 }
 
@@ -1383,6 +1459,7 @@ pub(crate) enum CheckedStatement {
     /// compiler-derived release it runs [STOR-3].
     DropExpression {
         value: CheckedExpression,
+        capability_origins: Option<CheckedCapabilityOrigins>,
         release: crate::SystemRelease,
     },
     /// A named executed proof residual [CLM-1]. The claim name is the DIAG-3
@@ -1455,6 +1532,7 @@ pub(crate) enum CheckedStatement {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedParameter {
     pub(crate) name: String,
+    pub(crate) declaration: DeclarationId,
     /// The complete source `param` node used by PRV-1 origin witnesses.
     pub(crate) node_path: NodePath,
     pub(crate) binding: BindingId,
@@ -1475,9 +1553,20 @@ pub(crate) struct CheckedFunction {
     pub(crate) parameters: Vec<CheckedParameter>,
     pub(crate) result_mode: CheckedMode,
     pub(crate) result: CheckedType,
+    /// Closed-world logical-authority origin of this function's result.
+    pub(crate) result_authority_origin: CheckedResultAuthorityOrigin,
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
     pub(crate) declared_traps: bool,
     pub(crate) declared_allocates_heap: bool,
+    /// Direct formal capability subjects named by `writes(...)`. Provenance
+    /// consumes this boundary fact before target/fragment summaries are
+    /// derived later in the pipeline.
+    pub(crate) declared_capability_writes: Vec<DeclarationId>,
+    /// Conservative fixed-point summary of every reachable target action.
+    pub(crate) target_action: crate::TargetAction,
+    /// Concrete family-authority uses projected onto this function's formal
+    /// capability parameters. Unknown propagation fails closed in PAR.
+    pub(crate) authority_summary: CheckedAuthoritySummary,
     /// Callable-boundary predicates in `requires_clause` source order.
     pub(crate) requirements: Vec<super::goal::CheckedRequirement>,
     /// Verified-relation surfaces in `ensures_clause` source order. H1
@@ -1492,6 +1581,21 @@ pub(crate) struct CheckedFunction {
     /// diagnostics read it; lowering deliberately does not.
     #[allow(dead_code)]
     pub(crate) entailment: super::entailment::FunctionEntailment,
+}
+
+/// One family authority use at a callable boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedAuthorityUse {
+    pub(crate) parameter: u32,
+    pub(crate) family: crate::SystemAuthorityFamily,
+    pub(crate) fragment: crate::SystemAuthorityFragment,
+}
+
+/// Closed-world authority summary of one concrete function.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct CheckedAuthoritySummary {
+    pub(crate) uses: Vec<CheckedAuthorityUse>,
+    pub(crate) unknown: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1517,12 +1621,12 @@ pub(crate) struct CheckedGenericRequirement {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedEffectCapabilities {
-    pub(crate) reads: Vec<DeclarationId>,
-    pub(crate) writes: Vec<DeclarationId>,
+    pub(crate) region_reads: Vec<DeclarationId>,
+    pub(crate) region_writes: Vec<DeclarationId>,
+    pub(crate) capability_reads: Vec<DeclarationId>,
+    pub(crate) capability_writes: Vec<DeclarationId>,
     pub(crate) allocates_heap: bool,
     pub(crate) allocates_arenas: Vec<DeclarationId>,
-    pub(crate) external: bool,
-    pub(crate) blocks: bool,
     pub(crate) traps: bool,
 }
 
@@ -1608,23 +1712,6 @@ pub(crate) struct CheckedLawDerivation {
 pub(crate) struct CheckedEntryForm {
     /// Selected [FN-7] table ordinals in strictly increasing order.
     pub(crate) inputs: Vec<u8>,
-    /// Retained conservative alias links between selected inputs.
-    pub(crate) aliases: Vec<CheckedResourceAlias>,
-}
-
-/// One retained conservative alias link between two standard-input resource
-/// owners, by [FN-7] table ordinal.
-///
-/// [SYS-12] fixes exactly one for the first slice: redirection may make the
-/// `command.stdout` and `command.stderr` owners the same sink. v0.18 defines
-/// no consumer of the fact and it refuses no program; the checked program
-/// retains it [DIAG-2] so a later verified cross-resource reordering fact
-/// fails closed on this pair rather than treating two separate `Output`
-/// owners as disjoint sinks.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedResourceAlias {
-    pub(crate) left: u8,
-    pub(crate) right: u8,
 }
 
 /// Stable checked identity of one direct claim in the CLM-3 SCC summary.

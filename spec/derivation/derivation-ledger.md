@@ -3,9 +3,11 @@
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
 the active v0.36 authority at SHA-256
-`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62` at
-`spec/kernel-spec.md`; released versioned files retain the superseded
-authorities. Requirement (META-6): every rule is provably
+`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
+The stable path currently carries the v0.37 work-branch candidate which
+supersedes those exact bytes; the candidate amendment at the end of this file
+binds its changed derivations, while released versioned files retain the
+superseded authorities. Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
 exist; this form is minimality-selected and awaits its experiment),
@@ -1400,3 +1402,102 @@ its own coverage annotation in the protected manifest before the repository
 gate's coverage denominator is satisfied. Both annotations landed with the
 v0.35 activation as the owner-approved protected addition their records
 prepared.
+
+## v0.37 candidate amendment — capability effects and completion I/O (2026-08-26)
+
+Candidate binding: `spec/kernel-spec.md`, headed v0.37 CANDIDATE, superseding
+the exact active v0.36 digest named above. Its complete first-principles chain
+is `research/investigations/io-model/FIRST-PRINCIPLES.md`; the selected concrete
+surface is `research/investigations/io-model/DESIGN.md`; the discarded branch
+evidence and clean-core measurements are `IMPLEMENTATION-AUDIT.md` and
+`RESULTS.md` beside it. These bytes are work-branch language authority and are
+not merge-ready ACTIVE bytes until the normal exact-revision approval,
+activation-chain, and outgoing-archive step.
+
+No numbered rule is added or removed and no derivation status changes. The
+amendment changes the form of EFF-1, EFF-2, EFF-3, EFF-5, PAR-1, PAR-2, and the
+existing SYS family. The following chains supersede the older row text above
+for this candidate.
+
+**Capability-parameterized effects.** A lexical REGIONID answers how long
+ordinary storage may be borrowed. It cannot identify outside authority: an
+owned `finish(output: own FileOutput)` has no borrow region, and a shared Sink
+must keep one root alive while several ordered reservations coexist. FN-1's
+callable boundary must still state everything a caller needs, and W3 forbids a
+write hidden behind a `pure` spelling. EFF-1 therefore lets `reads` and
+`writes` name a direct formal capability value beside ordinary regions. EFF-2
+derives and checks those subjects in both directions, across calls and
+compiler-derived releases. This is the minimum form that preserves signature
+honesty, handles own/shared/unique modes uniformly, and gives overlap a
+concrete logical supplier. A writer cannot declare dispatch, blocking,
+suspension, a fragment relation, or a target mechanism.
+
+**Family fragments instead of a global world.** Resource identity carries
+common lifetime and control; family-defined fragments decide concurrency.
+For one logical root, every pair is Free, Ordered, or Exclusive. Free admits
+both; Ordered admits both while preserving family attribution order;
+Exclusive delays the later admission until authority release. Distinct roots
+have no implicit cross-root order. Hard links, descriptor duplication outside
+the API, and output redirection are environment facts and neither merge nor
+separate logical roots. This follows P0 by retaining every legal overlap, W1
+by making the ordinary call the fast form, T1 by retaining authority and
+payload loans to declared milestones, and W3 by deriving every relation from
+the closed family catalog rather than writer claims. It supersedes v0.36's
+blanket cross-resource EFF-5 order and the rejected experimental global-world
+implementation, whose own measurements recorded roughly 24 to 30 percent
+regression and no useful world-call overlap.
+
+**Completion-only target model.** External work has its own clock. Binding one
+operation to one occupied compute thread loses a scheduling resource, while a
+readiness result is only a hint that an operation may progress. The language
+therefore exposes one submission/completion model through ordinary calls.
+Native completion, readiness, polling, interrupts, and a bounded target-only
+helper are adapter choices. `blocks` cannot be a portable source fact and is
+replaced by compiler-owned `never-suspends`/`may-suspend` metadata plus exact
+milestones. A helper accepts only a typed target descriptor and never a writer
+function. This derives from P0 and W1, with W3/T1 requiring stable bounded
+operation ownership before target handoff and release/acquire publication
+before a continuation uses a result.
+
+**Milestones, capacity, and failure.** One finite operation retains distinct
+result-ready, payload-released, authority-released, and terminal facts even
+when the first file specialization publishes them together. Capacity is
+finite. `wait-capacity` transfers nothing to the target and lets the scheduler
+run other ready work; it is not a writer-visible `WouldBlock`. A no-progress
+host interruption and readiness refusal are adapter progress, so
+`Interrupted` and `WouldBlock` leave `IoError`. Exactly-one terminalization,
+captured-generation validation before result writes, and an active bundle
+which cannot be dropped follow directly from T1/T2. Host or target resource
+failure remains typed only where the operation contract assigns it a writer
+outcome.
+
+**Selected first family surfaces.** `read_at` takes an explicit offset and
+uses a Free positioned-read fragment, so reads on one file can overlap when
+their ordinary destination loans do. `Output` is an Ordered Sink using shared
+borrows; `DirectorySource` is an Ordered Source using shared borrows. A
+whole-root release remains Exclusive. These forms are selected because the
+old cursor-only ReadFile and exclusive Output made safe hardware concurrency
+unrepresentable. Network send/receive facets and timer Sources use the same
+model in the design record and add catalog rows only when their target slice
+is implemented.
+
+**Trap consequence.** A retained claim is a reviewed true theorem; a false
+execution is defective and cannot occur in a correct program. T3 therefore
+forbids a claim-free eligibility gate, trap-latch submission read, epoch,
+metadata field, queue transition, wake, copy, or ordering cost on the correct
+path. A defective execution may leave whichever family-valid outside actions
+became visible before process termination. Memory safety remains unconditional
+through the same operation ownership and qualified process teardown.
+
+**Current evidence and open form debt.** The bounded core measures about 35 ns
+for claim, publish, drain, and consume on the recorded M4 host. Its matched
+park/resume median is 1.708 us against 1.667 us for a raw condition variable.
+Wrapping a cached 4 KiB pread with zero-helper completion adds about 53 to 64
+ns, selecting a direct/inline depth-one specialization; helper handoff does
+not cross over for cached operations and remains only a target fallback for
+real waits. A real Linux io_uring positioned-I/O probe passes; real Windows
+IOCP code strict-cross-links but remains fail-closed pending execution on a
+Windows runner. Selective stackless continuation across arbitrary user call
+chains remains the principal implementation and measurement debt. These open
+items affect realization and performance evidence, not the derivation of one
+completion-only source model.

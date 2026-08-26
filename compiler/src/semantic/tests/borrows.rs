@@ -698,12 +698,12 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
     // it into a system operation whose own parameter is that same mode
     // [SYS-2]. An opaque resource has no source-visible content, so its
     // borrow is the value itself.
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads('o 's), writes('o), external, blocks contract {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> result: own unit reads('o 's), writes(output) contract {
   define capacity = len(deref(source));
   requires ile(count, capacity);
 } {
   region 'attempt {
-    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: count) {
+    match write_once<'attempt, 's>(output: &'attempt deref(output), source: source, start: 0_u64, end: count) {
       Ok(value: written) => {
       }
       Err(error: problem) => {
@@ -713,7 +713,7 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
   let batch = buffer_new(1_u64, 0_u8);
   region 'publication {
     publish<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, count: 1_u64);
@@ -742,19 +742,15 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
         ));
     });
 
-    // The row is checked both ways over the borrowed parameter's region: the
-    // write the operation performs through `&uniq 'o` is attributed to the
-    // caller-supplied region, exactly as it is for a borrowed buffer [EFF-2].
-    let declared = b"reads('o 's), writes('o), external";
+    // The row is checked both ways: Output authority is attributed to the
+    // direct capability formal independently of the borrow lifetime.
+    let declared = b"reads('o 's), writes(output)";
     let at = source
         .windows(declared.len())
         .position(|window| window == declared)
         .expect("fixture declares the publish row");
     let mut narrowed = source.to_vec();
-    narrowed.splice(
-        at..at + declared.len(),
-        b"reads('o 's), external".iter().copied(),
-    );
+    narrowed.splice(at..at + declared.len(), b"reads('o 's)".iter().copied());
     assert_rule(
         &narrowed,
         SemanticRule::Eff2,

@@ -78,6 +78,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.invalid_propagation(propagate);
         }
         let error_drops = self.live_affine_drops(bindings, &HashSet::new())?;
+        let capability_origins = self.capability_origins_of_value(&value, bindings)?;
         if bindings
             .insert(
                 declaration,
@@ -86,6 +87,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration,
                     mode: CheckedMode::Own,
                     ty: ok_type,
+                    capability_origins: self
+                        .type_carries_one_capability(ok_type)?
+                        .then(|| capability_origins.clone())
+                        .flatten(),
                     live: true,
                     loop_depth: scope.loops.len(),
                     compiler_updated: false,

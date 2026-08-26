@@ -8,8 +8,8 @@ use crate::{
 
 use super::super::super::super::goal::{GoalDatum, GoalExpression, GoalProjection};
 use super::super::super::super::model::{
-    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow, CheckedSliceOrigin,
-    CheckedType,
+    CheckedCapabilityOrigins, CheckedExpression, CheckedMode, CheckedNominalKind,
+    CheckedResultBorrow, CheckedSliceOrigin, CheckedType,
 };
 use super::super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, places_overlap, push_slice_origin,
@@ -111,19 +111,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut checked_borrows = Vec::with_capacity(fields.len());
         let mut checked_slices = Vec::with_capacity(fields.len());
         let mut argument_holders = Vec::with_capacity(fields.len());
+        let mut capability_origins = Vec::with_capacity(fields.len());
         let mut argument_nodes = Vec::with_capacity(fields.len());
         let mut goal_arguments = Vec::with_capacity(fields.len());
         let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
         let call = self.tree.path(node)?.clone();
-        // The payload-free categories transfer by presence at a call
-        // boundary [EFF-2]; only region entries are projected below.
+        // Payload-free allocation and trap capabilities transfer by presence
+        // at a call boundary [EFF-2]; region entries are projected below.
         let mut effects = EffectSet {
-            reads: Vec::new(),
-            writes: Vec::new(),
+            region_reads: Vec::new(),
+            region_writes: Vec::new(),
+            capability_reads: Vec::new(),
+            capability_writes: Vec::new(),
             allocates_heap: signature.declared_effects.allocates_heap,
             allocates_arenas: Vec::new(),
-            external: signature.declared_effects.external,
-            blocks: signature.declared_effects.blocks,
             traps: signature.declared_effects.traps,
         };
         let result_candidate = self.result_borrow_candidate(signature);
@@ -179,6 +180,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
             }
             let passed_borrow = self.borrow_for_destination(expected_mode, &argument, atom)?;
+            capability_origins.push(self.capability_origins_of_value(&argument, bindings)?);
             let ordinal =
                 u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
             goal_arguments.push(self.call_goal_argument(
@@ -210,6 +212,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &checked_borrows,
             &checked_slices,
             &argument_holders,
+            &capability_origins,
             bindings,
             &mut effects,
         )?;
@@ -696,6 +699,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         borrows: &[Option<BorrowInfo>],
         slices: &[Option<SliceInfo>],
         holders: &[Option<DeclarationId>],
+        capability_origins: &[Option<CheckedCapabilityOrigins>],
         bindings: &HashMap<DeclarationId, LocalBinding>,
         effects: &mut EffectSet,
     ) -> Result<(), CheckStop> {
@@ -711,6 +715,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?,
             );
         }
+        for (access, declared) in [
+            (
+                AccessKind::Read,
+                &signature.declared_effects.capability_reads,
+            ),
+            (
+                AccessKind::Write,
+                &signature.declared_effects.capability_writes,
+            ),
+        ] {
+            for formal in declared {
+                let index = signature
+                    .parameters
+                    .iter()
+                    .position(|parameter| parameter.declaration == *formal)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let origins = capability_origins
+                    .get(index)
+                    .and_then(Option::as_ref)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                for origin in &origins.formals {
+                    match access {
+                        AccessKind::Read => effects.add_capability_read(*origin),
+                        AccessKind::Write => effects.add_capability_write(*origin),
+                        _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+                    }
+                }
+            }
+        }
         for (parameter, ((borrow, slice), holder)) in signature
             .parameters
             .iter()
@@ -725,8 +758,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 _ => None,
             };
             for (access, declared) in [
-                (AccessKind::Read, &signature.declared_effects.reads),
-                (AccessKind::Write, &signature.declared_effects.writes),
+                (AccessKind::Read, &signature.declared_effects.region_reads),
+                (AccessKind::Write, &signature.declared_effects.region_writes),
             ] {
                 if mode_region.is_some_and(|region| declared.contains(&region)) {
                     let borrow = borrow
@@ -735,8 +768,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.check_loan_access(bindings, *holder, &borrow.place, access, node)?;
                     if let Some(origin) = borrow.origin_region {
                         match access {
-                            AccessKind::Read => effects.add_read(origin),
-                            AccessKind::Write => effects.add_write(origin),
+                            AccessKind::Read => effects.add_region_read(origin),
+                            AccessKind::Write => effects.add_region_write(origin),
                             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
                         }
                     }
@@ -750,8 +783,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     for origin in slice.effect_regions() {
                         match access {
-                            AccessKind::Read => effects.add_read(origin),
-                            AccessKind::Write => effects.add_write(origin),
+                            AccessKind::Read => effects.add_region_read(origin),
+                            AccessKind::Write => effects.add_region_write(origin),
                             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
                         }
                     }

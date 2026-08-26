@@ -38,11 +38,11 @@ use crate::SYSTEM_OPERATIONS;
 /// endpoint, with the observing variant. Both endpoint actuals are found by
 /// parameter name in the catalog row, never by a hardcoded position.
 const BOUNDARY_ENDPOINTS: [(&str, &str); 5] = [
-    ("read_once", "ReadBytes"),
+    ("read_at", "ReadBytes"),
     ("write_once", "Ok"),
     ("host_copy_bytes", "Ok"),
     ("host_copy_utf8", "Ok"),
-    ("list_once", "ListBytes"),
+    ("directory_next", "ListBytes"),
 ];
 
 /// The three S11 terms installed for one counted range.

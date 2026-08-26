@@ -55,7 +55,7 @@
 //! | UTF-8 text conversion | absence side gated here; the presence side is the `run-syshost-copyutf8-*` conformance cases. The Windows column the row also names has no implementation in the first slice, so it is not inspectable and is not claimed. |
 //! | `RelativePath` construction | `relative_path_retypes_the_lease_without_allocating` |
 //! | `open_read` | `open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor` |
-//! | `read_once` / `write_once` | `each_transfer_is_one_host_call_with_a_cold_outcome_mapper` |
+//! | `read_at` / `write_once` | `each_transfer_is_one_host_call_with_a_cold_outcome_mapper` |
 //! | `DirectoryRead`/`ReadFile` release | `every_release_close_is_one_discarded_attempt` |
 //! | value releases | `releasing_a_value_or_an_output_reaches_no_host_facility` |
 //! | `Output` release | the same test, plus the deterministic-host run below. The row's second half is a *recording* obligation, not a gate: a failure surfaced only at close or writeback is outside this slice's error model, is recorded as such in the dossier, and is observed rather than assumed by `deterministic_target::an_output_sink_that_fails_only_at_close_is_never_closed_by_its_release`. |
@@ -213,10 +213,11 @@ fn first_argument<'line>(line: &'line str, callee: &str) -> Option<&'line str> {
 /// A publication is one source `publish_all` call. In the emitted program each
 /// appears in exactly one of two forms: a call into the out-of-line
 /// `publish_all`, whose first argument is the descriptor, or — where the host
-/// inliner expanded that site — the `@write` of the expanded copy, carrying
-/// the same literal descriptor. The out-of-line body's own `@write` names the
-/// parameter instead of a literal and is not a publication site; it is the one
-/// transfer the one source `write_once` site emits.
+/// inliner expanded that site — the typed direct target call of the expanded
+/// copy, carrying the same literal descriptor. The out-of-line body's own
+/// target call names the parameter instead of a literal and is not a
+/// publication site; it is the one transfer the one source `write_once` site
+/// emits.
 fn publications() -> Vec<u32> {
     let mut descriptors = Vec::new();
     for line in program().lines() {
@@ -224,7 +225,7 @@ fn publications() -> Vec<u32> {
             continue;
         };
         let argument = match target {
-            "wf_publish_all" | "write" => first_argument(line, target),
+            "wf_publish_all" | "wf__completion_file_write_direct" => first_argument(line, target),
             _ => None,
         };
         let Some(argument) = argument else {
@@ -368,7 +369,7 @@ const SELECTED_ROWS: &[(u32, &str)] = &[
     (3, "host_copy_bytes"),
     (6, "relative_path"),
     (7, "open_read"),
-    (8, "read_once"),
+    (8, "read_at"),
     (9, "write_once"),
     (10, "exit_status"),
     // The [SYS-14] traversal surface and the [SYS-11] file-open-by-name
@@ -377,8 +378,8 @@ const SELECTED_ROWS: &[(u32, &str)] = &[
     // by its enumerated name. `open_read` stays on the list because the search
     // still takes the path route when its root names a single file.
     (11, "open_directory"),
-    (12, "open_list"),
-    (13, "list_once"),
+    (12, "open_directory_source"),
+    (13, "directory_next"),
     (14, "open_file"),
 ];
 
@@ -550,7 +551,7 @@ fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
     // The search has exactly five open sites, derived from the source and not
     // from the module: `main` opens the search root with `open_directory` and,
     // when that root is not a directory, the same name with `open_read`;
-    // `walk` opens one enumeration with `open_list`, each child directory with
+    // `walk` opens one enumeration with `open_directory_source`, each child directory with
     // `open_directory`, and each regular file with `open_file`.
     assert_eq!(program().matches("@openat(").count(), 5);
     assert_eq!(program().matches("@open(").count(), 1);
@@ -582,15 +583,25 @@ fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
     );
 }
 
-/// §9.1 row 7 — `read_once` and `write_once` consume statically authorized
-/// ranges, make at most one host transfer, sanitize one host count into an
-/// absolute endpoint, and use a cold outcome mapper.
+/// §9.1 row 7 — `read_at` and `write_once` consume statically authorized
+/// ranges, make one compiler-owned typed target call, sanitize one target
+/// count into an absolute endpoint, and use a cold outcome mapper. Target
+/// hostile tests separately pin that no-progress retries produce at most one
+/// progress-producing transfer.
 #[test]
 fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     let module = emitted();
-    for (operation, facility) in [
-        ("wf.sys.read_once.v1", "@read("),
-        ("wf.sys.write_once.v1", "@write("),
+    for (operation, facility, mapper) in [
+        (
+            "wf.sys.read_at.v1",
+            "@wf__completion_file_pread_direct(",
+            "wf.sys.read.completion",
+        ),
+        (
+            "wf.sys.write_once.v1",
+            "@wf__completion_file_write_direct(",
+            "wf.sys.write.completion",
+        ),
     ] {
         let row = approved_row(module, operation);
         // SYS-8's two source obligations authorize `sub nuw`; the wrapper has
@@ -605,13 +616,15 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
             row.contains("%vacant = icmp eq i64 %extent, 0"),
             "{operation} must short-circuit an empty range:\n{row}"
         );
-        // Exactly one host transfer, and one check of the count it reported.
+        // Exactly one typed target call, and one check of the count it reported.
         assert_eq!(
             row.matches(facility).count(),
             1,
-            "{operation} is at most one host attempt:\n{row}"
+            "{operation} must make one typed target call:\n{row}"
         );
-        assert!(row.contains("%progress = icmp sgt i64"));
+        let mapped = approved_row(module, mapper);
+        assert!(mapped.contains("%progress = icmp sgt i64"));
+        assert_eq!(mapped.matches("@wf.sys.io.error(").count(), 1);
         for forbidden in [
             "@calloc",
             "@malloc",
@@ -644,22 +657,29 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     );
     // The cold mapper is not merely marked cold: the optimizer moved every
     // one of its call sites out of the program's own code into outlined cold
-    // functions, so the thirty-class mapping is unreachable on a successful
+    // functions, so the twenty-eight-class mapping is unreachable on a successful
     // transfer.
     assert!(!program.contains("@wf.sys.io.error("));
     assert!(
         optimized().matches("@wf.sys.io.error(").count() > 1,
         "the mapper must still exist for the failure paths"
     );
-    // One host transfer per source operation. `wfgrep` writes `read_once` and
+    // One typed target call per source operation. `wfgrep` writes `read_at` and
     // `write_once` once each, so the emitted program holds one `@read` and one
     // `@write` for each surviving copy of the body that holds them: the one
-    // source `read_once` site in `search_file`, and the one source
+    // source `read_at` site in `search_file`, and the one source
     // `write_once` site in `publish_all`, whose out-of-line definition the
     // inliner left standing.
-    assert_eq!(program.matches("@read(").count(), 1);
     assert_eq!(
-        program.matches("@write(").count(),
+        program
+            .matches("@wf__completion_file_pread_direct(")
+            .count(),
+        1
+    );
+    assert_eq!(
+        program
+            .matches("@wf__completion_file_write_direct(")
+            .count(),
         1,
         "one transfer per surviving copy of the one source write_once site"
     );
@@ -678,7 +698,10 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     // bytes, takes a lock, or touches a signal disposition beside the transfer
     // [QUAL-3].
     for function in program_functions() {
-        for site in ["@read(", "@write("] {
+        for site in [
+            "@wf__completion_file_pread_direct(",
+            "@wf__completion_file_write_direct(",
+        ] {
             if !function.contains(site) {
                 continue;
             }
@@ -720,7 +743,7 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
 /// attempt, and an ambiguous close is never retried.
 #[test]
 fn every_release_close_is_one_discarded_attempt() {
-    // The three closing resource kinds close: `DirectoryRead`, `DirectoryList`,
+    // The three closing resource kinds close: `DirectoryRead`, `DirectorySource`,
     // and `ReadFile`. The program holds all three, so all three appear. The
     // emitted `open_file` helper has two mutually exclusive provisional-error
     // cleanup paths, independently locked in `system.rs`; the host optimizer
@@ -837,7 +860,9 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             "open" | "signal"
             // The first slice's own host operations, including the [SYS-14]
             // enumeration facility this target's [QUAL-1] row names.
-            | "openat" | "fstat" | "read" | "write" | "close" | "__getdirentries64"
+            | "openat" | "fstat" | "pread" | "write" | "close"
+            | "wf__completion_file_pread_direct" | "wf__completion_file_write_direct"
+            | "wf__completion_directory_next_direct"
             // Darwin's native error-slot access on failed host operations.
             | "__error"
             // The lease length pass and the path NUL scan.
@@ -972,7 +997,12 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
         let Some(first_allocation) = function.find("@calloc(") else {
             continue;
         };
-        for transfer in ["@openat(", "@read(", "@write(", "@__getdirentries64("] {
+        for transfer in [
+            "@openat(",
+            "@wf__completion_file_pread_direct(",
+            "@wf__completion_file_write_direct(",
+            "@wf__completion_directory_next_direct(",
+        ] {
             let Some(first) = function.find(transfer) else {
                 continue;
             };
@@ -1095,7 +1125,7 @@ fn the_output_batch_costs_one_host_write_per_full_batch() {
     assert!(!trace.contains("wf_test close fd=1 "));
     assert!(!trace.contains("wf_test close fd=2 "));
     // Three reads for a two-chunk file: two that delivered bytes and one that
-    // observed the end. One host attempt per source `read_once`, never a retry
+    // observed the end. One host attempt per source `read_at`, never a retry
     // and never a second attempt to confirm the end [SYS-8]. Nothing was ever
     // published to standard error: the successful path reports nothing.
     // And the whole run is the §12.2 per-byte-call rejection, measured rather
@@ -1107,7 +1137,7 @@ fn the_output_batch_costs_one_host_write_per_full_batch() {
         "the whole run is a dozen host calls: {trace:?}"
     );
     assert_eq!(
-        trace.matches("wf_test read fd=42 ").count(),
+        trace.matches("wf_test pread fd=42 ").count(),
         3,
         "trace was {trace:?}"
     );

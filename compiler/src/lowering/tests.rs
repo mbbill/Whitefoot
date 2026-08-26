@@ -274,10 +274,16 @@ fn assert_contract(
     assert_eq!(contract.backing, backing);
 }
 
-const CLOSE_ROW: SystemReleaseRow = SystemReleaseRow {
-    external: true,
-    blocks: true,
-};
+const fn close_row(family: crate::SystemAuthorityFamily) -> SystemReleaseRow {
+    SystemReleaseRow {
+        target_action: crate::TargetAction::MAY_SUSPEND,
+        capability_write: true,
+        authority: crate::SystemReleaseAuthority::Known(crate::SystemAuthorityFacet {
+            family,
+            fragment: crate::SystemAuthorityFragment::WholeResource,
+        }),
+    }
+}
 
 #[test]
 fn every_system_type_carries_its_release_contract_and_one_release_edge() {
@@ -289,10 +295,11 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
         "fn release_args(value: own Args) -> result: own unit pure {{\n  return unit;\n}}\n\n\
          fn release_host_string(value: own HostString) -> result: own unit pure {{\n  return unit;\n}}\n\n\
          fn release_relative_path(value: own RelativePath) -> result: own unit pure {{\n  return unit;\n}}\n\n\
-         fn release_directory_read(value: own DirectoryRead) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
-         fn release_read_file(value: own ReadFile) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
+         fn release_directory_read(value: own DirectoryRead) -> result: own unit writes(value) {{\n  return unit;\n}}\n\n\
+         fn release_read_file(value: own ReadFile) -> result: own unit writes(value) {{\n  return unit;\n}}\n\n\
          fn release_output(value: own Output) -> result: own unit pure {{\n  return unit;\n}}\n\n\
          fn release_exit_status(value: own ExitStatus) -> result: own unit pure {{\n  return unit;\n}}\n\n\
+         fn release_directory_source(value: own DirectorySource) -> result: own unit writes(value) {{\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -328,14 +335,14 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
             program,
             SystemResourceType::DirectoryRead,
             NativeCloseAttempt,
-            CLOSE_ROW,
+            close_row(crate::SystemAuthorityFamily::DirectoryRead),
             Opaque,
         );
         assert_contract(
             program,
             SystemResourceType::ReadFile,
             NativeCloseAttempt,
-            CLOSE_ROW,
+            close_row(crate::SystemAuthorityFamily::ReadFile),
             Opaque,
         );
         assert_contract(
@@ -350,6 +357,13 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
             SystemResourceType::ExitStatus,
             LogicalConsume,
             SystemReleaseRow::EMPTY,
+            Opaque,
+        );
+        assert_contract(
+            program,
+            SystemResourceType::DirectorySource,
+            NativeCloseAttempt,
+            close_row(crate::SystemAuthorityFamily::DirectorySource),
             Opaque,
         );
 
@@ -384,6 +398,11 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
                 SystemResourceType::ExitStatus,
                 LogicalConsume,
             ),
+            (
+                "release_directory_source",
+                SystemResourceType::DirectorySource,
+                NativeCloseAttempt,
+            ),
         ] {
             let function = function(program, name);
             let [drop] = return_drops(function) else {
@@ -394,7 +413,7 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
             assert_eq!(
                 drop.release().row,
                 if action == NativeCloseAttempt {
-                    CLOSE_ROW
+                    close_row(resource.authority_family().expect("close resource family"))
                 } else {
                     SystemReleaseRow::EMPTY
                 }
@@ -409,7 +428,7 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
 #[test]
 fn a_move_keeps_the_resource_identity_and_its_release() {
     let source = format!(
-        "fn release_after_move(file: own ReadFile) -> result: own unit external, blocks {{\n  \
+        "fn release_after_move(file: own ReadFile) -> result: own unit writes(file) {{\n  \
          let moved = move file;\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -435,7 +454,7 @@ fn a_move_keeps_the_resource_identity_and_its_release() {
 fn a_struct_field_release_reaches_the_contained_resource() {
     let source = format!(
         "struct Holder {{\n  file: ReadFile;\n}}\n\n\
-         fn release_holder(holder: own Holder) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
+         fn release_holder(holder: own Holder) -> result: own unit writes(holder) {{\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -456,13 +475,19 @@ fn a_struct_field_release_reaches_the_contained_resource() {
             field.release().action,
             Some(SystemReleaseAction::NativeCloseAttempt)
         );
-        assert_eq!(field.release().row, CLOSE_ROW);
+        assert_eq!(
+            field.release().row,
+            close_row(crate::SystemAuthorityFamily::ReadFile)
+        );
         assert_ne!(field.value(), function.parameters()[0].0);
         // The struct itself has no release action of its own, and its row is
         // the union of what its owned content may run.
         assert_eq!(dropped_resource(program, *aggregate), None);
         assert_eq!(aggregate.release().action, None);
-        assert_eq!(aggregate.release().row, CLOSE_ROW);
+        assert_eq!(
+            aggregate.release().row,
+            close_row(crate::SystemAuthorityFamily::ReadFile)
+        );
         assert_eq!(aggregate.value(), function.parameters()[0].0);
     });
 }
@@ -471,7 +496,7 @@ fn a_struct_field_release_reaches_the_contained_resource() {
 fn an_enum_release_carries_the_union_of_its_components_rows() {
     let source = format!(
         "enum Holder {{\n  Empty();\n  Full(file: ReadFile);\n}}\n\n\
-         fn release_holder(holder: own Holder) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
+         fn release_holder(holder: own Holder) -> result: own unit writes(holder) {{\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -484,7 +509,10 @@ fn an_enum_release_carries_the_union_of_its_components_rows() {
         // the union of the rows its variants may run.
         assert_eq!(dropped_resource(program, *drop), None);
         assert_eq!(drop.release().action, None);
-        assert_eq!(drop.release().row, CLOSE_ROW);
+        assert_eq!(
+            drop.release().row,
+            close_row(crate::SystemAuthorityFamily::ReadFile)
+        );
     });
 }
 
@@ -492,7 +520,7 @@ fn an_enum_release_carries_the_union_of_its_components_rows() {
 fn one_match_arm_releases_its_binder_on_that_arms_normal_edge() {
     let source = format!(
         "enum Holder {{\n  Empty();\n  Full(file: ReadFile);\n}}\n\n\
-         fn release_arm(holder: own Holder) -> result: own unit external, blocks {{\n  \
+         fn release_arm(holder: own Holder) -> result: own unit writes(holder) {{\n  \
          match move holder {{\n    Empty() => {{\n    }}\n    Full(file: opened) => {{\n    }}\n  }}\n  \
          return unit;\n}}\n\n{COMMAND_ENTRY}"
     );
@@ -532,10 +560,10 @@ fn one_match_arm_releases_its_binder_on_that_arms_normal_edge() {
 fn returning_or_passing_an_owner_derives_no_release_here() {
     let source = format!(
         "fn pass_through(file: own ReadFile) -> result: own ReadFile pure {{\n  return move file;\n}}\n\n\
-         fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {{\n  return unit;\n}}\n\n\
-         fn hand_off(file: own ReadFile) -> result: own unit external, blocks {{\n  \
+         fn release_read_file(file: own ReadFile) -> result: own unit writes(file) {{\n  return unit;\n}}\n\n\
+         fn hand_off(file: own ReadFile) -> result: own unit writes(file) {{\n  \
          release_read_file(file: move file);\n  return unit;\n}}\n\n\
-         fn receive(file: own ReadFile) -> result: own unit external, blocks {{\n  \
+         fn receive(file: own ReadFile) -> result: own unit writes(file) {{\n  \
          let received = pass_through(file: move file);\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
@@ -571,7 +599,7 @@ fn releases_keep_reverse_declaration_order_and_never_sit_on_a_trapping_edge() {
         "fn need_true(flag: own Bool) -> result: own unit pure contract {{\n  \
          requires flag;\n}} {{\n  return unit;\n}}\n\n\
          fn ordered(first: own ReadFile, second: own ReadFile, ready: own Bool) \
-         -> result: own unit external, blocks, traps {{\n  \
+         -> result: own unit writes(first second), traps {{\n  \
          let not_ready = bnot(ready);\n  \
          let tautology = bor(ready, not_ready);\n  \
          claim ordering_probe: tautology because \"premises: ready is the current function's ordinary Bool parameter, not_ready is its Boolean negation, and tautology is their disjunction\\nderivation: every Bool is either true or false, so ready or its negation is always true\\nconclusion: tautology is true\\nchecker gap: ENT decomposes established Boolean expressions but does not synthesize excluded middle for an opaque Bool parameter\\nconsumers: the following need_true call requires this exact tautology\";\n  \
@@ -614,7 +642,7 @@ fn releases_keep_reverse_declaration_order_and_never_sit_on_a_trapping_edge() {
 
 #[test]
 fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
-    let source = "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus external, blocks {\n  return exit_status(code: 0_u8);\n}\n";
+    let source = "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(source.as_bytes(), |program| {
         let main = function(program, "main");
         let block = only_block(main);
@@ -672,26 +700,17 @@ fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
 }
 
 #[test]
-fn the_entry_retains_the_standard_input_rows_and_the_may_alias_pair() {
+fn the_entry_retains_distinct_standard_input_rows_without_alias_metadata() {
     let both = "command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(both.as_bytes(), |program| {
-        let IrEntry::Command { inputs, aliases } = program.entry();
+        let IrEntry::Command { inputs } = program.entry();
         assert_eq!(inputs, &vec![2, 3]);
-        // [SYS-12]: redirection may make the two `Output` owners one sink.
-        // Nothing here reads the link; it is retained so a later
-        // cross-resource reordering fact cannot treat them as disjoint.
-        let [alias] = aliases.as_slice() else {
-            panic!("the two output owners must carry one retained alias link");
-        };
-        assert_eq!((alias.left(), alias.right()), (2, 3));
     });
 
     let one = "command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(one.as_bytes(), |program| {
-        let IrEntry::Command { inputs, aliases } = program.entry();
+        let IrEntry::Command { inputs } = program.entry();
         assert_eq!(inputs, &vec![2]);
-        // One selected sink has nothing to alias with.
-        assert!(aliases.is_empty());
     });
 }
 

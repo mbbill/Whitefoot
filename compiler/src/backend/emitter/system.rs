@@ -60,6 +60,30 @@ const OPEN_LIST: u8 = 12;
 const LIST_ONCE: u8 = 13;
 const OPEN_FILE: u8 = 14;
 
+/// The finite system operations the first typed file adapter can actualize.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CompletionFileOperation {
+    Read,
+    Write,
+}
+
+pub(super) fn completion_file_operation(
+    operation: crate::IrSystemOperation,
+) -> Option<CompletionFileOperation> {
+    match operation.ordinal() {
+        READ_ONCE => Some(CompletionFileOperation::Read),
+        WRITE_ONCE => Some(CompletionFileOperation::Write),
+        _ => None,
+    }
+}
+
+pub(super) const fn completion_mapper_symbol(operation: CompletionFileOperation) -> &'static str {
+    match operation {
+        CompletionFileOperation::Read => READ_COMPLETION_MAPPER,
+        CompletionFileOperation::Write => WRITE_COMPLETION_MAPPER,
+    }
+}
+
 /// The portable [SYS-14] entry-kind values written into the destination.
 const KIND_UNKNOWN: u8 = 0;
 const KIND_REGULAR: u8 = 1;
@@ -78,6 +102,12 @@ const UTF8_VALIDATOR: &str = "wf.sys.utf8.valid";
 /// The private symbol of the one cold [SYS-7] outcome mapper every failing
 /// I/O implementation shares [QUAL-3].
 const IO_ERROR_MAPPER: &str = "wf.sys.io.error";
+
+/// Raw target-result mappers shared by the direct specialization and the
+/// finite completion route.  Keeping one mapper is what makes the two
+/// execution choices produce the same qualified Whitefoot outcome.
+const READ_COMPLETION_MAPPER: &str = "wf.sys.read.completion";
+const WRITE_COMPLETION_MAPPER: &str = "wf.sys.write.completion";
 
 /// The private constant naming the initial working directory.
 const WORKING_DIRECTORY: &str = "@.wf.sys.working.directory";
@@ -104,7 +134,7 @@ pub(super) fn emit_system_interface(
     let mut declarations: BTreeSet<String> = BTreeSet::new();
     let mut definitions = String::new();
     let mut needs_validator = false;
-    // The command bootstrap and `open_list` both name the self component, so
+    // The command bootstrap and `open_directory_source` both name the self component, so
     // the constant is emitted once for whichever of them the program uses.
     let mut needs_working_directory = false;
 
@@ -187,7 +217,7 @@ pub(super) fn emit_system_interface(
             READ_ONCE => {
                 let shape = read_outcome_shape(program, result)?;
                 record_io_error(&mut io_error, shape.failed_type)?;
-                definitions.push_str(&emit_read_once(program, implementation, &shape, target)?);
+                definitions.push_str(&emit_read_at(program, implementation, &shape, target)?);
             }
             WRITE_ONCE => {
                 let shape = outcome_shape(program, result)?;
@@ -209,12 +239,17 @@ pub(super) fn emit_system_interface(
                 let shape = outcome_shape(program, result)?;
                 record_io_error(&mut io_error, shape.err_type)?;
                 needs_working_directory = true;
-                definitions.push_str(&emit_open_list(implementation, &shape, target)?);
+                definitions.push_str(&emit_open_directory_source(implementation, &shape, target)?);
             }
             LIST_ONCE => {
                 let shape = list_outcome_shape(program, result)?;
                 record_io_error(&mut io_error, shape.failed_type)?;
-                definitions.push_str(&emit_list_once(program, implementation, &shape, target)?);
+                definitions.push_str(&emit_directory_next(
+                    program,
+                    implementation,
+                    &shape,
+                    target,
+                )?);
             }
             OPEN_FILE => {
                 let shape = outcome_shape(program, result)?;
@@ -328,7 +363,7 @@ fn operation_declarations(
         }
         READ_ONCE => {
             return Ok(vec![
-                format!("declare i64 @{}(i32, ptr, i64)", target.read_symbol()),
+                format!("declare i64 @{}(i32, ptr, i64, i64)", target.pread_symbol()),
                 "declare void @abort() noreturn".to_owned(),
             ]);
         }
@@ -344,8 +379,16 @@ fn operation_declarations(
             let enumeration = target
                 .directory_enumeration()
                 .ok_or(BackendFailure::InvalidIr)?;
+            /* The C adapter is target-guarded and calls this exact Darwin
+             * facility. Refuse to reuse it if a future target contributes a
+             * different enumeration ABI or declaration. */
+            if enumeration.symbol() != "__getdirentries64"
+                || enumeration.declaration() != "declare i64 @__getdirentries64(i32, ptr, i64, ptr)"
+            {
+                return Err(BackendFailure::InvalidIr);
+            }
             return Ok(vec![
-                enumeration.declaration().to_owned(),
+                "declare i64 @wf__completion_directory_next_direct(i32, ptr, i64, ptr)".to_owned(),
                 "declare void @abort() noreturn".to_owned(),
             ]);
         }
@@ -1029,7 +1072,7 @@ struct IoErrorClass {
     code_index: usize,
 }
 
-/// Resolves the closed thirty-class [SYS-7] set in one program's `IoError`.
+/// Resolves the closed twenty-eight-class [SYS-7] set in one program's `IoError`.
 ///
 /// [SYS-2] fixes the class set, its declared order, and the two inline detail
 /// fields every class carries, and the checked program interns the nominal
@@ -1176,7 +1219,7 @@ fn emit_open_read(
     ))
 }
 
-fn emit_read_once(
+fn emit_read_at(
     program: &IrProgram<'_, '_, '_>,
     implementation: ApprovedImplementation,
     shape: &ReadOutcomeShape,
@@ -1196,41 +1239,84 @@ fn emit_read_once(
         llvm,
         bytes_tag,
         bytes_index,
+        ..
+    } = shape;
+    let entry = range_entry("");
+    let (read_error, error) = native_error(target, "failure");
+    let invalid_input = target
+        .error_classes()
+        .iter()
+        .find(|class| class.class == "InvalidInput")
+        .and_then(|class| class.codes.first())
+        .copied()
+        .ok_or(BackendFailure::InvalidIr)?;
+    // The two call-site SYS-8 goals authorize this half-open range. A
+    // zero-length range reports `next = start` and issues no host transfer.
+    // A nonempty range makes at most one positioned transfer attempt. The
+    // explicit file offset is checked before handoff and the operation never
+    // observes or changes an implicit cursor.
+    let mapper = emit_read_completion_mapper(shape);
+    let wrapper = format!(
+        "define private {llvm} @{symbol}({file} %file, {buffer} %destination, i64 %file_offset, \
+         i64 %start, i64 %end) alwaysinline {{\n\
+         {entry}\
+         measure:\n  \
+         %vacant = icmp eq i64 %extent, 0\n  \
+         br i1 %vacant, label %empty, label %offset\n\
+         empty:\n  \
+         %empty.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
+         %empty.outcome = insertvalue {llvm} %empty.tag, i64 %start, {bytes_index}\n  \
+         ret {llvm} %empty.outcome\n\
+         offset:\n  \
+         %offset.fits = icmp ule i64 %file_offset, 9223372036854775807\n  \
+         br i1 %offset.fits, label %transfer, label %invalid.offset\n\
+         invalid.offset:\n  \
+         %invalid.outcome = call {llvm} @{READ_COMPLETION_MAPPER}(i64 -1, i32 {invalid_input}, \
+         i64 %start, i64 %extent)\n  \
+         ret {llvm} %invalid.outcome\n\
+         transfer:\n  \
+         %base = extractvalue {buffer} %destination, 0\n  \
+         %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
+         %transferred = call i64 @{pread}({file} %file, ptr %target, i64 %extent, \
+         i64 %file_offset)\n  \
+         %failed = icmp slt i64 %transferred, 0\n  \
+         br i1 %failed, label %failure, label %complete\n\
+         failure:\n\
+         {read_error}  br label %complete\n\
+         complete:\n  \
+         %error = phi i32 [ 0, %transfer ], [ {error}, %failure ]\n  \
+         %outcome = call {llvm} @{READ_COMPLETION_MAPPER}(i64 %transferred, i32 %error, \
+         i64 %start, i64 %extent)\n  \
+         ret {llvm} %outcome\n\
+        }}\n\n",
+        symbol = implementation.symbol(),
+        pread = target.pread_symbol()
+    );
+    Ok(format!("{mapper}{wrapper}"))
+}
+
+fn emit_read_completion_mapper(shape: &ReadOutcomeShape) -> String {
+    let ReadOutcomeShape {
+        llvm,
+        bytes_tag,
+        bytes_index,
         end_tag,
         failed_tag,
         failed_index,
         failed_llvm,
         ..
     } = shape;
-    let entry = range_entry("");
-    let (read_error, error) = native_error(target, "failure");
-    // The two call-site SYS-8 goals authorize this half-open range. A
-    // zero-length range reports `next = start` and issues no host transfer,
-    // and is never
-    // reported as `ReadEnd`. A nonempty range makes at most one host transfer
-    // attempt: reported progress is returned immediately and never hidden by a
-    // second attempt, so `ReadBytes(next)` advances beyond start only for
-    // positive host progress,
-    // than zero, only `ReadEnd` states that no byte was available at the
-    // observed end, and a reported interruption reaches source as
-    // `Interrupted` rather than being retried. The host advances the file
-    // cursor by exactly `next - start` [SYS-11], and exactly `[start, next)`
-    // of the requested range may have changed.
-    Ok(format!(
-        "define private {llvm} @{symbol}({file} %file, {buffer} %destination, i64 %start, \
-         i64 %end) alwaysinline {{\n\
-         {entry}\
-         measure:\n  \
-         %vacant = icmp eq i64 %extent, 0\n  \
-         br i1 %vacant, label %empty, label %transfer\n\
-         empty:\n  \
+    format!(
+        "define private {llvm} @{READ_COMPLETION_MAPPER}(i64 %transferred, i32 %error, \
+         i64 %start, i64 %extent) alwaysinline {{\n\
+         entry:\n  \
+         %empty = icmp eq i64 %extent, 0\n  \
+         br i1 %empty, label %vacant, label %nonempty\n\
+         vacant:\n  \
          %empty.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
          %empty.outcome = insertvalue {llvm} %empty.tag, i64 %start, {bytes_index}\n  \
          ret {llvm} %empty.outcome\n\
-         transfer:\n  \
-         %base = extractvalue {buffer} %destination, 0\n  \
-         %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
-         %transferred = call i64 @{read}({file} %file, ptr %target, i64 %extent)\n  \
+         nonempty:\n  \
          %progress = icmp sgt i64 %transferred, 0\n  \
          br i1 %progress, label %sanitize, label %quiet\n\
          sanitize:\n  \
@@ -1247,9 +1333,8 @@ fn emit_read_once(
          exhausted:\n  \
          %exhausted.outcome = insertvalue {llvm} zeroinitializer, i32 {end_tag}, 0\n  \
          ret {llvm} %exhausted.outcome\n\
-         failure:\n\
-         {read_error}  \
-         %failure.error = call {failed_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 {ORIGIN_READ})\n  \
+         failure:\n  \
+         %failure.error = call {failed_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 {ORIGIN_READ})\n  \
          %failed.tag = insertvalue {llvm} zeroinitializer, i32 {failed_tag}, 0\n  \
          %failed.outcome = insertvalue {llvm} %failed.tag, {failed_llvm} %failure.error, \
          {failed_index}\n  \
@@ -1257,10 +1342,8 @@ fn emit_read_once(
          tcb.defect:\n  \
          call void @abort()\n  \
          unreachable\n\
-         }}\n\n",
-        symbol = implementation.symbol(),
-        read = target.read_symbol()
-    ))
+         }}\n\n"
+    )
 }
 
 fn emit_write_once(
@@ -1291,9 +1374,6 @@ fn emit_write_once(
         llvm,
         ok_tag,
         ok_index,
-        err_tag,
-        err_index,
-        err_llvm,
         ..
     } = shape;
     let entry = range_entry("");
@@ -1301,8 +1381,6 @@ fn emit_write_once(
     // A host zero-length write is `Err(WriteZero())`, which no native error
     // code produced: [SYS-7] leaves both detail fields zero when the target
     // supplies no value for them.
-    let (refused_value, refused_error) =
-        io_error_value(err_llvm, refused, "refused", "0", &ORIGIN_NONE.to_string());
     // At most one host output attempt [SYS-12]. A zero-length range reports
     // `next = start` and issues no host transfer; otherwise `Ok(next)` means
     // exactly that the host accepted `[start, next)`, promising neither line
@@ -1310,7 +1388,8 @@ fn emit_write_once(
     // the recoverable `BrokenPipe` class because the bootstrap installed the
     // ignored write-to-closed-pipe disposition once, before entry [QUAL-3];
     // this path performs no per-call signal-disposition operation.
-    Ok(format!(
+    let mapper = emit_write_completion_mapper(shape, refused);
+    let wrapper = format!(
         "define private {llvm} @{symbol}({output} %output, {buffer} %source, i64 %start, \
          i64 %end) alwaysinline {{\n\
          {entry}\
@@ -1325,6 +1404,45 @@ fn emit_write_once(
          %base = extractvalue {buffer} %source, 0\n  \
          %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
          %accepted = call i64 @{write}({output} %output, ptr %target, i64 %extent)\n  \
+         %failed = icmp slt i64 %accepted, 0\n  \
+         br i1 %failed, label %failure, label %complete\n\
+         failure:\n\
+         {read_error}  br label %complete\n\
+         complete:\n  \
+         %error = phi i32 [ 0, %transfer ], [ {error}, %failure ]\n  \
+         %outcome = call {llvm} @{WRITE_COMPLETION_MAPPER}(i64 %accepted, i32 %error, \
+         i64 %start, i64 %extent)\n  \
+         ret {llvm} %outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        write = target.write_symbol()
+    );
+    Ok(format!("{mapper}{wrapper}"))
+}
+
+fn emit_write_completion_mapper(shape: &OutcomeShape, refused: &IoErrorClass) -> String {
+    let OutcomeShape {
+        llvm,
+        ok_tag,
+        ok_index,
+        err_tag,
+        err_index,
+        err_llvm,
+        ..
+    } = shape;
+    let (refused_value, refused_error) =
+        io_error_value(err_llvm, refused, "refused", "0", &ORIGIN_NONE.to_string());
+    format!(
+        "define private {llvm} @{WRITE_COMPLETION_MAPPER}(i64 %accepted, i32 %error, \
+         i64 %start, i64 %extent) alwaysinline {{\n\
+         entry:\n  \
+         %empty = icmp eq i64 %extent, 0\n  \
+         br i1 %empty, label %vacant, label %nonempty\n\
+         vacant:\n  \
+         %empty.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %empty.outcome = insertvalue {llvm} %empty.tag, i64 %start, {ok_index}\n  \
+         ret {llvm} %empty.outcome\n\
+         nonempty:\n  \
          %progress = icmp sgt i64 %accepted, 0\n  \
          br i1 %progress, label %sanitize, label %quiet\n\
          sanitize:\n  \
@@ -1343,19 +1461,16 @@ fn emit_write_once(
          %zero.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
          %zero.outcome = insertvalue {llvm} %zero.tag, {err_llvm} {refused_error}, {err_index}\n  \
          ret {llvm} %zero.outcome\n\
-         failure:\n\
-         {read_error}  \
-         %failure.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 {ORIGIN_WRITE})\n  \
+         failure:\n  \
+         %failure.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 {ORIGIN_WRITE})\n  \
          %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
          %err.outcome = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
          ret {llvm} %err.outcome\n\
          tcb.defect:\n  \
          call void @abort()\n  \
          unreachable\n\
-         }}\n\n",
-        symbol = implementation.symbol(),
-        write = target.write_symbol()
-    ))
+         }}\n\n"
+    )
 }
 
 /// One [SYS-6] `ListOutcome` instantiation's tags and field positions.
@@ -1682,20 +1797,20 @@ fn emit_open_by_name(
     ))
 }
 
-/// Emits the approved implementation of `open_list` [SYS-14].
+/// Emits the approved implementation of `open_directory_source` [SYS-14].
 ///
 /// One enumeration handle is an independent descriptor opened against the
 /// capability's own directory object through the same directory-relative
 /// facility [PATH-2], named by the self component. It therefore carries its
 /// own cursor and aliases the capability no more than `open_read`'s
 /// `ReadFile` does [SYS-10].
-fn emit_open_list(
+fn emit_open_directory_source(
     implementation: ApprovedImplementation,
     shape: &OutcomeShape,
     target: SystemTarget,
 ) -> Result<String, BackendFailure> {
     let directory = representation(SystemResourceType::DirectoryRead);
-    let list = representation(SystemResourceType::DirectoryList);
+    let list = representation(SystemResourceType::DirectorySource);
     if shape.ok_llvm != list {
         return Err(BackendFailure::InvalidIr);
     }
@@ -1734,11 +1849,13 @@ fn emit_open_list(
     ))
 }
 
-/// Emits the approved implementation of `list_once` [SYS-14].
+/// Emits the approved implementation of `directory_next` [SYS-14].
 ///
-/// The shape is [SYS-8]'s: enter the statically authorized range, make at most
-/// one host call, then one outcome check and a cold mapper [QUAL-3]. The one addition
-/// is normalization — the facility writes its own records into the caller's
+/// The shape is [SYS-8]'s: enter the statically authorized range, obtain at
+/// most one progress-producing host transfer through the target-progress
+/// wrapper, then one outcome check and a cold mapper [QUAL-3]. Interruption and
+/// readiness refusal remain inside that wrapper. The one addition is
+/// normalization — the facility writes its own records into the caller's
 /// range, and the shim rewrites them in place as the portable
 /// `[kind][little-endian u16 name length][name bytes]` sequence [SYS-14]. The
 /// rewrite moves every byte strictly toward the front, because a portable
@@ -1746,13 +1863,13 @@ fn emit_open_list(
 /// unread byte is ever overwritten. Every native header field is validated
 /// against the reported extent before it is used, so a record the facility
 /// mis-sizes ends the walk instead of reading past the range.
-fn emit_list_once(
+fn emit_directory_next(
     program: &IrProgram<'_, '_, '_>,
     implementation: ApprovedImplementation,
     shape: &ListOutcomeShape,
     target: SystemTarget,
 ) -> Result<String, BackendFailure> {
-    let list = representation(SystemResourceType::DirectoryList);
+    let list = representation(SystemResourceType::DirectorySource);
     let buffer = llvm_type(
         program,
         IrType::Buffer {
@@ -1803,7 +1920,7 @@ fn emit_list_once(
          transfer:\n  \
          %base = extractvalue {buffer} %destination, 0\n  \
          %window = getelementptr inbounds i8, ptr %base, i64 %start\n  \
-         %filled = call i64 @{enumerate}({list} %list, ptr %window, i64 %extent, \
+         %filled = call i64 @wf__completion_directory_next_direct({list} %list, ptr %window, i64 %extent, \
          ptr %position)\n  \
          %progress = icmp sgt i64 %filled, 0\n  \
          br i1 %progress, label %sanitize, label %quiet\n\
@@ -1917,7 +2034,6 @@ fn emit_list_once(
          unreachable\n\
          }}\n\n",
         symbol = implementation.symbol(),
-        enumerate = enumeration.symbol(),
         root = target.root_prefix(),
     ))
 }

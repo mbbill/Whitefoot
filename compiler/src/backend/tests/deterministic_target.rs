@@ -38,6 +38,9 @@ pub(super) enum HostError {
     /// An interrupted call. A close that reports it leaves the descriptor's
     /// state unknowable, which is exactly why [SYS-5] never retries after one.
     Interrupted,
+    /// A readiness refusal. The deterministic adapter consumes the next
+    /// scripted answer only after recording the exact readiness wait.
+    WouldBlock,
     /// A device or input/output failure: the mid-stream condition a real file
     /// cannot be made to produce at a chosen call.
     DeviceFailure,
@@ -47,6 +50,7 @@ impl HostError {
     const fn macro_name(self) -> &'static str {
         match self {
             Self::Interrupted => "EINTR",
+            Self::WouldBlock => "EAGAIN",
             Self::DeviceFailure => "EIO",
         }
     }
@@ -152,7 +156,7 @@ impl HostScript {
         let mut source = String::from(HOST_PRELUDE);
         source.push_str(&fixture_table(self.file.as_deref()));
         source.push_str(&file_status_table(self.file_status));
-        source.push_str(&outcome_table("read", &self.reads));
+        source.push_str(&outcome_table("pread", &self.reads));
         source.push_str(&outcome_table("write", &self.writes));
         source.push_str(&outcome_table("close", &self.closes));
         source.push_str(HOST_FACILITIES);
@@ -190,8 +194,7 @@ fn fixture_table(file: Option<&[u8]>) -> String {
     format!(
         "static const int wf_test_file_present = {present};\n\
          static const unsigned char wf_test_file_bytes[] = {{ {} }};\n\
-         static const unsigned long wf_test_file_length = {length};\n\
-         static unsigned long wf_test_file_cursor = 0;\n",
+         static const unsigned long wf_test_file_length = {length};\n",
         entries.join(", ")
     )
 }
@@ -225,6 +228,7 @@ const HOST_PRELUDE: &str = "\
 #include <errno.h>\n\
 #include <fcntl.h>\n\
 #include <limits.h>\n\
+#include <stdint.h>\n\
 #include <stdio.h>\n\
 #include <string.h>\n\
 #include <sys/stat.h>\n\
@@ -326,33 +330,68 @@ int wf_test_fstat(int descriptor, struct stat *status) {\n\
     return 0;\n\
 }\n\
 \n\
-ssize_t wf_test_read(int descriptor, void *destination, size_t capacity) {\n\
+ssize_t wf_test_pread(int descriptor, void *destination, size_t capacity,\n\
+                      int64_t offset) {\n\
     char line[192];\n\
-    long entry = wf_test_step(wf_test_read_script, wf_test_read_scripted,\n\
-                              &wf_test_read_calls);\n\
+    long entry;\n\
+    for (;;) {\n\
+        entry = wf_test_step(wf_test_pread_script, wf_test_pread_scripted,\n\
+                             &wf_test_pread_calls);\n\
+        if (entry == -EINTR) {\n\
+            snprintf(line, sizeof line,\n\
+                     \"wf_test pread fd=%d progress=eintr\\n\", descriptor);\n\
+            wf_test_trace(line);\n\
+            continue;\n\
+        }\n\
+        if (entry == -EAGAIN) {\n\
+            snprintf(line, sizeof line,\n\
+                     \"wf_test pread fd=%d wait=readable\\n\", descriptor);\n\
+            wf_test_trace(line);\n\
+            continue;\n\
+        }\n\
+        break;\n\
+    }\n\
     if (entry < 0) {\n\
-        snprintf(line, sizeof line, \"wf_test read fd=%d capacity=%lu -> error\\n\",\n\
-                 descriptor, (unsigned long)capacity);\n\
+        snprintf(line, sizeof line,\n\
+                 \"wf_test pread fd=%d offset=%lld capacity=%lu -> error\\n\",\n\
+                 descriptor, (long long)offset, (unsigned long)capacity);\n\
         wf_test_trace(line);\n\
         errno = (int)(-entry);\n\
         return -1;\n\
     }\n\
-    unsigned long remaining = wf_test_file_length - wf_test_file_cursor;\n\
+    unsigned long position = (unsigned long)offset;\n\
+    unsigned long remaining = position < wf_test_file_length\n\
+        ? wf_test_file_length - position : 0;\n\
     unsigned long delivered = capacity < remaining ? capacity : remaining;\n\
     delivered = wf_test_capped(entry, delivered);\n\
-    memcpy(destination, wf_test_file_bytes + wf_test_file_cursor, delivered);\n\
-    wf_test_file_cursor += delivered;\n\
+    memcpy(destination, wf_test_file_bytes + position, delivered);\n\
     snprintf(line, sizeof line,\n\
-             \"wf_test read fd=%d capacity=%lu delivered=%lu\\n\", descriptor,\n\
-             (unsigned long)capacity, delivered);\n\
+             \"wf_test pread fd=%d offset=%lld capacity=%lu delivered=%lu\\n\",\n\
+             descriptor, (long long)offset, (unsigned long)capacity, delivered);\n\
     wf_test_trace(line);\n\
     return (ssize_t)delivered;\n\
 }\n\
 \n\
 ssize_t wf_test_write(int descriptor, const void *source, size_t count) {\n\
     char line[192];\n\
-    long entry = wf_test_step(wf_test_write_script, wf_test_write_scripted,\n\
-                              &wf_test_write_calls);\n\
+    long entry;\n\
+    for (;;) {\n\
+        entry = wf_test_step(wf_test_write_script, wf_test_write_scripted,\n\
+                             &wf_test_write_calls);\n\
+        if (entry == -EINTR) {\n\
+            snprintf(line, sizeof line,\n\
+                     \"wf_test write fd=%d progress=eintr\\n\", descriptor);\n\
+            wf_test_trace(line);\n\
+            continue;\n\
+        }\n\
+        if (entry == -EAGAIN) {\n\
+            snprintf(line, sizeof line,\n\
+                     \"wf_test write fd=%d wait=writable\\n\", descriptor);\n\
+            wf_test_trace(line);\n\
+            continue;\n\
+        }\n\
+        break;\n\
+    }\n\
     if (entry < 0) {\n\
         snprintf(line, sizeof line, \"wf_test write fd=%d count=%lu -> error\\n\",\n\
                  descriptor, (unsigned long)count);\n\
@@ -441,7 +480,7 @@ pub(super) fn run_emitted_on_deterministic_host(
 /// status, so its only host activity is the [SYS-5] release of one
 /// `DirectoryRead`.
 const RELEASES_ONE_DIRECTORY: &[u8] =
-    br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus external, blocks {
+    br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus writes(cwd) {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -449,7 +488,7 @@ const RELEASES_ONE_DIRECTORY: &[u8] =
 /// A command that reads its own invocation vector and reaches no host object
 /// at all, so every row it uses is one both target columns share.
 const READS_ITS_ARGUMENTS: &[u8] =
-    br#"command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+    br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region 'a {
     let total = args_count<'a>(args: &'a args);
     let narrowed = cvt<u64, u8>(total);
@@ -469,13 +508,13 @@ const READS_ITS_ARGUMENTS: &[u8] =
 /// while also binding the initial working directory so exactly one resource
 /// in the program releases with a close.
 const WRITES_THEN_RELEASES_BOTH: &[u8] =
-    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus writes(cwd out), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 3_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 3_u64) {
         Ok(value: written) => {
           let narrowed = cvt<u64, u8>(written);
           match narrowed {
@@ -503,7 +542,7 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
 fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
     let arms = class_arms(12, named, default);
     format!(
-        r#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {{
+        r#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {{
   let name = buffer_new(1_u64, 65_u8);
   region 'c {{
     region 'n {{
@@ -763,14 +802,14 @@ fn a_mid_stream_read_failure_stops_the_drain_after_the_bytes_it_delivered() {
     );
     // Exactly two attempts: the failing one ended the drain and nothing
     // retried it.
-    assert_eq!(run.attempts("read"), 2);
+    assert_eq!(run.attempts("pread"), 2);
     assert!(
         run.trace()
-            .contains("wf_test read fd=42 capacity=3 delivered=3")
+            .contains("wf_test pread fd=42 offset=0 capacity=3 delivered=3")
     );
     assert!(
         run.trace()
-            .contains("wf_test read fd=42 capacity=3 -> error")
+            .contains("wf_test pread fd=42 offset=3 capacity=3 -> error")
     );
 
     // The control: the same program over the same fixture with nothing
@@ -781,7 +820,54 @@ fn a_mid_stream_read_failure_stops_the_drain_after_the_bytes_it_delivered() {
         &[b"eight.txt"],
     );
     assert_eq!(clean.output.status.code(), Some(83));
-    assert_eq!(clean.attempts("read"), 4);
+    assert_eq!(clean.attempts("pread"), 4);
+}
+
+#[test]
+fn read_no_progress_answers_are_internal_until_one_positioned_read_progresses() {
+    let run = run_on_deterministic_host(
+        CHUNKED_READ,
+        &HostScript::new().file(b"abc").reads(&[
+            HostOutcome::Fail(HostError::Interrupted),
+            HostOutcome::Fail(HostError::WouldBlock),
+            HostOutcome::Succeed,
+        ]),
+        &[b"three.txt"],
+    );
+    assert_eq!(
+        run.output.status.code(),
+        Some(31),
+        "trace was {:?}",
+        run.trace()
+    );
+    assert_eq!(run.trace().matches("progress=eintr").count(), 1);
+    assert_eq!(run.trace().matches("wait=readable").count(), 1);
+    assert_eq!(run.trace().matches("delivered=3").count(), 1);
+    assert!(!run.trace().contains("-> error"));
+}
+
+#[test]
+fn write_no_progress_answers_are_internal_until_one_write_progresses() {
+    let run = run_on_deterministic_host(
+        WRITE_PREFIX,
+        &HostScript::new().writes(&[
+            HostOutcome::Fail(HostError::Interrupted),
+            HostOutcome::Fail(HostError::WouldBlock),
+            HostOutcome::Succeed,
+        ]),
+        &[],
+    );
+    assert_eq!(
+        run.output.status.code(),
+        Some(3),
+        "trace was {:?}",
+        run.trace()
+    );
+    assert_eq!(run.trace().matches("progress=eintr").count(), 1);
+    assert_eq!(run.trace().matches("wait=writable").count(), 1);
+    assert_eq!(run.trace().matches("accepted=2").count(), 1);
+    assert!(run.trace().contains("bytes=xy"));
+    assert!(!run.trace().contains("-> error"));
 }
 
 #[test]
@@ -871,7 +957,7 @@ fn the_trap_record_writer_stays_native_on_the_deterministic_target() {
     // facility, but only the operation row has a target column: the record
     // writer is the compiler's own and must never be scriptable, or a forced
     // short write could truncate a trap record. One module declares both.
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks, traps {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap), traps {
   let bytes = buffer_new(1_u64, 65_u8);
   let bounded = 0_u64;
   let step = 0_u64;
@@ -886,7 +972,7 @@ fn the_trap_record_writer_stays_native_on_the_deterministic_target() {
   let successor = bounded + 1_u64;
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
         }
         Err(error: problem) => {
@@ -933,11 +1019,11 @@ fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
         "return exit_status(code: 199_u8);",
     );
     let source = format!(
-        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {{
+        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {{
   let bytes = buffer_new(2_u64, 119_u8);
   region 'o {{
     region 's {{
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 2_u64) {{
+      match write_once<'o, 's>(output: &'o out, source: &'s bytes, start: 0_u64, end: 2_u64) {{
         Ok(value: written) => {{
           let narrowed = cvt<u64, u8>(written);
           match narrowed {{

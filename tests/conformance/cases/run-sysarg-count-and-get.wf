@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   doc "SYS-9: args_count is total and arg_get returns Ok at a present position and InvalidIndex beyond the last; the counted vector is the complete native one, so position 0 is the invoked name.";
   region 'a {
     let count = args_count<'a>(args: &'a args);

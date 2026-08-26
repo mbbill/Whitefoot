@@ -18,13 +18,16 @@ pub use engine::{resolve, resolve_with_inventory};
 
 pub use catalog::{
     Inventory, OPEN_BY_NAME, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
-    SystemConstructor, SystemEntity, SystemField, SystemNominal, SystemOperation, SystemParameter,
-    SystemParameterMode, SystemRelease, SystemReleaseAction, SystemReleaseRow,
-    SystemResourceBacking, SystemResourceContract, SystemResourceType, SystemResultPayload,
-    SystemTypeRef, TRAVERSAL_SURFACE, operation_region_effects, system_constructor_declaration,
-    system_constructor_index, system_constructors, system_entity, system_nominal_index,
-    system_nominals, system_operation_index, system_operations, system_release_row,
-    system_resource_contract,
+    SystemAuthority, SystemAuthorityAttribution, SystemAuthorityFacet, SystemAuthorityFamily,
+    SystemAuthorityFragment, SystemAuthorityPairRelation, SystemConstructor, SystemEntity,
+    SystemField, SystemNominal, SystemOperation, SystemParameter, SystemParameterMode,
+    SystemRelease, SystemReleaseAction, SystemReleaseAuthority, SystemReleaseRow,
+    SystemResourceBacking, SystemResourceContract, SystemResourceType, SystemResultAuthority,
+    SystemResultPayload, SystemTypeRef, TRAVERSAL_SURFACE, TargetAction, TargetCompletion,
+    TargetDispatch, TargetMilestones, operation_region_effects, system_authority_pair_relation,
+    system_constructor_declaration, system_constructor_index, system_constructors, system_entity,
+    system_nominal_index, system_nominals, system_operation_index, system_operations,
+    system_release_row, system_resource_contract,
 };
 
 /// Returns the exact OP-1 spelling of a resolved operation family.
@@ -276,7 +279,7 @@ pub enum DependentDeclarationRole {
     ContractMember,
 }
 
-/// Lexical-use roles U01 through U18.
+/// Lexical-use roles U01 through U19.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LexicalUseRole {
     /// U01: nominal or generic type.
@@ -299,6 +302,8 @@ pub enum LexicalUseRole {
     TypeArgumentRegion,
     /// U09: region named in an effect.
     EffectRegion,
+    /// A direct formal capability parameter named in an effect.
+    EffectCapability,
     /// U10: region named by a borrow expression.
     BorrowRegion,
     /// U11: break target.
@@ -667,6 +672,8 @@ pub enum ResolutionRule {
     Const2,
     /// Region uniqueness or lookup.
     Own3,
+    /// Capability-parameter effect lookup.
+    Eff1,
     /// Operation-family or callee lookup.
     Op1,
     /// Contract lookup.
@@ -692,6 +699,7 @@ impl ResolutionRule {
             Self::Const1 => "CONST-1",
             Self::Const2 => "CONST-2",
             Self::Own3 => "OWN-3",
+            Self::Eff1 => "EFF-1",
             Self::Op1 => "OP-1",
             Self::Fn3 => "FN-3",
             Self::Fn4 => "FN-4",

@@ -1,5 +1,5 @@
 fn dispose_open_outcome(outcome: own Result<ReadFile, IoError>) -> function_result: own unit pure {
-  doc "The near-miss a writer argues is correct because only one branch releases: running on only some paths never weakens the release contribution, so omitting `external, blocks` is an undeclared-but-exhibited rejection citing EFF-2.";
+  doc "The near-miss a writer argues is correct because only one branch releases: running on only some paths never weakens writes(outcome), so omitting it is an undeclared effect rejected by EFF-2.";
   match outcome {
     Ok(value: file) => {
       return unit;

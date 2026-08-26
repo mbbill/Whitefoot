@@ -52,7 +52,7 @@ fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) 
   return limit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
   let total = spine(depth: DEPTH_u64, v: 1.0009765625_f64);
   let bits = reinterpret<f64, u64>(total);
   let report = buffer_new(17_u64, 10_u8);
@@ -61,7 +61,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
   }
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 17_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s report, start: 0_u64, end: 17_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }

@@ -15,8 +15,8 @@
 use std::process::Command;
 
 use super::parallel::{
-    build_executable_without_runtime, clone_symbols, function_body, grants_over_runs, identical,
-    run_counting_grants,
+    build_executable_without_parallel_runtime, clone_symbols, function_body, grants_over_runs,
+    identical, run_counting_grants,
 };
 use super::{
     build_executable, emit, emit_with_overlap, module_requires_parallel_runtime, test_directory,
@@ -107,7 +107,7 @@ fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
   return total;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
   let value = folded(lo: 0_u64, hi: 400000_u64);
   let report = buffer_new(8_u64, 0_u8);
   region 'r {
@@ -115,7 +115,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
   }
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s report, start: 0_u64, end: 8_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -326,7 +326,7 @@ fn folded(salt: own u64, rounds: own u64, stride: own u64) -> result: own u64 pu
   return total;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
   let value = folded(salt: 9876543210_u64, rounds: 24_u64, stride: 7_u64);
   let report = buffer_new(8_u64, 0_u8);
   region 'r {
@@ -334,7 +334,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
   }
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s report, start: 0_u64, end: 8_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -981,7 +981,7 @@ fn admitted_combine_source() -> Vec<u8> {
     let width = 8 * ADMITTED_COMBINES.len();
     source.push_str(&format!(
         "\ncommand fn main(command.stdout as out: own Output) -> status: own ExitStatus \
-         allocates(heap), external, blocks {{\n  \
+         writes(out), allocates(heap) {{\n  \
          let report = buffer_new({width}_u64, 0_u8);\n  region 'r {{\n"
     ));
     let mut at = "0_u64".to_owned();
@@ -995,7 +995,7 @@ fn admitted_combine_source() -> Vec<u8> {
     }
     source.push_str(&format!(
         "  }}\n  region 'o {{\n    region 's {{\n      \
-         match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, \
+         match write_once<'o, 's>(output: &'o out, source: &'s report, start: 0_u64, \
          end: {width}_u64) {{\n        Ok(value: next) => {{\n          \
          return exit_status(code: 0_u8);\n        }}\n        Err(error: problem) => {{\n          \
          return exit_status(code: 1_u8);\n        }}\n      }}\n    }}\n  }}\n}}\n"
@@ -1216,7 +1216,7 @@ fn a_module_with_a_split_loop_and_no_runtime_still_runs() {
         "a module that splits must carry its own answer to the allowance:\n{module}"
     );
     let directory = test_directory();
-    let alone = build_executable_without_runtime(&module, &directory);
+    let alone = build_executable_without_parallel_runtime(&module, &directory);
     let output = Command::new(&alone)
         .output()
         .expect("run the split module with no runtime linked");

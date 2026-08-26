@@ -59,26 +59,14 @@ fn an_unmarked_main_is_not_an_alternate_entry_form() {
 
 #[test]
 fn the_no_input_command_entry_admits_every_effect_subset() {
-    // [FN-7] admits every canonical subset of the four command effects. A
-    // body that does not exhibit a declared row is [EFF-2]'s rejection, not
-    // FN-7's, so this asserts only that the entry judgment lets each through.
+    // With no formal capability there is no legal IDENT subject for reads or
+    // writes. FN-7 admits every canonical subset of the remaining command
+    // categories; an unexhibited admitted row is EFF-2's later judgment.
     for row in [
         &b"pure"[..],
         &b"allocates(heap)"[..],
-        &b"external"[..],
-        &b"blocks"[..],
         &b"traps"[..],
-        &b"allocates(heap), external"[..],
-        &b"allocates(heap), blocks"[..],
         &b"allocates(heap), traps"[..],
-        &b"external, blocks"[..],
-        &b"external, traps"[..],
-        &b"blocks, traps"[..],
-        &b"allocates(heap), external, blocks"[..],
-        &b"allocates(heap), external, traps"[..],
-        &b"allocates(heap), blocks, traps"[..],
-        &b"external, blocks, traps"[..],
-        &b"allocates(heap), external, blocks, traps"[..],
     ] {
         let mut source = b"command fn main() -> status: own ExitStatus ".to_vec();
         source.extend_from_slice(row);
@@ -162,23 +150,22 @@ fn a_missing_command_marker_outranks_legacy_signature_details() {
 
 #[test]
 fn admitted_but_unexhibited_entry_effects_reach_eff2() {
-    // `external` and `blocks` are ordinary members of the command entry's
-    // four-effect powerset. These bodies do not exhibit them, so they pass
-    // FN-7 and are rejected later by EFF-2.
+    // Allocation and trap remain admitted entry categories. These bodies do
+    // not exhibit them, so they pass FN-7 and reject later under EFF-2.
     assert_rule(
-        b"command fn main() -> status: own ExitStatus external {\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
-        b"command fn main() -> status: own ExitStatus blocks {\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus traps {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
-    // The same category on a non-entry declaration is likewise an ordinary
-    // declared-but-unexhibited effect mismatch.
+    // A legal capability subject on a non-entry declaration is likewise an
+    // ordinary declared-but-unexhibited mismatch.
     assert_rule(
-        b"fn probe() -> result: own unit external {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
@@ -202,12 +189,11 @@ fn an_admitted_command_entry_completes_semantic_checking() {
     // path — [SYS-2] call typing and [EFF-2] attribution including the
     // release contribution — is implemented, so a `command` entry whose
     // declared row equals its exhibited row completes semantic checking.
-    // The full-input entry exhibits `external, blocks` from the
-    // `DirectoryRead` input's compiler-derived close attempt; every other
-    // standard input's release row is empty [SYS-5].
+    // The full-input entry exhibits `writes(cwd)` from DirectoryRead's
+    // compiler-derived close; every other input release row is empty [SYS-5].
     for source in [
         &b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
-        &b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus external, blocks {\n  return exit_status(code: 0_u8);\n}\n"[..],
+        &b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n"[..],
         // A subset in strictly increasing table-ordinal order, skipping rows.
         &b"command fn main(command.args as args: own Args, command.stderr as err: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
     ] {

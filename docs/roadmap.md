@@ -1,20 +1,17 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 50 (claim locality landed on `main`; proof-derived parallelism is
-the live direction; the v0.36 activation lands with the 0081 loan-column merge)
+Revision: 51 (v0.36 remains activated authority; the capability-based
+completion-I/O rebuild and v0.37 candidate are the live work-branch direction)
 
-The active language authority is v0.36 at the stable path
-[`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
+The active language authority is v0.36, SHA-256
 `fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
-Claim residual canonicality and claim locality are landed on `main`, not
-pending; revision 49 described them as awaiting merge and this revision
-records them as authority. Exact v0.8 through v0.33 are immutable flat
-archives. Branch `par/proof-derived-parallelism` carries a v0.35 CANDIDATE
-adding one rule, [PAR-1]; a candidate is not authority, and only the merge
-approval activates it. The execution plan at
-[`docs/current-plan.md`](current-plan.md) is PROPOSED (proof-derived
-parallelism) and authorizes no work until the owner approves it.
+On this work branch the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md)
+declares a v0.37 CANDIDATE which supersedes those exact bytes. A candidate is
+valid branch work, not a merge-ready active identity; activation still needs
+the exact owner-approved revision, outgoing v0.36 archive, approval record,
+and canonical gate. The execution plan is
+[`docs/current-plan.md`](current-plan.md).
 Project law is the [`Constitution`](constitution.md), and the operational
 process is [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -864,12 +861,23 @@ carries is counted-loop reduction permission, not intra-object disjointness.
   sized by `WF_WORKERS` whose workers share-read outer state, it allocates
   nothing per offer, it never queues (a refused offer is an inline call), and
   granted-lane counts are measured rather than assumed. Whether that shape
-  survives a second workload is still open, and the I/O lane will need a
-  different one.
-- **Missing / next:** re-measure allocation, scheduling, determinism, and
-  absolute wall time on a workload that is not the compute demo, and settle
-  the completion-based runtime the I/O lane needs; any OWN-11 change needs
-  hostile soundness review.
+  survives a second workload is still open. The v0.37 work branch now carries
+  the separate I/O shape: bounded preallocated operation slots, product
+  milestones, generation-safe publication, one compute/target/completion/admission/capacity
+  wake epoch, typed target-only helpers, real Linux io_uring positioned I/O,
+  an epoll/eventfd multi-waiter-safe park, and a strict-cross-linked Windows
+  IOCP implementation. Independent direct file groups reserve 2–64 slots
+  all-or-none and submit every member; same-root Output batches retain source
+  attribution; completion drain precedes dependent-frame readiness; the first
+  tail-wrapper stackless slice resumes on any scheduler lane; pure compute
+  links no completion runtime.
+- **Missing / next:** generalize selective stackless continuation lowering to
+  branches, loops, multiple suspension points, indirect calls, and non-tail
+  children; replace the explicit multi-root capability stop with per-leaf
+  origins; consume retained DirectorySource Ordered edges; measure
+  cold/high-latency and native target workloads; and execute the Windows probe
+  and close its persistent multi-waiter wake before qualification. Any widening
+  keeps the same bounded ownership and hostile soundness gates.
 - **Facts:** [dynamic fan-out placement](../research/archive-promotion-audit.md#3-dynamic-fan-out-retained-as-a-parallel-design-witness) ·
   [measured lane grants and wall time](../research/investigations/proof-derived-parallelism/RESULTS.md).
 
@@ -880,49 +888,46 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### outline:BOUND-1 — System capabilities and host integration
 
-`[current: first slice complete end-to-end with standing cost gates]`
-`[next: helper decomposition (system-type borrow parameters); later families on project pressure]`
+`[current: v0.36 active; v0.37 capability-completion candidate implemented]`
+`[next: widen stackless/DirectorySource, Windows execution, then activation review]`
 
 - **Goal:** give command, service, and embedded program instances a
   coherent capability-based host boundary covering process context,
   filesystems, data streams, clocks, randomness, networking, waiting and
   cancellation, and future threads or tasks without ambient mutable authority
   or writer-defined trust.
-- **Current:** the owner selected the dossier architecture on 2026-08-05 after
-  a 31-issue adversarial review: exact typed entry inputs under a declared
-  program kind, immutable values / shared capabilities / unique stateful
-  resources over ordinary `own`/`&`/`&uniq`, exact `external` and `blocks`
-  effects with conservative source ordering, operation-specific one-attempt
-  I/O with portable error classes, lossless target paths, compiler-owned
-  resource contracts with three completion policies, a Route C
-  system-declaration domain (with the recorded fallback to a prelude
-  extension if the syntactic conditional-visibility mechanism is declined),
-  and static target qualification. v0.17 itself still has a fixed no-argument
-  `main`, memory-only effect rows, and no compiler system path; the only
-  ordinary external-I/O call is a private trap diagnostic.
-- **Missing / next:** the first command slice is complete: v0.18/v0.19
-  active, the compiler implements the whole surface end-to-end on the native
-  macOS/Linux command target, sequential `wfgrep` passes its oracle, and the
-  dossier §9.1 rows are standing machine gates (task 0016). Named
-  implementation follow-up: borrow-mode parameters of system nominal types
-  are an unsupported specified capability (task-0015 finding) forcing
-  helper-free programs. Later families (clocks, network, async/wait,
-  threads, child processes) remain additive true subsets on their own
-  project pressure. Historically: v0.18 activated 2026-08-06 (`9768bae`)
-  with the exact
-  first-command-slice batch: 25 new rules, 13 modified, the Route C
-  declaration domain, and the promoted native grammar. The compiler parses
-  the whole surface and reports it as explicit unsupported capability;
-  implementation proceeds through the eleven planned tasks 0006-0016 (front
-  end, effects, checked IR, qualification and native lowering, deterministic
-  test target, conformance execution, sequential `wfgrep`, cost and hostile
-  gates), then returns to the frozen sequential `wfgrep` checkpoint. Later
-  families (clocks, network, async/wait, threads, child processes) remain
-  additive true subsets of the selected model and wait for their own project
-  pressure.
-- **Facts:** v0.17 `FN-7`, `EFF-1/2`, `PROG-1/2`, `CAP-1`, `GATE-1`, and
-  `LEDGER-1` · [architecture dossier](../research/investigations/system-capability-architecture/DOSSIER.md) ·
-  [review decision record](../research/investigations/system-capability-architecture/decisions.json) ·
+- **Current:** v0.36 remains active. The v0.37 candidate removes the
+  payload-free `external` and target-shaped `blocks` effects. `reads` and
+  `writes` instead name ordinary borrow regions or direct formal capability
+  values, while compiler-derived family summaries refine each capability use
+  into Free, Ordered, or Exclusive fragments. Completion is the sole
+  language-level I/O model. `read_at` provides Free positioned reads;
+  `Output` and `DirectorySource` use shared borrows with Ordered reservations;
+  compiler-derived close is an Exclusive whole-root transition. Direct system
+  calls participate in the same proof-derived overlap judgment as user calls.
+  The candidate compiler, runtime core, typed macOS fallback, Linux io_uring
+  adapter, Windows IOCP code, conformance migration, and first performance
+  measurements exist on `codex/io-model-completion-rebuild`. Capability-result
+  origins preserve finite formal/fresh/absent sets for values carrying at most
+  one runtime root; multi-root executable values stop explicitly after source
+  judgments rather than losing an effect. Family relations are true
+  fragment-pair contracts; all-or-none free file batches, direct Output
+  batches, and the first stackless wrapper chain are executable; Linux native
+  selection and CQ wake have run on Linux 6.8.0 aarch64.
+- **Missing / next:** widen stackless lowering beyond its one-suspension
+  tail-chain subset; add per-release-leaf origins for multi-root products;
+  actualize retained
+  DirectorySource edges and remaining finite system calls; execute and qualify
+  Windows; then present exact candidate bytes and conformance changes for owner
+  review and merge-time activation. Network, timer, cancellation, deadline,
+  and finish-required file-output declarations already have concrete family
+  designs and enter the system catalog only with their target slice.
+- **Facts:** [first-principles derivation](../research/investigations/io-model/FIRST-PRINCIPLES.md) ·
+  [concrete API and lowering design](../research/investigations/io-model/DESIGN.md) ·
+  [experimental implementation audit](../research/investigations/io-model/IMPLEMENTATION-AUDIT.md) ·
+  [clean-core measurements](../research/investigations/io-model/RESULTS.md) ·
+  [historical architecture dossier](../research/investigations/system-capability-architecture/DOSSIER.md) ·
+  [historical review decision record](../research/investigations/system-capability-architecture/decisions.json) ·
   [WASI capability model](https://github.com/WebAssembly/WASI/blob/main/docs/Capabilities.md) ·
   [WASI 0.1–0.3 release lessons](https://wasi.dev/releases).
 

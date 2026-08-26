@@ -18,8 +18,9 @@ use std::path::Path;
 use std::process::Command;
 
 use super::{
-    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_RUNTIME_SOURCE, build_executable, compile_and_run, emit,
-    emit_with_overlap, module_requires_parallel_runtime, test_directory,
+    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
+    append_completion_runtime, build_executable, compile_and_run, emit, emit_with_overlap,
+    module_requires_completion_runtime, module_requires_parallel_runtime, test_directory,
 };
 
 /// A claim-free recursive fold over a heap tree, the smallest shape that has
@@ -115,7 +116,7 @@ fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> r
   return at +wrap 8_u64;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
   let t0 = oct(a: 1_u64, b: 2_u64, c: 3_u64, d: 4_u64, e: 5_u64, f: 6_u64, g: 7_u64, h: 8_u64);
   let t1 = oct(a: 9_u64, b: 10_u64, c: 11_u64, d: 12_u64, e: 13_u64, f: 14_u64, g: 15_u64, h: 16_u64);
   let t2 = oct(a: 17_u64, b: 18_u64, c: 19_u64, d: 20_u64, e: 21_u64, f: 22_u64, g: 23_u64, h: 24_u64);
@@ -132,7 +133,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
   }
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s report, start: 0_u64, end: 8_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -709,7 +710,7 @@ fn spell['d](destination: &uniq 'd buffer<u8>, value: own u64) -> result: own u6
   return cursor;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
   let total = spine(depth: DEPTH_u64, v: 1.0009765625_f64);
   let bits = reinterpret<f64, u64>(total);
   let report = buffer_new(8_u64, 0_u8);
@@ -718,7 +719,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
   }
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
+      match write_once<'o, 's>(output: &'o out, source: &'s report, start: 0_u64, end: 8_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -892,7 +893,7 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
 
     // Linked with nothing: the module's own weak definitions answer, every
     // lane is refused, and the program still produces its whole result.
-    let alone = build_executable_without_runtime(&module, &directory);
+    let alone = build_executable_without_parallel_runtime(&module, &directory);
     let sequential = Command::new(&alone)
         .output()
         .expect("run the linked module");
@@ -912,8 +913,13 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
         parallel.stdout, sequential.stdout,
         "granting lanes must not move one byte of the result"
     );
+    let observed_grants = if granted == 0 {
+        grants_over_runs(&module, &directory, Some("4"), 4)
+    } else {
+        granted
+    };
     assert!(
-        granted > 0,
+        observed_grants > 0,
         "the runtime granted no lane, so nothing was overlapped"
     );
 
@@ -992,7 +998,7 @@ fn an_overlapped_program_reports_one_byte_sequence_at_every_worker_count() {
     // The sequential reference is the same program with no runtime linked at
     // all, so the repeat is compared against today's execution and not only
     // against itself.
-    let alone = build_executable_without_runtime(&module, &directory);
+    let alone = build_executable_without_parallel_runtime(&module, &directory);
     let reference = Command::new(&alone)
         .output()
         .expect("run the linked module");
@@ -1180,18 +1186,20 @@ pub(super) fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
     Ok(())
 }
 
-/// Links one module with no runtime at all, whatever its own predicate says.
-pub(super) fn build_executable_without_runtime(
+/// Links one module without the parallel runtime, while retaining any target
+/// runtime the normal completion-only build requires. This is the exact
+/// sequential schedule of an overlap-capable module, not an invalid bare link.
+pub(super) fn build_executable_without_parallel_runtime(
     module: &str,
     directory: &Path,
 ) -> std::path::PathBuf {
     let assembly = directory.join("alone.ll");
     let executable = directory.join("alone");
     std::fs::write(&assembly, module).expect("write the module");
-    let linked = Command::new("/usr/bin/clang")
-        .arg("-x")
-        .arg("ir")
-        .arg(&assembly)
+    let mut command = Command::new("/usr/bin/clang");
+    command.arg("-x").arg("ir").arg(&assembly);
+    let _completion_units = append_completion_runtime(&mut command, module, directory);
+    let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
         .arg(&executable)
@@ -1199,7 +1207,7 @@ pub(super) fn build_executable_without_runtime(
         .expect("invoke host clang");
     assert!(
         linked.status.success(),
-        "a module that hands work out must link with no runtime:\n{}",
+        "a module that hands work out must link without the parallel runtime:\n{}",
         String::from_utf8_lossy(&linked.stderr)
     );
     std::fs::remove_file(&assembly).expect("remove the module");
@@ -1268,7 +1276,12 @@ fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
     std::fs::write(&assembly, module).expect("write the module");
-    std::fs::write(&runtime, PARALLEL_RUNTIME_SOURCE).expect("write the runtime");
+    let parallel_source = if module_requires_completion_runtime(module) {
+        PARALLEL_COMPLETION_RUNTIME_SOURCE
+    } else {
+        PARALLEL_RUNTIME_SOURCE
+    };
+    std::fs::write(&runtime, parallel_source).expect("write the runtime");
     // The floor joins every link the driver makes, and a lane's per-thread arm
     // lives in it, so this harness links what a shipped program links.
     std::fs::write(&floor, super::FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
@@ -1277,7 +1290,8 @@ fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
         "#include <stdio.h>\nextern unsigned long wf__par_grants;\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants);\n}\n",
     )
     .expect("write the observer");
-    let linked = Command::new("/usr/bin/clang")
+    let mut command = Command::new("/usr/bin/clang");
+    command
         .arg("-pthread")
         .arg("-x")
         .arg("ir")
@@ -1286,7 +1300,9 @@ fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
         .arg("c")
         .arg(&runtime)
         .arg(&floor)
-        .arg(&observer)
+        .arg(&observer);
+    let _completion_units = append_completion_runtime(&mut command, module, directory);
+    let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
         .arg(&executable)

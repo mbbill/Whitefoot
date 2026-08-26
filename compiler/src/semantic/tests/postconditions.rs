@@ -2497,7 +2497,7 @@ fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 traps {
   return values[bounded_position];
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus traps {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
   let values = array_new<u8, 4>(0_u8);
   region 'a {
     let position = args_count<'a>(args: &'a args);

@@ -50,7 +50,7 @@ fn wide_frame_source(depth: u64) -> Vec<u8> {
   return a +wrap b;
 }}
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus pure {{
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{
   let count = 0_u64;
   region 'invocation {{
     set count = args_count<'invocation>(args: &'invocation args);

@@ -38,7 +38,13 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
-    CompilationFailureKind, CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, SourceInput, compile,
+    COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
+    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
+    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
+    CompilationFailureKind, CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_OPTIMIZATION_ARGUMENTS,
+    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, SourceInput,
+    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, compile, module_requires_completion_runtime,
+    module_requires_parallel_runtime,
 };
 
 use super::corpus::{self, Arrangement, Case, Expectation, Status, Verdict};
@@ -204,10 +210,57 @@ fn link(module: &str, directory: &Path) -> PathBuf {
     let assembly = directory.join("case.ll");
     let executable = directory.join("case");
     std::fs::write(&assembly, module).expect("write the case's emitted module");
-    let linked = Command::new("/usr/bin/clang")
-        .arg("-x")
-        .arg("ir")
-        .arg(&assembly)
+    let mut command = Command::new("/usr/bin/clang");
+    command.arg("-x").arg("ir").arg(&assembly);
+    let floor = directory.join("wf_floor.c");
+    std::fs::write(&floor, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
+    command.arg("-pthread").arg("-x").arg("c").arg(&floor);
+    let completion = module_requires_completion_runtime(module);
+    if module_requires_parallel_runtime(module) {
+        let runtime = directory.join("par_runtime.c");
+        let source = if completion {
+            PARALLEL_COMPLETION_RUNTIME_SOURCE
+        } else {
+            PARALLEL_RUNTIME_SOURCE
+        };
+        std::fs::write(&runtime, source).expect("write the parallel runtime");
+        command.arg("-x").arg("c").arg(runtime);
+    }
+    if completion {
+        for (name, source) in [
+            ("contract.h", COMPLETION_CONTRACT_HEADER),
+            ("file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
+            ("bridge.h", COMPLETION_BRIDGE_HEADER),
+            ("writer_scheduler.h", WRITER_SCHEDULER_HEADER),
+            ("linux_io_uring.h", COMPLETION_LINUX_IO_URING_HEADER),
+            ("completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
+            ("file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
+            ("completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
+            ("writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
+            ("linux_io_uring.c", COMPLETION_LINUX_IO_URING_SOURCE),
+        ] {
+            std::fs::write(directory.join(name), source).expect("write completion runtime unit");
+        }
+        command
+            .arg("-I")
+            .arg(directory)
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion_runtime.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("file_adapter.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion_bridge.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("writer_scheduler.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("linux_io_uring.c"));
+    }
+    let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
         .arg(&executable)

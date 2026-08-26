@@ -1,13 +1,20 @@
 CARGO := cargo
 CC ?= cc
 NM ?= nm
+WINDOWS_CC ?= zig cc
+WINDOWS_OBJDUMP ?= objdump
 
 COMPLETION_DIR := src/backend/completion
 COMPLETION_TMP ?= $(HOME)/do_not_scan/whitefoot-completion-test
-COMPLETION_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread
+COMPLETION_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread \
+	-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
+	-DWF_COMPLETION_POLL=wf_completion_test_poll
 COMPLETION_SOURCES := \
 	$(COMPLETION_DIR)/runtime.c \
 	$(COMPLETION_DIR)/file_adapter.c \
+	$(COMPLETION_DIR)/bridge.c \
+	$(COMPLETION_DIR)/linux_io_uring.c \
+	$(COMPLETION_DIR)/writer_scheduler.c \
 	$(COMPLETION_DIR)/native_contract.c \
 	$(COMPLETION_DIR)/harness.c
 
@@ -38,7 +45,9 @@ spec:
 completion-test:
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
-	"$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
+	WF_IO_HELPERS=0 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
+	WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
+	WF_IO_HELPERS=4 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
 		$(COMPLETION_DIR)/pure_compute_probe.c -o "$(COMPLETION_TMP)/pure-compute"
 	@if $(NM) "$(COMPLETION_TMP)/pure-compute" | grep -q 'wf_completion_'; then \
@@ -46,12 +55,70 @@ completion-test:
 		exit 1; \
 	fi
 	@echo "completion pure-compute link boundary: PASS"
+	@if [ "$$(uname -s)" = Linux ]; then \
+		$(CC) $(COMPLETION_CFLAGS) \
+			$(COMPLETION_DIR)/runtime.c \
+			$(COMPLETION_DIR)/linux_io_uring.c \
+			$(COMPLETION_DIR)/native_adapter_probe.c \
+			-o "$(COMPLETION_TMP)/linux-native-probe"; \
+		"$(COMPLETION_TMP)/linux-native-probe" \
+			"$(COMPLETION_TMP)/linux-native-probe.data"; \
+		status=$$?; \
+		if [ $$status -ne 0 ] && [ $$status -ne 77 ]; then exit $$status; fi; \
+		if [ $$status -eq 0 ]; then \
+			WF_REQUIRE_LINUX_IO_URING=1 WF_IO_HELPERS=1 \
+				"$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"; \
+		fi; \
+	else \
+		$(CC) -std=c11 -Wall -Wextra -Werror -Wpedantic -pthread \
+			-fsyntax-only $(COMPLETION_DIR)/linux_io_uring.c; \
+	fi
 
 completion-sanitize:
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
+		-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
+		-DWF_COMPLETION_POLL=wf_completion_test_poll \
 		-fsanitize=address,undefined $(COMPLETION_SOURCES) \
 		-o "$(COMPLETION_TMP)/harness-sanitize"
 	ASAN_OPTIONS=detect_leaks=0 "$(COMPLETION_TMP)/harness-sanitize" "$(COMPLETION_TMP)"
 
-.PHONY: check format lint test docs spec completion-test completion-sanitize
+# This is deliberately an explicit qualification-development target rather
+# than part of `check`: it needs a Windows cross toolchain, and a successful
+# cross-link is not a substitute for execution on Windows.  It keeps the
+# target-only core and the opaque adapter ABI independently linkable, then
+# proves that the full PE imports real IOCP and overlapped file facilities.
+completion-windows-cross:
+	@mkdir -p "$(COMPLETION_TMP)/windows-zig-global" \
+		"$(COMPLETION_TMP)/windows-zig-local"
+	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
+	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
+	$(WINDOWS_CC) -target x86_64-windows-gnu \
+		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-I$(COMPLETION_DIR) \
+		$(COMPLETION_DIR)/windows_completion.c \
+		$(COMPLETION_DIR)/windows_iocp.c \
+		$(COMPLETION_DIR)/windows_completion_probe.c \
+		-o "$(COMPLETION_TMP)/windows-completion-probe.exe"
+	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
+	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
+	$(WINDOWS_CC) -target x86_64-windows-gnu \
+		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+		-I$(COMPLETION_DIR) \
+		$(COMPLETION_DIR)/windows_iocp.c \
+		$(COMPLETION_DIR)/native_adapter_probe.c \
+		-o "$(COMPLETION_TMP)/windows-adapter-probe.exe"
+	@imports="$$($(WINDOWS_OBJDUMP) -p \
+		"$(COMPLETION_TMP)/windows-completion-probe.exe")"; \
+	for symbol in CreateIoCompletionPort GetQueuedCompletionStatus \
+		PostQueuedCompletionStatus ReadFile WriteFile \
+		AcquireSRWLockExclusive SleepConditionVariableSRW; do \
+		if ! printf '%s\n' "$$imports" | grep -q "  $$symbol$$"; then \
+			echo "Windows completion probe does not import $$symbol" >&2; \
+			exit 1; \
+		fi; \
+	done
+	@echo "completion Windows x86-64 cross-link: PASS (not runtime-qualified)"
+
+.PHONY: check format lint test docs spec completion-test completion-sanitize \
+	completion-windows-cross

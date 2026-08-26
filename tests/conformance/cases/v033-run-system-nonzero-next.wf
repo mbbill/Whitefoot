@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   let bytes = buffer_new(3_u64, 0_u8);
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {

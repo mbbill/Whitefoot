@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {
   doc "`open_directory`'s success class: a name range holding one real component of the invocation directory yields a new `DirectoryRead` capability [SYS-14], derived from the root capability and never from an ambient one [SYS-7]. Exit 0 is reached only through `Ok`, so a build that answered every open with a validation failure would not pass.";
   let name = buffer_new(3_u64, 0_u8);
   set name[0_u64] = 115_u8;
@@ -43,12 +43,6 @@ command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus
               return exit_status(code: 8_u8);
             }
             Unsupported(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            Interrupted(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            WouldBlock(code: c, origin: o) => {
               return exit_status(code: 11_u8);
             }
             TimedOut(code: c, origin: o) => {

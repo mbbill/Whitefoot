@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.args as args: own Args) -> status: own ExitStatus external, blocks {
+command fn main(command.cwd as cwd: own DirectoryRead, command.args as args: own Args) -> status: own ExitStatus pure {
   doc "Selected standard inputs appear in strictly increasing table-ordinal order, so declared order is the one legal byte sequence; `command.cwd` before `command.args` is out of order and is a hard error citing FN-7 at that input_label node.";
   return exit_status(code: 0_u8);
 }

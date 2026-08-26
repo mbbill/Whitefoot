@@ -1824,7 +1824,7 @@ pub(crate) enum OutcomeRelation {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct OutcomeFact {
     /// The variant whose arm observes it — `Ok` for checked arithmetic and
-    /// for the `Result`-shaped boundary calls, `ReadBytes` for `read_once`.
+    /// for the `Result`-shaped boundary calls, `ReadBytes` for `read_at`.
     /// Every other arm establishes nothing [ENT-3].
     pub(crate) variant: &'static str,
     /// The term the binder is related to: p for S7, k for S10.

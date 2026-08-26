@@ -81,6 +81,14 @@ pub(super) struct LoopSplitSite<'ir> {
 /// links a Whitefoot executable links the same bytes.
 pub const PARALLEL_RUNTIME_SOURCE: &str = include_str!("../par_runtime.c");
 
+/// The same runtime with stackless writer-frame stealing compiled in. Link
+/// paths select these bytes only when the emitted module also selects the
+/// completion runtime, so pure compute pays no completion queue probe.
+pub const PARALLEL_COMPLETION_RUNTIME_SOURCE: &str = concat!(
+    "#define WF_PAR_WITH_WRITER_SCHEDULER 1\n",
+    include_str!("../par_runtime.c")
+);
+
 /// The module's own definition of the lane protocol: claim no lane, ever.
 ///
 /// A module that hands work out carries a *weak* sequential answer to every
@@ -190,12 +198,22 @@ pub(crate) fn sequential_clone_set(program: &IrProgram<'_, '_, '_>) -> HashSet<u
     let mut callees: Vec<Vec<u32>> = vec![Vec::new(); functions.len()];
     let mut hands_out = Vec::with_capacity(functions.len());
     for (ordinal, function) in functions.iter().enumerate() {
-        hands_out.push(
-            function
-                .overlaps()
-                .iter()
-                .any(|overlap| !overlap.handed_out().is_empty()),
-        );
+        hands_out.push(function.overlaps().iter().any(|overlap| {
+            overlap.handed_out().iter().any(|member| {
+                function.blocks().iter().any(|block| {
+                    block.instructions().iter().any(|instruction| {
+                        matches!(
+                            instruction,
+                            IrInstruction::Define {
+                                result,
+                                operation: IrOperation::Call { .. },
+                                ..
+                            } if result == member
+                        )
+                    })
+                })
+            })
+        }));
         for block in function.blocks() {
             for instruction in block.instructions() {
                 let IrInstruction::Define { operation, .. } = instruction else {
@@ -291,6 +309,7 @@ pub(crate) struct ParallelThunks {
     /// Whether any emitted function asked the runtime for a split allowance, so
     /// a module that splits no loop names that symbol nowhere.
     queries_split_budget: bool,
+    stackless_runtime: bool,
 }
 
 impl ParallelThunks {
@@ -302,6 +321,14 @@ impl ParallelThunks {
 
     pub(crate) const fn is_used(&self) -> bool {
         self.count != 0
+    }
+
+    pub(crate) const fn requires_runtime(&self) -> bool {
+        self.is_used() || self.stackless_runtime
+    }
+
+    pub(crate) fn request_stackless_runtime(&mut self) {
+        self.stackless_runtime = true;
     }
 
     pub(crate) const fn queries_split_budget(&self) -> bool {
@@ -322,7 +349,7 @@ impl ParallelThunks {
 
 /// One hand-out awaiting its join, in the order the group hands them out.
 #[derive(Clone, Debug)]
-pub(crate) struct HandedOut {
+pub(crate) struct ComputeHandedOut {
     /// The value the joined call defines: a granted lane's result read out of
     /// the frame, or a refused lane's own call, whichever edge ran.
     result: IrValueId,
@@ -338,6 +365,15 @@ pub(crate) struct HandedOut {
     /// the thunk calls, rendered once so the two edges cannot drift apart.
     callee: String,
     arguments: String,
+}
+
+/// One independently admitted operation awaiting the overlap join.  Compute
+/// calls use the lane frame protocol; direct finite file operations use the
+/// typed completion protocol and never put writer code on a file helper.
+#[derive(Clone, Debug)]
+pub(crate) enum HandedOut {
+    Compute(ComputeHandedOut),
+    Completion(super::completion::CompletionHandedOut),
 }
 
 impl FunctionEmitter<'_, '_> {
@@ -407,7 +443,7 @@ impl FunctionEmitter<'_, '_> {
             "  call void @wf__par_publish(ptr {frame}, ptr {thunk})\n  br label %{offered}\n{offered}:"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        self.handed_out.push(HandedOut {
+        self.handed_out.push(HandedOut::Compute(ComputeHandedOut {
             result,
             result_type: ty,
             frame_type,
@@ -415,7 +451,7 @@ impl FunctionEmitter<'_, '_> {
             result_field,
             callee,
             arguments: operands.join(", "),
-        });
+        }));
         Ok(())
     }
 
@@ -544,6 +580,13 @@ impl FunctionEmitter<'_, '_> {
             return Ok(());
         }
         for pending in std::mem::take(&mut self.handed_out) {
+            let pending = match pending {
+                HandedOut::Compute(pending) => pending,
+                HandedOut::Completion(pending) => {
+                    self.emit_completion_join(pending)?;
+                    continue;
+                }
+            };
             let condition = format!("%{}", self.next_temporary()?);
             let refused = format!("%{}", self.next_temporary()?);
             let waited = format!("%{}", self.next_temporary()?);
@@ -552,7 +595,7 @@ impl FunctionEmitter<'_, '_> {
             let wait = par_wait_label(pending.result);
             let done = par_done_label(pending.result);
             let result_type = llvm_type(self.program, pending.result_type)?;
-            let HandedOut {
+            let ComputeHandedOut {
                 frame,
                 frame_type,
                 callee,

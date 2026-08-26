@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus reads(args cwd), writes(cwd), allocates(heap) {
   doc "SYS-8: the sharpest boundary of the family, and the one most likely to be miscoded as `a full buffer implies end of input`. A file whose size equals the requested range extent fills [start, end) exactly and returns next = end, which is a success and not an end, so a further call is required and only that call reports ReadEnd.";
   let page = buffer_new(8_u64, 0_u8);
   region 'a {
@@ -12,7 +12,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                   Ok(value: file) => {
                     region 'f {
                       region 'd {
-                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd page, start: 0_u64, end: 8_u64) {
+                        match read_at<'f, 'd>(file: &'f file, destination: &uniq 'd page, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
                           ReadBytes(next: n) => {
                             let filled = ieq(n, 8_u64);
                             if filled {
@@ -31,7 +31,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                     }
                     region 'g {
                       region 'e {
-                        match read_once<'g, 'e>(file: &uniq 'g file, destination: &uniq 'e page, start: 0_u64, end: 8_u64) {
+                        match read_at<'g, 'e>(file: &'g file, destination: &uniq 'e page, file_offset: 8_u64, start: 0_u64, end: 8_u64) {
                           ReadBytes(next: more) => {
                             return exit_status(code: 13_u8);
                           }

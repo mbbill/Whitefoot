@@ -34,7 +34,7 @@ fn entry_bridge(raw_index: own u64) -> return_value: own u8 allocates(heap), tra
   return value;
 }
 
-command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus reads(args), allocates(heap), traps {
   doc "Two requirement-to-leaf call boundaries compose before the external entry actual is rejected under PRV-2; neither intermediate S4 axiom is a proof repair.";
   region 'a {
     let raw_index = args_count<'a>(args: &'a args);

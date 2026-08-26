@@ -23,13 +23,13 @@ ordered source bundle
   -> host executable
 ```
 
-The frontend targets the exact v0.36 bytes at `../spec/kernel-spec.md`,
+The frontend targets the exact v0.37 candidate bytes at `../spec/kernel-spec.md`,
 SHA-256
-`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`,
-in this revision. The outgoing exact v0.33 bytes, SHA-256
-`fc6b5a109e56b4bcd93d30ef934d3c78eca9bddafd640d30c10649e9ba62d08f`,
-are preserved in the immutable flat archive; `main` remains on v0.33 until
-this exact revision is approved and merged.
+`0cd75e5846986c583fb6453d861a6f3f72170d2b05b1cd2540f6850ab587f4c0`,
+in this revision. The candidate supersedes the exact active v0.36 bytes at
+`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
+The compiler's merge authority remains the exact v0.36 bytes until activation.
+It is valid work-branch authority, not a merge-ready ACTIVE identity.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same
 specification identity. The committed grammar tables are ordinary compiler
@@ -55,16 +55,15 @@ must first extend this same native path rather than reviving an independent
 grammar engine.
 
 The system-interface surface parses, resolves, and checks through the normal
-semantic path: FN-7 admits exactly one uncallable `command fn main`, system operation calls
-type against the SYS-2 catalog signatures, and EFF-2 checks the
-`external`/`blocks` categories exactly — the exhibited row is the union of
-the syntactic contribution and the release contribution, the SYS-5 release
-rows of every compiler-derived release recorded on a normal control-flow
-edge, with `buffer`/`box`/arena/`const` reclamation contributing nothing
-(STOR-3).
+semantic path: FN-7 admits exactly one uncallable `command fn main`; system
+operation calls type against the SYS-2 catalog; and EFF-2 checks memory regions
+and direct formal capability subjects exactly in both directions. The
+exhibited row is the union of body and compiler-derived release contributions.
+`external` and `blocks` are ordinary identifiers, not effects. Target
+suspension and family fragments are compiler-derived metadata.
 
 Target-independent lowering then carries those facts into the typed IR. Each
-of the seven opaque types becomes one IR nominal holding its complete
+of the eight opaque types becomes one IR nominal holding its complete
 SYS-5/HOST-3 contract: the target-independent semantic identity QUAL-1 owns,
 the one release action (logical consume, native close attempt, or `Output`'s
 source detach), that action's row, and whether the value is an inline lease
@@ -77,8 +76,10 @@ holding the released value's own action and the union of the rows it may run
 over owned content, in the checked program's reverse declaration order and in
 the position EFF-5 requires relative to surrounding calls; a failing `claim`
 has no edge that can carry one (TRAP-1). The IR also records the FN-7 command
-entry, its selected standard-input ordinals, and the SYS-12 stdout/stderr
-may-alias link, which nothing yet reads.
+entry and its selected standard-input ordinals. Standard output and standard
+error remain distinct logical roots even when host redirection makes them
+contact one physical sink; no environment alias is retained as language
+authority.
 
 A semantically accepted system program then compiles, links, and runs. The
 QUAL-1 target-qualification table — fixed Rust data mapping `(specification
@@ -94,13 +95,15 @@ through the target's directory-relative facility, never a prefix concatenated
 onto a path (PATH-2). Each SYS-8 transfer takes a half-open `start, end` range;
 the caller proves `start <= end` and `end <= len(buffer)` before any host
 action. Empty ranges complete with `next = start` without a transfer. A
-successful nonempty operation returns the absolute next endpoint, performs no
-second attempt, and a host zero-length write maps to `WriteZero` rather than a
-successful unchanged endpoint. One cold shared mapper turns a native error code into
-exactly one of SYS-7's thirty portable classes, carrying the two-field inline
+successful nonempty operation returns the absolute next endpoint and performs
+no second progress-producing attempt. `read_at` uses an explicit file offset
+and native positioned I/O. No-progress interruption and readiness refusal stay
+inside target progress. A host zero-length write maps to `WriteZero` rather
+than a successful unchanged endpoint. One cold shared mapper turns a native error code into
+exactly one of SYS-7's twenty-eight portable classes, carrying the two-field inline
 detail (`code`, `origin`); a native error with no portable distinction in that
 set is `Other`. Releases emit per SYS-5: a logical consume and `Output`'s
-source detach emit no code, while `DirectoryRead`, `DirectoryList`, and
+source detach emit no code, while `DirectoryRead`, `DirectorySource`, and
 `ReadFile` emit one direct close whose diagnostic is discarded and never
 retried. When `open_file` rejects a provisional descriptor after inspection,
 it applies the same one-attempt policy and returns the already selected typed
@@ -120,16 +123,18 @@ FN-7 entry validation reads finalized syntax and admits exactly one
 one writer-named `ExitStatus`, and may select zero through four standard inputs
 in table order. SYS-3 reserves the complete system declaration domain in every
 unit, independently of entry validity. Resolution therefore admits the
-candidate's sixteen nominal types, forty-two enum-variant constructors, and
+candidate's sixteen nominal types, forty enum-variant constructors, and
 fifteen operation signatures as one fixed declaration source beside source
 declarations and the prelude. A source declaration colliding with a system
 entry is the deterministic DIAG-1 rank-5 rejection at the source event, root
 and nested scopes alike, with a `(System, system_declaration_ordinal)` origin;
-there is no shadowing in either direction. Registered signature data
-(parameter names, modes, region parameters, named result types, and the fixed
-`external`/`blocks`/`traps` classifications, with `reads`/`writes` derived
-mechanically from parameter modes) lives in the resolution catalog for system
-semantic admission and effect attribution.
+there is no shadowing in either direction. Registered signature data includes
+parameter names, modes, regions, result types, exact memory and capability
+effects, target milestones, and family authority fragments. Each authority use
+carries only its family and fragment; the family's closed pair table decides
+Free, Ordered (with an attribution identity), or Exclusive for two fragments on
+one logical root. This data lives in the resolution catalog for semantic
+admission, effect attribution, overlap proof, and target lowering.
 
 The resolver covers every active-specification declaration, lexical-use, and deferred
 owner/member role through one grammar-driven path, including exact scopes,
@@ -296,13 +301,16 @@ flags or check elision.
 
 Effect rows are checked as exact source-level summaries for every admitted
 function. `pure` is the empty effect row, not a termination claim. The
-implemented executable paths otherwise track `reads('r)`, `writes('r)`,
-`allocates(heap)`, `external`, `blocks`, and `traps`, union local expression
-effects, propagate callee heap, trap, and payload-free-category effects by
-presence, and substitute formal read and write regions onto actual
-borrowed-storage and slice origins. The exhibited row additionally unions the
-release contribution — the fixed SYS-5 rows of every compiler-derived release
-on a normal edge — and a mismatch a release alone explains is reported at the
+implemented paths track region and direct-capability operands in `reads` and
+`writes`, allocation, and `traps`. Calls substitute regions onto actual
+storage and slice origins and capability formals onto retained logical roots.
+Capability-returning user calls use a closed-world fixed point whose finite
+answer records whether the value may be absent, may be fresh, or may come from
+each direct formal. Enum cardinality is computed per variant, so an optional
+capability is not confused with an unknown root and a pass-through wrapper
+cannot erase its caller authority.
+The exhibited row additionally unions every compiler-derived release on a
+normal edge, and a mismatch a release alone explains is reported at the
 function's `effects` node, rendering the owning parameter or binding. The
 computed row must equal the declared row, so both missing and superfluous
 capabilities reject under EFF-2. These facts currently stop at semantic
@@ -310,6 +318,39 @@ checking and static-contract compatibility.
 The backend emits no effect-derived LLVM function attributes or alias metadata,
 licenses no check elision from an effect row, and never emits `willreturn`;
 Whitefoot currently has no termination checker.
+
+The completion path is compiler-owned and selective. The shipped default
+actualizes eligible direct finite I/O groups while leaving compute-only groups
+byte-identical to the strict reference; `--par` additionally enables compute
+overlap. A pure module names and links no completion symbol. A direct
+`read_at` or `write_once` group allocates stable bounded operation storage
+before target handoff, runs independent members, observes ownership-complete,
+and maps the raw target result through the same qualified outcome mapper as the
+direct path. Same-root Output groups of 2–16 direct calls reserve all
+completion capacity or none, submit every member, and commit source
+attribution before physical writes begin. Relations come from the owning
+family's fragment-pair table; environment redirection creates no alias
+metadata.
+
+The first selective stackless slice covers a single-block root with one
+suspension point whose zero-state tail-wrapper chain ends in `read_at` or
+`write_once`. Completion publishes an opaque frame into a bounded scheduler
+queue, and only a normal scheduler lane invokes its resume entry. Branching,
+loops, multiple suspension points, indirect calls, non-tail suspended children,
+and may-suspend release edges retain the correct synchronous ABI.
+
+The common core keeps captured generation, separate result/payload/authority/
+terminal milestones, exactly-one terminal publication, bounded ready drain,
+and one compute/completion/capacity wake epoch. Completion before a scheduler
+announces sleep causes no host wake. Target helpers accept only a closed file
+request; they receive no writer function pointer. macOS regular files use the
+bounded typed fallback, and directory enumeration absorbs EINTR/readiness
+refusal in the same adapter. Linux `read_at` prefers real io_uring and falls
+back only before target ownership; its scheduler parks on an epoll set
+containing the ring fd and a broadcast eventfd, with no millisecond polling.
+The Windows core plus IOCP adapter strict-cross-links and remains fail-closed
+pending an actual Windows execution. No operation path reads a trap latch or
+carries trap-specific state.
 
 Target qualification is one private stage immediately before LLVM emission.
 The compiler executable fixes an exact aarch64 or x86-64 macOS/Linux triple and

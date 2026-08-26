@@ -1,203 +1,183 @@
-# Current Plan — proof-derived parallelism
+# Current Plan: capability-based completion I/O
 
-Status: PROPOSED (branch `par/proof-derived-parallelism`, 2026-08-21; updated
-on the branch 2026-08-22 for merge review, again 2026-08-23 on
-`par/loop-permission` for batch 0078, and again after the rebase onto `main`).
-This proposal authorizes no execution. Batches 0074, 0076, 0077 and 0078 were
-carried out under the owner's chartering directions of 2026-08-21/22/23, quoted
-verbatim in their records; this plan is the durable sequencing those directions
-imply, and it becomes ACTIVE only with the owner's approval at merge.
+Status: IMPLEMENTED AND GATED CANDIDATE on
+`codex/io-model-completion-rebuild`; exact-byte owner review and activation
+remain.
 
-Derived from Direction Outline revision 50 and main at
-`18d332e7`. Supersedes both the completed claim-only trap-surface plan and
-main's implemented claim-residual-canonicality plan, in place; that plan's
-remaining sequence is carried forward below rather than dropped.
-Active language authority: v0.36 at `spec/kernel-spec.md`, SHA-256
-`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`,
-activated by the owner-approved merge of 2026-08-23; it carries [PAR-1] v2
-and [PAR-2], and supersedes v0.34, whose bytes are archived as
-`spec/kernel-spec-v0.34.md`.
+Active language authority: v0.36,
+`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
+
+This plan starts from main revision
+`eab81a335addfb0ae060735771d4e98891dec2ea` and the settled first-principles
+record. The v0.37 specification at `spec/kernel-spec.md` is a work-branch
+candidate which supersedes the exact active v0.36 bytes. It is not a
+merge-ready ACTIVE identity.
 
 ## Objective
 
-Make Whitefoot's existing proofs pay for concurrency. The compiler already
-derives, for acceptance, exactly the facts a legality judgment for overlapped
-execution needs: resolved places, exact effect rows, the [OWN-7] overlap
-relation, the [EFF-2] call-boundary projection, and the call graph. Read a
-permission off those proofs, state the law that a permitted overlap is
-unobservable, and let a runtime decide profitability. No writer construct
-declares parallelism, no resource is a language concept, and no accepted
-program changes.
+Let ordinary Whitefoot calls keep independent outside operations in flight
+without giving the writer a blocking API, async syntax, scheduling marker,
+future, callback, global world identity, or unsafe escape. The compiler proves
+which capability fragments may coexist. The runtime chooses inline, native
+completion, scheduler progress, or a bounded target-only helper from target
+facts and measured cost.
 
-## Workstreams
+The deciding example is two positioned reads:
 
-- **W1 — compute lane v1 (landed on the branch; the first item this plan
-  covers).** The permission judgment P over sibling call pairs, the
-  non-normative `--par-ledger` developer output, runtime actualization behind
-  `WF_WORKERS`, the spec CANDIDATE v0.35 [PAR-1] rule, compiler tests
-  including each named counterexample shape, and the measured demo. Recorded
-  in `docs/ongoing/0074-proof-derived-parallelism.md`.
-- **W1b — the optimization campaign (landed on the branch, batches 0076 and
-  0077, chartered by the owner's directions of 2026-08-21/22).** Against a
-  paired benchmark oracle with a Rust/rayon twin: the hand-out frame moved
-  off the activation record; the lane scan replaced by per-thread
-  work-stealing deques; two-world compilation selecting a sequential clone
-  once per process; the permission window generalized over interposed
-  statements; the `band` discharge read through its proving binding; the
-  ENT-4 closure made ~5x faster (compile time only, emission byte-identical);
-  the shipped default changed so an unset `WF_WORKERS` in a `--par` binary
-  runs its parallel world (default-behavior change, flagged for owner
-  approval at merge); a second oracle family (`grid`, recursive index-split)
-  and a counted-loop ledger hint. End state on the N=18 authoritative
-  rotation: rayon wins zero cells; matched worker counts 14 WF wins / 25
-  parity / 0 losses; each language's shipped default 11 / 2 / 0. Records
-  `docs/ongoing/0076-par-optimization-digs.md` and
-  `docs/ongoing/0077-night-par-ceiling.md` carry the digs, the adversarial
-  audit's dispositions, and one recorded invariant breach (a w1-only
-  code-placement regression on three cells, attributed, W>=2 unaffected).
-  **Batch 0078 continues W1b on `par/loop-permission`, chartered by the
-  owner's two directions of 2026-08-23 and recorded in
-  `docs/ongoing/0078-loop-permission.md`.** It carries the first item of W4
-  forward — see W4 below — and it redirected the claim doctrine: the
-  claim-free actualizability gate is deleted from both permission judgments,
-  and `wf_trap` carries a first-trap-wins latch instead. A second protected
-  conformance annotation, for [PAR-2], is prepared and flagged there.
-- **W2 — the I/O concurrency lane (first among the remaining work).** A
-  completion-based family for overlapping host waits. This is where
-  the investigation found the profit: 2.83x on the dominant term of a
-  directory-walking workload that is 86% I/O, against a compute-lane delta of
-  roughly 0.15% of the same frame — with the recorded caveat that part of that
-  2.83x is an artifact of the measuring machine's security daemon and must be
-  re-measured before the number is used to justify anything. It is a separate
-  packet: it needs its own spec question
-  (`blocks` rows are exactly what W1's row gate refuses), its own runtime, and
-  its own owner approval. Nothing in W3 precedes it. **W4's first item does:**
-  this plan sequenced W2 ahead of all of W4, and the owner's chartering
-  direction of 2026-08-23 put counted-loop permission first instead. That
-  direction governs; the sequencing sentence is corrected here rather than
-  left to contradict the branch.
-- **W3 — the `pal` marker.** The writer-visible structural obligation of
-  PAL.md §6: non-authoritative, never gating legality, and therefore a grammar
-  plus FORM-table plus teaching-text packet of its own. It buys the writer a
-  gradient the ledger currently supplies by hand.
-- **W4 — permission growth.** Indexed-loop permission (Tier A) and
-  buffer-view splitting (Tier B), each with its recorded hazard ([OWN-9]
-  granularity; the c2-F4 aliasing case), and claim-bearing actualization with
-  the trap-arbitration ruling already on file. ~~Each widening is a [PAR-1]
-  amendment~~, which was stated as the cost W1's necessary-condition form
-  imposes and the first thing to revisit if it bites.
+```whitefoot
+let left = read_at(file: &file, destination: &uniq left_bytes, file_offset: 0_u64, start: 0_u64, end: left_end);
+let right = read_at(file: &file, destination: &uniq right_bytes, file_offset: 4096_u64, start: 0_u64, end: right_end);
+```
 
-  **Tier A landed on `par/loop-permission` as batch 0078, and it bit.** The
-  widening is a **new rule [PAR-2]**, not a [PAR-1] amendment. The reason is
-  recorded at
-  `research/investigations/proof-derived-parallelism/loop/DESIGN.md:86-88`:
-  the pair conditions and the quantified loop conditions read badly
-  interleaved, and a separate rule keeps the byte surface the owner reviews
-  minimal. That is a deliberate departure from this line, and it makes
-  **[PAR-2] a second protected annotation** at merge rather than the single
-  [PAR-1] one the Exclusions below name.
+The file fragments are Free and the destination loans are disjoint, so both
+operations may be submitted. Changing the two destinations to one buffer makes
+ordinary memory proof refuse the overlap. Changing the calls to two writes on
+one Output produces Ordered reservations instead: both may be pending, but
+source attribution fixes byte order.
 
-  **Claim-bearing actualization also landed, and not by arbitration.** The
-  owner's second direction of 2026-08-23 refused the trap-arbitration ruling
-  this line pointed at: a claim is the writer's always-true lemma, so an
-  execution that reaches a trap is erroneous and the program is defective, and
-  a correct program must not pay to make a defective one's report
-  reproducible. The claim-free actualizability gate is deleted from both
-  judgments; the elision-rank arbitration alternative is refused rather than
-  deferred, with the evidence promoted to
-  `research/investigations/proof-derived-parallelism/debate/d1-defense.md`.
+## Selected design
 
-## Boundaries and invariants
+The complete derivation is in
+`research/investigations/io-model/FIRST-PRINCIPLES.md`, the concrete API in
+`DESIGN.md`, the experimental-branch audit in `IMPLEMENTATION-AUDIT.md`, and
+measurements in `RESULTS.md` under the same investigation directory.
 
-Permission is never an obligation: a build without `--par` is byte-identical
-to today, an explicit opt-out (`WF_WORKERS=0` or `=1`) selects the sequential
-world, and every test that passes sequentially must pass under overlap. Since
-batch 0077 an unset `WF_WORKERS` in a `--par` binary defaults to one lane per
-logical CPU — published bytes stay identical at every worker count, but the
-default execution is parallel; that default stands only with the owner's
-merge approval. Worker count, schedule, and
-thread identity are outside the language and outside every rule. Acceptance is
-untouched in both directions — P consults typing, rows, places, the CFG, and
-~~the call graph~~, never the entailment fact state, so facts-on and facts-off
-behavior are identical by construction. (Batch 0078 removed the call graph from
-that list: deleting the claim closure took its last consumer, so
-`permission.rs` now carries the functions and their signatures alone.)
+The selected boundaries are:
 
-~~No arbitration machinery, parked lane, or coordinator is built while eligible
-regions are claim-free.~~ **Replaced by batch 0078's claim redirect.** Eligible
-regions are no longer required to be claim-free, and the guarantee [PAR-1]
-makes is now conditional on contract compliance in the sense [SCOPE-4] fixes:
-for a correct program, which reaches no trap, nothing changes. The boundary
-this sentence drew becomes: **no arbitration machinery and no coordinator is
-built, and the one latch that exists lives in the overlapped world only.** A
-module emits it exactly when it both carries a `claim` and hands a call out to
-a worker lane; the default build and a `--par` build that actualizes nothing
-emit the pre-latch trap path unchanged. It parks only a losing thread of an
-already-erroneous execution, and the winner's abort takes the process down with
-it, so exactly one well-formed [DIAG-3] record is written under any
-interleaving.
+1. `external` and `blocks` are not effects or reserved words.
+2. `reads` and `writes` may name an ordinary region or one direct formal
+   capability parameter. Borrow lifetime and logical authority remain
+   separate identities.
+3. Each system family refines a capability access into a logical root,
+   fragment, and Free, Ordered, or Exclusive relation.
+4. A finite operation has distinct result-ready, payload-released,
+   authority-released, and terminal facts even when one transition publishes
+   all four.
+5. Capacity is bounded. `wait-capacity` transfers nothing to the target and is
+   not a writer-visible `WouldBlock` result.
+6. Target code publishes results and wakes the scheduler. It never invokes a
+   writer continuation or receives a writer function pointer.
+7. A false claim cannot occur in a correct program, so no normal operation
+   path reads a trap latch or carries trap-specific state.
+8. Completion I/O is the shipped default. `--par` additionally enables
+   compute overlap; pure compute output is byte-identical to the strict
+   sequential reference and links no completion runtime.
 
-## Acceptance
+## Implemented
 
-- A real program compiles, is judged, hands work to lanes, and produces
-  byte-identical output at every worker count, with the granted-lane count
-  measured rather than assumed.
-- Each of the four permission conditions denies its own named counterexample,
-  and each denial cites the condition that actually judged it.
-- The ledger explains every analyzed site, so a sequentialized region is
-  visible rather than silent.
-- The repository gate is green with the candidate declared, and the owner
-  packet carries the exact candidate SHA-256, diff, impact inventory,
-  verifier output, and the protected coverage annotation [PAR-1] needs.
+### Language and compiler
 
-## Carried forward from the claim-residual-canonicality plan
+- v0.37 capability-effect grammar, resolution, type checking, exact
+  checked-both-ways rows, contract equality, release contribution, call
+  substitution, and command-entry support.
+- Closed-world capability-result origin fixed point with optional, fresh, and
+  finite formal-origin components. Moves, match/give, recursive wrappers,
+  loop backedges, and releases cannot wash an existing root into a fresh one.
+  The executable implementation is complete for values carrying at most one
+  runtime root. A product that may carry several roots reaches an explicit
+  `CapabilityResultOrigin` unsupported result only after ordinary source
+  judgments; it is never published with an empty effect or authority summary.
+- Compiler-derived target-action and family-fragment summaries through the
+  concrete call graph. Relations come from a family-owned fragment-pair table,
+  not from either fragment alone; Ordered edges retain their attribution.
+- Direct system calls in proof-derived pair and loop analysis, with memory,
+  operand, loan, consumed-value, capability, and exit facts kept separate.
+- Ordered reservation edges retained in checked metadata and IR. Direct
+  same-block Output runs of 2–16 calls are admitted all-or-none, submitted in
+  source attribution order, and committed as one batch. DirectorySource and
+  unsupported shapes retain their edge and execute sequentially. Nonadjacent
+  same-root edges survive through unrelated members.
+- `read_at` with explicit offset and Free same-root reads;
+  `DirectorySource` with Ordered `directory_next`; shared Ordered Output.
+- `Interrupted` and `WouldBlock` removed from writer outcomes. No-progress
+  interruption and readiness refusal stay inside target progress.
 
-That plan was IMPLEMENTED AND MIGRATED when this branch forked, and superseding
-it in place must resolve its remaining sequence rather than drop it. Its six
-items, with their state at this branch tip:
+### Runtime and target adapters
 
-1. *Review the final branch diff for regressions.* Open — it is this branch's
-   merge review, and it now covers the union of both programs.
-2. *Preserve the measured no-regression result and record the inherited
-   per-mask whole-program residuality risk; re-run compile-cost probes if
-   later code changes touch that path.* **Engaged.** This branch changed that
-   path: the rebase kept main's ENT-4 closure index and dropped this branch's
-   own dense-matrix variant of it, so the compile-cost probes are re-run here
-   rather than inherited.
-3. *Bring the live roadmap and batch record to the same implemented state.*
-   Done for main's program: roadmap revision 50 records claim locality as
-   landed, and `docs/done/0075-claim-residual-canonicality.md` stays main's
-   own live record, untouched by this branch.
-4. *Freeze the exact ACTIVE branch revision and finish the specification and
-   conformance before/after content.* Open, and now over v0.34 to v0.35:
-   ACTIVE v0.34 has digest `cb747505…`, its outgoing immutable v0.33 archive
-   has digest `fc6b5a10…`, and the v0.35 candidate's digest and both merge-time
-   recipe digests are recorded in batch 0078.
-5. *Commit the final bytes, then run canonical root `make check` on that exact
-   revision.* Open — the merge packet reports it.
-6. *Present that exact tested revision for the single owner approval.* Open.
+- Preallocated bounded operation slots and target queues.
+- Independent direct file groups of 2–64 operations reserve every completion
+  slot all-or-none before target handoff, including the source-last member.
+  This removes partial-admission hold-and-wait while preserving free target
+  execution. Empty ranges complete reserved tokens without a host transfer.
+- Captured generation checked before result storage changes.
+- Product milestone state, exactly-one terminal publication, release/acquire
+  result visibility, bounded drain, and lane-independent consume.
+- One wake epoch for compute, target work, completion, admission, and capacity;
+  completion-before-wait causes no syscall wake. Linux parks on one epoll set
+  containing the io_uring fd and an eventfd. The eventfd remains a broadcast
+  level fact until every already-announced waiter has left, preventing one
+  waiter from consuming another token owner's wake.
+- POSIX wakes one announced scheduler when exactly one is parked and broadcasts
+  one epoch transition when several are parked. A completed target event is
+  drained before its dependent writer frame enters the ready queue; that
+  enqueue publishes its own compute epoch before any lane can park.
+- An ordinary join registers its exact token only across the final
+  recheck-to-park window. If another lane drains that token, the drainer clears
+  the registration and publishes the consumability transition; uncontended
+  drains pay no extra epoch.
+- Typed POSIX/macOS helper fallback with zero-helper scheduler progress.
+- Real Linux io_uring positioned read/write submissions, CQE-driven wake, and
+  publication, executed on Linux 6.8.0 aarch64. Fatal post-handoff progress
+  errors fail-stop instead of falling back or hanging.
+- Real Windows overlapped ReadFile/WriteFile plus shared IOCP and a Win32-native
+  completion core. The PE strict-cross-links, while production qualification
+  remains fail-closed until it runs on Windows.
+- Direct `read_at` and `write_once` overlap lowering plus a selective stackless
+  slice: one single-block root suspension through zero-state tail wrappers to
+  a file leaf can resume on any scheduler lane. Branches, loops, multiple
+  suspension points, indirect calls, and non-tail suspended children retain
+  the correct synchronous ABI.
 
-Main's acceptance criteria for claim authority remain in force and are not
-restated here; nothing in this plan relaxes one. The one criterion this branch
-touches directly is that expected failures and runtime observations use
-ordinary control or typed outcomes rather than deliberately false claims — the
-trap-latch cases now meet it by fault injection into checked IR.
+### Evidence
 
-## Exclusions
+- Completion core hostile harness, ASan/UBSan, repeated W0/W1/W4 stress,
+  all-or-none batch pressure, staggered private-token multi-waiter wake,
+  stale publication, terminal race, completion-before-wait, and zero-helper
+  progress. The final exact-token drain fix passed 50/50 consecutive W0 runs
+  after the unfixed binary had reproduced the deadlock at run 6.
+- Compiler shape and executable tests prove that helpers receive typed target
+  requests, not writer thunks, and that the second independent operation runs
+  before a blocked first operation completes.
+- Conformance structure 29/29, coverage 137/137, and native adapter
+  `Pass=500 Skip=1 Fail=0`, with no verdict changes or deleted cases.
+- Final matched O3 measurement: 35.85 ns for a core round trip; cached pread
+  completion-progress adds 64.7 ns over direct. A one-waiter completion resume
+  measured 1.625 us against condvar 1.542 us. These results retain direct
+  depth-one specialization and reject a universal blocking-helper path.
+- Rust library 1301/1301, maintained programs 56/56, conformance structure
+  29/29, coverage 137/137, and native adapter `Pass=500 Skip=1 Fail=0`.
 
-No writer parallelism construct, no thread or task type, no heartbeat
-profitability policy, no `reduce`-clause regrouping, no arbitration for
-trapping lanes, and no generic-container work.
+## Remaining sequence
 
-Two exclusions this plan carried are overtaken by batch 0078 and are corrected
-rather than left standing:
+1. Replace the current multi-root capability stop with a per-release-leaf
+   origin tree, preserving each field through construct, move, projection,
+   match, replace, call substitution, and derived release.
+2. Generalize selective stackless lowering to branches, loops, multiple
+   suspension points, indirect calls, and non-tail suspended children.
+3. Actualize DirectorySource Ordered batches and the remaining finite
+   may-suspend system operations without adding a writer-visible wait form.
+4. Run cold-file, high-latency, network, and native Linux comparisons; run the
+   Windows probe on a Windows runner and close its bounded multi-waiter wake
+   proof before changing its qualification bit.
+5. Add the designed network, timer, cancellation, deadline, and
+   finish-required file-output catalog rows only with their target slices.
+6. Before any merge, convert the candidate to an exact ACTIVE identity,
+   archive v0.36 byte-for-byte, record the exact owner-approved spec and
+   conformance boundary in `governance/APPROVALS.md`, and run canonical
+   `make check` on that exact revision.
 
-- ~~no arbitration for claim-bearing regions~~ — claim-bearing regions are now
-  overlapped like any other. What stays excluded is *arbitration*: no rank, no
-  coordinator, no wakeup protocol. The latch is not arbitration; it is one
-  `cmpxchg` on a path a correct program never executes.
-- ~~no protected conformance change beyond the single [PAR-1] coverage
-  annotation~~ — there are **two** annotations for the merge approval to name,
-  [PAR-1] and [PAR-2]. Neither is landed on the branch; both are prepared as
-  exact bytes in `docs/ongoing/0078-loop-permission.md`, and each is applied
-  only together with its own rule text.
+Every technical target of canonical `make check` has passed independently on
+the candidate bytes. The canonical root invocation stops only at
+`spec-archive-integrity`, which deliberately rejects CANDIDATE status before
+activation.
+
+## Non-negotiable boundaries
+
+- No merge into `main` without owner approval of the exact revision.
+- No trap-path tax on a correct operation.
+- No whole writer wrapper on an I/O helper.
+- No unbounded operation, completion, event, or payload queue.
+- No target mechanism exposed as writer syntax.
+- No environment alias fact promoted into language authority.
+- No unsupported target reported as invalid source.
+- No test, verdict, check, or failure path weakened to obtain a green gate.

@@ -1,404 +1,466 @@
-# The Whitefoot I/O model — foundation record, revision 2
+# Whitefoot completion I/O design
 
-Status: DESIGN, pre-implementation. Revision 2 folds in the three
-adversarial reviews of 2026-08-25 (`spec-sweeper`, `runtime-attacker`,
-`blindspot-scout`, reports under the operator's scratch directory
-`wf-io/out/`; every load-bearing anchor re-verified by the lead). It
-authorizes no execution and changes no rule; every language change it
-sketches lands, if at all, through its own specification batch with owner
-approval at merge.
+Status: selected implementation design for the v0.37 candidate. The complete
+first-principles derivation remains in `FIRST-PRINCIPLES.md`; the rejected
+experimental implementation is classified in `IMPLEMENTATION-AUDIT.md`; the
+first clean-core measurements are recorded in `RESULTS.md`.
 
-Revision 1's two defects, named rather than smoothed over: it claimed
-distinct capability values imply world disjointness (false — the spec's
-own stdout/stderr same-sink conformance witness refutes it), and it
-claimed the per-contact-point narrowing of [EFF-5] "becomes a theorem"
-(false — v0.36's order promise spans different resources, so any
-narrowing is a versioned semantic decision, not a derivation).
+This document replaces the earlier world-region proposal in place. It contains
+no writer-visible world lifetime, `external` effect, `blocks` effect, future,
+pending value, callback, task, or blocking I/O family.
 
-Owner's chartering frame, verbatim (2026-08-24): "我希望外部io设计最好不要被
-posix限制了,其实最好不要被任何传统系统API限制思维。我设计wf的初衷之一就是
-自下而上构建完整的软件系统,包括操作系统。所以语言是在操作系统以下的。"
+## 1. What must two writes mean
 
-## 1. First principles: what external interaction is
+Consider two calls which use one output:
 
-A program is a state transformer on memory it owns. External interaction
-is contact with state it does not own, and only two physical facts
-distinguish that from computation: the outside world has its own clock,
-and the outside world's state is shared, so order out there is a real
-observable. Everything reducible to these facts fits two primitives:
+```whitefoot
+let header = write_once(output: &out, source: &header_bytes, start: 0_u64, end: header_end);
+let body = write_once(output: &out, source: &body_bytes, start: 0_u64, end: body_end);
+```
 
-- **submit** — the program, on its own clock, deposits a request into
-  shared state (a device register write, a DMA descriptor, a queue entry).
-- **complete** — the world, on its clock, announces an outcome (an
-  interrupt, a completion-queue entry, a flag).
+The machine should make both operations pending as soon as their arguments are
+ready. The output bytes must still contain the header before the body. Target
+completion order must not choose byte order, and neither operation should
+occupy a compute lane while the target is making progress.
 
-The bottom of the stack (NVMe queue pairs, NIC descriptor rings) and the
-top (io_uring, IOCP) independently converged on paired queues in shared
-memory; only the POSIX middle still carries the 1970s shape. Of the three
-constraints that shaped that shape — protection domains, the blocking
-thread, interrupt-as-preemption — the first dissolves for proven code
-(its *containment* function survives, §8), the second was a
-representation choice, and the third reduces to completion delivery (an
-interrupt runs no user code; it wakes an executor — Embassy's shape).
+Three different relations are present:
 
-One amendment from review: **not every completion answers a submit.**
-Signals, device hot-unplug, file-change notification, and child exit
-arrive unrequested. The model therefore has a third element: an **event
-source** — a capability armed by the program, with a contract fixing
-arming, pending/coalescing, drop, and fatal behavior. Writers still call
-ordinary operations; no handler or callback construct exists.
+```text
+shared borrow of out      keeps one logical output root alive
+ordered reservations      assign header before body on that root
+payload borrows           keep each byte buffer alive until its own release
+```
 
-## 2. One mode: completion; readiness is a backend
+One exclusive borrow cannot express this. It would reject simultaneous
+operations before the output family could apply its ordering rule. One shared
+borrow alone also cannot express it. It keeps the root alive but says nothing
+about an outside write.
 
-Readiness (select/poll/epoll/kqueue) delivers state, not results; it
-exists because POSIX `read` is indivisible; it cannot express ordinary
-file reads at all (a regular file is always "ready" and the read still
-blocks on the disk — disqualifying for wfgrep's disk-bound workload). A
-completion surface can be served from a readiness host by a runtime that
-performs the middle steps; the reverse is contorted. The language-facing
-model is completion; readiness, thread pools, and bare-metal interrupts
-are host backends.
+The API therefore uses an ordinary shared borrow plus a capability effect:
 
-## 3. The language surface: the world becomes regions — under proof, not
-by capability equality
+```whitefoot
+fn write_once['o, 's](
+  output: &'o Output,
+  source: &'s buffer<u8>,
+  start: own u64,
+  end: own u64,
+) -> result: own Result<u64, IoError>
+reads('o 's), writes(output);
+```
 
-No new construct; the writer's program stays sequential; overlap is
-permission read off proofs, as [PAR-1] did for compute. The refinement
-replaces the `external`/`blocks` row atoms with world-region vocabulary.
-The sweep of all 136 `external` / 31 `blocks` occurrences in the active
-spec found a mechanical rewrite for most and a missing semantic rule
-behind the rest; those rules are this section.
+`reads('o 's)` describes ordinary Whitefoot storage and borrow lifetimes.
+`writes(output)` says that the call changes authority supplied by the `output`
+parameter. The Output family refines that write into one ordered put
+reservation. Source code still uses the normal function-call grammar and the
+normal ownership, effect, and typed-outcome rules.
 
-### 3a. Two region kinds; identity lives in the capability's type
+## 2. Why an effect names a capability value
 
-Memory regions are [OWN-3] lexical lifetimes. World regions are effect
-and alias identities. They are distinct kinds: `&uniq 'b Output<'w>`
-carries memory-loan region `'b` and world region `'w`, and neither
-substitutes for the other. `own` stays a payload-free mode; each
-capability family declares the world-region vector its *type* carries,
-and system nominal identity keys on the family plus that vector. (The
-main representation cost of the whole design; nothing in `CheckedMode`
-carries this today.)
+A borrow region answers how long a reference is usable. A capability value
+answers which logical outside authority an operation uses. They cannot be one
+identity.
 
-### 3b. Disjointness is proven, never inferred from values
+An owned terminal operation makes the difference visible:
 
-> Different capability values are never by themselves evidence of world
-> disjointness. Two world regions are disjoint only when a TCB minting
-> rule or a checked generativity derivation proves that every state facet
-> the two footprints name cannot alias. Absent that proof, they overlap.
+```whitefoot
+fn finish_file(output: own FileOutput)
+  -> result: own Result<unit, IoError>
+writes(output);
+```
 
-Consequences fixed now, not deferred: stdout and stderr are conservatively
-may-alias (the spec's own same-sink witness); separate opens, equal or
-distinct paths, and hard links prove nothing about file content
-disjointness; `dup` preserves every source region; a handle's lifetime
-region is distinct from the persistent object's region; a
-capability-producing operation may mint a fresh result region only for
-state its contract proves fresh, and a compile-time identity stands for a
-may-alias class across executions unless separation is proven. On a
-Whitefoot OS the arbiter mints capabilities it can prove disjoint — the
-full-stack ambition is what eventually makes the type-level story sound
-outright; on POSIX the near-term policy is conservative: one file-object
-alias domain per target unless proven otherwise, network connections
-fresh only when the TCB mints them, all `Output` values may-alias.
+There is no borrow region in this signature. Requiring `writes('loan)` would
+either make the effect impossible to write or force a fictitious lifetime into
+the type. Hiding the action entirely would make the signature claim `pure`
+while the function flushes and closes a file.
 
-### 3c. World reads are not free; consuming reads are writes
+The source effect grammar therefore admits a direct formal parameter beside a
+REGIONID:
 
-Two monotonic-clock samples overlapped can return t2 < t1 — no
-source-order execution produces that. So:
+```ebnf
+effect := "reads" "(" (REGIONID | IDENT)+ ")"
+        | "writes" "(" (REGIONID | IDENT)+ ")"
+        | "allocates" "(" ("heap" | "arena" REGIONID)+ ")"
+        | "traps"
+```
 
-> Read/read overlap is admitted only when the operation's contract proves
-> source-order result attribution under overlap. An operation that
-> advances a cursor, consumes input, samples an ordered sequence, or
-> otherwise changes future observations *writes* its world region.
+The first implementation accepts only a direct formal capability parameter.
+A later field or payload path needs its own grammar and projection proof.
 
-Stdin consumption, entropy draws, `accept`, and cursor reads are
-world-region writes; genuinely idempotent snapshot reads may share.
+The checker derives capability effects from system calls, releases, and user
+calls, then compares the derived and written rows in both directions. A writer
+cannot omit, invent, or weaken one. `pure` remains an honest empty row.
 
-### 3d. Rows over world regions; does-ness stays checked
+## 3. Logical roots and family fragments
 
-With the kinds in place, the row vocabulary extends: `reads('w)` /
-`writes('w)` over world regions, [EFF-2]-checked in both directions
-exactly as memory rows are, projected through call boundaries — which
-requires extending the projection to world-region occurrences in
-own-mode actuals, capability values nested in outcomes, and
-compiler-derived releases (a release that closes a file *writes* its
-handle-lifetime region; today's release rows carry `external, blocks`
-and the migration must keep their conformance verdicts). The
-possession/use split survives review intact: loans on capability values
-order what could happen; world rows state what does.
+Every capability has one compiler-retained logical root. A successful factory
+mints a fresh root unless its contract says that the result is a facet of an
+existing root. Move preserves the root; borrow refers to it; a family split
+preserves the common root and assigns distinct roles.
 
-### 3e. The order law is a versioned decision with a conservative first
-step
+Environment aliasing does not alter this proof. Two opens mint two logical
+roots even if a hard link makes them reach the same inode. Standard output and
+standard error are two roots even if the host redirects both to one native
+sink. That is the same boundary other languages use when the environment
+changes underneath a legal program.
 
-v0.36's [EFF-5] orders external calls across *different* resources; any
-per-region narrowing is a semantic weakening. Two honest migrations
-exist: (1) first land the vocabulary with one conservative global
-world-order domain joined to every former-`external` operation —
-preserving v0.36 order exactly, zero semantic change — then narrow
-family by family under evidence, each narrowing a flagged owner
-decision; or (2) declare the weakening at once with a complete trace law
-(what is ordered, at which linearization point — submission, completion,
-or remote observation — with fence semantics; the current SYS-2
-inventory contains no fence operation, so one must be added, not
-presumed). **Recommendation: (1).** The eventual trace law must decide
-the linearization point explicitly; "order" without it is not a law.
+One authority use retained by the compiler has this conceptual form:
 
-### 3f. Traps and world windows: the erroneous promise widens; permission
-does not narrow
+```rust
+struct AuthorityUse {
+    origin: CapabilityOrigin,
+    family: FamilyId,
+    fragment: FragmentId,
+    access: ReadOrWrite,
+}
+```
 
-Both adversarial reviews found the same true fact from opposite ends:
-once windows may contain world writes, two current sentences become
-false — "no statement of a permitted overlap produces an external
-effect at all" and "which claim the record names is the only thing a
-schedule may select". Both reviews then proposed gating world-bearing
-windows on trap-free closures. That disposition is rejected, on the
-2026-08-23 claim ruling this project already made: a claim is a
-reviewed always-true lemma, a trapping execution is a defective
-program, and permission is never withheld from correct programs to
-stabilize a defective execution's observables. The gate would tax
-exactly the programs that can never trap.
+The family contract assigns exactly one relation to two live fragments on the
+same root:
 
-The doctrine-consistent repair rewrites the erroneous-execution clause
-instead: the schedule selects two things for a defective execution —
-which false claim the single record names, and which world effects were
-performed before the abort. Everything else stands: one complete
-record, whole-process abort, no undefined behavior. The TCB obligations
-land on the trap path alone, which correct programs never execute: no
-new submission after the trap latch; already-submitted operations
-retain their family semantics ([TRAP-1]'s existing already-started
-clause, extended from "started" to "submitted" — the abort does not
-wait for terminal states, because a defective program must still die
-promptly); the diagnostic record is written through a TCB-serialized
-single write that in-flight program output cannot split.
+```text
+free       both may proceed; neither creates an order
+ordered    both may be pending; family attribution fixes logical order
+exclusive  the later fragment waits for authority release
+```
 
-The nuance that made this look new, dissolved: compute-window
-divergence at an abort was externally invisible (the process dies with
-its memory), world-window divergence is visible (bytes in a file). But
-the language never promised a defective program's partial output a
-shape — a sequential defective program also leaves half its output
-before trapping. Overlap changes which garbage a defective run leaves,
-and garbage shape was never in the contract. Deterministic
-reproduction, as before, is free at `WF_WORKERS=0`.
+Fragments on different logical roots are independent. Ordinary memory loans
+remain a separate test. Two free file reads still cannot overlap if they both
+write the same destination buffer.
 
-### 3g. Residue the deletion must also settle
+## 4. Files, directories, and output
 
-`blocks` generalizes to trusted completion/blocking metadata on *every*
-target action (operations, releases, close, waits), with a derived
-transitive summary for user wrappers, so no backend routes a blocking
-action onto a required compute lane. Whether the bare spellings stay
-reserved words is a META-5 accepted-set choice. [PRV-1]'s
-external-*input* provenance class is a homonym, untouched by effect
-migration (rename to `boundary-derived` to avoid confusion). Gated FFI
-signatures with unclassifiable world reach charge one conservative
-top-world domain — absence of a footprint never implies purity. The
-conformance migration is enumerable and enumerated: 42 case files
-mention the atoms, 7 manifest records are verdict-sensitive, the
-same-sink EFF-5 runtime witness must keep passing under conservative
-aliasing, and no verdict changes silently.
+### 4.1 Random-access files
 
-## 4. The runtime: one scheduler, two work sources — as a written state
-machine, not a slogan
+A random read must not share an implicit cursor:
 
-The unification survives review; the sketch did not. A compute frame is
-self-runnable and stealable; an I/O frame is runnable only by the world;
-join's fallback is "run it" for compute and "wait for it" for I/O. What
-the reviews add:
+```whitefoot
+fn read_at['f, 'd](
+  file: &'f ReadFile,
+  destination: &uniq 'd buffer<u8>,
+  file_offset: own u64,
+  start: own u64,
+  end: own u64,
+) -> result: own ReadOutcome
+reads('f 'd file), writes('d);
+```
 
-- **The park/wake state machine is the design.** Its one law: after
-  *any* progress — a reaped CQE, a consumed wake hint, a completed
-  frame — the lane returns to the top of the scheduling loop; it never
-  parks on the heels of progress. (The sketched loop had a
-  sleep-forever edge: reap the join target's completion, flip its flag,
-  park anyway.) Parking follows announce-then-recheck, the discipline
-  the existing condvar path already implements with its idle bit.
-- **Wake plumbing, corrected.** `io_uring`'s registered eventfd notifies
-  ring→fd, not fd→ring; a compute wake becomes a CQE only via a POLL_ADD
-  on the eventfd, one-shot unless multishot, re-armed after every
-  consumption. An eventfd read drains the whole count: one notification
-  means "scan all sources to quiescence, re-arm, announce, scan once
-  more, then park" — never "run one frame".
-- **Ring affinity follows the executing lane.** A stolen frame submits
-  on the thief's ring and joins on it; the compute slot's home-lane
-  field must not be reused as ring identity, or completions land on a
-  ring nobody waits on.
-- **Completions never enter compute deques.** Chase-Lev has one
-  producer; a completion writes results and a terminal state, full stop.
-  Dependent continuations are the C stack below the join — that is what
-  "no continuations" means operationally.
-- **Join helping is bounded.** An unbounded steal-while-joining both
-  inverts latency (the ready completion waits out an arbitrary stolen
-  frame) and nests frames on one lane stack (the 0079 audit already
-  established stolen calls do not start at stack bottom; the ledger
-  cannot see the scheduler layer). First version: a joining lane drains
-  its completions first, returns the instant its target is done, helps
-  only frames of its own window, and takes at most one unrelated steal
-  per round under a per-lane help-depth bound that the stack ledger
-  names.
-- **Fairness is stated, not assumed:** completion queues drained after
-  at most a bounded number of compute frames and vice versa; batches
-  bounded; a non-terminating frame voids latency guarantees and the
-  limitation is documented.
-- **The kqueue/waiter shape** keeps one never-blocking waiter (readiness,
-  dispatch, enqueue, wake) over a disk pool of fixed depth; completion
-  nodes are preallocated per frame so the mailbox can never be full;
-  the mailbox is an MPSC with release/acquire publication,
-  exactly-once terminal transitions, generation-tagged frames against
-  ABA, enqueue linearized before wake, and announce-then-recheck
-  consumers — each a named requirement, none assumed from the word
-  "MPSC". (The runtime has already paid once for a plain shared word;
-  the lane-count race of batch 0080 is the precedent.)
-- **In-flight loans run to terminal state.** From submission
-  linearization to the operation's terminal completion: the buffer
-  neither moves, frees, nor is reused; the frame stays out of the free
-  list; an exclusive input loan excludes the lane itself. A cancel
-  request is not a terminal state (its CQE and the operation's are
-  unordered; hardware operations may be uncancelable).
-- **Abort teardown is target qualification.** Hosted Linux: ring
-  teardown cancels what it can and holds references for what it cannot;
-  nothing user-side drains queues in a signal handler. Bare metal: DMA
-  may write after the CPU declares abort — the arbiter quiesces,
-  quarantines, or declares reset-before-reuse; the floor's
-  first-record-wins abort composes with this as TCB teardown, not
-  language cleanup. v0.36's abandoned-continuation sentence does not
-  cover asynchronous families; the I/O batch owes [TRAP-1] an
-  already-submitted-work clause.
-- **Cancellation, first version:** none at window exits. Every normal or
-  recoverable exit edge first observes terminal states for all submitted
-  operations of its window — the structure the current lowering already
-  has (join after the last member, before any exit edge). "Stop
-  waiting" without a terminal state is not sound; early-exit
-  cancellation waits for a design that can transfer buffer ownership to
-  a hidden reaper, and is deliberately not promised now.
+Two `read_at` fragments on one file root are free. Destination loans decide
+whether their memory writes can overlap. `ReadBytes(next)` states that the
+destination prefix `[start, next)` was initialized. A short successful read is
+`ReadBytes`; a failed outcome reports zero progress. `WouldBlock` and a
+no-progress host interruption belong to the target adapter, not the writer
+outcome.
 
-## 5. The worlds, re-drawn on two axes
+### 4.2 Sequential files and directories
 
-Review dissolved revision 1's single axis twice over. The honest
-structure:
+Sequential access is an owned Source because its cursor, read-ahead, capacity,
+and finalization persist across outcomes:
 
-- **Execution axis:** sequential (source-order schedule, no overlap) or
-  overlapped (permission-based).
-- **World-provider axis:** live world, or — named now, built later — a
-  recorded world for deterministic replay. `WF_WORKERS=0` alone is *not*
-  a full determinism anchor; a live filesystem, clock, or network varies
-  under it. Replay is a world backend, not a third lowering.
+```whitefoot
+fn file_source(file: own ReadFile, offset: own u64)
+  -> result: own FileSource
+pure;
 
-Within the execution axis, three concepts the current bootstrap conflates
-must split: whether the overlapped world is selected; how many compute
-lanes exist; whether an I/O backend is initialized. Current code maps
-`WF_WORKERS<2` to "pool off" and the emitter defers a refused member to
-after the last member — so revision 1's claim that W=1 keeps source
-order was **false**; a W=1 overlapped world changes three observables
-(which claim an erroneous execution records; published bytes when traps
-and world writes could mix — narrowed by §3f's widened erroneous clause; stack resource
-records, since overlapped clones spend 48 B/level against sequential
-16 B/level on the 0079 measurement). Each is a flagged decision at the
-batch that changes the mapping, with `WF_WORKERS=0` retained as the
-sequential world and the compute-claim refusal made an explicit
-`compute_lanes < 2` rule rather than a side effect of "pool off".
-Embedded terminology corrected: `WF_WORKERS=0` means no overlap and no
-worker pool, not "no I/O substrate"; a bare-metal build still carries
-the minimal driver/executor its targets qualify.
+fn file_next['q, 'd](
+  source: &'q FileSource,
+  destination: &uniq 'd buffer<u8>,
+  start: own u64,
+  end: own u64,
+) -> result: own ReadOutcome
+reads('q 'd), writes(source 'd);
+```
 
-## 6. What any first spec batch must fix per operation (the minimal
-closure)
+Several calls may hold ordered reservations. If the next physical offset is
+not known until an earlier partial read completes, the later reservation waits
+inside the Source without occupying a writer lane.
 
-For every system operation (the current inventory is fifteen; the table
-rewrites as a whole, not by suffix):
+Directory lookup remains free on one `DirectoryRead` root. Enumeration is a
+Source with ordered batches:
 
-1. authority inputs and capability mint/alias relations;
-2. world footprint and its commutativity class (§3c);
-3. submission, linearization, loan-release, and completion points —
-   "complete" names which of buffer-reuse, world-visibility, durability
-   (§ blindspot B5);
-4. outcome taxonomy: typed world outcome vs static rejection vs claim
-   trap vs TCB resource death vs target defect, keyed by semantic
-   source, never by errno spelling;
-5. progress contract (may wait forever vs eventually completes; device
-   removal completes everything; a lost completion is a target defect);
-6. protection, memory-order, and lifetime obligations for target
-   qualification;
-7. a stable operation identity for ledgers and conformance.
+```whitefoot
+fn open_read['c, 'p](root: &'c DirectoryRead, path: &'p RelativePath)
+  -> result: own Result<ReadFile, IoError>
+reads('c 'p root);
 
-Program kinds need root capability tables: today's `command` entry has
-no stdin (the word appears zero times in the spec) and bare metal has no
-args/cwd; each kind fixes its closed capability set and lifecycle.
-Conformance runs on three tiers: a scripted deterministic world for
-semantics across completion schedules; target qualification for real
-backends; performance strictly outside conformance. An `--io-ledger`
-sibling of `--par-ledger` shows sites, origin relations, footprints, and
-grants/denials at compile time.
+fn open_directory_source['c](directory: &'c DirectoryRead)
+  -> result: own Result<DirectorySource, IoError>
+reads('c directory);
 
-## 7. Structural backlog (shaped, not blocking)
+fn directory_next['q, 'd](
+  source: &'q DirectorySource,
+  destination: &uniq 'd buffer<u8>,
+  start: own u64,
+  end: own u64,
+) -> result: own ListOutcome
+reads('q 'd), writes(source 'd);
+```
 
-From the blind-spot sweep, parked with owners: signal classification
-(SIGPIPE is an outcome, SIGCHLD a child-lifecycle completion, fatal
-faults stay with the floor); processes as capabilities (no writer fork/
-in-place exec; atomic spawn returning a completion-required Child; wait
-is a completion; ChildOutcome separate from ExitStatus); pipes with
-arbiter-owned history and Rx/Tx facets; filesystem namespace operations
-as multi-region footprints (rename writes two directories); file object
-vs cursor facets (positioned reads want per-range footprints only where
-targets prove them); mmap/MMIO never behind ordinary borrows (snapshot
-or arbiter-proved exclusive mappings only — optimizer facts break on
-externally mutable memory); clock domains (monotonic vs wall, opaque
-instants, deadline races arbiter-linearized); entropy as one seed
-operation feeding an owned local PRNG; network state machines
-(NetworkAuthority, Listener, connection type states; accept writes the
-listener's sequence region and mints fresh connection origins);
-stream Rx/Tx facets with per-direction FIFO and half-close as consuming
-transitions; datagram outcomes distinct from byte streams; resolver as
-explicit capability; variable-sized results on caller buffers or owned
-backing, never hidden allocation; visibility vs durability vs
-crash-atomicity as distinct resource families (fsync commits a file,
-not its directory entry). Distant, named: TLS placement, typed device
-control without an ioctl escape hatch, cross-program leases, zero-copy
-splice as dual-capability operations.
+The caller-buffer form is the first implementable storage shape. A later
+source-owned pool can return owned initialized batches without changing the
+completion or authority model.
 
-## 8. What a syscall was for; what protection keeps
+### 4.3 Output and finished file output
 
-Protection against bad access → replaced by proof; the gate becomes a
-queue write. Portability → a library concern. Naming and authority →
-affine capabilities, arbiter-minted on a Whitefoot OS. Multiplexing
-shared devices → irreducible, a queue arbiter. And the owner's
-correction stands as §7 of revision 1 stated: containment of *logic*
-errors survives proof — the residual kernel is bootstrap, scheduler,
-and an arbiter that keeps accounts (quotas, fairness, revocation, kill),
-with affine capabilities making revocation tractable and "process"
-surviving as the unit of containment and reclamation. Before a
-Whitefoot OS exists, target qualification names the protection each
-host actually provides (descriptor aliasing, generation-tagged handle
-tables, quarantine of late completions).
+`Output` is an ordered Sink. Its runtime may combine adjacent reservations
+into `writev`; a partial physical write completes whole earlier reservations,
+then records progress for at most one reservation, without changing logical
+byte order.
 
-## 9. Falsifiers and next experiments, cheapest first
+Command output is release-complete and promises neither durability nor a
+final close. A file created for output is different:
 
-1. **The migration ledger (paper).** Amendments §3a–§3g enumerate the
-   spec surface (117 lines carrying the atoms; 42 conformance files; 7
-   verdict-sensitive records; the release table; the entry canonical
-   form). Write the conservative-first migration (§3e option 1) as a
-   draft delta and check every RESISTS sentence from the sweep resolves
-   against it. Any sentence still resisting is a missed rule.
-2. **kqueue prototype on this machine.** Waiter + preallocated-node
-   mailbox + bounded disk pool + the §4 state machine; re-measure the
-   directory-walk 2.83x (recorded caveat: measuring-machine security
-   daemon). Success gates any runtime batch.
-3. **Unified-parking probe (Linux).** POLL_ADD-on-eventfd multishot,
-   re-arm discipline, mixed load; verify no lost wakeup against the §4
-   law, and measure against the condvar path. Runs in CI on a Linux
-   runner (owner direction: all three host backends — kqueue, io_uring,
-   IOCP — are written against one contract, tested locally on macOS and
-   cross-checked on GitHub Actions).
+```whitefoot
+fn open_output['d, 'p](directory: &'d DirectoryWrite, path: &'p RelativePath)
+  -> result: own Result<FileOutput, IoError>
+reads('d 'p), writes(directory);
 
-## 10. Decisions queued for the owner
+fn write_file_once['o, 's](output: &'o FileOutput, source: &'s buffer<u8>, start: own u64, end: own u64)
+  -> result: own Result<u64, IoError>
+reads('o 's), writes(output);
 
-1. §3e: conservative-first order migration (recommended) vs declared
-   weakening with a full trace law.
-2. §3f: the widened erroneous-execution clause (schedule also selects a
-   defective run's pre-abort world effects; [TRAP-1]'s already-started
-   clause extends to submitted operations). Rewrites two [PAR-1]
-   sentences; gates nothing; the rewrite carries constitution T3's
-   direction clause into the rule text, so the next reader under
-   pressure finds the yield direction beside the promise.
-3. §5: the WF_WORKERS mapping change and its three observable deltas.
-4. Whether `external`/`blocks` remain reserved spellings after deletion.
-5. The provenance rename (`boundary-derived`) riding the same batch or
-   a separate one.
+fn finish_file(output: own FileOutput)
+  -> result: own Result<unit, IoError>
+writes(output);
+
+fn abandon_file(output: own FileOutput)
+  -> result: own unit
+writes(output);
+```
+
+`FileOutput` is finish-required. `finish_file` drains ordered writes and
+reports final flush and close diagnostics. It does not imply durable storage;
+sync or transactional commit needs a separate operation and milestone.
+`abandon_file` makes loss explicit instead of treating an affine drop as
+successful finish.
+
+## 5. Network and timer families
+
+A TCP connection has one root with receive, send, and control fragments:
+
+```text
+Receive x Receive   ordered
+Send x Send         ordered
+Receive x Send      free
+Control x any       exclusive
+```
+
+The first surface can keep those facets internal:
+
+```whitefoot
+fn tcp_connect['n, 'a](network: &'n Network, address: &'a SocketAddress)
+  -> result: own Result<TcpConnection, IoError>
+reads('n 'a), writes(network);
+
+fn tcp_accept['l](listener: &'l TcpListener)
+  -> result: own Result<TcpConnection, IoError>
+reads('l), writes(listener);
+
+fn tcp_receive_once['c, 'd](connection: &'c TcpConnection, destination: &uniq 'd buffer<u8>, start: own u64, end: own u64)
+  -> result: own ReadOutcome
+reads('c 'd), writes(connection 'd);
+
+fn tcp_send_once['c, 's](connection: &'c TcpConnection, source: &'s buffer<u8>, start: own u64, end: own u64)
+  -> result: own Result<u64, IoError>
+reads('c 's), writes(connection);
+```
+
+The hidden fragment summary distinguishes send from receive even though both
+source boundaries write `connection`. A listener is a persistent Source with
+bounded preposted accepts. When its ready queue is full, the adapter stops
+posting more accepts and lets the host backlog provide pressure. It never
+builds an unbounded queue.
+
+TCP send completion means that the local stack accepted the reported prefix.
+It does not mean that the peer acknowledged it. A higher-level protocol that
+requires acknowledgement owns a different receipt and finish contract.
+
+A one-shot timer is a normal finite call; a periodic timer is a Source:
+
+```whitefoot
+fn timer_until['c](clock: &'c MonotonicClock, deadline: own MonotonicInstant)
+  -> result: own Result<MonotonicInstant, TimerError>
+reads('c clock);
+
+fn periodic_next['t](timer: &'t PeriodicTimer)
+  -> result: own TickOutcome
+reads('t), writes(timer);
+```
+
+A periodic source retains one coalesced shot and reports an `expirations`
+count. It neither allocates an unbounded backlog nor silently pretends every
+period was delivered separately.
+
+## 6. Completion milestones and capacity
+
+Every operation record has distinct facts even when the first implementation
+publishes them together:
+
+```text
+accepted
+result-ready
+payload-released
+authority-released
+terminal
+```
+
+A normal call exposes its result only at ownership-complete, which is
+result-ready plus every payload and authority release the caller needs. A
+zero-copy family whose result becomes ready before its payload is reusable
+must return a family-specific affine receipt. It cannot make an ordinary
+result usable early and hide the remaining loan.
+
+Capacity exhaustion has one internal outcome, `wait-capacity`. The target does
+not own the operation yet; the runtime retains its complete bundle and runs
+other ready frames. `WouldBlock` is not a writer scheduling outcome. A typed
+`ResourceExhausted` result is reserved for a real host resource-creation
+failure after admission rules have run.
+
+Cancellation request is not terminal. A cancellable family keeps the payload,
+fragment, target token, and unique terminal witness until normal completion or
+confirmed cancellation wins. Dropping an active operation is impossible.
+
+## 7. Compiler representation
+
+The compiler keeps memory and authority separate:
+
+```text
+memory row          region reads/writes and allocations
+capability row      formal capability reads/writes
+family summary      root, role, fragment, relation, attribution, milestones
+target summary      never-suspends or may-suspend
+```
+
+System contracts seed all four. User calls substitute formal regions and
+capability parameters into caller places. Capability origin follows moves,
+returns, admitted aggregate projections, fresh results, and family facets. An
+unknown origin or fragment fails closed for overlap and optimization.
+
+Callable result origin is a closed-world fixed point, not the absence of an
+edge. A result which can carry at most one runtime root retains three
+independent finite facts: it may be absent on a variant such as `Err`, it may
+be freshly minted, and it may come from each listed formal. Enum root
+cardinality is computed per variant before taking the type-wide minimum and
+maximum. This makes `Result<ReadFile, IoError>` a zero-or-one-root value while
+distinguishing it from a struct that simultaneously owns two roots. A pass-through,
+choice, recursive wrapper, loop update, or release therefore cannot turn an
+existing caller root into a fresh local root or an empty effect.
+
+The current executable compiler closes that representation for values whose
+maximum is one. It does not pretend that one flat origin set describes a
+multi-root product: after every ordinary source judgment, such a value stops as
+the explicit `CapabilityResultOrigin` unsupported capability. The next
+representation step is an origin tree keyed by owned release-leaf paths. Until
+then, preliminary checking may use conservative scratch to finish ordinary
+source judgments, but no multi-root product publishes a checked program or
+reaches authority lowering and code generation as though its roots were absent.
+
+The overlap judgment first applies existing dataflow, ordinary memory,
+operand-read, loan, and exit tests. It then compares family fragments:
+
+```text
+free       permit
+ordered    permit and retain the family attribution order
+exclusive deny this overlap window
+unknown    deny this overlap window
+```
+
+Denial never rejects source. The ledger reports the concrete roots, fragments,
+relation, milestones, and whether lowering actually used the permission.
+
+## 8. Runtime and lowering
+
+`never-suspends` functions keep the current direct ABI. A `may-suspend`
+function receives selective stackless start/resume lowering. Its frame stores
+only values live across a suspension point, the resume state, owned operation
+bundles, and milestone requirements. It is not a copied native stack.
+
+Before target handoff, one finite operation has stable bounded storage and an
+immutable token containing its captured generation. Submission returns:
+
+```text
+inline-terminal     all promised milestones published; no future packet
+target-owned        target now owns progress
+wait-capacity       runtime owns the unsubmitted bundle
+```
+
+A target publisher validates the captured token before changing result
+storage, writes the result, release-publishes milestone facts, and leaves one
+bounded completion event. A scheduler lane drains that exact event before it
+injects the dependent writer frame. The resumed frame can therefore consume
+immediately. Enqueueing the frame advances the shared compute/completion epoch;
+target and drain code never invoke writer code.
+
+An ordinary blocking join uses the same rule without a writer frame. Only
+after its final source recheck does it register the exact token it may sleep
+for. A different lane that drains that token clears the registration and
+publishes the new consumable state. A drain with no registered token owner
+performs no second epoch update, which keeps the uncontended round trip on the
+measured fast path.
+A blocking helper is allowed only as one target's bounded adapter and executes
+only a typed target operation.
+
+Compute publication and completion publication share one wake epoch and one
+announce, recheck, then park decision. Completion-before-wait produces no
+wake. One POSIX waiter receives one signal; several already-announced waiters
+receive one broadcast for the epoch transition. A frame can resume on any
+eligible lane; its originating lane is an affinity hint, not a correctness
+condition. Queue draining and helping are bounded.
+
+No submission, completion, frame, scheduler, or target path reads a trap latch
+or carries trap-specific state. A correct program cannot execute a false
+claim, so that impossible path receives no normal-path budget.
+
+## 9. Implemented v0.37 candidate boundary
+
+The candidate implements the general compiler model and one deliberately
+finite actualization slice:
+
+- direct independent `read_at`/`write_once` groups of 2–64 reserve completion
+  slots all-or-none, then submit every member including the source-last call;
+- 2–16 direct same-block Output writes reserve all operation capacity or none,
+  submit every member, and commit their `OutputBytes` attribution before the
+  first physical write;
+- one single-block root suspension can cross a zero-state tail-wrapper chain
+  to a file leaf and resume on any scheduler lane;
+- empty file ranges complete inline or complete their already-reserved token
+  without a host transfer;
+- branch, loop, multi-suspension, indirect, and non-tail suspended shapes keep
+  the synchronous ABI; and
+- DirectorySource retains `DirectoryEntries` edges but is not actualized yet.
+
+Linux parks on one epoll set containing the io_uring fd and a broadcast
+eventfd for compute, target, admission, and capacity facts. The eventfd remains readable until every
+already-announced waiter leaves, so one waiter cannot consume another token
+owner's wake. macOS uses the bounded typed fallback for regular files and the
+same internal EINTR/readiness retry for directory batches. Windows has a real
+IOCP/OVERLAPPED implementation and a Win32-native core, but remains
+fail-closed until the probe executes on Windows and its wake packet path gains
+the same bounded persistent multi-waiter guarantee.
+
+## 10. Platform shape and evidence
+
+Linux should submit real operations through io_uring where the qualified
+kernel supports them. Windows should use overlapped operations associated with
+IOCP. macOS may use kernel completion or readiness where it is real and a
+bounded target-only helper for regular-file operations which lack a better
+facility. None of those mechanisms changes source semantics.
+
+The first end-to-end evidence must include:
+
+1. independent output writes simultaneously pending;
+2. two writes on one Output pending with source-order bytes;
+3. two `read_at` operations on one file and disjoint destinations overlapping;
+4. overlapping destinations denied by ordinary memory proof;
+5. TCP receive and send on one root overlapping;
+6. pure code linking no completion runtime;
+7. an unused outside write remaining in the module;
+8. completion-before-wait producing no wake;
+9. a stale captured token failing before result storage changes; and
+10. no claim-dependent instruction or field on a correct submission path.
+
+Performance remains an experiment, not a premise. Each platform compares
+matched direct blocking and completion implementations at depth one and across
+increasing concurrency, including inline completion, bounded helper fallback,
+native completion, Source/Sink batching, and scheduler resume latency. A
+measured loss reopens the responsible representation or adapter. It never
+introduces a second writer-visible blocking API by default.

@@ -16,7 +16,7 @@ fn entry_bridge(raw_index: own u64) -> return_value: own u8 allocates(heap), tra
   return value;
 }
 
-command fn main(command.args as args: own Args) -> return_value: own ExitStatus allocates(heap), traps {
+command fn main(command.args as args: own Args) -> return_value: own ExitStatus reads(args), allocates(heap), traps {
   doc "A command-entry actual crosses into a local residual claim that proves the full call goal but disappears from the claim-blinded state, so the external system result cannot launder the protected leaf through S4.";
   region 'a {
     let raw_index = args_count<'a>(args: &'a args);

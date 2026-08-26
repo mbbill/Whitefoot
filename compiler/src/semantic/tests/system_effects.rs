@@ -1,4 +1,4 @@
-//! [EFF-2] release attribution and the two payload-free categories.
+//! [EFF-2] capability-parameter effects and release attribution.
 //!
 //! The exhibited row is the union of the syntactic contribution and the
 //! release contribution: the effect rows of every compiler-derived release
@@ -7,7 +7,8 @@
 
 use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
 
-use super::{assert_rule, with_semantics};
+use super::super::model::CheckedResultAuthorityOrigin;
+use super::{assert_rule, assert_unsupported, with_semantics};
 
 const RELEASE_FIX: &str = "declare the release effects of every resource this function may release, or move the owner out";
 
@@ -48,14 +49,14 @@ fn assert_release_mismatch(source: &[u8], owner: &str, located: &[u8]) {
     });
 }
 
-const CANONICAL_ACCEPT: &[u8] = b"fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const CANONICAL_ACCEPT: &[u8] = b"fn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 const CANONICAL_REJECT: &[u8] = b"fn release_read_file(file: own ReadFile) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[test]
 fn the_canonical_release_case_holds_exactly() {
     // A nongeneric function whose only parameter is `own ReadFile` and whose
-    // complete body is exactly `return unit;` exhibits `external, blocks`:
+    // complete body is exactly `return unit;` exhibits `writes(file)`:
     // its whole row is the release contribution of that parameter's
     // compiler-derived close attempt on the function-return edge
     // [EFF-2, STOR-3, SYS-5].
@@ -67,7 +68,7 @@ fn the_canonical_release_case_holds_exactly() {
 
 const BORROWED_ACCEPT: &[u8] = b"fn touch_read_file['f](file: &'f ReadFile) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
-const BORROWED_REJECT: &[u8] = b"fn touch_read_file['f](file: &'f ReadFile) -> result: own unit external, blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const BORROWED_REJECT: &[u8] = b"fn touch_read_file['f](file: &'f ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[test]
 fn a_borrowed_resource_parameter_contributes_no_release_row() {
@@ -89,30 +90,26 @@ fn a_borrowed_resource_parameter_contributes_no_release_row() {
 
 #[test]
 fn over_declaring_the_release_row_rejects_likewise() {
-    // The opposite direction: `Args` releases by logical consume with the
-    // empty row [SYS-5, SYS-9], and `args_count`'s own row carries neither
-    // category, so declaring `external, blocks` is declared-but-unexhibited.
-    // No release contributed the mismatching categories, so this is the
-    // ordinary EFF-2 mismatch, not the release-attributed diagnostic.
+    // Preserve the old test's declared-but-unexhibited direction under the
+    // capability-row model: Args release is empty and the body performs no
+    // capability action, so `reads(args)` is an exact over-declaration.
     assert_rule(
-        b"fn count_arguments(args: own Args) -> result: own u64 external, blocks {\n  region 'a {\n    let total = args_count<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn ignore_arguments(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
 }
 
 #[test]
-fn an_immutable_borrowing_helper_is_exactly_pure() {
-    // Reading through a borrow of a current-function own root contributes no
-    // enclosing region effect [EFF-2], `args_count` is total with the empty
-    // row [SYS-2], and `Args` releases with the empty row [SYS-5], so `pure`
-    // is exact rather than merely permitted.
+fn an_immutable_borrowing_helper_names_only_the_snapshot_capability() {
+    // The local borrow region still does not escape into the row. The new
+    // authority component is `reads(args)`, independently of that lifetime.
     assert_complete(
-        b"fn count_arguments(args: own Args) -> result: own u64 pure {\n  region 'a {\n    let total = args_count<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn count_arguments(args: own Args) -> result: own u64 reads(args) {\n  region 'a {\n    let total = args_count<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
-const CONDITIONAL_UNION_ACCEPT: &[u8] = b"fn dispose_open_outcome(outcome: own Result<ReadFile, IoError>) -> result: own unit external, blocks {\n  match outcome {\n    Ok(value: file) => {\n      return unit;\n    }\n    Err(error: problem) => {\n      return unit;\n    }\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const CONDITIONAL_UNION_ACCEPT: &[u8] = b"fn dispose_open_outcome(outcome: own Result<ReadFile, IoError>) -> result: own unit writes(outcome) {\n  match outcome {\n    Ok(value: file) => {\n      return unit;\n    }\n    Err(error: problem) => {\n      return unit;\n    }\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 const CONDITIONAL_UNION_REJECT: &[u8] = b"fn dispose_open_outcome(outcome: own Result<ReadFile, IoError>) -> result: own unit pure {\n  match outcome {\n    Ok(value: file) => {\n      return unit;\n    }\n    Err(error: problem) => {\n      return unit;\n    }\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
@@ -121,7 +118,7 @@ fn a_release_on_one_match_arm_contributes_its_row() {
     // The release contribution is the union over every normal edge of the
     // conservative structural graph [FN-1]: only the `Ok` arm ever holds a
     // `ReadFile`, and `IoError` has no release action [SYS-5], yet the
-    // one-arm release still contributes `external, blocks`.
+    // one-arm release still contributes its exact capability write.
     assert_complete(CONDITIONAL_UNION_ACCEPT);
     // Running on only some paths never weakens the contribution: omitting
     // the row is an undeclared-but-exhibited rejection naming the arm
@@ -135,14 +132,14 @@ fn a_pure_contract_member_cannot_bind_a_release_effectful_function() {
     // and `blocks` by presence exactly as `traps`: a `pure` member cannot
     // bind a function that exhibits a category only through release.
     assert_rule(
-        b"contract Disposer {\n  fn dispose(file: own ReadFile) -> result: own unit pure;\n}\n\nconform u64: Disposer {\n  dispose = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit external, blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"contract Disposer {\n  fn dispose(file: own ReadFile) -> result: own unit pure;\n}\n\nconform u64: Disposer {\n  dispose = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn3,
         SemanticIssueKind::IncompatibleConformanceFunction,
     );
     // The same member row binds the same function when both declare the two
     // categories, so the presence comparison admits as well as rejects.
     assert_complete(
-        b"contract Disposer {\n  fn dispose(file: own ReadFile) -> result: own unit external, blocks;\n}\n\nconform u64: Disposer {\n  dispose = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit external, blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"contract Disposer {\n  fn dispose(item: own ReadFile) -> result: own unit writes(item);\n}\n\nconform u64: Disposer {\n  dispose = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -164,46 +161,482 @@ fn memory_reclamation_contributes_no_release_row() {
 fn release_attribution_is_transitive_over_owned_content() {
     // Release of a value is release of its components [SYS-5]: a
     // `box<ReadFile>` drop frees the box with the empty row and releases the
-    // boxed `ReadFile` with its fixed `external, blocks` row, so the row is
+    // boxed `ReadFile` with its fixed capability-release row, so the row is
     // exhibited through the indirection.
     assert_complete(
-        b"fn stash(file: own ReadFile) -> result: own unit allocates(heap), external, blocks {\n  let boxed = box_new(move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn stash(file: own ReadFile) -> result: own unit writes(file), allocates(heap) {\n  let boxed = box_new(move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
 #[test]
 fn the_two_categories_keep_eff1_canonical_order_and_multiplicity() {
-    // `external` and `blocks` take fixed positions between `allocates` and
-    // `traps` [EFF-1]; out-of-order and repeated spellings are EFF-1
-    // rejections before any EFF-2 judgment.
+    // The replacement keeps the same canonical-order and multiplicity
+    // coverage over the live categories: reads, writes, allocates, traps.
     assert_rule(
-        b"fn probe() -> result: own unit blocks, external {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: own ReadFile) -> result: own unit allocates(heap), writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         SemanticIssueKind::InvalidEffectRow,
     );
     assert_rule(
-        b"fn probe() -> result: own unit external, external {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: own ReadFile) -> result: own unit writes(file), writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         SemanticIssueKind::InvalidEffectRow,
     );
     assert_rule(
-        b"fn probe() -> result: own unit traps, blocks {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: own ReadFile) -> result: own unit traps, writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         SemanticIssueKind::InvalidEffectRow,
     );
 }
 
 #[test]
-fn user_calls_transfer_the_two_categories_by_presence() {
-    // A call to a function whose row includes `external` or `blocks`
-    // syntactically exhibits that category at the caller [EFF-2]; the
-    // categories are payload-free, so no region projection applies.
+fn user_calls_substitute_capability_formals_to_actual_origins() {
+    // A moved capability keeps its direct formal origin, and the callee's
+    // capability subject projects back to that caller formal.
     assert_complete(
-        b"fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {\n  return unit;\n}\n\nfn forward(file: own ReadFile) -> result: own unit external, blocks {\n  release_read_file(file: move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\nfn forward(file: own ReadFile) -> result: own unit writes(file) {\n  let moved = move file;\n  release_read_file(file: move moved);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
     assert_rule(
-        b"fn release_read_file(file: own ReadFile) -> result: own unit external, blocks {\n  return unit;\n}\n\nfn forward(file: own ReadFile) -> result: own unit pure {\n  release_read_file(file: move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\nfn forward(file: own ReadFile) -> result: own unit pure {\n  release_read_file(file: move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
+    );
+}
+
+const PASS_OUTPUT_PREFIX: &str = r#"fn pass_output(output: own Output) -> result: own Output pure {
+  return move output;
+}
+
+"#;
+
+fn pass_output_program(effects: &str) -> Vec<u8> {
+    format!(
+        "{PASS_OUTPUT_PREFIX}command fn main(command.stdout as out: own Output) -> status: own ExitStatus {effects} {{\n  let same = pass_output(output: move out);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {{\n    region 's {{\n      let written = write_once<'o, 's>(output: &'o same, source: &'s bytes, start: 0_u64, end: 1_u64);\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+    )
+    .into_bytes()
+}
+
+#[test]
+fn a_user_result_cannot_wash_an_output_formal_origin() {
+    let accepted = pass_output_program("writes(out), allocates(heap)");
+    assert_complete(&accepted);
+    let washed = pass_output_program("allocates(heap)");
+    assert_rule(
+        &washed,
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
+    );
+    with_semantics(&accepted, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("the pass-through program must check: {outcome:?}");
+        };
+        assert_eq!(
+            program.data.functions[0].result_authority_origin,
+            CheckedResultAuthorityOrigin::Finite {
+                may_absent: false,
+                may_fresh: false,
+                formals: vec![0],
+            }
+        );
+    });
+}
+
+#[test]
+fn a_passed_through_read_file_close_keeps_its_release_write() {
+    let accepted = br#"fn pass_file(file: own ReadFile) -> result: own ReadFile pure {
+  return move file;
+}
+
+fn close_after_pass(file: own ReadFile) -> result: own unit writes(file) {
+  let same = pass_file(file: move file);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(accepted);
+    let rejected = br#"fn pass_file(file: own ReadFile) -> result: own ReadFile pure {
+  return move file;
+}
+
+fn close_after_pass(file: own ReadFile) -> result: own unit pure {
+  let same = pass_file(file: move file);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_release_mismatch(rejected, "same", b"pure");
+}
+
+fn choose_output_program(effects: &str, delivered: bool) -> Vec<u8> {
+    let chooser = if delivered {
+        r#"fn choose_output(left: own Output, right: own Output, take_left: own Bool) -> result: own Output pure {
+  let selected = if take_left {
+    give move left;
+  } else {
+    give move right;
+  }
+  return move selected;
+}
+
+fn forward_choice(left: own Output, right: own Output, take_left: own Bool) -> result: own Output pure {
+  return choose_output(left: move left, right: move right, take_left: take_left);
+}
+
+"#
+    } else {
+        r#"fn forward_choice(left: own Output, right: own Output, take_left: own Bool) -> result: own Output pure {
+  if take_left {
+    return move left;
+  } else {
+    return move right;
+  }
+}
+
+"#
+    };
+    format!(
+        "{chooser}command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus {effects} {{\n  let flag = True();\n  let selected = forward_choice(left: move out, right: move err, take_left: flag);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {{\n    region 's {{\n      let written = write_once<'o, 's>(output: &'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+    )
+    .into_bytes()
+}
+
+#[test]
+fn a_control_flow_result_projects_to_every_possible_formal() {
+    let accepted = choose_output_program("writes(out err), allocates(heap)", false);
+    assert_complete(&accepted);
+    let narrowed = choose_output_program("writes(out), allocates(heap)", false);
+    assert_rule(
+        &narrowed,
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
+    );
+    with_semantics(&accepted, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("the finite-origin choice must check: {outcome:?}");
+        };
+        assert_eq!(
+            program.data.functions[0].result_authority_origin,
+            CheckedResultAuthorityOrigin::Finite {
+                may_absent: false,
+                may_fresh: false,
+                formals: vec![0, 1],
+            }
+        );
+    });
+}
+
+#[test]
+fn value_if_delivery_and_a_multihop_wrapper_preserve_the_same_formal() {
+    let source = br#"fn delivered(output: own Output, first: own Bool) -> result: own Output pure {
+  let selected = if first {
+    give move output;
+  } else {
+    give move output;
+  }
+  return move selected;
+}
+
+fn delivered_wrapper(output: own Output, first: own Bool) -> result: own Output pure {
+  return delivered(output: move output, first: first);
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+  let flag = True();
+  let selected = delivered_wrapper(output: move out, first: flag);
+  let bytes = buffer_new(1_u64, 65_u8);
+  region 'o {
+    region 's {
+      let written = write_once<'o, 's>(output: &'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
+#[test]
+fn a_recursive_pass_through_reaches_the_formal_fixed_point() {
+    let source = br#"fn recursive_pass(output: own Output, stop: own Bool) -> result: own Output pure {
+  if stop {
+    return move output;
+  } else {
+    return recursive_pass(output: move output, stop: stop);
+  }
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+  let flag = True();
+  let selected = recursive_pass(output: move out, stop: flag);
+  let bytes = buffer_new(1_u64, 65_u8);
+  region 'o {
+    region 's {
+      let written = write_once<'o, 's>(output: &'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
+#[test]
+fn a_mutually_recursive_pass_through_reaches_the_same_fixed_point() {
+    let source = br#"fn mutual_a(output: own Output, stop: own Bool) -> result: own Output pure {
+  if stop {
+    return move output;
+  } else {
+    return mutual_b(output: move output, stop: stop);
+  }
+}
+
+fn mutual_b(output: own Output, stop: own Bool) -> result: own Output pure {
+  return mutual_a(output: move output, stop: stop);
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+  let flag = True();
+  let selected = mutual_b(output: move out, stop: flag);
+  let bytes = buffer_new(1_u64, 65_u8);
+  region 'o {
+    region 's {
+      let written = write_once<'o, 's>(output: &'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
+#[test]
+fn a_fresh_and_formal_result_join_remains_a_finite_origin_set() {
+    let source = br#"fn choose_file['r, 'p](existing: own Result<ReadFile, IoError>, root: &'r DirectoryRead, path: &'p RelativePath, fresh: own Bool) -> result: own Result<ReadFile, IoError> reads('r 'p root), writes(existing) {
+  if fresh {
+    return open_read<'r, 'p>(root: root, path: path);
+  } else {
+    return move existing;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("fresh/formal origin union must check: {outcome:?}");
+        };
+        assert_eq!(
+            program.data.functions[0].result_authority_origin,
+            CheckedResultAuthorityOrigin::Finite {
+                may_absent: true,
+                may_fresh: true,
+                formals: vec![0],
+            }
+        );
+    });
+}
+
+#[test]
+fn an_unclosed_recursive_origin_is_explicitly_unsupported() {
+    let source = br#"fn unclosed(output: own Output) -> result: own Output pure {
+  return unclosed(output: move output);
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {
+  let result = unclosed(output: move out);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_unsupported(
+        source,
+        crate::UnsupportedSemanticFeature::CapabilityResultOrigin,
+    );
+}
+
+#[test]
+fn a_multi_root_capability_aggregate_is_explicitly_unsupported() {
+    let source = br#"struct Pair {
+  first: ReadFile;
+  second: ReadFile;
+}
+
+fn dispose(pair: own Pair) -> result: own unit pure {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_unsupported(
+        source,
+        crate::UnsupportedSemanticFeature::CapabilityResultOrigin,
+    );
+}
+
+#[test]
+fn a_source_error_precedes_the_multi_root_capability_stop() {
+    let source = br#"struct Pair {
+  first: ReadFile;
+  second: ReadFile;
+}
+
+fn broken(pair: own Pair) -> result: own unit pure {
+  return 1_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule(source, SemanticRule::Fn1, SemanticIssueKind::ReturnMismatch);
+}
+
+#[test]
+fn an_unrelated_loop_does_not_destroy_a_formal_origin() {
+    let source = br#"fn through_loop(output: own Output) -> result: own Output pure {
+  loop @once {
+    break @once;
+  }
+  return move output;
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+  let selected = through_loop(output: move out);
+  let bytes = buffer_new(1_u64, 65_u8);
+  region 'o {
+    region 's {
+      let written = write_once<'o, 's>(output: &'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
+#[test]
+fn a_loop_break_join_retains_the_two_origins_an_update_can_select() {
+    let source = br#"fn loop_choice['r, 'p](selected: own Result<ReadFile, IoError>, root: &'r DirectoryRead, path: &'p RelativePath, refresh: own Bool) -> result: own Result<ReadFile, IoError> reads('r 'p root), writes(selected) {
+  loop @once {
+    if refresh {
+      let replacement = open_read<'r, 'p>(root: root, path: path);
+      let discarded = replace selected = move replacement;
+    }
+    break @once;
+  }
+  return move selected;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("loop origin update must check: {outcome:?}");
+        };
+        assert_eq!(
+            program.data.functions[0].result_authority_origin,
+            CheckedResultAuthorityOrigin::Finite {
+                may_absent: true,
+                may_fresh: true,
+                formals: vec![0],
+            }
+        );
+    });
+}
+
+#[test]
+fn an_optional_capability_result_can_prove_that_its_only_route_is_absent() {
+    let source = br#"fn no_file() -> result: own Result<ReadFile, IoError> pure {
+  let problem = Other(code: 0_u32, origin: 0_u8);
+  return Err<ReadFile, IoError>(error: move problem);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = no_file();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("a proved Err-only optional capability must check: {outcome:?}");
+        };
+        assert_eq!(
+            program.data.functions[0].result_authority_origin,
+            CheckedResultAuthorityOrigin::Finite {
+                may_absent: true,
+                may_fresh: false,
+                formals: Vec::new(),
+            }
+        );
+    });
+}
+
+#[test]
+fn an_optional_result_projects_its_present_formal_and_keeps_its_absent_route() {
+    let source = br#"fn maybe_output(output: own Output, present: own Bool) -> result: own Result<Output, IoError> pure {
+  if present {
+    return Ok<Output, IoError>(value: move output);
+  } else {
+    let problem = Other(code: 0_u32, origin: 0_u8);
+    return Err<Output, IoError>(error: move problem);
+  }
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
+  let flag = True();
+  match maybe_output(output: move out, present: flag) {
+    Ok(value: selected) => {
+      let bytes = buffer_new(1_u64, 65_u8);
+      region 'o {
+        region 's {
+          let written = write_once<'o, 's>(output: &'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+        }
+      }
+    }
+    Err(error: problem) => {
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("optional formal origin must check: {outcome:?}");
+        };
+        assert_eq!(
+            program.data.functions[0].result_authority_origin,
+            CheckedResultAuthorityOrigin::Finite {
+                may_absent: true,
+                may_fresh: false,
+                formals: vec![0],
+            }
+        );
+    });
+}
+
+#[test]
+fn eff1_rejects_a_copy_only_parameter_as_a_capability_subject() {
+    assert_rule(
+        b"fn probe(value: own u64) -> result: own unit reads(value) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        SemanticRule::Eff1,
+        SemanticIssueKind::InvalidEffectRow,
+    );
+}
+
+#[test]
+fn external_and_blocks_are_ordinary_function_and_parameter_names() {
+    assert_complete(
+        b"fn external(blocks: own Args) -> result: own u64 reads(blocks) {\n  region 'a {\n    let total = args_count<'a>(args: &'a blocks);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }

@@ -6,8 +6,26 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <sched.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+/* Fixed scheduler injection. The completion core publishes only an opaque
+ * frame. A link which registers no frame dependency needs no scheduler unit. */
+__attribute__((weak)) void wf__writer_scheduler_ready(void *frame) {
+    (void)frame;
+    abort();
+}
+
+static void wf_completion_notify_scheduler(wf_completion_runtime *runtime);
+static void wf_completion_notify_admission(wf_completion_runtime *runtime);
+
+enum wf_completion_batch_gate {
+    WF_COMPLETION_BATCH_GATE_OPEN = 0u,
+    WF_COMPLETION_BATCH_GATE_CLOSED = 1u,
+    WF_COMPLETION_BATCH_GATE_SINGLE_WAITING = 2u
+};
 
 static int wf_completion_token_slot(
     wf_completion_runtime *runtime,
@@ -24,6 +42,7 @@ static int wf_completion_token_slot(
 static void wf_completion_clear_statistics(wf_completion_runtime *runtime) {
     atomic_init(&runtime->stat_claims, 0);
     atomic_init(&runtime->stat_claim_capacity_waits, 0);
+    atomic_init(&runtime->stat_claim_admission_waits, 0);
     atomic_init(&runtime->stat_target_capacity_waits, 0);
     atomic_init(&runtime->stat_publications, 0);
     atomic_init(&runtime->stat_stale_publications, 0);
@@ -33,7 +52,9 @@ static void wf_completion_clear_statistics(wf_completion_runtime *runtime) {
     atomic_init(&runtime->stat_parks, 0);
     atomic_init(&runtime->stat_wake_signals, 0);
     atomic_init(&runtime->stat_compute_notifications, 0);
+    atomic_init(&runtime->stat_target_notifications, 0);
     atomic_init(&runtime->stat_capacity_notifications, 0);
+    atomic_init(&runtime->stat_admission_notifications, 0);
 }
 
 int wf_completion_runtime_init(
@@ -57,15 +78,25 @@ int wf_completion_runtime_init(
     atomic_init(&runtime->ready_events, 0);
     atomic_init(&runtime->wake_epoch, 0);
     atomic_init(&runtime->parked_schedulers, 0);
+    atomic_init(&runtime->batch_claiming, 0);
+    atomic_init(&runtime->single_claimers, 0);
+    runtime->wake_callback = NULL;
+    runtime->wake_context = NULL;
     wf_completion_clear_statistics(runtime);
 
+    error = pthread_mutex_init(&runtime->batch_claim_lock, NULL);
+    if (error != 0) {
+        return error;
+    }
     error = pthread_mutex_init(&runtime->wake_lock, NULL);
     if (error != 0) {
+        (void)pthread_mutex_destroy(&runtime->batch_claim_lock);
         return error;
     }
     error = pthread_cond_init(&runtime->wake_condition, NULL);
     if (error != 0) {
         (void)pthread_mutex_destroy(&runtime->wake_lock);
+        (void)pthread_mutex_destroy(&runtime->batch_claim_lock);
         return error;
     }
 
@@ -80,6 +111,7 @@ int wf_completion_runtime_init(
             }
             (void)pthread_cond_destroy(&runtime->wake_condition);
             (void)pthread_mutex_destroy(&runtime->wake_lock);
+            (void)pthread_mutex_destroy(&runtime->batch_claim_lock);
             return error;
         }
         atomic_init(&slot->generation, 0);
@@ -87,7 +119,26 @@ int wf_completion_runtime_init(
         atomic_init(&slot->milestones, 0);
         atomic_init(&slot->event_pending, 0);
         atomic_init(&slot->event_drained, 0);
+        slot->consume_waiting = 0;
+        slot->dependent_frame = NULL;
+        slot->dependent_requirement = 0;
     }
+    return 0;
+}
+
+int wf_completion_set_wake_callback(
+    wf_completion_runtime *runtime,
+    wf_completion_wake_callback wake,
+    void *context
+) {
+    if (runtime == NULL || runtime->slots == NULL || wake == NULL) {
+        return EINVAL;
+    }
+    if (runtime->wake_callback != NULL) {
+        return EBUSY;
+    }
+    runtime->wake_context = context;
+    runtime->wake_callback = wake;
     return 0;
 }
 
@@ -129,6 +180,12 @@ int wf_completion_runtime_destroy(wf_completion_runtime *runtime) {
             first_error = error;
         }
     }
+    {
+        int error = pthread_mutex_destroy(&runtime->batch_claim_lock);
+        if (first_error == 0 && error != 0) {
+            first_error = error;
+        }
+    }
     if (first_error == 0) {
         runtime->slots = NULL;
         runtime->slot_count = 0;
@@ -136,7 +193,7 @@ int wf_completion_runtime_destroy(wf_completion_runtime *runtime) {
     return first_error;
 }
 
-enum wf_completion_claim_result wf_completion_claim(
+static enum wf_completion_claim_result wf_completion_claim_one(
     wf_completion_runtime *runtime,
     wf_completion_token *token
 ) {
@@ -179,10 +236,14 @@ enum wf_completion_claim_result wf_completion_claim(
         }
         generation += 1;
         slot->terminal_kind = 0;
+        slot->adapter_tag = 0;
         slot->result_size = 0;
+        slot->dependent_frame = NULL;
+        slot->dependent_requirement = 0;
         atomic_store_explicit(&slot->milestones, 0, memory_order_relaxed);
         atomic_store_explicit(&slot->event_pending, 0, memory_order_relaxed);
         atomic_store_explicit(&slot->event_drained, 0, memory_order_relaxed);
+        slot->consume_waiting = 0;
         atomic_store_explicit(&slot->generation, generation, memory_order_relaxed);
         atomic_store_explicit(&slot->phase, WF_COMPLETION_READY, memory_order_release);
         (void)pthread_mutex_unlock(&slot->publication_lock);
@@ -199,6 +260,160 @@ enum wf_completion_claim_result wf_completion_claim(
         memory_order_relaxed
     );
     return WF_COMPLETION_CLAIM_WAIT_CAPACITY;
+}
+
+/* Marks the current closed-gate generation before returning a scheduler wait.
+ * The batch exchange either observes this bit and broadcasts, or wins first;
+ * in the latter case the failed CAS observes OPEN and the claimant retries
+ * immediately. All gate and active-claimer operations share the seq_cst order. */
+static int wf_completion_batch_admission_closed(
+    wf_completion_runtime *runtime
+) {
+    unsigned observed = atomic_load_explicit(
+        &runtime->batch_claiming,
+        memory_order_seq_cst
+    );
+    for (;;) {
+        if ((observed & WF_COMPLETION_BATCH_GATE_CLOSED) == 0) {
+            return 0;
+        }
+        if ((observed & WF_COMPLETION_BATCH_GATE_SINGLE_WAITING) != 0) {
+            return 1;
+        }
+        if (atomic_compare_exchange_weak_explicit(
+                &runtime->batch_claiming,
+                &observed,
+                observed | WF_COMPLETION_BATCH_GATE_SINGLE_WAITING,
+                memory_order_seq_cst,
+                memory_order_seq_cst
+            )) {
+            return 1;
+        }
+    }
+}
+
+static int wf_completion_reopen_batch_admission(
+    wf_completion_runtime *runtime
+) {
+    unsigned closed = atomic_exchange_explicit(
+        &runtime->batch_claiming,
+        WF_COMPLETION_BATCH_GATE_OPEN,
+        memory_order_seq_cst
+    );
+    return (closed & WF_COMPLETION_BATCH_GATE_SINGLE_WAITING) != 0;
+}
+
+enum wf_completion_claim_result wf_completion_claim(
+    wf_completion_runtime *runtime,
+    wf_completion_token *token
+) {
+    if (runtime == NULL || token == NULL || runtime->slots == NULL) {
+        return WF_COMPLETION_CLAIM_INVALID;
+    }
+    if (wf_completion_batch_admission_closed(runtime)) {
+        atomic_fetch_add_explicit(
+            &runtime->stat_claim_admission_waits,
+            1,
+            memory_order_relaxed
+        );
+        return WF_COMPLETION_CLAIM_WAIT_ADMISSION;
+    }
+    atomic_fetch_add_explicit(
+        &runtime->single_claimers,
+        1,
+        memory_order_seq_cst
+    );
+    if (wf_completion_batch_admission_closed(runtime)) {
+        atomic_fetch_sub_explicit(
+            &runtime->single_claimers,
+            1,
+            memory_order_seq_cst
+        );
+        atomic_fetch_add_explicit(
+            &runtime->stat_claim_admission_waits,
+            1,
+            memory_order_relaxed
+        );
+        return WF_COMPLETION_CLAIM_WAIT_ADMISSION;
+    }
+    {
+        enum wf_completion_claim_result result =
+            wf_completion_claim_one(runtime, token);
+        atomic_fetch_sub_explicit(
+            &runtime->single_claimers,
+            1,
+            memory_order_seq_cst
+        );
+        return result;
+    }
+}
+
+enum wf_completion_claim_result wf_completion_claim_many(
+    wf_completion_runtime *runtime,
+    wf_completion_token *tokens,
+    size_t count
+) {
+    size_t available = 0;
+    size_t index;
+    int notify_admission;
+    if (runtime == NULL || tokens == NULL || count == 0
+        || runtime->slots == NULL || count > runtime->slot_count) {
+        return WF_COMPLETION_CLAIM_INVALID;
+    }
+    (void)pthread_mutex_lock(&runtime->batch_claim_lock);
+    atomic_store_explicit(
+        &runtime->batch_claiming,
+        WF_COMPLETION_BATCH_GATE_CLOSED,
+        memory_order_seq_cst
+    );
+    while (atomic_load_explicit(
+               &runtime->single_claimers,
+               memory_order_seq_cst
+           ) != 0) {
+        (void)sched_yield();
+    }
+    for (index = 0; index < runtime->slot_count; ++index) {
+        wf_completion_slot *slot = &runtime->slots[index];
+        if (atomic_load_explicit(&slot->phase, memory_order_acquire)
+                == WF_COMPLETION_FREE
+            && atomic_load_explicit(
+                   &slot->generation,
+                   memory_order_relaxed
+               ) != UINT64_MAX) {
+            available += 1;
+        }
+    }
+    if (available < count) {
+        notify_admission = wf_completion_reopen_batch_admission(runtime);
+        (void)pthread_mutex_unlock(&runtime->batch_claim_lock);
+        if (notify_admission != 0) {
+            wf_completion_notify_admission(runtime);
+        }
+        atomic_fetch_add_explicit(
+            &runtime->stat_claim_capacity_waits,
+            1,
+            memory_order_relaxed
+        );
+        return WF_COMPLETION_CLAIM_WAIT_CAPACITY;
+    }
+    for (index = 0; index < count; ++index) {
+        if (wf_completion_claim_one(runtime, &tokens[index])
+            != WF_COMPLETION_CLAIMED) {
+            atomic_store_explicit(
+                &runtime->batch_claiming,
+                0,
+                memory_order_seq_cst
+            );
+            (void)pthread_mutex_unlock(&runtime->batch_claim_lock);
+            abort();
+        }
+    }
+    notify_admission = wf_completion_reopen_batch_admission(runtime);
+    (void)pthread_mutex_unlock(&runtime->batch_claim_lock);
+    if (notify_admission != 0) {
+        wf_completion_notify_admission(runtime);
+    }
+    return WF_COMPLETION_CLAIMED;
 }
 
 static enum wf_completion_transition_result wf_completion_transition(
@@ -278,21 +493,74 @@ enum wf_completion_transition_result wf_completion_target_accepted(
     );
 }
 
+enum wf_completion_transition_result wf_completion_set_adapter_tag(
+    wf_completion_runtime *runtime,
+    wf_completion_token token,
+    uint32_t adapter_tag
+) {
+    wf_completion_slot *slot;
+    uint64_t generation;
+    unsigned phase;
+    if (adapter_tag == 0 || !wf_completion_token_slot(runtime, token, &slot)) {
+        return WF_COMPLETION_TRANSITION_STALE;
+    }
+    (void)pthread_mutex_lock(&slot->publication_lock);
+    generation = atomic_load_explicit(&slot->generation, memory_order_relaxed);
+    phase = atomic_load_explicit(&slot->phase, memory_order_relaxed);
+    if (generation != token.generation) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return WF_COMPLETION_TRANSITION_STALE;
+    }
+    if (phase != WF_COMPLETION_READY && phase != WF_COMPLETION_WAIT_CAPACITY
+        && phase != WF_COMPLETION_SUBMITTING) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return WF_COMPLETION_TRANSITION_INVALID_STATE;
+    }
+    slot->adapter_tag = adapter_tag;
+    (void)pthread_mutex_unlock(&slot->publication_lock);
+    return WF_COMPLETION_TRANSITIONED;
+}
+
 static void wf_completion_notify_scheduler(wf_completion_runtime *runtime) {
     atomic_fetch_add_explicit(&runtime->wake_epoch, 1, memory_order_release);
     (void)pthread_mutex_lock(&runtime->wake_lock);
-    if (atomic_load_explicit(
+    {
+        unsigned parked = atomic_load_explicit(
             &runtime->parked_schedulers,
             memory_order_relaxed
-        ) != 0) {
-        (void)pthread_cond_signal(&runtime->wake_condition);
-        atomic_fetch_add_explicit(
-            &runtime->stat_wake_signals,
-            1,
-            memory_order_relaxed
         );
+        if (parked != 0) {
+            /* An active scheduler observes the epoch or ready source directly.
+             * Only an announced sleeper needs an explicit host wake. External
+             * target waits increment parked_schedulers under this same lock,
+             * closing their empty-check -> sleep race. */
+            if (runtime->wake_callback != NULL) {
+                runtime->wake_callback(runtime->wake_context);
+            }
+            /* One waiter needs one signal. Two or more captured the same old
+             * global epoch, so all of them must recheck after this transition. */
+            if (parked == 1) {
+                (void)pthread_cond_signal(&runtime->wake_condition);
+            } else {
+                (void)pthread_cond_broadcast(&runtime->wake_condition);
+            }
+            atomic_fetch_add_explicit(
+                &runtime->stat_wake_signals,
+                1,
+                memory_order_relaxed
+            );
+        }
     }
     (void)pthread_mutex_unlock(&runtime->wake_lock);
+}
+
+static void wf_completion_notify_admission(wf_completion_runtime *runtime) {
+    atomic_fetch_add_explicit(
+        &runtime->stat_admission_notifications,
+        1,
+        memory_order_relaxed
+    );
+    wf_completion_notify_scheduler(runtime);
 }
 
 static enum wf_completion_publish_result wf_completion_publish(
@@ -377,7 +645,6 @@ static enum wf_completion_publish_result wf_completion_publish(
         memory_order_relaxed
     );
     (void)pthread_mutex_unlock(&slot->publication_lock);
-
     wf_completion_notify_scheduler(runtime);
     return WF_COMPLETION_PUBLISHED;
 }
@@ -416,6 +683,7 @@ size_t wf_completion_drain(
 ) {
     size_t scanned = 0;
     size_t produced = 0;
+    int wake_consumer = 0;
     size_t cursor;
     size_t index;
 
@@ -432,6 +700,7 @@ size_t wf_completion_drain(
     while (scanned < scan_budget && produced < event_capacity) {
         size_t slot_index = index;
         wf_completion_slot *slot = &runtime->slots[slot_index];
+        void *dependent_frame = NULL;
         unsigned pending = 1;
         scanned += 1;
         index = index + 1 == runtime->slot_count ? 0 : index + 1;
@@ -456,7 +725,18 @@ size_t wf_completion_drain(
             memory_order_acquire
         );
         events[produced].terminal_kind = slot->terminal_kind;
+        if (slot->dependent_frame != NULL
+            && (events[produced].milestones & slot->dependent_requirement)
+                == slot->dependent_requirement) {
+            dependent_frame = slot->dependent_frame;
+            slot->dependent_frame = NULL;
+            slot->dependent_requirement = 0;
+        }
         atomic_store_explicit(&slot->event_drained, 1, memory_order_release);
+        if (slot->consume_waiting != 0) {
+            slot->consume_waiting = 0;
+            wake_consumer = 1;
+        }
         (void)pthread_mutex_unlock(&slot->publication_lock);
 
         atomic_fetch_sub_explicit(&runtime->ready_events, 1, memory_order_acq_rel);
@@ -465,7 +745,18 @@ size_t wf_completion_drain(
             1,
             memory_order_relaxed
         );
+        /* A writer frame becomes runnable only after its exact event is
+         * scheduler-owned. Its resume can therefore consume immediately. */
+        if (dependent_frame != NULL) {
+            wf__writer_scheduler_ready(dependent_frame);
+        }
         produced += 1;
+    }
+    if (wake_consumer != 0) {
+        /* Only a token owner which completed the final recheck-to-park
+         * handshake needs this second publication. Uncontended drain remains
+         * a local state change. */
+        wf_completion_notify_scheduler(runtime);
     }
     return produced;
 }
@@ -500,6 +791,56 @@ enum wf_completion_transition_result wf_completion_observe(
     *phase = atomic_load_explicit(&slot->phase, memory_order_acquire);
     (void)pthread_mutex_unlock(&slot->publication_lock);
     return WF_COMPLETION_TRANSITIONED;
+}
+
+enum wf_completion_depend_result wf_completion_depend(
+    wf_completion_runtime *runtime,
+    wf_completion_token token,
+    uint32_t requirement,
+    void *frame
+) {
+    wf_completion_slot *slot;
+    uint64_t generation;
+    uint32_t milestones;
+    unsigned phase;
+    int already_ready = 0;
+
+    if (requirement == 0 || frame == NULL || runtime == NULL
+        || !wf_completion_token_slot(runtime, token, &slot)) {
+        return WF_COMPLETION_DEPEND_INVALID_ARGUMENT;
+    }
+    (void)pthread_mutex_lock(&slot->publication_lock);
+    generation = atomic_load_explicit(&slot->generation, memory_order_relaxed);
+    if (generation != token.generation) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return WF_COMPLETION_DEPEND_STALE;
+    }
+    if (slot->dependent_frame != NULL) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return WF_COMPLETION_DEPEND_DUPLICATE;
+    }
+    phase = atomic_load_explicit(&slot->phase, memory_order_acquire);
+    if (phase == WF_COMPLETION_FREE || phase == WF_COMPLETION_RETIRED) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return WF_COMPLETION_DEPEND_STALE;
+    }
+    milestones = atomic_load_explicit(&slot->milestones, memory_order_acquire);
+    if ((milestones & requirement) == requirement
+        && atomic_load_explicit(
+               &slot->event_drained,
+               memory_order_acquire
+           ) != 0) {
+        already_ready = 1;
+    } else {
+        slot->dependent_frame = frame;
+        slot->dependent_requirement = requirement;
+    }
+    (void)pthread_mutex_unlock(&slot->publication_lock);
+    if (already_ready) {
+        wf__writer_scheduler_ready(frame);
+        return WF_COMPLETION_DEPEND_ALREADY_READY;
+    }
+    return WF_COMPLETION_DEPEND_REGISTERED;
 }
 
 enum wf_completion_consume_result wf_completion_consume(
@@ -544,10 +885,15 @@ enum wf_completion_consume_result wf_completion_consume(
         memory_order_acquire
     );
     outcome->terminal_kind = slot->terminal_kind;
+    outcome->adapter_tag = slot->adapter_tag;
     outcome->result_size = slot->result_size;
 
     slot->terminal_kind = 0;
+    slot->adapter_tag = 0;
     slot->result_size = 0;
+    slot->dependent_frame = NULL;
+    slot->dependent_requirement = 0;
+    slot->consume_waiting = 0;
     atomic_store_explicit(&slot->milestones, 0, memory_order_relaxed);
     atomic_store_explicit(&slot->event_drained, 0, memory_order_relaxed);
     atomic_store_explicit(&slot->phase, WF_COMPLETION_FREE, memory_order_release);
@@ -560,6 +906,35 @@ enum wf_completion_consume_result wf_completion_consume(
     /* A slot-capacity waiter may live on another scheduler lane. */
     wf_completion_notify_capacity(runtime);
     return WF_COMPLETION_CONSUMED;
+}
+
+enum wf_completion_consume_wait_result wf_completion_wait_to_consume(
+    wf_completion_runtime *runtime,
+    wf_completion_token token
+) {
+    wf_completion_slot *slot;
+    uint64_t generation;
+    unsigned phase;
+    unsigned drained;
+    if (!wf_completion_token_slot(runtime, token, &slot)) {
+        return WF_COMPLETION_CONSUME_WAIT_STALE;
+    }
+    (void)pthread_mutex_lock(&slot->publication_lock);
+    generation = atomic_load_explicit(&slot->generation, memory_order_relaxed);
+    phase = atomic_load_explicit(&slot->phase, memory_order_acquire);
+    drained = atomic_load_explicit(&slot->event_drained, memory_order_acquire);
+    if (generation != token.generation || phase == WF_COMPLETION_FREE
+        || phase == WF_COMPLETION_RETIRED) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return WF_COMPLETION_CONSUME_WAIT_STALE;
+    }
+    if (phase == WF_COMPLETION_TERMINAL_PHASE && drained != 0) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return WF_COMPLETION_CONSUME_READY;
+    }
+    slot->consume_waiting = 1;
+    (void)pthread_mutex_unlock(&slot->publication_lock);
+    return WF_COMPLETION_CONSUME_WAIT_REGISTERED;
 }
 
 uint64_t wf_completion_wake_epoch(const wf_completion_runtime *runtime) {
@@ -575,6 +950,18 @@ void wf_completion_notify_compute(wf_completion_runtime *runtime) {
     }
     atomic_fetch_add_explicit(
         &runtime->stat_compute_notifications,
+        1,
+        memory_order_relaxed
+    );
+    wf_completion_notify_scheduler(runtime);
+}
+
+void wf_completion_notify_target(wf_completion_runtime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    atomic_fetch_add_explicit(
+        &runtime->stat_target_notifications,
         1,
         memory_order_relaxed
     );
@@ -711,6 +1098,10 @@ wf_completion_statistics wf_completion_statistics_snapshot(
         &runtime->stat_claim_capacity_waits,
         memory_order_relaxed
     );
+    statistics.claim_admission_waits = atomic_load_explicit(
+        &runtime->stat_claim_admission_waits,
+        memory_order_relaxed
+    );
     statistics.target_capacity_waits = atomic_load_explicit(
         &runtime->stat_target_capacity_waits,
         memory_order_relaxed
@@ -747,8 +1138,16 @@ wf_completion_statistics wf_completion_statistics_snapshot(
         &runtime->stat_compute_notifications,
         memory_order_relaxed
     );
+    statistics.target_notifications = atomic_load_explicit(
+        &runtime->stat_target_notifications,
+        memory_order_relaxed
+    );
     statistics.capacity_notifications = atomic_load_explicit(
         &runtime->stat_capacity_notifications,
+        memory_order_relaxed
+    );
+    statistics.admission_notifications = atomic_load_explicit(
+        &runtime->stat_admission_notifications,
         memory_order_relaxed
     );
     return statistics;

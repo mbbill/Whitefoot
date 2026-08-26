@@ -214,7 +214,7 @@ fn bs_push_decimal['a](s: &uniq 'a ByteString, value: own u64) -> result: own un
   return unit;
 }
 
-fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes('o), external, blocks contract {
+fn publish_all['o, 's](output: &'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads('o 's), writes(output) contract {
   define source_length = len(deref(source));
   requires ile(length, source_length);
 } {
@@ -227,7 +227,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
       break @publish;
     }
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+      match write_once<'attempt, 's>(output: &'attempt deref(output), source: source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -240,7 +240,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus writes(out), allocates(heap) {
   doc "Builds one byte string from literals, concatenates, searches it, and publishes the measured report.";
   let subject = bs_new();
   region 'head_view {
@@ -392,7 +392,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus all
   let report_within_capacity = ile(published, report_capacity);
   if report_within_capacity {
     region 'publish {
-      match publish_all<'publish, 'publish>(output: &uniq 'publish out, source: &'publish report.buf, length: published) {
+      match publish_all<'publish, 'publish>(output: &'publish out, source: &'publish report.buf, length: published) {
         Ok(value: done) => {
         }
         Err(error: problem) => {

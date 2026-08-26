@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   doc "SYS-8 admits an empty range only when its endpoint lies inside the destination. Here start equals end but end exceeds the buffer length, so the second range goal is refuted statically.";
   let bytes = buffer_new(4_u64, 0_u8);
   region 'a {

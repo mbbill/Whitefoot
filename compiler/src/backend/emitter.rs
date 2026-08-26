@@ -9,6 +9,7 @@ mod array;
 mod boxes;
 mod buffer;
 mod cleanup;
+mod completion;
 mod conversion;
 mod floating;
 mod floor;
@@ -17,6 +18,7 @@ mod operations;
 mod parallel;
 mod reinterpret;
 mod slice;
+mod stackless;
 mod system;
 
 use std::collections::{BTreeSet, HashSet};
@@ -35,6 +37,12 @@ use crate::{
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
+pub use completion::{
+    COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
+    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
+    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
+    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, module_requires_completion_runtime,
+};
 use floor::FLOOR_RUNTIME_FALLBACK;
 pub use floor::FLOOR_RUNTIME_SOURCE;
 pub use floor::FLOOR_STACK_BYTES;
@@ -43,7 +51,9 @@ use parallel::{
     PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, par_done_label, sequential_clone_set,
     sequential_clone_symbol,
 };
-pub use parallel::{PARALLEL_RUNTIME_SOURCE, module_requires_parallel_runtime};
+pub use parallel::{
+    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, module_requires_parallel_runtime,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackendFailure {
@@ -112,23 +122,35 @@ fn emit_llvm_for(
     let mut claim_records = Vec::new();
     let mut intrinsics = BTreeSet::new();
     let mut thunks = ParallelThunks::default();
+    let mut completion_used = false;
     let mut functions = String::new();
-    for function in program.functions() {
-        functions.push_str(
-            &FunctionEmitter::new(
-                program,
-                &qualification,
-                function,
-                target,
-                ModuleState {
-                    claim_records: &mut claim_records,
-                    intrinsics: &mut intrinsics,
-                    parallel: &mut thunks,
-                    sequential_clones: None,
-                },
-            )
-            .emit()?,
+    let stackless = stackless::StacklessPlan::build(program, &qualification);
+    for (ordinal, function) in program.functions().iter().enumerate() {
+        let emitter = FunctionEmitter::new(
+            program,
+            &qualification,
+            function,
+            target,
+            ModuleState {
+                claim_records: &mut claim_records,
+                intrinsics: &mut intrinsics,
+                parallel: &mut thunks,
+                completion_used: &mut completion_used,
+                sequential_clones: None,
+            },
         );
+        let emitted = if stackless
+            .as_ref()
+            .is_some_and(|plan| u32::try_from(ordinal).ok() == Some(plan.root_ordinal()))
+        {
+            emitter.emit_stackless_root(stackless.as_ref().expect("checked above"))?
+        } else {
+            emitter.emit()?
+        };
+        functions.push_str(&emitted);
+    }
+    if let Some(plan) = &stackless {
+        functions.push_str(&plan.emit_tail_definitions(program, &qualification)?);
     }
     // The second world. It exists only where the first one actualizes
     // something, so a build that hands nothing out — every default build among
@@ -160,6 +182,7 @@ fn emit_llvm_for(
                         claim_records: &mut claim_records,
                         intrinsics: &mut intrinsics,
                         parallel: &mut thunks,
+                        completion_used: &mut completion_used,
                         sequential_clones: Some(&clones),
                     },
                 )
@@ -343,7 +366,7 @@ fn emit_llvm_for(
     }
     // Emitted only where a permitted overlap group is actually handed out, so
     // a module that overlaps nothing names no runtime symbol at all.
-    if thunks.is_used() {
+    if thunks.requires_runtime() {
         text.push('\n');
         text.push_str(PARALLEL_RUNTIME_FALLBACK);
         if !clones.is_empty() {
@@ -353,6 +376,14 @@ fn emit_llvm_for(
             text.push_str(PARALLEL_SPLIT_BUDGET_FALLBACK);
         }
         text.push_str(thunks.definitions());
+    }
+    if completion_used {
+        text.push('\n');
+        text.push_str(completion::COMPLETION_RUNTIME_FALLBACK);
+    }
+    if stackless.is_some() {
+        text.push('\n');
+        text.push_str(stackless::STACKLESS_RUNTIME_FALLBACK);
     }
     if !functions.is_empty() {
         text.push('\n');
@@ -644,7 +675,7 @@ struct FunctionEmitter<'program, 'state> {
     /// again, which is what keeps the blocks a world emits and the labels its
     /// phis name from disagreeing: a `par.done` label can be named only where
     /// the same slice caused the block to be emitted.
-    overlaps: &'program [IrOverlap],
+    overlaps: Vec<IrOverlap>,
     /// Values whose defining call is handed to a worker lane [PAR-1
     /// candidate], and the values whose definitions are the join sites that
     /// complete them.
@@ -652,6 +683,12 @@ struct FunctionEmitter<'program, 'state> {
     overlap_join_sites: HashSet<IrValueId>,
     /// Hand-outs emitted in the current block and not yet joined.
     handed_out: Vec<HandedOut>,
+    /// The one source-ordered OutputSequence batch currently being filled.
+    ordered_output: Option<completion::OrderedOutputEmission>,
+    /// The one all-or-none independent file batch currently being filled.
+    free_file_batch: Option<completion::FreeFileBatchEmission>,
+    /// Whether any function in this module emitted a typed completion handoff.
+    completion_used: &'state mut bool,
     /// The functions that have a sequential clone, when this emitter is
     /// rendering one.
     ///
@@ -676,6 +713,7 @@ struct ModuleState<'state> {
     claim_records: &'state mut Vec<Vec<u8>>,
     intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
     parallel: &'state mut ParallelThunks,
+    completion_used: &'state mut bool,
     /// `None` emits the ordinary lowering; `Some` emits the sequential clone.
     sequential_clones: Option<&'state HashSet<u32>>,
 }
@@ -692,16 +730,40 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             claim_records,
             intrinsics,
             parallel,
+            completion_used,
             sequential_clones,
         } = module;
-        // A clone actualizes nothing, so it carries no group at all: the
-        // suppression is here, at the one place the lowering reads the
-        // judgment, rather than at each of the sites that consume it.
-        let overlaps = if sequential_clones.is_some() {
-            &[][..]
-        } else {
-            function.overlaps()
-        };
+        // A sequential clone suppresses compute hand-outs only. Target
+        // completion is independent of the compute-pool choice and remains
+        // active in both worlds.
+        let overlaps: Vec<IrOverlap> = function
+            .overlaps()
+            .iter()
+            .filter_map(|overlap| {
+                if !overlap_is_actualizable(program, qualification, function, overlap)
+                    || (sequential_clones.is_some()
+                        && !target_completion_overlap(qualification, function, overlap))
+                {
+                    return None;
+                }
+                let overlap = overlap.clone();
+                Some(
+                    if free_completion_overlap(qualification, function, &overlap) {
+                        overlap.dispatch_every_member()
+                    } else {
+                        overlap
+                    },
+                )
+            })
+            .collect();
+        let overlap_handed_out = overlaps
+            .iter()
+            .flat_map(|overlap| overlap.dispatched().iter().copied())
+            .collect();
+        let overlap_join_sites = overlaps
+            .iter()
+            .filter_map(crate::IrOverlap::join_site)
+            .collect();
         Self {
             program,
             qualification,
@@ -715,15 +777,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             temporary: 0,
             parallel,
             overlaps,
-            overlap_handed_out: overlaps
-                .iter()
-                .flat_map(|overlap| overlap.handed_out().iter().copied())
-                .collect(),
-            overlap_join_sites: overlaps
-                .iter()
-                .filter_map(crate::IrOverlap::join_site)
-                .collect(),
+            overlap_handed_out,
+            overlap_join_sites,
             handed_out: Vec::new(),
+            ordered_output: None,
+            free_file_batch: None,
+            completion_used,
             sequential_clones,
         }
     }
@@ -859,7 +918,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     block_exit_label(
                         edge.predecessor,
                         self.block(edge.predecessor)?,
-                        self.overlaps
+                        &self.overlaps
                     )
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
@@ -978,7 +1037,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::SystemCall {
                 operation,
                 arguments,
-            } => self.emit_system_call(result, ty, *operation, arguments),
+                ..
+            } => {
+                if self.overlap_handed_out.contains(&result) {
+                    self.emit_handed_out_system_call(result, ty, *operation, arguments)
+                } else {
+                    self.emit_system_call(result, ty, *operation, arguments)
+                }
+            }
             IrOperation::Integer {
                 operation,
                 operand_type,
@@ -1365,6 +1431,116 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     }
 }
 
+/// Whether every member which would leave the calling thread has an execution
+/// route that preserves its target-action contract.  A possibly-suspending
+/// Whitefoot wrapper is intentionally refused until selective stackless frames
+/// exist; only its direct compiler-owned file operation can enter completion.
+fn overlap_is_actualizable(
+    program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
+    function: &IrFunction,
+    overlap: &IrOverlap,
+) -> bool {
+    if target_completion_overlap(qualification, function, overlap) {
+        return true;
+    }
+    if overlap
+        .members()
+        .iter()
+        .any(|member| match definition_operation(function, *member) {
+            Some(IrOperation::Call {
+                function: callee, ..
+            }) => program
+                .functions()
+                .get(*callee as usize)
+                .is_none_or(|callee| callee.target_action().may_suspend()),
+            Some(IrOperation::SystemCall { target_action, .. }) => target_action.may_suspend(),
+            _ => false,
+        })
+    {
+        return false;
+    }
+    overlap
+        .handed_out()
+        .iter()
+        .all(|member| match definition_operation(function, *member) {
+            Some(IrOperation::Call { function, .. }) => program
+                .functions()
+                .get(*function as usize)
+                .is_some_and(|callee| !callee.target_action().may_suspend()),
+            Some(IrOperation::SystemCall {
+                operation,
+                target_action,
+                ..
+            }) => {
+                target_action.may_suspend()
+                    && qualification.target().supports_posix_file_completion()
+                    && system::completion_file_operation(*operation).is_some()
+            }
+            _ => false,
+        })
+}
+
+fn target_completion_overlap(
+    qualification: &Qualification,
+    function: &IrFunction,
+    overlap: &IrOverlap,
+) -> bool {
+    if let Some(attribution) = overlap.ordered_attribution() {
+        return attribution == crate::SystemAuthorityAttribution::OutputBytes
+            && overlap.dispatched().len() <= crate::ORDERED_OUTPUT_BATCH_MEMBERS
+            && qualification.target().supports_posix_file_completion()
+            && overlap.dispatched().iter().all(|member| {
+                matches!(
+                    definition_operation(function, *member),
+                    Some(IrOperation::SystemCall {
+                        operation,
+                        target_action,
+                        ..
+                    }) if target_action.may_suspend()
+                        && system::completion_file_operation(*operation)
+                            == Some(system::CompletionFileOperation::Write)
+                )
+            });
+    }
+    free_completion_overlap(qualification, function, overlap)
+}
+
+fn free_completion_overlap(
+    qualification: &Qualification,
+    function: &IrFunction,
+    overlap: &IrOverlap,
+) -> bool {
+    overlap.ordered_attribution().is_none()
+        && overlap.members().len() <= crate::FREE_COMPLETION_BATCH_MEMBERS
+        && qualification.target().supports_posix_file_completion()
+        && overlap.members().iter().all(|member| {
+            matches!(
+                definition_operation(function, *member),
+                Some(IrOperation::SystemCall {
+                    operation,
+                    target_action,
+                    ..
+                }) if target_action.may_suspend()
+                    && system::completion_file_operation(*operation).is_some()
+            )
+        })
+}
+
+fn definition_operation(function: &IrFunction, value: IrValueId) -> Option<&IrOperation> {
+    function.blocks().iter().find_map(|block| {
+        block
+            .instructions()
+            .iter()
+            .find_map(|instruction| match instruction {
+                IrInstruction::Define {
+                    result, operation, ..
+                } if *result == value => Some(operation),
+                _ => None,
+            })
+    })
+}
+
 fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, BackendFailure> {
     match ty {
         IrType::Unit => Ok("i8".to_owned()),
@@ -1500,7 +1676,7 @@ fn overlap_join_tail(overlaps: &[IrOverlap], result: IrValueId) -> Option<IrValu
     overlaps
         .iter()
         .find(|overlap| overlap.join_site() == Some(result))
-        .and_then(|overlap| overlap.handed_out().last().copied())
+        .and_then(|overlap| overlap.dispatched().last().copied())
 }
 
 fn block_exit_label(block_id: IrBlockId, block: &IrBlock, overlaps: &[IrOverlap]) -> String {

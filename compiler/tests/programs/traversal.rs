@@ -17,19 +17,20 @@ use super::support::{
 /// growable byte-string layer and publishes them in sorted order.
 ///
 /// The fixture is a real three-level tree, so a green run establishes that
-/// `open_list` produced an independent enumeration handle, that `list_once`
+/// `open_directory_source` produced an independent enumeration handle, that `directory_next`
 /// normalized the host's own records into the portable form, and that
 /// `open_directory` opened each child capability by name bytes with no path
 /// value ever formed.
 #[test]
 fn the_traversal_program_walks_a_real_tree_and_publishes_it_sorted() {
     let llvm = compile_program_with_traversal_surface("dir_walk.wf");
-    // The three approved implementations and the target's own enumeration
-    // facility, by symbol rather than by any source name [QUAL-1].
-    assert!(llvm.contains("@wf.sys.open_list.v1"));
-    assert!(llvm.contains("@wf.sys.list_once.v1"));
+    // The three approved implementations and the compiler-owned target
+    // progress wrapper, by symbol rather than by any source name [QUAL-1].
+    assert!(llvm.contains("@wf.sys.open_directory_source.v1"));
+    assert!(llvm.contains("@wf.sys.directory_next.v1"));
     assert!(llvm.contains("@wf.sys.open_directory.v1"));
-    assert!(llvm.contains("__getdirentries64"));
+    assert!(llvm.contains("wf__completion_directory_next_direct"));
+    assert!(!llvm.contains("call i64 @__getdirentries64"));
 
     let program = build_program(&llvm);
     let fixture = fixture_directory();
@@ -111,7 +112,7 @@ fn the_traversal_source_is_admitted_only_by_the_declaring_inventory() {
     );
     let failure = compile_program_rejection_without_traversal_surface("dir_walk.wf");
     assert!(
-        failure.contains("UnresolvedUse") && failure.contains("open_list"),
+        failure.contains("UnresolvedUse") && failure.contains("open_directory_source"),
         "the base inventory must reject the traversal spellings as undeclared names: {failure}"
     );
 }
@@ -146,15 +147,15 @@ fn appending_open_file_leaves_every_traversal_program_byte_identical() {
 /// from ownership rather than from any traversal-specific rule.
 #[test]
 fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {
   doc "Moves one enumeration handle and then uses the moved binding.";
   let scratch = buffer_new(64_u64, 0_u8);
   region 'listing {
-    match open_list<'listing>(directory: &'listing cwd) {
+    match open_directory_source<'listing>(directory: &'listing cwd) {
       Ok(value: list) => {
         let taken = move list;
         region 'step {
-          match list_once<'step, 'step>(list: &uniq 'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
+          match directory_next<'step, 'step>(source: &'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
             ListBytes(next: endpoint, entries: reported) => {
             }
             ListEnd() => {
@@ -183,7 +184,7 @@ fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
 /// even with the traversal surface admitted.
 #[test]
 fn program_bytes_still_cannot_become_a_path_value() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus writes(cwd), allocates(heap) {
   doc "Attempts to construct a relative path from program bytes.";
   let name = buffer_new(8_u64, 97_u8);
   region 'attempt {
@@ -209,14 +210,14 @@ fn program_bytes_still_cannot_become_a_path_value() {
 /// missing arm is a rejection rather than a silent fallthrough.
 #[test]
 fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus allocates(heap), external, blocks {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(cwd), writes(cwd), allocates(heap) {
   doc "Omits one enumeration outcome from an otherwise complete match.";
   let scratch = buffer_new(64_u64, 0_u8);
   region 'listing {
-    match open_list<'listing>(directory: &'listing cwd) {
+    match open_directory_source<'listing>(directory: &'listing cwd) {
       Ok(value: list) => {
         region 'step {
-          match list_once<'step, 'step>(list: &uniq 'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
+          match directory_next<'step, 'step>(source: &'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
             ListBytes(next: endpoint, entries: reported) => {
             }
             ListEnd() => {

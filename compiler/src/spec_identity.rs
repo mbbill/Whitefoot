@@ -10,11 +10,11 @@
 //! scalar here or at a consumer.
 
 /// Version token on the embedded specification's title line.
-pub const SPEC_VERSION: &str = "v0.36";
+pub const SPEC_VERSION: &str = "v0.37";
 
 /// Lowercase SHA-256 hex of the embedded specification bytes.
 pub const SPEC_SHA256_HEX: &str =
-    "fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62";
+    "0cd75e5846986c583fb6453d861a6f3f72170d2b05b1cd2540f6850ab587f4c0";
 
 /// Number of `ACTIVE-SPEC:` records in the embedded activation chain.
 pub const ACTIVATION_CHAIN_LENGTH: usize = 28;
