@@ -3,18 +3,19 @@
 Branch: `codex/io-model-completion`, from `main` at
 `eab81a335addfb0ae060735771d4e98891dec2ea`.
 
-Status: IN PROGRESS. Phase A started 2026-08-25; v0.37 was activated as
-ordinary work-branch work on 2026-08-25.
+Status: COMPLETE ON THE WORK BRANCH. Phase A started 2026-08-25; v0.37 was
+activated as ordinary work-branch work on 2026-08-25, and Phases A through C
+closed on 2026-08-25.
 
 ## Charter
 
-The owner directed this branch to execute
+The owner directed this branch to execute the now-retired handoff formerly at
 `research/investigations/io-model/HANDOFF.md` from Phase A through the final
-phase. The batch is complete only when the specification migration, compiler
+phase. Its completion boundary included the specification migration, compiler
 and conformance migration, macOS prototype and measurement, production macOS,
-Linux, and Windows completion backends, cross-host harness, CI coverage, and
-the deterministic `--io-ledger` audit surface, scripted schedule evidence, and
-canonical repository verification are complete.
+Linux, and Windows completion backends, cross-host harness, CI coverage, the
+deterministic `--io-ledger` audit surface, scripted schedule evidence, and
+canonical repository verification. Every item is complete.
 
 No revision from this branch may enter `main` without the owner's approval of
 the exact revision. This record does not authorize such a merge.
@@ -109,9 +110,11 @@ active specification bytes together with the compiler and corpus migration.
 
 ### Candidate and ledgers
 
-`research/investigations/io-model/SPEC-CANDIDATE.md` now contains the complete
-non-authoritative delta against v0.36 under the recommended selections. It
-includes:
+The now-retired `research/investigations/io-model/SPEC-CANDIDATE.md` contained
+the complete non-authoritative delta against v0.36 under the recommended
+selections. Its research state is preserved by commit `13a93bdf`; its selected
+content is carried by the active specification and the ledgers below. It
+included:
 
 - D1 through D5 with consequences, including all three observable
   `WF_WORKERS=1` mapping deltas;
@@ -337,12 +340,45 @@ target-action record against its catalog row, and maps only already-qualified
 native macOS/Linux operations to completion adapters. IOCP CI coverage does
 not add Windows compiler qualification.
 
-Pending: record the GitHub-hosted macOS/Ubuntu/Windows matrix result on the
-committed branch revision.
+### Hosted completion matrix
+
+GitHub Actions run
+[`32920412577`](https://github.com/mbbill/Whitefoot/actions/runs/32920412577)
+tested exact implementation revision
+`0bb7b97b83e3a7286cac812bd0e6d295aca00add` after it was pushed to
+`codex/io-model-completion`. The run started at 2026-08-26 01:49:31 UTC and
+completed successfully at 01:49:56 UTC. All three independent jobs succeeded:
+
+| Host | Job | Result | Completed UTC |
+|---|---:|---|---|
+| Ubuntu | `98032760765` | success | 01:49:42 |
+| Windows | `98032760835` | success | 01:49:55 |
+| macOS | `98032760876` | success | 01:49:46 |
+
+The Ubuntu job strictly compiled and executed both the normal io_uring path
+and `WF_IO_TEST_FORCE_ONESHOT`; the macOS job strictly compiled and executed
+the kqueue path; the Windows job strictly compiled and executed the IOCP path.
+Each build used C11 with `-Wall -Wextra -Wpedantic -Werror`. The subsequent
+closure revision changes only project records and removes the superseded
+handoff and candidate; the runtime/compiler bytes exercised by this matrix are
+unchanged.
 
 ## Closure
 
-Pending cross-host CI, final document scan, and canonical exact-revision
-`make check`. Closure moves this record to `docs/done/`, deletes the superseded
-handoff and candidate draft, and prepares one merge packet. Closure does not
-merge the revision into `main`.
+Phases A, B, and C are complete. The cross-host matrix is green, the adverse
+Phase B measurements remain prominent and unsoftened, the conformance boundary
+is exact, and D1 through D5 are recorded as flagged decisions. The superseded
+handoff and candidate draft are deleted with this closure, and this batch
+record moves to `docs/done/`.
+
+The final merge packet supplies the closure commit identity and its canonical
+`make check` result; embedding a commit's own identity here would be
+self-referential. No branch revision has been merged into `main`.
+
+The required agent-document scan covered this record and
+`docs/current-plan.md`. Every stop-word match is either the final merge rule,
+the mandated scan vocabulary itself, a runtime identifier such as `waiter` or
+`owner_lane`, or an English substring in a semantic term such as `ownership`
+or `representation`. A broader literal-reader pass found no instruction to
+pause during branch work. The final merge packet gives the line-by-line match
+classification.

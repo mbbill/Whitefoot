@@ -1,8 +1,8 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 52 (batch 0082 implements the v0.37 world-region model and the
-three-host completion contract on its work branch)
+Revision: 53 (batch 0082 completes the v0.37 world-region model and verifies
+the completion contract on hosted macOS, Ubuntu, and Windows)
 
 The active language authority is v0.37 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -10,8 +10,9 @@ The active language authority is v0.37 at the stable path
 Claim residual canonicality and claim locality are landed on `main`, not
 pending; revision 49 described them as awaiting merge and this revision
 records them as authority. Exact v0.8 through v0.36 are immutable flat
-archives. `main` remains at v0.36 until the exact batch-0082 revision passes
-the final merge boundary. The execution plan at
+archives. `main` remains at v0.36 until the exact green batch-0082 revision is
+owner-approved and merged under the four repository rules. The execution plan
+at
 [`docs/current-plan.md`](current-plan.md) records technical state and
 sequencing only; it neither authorizes nor pauses branch work.
 Project law is the [`Constitution`](constitution.md), and the operational
@@ -870,7 +871,9 @@ carries is counted-loop reduction permission, not intra-object disjointness.
   join helping. kqueue, io_uring/eventfd, and IOCP implement one shared
   contract; strict C harnesses cover publication, frame reuse, forced
   submission failure, terminal loans, multi-lane affinity, mixed load, and
-  Linux one-shot rearming.
+  Linux one-shot rearming. GitHub Actions run `32920412577` executes that
+  contract successfully on hosted macOS, Ubuntu, and Windows at exact
+  implementation revision `0bb7b97b`.
 - **Missing / next:** the controlled directory-walk did not expose an
   actualizable world-I/O pair, so adapter overhead dominated and v0.37 was
   24.2%–30.0% slower than v0.36 at the best observed times. A later project
@@ -878,7 +881,8 @@ carries is counted-loop reduction permission, not intra-object disjointness.
   before claiming end-to-end I/O speedup. No current evidence supports
   narrowing the conservative global world-order domain.
 - **Facts:** [dynamic fan-out placement](../research/archive-promotion-audit.md#3-dynamic-fan-out-retained-as-a-parallel-design-witness) ·
-  [measured lane grants and wall time](../research/investigations/proof-derived-parallelism/RESULTS.md).
+  [measured lane grants and wall time](../research/investigations/proof-derived-parallelism/RESULTS.md) ·
+  [batch 0082 completion evidence](done/0082-world-region-io-completion.md).
 
 ## Boundaries, targets, and deployment
 

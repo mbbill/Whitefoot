@@ -1,13 +1,12 @@
 # Current Plan — world-region I/O completion
 
-Status: EXECUTING on `codex/io-model-completion` as batch 0082.
+Status: COMPLETE ON `codex/io-model-completion` as batch 0082.
 
-This file records technical state and sequence only. Every branch step below
-continues without an intermediate repository gate, including specification
-activation, adverse-result handling, CI, and documentation closure. The only
-repository stop is after the exact final revision passes canonical
-`make check`, when that revision and its merge packet are submitted for the
-single approval required to enter `main`.
+This file records technical state only. The specification activation,
+compiler and conformance migration, adverse-result handling, three-host CI,
+and documentation closure are complete on the work branch. The branch has not
+entered `main`; the only remaining repository action is the owner-approved
+merge of the exact green revision named in the final merge packet.
 
 Active language authority: v0.37 at `spec/kernel-spec.md`, SHA-256
 `6ace763ae2c2d20127f9218ed93ef8865312f68e62d40a23dbc4757d40160c6b`.
@@ -70,17 +69,23 @@ discipline while supporting kqueue, io_uring, and IOCP behind one C contract.
   cannot start in the Colima VM because its runtime rejects the io_uring mmap
   address layout, before the harness begins.
 
-## Remaining continuous sequence
+## Completion evidence
 
-1. Run the shared strict-C harness on GitHub-hosted macOS, Ubuntu, and Windows,
-   including Linux's forced one-shot poll path.
-2. Close the implementation record: remove superseded handoff/candidate
-   material, move batch 0082 to `docs/done/`, and synchronize the README,
-   roadmap, patterns, specification record, and compiler inventory.
-3. Run the final adversarial diff, repository hygiene and document-literalism
-   scans, then canonical `make check` on the exact committed revision.
-4. Assemble one merge packet containing the exact revision, complete evidence,
-   adverse measurements, conformance before/after boundary, and D1–D5 list.
+- GitHub Actions run
+  [`32920412577`](https://github.com/mbbill/Whitefoot/actions/runs/32920412577)
+  succeeded on macOS, Ubuntu, and Windows at exact implementation revision
+  `0bb7b97b83e3a7286cac812bd0e6d295aca00add`. Ubuntu exercised normal and
+  forced-one-shot io_uring, macOS exercised kqueue, and Windows exercised
+  IOCP. The closure revision changes only records and removes superseded
+  research instructions.
+- The v0.36 and v0.37 native adapters each reach `Pass=500 Skip=1`; all 501
+  case `id/rules/expect/status` declarations compare equal.
+- The active v0.37 specification has SHA-256
+  `6ace763ae2c2d20127f9218ed93ef8865312f68e62d40a23dbc4757d40160c6b`,
+  contains 137 covered rules, and has 29 unbroken activation links.
+- The exact closure revision receives the canonical `make check` run reported
+  in the final merge packet. This statement records the finished handoff
+  boundary and does not create a separate repository gate.
 
 ## Flagged decisions carried by the final revision
 
