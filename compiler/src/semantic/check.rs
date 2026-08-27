@@ -30,10 +30,10 @@ use super::entailment::{
     CallGoalDisposition, CheckedGenericClaimSchema, ClaimCounterfactualWitness,
     ClaimFormationFailure, ClaimLocalityFailure, ClaimMask, ClaimMaskedDisposition,
     ClaimSchemaProofEvidence, ClaimSourceIdentity, ClaimTerminalOwner, ClaimTerminalRoot,
-    DerivationRootKind, EntailmentCallee, EntailmentContext, PostconditionSchedule,
-    VerifiedPostconditionSummary, analyze_function, analyze_function_candidate,
-    analyze_function_candidate_masked, analyze_function_masked, build_claim_ledger,
-    finalize_function_entailment, postcondition_schedule,
+    DerivationRootKind, EntailmentCallee, EntailmentContext, FunctionPostconditionProof,
+    PostconditionSchedule, VerifiedPostconditionSummary, analyze_function,
+    analyze_function_candidate, analyze_function_candidate_masked, analyze_function_masked,
+    build_claim_ledger, finalize_function_entailment, postcondition_schedule,
 };
 use super::goal::{
     CheckedCallRequirement, CheckedRequirement, ConcreteGoal, GoalDatum, GoalExpression,
@@ -49,7 +49,7 @@ use super::model::{
 };
 use super::permission::{PermissionSignature, analyze_permission};
 use super::permission_ledger::{LedgerSource, render_ledger};
-use super::postcondition::CheckedPostconditionSelector;
+use super::postcondition::{CheckedPostcondition, CheckedPostconditionSelector};
 use super::provenance::{
     DatumSelector, FrozenProvenanceDependencies, ProvenanceContext,
     ProvenanceDemandKind as InternalDemandKind, ProvenanceFailures, ProvenanceMetadata,
@@ -128,6 +128,93 @@ struct ResidualProvenanceContext<'a> {
     failures: &'a ProvenanceFailures,
     frozen: &'a FrozenProvenanceDependencies,
     main: FunctionId,
+}
+
+/// One [CLM-2] counterfactual entailment reuse cache.
+///
+/// `claim_residuality_outcome` reruns the whole concrete inventory once per
+/// claim component, and each rerun analyzes every function again. The
+/// entailment walk reads its claim mask at exactly five points; three consult
+/// only whether a mask is present, and the two that read the mask's identity
+/// (`flow::Analyzer::walk_statement` and
+/// `flow::Analyzer::establish_claim_contribution`) both additionally require
+/// `mask.function == self.function.id`. The analysis of a function no mask
+/// names is therefore one value shared by every masked rerun, and repeating it
+/// is pure recomputation: on `tests/programs/wfgrep.wf` 82 of the 102
+/// whole-function analyses are bit-identical repeats.
+///
+/// One entry holds that value beside the exact published-postcondition context
+/// it was computed under. A reuse is admitted only when the analyzed function
+/// is untargeted and that context still compares equal, so the reused
+/// entailment is the same value the rerun would have produced. The cache is
+/// scoped to one `claim_residuality_outcome` invocation, whose remaining
+/// analysis inputs — the checked function itself, its binding names, its claim
+/// authority, the callee, constant and nominal tables, and `optimistic_batch`
+/// — are the same for every rerun. The analyzer never reads the function's own
+/// `entailment` field, which is its output slot.
+#[derive(Default)]
+struct CounterfactualReuse {
+    entries: Vec<Option<CounterfactualReuseEntry>>,
+}
+
+struct CounterfactualReuseEntry {
+    verified_postconditions: Vec<Vec<CheckedPostcondition>>,
+    verified_postcondition_proofs: Vec<Vec<FunctionPostconditionProof>>,
+    entailment: super::entailment::FunctionEntailment,
+}
+
+impl CounterfactualReuse {
+    /// The untargeted analysis of `index` when it was computed under exactly
+    /// this published-postcondition context.
+    fn get(
+        &self,
+        index: usize,
+        verified_postconditions: &[Vec<&CheckedPostcondition>],
+        verified_postcondition_proofs: &[Vec<&FunctionPostconditionProof>],
+    ) -> Option<&super::entailment::FunctionEntailment> {
+        let entry = self.entries.get(index)?.as_ref()?;
+        (Self::same(&entry.verified_postconditions, verified_postconditions)
+            && Self::same(
+                &entry.verified_postcondition_proofs,
+                verified_postcondition_proofs,
+            ))
+        .then_some(&entry.entailment)
+    }
+
+    fn store(
+        &mut self,
+        index: usize,
+        verified_postconditions: &[Vec<&CheckedPostcondition>],
+        verified_postcondition_proofs: &[Vec<&FunctionPostconditionProof>],
+        entailment: &super::entailment::FunctionEntailment,
+    ) {
+        if self.entries.len() <= index {
+            self.entries.resize_with(index + 1, || None);
+        }
+        self.entries[index] = Some(CounterfactualReuseEntry {
+            verified_postconditions: Self::own(verified_postconditions),
+            verified_postcondition_proofs: Self::own(verified_postcondition_proofs),
+            entailment: entailment.clone(),
+        });
+    }
+
+    fn own<T: Clone>(borrowed: &[Vec<&T>]) -> Vec<Vec<T>> {
+        borrowed
+            .iter()
+            .map(|entries| entries.iter().map(|entry| (*entry).clone()).collect())
+            .collect()
+    }
+
+    fn same<T: PartialEq>(owned: &[Vec<T>], borrowed: &[Vec<&T>]) -> bool {
+        owned.len() == borrowed.len()
+            && owned.iter().zip(borrowed).all(|(owned, borrowed)| {
+                owned.len() == borrowed.len()
+                    && owned
+                        .iter()
+                        .zip(borrowed)
+                        .all(|(owned, borrowed)| owned == *borrowed)
+            })
+    }
 }
 
 fn derive_slice_return_ceiling(
@@ -2005,6 +2092,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             && self.generic_claim_schema_entailment_issue.is_none()
             && self.generic_claim_schema_provenance_issue.is_none()
         {
+            let mut reuse = CounterfactualReuse::default();
             'claims: for (function_index, declaration) in canonical {
                 let claim_count = full[*function_index].function.entailment.claims.len();
                 for claim_index in 0..claim_count {
@@ -2029,6 +2117,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             callees,
                             optimistic_batch,
                             &mask,
+                            &mut reuse,
                         )?;
                         let Some(witness) = self.counterfactual_witness(
                             &full_schema_functions,
@@ -2081,6 +2170,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         callees,
                         optimistic_batch,
                         &mask,
+                        &mut reuse,
                     )?;
                     let Some(witness) = self.counterfactual_witness(
                         &full_schema_functions,
@@ -2298,8 +2388,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         callees: &[EntailmentCallee],
         optimistic_batch: bool,
         mask: &ClaimMask,
+        reuse: &mut CounterfactualReuse,
     ) -> Result<PostconditionSchedule, CheckStop> {
-        self.analyze_function_inventory_with_mask(functions, callees, optimistic_batch, Some(mask))
+        self.analyze_function_inventory_reusing(
+            functions,
+            callees,
+            optimistic_batch,
+            Some(mask),
+            Some(reuse),
+        )
     }
 
     fn analyze_function_inventory_with_mask(
@@ -2308,6 +2405,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         callees: &[EntailmentCallee],
         optimistic_batch: bool,
         mask: Option<&ClaimMask>,
+    ) -> Result<PostconditionSchedule, CheckStop> {
+        self.analyze_function_inventory_reusing(functions, callees, optimistic_batch, mask, None)
+    }
+
+    fn analyze_function_inventory_reusing(
+        &self,
+        functions: &mut [CheckedFunctionInventory],
+        callees: &[EntailmentCallee],
+        optimistic_batch: bool,
+        mask: Option<&ClaimMask>,
+        mut reuse: Option<&mut CounterfactualReuse>,
     ) -> Result<PostconditionSchedule, CheckStop> {
         // The [ENT] engine is acceptance-bearing [ENT-1]: it computes the
         // closed fact states, obligation and ordinary-call goal dispositions,
@@ -2318,7 +2426,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             postcondition_schedule(functions.iter().map(|checked| &checked.function))
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if schedule.components.is_empty() {
-            for checked in &mut *functions {
+            for (index, checked) in functions.iter_mut().enumerate() {
                 let context = EntailmentContext {
                     callees,
                     constants: &self.checked_constants,
@@ -2329,7 +2437,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     binding_names: &checked.binding_names,
                     claim_authority: &checked.claim_authority,
                 };
-                checked.function.entailment = match (optimistic_batch, mask) {
+                let untargeted = mask.is_some_and(|mask| mask.function != checked.function.id);
+                if untargeted
+                    && let Some(reuse) = reuse.as_deref()
+                    && let Some(cached) = reuse.get(index, &[], &[])
+                {
+                    checked.function.entailment = cached.clone();
+                    continue;
+                }
+                let entailment = match (optimistic_batch, mask) {
                     (true, Some(mask)) => {
                         analyze_function_candidate_masked(&checked.function, &context, mask)
                     }
@@ -2339,6 +2455,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     (true, None) => analyze_function_candidate(&checked.function, &context),
                     (false, None) => analyze_function(&checked.function, &context),
                 };
+                if untargeted && let Some(reuse) = reuse.as_deref_mut() {
+                    reuse.store(index, &[], &[], &entailment);
+                }
+                checked.function.entailment = entailment;
             }
         } else {
             for component in &mut schedule.components {
@@ -2396,12 +2516,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         binding_names: &checked.binding_names,
                         claim_authority: &checked.claim_authority,
                     };
-                    let entailment = match mask {
-                        Some(mask) => {
+                    let untargeted = mask.is_some_and(|mask| mask.function != checked.function.id);
+                    let cached = if untargeted {
+                        reuse.as_deref().and_then(|reuse| {
+                            reuse.get(
+                                function_index,
+                                &verified_postconditions,
+                                &verified_postcondition_proofs,
+                            )
+                        })
+                    } else {
+                        None
+                    };
+                    let entailment = match (cached, mask) {
+                        (Some(cached), _) => cached.clone(),
+                        (None, Some(mask)) => {
                             analyze_function_candidate_masked(&checked.function, &context, mask)
                         }
-                        None => analyze_function_candidate(&checked.function, &context),
+                        (None, None) => analyze_function_candidate(&checked.function, &context),
                     };
+                    if untargeted
+                        && cached.is_none()
+                        && let Some(reuse) = reuse.as_deref_mut()
+                    {
+                        reuse.store(
+                            function_index,
+                            &verified_postconditions,
+                            &verified_postcondition_proofs,
+                            &entailment,
+                        );
+                    }
                     drop(verified_postconditions);
                     drop(verified_postcondition_proofs);
                     functions[function_index].function.entailment = entailment;
@@ -2968,6 +3112,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .then(left.1.cmp(&right.1))
         });
 
+        let mut reuse = CounterfactualReuse::default();
         for (_, _, function_index, claim_index) in candidates {
             let node_path = functions[function_index].entailment.claims[claim_index]
                 .node_path
@@ -2990,6 +3135,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     callees,
                     optimistic_batch,
                     &mask,
+                    &mut reuse,
                 )?;
                 if let Some(witness) = self.counterfactual_witness(
                     functions,
@@ -3030,7 +3176,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 component: None,
             };
             let mut scratch = phase_a.to_vec();
-            self.analyze_function_inventory_masked(&mut scratch, callees, optimistic_batch, &mask)?;
+            self.analyze_function_inventory_masked(
+                &mut scratch,
+                callees,
+                optimistic_batch,
+                &mask,
+                &mut reuse,
+            )?;
             if let Some(witness) = self.counterfactual_witness(
                 functions,
                 &scratch,
@@ -4623,5 +4775,67 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod counterfactual_reuse_tests {
+    use super::{CounterfactualReuse, FunctionPostconditionProof};
+    use crate::NodePath;
+    use crate::semantic::entailment::{
+        FunctionEntailment, PostconditionAggregate, ProofView, VerifiedPostconditionSummary,
+    };
+    use crate::semantic::model::FunctionId;
+
+    fn aggregate(view: ProofView) -> PostconditionAggregate {
+        PostconditionAggregate {
+            view,
+            discharged: true,
+            derivation: None,
+        }
+    }
+
+    fn proof(relation_ordinal: u32) -> FunctionPostconditionProof {
+        let block = NodePath {
+            components: vec![0],
+        };
+        FunctionPostconditionProof {
+            block: block.clone(),
+            selector: block.clone(),
+            relation_ordinal,
+            summary: Some(VerifiedPostconditionSummary {
+                function: FunctionId(0),
+                block,
+                relation_ordinal,
+                component: 0,
+            }),
+            exits: Vec::new(),
+            complete: aggregate(ProofView::Complete),
+            unasserted: aggregate(ProofView::Unasserted),
+            s4_blinded: aggregate(ProofView::S4Blinded),
+        }
+    }
+
+    /// The reuse of a [CLM-2] counterfactual analysis is admitted only when
+    /// the published FN-9 context the entry was computed under is unchanged,
+    /// and only for the function the entry belongs to. A key that ignored
+    /// either would hand a later rerun an entailment derived from
+    /// postconditions that rerun no longer publishes.
+    #[test]
+    fn a_changed_published_context_is_not_reused() {
+        let entailment = FunctionEntailment::default();
+        let stored = proof(0);
+        let other = proof(1);
+        let before = vec![vec![&stored]];
+        let mut reuse = CounterfactualReuse::default();
+        reuse.store(1, &[], &before, &entailment);
+
+        assert!(reuse.get(1, &[], &before).is_some());
+        assert!(reuse.get(1, &[], &[vec![&other]]).is_none());
+        assert!(reuse.get(1, &[], &[Vec::new()]).is_none());
+        assert!(reuse.get(1, &[], &[]).is_none());
+        assert!(reuse.get(1, &[vec![]], &before).is_none());
+        assert!(reuse.get(0, &[], &before).is_none());
+        assert!(reuse.get(2, &[], &before).is_none());
     }
 }

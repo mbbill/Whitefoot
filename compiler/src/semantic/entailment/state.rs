@@ -790,9 +790,123 @@ pub(crate) struct DerivationLedger {
     /// S12 call relation. Parent IDs precede children, so this is computed
     /// once at interning rather than rediscovered by every kill/join query.
     postcondition_call_ancestry: Vec<bool>,
-    interned: HashMap<(ProofView, DerivationNode), DerivationId>,
+    interned: InternIndex,
     pub(crate) metrics: DerivationMetrics,
 }
+
+/// Content-addressed accelerator for [`DerivationLedger::intern_for`].
+///
+/// The index is derived from the ledger's own nodes rather than ledger state:
+/// it holds one entry per interned node and answers exactly what a linear
+/// search of `nodes` and `node_views` would. Two ledgers with equal nodes are
+/// therefore equal whatever their indices hold, and a clone can leave the
+/// entries behind and rebuild them the first time the copy interns anything.
+/// That matters because [CLM-2] clones the whole concrete inventory once per
+/// counterfactual rerun and almost never interns into the copy: on
+/// `tests/programs/wfgrep.wf` copying this table was the single largest cost
+/// in the check.
+///
+/// `stale` separates the two ways the entries can be absent. A clone sets it,
+/// so the copy rebuilds before its first lookup. [`DerivationLedger::
+/// finish_with_event_roots`] instead clears the index deliberately, after
+/// remapping every node identity, and leaves it empty and fresh.
+#[derive(Debug, Default)]
+struct InternIndex {
+    entries: HashMap<(ProofView, DerivationNode), DerivationId, InternHashBuilder>,
+    stale: bool,
+}
+
+impl Clone for InternIndex {
+    fn clone(&self) -> Self {
+        Self {
+            entries: HashMap::default(),
+            stale: !self.entries.is_empty(),
+        }
+    }
+}
+
+/// Hash builder for [`InternIndex`].
+///
+/// The index is private to this module, is never iterated, and is rebuilt from
+/// the ledger's nodes whenever it is absent, so its hash function reaches no
+/// compiler output and no traversal order. The [ENT-4] closure interns one
+/// candidate proof step for every accepted matrix cell, which made hashing
+/// whole [`DerivationNode`] values with the default `SipHash` the largest
+/// single remaining cost of checking `tests/programs/wfgrep.wf`.
+#[derive(Clone, Copy, Debug, Default)]
+struct InternHashBuilder;
+
+impl std::hash::BuildHasher for InternHashBuilder {
+    type Hasher = InternHasher;
+
+    fn build_hasher(&self) -> Self::Hasher {
+        InternHasher::default()
+    }
+}
+
+/// Deterministic multiply-rotate word hasher, seeded by the fractional bits of
+/// the golden ratio.
+#[derive(Clone, Copy, Debug, Default)]
+struct InternHasher {
+    state: u64,
+}
+
+impl InternHasher {
+    const SEED: u64 = 0x517c_c1b7_2722_0a95;
+
+    fn mix(&mut self, word: u64) {
+        self.state = (self.state.rotate_left(5) ^ word).wrapping_mul(Self::SEED);
+    }
+}
+
+impl std::hash::Hasher for InternHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        let mut words = bytes.chunks_exact(8);
+        for word in &mut words {
+            self.mix(u64::from_le_bytes(
+                word.try_into().expect("chunks_exact yields eight bytes"),
+            ));
+        }
+        let tail = words.remainder();
+        if !tail.is_empty() {
+            let mut word = [0_u8; 8];
+            word[..tail.len()].copy_from_slice(tail);
+            self.mix(u64::from_le_bytes(word));
+        }
+    }
+
+    fn write_u8(&mut self, value: u8) {
+        self.mix(u64::from(value));
+    }
+
+    fn write_u16(&mut self, value: u16) {
+        self.mix(u64::from(value));
+    }
+
+    fn write_u32(&mut self, value: u32) {
+        self.mix(u64::from(value));
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.mix(value);
+    }
+
+    fn write_usize(&mut self, value: usize) {
+        self.mix(value as u64);
+    }
+
+    fn finish(&self) -> u64 {
+        self.state
+    }
+}
+
+impl PartialEq for InternIndex {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for InternIndex {}
 
 impl DerivationLedger {
     pub(crate) fn event(
@@ -826,9 +940,14 @@ impl DerivationLedger {
     }
 
     pub(crate) fn intern_for(&mut self, view: ProofView, node: DerivationNode) -> DerivationId {
-        if let Some(id) = self.interned.get(&(view, node.clone())).copied() {
+        if self.interned.stale {
+            self.rebuild_intern_index();
+        }
+        let key = (view, node);
+        if let Some(id) = self.interned.entries.get(&key).copied() {
             return id;
         }
+        let (view, node) = key;
         let id = DerivationId(
             u32::try_from(self.nodes.len())
                 .expect("ENT derivation inventory exceeds the u32 identity space"),
@@ -873,8 +992,29 @@ impl DerivationLedger {
         self.depths.push(depth);
         self.postcondition_call_ancestry
             .push(postcondition_call_ancestry);
-        self.interned.insert((view, node), id);
+        self.interned.entries.insert((view, node), id);
         id
+    }
+
+    /// Restores the index a clone left behind.
+    ///
+    /// Replaying the ledger's own nodes in identity order reproduces the same
+    /// map the interning sequence built: every node was inserted under its own
+    /// identity, and a node identity repeated after an index reset kept the
+    /// later entry.
+    fn rebuild_intern_index(&mut self) {
+        self.interned.entries.clear();
+        self.interned.entries.reserve(self.nodes.len());
+        for (index, node) in self.nodes.iter().enumerate() {
+            let id = DerivationId(
+                u32::try_from(index)
+                    .expect("ENT derivation inventory exceeds the u32 identity space"),
+            );
+            self.interned
+                .entries
+                .insert((self.node_views[index], node.clone()), id);
+        }
+        self.interned.stale = false;
     }
 
     pub(crate) fn depth(&self, id: DerivationId) -> u32 {
@@ -1136,8 +1276,9 @@ impl DerivationLedger {
         }
         self.depths = depths;
         self.postcondition_call_ancestry = postcondition_call_ancestry;
-        self.interned.clear();
-        self.interned.shrink_to_fit();
+        self.interned.entries.clear();
+        self.interned.entries.shrink_to_fit();
+        self.interned.stale = false;
         let event_remap = self.prune_events(event_roots);
         self.validate_view_integrity();
         self.metrics = self.measure();
@@ -2937,7 +3078,7 @@ pub(crate) fn contradiction_without_proofs(
         // Floyd-Warshall over the exact same saturating difference bounds.
         // One pass closes the current edge set; a second is needed only when
         // a newly derived disequality strengthens a weak bound below.
-        for middle in ids.iter().filter(|id| active_middles.contains(id)) {
+        for middle in ids.iter().filter(|id| active_middles.contains(**id)) {
             let middle = middle.0 as usize;
             let middle_row = middle * dimension;
             for left in 0..dimension {
@@ -3077,11 +3218,15 @@ fn close_with_excluded_term(
             ledger,
         );
     }
-    let mut bounds = state.bounds.clone();
-    let mut bound_proofs = state.bound_proofs.clone();
     let mut distinct = state.distinct.clone();
     let mut distinct_proofs = state.distinct_proofs.clone();
-    let mut dense_bounds = DenseClosureBounds::from_maps(term_count, &bounds, &bound_proofs);
+    // The dense matrix is the only live bound index while the fixed point
+    // runs; every rule reads it and nothing reads the maps. Rebuilding the
+    // maps once from the settled matrix keeps their exact content while
+    // dropping one hashed pair insert per accepted candidate, of which
+    // `tests/programs/wfgrep.wf` accepts eighteen million.
+    let mut dense_bounds =
+        DenseClosureBounds::from_maps(term_count, &state.bounds, &state.bound_proofs);
     let ids = terms
         .ids()
         .filter(|id| Some(*id) != excluded)
@@ -3101,8 +3246,6 @@ fn close_with_excluded_term(
             };
             insert_closed_candidate(
                 state.view,
-                &mut bounds,
-                &mut bound_proofs,
                 &mut dense_bounds,
                 ClosedBoundCandidate {
                     left,
@@ -3158,8 +3301,9 @@ fn close_with_excluded_term(
     // pairs, so iteration terminates; strengthening only lowers a bound to
     // -1, so the outer loop runs at most a handful of rounds.
     loop {
+        dense_bounds.begin_round();
         let mut changed = false;
-        for middle in ids.iter().filter(|id| active_middles.contains(id)) {
+        for middle in ids.iter().filter(|id| active_middles.contains(**id)) {
             // Preserve the former dense TermId order while skipping absent
             // matrix cells.  Transitivity cannot add a new incoming or
             // outgoing key for `middle` while processing this middle: the
@@ -3177,11 +3321,32 @@ fn close_with_excluded_term(
                 .copied()
                 .filter(|right| dense_bounds.get(*middle, *right).is_some())
                 .collect::<Vec<_>>();
+            // Semi-naive round: a triple whose two premise cells both still
+            // hold the values they held when this same traversal last offered
+            // it builds the identical candidate node, and the conclusion cell
+            // has only improved since, so `insert_closed_candidate` would
+            // reject it without touching the ledger. Skipping such a triple
+            // removes work and nothing else; the surviving triples keep their
+            // former order, so the accepted sequence is unchanged. When no
+            // incident cell of `middle` is fresh, none of its triples can
+            // become fresh either, because the block changes nothing.
+            if !incoming
+                .iter()
+                .any(|left| dense_bounds.fresh(*left, *middle))
+                && !outgoing
+                    .iter()
+                    .any(|right| dense_bounds.fresh(*middle, *right))
+            {
+                continue;
+            }
             for left in incoming {
                 let (first, first_proof) = dense_bounds
                     .get(left, *middle)
                     .expect("incoming closure key collected above");
                 for right in &outgoing {
+                    if !dense_bounds.fresh(left, *middle) && !dense_bounds.fresh(*middle, *right) {
+                        continue;
+                    }
                     let (second, second_proof) = dense_bounds
                         .get(*middle, *right)
                         .expect("outgoing closure key collected above");
@@ -3210,8 +3375,6 @@ fn close_with_excluded_term(
                     };
                     changed |= insert_closed_candidate(
                         state.view,
-                        &mut bounds,
-                        &mut bound_proofs,
                         &mut dense_bounds,
                         ClosedBoundCandidate {
                             left,
@@ -3271,8 +3434,6 @@ fn close_with_excluded_term(
                     };
                     changed |= insert_closed_candidate(
                         state.view,
-                        &mut bounds,
-                        &mut bound_proofs,
                         &mut dense_bounds,
                         ClosedBoundCandidate {
                             left: from,
@@ -3304,6 +3465,7 @@ fn close_with_excluded_term(
             }
         }
     }
+    let (bounds, bound_proofs) = dense_bounds.into_maps();
     let closed = ClosedState {
         view: state.view,
         all_derivable: contradiction.is_some(),
@@ -3370,27 +3532,29 @@ fn closure_middle_terms(
     terms: &TermTable,
     goals: &GoalTable,
     ids: &[TermId],
-) -> HashSet<TermId> {
-    let available = ids.iter().copied().collect::<HashSet<_>>();
-    let mut active = HashSet::new();
-    if available.contains(&ZERO) {
-        active.insert(ZERO);
+) -> ActiveMiddles {
+    // `TermId` is the dense function-local term identity, so membership is a
+    // direct index rather than a hashed probe. The old sets answered one probe
+    // per live relation endpoint of every closure.
+    let width = terms.ids().count();
+    let mut available = vec![false; width];
+    for id in ids {
+        available[id.0 as usize] = true;
     }
+    let mut active = ActiveMiddles(vec![false; width]);
+    let admit = |term: TermId, active: &mut ActiveMiddles| {
+        if available[term.0 as usize] {
+            active.0[term.0 as usize] = true;
+        }
+    };
+    admit(ZERO, &mut active);
     for &(left, right) in state.bounds.keys() {
-        if available.contains(&left) {
-            active.insert(left);
-        }
-        if available.contains(&right) {
-            active.insert(right);
-        }
+        admit(left, &mut active);
+        admit(right, &mut active);
     }
     for &(left, right) in &state.distinct {
-        if available.contains(&left) {
-            active.insert(left);
-        }
-        if available.contains(&right) {
-            active.insert(right);
-        }
+        admit(left, &mut active);
+        admit(right, &mut active);
     }
 
     let mut pending_goals = state
@@ -3405,17 +3569,13 @@ fn closure_middle_terms(
         }
         if let Some(relation) = goals.projection(goal) {
             for term in relation.terms() {
-                if available.contains(&term) {
-                    active.insert(term);
-                }
+                admit(term, &mut active);
             }
         }
         if let Some(normalization) = goals.normalization(goal) {
             for relation in normalization.components.iter().flatten() {
                 for term in relation.terms() {
-                    if available.contains(&term) {
-                        active.insert(term);
-                    }
+                    admit(term, &mut active);
                 }
             }
         }
@@ -3433,12 +3593,19 @@ fn closure_middle_terms(
         let Some(LengthBound::Equal(parameter)) = terms.length_bound(*id) else {
             continue;
         };
-        active.insert(*id);
-        if available.contains(&parameter) {
-            active.insert(parameter);
-        }
+        active.0[id.0 as usize] = true;
+        admit(parameter, &mut active);
     }
     active
+}
+
+/// Dense membership of the terms the [ENT-4] fixed point uses as middles.
+struct ActiveMiddles(Vec<bool>);
+
+impl ActiveMiddles {
+    fn contains(&self, term: TermId) -> bool {
+        self.0[term.0 as usize]
+    }
 }
 
 struct ClosedBoundCandidate {
@@ -3458,8 +3625,27 @@ struct ClosedBoundCandidate {
 /// the authoritative maps and is discarded when this one closure finishes.
 struct DenseClosureBounds {
     dimension: usize,
-    bounds: Vec<Option<i128>>,
-    proofs: Vec<Option<DerivationId>>,
+    cells: Vec<Option<ClosedCell>>,
+    live: usize,
+    round: u32,
+}
+
+/// The closed state's live bound and proof maps, in that order.
+type ClosedBoundMaps = (
+    HashMap<(TermId, TermId), i128>,
+    HashMap<(TermId, TermId), DerivationId>,
+);
+
+/// One live cell of the closure matrix. Bound, proof and freshness stamp sit
+/// together because the transitivity cube reads all three of a cell at once.
+#[derive(Clone, Copy)]
+struct ClosedCell {
+    bound: i128,
+    proof: DerivationId,
+    /// Fixed-point round in which the cell last changed. Zero covers both a
+    /// cell carried in from the state and one an implicit fact established
+    /// before the first round, which is what makes round 1 complete.
+    changed_in: u32,
 }
 
 impl DenseClosureBounds {
@@ -3468,13 +3654,14 @@ impl DenseClosureBounds {
         bounds: &HashMap<(TermId, TermId), i128>,
         proofs: &HashMap<(TermId, TermId), DerivationId>,
     ) -> Self {
-        let cells = dimension
+        let count = dimension
             .checked_mul(dimension)
             .expect("ENT closure matrix exceeds the address space");
         let mut dense = Self {
             dimension,
-            bounds: vec![None; cells],
-            proofs: vec![None; cells],
+            cells: vec![None; count],
+            live: 0,
+            round: 0,
         };
         for (&(left, right), &bound) in bounds {
             let proof = proofs
@@ -3486,6 +3673,17 @@ impl DenseClosureBounds {
         dense
     }
 
+    fn begin_round(&mut self) {
+        self.round += 1;
+    }
+
+    /// Whether this cell changed during the previous fixed-point round or
+    /// later. Every cell reports fresh in round 1, so the first pass over the
+    /// transitivity cube is the complete one.
+    fn fresh(&self, left: TermId, right: TermId) -> bool {
+        self.cells[self.index(left, right)].is_none_or(|cell| cell.changed_in + 1 >= self.round)
+    }
+
     fn index(&self, left: TermId, right: TermId) -> usize {
         let left = left.0 as usize;
         let right = right.0 as usize;
@@ -3494,25 +3692,48 @@ impl DenseClosureBounds {
     }
 
     fn get(&self, left: TermId, right: TermId) -> Option<(i128, DerivationId)> {
-        let index = self.index(left, right);
-        match (self.bounds[index], self.proofs[index]) {
-            (Some(bound), Some(proof)) => Some((bound, proof)),
-            (None, None) => None,
-            _ => panic!("ENT closure bound/proof index diverged"),
-        }
+        self.cells[self.index(left, right)].map(|cell| (cell.bound, cell.proof))
     }
 
     fn set(&mut self, left: TermId, right: TermId, bound: i128, proof: DerivationId) {
         let index = self.index(left, right);
-        self.bounds[index] = Some(bound);
-        self.proofs[index] = Some(proof);
+        if self.cells[index].is_none() {
+            self.live += 1;
+        }
+        self.cells[index] = Some(ClosedCell {
+            bound,
+            proof,
+            changed_in: self.round,
+        });
+    }
+
+    /// The settled matrix as the closed state's live bound and proof maps.
+    ///
+    /// Every pair the state carried in reached the matrix through
+    /// [`Self::from_maps`] and nothing removes a cell, so this returns exactly
+    /// the incoming pairs together with the ones the fixed point derived.
+    fn into_maps(self) -> ClosedBoundMaps {
+        let mut bounds = HashMap::with_capacity(self.live);
+        let mut proofs = HashMap::with_capacity(self.live);
+        for (index, cell) in self.cells.iter().enumerate() {
+            let Some(cell) = cell else {
+                continue;
+            };
+            let left = TermId(
+                u32::try_from(index / self.dimension).expect("term index fits the u32 identity"),
+            );
+            let right = TermId(
+                u32::try_from(index % self.dimension).expect("term index fits the u32 identity"),
+            );
+            bounds.insert((left, right), cell.bound);
+            proofs.insert((left, right), cell.proof);
+        }
+        (bounds, proofs)
     }
 }
 
 fn insert_closed_candidate(
     view: ProofView,
-    bounds: &mut HashMap<(TermId, TermId), i128>,
-    proofs: &mut HashMap<(TermId, TermId), DerivationId>,
     dense: &mut DenseClosureBounds,
     candidate: ClosedBoundCandidate,
     ledger: &mut DerivationLedger,
@@ -3523,7 +3744,6 @@ fn insert_closed_candidate(
         bound,
         node,
     } = candidate;
-    let pair = (left, right);
     let accepted = match dense.get(left, right) {
         None => true,
         Some((current, _)) if bound < current => true,
@@ -3534,8 +3754,6 @@ fn insert_closed_candidate(
         return false;
     }
     let proof = ledger.intern_for(view, node);
-    bounds.insert(pair, bound);
-    proofs.insert(pair, proof);
     dense.set(left, right, bound, proof);
     true
 }
@@ -4197,5 +4415,88 @@ mod tests {
         let call = remap[call.0 as usize].expect("S12 proof retained");
         assert!(!ledger.depends_on_postcondition_call(ordinary_proof));
         assert!(ledger.depends_on_postcondition_call(call));
+    }
+
+    /// Cloning a ledger deliberately leaves its interning index behind, which
+    /// is sound only because the copy rebuilds the index from its own nodes
+    /// before answering. Without the rebuild a clone silently re-interns
+    /// nodes it already holds, giving one proof step two identities.
+    #[test]
+    fn interning_into_a_cloned_ledger_keeps_the_original_identity() {
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S3, None);
+        let relation = Relation::Bound {
+            left: ZERO,
+            right: ZERO,
+            bound: 0,
+        };
+        let node = DerivationNode::SourceBound {
+            relation,
+            left: ZERO,
+            right: ZERO,
+            bound: 0,
+            event,
+        };
+        let original = ledger.intern_for(ProofView::Complete, node.clone());
+        let nodes = ledger.nodes.len();
+
+        let mut copy = ledger.clone();
+        assert_eq!(copy.nodes.len(), nodes);
+        assert_eq!(copy.intern_for(ProofView::Complete, node.clone()), original);
+        assert_eq!(copy.nodes.len(), nodes);
+        // The rebuilt index must also keep separating the proof views.
+        assert_ne!(copy.intern_for(ProofView::Unasserted, node), original);
+        assert_eq!(copy.nodes.len(), nodes + 1);
+    }
+
+    /// The ENT-4 fixed point revisits a transitivity triple only when one of
+    /// its premise cells changed since that triple was last offered. A
+    /// disequality strengthens `a - b <= 0` to `-1` only after the first
+    /// transitivity pass, so the strengthened edge must still reach `c`
+    /// through the later rounds. A freshness rule that stopped one round too
+    /// early would leave `a - c <= -1` underived.
+    #[test]
+    fn a_strengthened_bound_still_propagates_in_a_later_closure_round() {
+        let mut terms = TermTable::new();
+        let mut place = |binding| {
+            terms.intern(TermKind::Place(
+                super::super::term::PlaceTerm {
+                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    deref: false,
+                    fields: Vec::new(),
+                },
+                IntegerType::I32,
+            ))
+        };
+        let a = place(0);
+        let b = place(1);
+        let c = place(2);
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S3, None);
+        let mut state = FactState::for_view(ProofView::Complete);
+        state.establish(
+            &Relation::Bound {
+                left: a,
+                right: b,
+                bound: 0,
+            },
+            &mut ledger,
+            event,
+        );
+        state.establish(
+            &Relation::Bound {
+                left: b,
+                right: c,
+                bound: 0,
+            },
+            &mut ledger,
+            event,
+        );
+        state.establish_distinct_with_proof(a, b, &mut ledger, event);
+
+        let closed = close(&state, &terms, &GoalTable::default(), &mut ledger);
+        assert!(!closed.all_derivable);
+        assert!(closed.derives_bound(a, b, -1));
+        assert!(closed.derives_bound(a, c, -1));
     }
 }
