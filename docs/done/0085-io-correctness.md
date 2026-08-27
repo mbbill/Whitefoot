@@ -8,11 +8,13 @@ every finding. The direction that mattered most was widening: any case where
 the compiler accepts what the rules forbid, or permits an overlap whose
 observable result can differ from sequential execution.
 
-No widening was found. The permission judgment was correct on every line this
-batch drew at it. What was found instead is that the *lowering* could not
-compile most of the programs that judgment permits: two independent defects
-each made a permitted overlap fail to build, one on every host and one on
-Linux only.
+No reachable widening was found. The permission judgment answered correctly on
+every line this batch drew at it, and the one place where the *code* was
+correct only by accident of what the operation catalog happens to contain
+(F-04) has no row that reaches it. What was found instead is that the
+*lowering* could not compile most of the programs that judgment permits: two
+independent defects each made a permitted overlap fail to build, one on every
+host and one on Linux only.
 
 ## Findings
 
@@ -21,6 +23,7 @@ Linux only.
 | F-01 | differential execution | backend lowering: invalid module | `OVERLAP_BEFORE_A_BLOCK_JOIN`, `compiler/src/backend/tests/completion.rs` | fixed with test |
 | F-02 | permission attacks | over-rejection: unimplemented capability | both programs quoted below | flagged |
 | F-03 | runtime protocol, Linux | driver defect: cannot link on Linux | `the_compiler_owned_c_units_compile_in_the_default_dialect`, `compiler/src/backend/tests/completion.rs` | fixed with test |
+| F-04 | permission attacks | latent widening in the system-call footprint | reasoning below; no catalog row reaches it today | fixed, no observable change |
 
 ### F-01 — a completion window before a block join named the wrong phi predecessor
 
@@ -200,6 +203,36 @@ host-limited by construction — a macOS run leaves the `__linux__` bodies
 unpreprocessed — and that limit is stated in the test. Verified in Docker that
 it fails on Linux with the old member name and passes with the new one.
 
+### F-04 — a consumed `own` system argument could lose its written footprint (latent)
+
+[PAR-1] forms a call's written footprint from its row's `writes` paths
+*together with* the places its consumed `own` arguments name. `user_call_footprint`
+pushes that consumed-own write unconditionally. `system_call_footprint` pushed it
+in an `else` branch of the row test, so a parameter the row mentions at all took
+the row's path instead:
+
+```rust
+if written || read {
+    …push the row's read and write accesses…
+} else if matches!(parameter.mode, SystemParameterMode::Own) …
+```
+
+For a parameter in `writes` this is the same place either way, and for a
+parameter in neither list the `else` fires, so every row in today's catalog
+comes out right. The uncovered shape is an `own` parameter listed under `reads`
+and not `writes`: it would contribute a read footprint element and no written
+one, and a read element does not deny against another statement's read
+footprint or shared loans. Another statement could then read the place
+concurrently with the consume.
+
+No catalog row has that shape, so there is nothing to reproduce and no
+behavioural regression test to write — running the ledger over this batch's
+probes and the whole corpus before and after the change gives identical
+verdicts. The change is structural: `system_call_footprint` now pushes the
+consumed-own write unconditionally, exactly as its user-call sibling does, so
+the footprint is correct by the rule rather than by what the catalog happens to
+contain.
+
 ## Differential execution matrix
 
 Every program below was run across `WF_WORKERS` in {0, 1, 2, 4} crossed with
@@ -212,12 +245,60 @@ independent expectation on every run.
 | `read_overlap.wf` | two permitted positioned reads on one shared file into disjoint destinations, reassembled in fixed order | 240 | 240 | 0 |
 | `write_order.wf` | eight rounds of one ordered stdout write beside one independent stderr write | 360 | 360 | 0 |
 | `blocked_order.wf` | three 96 KB writes of one `Output`, each overlapped with an independent small write, stdout on a FIFO whose reader sleeps 250 ms so every bulk write really blocks | 96 | 96 | 0 |
+| `abc_order.wf` | FIRST-PRINCIPLES §10 exactly — `A(out)`, `B(err)`, `C(out)`, with A a 96 KB write into a FIFO nobody is draining yet | 96 | 96 | 0 |
 
-1,392 runs, 0 mismatches. The blocking case is the one that matters: with the
+1,584 runs, 0 mismatches. The blocking cases are the ones that matter: with the
 reader delayed, the pipe buffer fills and the target genuinely suspends, so the
 surviving guarantee — successive unique loans of one `Output` run in that
 order — is exercised against a suspending target rather than against a target
 that finishes inline.
+
+`abc_order.wf` is the schedule §10 spells out as required, and the emitted code
+is that schedule literally: A submits, B submits, `par.done.v13` joins A alone,
+C runs as a direct call on the loan A just returned, and only then does
+`par.done.v16` join B. C therefore becomes ready when A completes rather than
+when the whole group does, and B is still in flight while C uses `out`. The IR
+shape is already pinned by `a_reused_unique_output_waits_only_for_its_own_prior_operation`;
+what these runs add is that the ordering survives a target that actually
+suspends, which a shape assertion cannot show.
+
+Beside the purpose-written programs, every runnable `run`-kind conformance case
+was compiled and executed across the same matrix, with its `arrange` argv,
+files, directories, and stream redirects reproduced and its exit status
+compared to the manifest's:
+
+| lowering | host | cases built | runs | mismatches |
+| --- | --- | --- | --- | --- |
+| default | macOS | 173 of 173 | 2,076 | 0 |
+| `--par` | macOS | 173 of 173 | 2,076 | 0 |
+| default | Linux | 169 of 173 | 2,028 | 0 |
+| `--par` | Linux | 169 of 173 | 2,028 | 0 |
+
+8,208 further runs, 0 mismatches. This is measured evidence for this batch, not
+a gate addition: `make check` already runs each case once, and multiplying the
+corpus by twelve is runtime no current question needs.
+
+The four cases Linux does not build are `sys14-list-outcome-exhaustive`,
+`sys14-list-zero-range`, `sys14-directory-release`, and
+`sys14-entry-kind-closed`, all directory enumeration. Linux has no approved
+enumeration row in the qualification table, which
+`compiler/src/backend/qualification.rs` states deliberately: "Linux supplies
+`getdents64`, but this compiler intentionally has no approved ABI/record
+mapping for it yet. Qualification must therefore report MissingMapping rather
+than pretending the target lacks the semantic facility." The refusal arrives as
+`TargetQualification(MissingMapping(Operation(12)))` — a target-qualification
+failure, not a source rejection, which is what the compiler rules require of an
+unimplemented capability. The consequence worth stating is that `wfgrep` and
+`dir_walk` cannot be compiled for Linux at all today.
+
+An honest note on the harness. The conformance driver above reported 180
+mismatches on its first run and 36 on its second; all of them were the driver's
+own bugs — zsh's reserved `argv` array, `arrange.argv[0]` being the program
+name rather than an argument, and tab-delimited fields collapsing when a
+`bytes` field was empty. Each was identifiable as a harness fault rather than
+schedule dependence because the wrong answer was *constant* across all twelve
+worker/helper combinations. A compiler defect of the kind this batch hunts
+would have varied with the schedule.
 
 macOS host: Darwin 25.5.0, Apple clang. Linux host: Docker, Ubuntu 24.04
 aarch64, kernel 6.8, 2 CPUs, `--security-opt seccomp=unconfined` so
@@ -235,7 +316,11 @@ native one.
 | `completion-sanitize` (ASan + UBSan) | PASS | PASS (gcc) |
 | `completion-core-read-stress` | PASS, 200 of 200 | PASS, 200 of 200 (gcc) |
 | `completion-core-read-tsan` | PASS | PASS (gcc, ASLR disabled) |
-| full harness under TSan, helpers 0/1/4 and with io_uring required | not run | PASS |
+| full harness under TSan, helpers 0/1/4 | PASS | PASS, and again with io_uring required |
+
+The full-harness TSan runs are not a `compiler/Makefile` target — the shipped
+`completion-core-read-tsan` covers only the isolated core/read probe. They were
+built by hand from the same source list `completion-test` uses, on both hosts.
 
 Two environment notes, neither a program defect. The `wf-io-bench:linux` image
 carries clang 18 without `libclang_rt`, and the container has no working
@@ -269,7 +354,28 @@ findings whose probes had to survive are the ones now carried as compiler tests
 | intervening `set` on shared vs unrelated storage | `r1`, `r2` | denied / permitted |
 | a propagating member inside a window | `r3` | `(write, propagate)` permitted, `(propagate, write)` denied by condition 4 |
 | drop ordering around a completion join | `q1` | every derived release is emitted after `par.done` |
+| PAR-2 loop overlap with I/O in the body | `s1-loop-reads-shared-file.wf` | permitted, not actualized — see below |
 | T3: a claim must not tax the correct path | `t3-no-claim.wf`, `t3-with-claim.wf` | see below |
+
+### PAR-2 with I/O
+
+A counted loop whose body reads one shared `ReadFile` at an iteration-derived
+offset into an iteration-local buffer, folding into one `+wrap` accumulator, is
+*permitted*: the shared file loan needs no condition of its own, every written
+place is either the accumulator or iteration-introduced, and `read_at`'s
+contract is a positioned read that does not advance the resource's logical
+state, so two concurrent reads at different offsets are exactly what the
+contract admits.
+
+The lowering then declines to actualize it, and emits no split thunk at all.
+The mechanism is the same `overlap_is_actualizable` guard that keeps a
+may-suspend call off a compute lane: a loop split lowers to a recursive
+splitter whose left and right halves are one `IrOverlap`, and that overlap is
+refused because the splitter may suspend. That is [PAR-2]'s own escape — "an
+implementation without that lowering executes the loop sequentially" — and
+permission is never an obligation, so nothing is wrong. It is worth writing
+down because it means the loop half of the I/O concurrency story is currently
+judgment only, with no lowering behind it.
 
 ### T3
 
@@ -287,12 +393,41 @@ were correct: a claim about `args_count` was rejected [CLM-1] as an unstated
 system-result property, and a claim the checker already derives was rejected
 [CLM-2] as redundant.
 
+## Gate
+
+Canonical `make check` at the repository root, on the final revision of this
+branch, ends `== WHITEFOOT ALL TESTS GREEN ==`. Its own numbers:
+
+```text
+fmt and clippy                   clean
+conformance structure            29 of 29
+gate all-target Rust tests       1323 passed, 0 failed, 1 costly adapter ignored
+maintained programs              54 passed, 0 failed
+spec activation chain            29 unbroken activations
+conformance coverage             137 of 137 rules, 0 uncovered
+separate conformance adapter     502 Pass, 1 Skip
+```
+
+The library test count moves 1321 to 1323: this batch's two regression tests.
+Nothing else in the corpus changed, and no verdict, case, or manifest record
+was touched.
+
+The sanitizer targets, the hostile stress, the differential matrices, and the
+Linux runs above are not part of that entry point. They are separate
+`compiler/Makefile` targets and scratch harnesses invoked independently, and
+their results are this record's own measurements.
+
 ## Judgment calls
 
 - **F-02 is flagged, not fixed.** It is under-approximation reported as an
   explicit capability gap, and closing it is a language capability rather than
   a bug fix. Recorded with both failing programs so the next batch starts from
   a reproduction.
+- **F-04 was fixed without a regression test.** No catalog row reaches the
+  uncovered shape, so any test would assert a property of the catalog rather
+  than of the checker, and would become rot the moment the catalog changed. The
+  guard is that the code now matches its user-call sibling and the rule text;
+  the existing ledger tests prove nothing regressed.
 - **F-03 got two changes rather than one.** The rename alone would have fixed
   today's failure; the dialect pin is what stops the next GNU predefine from
   doing the same thing, and it removes a real divergence between what the gate
@@ -315,10 +450,16 @@ system-result property, and a claim the checker already derives was rejected
 
 - **Windows was not executed.** It has no runner here and stays cross-link
   only, exactly as batch 0082 left it.
-- **The `--par` compute-lane interaction with completion was probed but not
-  stressed.** `overlap_is_actualizable` refuses to hand any may-suspend call to
-  a compute lane, so the two mechanisms do not currently mix; that was read
-  from the source and confirmed on one program, not measured under load.
+- **Directory enumeration was not exercised on Linux**, because the
+  qualification table has no approved Linux enumeration row. Everything said
+  above about `open_directory_source` and `directory_next` is macOS evidence.
+- **The two overlap mechanisms do not currently mix, so their interaction was
+  not stressed.** `overlap_is_actualizable` refuses to hand any may-suspend
+  call to a compute lane, and it also refuses the recursive splitter a `for`
+  loop with I/O in its body would need. Every run above therefore exercises
+  completion hand-out beside compute hand-out in one process, never one inside
+  the other. Whether they should mix is a design question this batch did not
+  open.
 - **No new conformance case was added.** Every finding is a compiler or driver
   defect rather than a language rule, so the regression tests are ordinary
   compiler tests and the conformance corpus is untouched.
