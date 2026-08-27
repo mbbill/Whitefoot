@@ -251,9 +251,10 @@ class BlockerRegressionTests(unittest.TestCase):
                 "adversarial-caller.ll",
                 "adversarial-definitions.ll",
             ):
-                subprocess.run(
+                clang = shutil.which("clang")
+                completed = subprocess.run(
                     [
-                        shutil.which("clang"),
+                        clang,
                         "-Wno-override-module",
                         "-x",
                         "ir",
@@ -263,8 +264,18 @@ class BlockerRegressionTests(unittest.TestCase):
                         "-o",
                         str(Path(directory) / f"{name}.reemitted.ll"),
                     ],
-                    check=True,
+                    check=False,
                     capture_output=True,
+                    text=True,
+                )
+                # The compiler's own message is the whole diagnostic value of
+                # this case: "returned non-zero exit status 1" says a fixture
+                # is invalid without saying which line of it, and a reader on
+                # another host cannot rerun the command.
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    f"{name} did not parse under {clang}:\n{completed.stderr}",
                 )
 
     def test_metadata_operand_bundle_and_inline_asm_fail_closed(self) -> None:
