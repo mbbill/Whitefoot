@@ -17,6 +17,20 @@ COMPLETION_SOURCES := \
 	$(COMPLETION_DIR)/writer_scheduler.c \
 	$(COMPLETION_DIR)/native_contract.c \
 	$(COMPLETION_DIR)/harness.c
+COMPLETION_CORE_READ_SOURCES := \
+	$(COMPLETION_DIR)/runtime.c \
+	$(COMPLETION_DIR)/file_adapter.c \
+	$(COMPLETION_DIR)/core_read_probe.c
+COMPLETION_CORE_READ_ALLOWED_SOURCES := \
+	$(COMPLETION_DIR)/runtime.c \
+	$(COMPLETION_DIR)/file_adapter.c \
+	$(COMPLETION_DIR)/core_read_probe.c
+COMPLETION_CORE_READ_UNEXPECTED_SOURCES := $(filter-out \
+	$(COMPLETION_CORE_READ_ALLOWED_SOURCES),$(COMPLETION_CORE_READ_SOURCES))
+COMPLETION_CORE_READ_FORBIDDEN_SOURCES := $(filter \
+	%/bridge.c %/writer_scheduler.c,$(COMPLETION_CORE_READ_SOURCES))
+COMPLETION_CORE_READ_DEFINES := \
+	-DWF_COMPLETION_PREAD=wf_completion_test_pread
 
 check: format lint test docs spec completion-test
 	@echo "== WHITEFOOT COMPILER GATE GREEN =="
@@ -42,7 +56,7 @@ docs:
 spec:
 	$(CARGO) run --bin whitefoot-spec --locked --offline
 
-completion-test:
+completion-test: completion-core-read-test
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
 	WF_IO_HELPERS=0 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)"
@@ -74,7 +88,30 @@ completion-test:
 			-fsyntax-only $(COMPLETION_DIR)/linux_io_uring.c; \
 	fi
 
-completion-sanitize:
+completion-core-read-source-boundary:
+	@if [ -n "$(strip $(COMPLETION_CORE_READ_UNEXPECTED_SOURCES) \
+		$(COMPLETION_CORE_READ_FORBIDDEN_SOURCES))" ]; then \
+		echo "completion core/read source list crosses the isolated boundary: \
+			$(COMPLETION_CORE_READ_UNEXPECTED_SOURCES) \
+			$(COMPLETION_CORE_READ_FORBIDDEN_SOURCES)" >&2; \
+		exit 1; \
+	fi
+
+completion-core-read-test: completion-core-read-source-boundary
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread \
+		$(COMPLETION_CORE_READ_DEFINES) \
+		$(COMPLETION_CORE_READ_SOURCES) \
+		-o "$(COMPLETION_TMP)/core-read-probe"
+	"$(COMPLETION_TMP)/core-read-probe" "$(COMPLETION_TMP)"
+	@if $(NM) "$(COMPLETION_TMP)/core-read-probe" | \
+		grep -Eq 'wf__completion_output_batch|wf_ordered_output|wf_bridge_ordered|wf__writer_run_root|wf__completion_file_pread_submit'; then \
+		echo "isolated completion core/read probe links bridge or Ordered Output symbols" >&2; \
+		exit 1; \
+	fi
+	@echo "completion core/read bridge isolation: PASS"
+
+completion-sanitize: completion-core-read-sanitize
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
 		-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
@@ -82,6 +119,36 @@ completion-sanitize:
 		-fsanitize=address,undefined $(COMPLETION_SOURCES) \
 		-o "$(COMPLETION_TMP)/harness-sanitize"
 	ASAN_OPTIONS=detect_leaks=0 "$(COMPLETION_TMP)/harness-sanitize" "$(COMPLETION_TMP)"
+
+completion-core-read-sanitize: completion-core-read-source-boundary
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
+		$(COMPLETION_CORE_READ_DEFINES) -fsanitize=address,undefined \
+		$(COMPLETION_CORE_READ_SOURCES) \
+		-o "$(COMPLETION_TMP)/core-read-probe-sanitize"
+	ASAN_OPTIONS=detect_leaks=0 \
+		"$(COMPLETION_TMP)/core-read-probe-sanitize" "$(COMPLETION_TMP)"
+
+# These are qualification-development targets rather than canonical gates.
+# Stress repeats the sleep/publication races; TSan is optional because not
+# every supported build host ships a thread-sanitizer runtime.
+completion-core-read-stress: completion-core-read-test
+	@iteration=0; \
+	while [ $$iteration -lt 200 ]; do \
+		"$(COMPLETION_TMP)/core-read-probe" "$(COMPLETION_TMP)" >/dev/null \
+			|| exit 1; \
+		iteration=$$((iteration + 1)); \
+	done
+	@echo "completion core/read stress: PASS (200 runs)"
+
+completion-core-read-tsan: completion-core-read-source-boundary
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
+		$(COMPLETION_CORE_READ_DEFINES) -fsanitize=thread \
+		$(COMPLETION_CORE_READ_SOURCES) \
+		-o "$(COMPLETION_TMP)/core-read-probe-tsan"
+	TSAN_OPTIONS=halt_on_error=1 \
+		"$(COMPLETION_TMP)/core-read-probe-tsan" "$(COMPLETION_TMP)"
 
 # This is deliberately an explicit qualification-development target rather
 # than part of `check`: it needs a Windows cross toolchain, and a successful
@@ -120,5 +187,7 @@ completion-windows-cross:
 	done
 	@echo "completion Windows x86-64 cross-link: PASS (not runtime-qualified)"
 
-.PHONY: check format lint test docs spec completion-test completion-sanitize \
-	completion-windows-cross
+.PHONY: check format lint test docs spec completion-test \
+	completion-core-read-source-boundary completion-core-read-test \
+	completion-core-read-stress completion-core-read-tsan completion-sanitize \
+	completion-core-read-sanitize completion-windows-cross

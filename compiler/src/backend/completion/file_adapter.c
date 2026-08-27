@@ -19,6 +19,12 @@
 extern int WF_COMPLETION_POLL(struct pollfd *, nfds_t, int);
 #endif
 
+#if !defined(WF_COMPLETION_PREAD)
+#define WF_COMPLETION_PREAD pread
+#else
+extern ssize_t WF_COMPLETION_PREAD(int, void *, size_t, off_t);
+#endif
+
 #if defined(__APPLE__)
 /* libSystem exports the exact facility used by the qualified Darwin target;
  * it is intentionally not replaced with an opendir/readdir loop. */
@@ -95,6 +101,14 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
         }
         break;
     case WF_FILE_PREAD:
+        /* An empty transfer has no external action.  This must be decided
+         * before descriptor and offset validation reaches the host: callers
+         * rely on zero length completing without touching
+         * either the destination or the file facility. */
+        if (request->operation.pread.count == 0) {
+            result.value = 0;
+            return result;
+        }
         if (request->operation.pread.count > (size_t)SSIZE_MAX
             || (int64_t)(off_t)request->operation.pread.offset
                 != request->operation.pread.offset) {
@@ -157,7 +171,7 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
         );
         break;
     case WF_FILE_PREAD:
-        result.value = pread(
+        result.value = WF_COMPLETION_PREAD(
             request->operation.pread.descriptor,
             request->operation.pread.buffer,
             request->operation.pread.count,
