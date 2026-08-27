@@ -1204,6 +1204,213 @@ static int test_bridge_open_status_and_close_are_typed_operations(
     return 0;
 }
 
+/* One file of exactly one byte, so the byte a later read returns names which
+ * file was opened. */
+static int wf_harness_write_marker_file(int root, const char *name, char byte) {
+    int descriptor = openat(root, name, O_CREAT | O_TRUNC | O_WRONLY, 0600);
+    if (descriptor < 0) {
+        return -1;
+    }
+    if (write(descriptor, &byte, 1) != 1) {
+        (void)close(descriptor);
+        return -1;
+    }
+    return close(descriptor);
+}
+
+/* A submitted open resolves the name it was given, not the bytes that were in
+ * the caller's buffer when the host got round to it.
+ *
+ * The caller regains its name buffer the moment submission returns, so this
+ * rewrites the buffer to name a *different* existing file immediately after
+ * every submit.  The two names are the same length, so the rewrite is exactly
+ * the overwrite a loop reusing one scratch buffer performs.  If the operation
+ * record did not own its path bytes, the open would resolve the second name
+ * and the marker byte would be wrong — or, on the ring, the kernel would read
+ * a buffer the writer is concurrently rewriting.
+ *
+ * The private adapter leg also observes [SYS-2]'s `loan-released(path)` fact
+ * while the operation is still outstanding, which is what makes the release
+ * milestone a checked contract rather than a comment.  Both legs run on every
+ * platform: the bridge leg reaches the io_uring ring on Linux and the bounded
+ * POSIX adapter on Darwin, which are the two adapters that stage a path. */
+static int test_submitted_open_owns_its_path_bytes(
+    const char *scratch_directory
+) {
+    wf_completion_runtime runtime;
+    wf_completion_slot slots[4];
+    wf_file_adapter adapter;
+    wf_file_work queue[1];
+    wf_completion_token token;
+    wf_file_request request;
+    wf_file_result result;
+    uint32_t milestones = 0;
+    unsigned phase = 0;
+    char first[64];
+    char second[64];
+    char requested[64];
+    char first_directory[64];
+    char second_directory[64];
+    char marker = 0;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
+    int root;
+    int descriptor;
+    int marker_descriptor;
+    uint64_t native_before = wf__completion_linux_io_uring_submissions();
+
+    CHECK(scratch_directory != NULL);
+    root = open(scratch_directory, O_RDONLY | O_DIRECTORY);
+    CHECK(root >= 0);
+    CHECK(
+        snprintf(first, sizeof(first), "wf-open-name-a-%ld", (long)getpid())
+        > 0
+    );
+    CHECK(
+        snprintf(second, sizeof(second), "wf-open-name-b-%ld", (long)getpid())
+        > 0
+    );
+    CHECK(strlen(first) == strlen(second));
+    CHECK(wf_harness_write_marker_file(root, first, 'A') == 0);
+    CHECK(wf_harness_write_marker_file(root, second, 'B') == 0);
+
+    /* The bounded POSIX adapter, driven by this thread alone so the host call
+     * demonstrably runs after the rewrite. */
+    CHECK(wf_completion_runtime_init(&runtime, slots, 4) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, queue, 1, NULL, 0) == 0);
+    CHECK(wf_completion_claim(&runtime, &token) == WF_COMPLETION_CLAIMED);
+    memcpy(requested, first, strlen(first) + 1u);
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_FILE_OPEN_AT;
+    request.operation.open_at.directory = root;
+    request.operation.open_at.path = requested;
+    request.operation.open_at.flags = O_RDONLY;
+    request.operation.open_at.expected_kind = WF_FILE_EXPECT_REGULAR;
+    CHECK(
+        wf_file_adapter_submit(&adapter, token, &request)
+        == WF_FILE_TARGET_OWNS
+    );
+    memcpy(requested, second, strlen(second) + 1u);
+    CHECK(
+        wf_completion_observe(&runtime, token, &milestones, &phase)
+        == WF_COMPLETION_TRANSITIONED
+    );
+    CHECK((milestones & WF_COMPLETION_PAYLOAD_RELEASED) != 0);
+    CHECK((milestones & WF_COMPLETION_TERMINAL) == 0);
+    CHECK(phase == WF_COMPLETION_IN_FLIGHT);
+    CHECK(wf_file_adapter_progress(&adapter, 1) == 1);
+    CHECK(drain_and_consume_file(&runtime, token, &result) == 0);
+    CHECK(result.error_code == 0 && result.value >= 0);
+    CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    descriptor = (int)result.value;
+    CHECK(pread(descriptor, &marker, 1, 0) == 1);
+    CHECK(marker == 'A');
+    CHECK(close(descriptor) == 0);
+    CHECK(wf_file_adapter_shutdown(&adapter) == 0);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+
+    /* The shipped bridge, on whichever target it selects. */
+    memcpy(requested, first, strlen(first) + 1u);
+    CHECK(
+        wf__completion_file_open_at_submit(
+            root,
+            requested,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &token
+        ) == 1
+    );
+    memcpy(requested, second, strlen(second) + 1u);
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(
+        value >= 0 && error_code == 0
+        && open_outcome == WF_FILE_OPEN_SUCCEEDED
+    );
+    descriptor = (int)value;
+    marker = 0;
+    CHECK(wf__completion_file_pread_direct(descriptor, &marker, 1, 0) == 1);
+    CHECK(marker == 'A');
+    CHECK(wf__completion_file_close_direct(descriptor) == 0);
+
+    /* `open_directory` stages its name through exactly the same request, so
+     * it is checked the same way: the marker file exists only under the first
+     * directory, and finding it proves which name was resolved. */
+    CHECK(
+        snprintf(
+            first_directory,
+            sizeof(first_directory),
+            "wf-open-dir-a-%ld",
+            (long)getpid()
+        ) > 0
+    );
+    CHECK(
+        snprintf(
+            second_directory,
+            sizeof(second_directory),
+            "wf-open-dir-b-%ld",
+            (long)getpid()
+        ) > 0
+    );
+    CHECK(strlen(first_directory) == strlen(second_directory));
+    (void)unlinkat(root, first_directory, AT_REMOVEDIR);
+    (void)unlinkat(root, second_directory, AT_REMOVEDIR);
+    CHECK(mkdirat(root, first_directory, 0700) == 0);
+    CHECK(mkdirat(root, second_directory, 0700) == 0);
+    marker_descriptor = openat(root, first_directory, O_RDONLY | O_DIRECTORY);
+    CHECK(marker_descriptor >= 0);
+    CHECK(wf_harness_write_marker_file(marker_descriptor, "marker", 'A') == 0);
+    CHECK(close(marker_descriptor) == 0);
+
+    memcpy(requested, first_directory, strlen(first_directory) + 1u);
+    CHECK(
+        wf__completion_file_open_at_submit(
+            root,
+            requested,
+            O_RDONLY | O_DIRECTORY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_DIRECTORY,
+            &token
+        ) == 1
+    );
+    memcpy(requested, second_directory, strlen(second_directory) + 1u);
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(
+        value >= 0 && error_code == 0
+        && open_outcome == WF_FILE_OPEN_SUCCEEDED
+    );
+    descriptor = (int)value;
+    marker_descriptor = openat(descriptor, "marker", O_RDONLY);
+    CHECK(marker_descriptor >= 0);
+    CHECK(close(marker_descriptor) == 0);
+    CHECK(wf__completion_file_close_direct(descriptor) == 0);
+
+#if defined(__linux__)
+    /* Where the ring is the qualified target, both bridge opens above are ring
+     * operations. Without this the leg would still pass on a silent fallback
+     * to the bounded adapter, which is the other half of what this test is
+     * about. */
+    if (getenv("WF_REQUIRE_LINUX_IO_URING") != NULL) {
+        CHECK(wf__completion_linux_io_uring_submissions() >= native_before + 2);
+    }
+#endif
+    (void)native_before;
+
+    marker_descriptor = openat(root, first_directory, O_RDONLY | O_DIRECTORY);
+    CHECK(marker_descriptor >= 0);
+    CHECK(unlinkat(marker_descriptor, "marker", 0) == 0);
+    CHECK(close(marker_descriptor) == 0);
+    CHECK(unlinkat(root, first, 0) == 0);
+    CHECK(unlinkat(root, second, 0) == 0);
+    CHECK(unlinkat(root, first_directory, AT_REMOVEDIR) == 0);
+    CHECK(unlinkat(root, second_directory, AT_REMOVEDIR) == 0);
+    CHECK(close(root) == 0);
+    return 0;
+}
+
 static int test_bridge_capacity_falls_back_per_operation(void) {
     wf_completion_token tokens[WF_HARNESS_OPERATION_CAPACITY];
     wf_completion_token refused;
@@ -2140,6 +2347,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_single_thread_file_progress_and_backpressure(argv[1]));
     RUN_TEST(test_bridge_independent_positioned_reads(argv[1]));
     RUN_TEST(test_bridge_open_status_and_close_are_typed_operations(argv[1]));
+    RUN_TEST(test_submitted_open_owns_its_path_bytes(argv[1]));
     RUN_TEST(test_bridge_capacity_falls_back_per_operation());
     RUN_TEST(test_checked_open_rejects_and_closes_nonregular_descriptors(argv[1]));
     RUN_TEST(test_open_failure_classes_are_typed_outcomes(argv[1]));

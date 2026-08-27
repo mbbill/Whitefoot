@@ -351,6 +351,7 @@ static int wf_file_take_work(wf_file_adapter *adapter, wf_file_work *work) {
             ? adapter->queue_capacity - 1
             : adapter->queue_tail - 1;
         *work = adapter->queue[adapter->queue_tail];
+        wf_file_work_bind_path(work);
         adapter->queue_count -= 1;
         present = 1;
     }
@@ -421,6 +422,7 @@ static void *wf_file_helper_main(void *context) {
         }
         released_capacity = adapter->queue_count == adapter->queue_capacity;
         work = adapter->queue[adapter->queue_head];
+        wf_file_work_bind_path(&work);
         adapter->queue_head = (adapter->queue_head + 1) % adapter->queue_capacity;
         adapter->queue_count -= 1;
         (void)pthread_mutex_unlock(&adapter->queue_lock);
@@ -565,8 +567,36 @@ static void wf_file_enqueue_locked(
     wf_completion_token token,
     const wf_file_request *request
 ) {
-    adapter->queue[adapter->queue_tail].token = token;
-    adapter->queue[adapter->queue_tail].request = *request;
+    wf_file_work *entry = &adapter->queue[adapter->queue_tail];
+    entry->token = token;
+    entry->request = *request;
+    if (request->kind == WF_FILE_OPEN_AT) {
+        /* The path becomes this record's own before any helper can see the
+         * entry.  `wf_file_adapter_submit` refused a name that does not fit
+         * before the operation was claimed, so this copy cannot fail. */
+        (void)wf_file_stage_path(
+            entry->path_storage,
+            request->operation.open_at.path
+        );
+        wf_file_work_bind_path(entry);
+        /* [SYS-2]'s `loan-released(path)` for this open holds from here: the
+         * name the host will resolve is the record's own, so the caller's
+         * buffer is free whatever the host does next.  Publishing it makes
+         * that an observable fact rather than an adapter comment.  A refusal
+         * is an adapter/core contract defect: it is counted, never retried,
+         * and never turned into writer-visible behaviour. */
+        if (wf_completion_publish_milestone(
+                adapter->runtime,
+                token,
+                WF_COMPLETION_PAYLOAD_RELEASED
+            ) != WF_COMPLETION_PUBLISHED) {
+            atomic_fetch_add_explicit(
+                &adapter->stat_publication_failures,
+                1,
+                memory_order_relaxed
+            );
+        }
+    }
     adapter->queue_tail = (adapter->queue_tail + 1) % adapter->queue_capacity;
     adapter->queue_count += 1;
     atomic_fetch_add_explicit(
@@ -594,6 +624,14 @@ enum wf_file_submit_result wf_file_adapter_submit(
 
     if (adapter == NULL || adapter->initialized == 0
         || !wf_file_request_valid(request)) {
+        return WF_FILE_SUBMIT_INVALID;
+    }
+    /* A submitted open's path must fit the operation record, because the
+     * record is what resolves it.  The direct executor carries any length and
+     * needs no copy, so refusing here before anything is claimed leaves the
+     * caller an honest fallback rather than a truncated name. */
+    if (request->kind == WF_FILE_OPEN_AT
+        && !wf_file_path_fits(request->operation.open_at.path)) {
         return WF_FILE_SUBMIT_INVALID;
     }
     (void)pthread_mutex_lock(&adapter->queue_lock);

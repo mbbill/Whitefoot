@@ -438,7 +438,10 @@ static enum wf_completion_publish_result wf_completion_publish(
     slot->result_size = publication->result_size;
     slot->terminal_kind = publication->terminal_kind;
 
-    /* Result bytes precede the release-published milestone product. */
+    /* Result bytes precede the release-published milestone product.  A store
+     * rather than an accumulation: the terminal product was checked complete
+     * above, so it already contains every fact
+     * `wf_completion_publish_milestone` may have published earlier. */
     atomic_store_explicit(
         &slot->milestones,
         publication->milestones,
@@ -458,6 +461,59 @@ static enum wf_completion_publish_result wf_completion_publish(
     );
     (void)pthread_mutex_unlock(&slot->publication_lock);
     wf_completion_notify_scheduler(runtime);
+    return WF_COMPLETION_PUBLISHED;
+}
+
+enum wf_completion_publish_result wf_completion_publish_milestone(
+    wf_completion_runtime *runtime,
+    wf_completion_token token,
+    uint32_t milestones
+) {
+    wf_completion_slot *slot;
+    uint64_t generation;
+    unsigned phase;
+
+    /* Only facts of this operation, and never the terminal one: a terminal
+     * fact without the result bytes it stands for would let a consumer read a
+     * slot that has nothing in it. */
+    if (milestones == 0
+        || (milestones & ~(uint32_t)WF_COMPLETION_OWNERSHIP_COMPLETE) != 0
+        || (milestones & (uint32_t)WF_COMPLETION_TERMINAL) != 0) {
+        return WF_COMPLETION_PUBLISH_INVALID_ARGUMENT;
+    }
+    if (!wf_completion_token_slot(runtime, token, &slot)) {
+        return WF_COMPLETION_PUBLISH_STALE;
+    }
+
+    (void)pthread_mutex_lock(&slot->publication_lock);
+    generation = atomic_load_explicit(&slot->generation, memory_order_relaxed);
+    if (generation != token.generation) {
+        atomic_fetch_add_explicit(
+            &runtime->stat_stale_publications,
+            1,
+            memory_order_relaxed
+        );
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return WF_COMPLETION_PUBLISH_STALE;
+    }
+    phase = atomic_load_explicit(&slot->phase, memory_order_relaxed);
+    if (phase == WF_COMPLETION_TERMINAL_PHASE) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return WF_COMPLETION_PUBLISH_DUPLICATE_TERMINAL;
+    }
+    if (phase != WF_COMPLETION_SUBMITTING && phase != WF_COMPLETION_IN_FLIGHT) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return WF_COMPLETION_PUBLISH_INVALID_STATE;
+    }
+    /* Accumulated, not stored: this route publishes one fact of a product the
+     * terminal route later completes, and the terminal product is a superset
+     * of everything published here. */
+    atomic_fetch_or_explicit(
+        &slot->milestones,
+        milestones,
+        memory_order_release
+    );
+    (void)pthread_mutex_unlock(&slot->publication_lock);
     return WF_COMPLETION_PUBLISHED;
 }
 
