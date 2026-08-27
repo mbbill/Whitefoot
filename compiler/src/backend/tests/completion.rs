@@ -1054,22 +1054,31 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
 /// Where a native completion path exists, an open and a close are operations
 /// on it, and one rule decides the open's typed outcome on every target.
 ///
-/// A many-small-file program spends most of its I/O in opens. While the ring
-/// carried only transfers, every open still cost a blocking `openat` on the
-/// submitting scheduler, which is where the whole measured distance to a
-/// plain thread pool lived. The kind check that makes an open typed —
-/// refusing a FIFO, refusing a directory — must move with it: it inspects the
-/// descriptor the open produced, on the same ring, and the descriptor it
-/// refuses is disposed of there too. The refusal rule itself lives once, so a
-/// FIFO is refused identically whether the open ran on a helper thread, on
-/// the scheduler, or in the kernel.
+/// While the ring carried only transfers, every open cost a blocking `openat`
+/// on the submitting scheduler: in the zero-helper configuration a native ring
+/// selects, that is the one thread which could otherwise run any other ready
+/// frame, so a slow path resolution stalls all of them. The path resolution is
+/// what the ring now carries.
+///
+/// The kind check that makes an open typed — refusing a FIFO, refusing a
+/// directory — stays a host call on the reaping thread, and that placement is
+/// measured rather than preferred. Written first as a linked `IORING_OP_STATX`
+/// of the same descriptor, it kept the reaping thread free of host calls and
+/// cost two ring round trips per open: on the two-CPU Linux container the
+/// eight-wide many-file program ran 152 ms against 116 ms for the bounded
+/// adapter it replaced. Done as one `fstat` of an already-open descriptor —
+/// an inode read that cannot wait on anything — the same program runs 119 ms.
+///
+/// The refusal rule itself lives once, so a FIFO is refused identically
+/// whether the open ran on a helper thread, on the scheduler, or in the
+/// kernel.
 #[test]
 fn a_native_ring_carries_opens_and_closes_under_one_kind_rule() {
     let ring = crate::COMPLETION_LINUX_IO_URING_SOURCE;
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
     let adapter_header = crate::COMPLETION_FILE_ADAPTER_HEADER;
 
-    for opcode in ["IORING_OP_OPENAT", "IORING_OP_CLOSE", "IORING_OP_STATX"] {
+    for opcode in ["IORING_OP_OPENAT", "IORING_OP_CLOSE"] {
         assert!(
             ring.contains(opcode),
             "the ring adapter must submit {opcode}"
@@ -1088,21 +1097,29 @@ fn a_native_ring_carries_opens_and_closes_under_one_kind_rule() {
         crate::COMPLETION_FILE_ADAPTER_SOURCE.contains("wf_file_kind_outcome("),
         "the bounded POSIX adapter must answer with the shared open-kind rule"
     );
-    // No stage of an open reaches the host through a blocking call: not the
-    // open, not the kind check, and not the disposal of a refused descriptor.
-    let open_stages = ring
-        .split_once("static int wf_linux_advance_open(")
-        .expect("the open stages are one named function")
+    // The part of an open that can wait is the path resolution, and no
+    // scheduler thread may perform that: it is a ring operation or nothing.
+    let decision = ring
+        .split_once("static void wf_linux_decide_open(")
+        .expect("the open decision is one named function")
         .1
         .split_once("\n}\n")
-        .expect("the open stages end with the function")
+        .expect("the open decision ends with the function")
         .0;
-    for blocking in ["openat(", "fstat(", "statx(", "close("] {
-        assert!(
-            !open_stages.contains(blocking),
-            "no open stage may call {blocking} on a scheduler thread: {open_stages}"
-        );
-    }
+    assert!(
+        !decision.contains("openat("),
+        "an open's path resolution belongs to the ring: {decision}"
+    );
+    assert!(
+        !ring.contains("submission->opcode = IORING_OP_STATX"),
+        "the kind check is one fstat of an open descriptor, not a second ring \
+         round trip that measured 31 percent slower"
+    );
+    assert!(
+        decision.contains("fstat(entry->opened_descriptor"),
+        "the kind check reads the mode of the descriptor the open produced: \
+         {decision}"
+    );
     // The bridge offers both operations to the ring before the bounded
     // fallback, and answers -1 rather than claiming an operation it cannot
     // then hand over.

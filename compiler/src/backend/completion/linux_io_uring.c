@@ -417,11 +417,6 @@ static int wf_linux_request_valid(const wf_linux_file_request *request) {
     }
 }
 
-/* statx of an already-open descriptor names the empty path with
- * AT_EMPTY_PATH.  That pointer must outlive the operation, so it is this
- * unit's own storage rather than any caller string. */
-static const char wf_linux_empty_path[1] = {0};
-
 static wf_linux_io_uring_entry *wf_linux_reserve_entry(
     wf_linux_io_uring_adapter *adapter,
     size_t *entry_index
@@ -490,19 +485,6 @@ static void wf_linux_stage_entry_locked(
         submission->poll_events = entry->request.kind == WF_LINUX_FILE_READ_AT
             ? POLLIN
             : POLLOUT;
-    } else if (entry->stage == WF_LINUX_IO_URING_STAGE_OPEN_STATUS) {
-        /* AT_EMPTY_PATH against the descriptor the open produced, so the kind
-         * decision inspects the object that was actually opened and never
-         * resolves the path a second time. */
-        submission->opcode = IORING_OP_STATX;
-        submission->fd = entry->opened_descriptor;
-        submission->addr = (uint64_t)(uintptr_t)wf_linux_empty_path;
-        submission->len = STATX_TYPE;
-        submission->off = (uint64_t)(uintptr_t)&entry->status;
-        submission->statx_flags = AT_EMPTY_PATH;
-    } else if (entry->stage == WF_LINUX_IO_URING_STAGE_OPEN_DISCARD) {
-        submission->opcode = IORING_OP_CLOSE;
-        submission->fd = entry->opened_descriptor;
     } else {
         switch (entry->request.kind) {
         case WF_LINUX_FILE_OPEN_AT:
@@ -640,11 +622,9 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
     entry->kind = request->kind;
     entry->request = *request;
     entry->waiting_readiness = 0;
-    entry->stage = WF_LINUX_IO_URING_STAGE_PRIMARY;
     entry->opened_descriptor = -1;
     entry->open_outcome = WF_FILE_OPEN_SUCCEEDED;
     entry->open_error = 0;
-    memset(&entry->status, 0, sizeof(entry->status));
     transition = wf_completion_target_accepted(adapter->runtime, token);
     if (transition != WF_COMPLETION_TRANSITIONED) {
         atomic_store_explicit(
@@ -719,60 +699,56 @@ static int wf_linux_transfer_kind(enum wf_linux_file_operation_kind kind) {
     return kind == WF_LINUX_FILE_READ_AT || kind == WF_LINUX_FILE_WRITE_AT;
 }
 
-/* Drives the stages of a kind-checked open.  `*advanced` is set when the
- * entry has been resubmitted for a further stage and nothing may be published
- * yet; otherwise the entry now carries the open's final answer. */
-static int wf_linux_advance_open(
-    wf_linux_io_uring_adapter *adapter,
-    size_t entry_index,
+/* Decides a completed open's typed outcome.
+ *
+ * The path resolution — the part of an open that can genuinely wait — is what
+ * the ring carries. What remains is reading the mode of the descriptor the
+ * kernel already produced, and that is an in-memory inode read which cannot
+ * wait on anything, so it is one `fstat` here rather than a second ring
+ * operation.
+ *
+ * That is a measurement, not a preference. The kind check was first written
+ * as a linked `IORING_OP_STATX` of the same descriptor, which keeps the
+ * reaping thread free of host calls entirely. Two ring round trips per open
+ * cost more than the open they wrap: on the two-CPU Linux container the
+ * eight-wide many-file program ran 152 ms against 116 ms for the bounded
+ * adapter it replaced, and the four-wide one 203 ms against 140 ms. With the
+ * check done here instead, the same programs run 119 ms and 141 ms — parity,
+ * with the blocking `openat` gone from the scheduler thread. A descriptor the
+ * check refuses is disposed of by the same single close the direct path
+ * makes, on the error path where nothing is waiting for throughput. */
+static void wf_linux_decide_open(
     wf_linux_io_uring_entry *entry,
-    int32_t completion_result,
-    int *advanced
+    int32_t completion_result
 ) {
-    *advanced = 0;
-    switch (entry->stage) {
-    case WF_LINUX_IO_URING_STAGE_PRIMARY:
-        if (completion_result < 0) {
-            entry->opened_descriptor = -1;
-            entry->open_error = -completion_result;
-            entry->open_outcome = WF_FILE_OPEN_FAILED;
-            return 0;
-        }
-        entry->opened_descriptor = completion_result;
-        if (entry->request.expected_kind == WF_FILE_EXPECT_ANY) {
-            entry->open_error = 0;
-            entry->open_outcome = WF_FILE_OPEN_SUCCEEDED;
-            return 0;
-        }
-        entry->stage = WF_LINUX_IO_URING_STAGE_OPEN_STATUS;
-        *advanced = 1;
-        return wf_linux_resubmit_entry(adapter, entry_index, entry, 0);
-    case WF_LINUX_IO_URING_STAGE_OPEN_STATUS:
-        if (completion_result < 0) {
-            entry->open_error = -completion_result;
-            entry->open_outcome = WF_FILE_OPEN_STATUS_FAILED;
-        } else {
-            entry->open_error = 0;
-            entry->open_outcome = wf_file_kind_outcome(
-                entry->request.expected_kind,
-                (unsigned int)entry->status.stx_mode
-            );
-            if (entry->open_outcome == WF_FILE_OPEN_SUCCEEDED) {
-                return 0;
-            }
-        }
-        /* The descriptor is refused, so the adapter disposes of it on the
-         * same ring rather than leaking it or blocking a scheduler thread. */
-        entry->stage = WF_LINUX_IO_URING_STAGE_OPEN_DISCARD;
-        *advanced = 1;
-        return wf_linux_resubmit_entry(adapter, entry_index, entry, 0);
-    case WF_LINUX_IO_URING_STAGE_OPEN_DISCARD:
-    default:
-        /* The refusal was decided before this close was submitted, and one
-         * ambiguous close attempt has already consumed the descriptor's
-         * authority, so its diagnostic never changes the answer. */
-        return 0;
+    struct stat status;
+    if (completion_result < 0) {
+        entry->opened_descriptor = -1;
+        entry->open_error = -completion_result;
+        entry->open_outcome = WF_FILE_OPEN_FAILED;
+        return;
     }
+    entry->opened_descriptor = completion_result;
+    entry->open_error = 0;
+    entry->open_outcome = WF_FILE_OPEN_SUCCEEDED;
+    if (entry->request.expected_kind == WF_FILE_EXPECT_ANY) {
+        return;
+    }
+    if (fstat(entry->opened_descriptor, &status) != 0) {
+        entry->open_error = errno;
+        entry->open_outcome = WF_FILE_OPEN_STATUS_FAILED;
+    } else {
+        entry->open_outcome = wf_file_kind_outcome(
+            entry->request.expected_kind,
+            (unsigned int)status.st_mode
+        );
+        if (entry->open_outcome == WF_FILE_OPEN_SUCCEEDED) {
+            return;
+        }
+    }
+    /* One close attempt whose diagnostic is discarded, exactly as the direct
+     * path makes it, and never retried. */
+    (void)close(entry->opened_descriptor);
 }
 
 static int wf_linux_publish_completion(
@@ -815,24 +791,15 @@ static int wf_linux_publish_completion(
             return wf_linux_resubmit_entry(adapter, entry_index, entry, 1);
         }
     } else if (entry->request.kind == WF_LINUX_FILE_OPEN_AT) {
-        int advanced = 0;
-        int error = wf_linux_advance_open(
-            adapter,
-            entry_index,
-            entry,
-            completion->res,
-            &advanced
-        );
-        if (advanced != 0 || error != 0) {
-            return error;
-        }
+        wf_linux_decide_open(entry, completion->res);
     }
 
     memset(&result, 0, sizeof(result));
     result.kind = entry->kind;
     if (entry->request.kind == WF_LINUX_FILE_OPEN_AT) {
-        /* Every stage of a kind-checked open has finished; the outcome the
-         * stages decided is the whole answer. */
+        /* The kind decision above is the whole answer, and it names the
+         * descriptor even where it refused it, exactly as the direct path
+         * does. */
         result.open_outcome = entry->open_outcome;
         result.error_code = entry->open_error;
         result.value = entry->opened_descriptor;
