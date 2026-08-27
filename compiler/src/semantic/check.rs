@@ -159,6 +159,14 @@ struct ResidualProvenanceContext<'a> {
 /// dropped. A held copy would double the largest live structure in the check:
 /// on `tests/programs/wfgrep.wf` one inventory of derivation arenas is half a
 /// gigabyte.
+///
+/// What the entry holds is the analysis, not the inventory slot it was lent
+/// to. The slot picks up one thing the analysis never produces: the SCC
+/// scheduler stamps a [`VerifiedPostconditionSummary`] onto every postcondition
+/// proof of a component it publishes, and whether a component publishes is a
+/// decision each rerun takes again under its own mask. `reclaim` therefore
+/// clears that stamp on the way back, so no rerun can read a summary a
+/// different rerun published.
 #[derive(Default)]
 struct CounterfactualReuse {
     entries: Vec<Option<CounterfactualReuseEntry>>,
@@ -216,12 +224,21 @@ impl CounterfactualReuse {
         }
     }
 
-    /// Takes one lent value back.
+    /// Takes one lent value back, as the analysis produced it.
     ///
     /// An entry is lent exactly when its `entailment` is absent, so a function
     /// this rerun analyzed under a mask that names it — whose inventory slot
     /// therefore holds a masked value — keeps the untargeted value an earlier
     /// rerun recorded.
+    ///
+    /// The published FN-9 summaries are cleared because they belong to the
+    /// rerun that published them rather than to the analysis: the analyzer
+    /// emits `summary: None` for every postcondition proof, and the scheduler
+    /// fills them in afterwards only for a component whose functions all
+    /// discharged under *that* rerun's mask. Carrying them back would let a
+    /// rerun whose component does not publish still read an earlier rerun's
+    /// summaries as visible postconditions, which is a different proof search
+    /// for every function scheduled after it.
     fn reclaim_one(
         &mut self,
         index: usize,
@@ -233,7 +250,11 @@ impl CounterfactualReuse {
         if entry.entailment.is_some() {
             return;
         }
-        entry.entailment = Some(std::mem::take(entailment));
+        let mut analyzed = std::mem::take(entailment);
+        for proof in &mut analyzed.postconditions {
+            proof.summary = None;
+        }
+        entry.entailment = Some(analyzed);
     }
 
     fn own<T: Clone>(borrowed: &[Vec<&T>]) -> Vec<Vec<T>> {
@@ -4917,6 +4938,35 @@ mod counterfactual_reuse_tests {
         assert!(
             reuse.take(0, &[], &context).is_none(),
             "the entry holds nothing while the inventory holds the value"
+        );
+    }
+
+    /// The entry holds the analysis, not the inventory slot it was lent to.
+    /// The slot picks up the published FN-9 summaries of every component the
+    /// SCC scheduler publishes, and each [CLM-2] rerun takes that publication
+    /// decision again under its own mask. An entry that carried the stamp back
+    /// would hand the next rerun a postcondition proof marked verified by a
+    /// component that rerun never published, which every function scheduled
+    /// after it then reads as one more visible postcondition.
+    #[test]
+    fn a_published_summary_is_not_lent_to_the_next_rerun() {
+        let mut reuse = CounterfactualReuse::default();
+        // `proof` builds the proofs as the publish loop leaves them.
+        let mut entailment = FunctionEntailment {
+            postconditions: vec![proof(0), proof(1)],
+            ..FunctionEntailment::default()
+        };
+
+        reuse.lend(0, &[], &[]);
+        reuse.reclaim_one(0, &mut entailment);
+
+        let lent = reuse.take(0, &[], &[]).expect("the value comes back");
+        assert_eq!(lent.postconditions.len(), 2);
+        assert!(
+            lent.postconditions
+                .iter()
+                .all(|proof| proof.summary.is_none()),
+            "a summary published by one rerun must not reach the next"
         );
     }
 }

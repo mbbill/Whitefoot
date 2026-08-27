@@ -78,7 +78,10 @@ Three readings decide the batch.
 ## Mechanism
 
 Five changes. None changes which candidates the closure accepts, in what order,
-or with which proof; four are pure representation and one removes a copy.
+or with which proof; four are pure representation and one removes a copy. That
+claim is about proof search, so **Oracle** below measures it at the derivation
+and not only at the emitted program — an adversarial review broke the first
+version of change 4 while the emitted program stayed identical everywhere.
 
 1. **The interning index keys a hash, not a node** (`entailment/state.rs`).
    `InternIndex` was `HashMap<(ProofView, DerivationNode), DerivationId>`, so
@@ -91,15 +94,21 @@ or with which proof; four are pure representation and one removes a copy.
    removed from the index, only rebuilt or cleared whole, so a free key always
    ends the walk. `rebuild_intern_index` replays the same walk in identity
    order and still lets a repeated identity keep the later entry.
-   `intern_for` no longer clones the node it interns.
+   `intern_for` no longer clones the node it interns. Absence is the index's
+   only state and is read off the ledger — empty entries beside a non-empty
+   arena means a replay is owed — rather than tracked by a flag each dropper
+   has to set correctly.
    693 M → 55 M per inventory.
 2. **`DerivationLedger::settle()`** (`entailment/state.rs`), called by
    `flow::analyze_candidate` and `analyze_candidate_masked` — the two entry
    points that deliberately defer `finish`. It shrinks the arena's vectors to
-   their length and drops the interning index the way a clone drops it, marking
-   it stale so a later query replays it. Neither is observable: capacity is not
-   read anywhere, `finish_with_event_roots` rebuilds every vector at its
-   retained length, and the [DIAG-2] byte metric is taken after that rebuild.
+   their length and drops the interning index. Neither is observable: the index
+   is derived from the nodes, so the next interning replays it, and every
+   vector it releases is one `finish_with_event_roots` rebuilds at its retained
+   length before the [DIAG-2] byte metric reads its capacity. `roots` is the
+   exception — that pass rewrites each root's identity in place instead of
+   rebuilding the vector, so its capacity does reach the metric — and `settle`
+   leaves it alone.
    755 M → 514 M per inventory, before the width change below.
 3. **The arena entry narrows from 208 bytes to 64.** `PostconditionCall` and
    `PostconditionDeliveryJoin` now hold one `Box<…Detail>` each, and the
@@ -117,6 +126,10 @@ or with which proof; four are pure representation and one removes a copy.
    a function the rerun analyzed under a mask that names it keeps the
    untargeted value an earlier rerun recorded — the same rule the copying
    version had. One copy exists at any moment instead of two.
+   `reclaim` clears the published FN-9 summaries as the value comes back: the
+   SCC scheduler stamps them onto the inventory's copy, each rerun takes that
+   publication decision again under its own mask, and what the entry holds is
+   the analysis, which emits `summary: None`.
    514 M removed.
 5. **Provenance takes borrowed functions.** `analyze_program_provenance_with_frozen`,
    `freeze_program_provenance`, `refresh_entailment_views` and their five
@@ -161,43 +174,193 @@ inventory it names.
 - **A wall-clock or RSS regression assertion.** Both are machine numbers. The
   guards below assert mechanism.
 
+## What an adversarial review found, and what it cost
+
+The first version of this record claimed that none of the five changes can
+alter a derivation, and offered 623 identical compilations as the evidence. An
+adversarial review refuted that claim with a 39-line program and found a second
+defect the corpus cannot reach. Both are repaired here, both are guarded, and
+the claim is now backed by a derivation-level oracle rather than by emitted
+output alone. The IR evidence was never wrong; it was answering a weaker
+question than the claim asked.
+
+**A published summary leaked from one counterfactual rerun into the next.** The
+copying version called `store` before the SCC scheduler's publish loop, so the
+cached value always carried `summary: None` — what the analyzer emits. Lending
+inverted that order: the value now lives in the rerun's inventory, the publish
+loop stamps a `VerifiedPostconditionSummary` onto its postcondition proofs, and
+`reclaim` took it back afterwards. `proof.summary` is not bookkeeping — it is
+read to build `verified_postconditions` and `verified_postcondition_proofs`,
+which are both the analyzer's `EntailmentContext` and the reuse key — so the
+stamp is acceptance-bearing input to every later analysis.
+
+The review's program exposes it. `alpha` and `beta` are a two-function SCC,
+each with an `ensures` that only `beta`'s claim can discharge; `gamma` holds an
+unrelated, earlier-sorting claim; `delta` calls `alpha` and feeds the result to
+a `requires`.
+
+```
+const small: array<i32, 4> =[10_i32, 20_i32, 30_i32, 40_i32];
+
+fn alpha(value: own u64) -> result: own u64 traps contract {
+  ensures ile(result, 100_u64);
+} {
+  let ignored = beta(value: value);
+  return 5_u64;
+}
+
+fn gamma(i: own u64) -> result: own i32 traps {
+  let bounded = i % 4_u64;
+  let inside = ilt(bounded, 4_u64);
+  claim gamma_bound: inside because "premises: p\nderivation: d\nconclusion: c\nchecker gap: g\nconsumers: u";
+  return small[bounded];
+}
+
+fn beta(value: own u64) -> result: own u64 traps contract {
+  ensures ile(result, 100_u64);
+} {
+  let ignored = alpha(value: value);
+  let bounded = value % 1024_u64;
+  let inside = ile(bounded, 100_u64);
+  claim beta_bound: inside because "premises: p\nderivation: d\nconclusion: c\nchecker gap: g\nconsumers: u";
+  return bounded;
+}
+
+fn accept_bound(value: own u64, limit: own u64) -> result: own u64 pure contract {
+  define admitted = ile(value, limit);
+  requires admitted;
+} {
+  return value;
+}
+
+fn delta(value: own u64) -> result: own u64 traps {
+  let a = alpha(value: value);
+  let ok = accept_bound(value: a, limit: 100_u64);
+  return ok;
+}
+
+command fn main() -> status: own ExitStatus traps {
+  let g = gamma(i: 1_u64);
+  let d = delta(value: 3_u64);
+  return exit_status(code: 0_u8);
+}
+```
+
+Masking `gamma_bound` publishes component 0 and stamps `alpha`; masking
+`beta_bound` leaves component 0 unpublished, and the entry handed `alpha` back
+with the earlier rerun's stamp. Every function scheduled after it then saw one
+visible postcondition where the base compiler saw none, and `delta`'s
+counterfactual arena was 39 nodes against the base's 30. `reclaim` now clears
+the stamp, which restores the exact value the copying version cached and with
+it the invariant stated at the `claim_counterfactual_inventory` site — no
+baseline entailment or materialized parent leaks into a masked rewalk — and the
+documented meaning of `FunctionPostconditionProof::summary`.
+
+**`settle` composed with `clone` minted a second identity for one proof step.**
+`InternIndex` carried a `stale` flag, and `Clone` recomputed it as
+`!entries.is_empty()`. A settled ledger has empty entries, so its clone was
+born looking freshly finished and never replayed the index: re-interning a node
+the arena already held returned a new `DerivationId`. The same hole existed at
+the base revision for a clone of a clone; what this batch added was a settled
+state on every candidate ledger, which is exactly the state the copy
+mishandled. The flag is gone. The index has one absent state, read off the
+ledger — empty entries beside a non-empty arena — so a clone, a `settle` and a
+`finish` are all owed the same replay and no dropper can get it wrong. Nothing
+in production interns into a copied ledger today, so no compilation changed;
+the defect was a live hazard rather than a live fault.
+
+**One rationale in this record was wrong.** It said `settle`'s `shrink_to_fit`
+is unobservable because capacity is not read anywhere. `DerivationLedger::
+measure` reads six vector capacities into `metrics.retained_bytes`, and `roots`
+is the one vector `finish_with_event_roots` rewrites in place instead of
+rebuilding, so shrinking `roots` did move that metric. It reaches no
+diagnostic today, so nothing observable changed, but the reason was false.
+`settle` no longer touches `roots` — a handful of entries per function beside
+millions of nodes — and the oracle below now measures the byte metric instead
+of asserting it cannot move.
+
 ## Result
 
-Gate profile, `whitefootc --par -o /dev/null`, five runs interleaved between
-the two binaries on an otherwise idle machine; medians, with maximum resident
-set size from `/usr/bin/time -l`.
+Gate profile, `whitefootc --par -o /dev/null`, five rounds interleaved across
+three binaries; medians, with maximum resident set size from `/usr/bin/time
+-l`. The middle column is this branch *before* the repair above, measured in
+the same rounds, so the repair's own cost is visible rather than inferred.
 
-| | before | after | ratio |
-| --- | --- | --- | --- |
-| `wfgrep.wf` peak RSS | 3125.0 MiB | **419.0 MiB** | **7.46×** |
-| `wfgrep.wf` wall | 6.86 s | 4.23 s | 1.62× faster |
-| `dir_walk.wf` peak RSS | 436.6 MiB | **93.8 MiB** | **4.65×** |
-| `dir_walk.wf` wall | 0.72 s | 0.62 s | 1.16× faster |
+| | `79b29665` | before repair | after repair | ratio |
+| --- | --- | --- | --- | --- |
+| `wfgrep.wf` peak RSS | 2406.8 MiB | 483.5 MiB | **481.3 MiB** | **5.00×** |
+| `wfgrep.wf` wall | 15.57 s | 7.91 s | 8.80 s | 1.77× faster |
+| `dir_walk.wf` peak RSS | 436.1 MiB | 94.5 MiB | **94.0 MiB** | **4.64×** |
+| `dir_walk.wf` wall | 1.63 s | 1.54 s | 1.29 s | 1.26× faster |
 
 The suite run that checks `wfgrep.wf` — the `programs` gate binary filtered to
-`wfgrep`, twelve tests over the compiler's own thread pool, medians of three
-interleaved runs:
+`wfgrep`, twelve tests over the compiler's own thread pool, five interleaved
+rounds:
 
-| | before | after | ratio |
-| --- | --- | --- | --- |
-| peak RSS | 4807.7 MiB | **919.4 MiB** | **5.23×** |
-| wall | 10.67 s | 4.94 s | 2.16× faster |
+| | `79b29665` | before repair | after repair | ratio |
+| --- | --- | --- | --- | --- |
+| peak RSS | 4265.9 MiB | 849.9 MiB | **849.9 MiB** | **5.02×** |
+| wall | 28.78 s | 14.91 s | 12.88 s | 2.23× faster |
+
+These rounds ran on a machine carrying other builds, and the walls are worth
+only their ratios. The peaks are worth more, but not equally: `dir_walk.wf`
+spans 434.8–437.7 MiB before and 93.3–95.9 MiB after, and the suite spans
+3644.7–4726.8 MiB before and 829.0–921.9 MiB after, while the single-file
+`wfgrep.wf` peak on `79b29665` spans 1460.4–4745.8 MiB. That last spread is
+the measurement telling the truth: the peak is set by how many function
+inventories are live at once, so on the old representation it tracks how much
+of the check the machine let run concurrently. After the change each live unit
+is small enough that the same variation costs 321.3–494.3 MiB. An earlier,
+quieter run of the same comparison read 3125.0 MiB against 419.0 MiB, at the
+top of that same range.
 
 Every step also made the check faster, which is the shape a memory fix takes
 when the memory was copies: an index entry that stores twelve bytes instead of
 228 and never copies a node, arena entries copied at 64 bytes instead of 208,
 and a `FunctionEntailment` moved rather than deep-copied are all strictly less
-work than what they replace.
+work than what they replace. The repair costs neither: clearing a handful of
+`Option`s per function and leaving one small vector unshrunk are at the noise
+floor of both tables.
 
 ## Oracle
 
-`whitefootc --par --emit-llvm --par-ledger --stack-ledger` over **623 sources**
-— every `tests/programs/*.wf` (25), `tests/codegen/**/*.wf` (95) and
-`tests/conformance/cases/*.wf` (503) — comparing stdout, stderr, exit status
-and the emitted LLVM IR against a compiler built from `79b29665` exported into
-a scratch tree: **0 differences** (`diff -r` over 2132 captured files —
-stdout, stderr and exit status for all 623, plus the IR text of the 262 that
-compile).
+Two comparisons, both against a compiler built from `79b29665` exported into a
+scratch tree by `git archive`, over **623 sources** — every
+`tests/programs/*.wf` (25), `tests/codegen/**/*.wf` (95) and
+`tests/conformance/cases/*.wf` (503) — plus the review's `scc_publish.wf`.
+
+**Emitted output.** `whitefootc --par --emit-llvm --par-ledger --stack-ledger`,
+comparing stdout, stderr, exit status and the emitted LLVM IR: **0
+differences** (`diff -r` over 2135 captured files — stdout, stderr and exit
+status for all 624, plus the IR text of the 263 that compile).
+
+**Derivations.** The claim this batch makes is about proof search, and identical
+IR does not establish it: the refuted version of change 4 emitted identical IR
+on every one of these sources while searching a different arena. A temporary
+probe — added to both scratch trees, never to the worktree, removed before
+committing — prints, for every function of every inventory analysis and for
+every finished ledger, the arena's node count, parent-edge count, root count,
+event count, published-summary count, and a hash of the whole DAG: each node's
+proof view, its depth, its parent and retained-reference identities in order,
+and its flow event. Those are `DerivationId` and `FlowEventId` values, so the
+fingerprint is comparable across the two node representations even though the
+node's bytes are not. On `wfgrep.wf` it covers 2 313 251 arena nodes at the
+first of the six inventory analyses that program performs — the attribution
+table's figure — and within 220 of that at the other five. Over the same 624
+sources: **0 differences**.
+
+The probe has teeth. Run against the branch *before* this repair it reports the
+two lines the review reported — `published=1` where the base compiler has 0,
+and `nodes=39 edges=21 roots=4` where the base compiler has `nodes=30
+edges=15 roots=0` — on `scc_publish.wf`, and nowhere else in the corpus.
+
+**The [DIAG-2] byte metric.** `settle`'s only claim is that it is invisible, so
+it is measured rather than argued: the same probe records
+`metrics.retained_bytes` beside every finished ledger, and the branch compared
+against itself with `settle` disabled is byte-identical over all 624 sources.
+That number is *not* comparable to the base compiler — narrowing the arena
+entry from 208 bytes to 64 is exactly what it measures — and it is the only
+field of the fingerprint that differs there.
 
 `cargo test --profile gate --all-targets --locked --offline`: all library
 tests, 54 maintained programs, conformance — green. Canonical `make check`
@@ -205,15 +368,30 @@ green end to end (`== WHITEFOOT ALL TESTS GREEN ==`).
 
 ## Regression guards
 
-Three new, each asserting a mechanism rather than a number, plus one existing
-guard adapted to the lending API.
+Five new, each asserting a mechanism rather than a number, plus two existing
+guards extended. The three that cover the two repairs were checked against the
+code they guard: reverting both repairs in a scratch copy of the tree turns
+exactly those three red — `DerivationId(1)` where `DerivationId(0)` is owed,
+twice, and a summary that survived the reclaim.
 
 - `interning_into_a_settled_ledger_keeps_the_original_identity`
   (`entailment/state.rs`) — interning a node already present into a *settled*
   ledger returns the original identity and grows nothing, and still separates
-  proof views. `settle` drops the index the way a clone drops it rather than
-  the way `finish` resets it; getting that backwards would give one proof step
-  two identities, and every [CLM-2] rerun analyzes a settled ledger again.
+  proof views. Getting that wrong would give one proof step two identities, and
+  every [CLM-2] rerun analyzes a settled ledger again.
+- `interning_into_a_clone_of_a_settled_ledger_keeps_the_original_identity`
+  (`entailment/state.rs`) — the composition the check actually runs: a
+  candidate ledger is settled once and every rerun clones it. This is the
+  review's second finding. Neither guard above it composes the two, and the
+  defect lived exactly in the composition.
+- `interning_into_a_cloned_ledger_keeps_the_original_identity` (batch 0083)
+  now also interns into a clone *of a clone*, which is the same hole reached
+  without `settle` — and the shape that was already broken at `79b29665`.
+- `a_published_summary_is_not_lent_to_the_next_rerun` (`semantic/check.rs`) —
+  a value reclaimed from an inventory whose postcondition proofs the scheduler
+  published comes back with no summary on any of them. This is the review's
+  first finding: the entry holds the analysis, and the analysis emits
+  `summary: None`.
 - `the_derivation_arena_entry_stays_narrow` (`entailment/state.rs`) —
   `size_of::<DerivationNode>() <= 64`. The arena is one flat array of millions
   of entries and the counterfactual holds two at once, so the widest variant
@@ -251,9 +429,24 @@ guard adapted to the lending API.
 - `settle` drops the whole index rather than shrinking it. A shrink would
   rehash 2.3 M entries to keep a table nothing will add to; the rebuild is one
   linear pass and only happens if something interns again.
+- The leaked summary is cleared on the way back into the entry rather than on
+  the way out of it. Both restore the same value; clearing at `reclaim` is the
+  form under which the entry never holds a post-publish entailment at all, so
+  the invariant is a property of the cache rather than of every reader of it.
+- The `stale` flag was deleted rather than repaired. Setting it correctly is
+  three sites' obligation and two of them had it wrong; reading absence off the
+  ledger is one condition that cannot disagree with itself. The cost is a
+  rebuild after `finish` if anything interns again, which is the case that used
+  to mint a duplicate identity.
+- The review's program did not join `tests/programs`. It compiles identically
+  on both sides of the defect it exposes — that is the whole point of the
+  finding — so a corpus program cannot fail on it and would only cost a check.
+  What guards the finding is the mechanism test; the program is reproduced
+  above so the oracle can be rerun without the review's scratch tree.
 - Temporary instrumentation — arena and index footprints per structure, the
-  node-kind histogram, the post-`finish` node count — was removed before
-  committing. The numbers it produced are the attribution tables above.
+  node-kind histogram, the post-`finish` node count, and the derivation
+  fingerprint the oracle above compares — was removed before committing. The
+  numbers it produced are the attribution tables above and the oracle result.
 - `mcts_mem/` was not consulted or written: no recorded design choice was
   re-decided.
 

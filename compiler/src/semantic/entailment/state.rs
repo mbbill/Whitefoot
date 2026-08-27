@@ -831,10 +831,13 @@ pub(crate) struct DerivationLedger {
 /// `tests/programs/wfgrep.wf` copying this table was the single largest cost
 /// in the check.
 ///
-/// `stale` separates the two ways the entries can be absent. A clone sets it,
-/// so the copy rebuilds before its first lookup. [`DerivationLedger::
-/// finish_with_event_roots`] instead clears the index deliberately, after
-/// remapping every node identity, and leaves it empty and fresh.
+/// Absence is therefore the only state the index has to represent, and it is
+/// read off the ledger rather than tracked: empty entries beside a non-empty
+/// arena means the index is owed a replay, whoever dropped it — a clone, a
+/// [`DerivationLedger::settle`], or the deliberate reset in
+/// [`DerivationLedger::finish_with_event_roots`]. A flag that distinguished
+/// those droppers would have to be set correctly by each of them and would
+/// mint a second identity for an already-held node wherever one got it wrong.
 ///
 /// The entry keys the node's own hash rather than a copy of the node, and a
 /// hash already taken resolves by stepping to the next key. Every probe still
@@ -846,15 +849,11 @@ pub(crate) struct DerivationLedger {
 #[derive(Debug, Default)]
 struct InternIndex {
     entries: HashMap<u64, DerivationId, InternHashBuilder>,
-    stale: bool,
 }
 
 impl Clone for InternIndex {
     fn clone(&self) -> Self {
-        Self {
-            entries: HashMap::default(),
-            stale: !self.entries.is_empty(),
-        }
+        Self::default()
     }
 }
 
@@ -973,7 +972,7 @@ impl DerivationLedger {
     }
 
     pub(crate) fn intern_for(&mut self, view: ProofView, node: DerivationNode) -> DerivationId {
-        if self.interned.stale {
+        if self.interned.entries.is_empty() && !self.nodes.is_empty() {
             self.rebuild_intern_index();
         }
         let key = match self.probe_intern(view, &node) {
@@ -1090,7 +1089,6 @@ impl DerivationLedger {
             entries.insert(key, id);
         }
         self.interned.entries = entries;
-        self.interned.stale = false;
     }
 
     pub(crate) fn depth(&self, id: DerivationId) -> u32 {
@@ -1297,22 +1295,24 @@ impl DerivationLedger {
     /// again the storage its nodes occupy, beside an interning index it no
     /// longer has anything to add to. A candidate ledger then survives every
     /// [CLM-2] rerun and the whole program batch, so both are paid for many
-    /// times over. Neither is observable: the index is derived from the nodes
-    /// and is dropped exactly the way a clone drops it, so a later query
-    /// replays it; `finish_with_event_roots` rebuilds every vector at its
-    /// retained length, and the [DIAG-2] byte metric is taken after that
-    /// rebuild.
+    /// times over. Neither is observable: the index is derived from the nodes,
+    /// so a later interning replays it, and every vector released here is one
+    /// `finish_with_event_roots` rebuilds at its retained length before the
+    /// [DIAG-2] byte metric reads its capacity.
+    ///
+    /// `roots` is deliberately not released. It is the one vector that
+    /// survives `finish_with_event_roots` in place — that pass rewrites each
+    /// root's identity rather than rebuilding the vector — so its capacity
+    /// does reach `measure`, and shrinking it here would move the reported
+    /// byte metric of a settled function. It is also a handful of entries per
+    /// function beside millions of nodes, so releasing it would buy nothing.
     pub(crate) fn settle(&mut self) {
         self.events.shrink_to_fit();
         self.nodes.shrink_to_fit();
         self.node_views.shrink_to_fit();
-        self.roots.shrink_to_fit();
         self.depths.shrink_to_fit();
         self.postcondition_call_ancestry.shrink_to_fit();
-        if !self.interned.entries.is_empty() {
-            self.interned.entries = HashMap::default();
-            self.interned.stale = true;
-        }
+        self.interned.entries = HashMap::default();
     }
 
     pub(crate) fn add_root(&mut self, kind: DerivationRootKind, node: DerivationId) {
@@ -1378,7 +1378,6 @@ impl DerivationLedger {
         self.postcondition_call_ancestry = postcondition_call_ancestry;
         self.interned.entries.clear();
         self.interned.entries.shrink_to_fit();
-        self.interned.stale = false;
         let event_remap = self.prune_events(event_roots);
         self.validate_view_integrity();
         self.metrics = self.measure();
@@ -4511,7 +4510,9 @@ mod tests {
     /// Cloning a ledger deliberately leaves its interning index behind, which
     /// is sound only because the copy rebuilds the index from its own nodes
     /// before answering. Without the rebuild a clone silently re-interns
-    /// nodes it already holds, giving one proof step two identities.
+    /// nodes it already holds, giving one proof step two identities. A copy of
+    /// that copy is the same ledger again and must answer the same way, so the
+    /// rebuild cannot be owed to "the original had entries".
     #[test]
     fn interning_into_a_cloned_ledger_keeps_the_original_identity() {
         let mut ledger = DerivationLedger::default();
@@ -4531,7 +4532,10 @@ mod tests {
         let original = ledger.intern_for(ProofView::Complete, node.clone());
         let nodes = ledger.nodes.len();
 
-        let mut copy = ledger.clone();
+        let copy = ledger.clone();
+        assert_eq!(copy.nodes.len(), nodes);
+        // A clone of the clone holds the same nodes and no index either.
+        let mut copy = copy.clone();
         assert_eq!(copy.nodes.len(), nodes);
         assert_eq!(copy.intern_for(ProofView::Complete, node.clone()), original);
         assert_eq!(copy.nodes.len(), nodes);
@@ -4540,12 +4544,11 @@ mod tests {
         assert_eq!(copy.nodes.len(), nodes + 1);
     }
 
-    /// `settle` drops the interning index of a finished analysis, which is a
-    /// clone's absence rather than a finish's deliberate reset: a later
-    /// interning must replay the index and return the identity the ledger
-    /// already holds. Dropping it the other way would give one proof step two
-    /// identities, and every [CLM-2] rerun analyzes a settled ledger's
-    /// function again.
+    /// `settle` drops the interning index of a finished analysis, and a later
+    /// interning must replay it and return the identity the ledger already
+    /// holds. Leaving the ledger looking freshly reset instead would give one
+    /// proof step two identities, and every [CLM-2] rerun analyzes a settled
+    /// ledger's function again.
     #[test]
     fn interning_into_a_settled_ledger_keeps_the_original_identity() {
         let mut ledger = DerivationLedger::default();
@@ -4573,6 +4576,40 @@ mod tests {
         assert_eq!(ledger.nodes.len(), nodes);
         assert_ne!(ledger.intern_for(ProofView::Unasserted, node), original);
         assert_eq!(ledger.nodes.len(), nodes + 1);
+    }
+
+    /// The composition of the two guards above is the shape the check actually
+    /// runs: a candidate ledger is settled once, and every [CLM-2] rerun then
+    /// clones it. Both droppers leave the index absent, so the clone of a
+    /// settled ledger is owed exactly the same replay as any other clone.
+    /// Deciding that from anything but the copy's own nodes — from whether the
+    /// original still held entries, say — makes this copy the one that mints a
+    /// second identity for a proof step the arena already holds.
+    #[test]
+    fn interning_into_a_clone_of_a_settled_ledger_keeps_the_original_identity() {
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S3, None);
+        let node = DerivationNode::SourceBound {
+            relation: Relation::Bound {
+                left: ZERO,
+                right: ZERO,
+                bound: 0,
+            },
+            left: ZERO,
+            right: ZERO,
+            bound: 0,
+            event,
+        };
+        let original = ledger.intern_for(ProofView::Complete, node.clone());
+        let nodes = ledger.nodes.len();
+        ledger.settle();
+
+        let mut copy = ledger.clone();
+        assert_eq!(copy.nodes.len(), nodes);
+        assert_eq!(copy.intern_for(ProofView::Complete, node.clone()), original);
+        assert_eq!(copy.nodes.len(), nodes);
+        assert_ne!(copy.intern_for(ProofView::Unasserted, node), original);
+        assert_eq!(copy.nodes.len(), nodes + 1);
     }
 
     /// The derivation arena is one flat array of a few million entries per
