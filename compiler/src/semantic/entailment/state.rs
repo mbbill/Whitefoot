@@ -405,7 +405,7 @@ pub(crate) enum DerivationNode {
     PostconditionExit {
         statement: NodePath,
         relation_ordinal: u32,
-        relation: Relation,
+        relation: Box<Relation>,
         parent: DerivationId,
     },
     PostconditionAggregate {
@@ -414,25 +414,14 @@ pub(crate) enum DerivationNode {
         parents: Vec<DerivationId>,
     },
     /// Caller-local S12 evidence for one instantiated earlier-component
-    /// summary. `a0_parents` deliberately name complete-view nodes even when
-    /// this node belongs to U or B; they are retained checked references, not
-    /// cross-view derivation edges. `view_parents` are the exact same-view Gv
-    /// premises used only by the Uq branch.
+    /// summary, held out of line by [`PostconditionCallDetail`].
     PostconditionCall {
-        call: NodePath,
-        relation: Relation,
-        summary: VerifiedPostconditionSummaryRef,
-        /// Instantiated ENT-2 terms and their exact caller holder support, in
-        /// relation operand order.
-        substitutions: Vec<PostconditionCallSubstitution>,
-        transfer_events: Vec<FlowEventId>,
-        a0_parents: Vec<DerivationId>,
-        view_parents: Vec<DerivationId>,
+        detail: Box<PostconditionCallDetail>,
     },
     PostconditionDirectResult {
         statement: NodePath,
         binding: BindingId,
-        relation: Relation,
+        relation: Box<Relation>,
         parent: DerivationId,
     },
     PostconditionDirectMatch {
@@ -441,14 +430,14 @@ pub(crate) enum DerivationNode {
         field: PreludeDeclarationId,
         tag: u32,
         binding: BindingId,
-        relation: Relation,
+        relation: Box<Relation>,
         parent: DerivationId,
     },
     PostconditionDirectReceiver {
         statement: NodePath,
         binding: BindingId,
         receiver_formal: u32,
-        relation: Relation,
+        relation: Box<Relation>,
         target_event: FlowEventId,
         parent: DerivationId,
     },
@@ -456,7 +445,7 @@ pub(crate) enum DerivationNode {
         statement: NodePath,
         payload: BindingId,
         binding: BindingId,
-        relation: Relation,
+        relation: Box<Relation>,
         target_event: FlowEventId,
         parent: DerivationId,
     },
@@ -466,18 +455,51 @@ pub(crate) enum DerivationNode {
         statement: NodePath,
         carrier: BindingId,
         receiver: BindingId,
-        relation: Relation,
+        relation: Box<Relation>,
         event: FlowEventId,
         parent: DerivationId,
     },
-    /// The ordinary weakest-bound L0 join of every reaching delivery image.
+    /// The ordinary weakest-bound L0 join of every reaching delivery image,
+    /// held out of line by [`PostconditionDeliveryJoinDetail`].
     PostconditionDeliveryJoin {
-        statement: NodePath,
-        receiver: BindingId,
-        relation: Relation,
-        event: FlowEventId,
-        parents: Vec<JoinParent>,
+        detail: Box<PostconditionDeliveryJoinDetail>,
     },
+}
+
+/// The retained content of one [`DerivationNode::PostconditionCall`].
+///
+/// `a0_parents` deliberately name complete-view nodes even when the node
+/// belongs to U or B; they are retained checked references, not cross-view
+/// derivation edges. `view_parents` are the exact same-view Gv premises used
+/// only by the Uq branch.
+///
+/// It is held behind a pointer because [`DerivationNode`] lives in one flat
+/// arena, so the widest variant sets the width of every entry. This is by far
+/// the widest, and the arena is overwhelmingly [ENT-4] transitivity and join
+/// steps: on `tests/programs/wfgrep.wf` 349 of 2.3 M nodes are S12 call
+/// evidence, and inlining them cost 128 bytes on each of the other 2.3 M.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct PostconditionCallDetail {
+    pub(crate) call: NodePath,
+    pub(crate) relation: Relation,
+    pub(crate) summary: VerifiedPostconditionSummaryRef,
+    /// Instantiated ENT-2 terms and their exact caller holder support, in
+    /// relation operand order.
+    pub(crate) substitutions: Vec<PostconditionCallSubstitution>,
+    pub(crate) transfer_events: Vec<FlowEventId>,
+    pub(crate) a0_parents: Vec<DerivationId>,
+    pub(crate) view_parents: Vec<DerivationId>,
+}
+
+/// The retained content of one [`DerivationNode::PostconditionDeliveryJoin`],
+/// held out of line for the same reason as [`PostconditionCallDetail`].
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct PostconditionDeliveryJoinDetail {
+    pub(crate) statement: NodePath,
+    pub(crate) receiver: BindingId,
+    pub(crate) relation: Relation,
+    pub(crate) event: FlowEventId,
+    pub(crate) parents: Vec<JoinParent>,
 }
 
 impl DerivationNode {
@@ -520,20 +542,25 @@ impl DerivationNode {
             Self::JoinBound { parents, .. }
             | Self::JoinDistinct { parents, .. }
             | Self::JoinGoal { parents, .. }
-            | Self::JoinContradiction { parents, .. }
-            | Self::PostconditionDeliveryJoin { parents, .. } => {
+            | Self::JoinContradiction { parents, .. } => {
                 for parent in parents {
                     visit(parent.parent);
+                }
+            }
+            Self::PostconditionDeliveryJoin { detail } => {
+                for parent in &detail.parents {
+                    visit(parent.parent);
+                }
+            }
+            Self::PostconditionCall { detail } => {
+                for parent in &detail.view_parents {
+                    visit(*parent);
                 }
             }
             Self::PostconditionAggregate { parents, .. }
             | Self::IntegerDomain { parents, .. }
             | Self::GoalNormalization { parents, .. }
-            | Self::BooleanIntroduction { parents, .. }
-            | Self::PostconditionCall {
-                view_parents: parents,
-                ..
-            } => {
+            | Self::BooleanIntroduction { parents, .. } => {
                 for parent in parents {
                     visit(*parent);
                 }
@@ -550,8 +577,8 @@ impl DerivationNode {
     /// evidence carried beside a U/B node without laundering its proof view.
     fn for_each_retained_reference(&self, mut visit: impl FnMut(DerivationId)) {
         self.for_each_parent(&mut visit);
-        if let Self::PostconditionCall { a0_parents, .. } = self {
-            for parent in a0_parents {
+        if let Self::PostconditionCall { detail } = self {
+            for parent in &detail.a0_parents {
                 visit(*parent);
             }
         }
@@ -587,17 +614,15 @@ impl DerivationNode {
             Self::JoinBound { parents, .. }
             | Self::JoinDistinct { parents, .. }
             | Self::JoinGoal { parents, .. }
-            | Self::JoinContradiction { parents, .. }
-            | Self::PostconditionDeliveryJoin { parents, .. } => parents.len(),
+            | Self::JoinContradiction { parents, .. } => parents.len(),
+            Self::PostconditionDeliveryJoin { detail } => detail.parents.len(),
             Self::PostconditionAggregate { parents, .. } => parents.len(),
             Self::IntegerDomain { parents, .. }
             | Self::GoalNormalization { parents, .. }
             | Self::BooleanIntroduction { parents, .. } => parents.len(),
-            Self::PostconditionCall {
-                a0_parents,
-                view_parents,
-                ..
-            } => a0_parents.len() + view_parents.len(),
+            Self::PostconditionCall { detail } => {
+                detail.a0_parents.len() + detail.view_parents.len()
+            }
             Self::SourceBound { .. }
             | Self::SourceDistinct { .. }
             | Self::SourceGoal { .. }
@@ -810,9 +835,17 @@ pub(crate) struct DerivationLedger {
 /// so the copy rebuilds before its first lookup. [`DerivationLedger::
 /// finish_with_event_roots`] instead clears the index deliberately, after
 /// remapping every node identity, and leaves it empty and fresh.
+///
+/// The entry keys the node's own hash rather than a copy of the node, and a
+/// hash already taken resolves by stepping to the next key. Every probe still
+/// compares the candidate against `nodes` and `node_views` before reporting a
+/// hit, so a colliding hash costs one extra step and never a wrong identity.
+/// Storing the node twice was the largest single allocation in the check: on
+/// `tests/programs/wfgrep.wf` one function inventory's indices held 2.3 M
+/// copies of a 208-byte node.
 #[derive(Debug, Default)]
 struct InternIndex {
-    entries: HashMap<(ProofView, DerivationNode), DerivationId, InternHashBuilder>,
+    entries: HashMap<u64, DerivationId, InternHashBuilder>,
     stale: bool,
 }
 
@@ -943,11 +976,10 @@ impl DerivationLedger {
         if self.interned.stale {
             self.rebuild_intern_index();
         }
-        let key = (view, node);
-        if let Some(id) = self.interned.entries.get(&key).copied() {
-            return id;
-        }
-        let (view, node) = key;
+        let key = match self.probe_intern(view, &node) {
+            Ok(id) => return id,
+            Err(key) => key,
+        };
         let id = DerivationId(
             u32::try_from(self.nodes.len())
                 .expect("ENT derivation inventory exceeds the u32 identity space"),
@@ -969,9 +1001,10 @@ impl DerivationLedger {
             parents_share_view,
             "ENT derivation parents must belong to the child's proof view"
         );
-        if let DerivationNode::PostconditionCall { a0_parents, .. } = &node {
+        if let DerivationNode::PostconditionCall { detail } = &node {
             assert!(
-                a0_parents
+                detail
+                    .a0_parents
                     .iter()
                     .all(|parent| { self.node_views[parent.0 as usize] == ProofView::Complete }),
                 "S12 A0 references must name complete-view proof nodes"
@@ -987,13 +1020,42 @@ impl DerivationLedger {
                 postcondition_call_ancestry |= self.postcondition_call_ancestry[parent.0 as usize];
             });
         }
-        self.nodes.push(node.clone());
+        self.nodes.push(node);
         self.node_views.push(view);
         self.depths.push(depth);
         self.postcondition_call_ancestry
             .push(postcondition_call_ancestry);
-        self.interned.entries.insert((view, node), id);
+        self.interned.entries.insert(key, id);
         id
+    }
+
+    /// The key one interned identity is filed under.
+    fn intern_key(view: ProofView, node: &DerivationNode) -> u64 {
+        use std::hash::{BuildHasher, Hash, Hasher};
+        let mut hasher = InternHashBuilder.build_hasher();
+        view.hash(&mut hasher);
+        node.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// The identity already filed for this exact node, or the free key it
+    /// would be filed under.
+    ///
+    /// The walk starts at the node's own key and steps by one while the key it
+    /// reaches is taken by a different node, so a hash shared by two nodes
+    /// separates them by one step instead of losing one of them. Nothing is
+    /// ever removed from the index — it is only rebuilt or cleared whole — so
+    /// a free key always ends the walk.
+    fn probe_intern(&self, view: ProofView, node: &DerivationNode) -> Result<DerivationId, u64> {
+        let mut key = Self::intern_key(view, node);
+        while let Some(&id) = self.interned.entries.get(&key) {
+            let index = id.0 as usize;
+            if self.node_views[index] == view && self.nodes[index] == *node {
+                return Ok(id);
+            }
+            key = key.wrapping_add(1);
+        }
+        Err(key)
     }
 
     /// Restores the index a clone left behind.
@@ -1003,17 +1065,31 @@ impl DerivationLedger {
     /// identity, and a node identity repeated after an index reset kept the
     /// later entry.
     fn rebuild_intern_index(&mut self) {
-        self.interned.entries.clear();
-        self.interned.entries.reserve(self.nodes.len());
+        let mut entries = std::mem::take(&mut self.interned.entries);
+        entries.clear();
+        entries.reserve(self.nodes.len());
         for (index, node) in self.nodes.iter().enumerate() {
             let id = DerivationId(
                 u32::try_from(index)
                     .expect("ENT derivation inventory exceeds the u32 identity space"),
             );
-            self.interned
-                .entries
-                .insert((self.node_views[index], node.clone()), id);
+            let view = self.node_views[index];
+            let mut key = Self::intern_key(view, node);
+            loop {
+                match entries.get(&key) {
+                    None => break,
+                    Some(&existing) => {
+                        let existing = existing.0 as usize;
+                        if self.node_views[existing] == view && self.nodes[existing] == *node {
+                            break;
+                        }
+                        key = key.wrapping_add(1);
+                    }
+                }
+            }
+            entries.insert(key, id);
         }
+        self.interned.entries = entries;
         self.interned.stale = false;
     }
 
@@ -1215,6 +1291,30 @@ impl DerivationLedger {
                 && compare_node_ties(candidate, &self.nodes[current.0 as usize]).is_lt())
     }
 
+    /// Releases the working storage of a settled analysis.
+    ///
+    /// The arena is built by pushing, so it ends a run holding roughly half
+    /// again the storage its nodes occupy, beside an interning index it no
+    /// longer has anything to add to. A candidate ledger then survives every
+    /// [CLM-2] rerun and the whole program batch, so both are paid for many
+    /// times over. Neither is observable: the index is derived from the nodes
+    /// and is dropped exactly the way a clone drops it, so a later query
+    /// replays it; `finish_with_event_roots` rebuilds every vector at its
+    /// retained length, and the [DIAG-2] byte metric is taken after that
+    /// rebuild.
+    pub(crate) fn settle(&mut self) {
+        self.events.shrink_to_fit();
+        self.nodes.shrink_to_fit();
+        self.node_views.shrink_to_fit();
+        self.roots.shrink_to_fit();
+        self.depths.shrink_to_fit();
+        self.postcondition_call_ancestry.shrink_to_fit();
+        if !self.interned.entries.is_empty() {
+            self.interned.entries = HashMap::default();
+            self.interned.stale = true;
+        }
+    }
+
     pub(crate) fn add_root(&mut self, kind: DerivationRootKind, node: DerivationId) {
         self.roots.push(DerivationRoot { kind, node });
     }
@@ -1297,8 +1397,8 @@ impl DerivationLedger {
                 assert!(parent.0 < index as u32);
                 assert_eq!(self.node_views[parent.0 as usize], view);
             });
-            if let DerivationNode::PostconditionCall { a0_parents, .. } = node {
-                for parent in a0_parents {
+            if let DerivationNode::PostconditionCall { detail } = node {
+                for parent in &detail.a0_parents {
                     assert!(parent.0 < index as u32);
                     assert_eq!(self.node_views[parent.0 as usize], ProofView::Complete);
                 }
@@ -1393,27 +1493,25 @@ impl DerivationLedger {
                     | DerivationNode::GoalNormalization { parents, .. } => {
                         parents.capacity() * size_of::<DerivationId>()
                     }
-                    DerivationNode::PostconditionDeliveryJoin { parents, .. } => {
-                        parents.capacity() * size_of::<JoinParent>()
+                    DerivationNode::PostconditionDeliveryJoin { detail } => {
+                        size_of::<PostconditionDeliveryJoinDetail>()
+                            + detail.parents.capacity() * size_of::<JoinParent>()
                     }
-                    DerivationNode::PostconditionCall {
-                        substitutions,
-                        transfer_events,
-                        a0_parents,
-                        view_parents,
-                        ..
-                    } => {
-                        substitutions.capacity() * size_of::<PostconditionCallSubstitution>()
-                            + substitutions
+                    DerivationNode::PostconditionCall { detail } => {
+                        size_of::<PostconditionCallDetail>()
+                            + detail.substitutions.capacity()
+                                * size_of::<PostconditionCallSubstitution>()
+                            + detail
+                                .substitutions
                                 .iter()
                                 .map(|substitution| {
                                     substitution.transfer_holders.capacity()
                                         * size_of::<BindingId>()
                                 })
                                 .sum::<usize>()
-                            + transfer_events.capacity() * size_of::<FlowEventId>()
-                            + a0_parents.capacity() * size_of::<DerivationId>()
-                            + view_parents.capacity() * size_of::<DerivationId>()
+                            + detail.transfer_events.capacity() * size_of::<FlowEventId>()
+                            + detail.a0_parents.capacity() * size_of::<DerivationId>()
+                            + detail.view_parents.capacity() * size_of::<DerivationId>()
                     }
                     _ => 0,
                 })
@@ -1424,15 +1522,13 @@ impl DerivationLedger {
                 .filter_map(|node| match node {
                     DerivationNode::PostconditionExit { statement, .. } => Some(statement),
                     DerivationNode::PostconditionAggregate { block, .. } => Some(block),
-                    DerivationNode::PostconditionCall { call, .. }
-                    | DerivationNode::PostconditionDirectMatch { call, .. } => Some(call),
+                    DerivationNode::PostconditionCall { detail } => Some(&detail.call),
+                    DerivationNode::PostconditionDirectMatch { call, .. } => Some(call),
                     DerivationNode::PostconditionDirectResult { statement, .. }
                     | DerivationNode::PostconditionDirectReceiver { statement, .. }
                     | DerivationNode::PostconditionSelectedReceiver { statement, .. }
-                    | DerivationNode::PostconditionGive { statement, .. }
-                    | DerivationNode::PostconditionDeliveryJoin { statement, .. } => {
-                        Some(statement)
-                    }
+                    | DerivationNode::PostconditionGive { statement, .. } => Some(statement),
+                    DerivationNode::PostconditionDeliveryJoin { detail } => Some(&detail.statement),
                     _ => None,
                 })
                 .map(|path| path.components.capacity() * size_of::<u32>())
@@ -1569,13 +1665,14 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         DerivationNode::PostconditionAggregate { parents, .. } => {
             parents.get(index).map(|parent| parent.0)
         }
-        DerivationNode::PostconditionCall {
-            summary,
-            a0_parents,
-            view_parents,
-            transfer_events,
-            ..
-        } => {
+        DerivationNode::PostconditionCall { detail } => {
+            let PostconditionCallDetail {
+                summary,
+                a0_parents,
+                view_parents,
+                transfer_events,
+                ..
+            } = detail.as_ref();
             let fixed = [
                 summary.summary.function.0,
                 summary.summary.component,
@@ -1634,24 +1731,21 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         } => [carrier.0, receiver.0, event.0, parent.0]
             .get(index)
             .copied(),
-        DerivationNode::PostconditionDeliveryJoin {
-            receiver,
-            event,
-            parents,
-            ..
-        } => [Some(receiver.0), Some(event.0)]
-            .get(index)
-            .copied()
-            .flatten()
-            .or_else(|| {
-                let index = index.checked_sub(2)?;
-                let parent = parents.get(index / 2)?;
-                if index.is_multiple_of(2) {
-                    Some(parent.ordinal)
-                } else {
-                    Some(parent.parent.0)
-                }
-            }),
+        DerivationNode::PostconditionDeliveryJoin { detail } => {
+            [Some(detail.receiver.0), Some(detail.event.0)]
+                .get(index)
+                .copied()
+                .flatten()
+                .or_else(|| {
+                    let index = index.checked_sub(2)?;
+                    let parent = detail.parents.get(index / 2)?;
+                    if index.is_multiple_of(2) {
+                        Some(parent.ordinal)
+                    } else {
+                        Some(parent.parent.0)
+                    }
+                })
+        }
     }
 }
 
@@ -1676,8 +1770,8 @@ fn node_event(node: &DerivationNode) -> Option<FlowEventId> {
             target_event: event,
             ..
         }
-        | DerivationNode::PostconditionGive { event, .. }
-        | DerivationNode::PostconditionDeliveryJoin { event, .. } => Some(*event),
+        | DerivationNode::PostconditionGive { event, .. } => Some(*event),
+        DerivationNode::PostconditionDeliveryJoin { detail } => Some(detail.event),
         _ => None,
     }
 }
@@ -1703,8 +1797,8 @@ fn node_event_mut(node: &mut DerivationNode) -> Option<&mut FlowEventId> {
             target_event: event,
             ..
         }
-        | DerivationNode::PostconditionGive { event, .. }
-        | DerivationNode::PostconditionDeliveryJoin { event, .. } => Some(event),
+        | DerivationNode::PostconditionGive { event, .. } => Some(event),
+        DerivationNode::PostconditionDeliveryJoin { detail } => Some(&mut detail.event),
         _ => None,
     }
 }
@@ -1713,11 +1807,8 @@ fn for_each_node_event(node: &DerivationNode, mut visit: impl FnMut(FlowEventId)
     if let Some(event) = node_event(node) {
         visit(event);
     }
-    if let DerivationNode::PostconditionCall {
-        transfer_events, ..
-    } = node
-    {
-        for event in transfer_events {
+    if let DerivationNode::PostconditionCall { detail } = node {
+        for event in &detail.transfer_events {
             visit(*event);
         }
     }
@@ -1727,11 +1818,8 @@ fn remap_node_events(node: &mut DerivationNode, remap: &[Option<FlowEventId>]) {
     if let Some(event) = node_event_mut(node) {
         *event = remap[event.0 as usize].expect("retained node event retained");
     }
-    if let DerivationNode::PostconditionCall {
-        transfer_events, ..
-    } = node
-    {
-        for event in transfer_events {
+    if let DerivationNode::PostconditionCall { detail } = node {
+        for event in &mut detail.transfer_events {
             *event = remap[event.0 as usize].expect("retained S12 transfer event retained");
         }
     }
@@ -1792,8 +1880,8 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         | DerivationNode::PostconditionDirectReceiver { parent, .. }
         | DerivationNode::PostconditionSelectedReceiver { parent, .. }
         | DerivationNode::PostconditionGive { parent, .. } => remap_id(parent, remap),
-        DerivationNode::PostconditionDeliveryJoin { parents, .. } => {
-            for parent in parents {
+        DerivationNode::PostconditionDeliveryJoin { detail } => {
+            for parent in &mut detail.parents {
                 remap_id(&mut parent.parent, remap);
             }
         }
@@ -1802,11 +1890,12 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
                 remap_id(parent, remap);
             }
         }
-        DerivationNode::PostconditionCall {
-            a0_parents,
-            view_parents,
-            ..
-        } => {
+        DerivationNode::PostconditionCall { detail } => {
+            let PostconditionCallDetail {
+                a0_parents,
+                view_parents,
+                ..
+            } = detail.as_mut();
             for parent in a0_parents.iter_mut().chain(view_parents) {
                 remap_id(parent, remap);
             }
@@ -4360,25 +4449,27 @@ mod tests {
         let call = ledger.intern_for(
             ProofView::Complete,
             DerivationNode::PostconditionCall {
-                call: NodePath {
-                    components: vec![0],
-                },
-                relation: s12.clone(),
-                summary: VerifiedPostconditionSummaryRef {
-                    summary: VerifiedPostconditionSummary {
-                        function: FunctionId(0),
-                        block: NodePath {
-                            components: vec![0, 0],
-                        },
-                        relation_ordinal: 0,
-                        component: 0,
+                detail: Box::new(PostconditionCallDetail {
+                    call: NodePath {
+                        components: vec![0],
                     },
-                    view: ProofView::Complete,
-                },
-                substitutions: Vec::new(),
-                transfer_events: Vec::new(),
-                a0_parents: Vec::new(),
-                view_parents: Vec::new(),
+                    relation: s12.clone(),
+                    summary: VerifiedPostconditionSummaryRef {
+                        summary: VerifiedPostconditionSummary {
+                            function: FunctionId(0),
+                            block: NodePath {
+                                components: vec![0, 0],
+                            },
+                            relation_ordinal: 0,
+                            component: 0,
+                        },
+                        view: ProofView::Complete,
+                    },
+                    substitutions: Vec::new(),
+                    transfer_events: Vec::new(),
+                    a0_parents: Vec::new(),
+                    view_parents: Vec::new(),
+                }),
             },
         );
         assert!(ledger.depends_on_postcondition_call(call));
@@ -4447,6 +4538,59 @@ mod tests {
         // The rebuilt index must also keep separating the proof views.
         assert_ne!(copy.intern_for(ProofView::Unasserted, node), original);
         assert_eq!(copy.nodes.len(), nodes + 1);
+    }
+
+    /// `settle` drops the interning index of a finished analysis, which is a
+    /// clone's absence rather than a finish's deliberate reset: a later
+    /// interning must replay the index and return the identity the ledger
+    /// already holds. Dropping it the other way would give one proof step two
+    /// identities, and every [CLM-2] rerun analyzes a settled ledger's
+    /// function again.
+    #[test]
+    fn interning_into_a_settled_ledger_keeps_the_original_identity() {
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S3, None);
+        let node = DerivationNode::SourceBound {
+            relation: Relation::Bound {
+                left: ZERO,
+                right: ZERO,
+                bound: 0,
+            },
+            left: ZERO,
+            right: ZERO,
+            bound: 0,
+            event,
+        };
+        let original = ledger.intern_for(ProofView::Complete, node.clone());
+        let nodes = ledger.nodes.len();
+
+        ledger.settle();
+        assert_eq!(ledger.nodes.len(), nodes);
+        assert_eq!(
+            ledger.intern_for(ProofView::Complete, node.clone()),
+            original
+        );
+        assert_eq!(ledger.nodes.len(), nodes);
+        assert_ne!(ledger.intern_for(ProofView::Unasserted, node), original);
+        assert_eq!(ledger.nodes.len(), nodes + 1);
+    }
+
+    /// The derivation arena is one flat array of a few million entries per
+    /// checked function, and the [CLM-2] counterfactual holds two of them at
+    /// once, so the widest variant sets the memory cost of the whole check.
+    /// The transitivity and join steps that make up almost every entry need
+    /// 48 bytes; the S12 call and delivery-join evidence, and the relation of
+    /// every other postcondition step, are held out of line to keep them from
+    /// widening those. Checking `tests/programs/wfgrep.wf` holds two live
+    /// inventories of 2.3 M entries, so each byte of this width is 4.6 MB of
+    /// resident memory.
+    #[test]
+    fn the_derivation_arena_entry_stays_narrow() {
+        assert!(
+            size_of::<DerivationNode>() <= 64,
+            "one derivation arena entry grew to {} bytes",
+            size_of::<DerivationNode>()
+        );
     }
 
     /// The ENT-4 fixed point revisits a transitivity triple only when one of

@@ -152,6 +152,13 @@ struct ResidualProvenanceContext<'a> {
 /// authority, the callee, constant and nominal tables, and `optimistic_batch`
 /// — are the same for every rerun. The analyzer never reads the function's own
 /// `entailment` field, which is its output slot.
+///
+/// The entry lends its value rather than copying it. Each rerun's inventory is
+/// the only place the entailment lives while that rerun runs, and
+/// [`CounterfactualReuse::reclaim`] takes it back before the inventory is
+/// dropped. A held copy would double the largest live structure in the check:
+/// on `tests/programs/wfgrep.wf` one inventory of derivation arenas is half a
+/// gigabyte.
 #[derive(Default)]
 struct CounterfactualReuse {
     entries: Vec<Option<CounterfactualReuseEntry>>,
@@ -160,33 +167,37 @@ struct CounterfactualReuse {
 struct CounterfactualReuseEntry {
     verified_postconditions: Vec<Vec<CheckedPostcondition>>,
     verified_postcondition_proofs: Vec<Vec<FunctionPostconditionProof>>,
-    entailment: super::entailment::FunctionEntailment,
+    /// Absent exactly while the rerun's own inventory holds this value.
+    entailment: Option<super::entailment::FunctionEntailment>,
 }
 
 impl CounterfactualReuse {
-    /// The untargeted analysis of `index` when it was computed under exactly
-    /// this published-postcondition context.
-    fn get(
-        &self,
-        index: usize,
-        verified_postconditions: &[Vec<&CheckedPostcondition>],
-        verified_postcondition_proofs: &[Vec<&FunctionPostconditionProof>],
-    ) -> Option<&super::entailment::FunctionEntailment> {
-        let entry = self.entries.get(index)?.as_ref()?;
-        (Self::same(&entry.verified_postconditions, verified_postconditions)
-            && Self::same(
-                &entry.verified_postcondition_proofs,
-                verified_postcondition_proofs,
-            ))
-        .then_some(&entry.entailment)
-    }
-
-    fn store(
+    /// Lends the untargeted analysis of `index` when it was computed under
+    /// exactly this published-postcondition context.
+    fn take(
         &mut self,
         index: usize,
         verified_postconditions: &[Vec<&CheckedPostcondition>],
         verified_postcondition_proofs: &[Vec<&FunctionPostconditionProof>],
-        entailment: &super::entailment::FunctionEntailment,
+    ) -> Option<super::entailment::FunctionEntailment> {
+        let entry = self.entries.get_mut(index)?.as_mut()?;
+        if !Self::same(&entry.verified_postconditions, verified_postconditions)
+            || !Self::same(
+                &entry.verified_postcondition_proofs,
+                verified_postcondition_proofs,
+            )
+        {
+            return None;
+        }
+        entry.entailment.take()
+    }
+
+    /// Records the context of a value this rerun's inventory now holds.
+    fn lend(
+        &mut self,
+        index: usize,
+        verified_postconditions: &[Vec<&CheckedPostcondition>],
+        verified_postcondition_proofs: &[Vec<&FunctionPostconditionProof>],
     ) {
         if self.entries.len() <= index {
             self.entries.resize_with(index + 1, || None);
@@ -194,8 +205,35 @@ impl CounterfactualReuse {
         self.entries[index] = Some(CounterfactualReuseEntry {
             verified_postconditions: Self::own(verified_postconditions),
             verified_postcondition_proofs: Self::own(verified_postcondition_proofs),
-            entailment: entailment.clone(),
+            entailment: None,
         });
+    }
+
+    /// Takes every lent value back out of one finished rerun's inventory.
+    fn reclaim(&mut self, functions: &mut [CheckedFunctionInventory]) {
+        for (index, checked) in functions.iter_mut().enumerate() {
+            self.reclaim_one(index, &mut checked.function.entailment);
+        }
+    }
+
+    /// Takes one lent value back.
+    ///
+    /// An entry is lent exactly when its `entailment` is absent, so a function
+    /// this rerun analyzed under a mask that names it — whose inventory slot
+    /// therefore holds a masked value — keeps the untargeted value an earlier
+    /// rerun recorded.
+    fn reclaim_one(
+        &mut self,
+        index: usize,
+        entailment: &mut super::entailment::FunctionEntailment,
+    ) {
+        let Some(Some(entry)) = self.entries.get_mut(index) else {
+            return;
+        };
+        if entry.entailment.is_some() {
+            return;
+        }
+        entry.entailment = Some(std::mem::take(entailment));
     }
 
     fn own<T: Clone>(borrowed: &[Vec<&T>]) -> Vec<Vec<T>> {
@@ -1007,7 +1045,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )?;
         let baseline_functions = function_inventory
             .iter()
-            .map(|checked| checked.function.clone())
+            .map(|checked| &checked.function)
             .collect::<Vec<_>>();
         let mut formation_rejections = Vec::new();
         if let Some(issue) = self.generic_claim_schema_formation_issue.take() {
@@ -1104,6 +1142,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Err(CheckStop::Issue(issue));
             }
         }
+        // Every baseline claim judgment above has been made, and the
+        // inventory these name is moved into `functions` below.
+        drop(baseline_functions);
         // [PRV-1] depends only on the immutable phase-A value/storage flow,
         // never on S3. Delay its one fixed point until the earlier CLM/ENT
         // gates pass, then freeze from the saved phase-A inventory and reuse
@@ -1111,7 +1152,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // recomputes the complete PRV-2/3 gate over its fresh proof views.
         let phase_a_functions = claim_counterfactual_inventory
             .iter()
-            .map(|checked| checked.function.clone())
+            .map(|checked| &checked.function)
             .collect::<Vec<_>>();
         let frozen_provenance = freeze_program_provenance(
             &phase_a_functions,
@@ -1129,7 +1170,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             external_entry: Some(main),
         };
         let mut provenance_analysis = analyze_program_provenance_with_frozen(
-            &functions,
+            &functions.iter().collect::<Vec<_>>(),
             &provenance_context,
             &frozen_provenance,
         )?;
@@ -1184,7 +1225,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             for function in &mut functions {
                 finalize_function_entailment(&mut function.entailment);
             }
-            provenance_analysis.refresh_entailment_views(&functions);
+            provenance_analysis.refresh_entailment_views(&functions.iter().collect::<Vec<_>>());
         }
         for function in &mut functions {
             function.body_disposition = function.entailment.body_disposition;
@@ -1984,14 +2025,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .map(|checked| checked.function.clone())
             .collect::<Vec<_>>();
+        let full_schema_refs = full_schema_functions.iter().collect::<Vec<_>>();
         let schema_provenance_context = ProvenanceContext {
             nominals: &self.nominals,
             external_entry: None,
         };
         let frozen_schema_provenance =
-            freeze_program_provenance(&full_schema_functions, &schema_provenance_context)?;
+            freeze_program_provenance(&full_schema_refs, &schema_provenance_context)?;
         let full_schema_provenance = analyze_program_provenance_with_frozen(
-            &full_schema_functions,
+            &full_schema_refs,
             &schema_provenance_context,
             &frozen_schema_provenance,
         )?;
@@ -2119,15 +2161,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             &mask,
                             &mut reuse,
                         )?;
-                        let Some(witness) = self.counterfactual_witness(
-                            &full_schema_functions,
+                        let witness = self.counterfactual_witness(
+                            &full_schema_refs,
                             &scratch,
                             &mask,
                             &full_schema_provenance.failures,
                             &frozen_schema_provenance,
                             None,
-                        )?
-                        else {
+                        )?;
+                        reuse.reclaim(&mut scratch);
+                        let Some(witness) = witness else {
                             full[*function_index].function.entailment.claims[claim_index]
                                 .disposition = super::entailment::ClaimDisposition::NonResidual {
                                 component: Some(component),
@@ -2172,15 +2215,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         &mask,
                         &mut reuse,
                     )?;
-                    let Some(witness) = self.counterfactual_witness(
-                        &full_schema_functions,
+                    let witness = self.counterfactual_witness(
+                        &full_schema_refs,
                         &scratch,
                         &mask,
                         &full_schema_provenance.failures,
                         &frozen_schema_provenance,
                         None,
-                    )?
-                    else {
+                    )?;
+                    reuse.reclaim(&mut scratch);
+                    let Some(witness) = witness else {
                         full[*function_index].function.entailment.claims[claim_index].disposition =
                             super::entailment::ClaimDisposition::NonResidual { component: None };
                         break 'claims;
@@ -2234,7 +2278,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
                 for witness in &mut claim.residual_witnesses {
-                    Self::stabilize_schema_terminal(&mut witness.terminal, &full_schema_functions)?;
+                    Self::stabilize_schema_terminal(&mut witness.terminal, &full_schema_refs)?;
                     let owner = match &witness.terminal {
                         ClaimTerminalRoot::Obligation { owner, .. }
                         | ClaimTerminalRoot::Call { owner, .. }
@@ -2323,12 +2367,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn stabilize_schema_terminal(
         terminal: &mut ClaimTerminalRoot,
-        functions: &[CheckedFunction],
+        functions: &[&CheckedFunction],
     ) -> Result<(), CheckStop> {
         fn schema_owner(
             owner: ClaimTerminalOwner,
             symbol: &str,
-            functions: &[CheckedFunction],
+            functions: &[&CheckedFunction],
         ) -> Result<(ClaimTerminalOwner, String), SemanticCompilerFailure> {
             match owner {
                 ClaimTerminalOwner::Concrete(function) => functions
@@ -2439,10 +2483,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 let untargeted = mask.is_some_and(|mask| mask.function != checked.function.id);
                 if untargeted
-                    && let Some(reuse) = reuse.as_deref()
-                    && let Some(cached) = reuse.get(index, &[], &[])
+                    && let Some(reuse) = reuse.as_deref_mut()
+                    && let Some(lent) = reuse.take(index, &[], &[])
                 {
-                    checked.function.entailment = cached.clone();
+                    checked.function.entailment = lent;
                     continue;
                 }
                 let entailment = match (optimistic_batch, mask) {
@@ -2456,7 +2500,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     (false, None) => analyze_function(&checked.function, &context),
                 };
                 if untargeted && let Some(reuse) = reuse.as_deref_mut() {
-                    reuse.store(index, &[], &[], &entailment);
+                    reuse.lend(index, &[], &[]);
                 }
                 checked.function.entailment = entailment;
             }
@@ -2517,9 +2561,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         claim_authority: &checked.claim_authority,
                     };
                     let untargeted = mask.is_some_and(|mask| mask.function != checked.function.id);
-                    let cached = if untargeted {
-                        reuse.as_deref().and_then(|reuse| {
-                            reuse.get(
+                    let lent = if untargeted {
+                        reuse.as_deref_mut().and_then(|reuse| {
+                            reuse.take(
                                 function_index,
                                 &verified_postconditions,
                                 &verified_postcondition_proofs,
@@ -2528,22 +2572,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     } else {
                         None
                     };
-                    let entailment = match (cached, mask) {
-                        (Some(cached), _) => cached.clone(),
+                    let reanalyzed = lent.is_none();
+                    let entailment = match (lent, mask) {
+                        (Some(lent), _) => lent,
                         (None, Some(mask)) => {
                             analyze_function_candidate_masked(&checked.function, &context, mask)
                         }
                         (None, None) => analyze_function_candidate(&checked.function, &context),
                     };
                     if untargeted
-                        && cached.is_none()
+                        && reanalyzed
                         && let Some(reuse) = reuse.as_deref_mut()
                     {
-                        reuse.store(
+                        reuse.lend(
                             function_index,
                             &verified_postconditions,
                             &verified_postcondition_proofs,
-                            &entailment,
                         );
                     }
                     drop(verified_postconditions);
@@ -2942,7 +2986,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn claim_lifecycle_rejection_global(
         &self,
-        functions: &[CheckedFunction],
+        functions: &[&CheckedFunction],
     ) -> Result<(), CheckStop> {
         let mut invalid = Vec::new();
         for function in functions {
@@ -3137,14 +3181,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     &mask,
                     &mut reuse,
                 )?;
-                if let Some(witness) = self.counterfactual_witness(
-                    functions,
+                let witness = self.counterfactual_witness(
+                    &functions.iter().collect::<Vec<_>>(),
                     &scratch,
                     &mask,
                     provenance.failures,
                     provenance.frozen,
                     Some(provenance.main),
-                )? {
+                )?;
+                reuse.reclaim(&mut scratch);
+                if let Some(witness) = witness {
                     witnesses.push(witness);
                 } else {
                     functions[function_index].entailment.claims[claim_index].disposition =
@@ -3183,14 +3229,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 &mask,
                 &mut reuse,
             )?;
-            if let Some(witness) = self.counterfactual_witness(
-                functions,
+            let witness = self.counterfactual_witness(
+                &functions.iter().collect::<Vec<_>>(),
                 &scratch,
                 &mask,
                 provenance.failures,
                 provenance.frozen,
                 Some(provenance.main),
-            )? {
+            )?;
+            reuse.reclaim(&mut scratch);
+            if let Some(witness) = witness {
                 witnesses.push(witness);
             } else {
                 functions[function_index].entailment.claims[claim_index].disposition =
@@ -3207,7 +3255,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn counterfactual_witness(
         &self,
-        full: &[CheckedFunction],
+        full: &[&CheckedFunction],
         masked: &[CheckedFunctionInventory],
         mask: &ClaimMask,
         full_provenance_failures: &ProvenanceFailures,
@@ -3217,7 +3265,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let terminal_witness = Self::masked_terminal_witness(full, masked, mask)?;
         let masked_functions = masked
             .iter()
-            .map(|checked| checked.function.clone())
+            .map(|checked| &checked.function)
             .collect::<Vec<_>>();
         let masked_provenance = analyze_program_provenance_with_frozen(
             &masked_functions,
@@ -3239,7 +3287,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn masked_terminal_witness(
-        full: &[CheckedFunction],
+        full: &[&CheckedFunction],
         masked: &[CheckedFunctionInventory],
         mask: &ClaimMask,
     ) -> Result<Option<ClaimCounterfactualWitness>, SemanticCompilerFailure> {
@@ -4780,6 +4828,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
 #[cfg(test)]
 mod counterfactual_reuse_tests {
+    use super::super::entailment::FlowEventKind;
     use super::{CounterfactualReuse, FunctionPostconditionProof};
     use crate::NodePath;
     use crate::semantic::entailment::{
@@ -4823,19 +4872,51 @@ mod counterfactual_reuse_tests {
     /// postconditions that rerun no longer publishes.
     #[test]
     fn a_changed_published_context_is_not_reused() {
-        let entailment = FunctionEntailment::default();
+        let mut entailment = FunctionEntailment::default();
         let stored = proof(0);
         let other = proof(1);
         let before = vec![vec![&stored]];
         let mut reuse = CounterfactualReuse::default();
-        reuse.store(1, &[], &before, &entailment);
+        reuse.lend(1, &[], &before);
+        reuse.reclaim_one(1, &mut entailment);
 
-        assert!(reuse.get(1, &[], &before).is_some());
-        assert!(reuse.get(1, &[], &[vec![&other]]).is_none());
-        assert!(reuse.get(1, &[], &[Vec::new()]).is_none());
-        assert!(reuse.get(1, &[], &[]).is_none());
-        assert!(reuse.get(1, &[vec![]], &before).is_none());
-        assert!(reuse.get(0, &[], &before).is_none());
-        assert!(reuse.get(2, &[], &before).is_none());
+        assert!(reuse.take(1, &[], &[vec![&other]]).is_none());
+        assert!(reuse.take(1, &[], &[Vec::new()]).is_none());
+        assert!(reuse.take(1, &[], &[]).is_none());
+        assert!(reuse.take(1, &[vec![]], &before).is_none());
+        assert!(reuse.take(0, &[], &before).is_none());
+        assert!(reuse.take(2, &[], &before).is_none());
+        assert!(reuse.take(1, &[], &before).is_some());
+    }
+
+    /// The [CLM-2] reuse entry lends its analysis to one rerun's inventory
+    /// instead of copying it, so exactly one copy of a function's derivation
+    /// arena exists at any moment. A second take before the reclaim would mean
+    /// two live copies, which is what the entry exists to avoid.
+    #[test]
+    fn a_lent_counterfactual_entry_is_not_a_second_copy() {
+        let stored = proof(0);
+        let context = vec![vec![&stored]];
+        let mut reuse = CounterfactualReuse::default();
+        let mut entailment = FunctionEntailment::default();
+        entailment.derivations.event(FlowEventKind::Snapshot, None);
+
+        reuse.lend(0, &[], &context);
+        assert!(
+            reuse.take(0, &[], &context).is_none(),
+            "a recorded context holds no value until the rerun gives one back"
+        );
+        reuse.reclaim_one(0, &mut entailment);
+        assert!(
+            entailment.derivations.events.is_empty(),
+            "the arena moved out of the inventory"
+        );
+
+        let lent = reuse.take(0, &[], &context).expect("the value comes back");
+        assert_eq!(lent.derivations.events.len(), 1);
+        assert!(
+            reuse.take(0, &[], &context).is_none(),
+            "the entry holds nothing while the inventory holds the value"
+        );
     }
 }

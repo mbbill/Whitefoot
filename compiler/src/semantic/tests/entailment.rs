@@ -19,9 +19,10 @@ use super::super::entailment::{
     CountedRootAtom, DerivationId, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId,
     FlowEventKind, FunctionEntailment, GoalId, GoalSign, ImplicitBoundKind, JoinParent,
     LengthBound, ObligationFamily, ObligationOutcome, PlaceProjection, PlaceRoot,
-    PostconditionAggregate, PostconditionDisposition, PostconditionExit, PostconditionViewExit,
-    ProofView, Relation, S7DerivationKind, ShiftOneIdentity, StrictDerivationRootKind, TermId,
-    TermKind, ZERO, build_claim_ledger, type_range,
+    PostconditionAggregate, PostconditionCallDetail, PostconditionDeliveryJoinDetail,
+    PostconditionDisposition, PostconditionExit, PostconditionViewExit, ProofView, Relation,
+    S7DerivationKind, ShiftOneIdentity, StrictDerivationRootKind, TermId, TermKind, ZERO,
+    build_claim_ledger, type_range,
 };
 use super::super::model::{
     CheckedBodyDisposition, CheckedExpression, CheckedProgramData, CheckedStatement, CheckedValue,
@@ -1292,6 +1293,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
             DerivationNode::PostconditionExit {
                 relation, parent, ..
             } => {
+                let relation = relation.as_ref();
                 assert_relation_terms_resolve(summary, relation);
                 let conclusion = DerivationConclusion::Relation(relation.clone());
                 assert!(matches!(
@@ -1322,15 +1324,16 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 );
                 DerivationConclusion::PostconditionAggregate
             }
-            DerivationNode::PostconditionCall {
-                relation,
-                summary: reference,
-                substitutions,
-                transfer_events,
-                a0_parents,
-                view_parents,
-                ..
-            } => {
+            DerivationNode::PostconditionCall { detail } => {
+                let PostconditionCallDetail {
+                    relation,
+                    summary: reference,
+                    substitutions,
+                    transfer_events,
+                    a0_parents,
+                    view_parents,
+                    ..
+                } = detail.as_ref();
                 assert_relation_terms_resolve(summary, relation);
                 assert!(!reference.summary.block.components().is_empty());
                 let view = summary.derivations.node_views[index];
@@ -1362,6 +1365,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
             | DerivationNode::PostconditionDirectMatch {
                 relation, parent, ..
             } => {
+                let relation = relation.as_ref();
                 assert_relation_terms_resolve(summary, relation);
                 assert_eq!(
                     retained_conclusion(&conclusions, *parent),
@@ -1375,6 +1379,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 parent,
                 ..
             } => {
+                let relation = relation.as_ref();
                 assert_relation_terms_resolve(summary, relation);
                 assert_eq!(
                     retained_conclusion(&conclusions, *parent),
@@ -1393,7 +1398,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 parent,
                 ..
             } => {
-                assert_relation_terms_resolve(summary, relation);
+                let relation = relation.as_ref();
                 let DerivationNode::PostconditionDirectMatch {
                     binding: parent_binding,
                     relation: parent_relation,
@@ -1402,6 +1407,8 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 else {
                     panic!("a selected receiver must extend one direct-match route");
                 };
+                let parent_relation = parent_relation.as_ref();
+                assert_relation_terms_resolve(summary, relation);
                 assert_eq!(parent_binding, payload);
                 assert_ne!(payload, binding);
                 assert!(relation_has_bare_binding(
@@ -1430,6 +1437,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 parent,
                 ..
             } => {
+                let relation = relation.as_ref();
                 assert_relation_terms_resolve(summary, relation);
                 let DerivationConclusion::Relation(source) =
                     retained_conclusion(&conclusions, *parent)
@@ -1446,14 +1454,14 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert_eq!(retained.node_path.as_ref(), Some(statement));
                 DerivationConclusion::Relation(relation.clone())
             }
-            DerivationNode::PostconditionDeliveryJoin {
-                statement,
-                receiver,
-                relation,
-                event,
-                parents,
-                ..
-            } => {
+            DerivationNode::PostconditionDeliveryJoin { detail } => {
+                let PostconditionDeliveryJoinDetail {
+                    statement,
+                    receiver,
+                    relation,
+                    event,
+                    parents,
+                } = detail.as_ref();
                 assert_relation_terms_resolve(summary, relation);
                 assert!(relation_has_bare_binding(summary, relation, *receiver));
                 assert!(!parents.is_empty());
@@ -1843,7 +1851,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     panic!("postcondition exit root must name an exit node");
                 };
                 assert_eq!(statement, &exit.statement);
-                assert_eq!(relation, &exit.relation);
+                assert_eq!(relation.as_ref(), &exit.relation);
             }
             DerivationRootKind::PostconditionAggregate {
                 relation_ordinal,
@@ -4045,17 +4053,20 @@ command fn main() -> status: own ExitStatus pure {
         .iter()
         .enumerate()
         .filter_map(|(index, node)| {
-            let DerivationNode::PostconditionDeliveryJoin {
+            let DerivationNode::PostconditionDeliveryJoin { detail } = node else {
+                return None;
+            };
+            let PostconditionDeliveryJoinDetail {
                 receiver,
-                relation:
-                    Relation::Bound {
-                        left,
-                        right: ZERO,
-                        bound: 127,
-                    },
+                relation,
                 parents,
                 ..
-            } = node
+            } = detail.as_ref();
+            let Relation::Bound {
+                left,
+                right: ZERO,
+                bound: 127,
+            } = relation
             else {
                 return None;
             };
@@ -4073,15 +4084,16 @@ command fn main() -> status: own ExitStatus pure {
             .filter(|(index, node)| {
                 summary.derivations.node_views[*index] == ProofView::Complete
                     && matches!(
-                        *node,
-                        DerivationNode::PostconditionGive {
-                            relation: Relation::Bound {
-                                right: ZERO,
-                                bound: 7 | 127,
-                                ..
-                            },
-                            ..
-                        }
+                        node,
+                        DerivationNode::PostconditionGive { relation, .. }
+                            if matches!(
+                                **relation,
+                                Relation::Bound {
+                                    right: ZERO,
+                                    bound: 7 | 127,
+                                    ..
+                                }
+                            )
                     )
             })
             .count(),
@@ -4095,24 +4107,25 @@ command fn main() -> status: own ExitStatus pure {
             .iter()
             .filter(|root| {
                 summary.derivations.node_views[root.node.0 as usize] == ProofView::Complete
-                    && matches!(
-                        &summary.derivations.nodes[root.node.0 as usize],
-                        DerivationNode::PostconditionGive {
-                            relation: Relation::Bound {
+                    && match &summary.derivations.nodes[root.node.0 as usize] {
+                        DerivationNode::PostconditionGive { relation, .. } => matches!(
+                            **relation,
+                            Relation::Bound {
                                 right: ZERO,
                                 bound: 7 | 127,
                                 ..
-                            },
-                            ..
-                        } | DerivationNode::PostconditionDeliveryJoin {
-                            relation: Relation::Bound {
+                            }
+                        ),
+                        DerivationNode::PostconditionDeliveryJoin { detail } => matches!(
+                            detail.relation,
+                            Relation::Bound {
                                 right: ZERO,
                                 bound: 127,
                                 ..
-                            },
-                            ..
-                        }
-                    )
+                            }
+                        ),
+                        _ => false,
+                    }
             })
             .count(),
         3,
@@ -4129,28 +4142,27 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(parents.len(), 2);
     let mut edge_bounds = parents
         .iter()
-        .map(
-            |parent| match &summary.derivations.nodes[parent.parent.0 as usize] {
-                DerivationNode::PostconditionGive {
-                    relation: Relation::Bound { bound, .. },
-                    ..
-                } => *bound,
-                node => panic!("delivery join must directly parent a give relation: {node:?}"),
-            },
-        )
+        .map(|parent| {
+            let node = &summary.derivations.nodes[parent.parent.0 as usize];
+            let DerivationNode::PostconditionGive { relation, .. } = node else {
+                panic!("delivery join must directly parent a give relation: {node:?}");
+            };
+            let Relation::Bound { bound, .. } = **relation else {
+                panic!("delivery join must directly parent a give relation: {node:?}");
+            };
+            bound
+        })
         .collect::<Vec<_>>();
     edge_bounds.sort_unstable();
     assert_eq!(edge_bounds, vec![7, 127]);
     assert!(
         summary.derivations.nodes.iter().all(|node| match node {
-            DerivationNode::PostconditionGive {
-                relation: Relation::Bound { left, right, .. },
-                ..
+            DerivationNode::PostconditionGive { relation, .. } => {
+                !matches!(**relation, Relation::Bound { left, right, .. } if left == right)
             }
-            | DerivationNode::PostconditionDeliveryJoin {
-                relation: Relation::Bound { left, right, .. },
-                ..
-            } => left != right,
+            DerivationNode::PostconditionDeliveryJoin { detail } => {
+                !matches!(detail.relation, Relation::Bound { left, right, .. } if left == right)
+            }
             _ => true,
         }),
         "the fresh receiver contributes no reflexive source fact"
@@ -4320,16 +4332,17 @@ command fn main() -> status: own ExitStatus pure {
             if summary.derivations.node_views[index] != ProofView::Complete {
                 return None;
             }
-            let DerivationNode::PostconditionDeliveryJoin {
-                relation:
-                    Relation::Bound {
-                        left,
-                        right: ZERO,
-                        bound: 127,
-                    },
-                parents,
-                ..
-            } = node
+            let DerivationNode::PostconditionDeliveryJoin { detail } = node else {
+                return None;
+            };
+            let PostconditionDeliveryJoinDetail {
+                relation, parents, ..
+            } = detail.as_ref();
+            let Relation::Bound {
+                left,
+                right: ZERO,
+                bound: 127,
+            } = relation
             else {
                 return None;
             };
@@ -4350,14 +4363,12 @@ command fn main() -> status: own ExitStatus pure {
         DerivationNode::PostconditionGive { .. }
     ));
     assert!(summary.derivations.nodes.iter().all(|node| match node {
-        DerivationNode::PostconditionGive {
-            relation: Relation::Bound { left, right, .. },
-            ..
+        DerivationNode::PostconditionGive { relation, .. } => {
+            !matches!(**relation, Relation::Bound { left, right, .. } if left == right)
         }
-        | DerivationNode::PostconditionDeliveryJoin {
-            relation: Relation::Bound { left, right, .. },
-            ..
-        } => left != right,
+        DerivationNode::PostconditionDeliveryJoin { detail } => {
+            !matches!(detail.relation, Relation::Bound { left, right, .. } if left == right)
+        }
         _ => true,
     }));
 }
@@ -4396,16 +4407,17 @@ command fn main() -> status: own ExitStatus pure {
         .iter()
         .enumerate()
         .filter_map(|(index, node)| {
-            let DerivationNode::PostconditionDeliveryJoin {
-                relation:
-                    Relation::Bound {
-                        right: ZERO,
-                        bound: 127,
-                        ..
-                    },
-                parents,
+            let DerivationNode::PostconditionDeliveryJoin { detail } = node else {
+                return None;
+            };
+            let PostconditionDeliveryJoinDetail {
+                relation, parents, ..
+            } = detail.as_ref();
+            let Relation::Bound {
+                right: ZERO,
+                bound: 127,
                 ..
-            } = node
+            } = relation
             else {
                 return None;
             };
@@ -6301,15 +6313,15 @@ command fn main() -> status: own ExitStatus pure {
         .iter()
         .enumerate()
         .filter_map(|(index, node)| {
-            let DerivationNode::PostconditionCall {
+            let DerivationNode::PostconditionCall { detail } = node else {
+                return None;
+            };
+            let PostconditionCallDetail {
                 summary: reference,
                 a0_parents,
                 view_parents,
                 ..
-            } = node
-            else {
-                return None;
-            };
+            } = detail.as_ref();
             Some((
                 summary.derivations.node_views[index],
                 reference.view,
@@ -6368,15 +6380,15 @@ command fn main() -> status: own ExitStatus pure {
         .iter()
         .enumerate()
         .filter_map(|(index, node)| {
-            let DerivationNode::PostconditionCall {
+            let DerivationNode::PostconditionCall { detail } = node else {
+                return None;
+            };
+            let PostconditionCallDetail {
                 summary: reference,
                 a0_parents,
                 view_parents,
                 ..
-            } = node
-            else {
-                return None;
-            };
+            } = detail.as_ref();
             Some((
                 summary.derivations.node_views[index],
                 reference.view,
@@ -7723,12 +7735,12 @@ command fn main() -> status: own ExitStatus pure {
             else {
                 panic!("the route root names its direct-result node");
             };
-            let DerivationNode::PostconditionCall { a0_parents, .. } =
+            let DerivationNode::PostconditionCall { detail } =
                 &caller.entailment.derivations.nodes[parent.0 as usize]
             else {
                 panic!("the direct-result parent is the instantiated call summary");
             };
-            assert!(a0_parents.contains(&call_goal));
+            assert!(detail.a0_parents.contains(&call_goal));
         }
     });
 }
@@ -8479,7 +8491,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                 .then_some((
                     summary.derivations.node_views[index],
                     *binding,
-                    relation.clone(),
+                    relation.as_ref().clone(),
                     *target_event,
                 ))
             })
@@ -8514,8 +8526,8 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
             !root_contains(summary, *parent, |ancestor| {
                 matches!(
                     ancestor,
-                    DerivationNode::PostconditionCall { call: candidate, .. }
-                        if candidate == &call.path
+                    DerivationNode::PostconditionCall { detail }
+                        if detail.call == call.path
                 )
             })
         }));
@@ -8706,7 +8718,7 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
         .nodes
         .iter()
         .filter_map(|node| match node {
-            DerivationNode::PostconditionDeliveryJoin { receiver, .. } => Some(*receiver),
+            DerivationNode::PostconditionDeliveryJoin { detail } => Some(detail.receiver),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -8800,8 +8812,8 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
             assert!(
                 root_contains(&report.entailment, *parent, |node| matches!(
                     node,
-                    DerivationNode::PostconditionDeliveryJoin { receiver, .. }
-                        if *receiver == bounded_length
+                    DerivationNode::PostconditionDeliveryJoin { detail }
+                        if detail.receiver == bounded_length
                 )),
                 "each A11-A16 receiver chain must descend from A10",
             );

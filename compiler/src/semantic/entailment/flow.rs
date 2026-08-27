@@ -421,7 +421,9 @@ pub(super) fn analyze_candidate(
     function: &CheckedFunction,
     context: &EntailmentContext<'_>,
 ) -> FunctionEntailment {
-    analyze_candidate_with_mask(function, context, None)
+    let mut entailment = analyze_candidate_with_mask(function, context, None);
+    entailment.derivations.settle();
+    entailment
 }
 
 pub(super) fn analyze_candidate_masked(
@@ -429,7 +431,9 @@ pub(super) fn analyze_candidate_masked(
     context: &EntailmentContext<'_>,
     mask: &ClaimMask,
 ) -> FunctionEntailment {
-    analyze_candidate_with_mask(function, context, Some(mask))
+    let mut entailment = analyze_candidate_with_mask(function, context, Some(mask));
+    entailment.derivations.settle();
+    entailment
 }
 
 fn analyze_candidate_with_mask(
@@ -1054,7 +1058,7 @@ impl Analyzer<'_, '_> {
                 super::state::DerivationNode::PostconditionExit {
                     statement: statement.clone(),
                     relation_ordinal,
-                    relation: relation.clone(),
+                    relation: Box::new(relation.clone()),
                     parent,
                 },
             );
@@ -1748,13 +1752,15 @@ impl Analyzer<'_, '_> {
         Some(self.derivations.intern_for(
             view,
             super::state::DerivationNode::PostconditionCall {
-                call: prepared.call.clone(),
-                relation: instantiated.relation.clone(),
-                summary,
-                substitutions: instantiated.substitutions.clone(),
-                transfer_events: prepared.transfer_events.clone(),
-                a0_parents: prepared.a0_parents.clone(),
-                view_parents,
+                detail: Box::new(super::state::PostconditionCallDetail {
+                    call: prepared.call.clone(),
+                    relation: instantiated.relation.clone(),
+                    summary,
+                    substitutions: instantiated.substitutions.clone(),
+                    transfer_events: prepared.transfer_events.clone(),
+                    a0_parents: prepared.a0_parents.clone(),
+                    view_parents,
+                }),
             },
         ))
     }
@@ -1778,7 +1784,7 @@ impl Analyzer<'_, '_> {
             super::state::DerivationNode::PostconditionDirectResult {
                 statement: statement.clone(),
                 binding,
-                relation: instantiated.relation.clone(),
+                relation: Box::new(instantiated.relation.clone()),
                 parent: call,
             },
         );
@@ -1974,7 +1980,7 @@ impl Analyzer<'_, '_> {
                 statement: statement.clone(),
                 binding: candidate.route.binding,
                 receiver_formal: candidate.route.formal,
-                relation: candidate.instantiated.relation.clone(),
+                relation: Box::new(candidate.instantiated.relation.clone()),
                 target_event,
                 parent: call,
             },
@@ -2092,7 +2098,7 @@ impl Analyzer<'_, '_> {
                 field: route.field,
                 tag: route.tag,
                 binding: route.binding,
-                relation: instantiated.relation.clone(),
+                relation: Box::new(instantiated.relation.clone()),
                 parent: call,
             },
         );
@@ -2473,7 +2479,7 @@ impl Analyzer<'_, '_> {
                 statement: statement.clone(),
                 payload: candidate.route.payload,
                 binding: candidate.route.binding,
-                relation: candidate.relation.clone(),
+                relation: Box::new(candidate.relation.clone()),
                 target_event,
                 parent,
             },
@@ -6349,7 +6355,7 @@ impl Analyzer<'_, '_> {
                     statement: context.statement.clone(),
                     carrier: context.carrier_binding,
                     receiver: context.receiver_binding,
-                    relation: relation.clone(),
+                    relation: Box::new(relation.clone()),
                     event: context.event,
                     parent,
                 },
@@ -6508,19 +6514,21 @@ impl Analyzer<'_, '_> {
             let proof = self.derivations.intern_for(
                 view,
                 DerivationNode::PostconditionDeliveryJoin {
-                    statement: context.statement.clone(),
-                    receiver: context.receiver_binding,
-                    relation: relation.clone(),
-                    event: context.event,
-                    parents,
+                    detail: Box::new(super::state::PostconditionDeliveryJoinDetail {
+                        statement: context.statement.clone(),
+                        receiver: context.receiver_binding,
+                        relation: relation.clone(),
+                        event: context.event,
+                        parents,
+                    }),
                 },
             );
-            let DerivationNode::PostconditionDeliveryJoin { parents, .. } =
+            let DerivationNode::PostconditionDeliveryJoin { detail } =
                 &self.derivations.nodes[proof.0 as usize]
             else {
                 unreachable!("just interned one delivery join")
             };
-            let parents = parents.clone();
+            let parents = detail.parents.clone();
             self.retain_delivery_give_parents(&parents, view);
             let occurrence = self.delivery_join_roots;
             self.delivery_join_roots = self
@@ -6566,19 +6574,21 @@ impl Analyzer<'_, '_> {
             let proof = self.derivations.intern_for(
                 view,
                 DerivationNode::PostconditionDeliveryJoin {
-                    statement: context.statement.clone(),
-                    receiver: context.receiver_binding,
-                    relation: relation.clone(),
-                    event: context.event,
-                    parents,
+                    detail: Box::new(super::state::PostconditionDeliveryJoinDetail {
+                        statement: context.statement.clone(),
+                        receiver: context.receiver_binding,
+                        relation: relation.clone(),
+                        event: context.event,
+                        parents,
+                    }),
                 },
             );
-            let DerivationNode::PostconditionDeliveryJoin { parents, .. } =
+            let DerivationNode::PostconditionDeliveryJoin { detail } =
                 &self.derivations.nodes[proof.0 as usize]
             else {
                 unreachable!("just interned one delivery join")
             };
-            let parents = parents.clone();
+            let parents = detail.parents.clone();
             self.retain_delivery_give_parents(&parents, view);
             let occurrence = self.delivery_join_roots;
             self.delivery_join_roots = self

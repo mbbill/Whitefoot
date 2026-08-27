@@ -428,7 +428,7 @@ pub(crate) struct FrozenProvenanceDependencies {
 impl ProvenanceAnalysis {
     /// Replaces the temporary pre-finish proof views with the authoritative
     /// remapped views after the optimistic program batch has passed PRV-2/3.
-    pub(crate) fn refresh_entailment_views(&mut self, functions: &[CheckedFunction]) {
+    pub(crate) fn refresh_entailment_views(&mut self, functions: &[&CheckedFunction]) {
         self.metadata.unasserted = functions
             .iter()
             .map(|function| function.entailment.unasserted.clone())
@@ -1594,7 +1594,7 @@ fn include_binding(maximum: &mut Option<u32>, binding: BindingId) {
 }
 
 fn dependency_fixed_point(
-    functions: &[CheckedFunction],
+    functions: &[&CheckedFunction],
     nominals: &[CheckedNominal],
     external_entry: Option<FunctionId>,
 ) -> ProvenanceResult<Vec<FunctionDependencies>> {
@@ -2346,7 +2346,7 @@ enum CarrierState {
 }
 
 struct CarrierReconstructor<'check> {
-    functions: &'check [CheckedFunction],
+    functions: &'check [&'check CheckedFunction],
     summaries: &'check [FunctionDependencies],
     nominals: &'check [CheckedNominal],
     external_entry: Option<FunctionId>,
@@ -2356,6 +2356,7 @@ impl<'check> CarrierReconstructor<'check> {
     fn function(&self, function: FunctionId) -> ProvenanceResult<&'check CheckedFunction> {
         self.functions
             .get(function.0 as usize)
+            .copied()
             .filter(|candidate| candidate.id == function)
             .ok_or(SemanticCompilerFailure::InvalidResolution)
     }
@@ -3957,7 +3958,7 @@ fn actual_values(
 }
 
 fn build_call_inventory(
-    functions: &[CheckedFunction],
+    functions: &[&CheckedFunction],
     dependencies: &[FunctionDependencies],
     unasserted: &[super::entailment::FunctionEntailmentView],
     blinded: &[super::entailment::FunctionEntailmentView],
@@ -4056,7 +4057,7 @@ fn build_call_inventory(
 }
 
 fn build_direct_call_inventory(
-    functions: &[CheckedFunction],
+    functions: &[&CheckedFunction],
     dependencies: &[FunctionDependencies],
     nominals: &[CheckedNominal],
 ) -> ProvenanceResult<Vec<DirectCallInventory>> {
@@ -4121,7 +4122,7 @@ fn build_direct_call_inventory(
 }
 
 fn local_bridge_seeds(
-    functions: &[CheckedFunction],
+    functions: &[&CheckedFunction],
     dependencies: &[FunctionDependencies],
     unasserted: &[super::entailment::FunctionEntailmentView],
     blinded: &[super::entailment::FunctionEntailmentView],
@@ -4196,7 +4197,7 @@ fn local_bridge_seeds(
 }
 
 fn local_gate_seeds(
-    functions: &[CheckedFunction],
+    functions: &[&CheckedFunction],
     dependencies: &[FunctionDependencies],
     unasserted: &[super::entailment::FunctionEntailmentView],
     blinded: &[super::entailment::FunctionEntailmentView],
@@ -5167,7 +5168,7 @@ fn build_call_links(
 
 /// Freezes the PRV-1 dependency fixed point from one phase-A inventory.
 pub(crate) fn freeze_program_provenance(
-    functions: &[CheckedFunction],
+    functions: &[&CheckedFunction],
     context: &ProvenanceContext<'_>,
 ) -> ProvenanceResult<FrozenProvenanceDependencies> {
     Ok(FrozenProvenanceDependencies {
@@ -5181,7 +5182,7 @@ pub(crate) fn freeze_program_provenance(
 /// fixed complete/U/B fact batch. Baseline and Full-minus runs share the same
 /// PRV-1 dependency fixed point because claims alter no value or storage flow.
 pub(crate) fn analyze_program_provenance_with_frozen(
-    functions: &[CheckedFunction],
+    functions: &[&CheckedFunction],
     context: &ProvenanceContext<'_>,
     frozen: &FrozenProvenanceDependencies,
 ) -> ProvenanceResult<ProvenanceAnalysis> {

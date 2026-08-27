@@ -36,7 +36,8 @@ use term::TermId;
 #[cfg(test)]
 pub(crate) use state::{
     ClaimLifecycleKind, CountedRootAtom, DerivationNode, FlowEvent, FlowEventId, FlowEventKind,
-    GoalSign, ImplicitBoundKind, JoinParent, Relation,
+    GoalSign, ImplicitBoundKind, JoinParent, PostconditionCallDetail,
+    PostconditionDeliveryJoinDetail, Relation,
 };
 #[cfg(test)]
 pub(crate) use term::{
