@@ -1023,32 +1023,6 @@ int wf__completion_file_close_direct(int descriptor) {
     return (int)wf_bridge_return_direct(wf_file_execute_direct(&request));
 }
 
-int wf__completion_file_close_release(int descriptor) {
-    wf_file_request request;
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_CLOSE;
-    request.operation.close.descriptor = descriptor;
-    /* Only where a helper already exists to take it. With no helper the
-     * disposal would sit in the queue until some scheduler ran it, which is
-     * the serialization this hand-over exists to remove, and the zero-helper
-     * configuration stays exactly the single direct close it was.
-     *
-     * The attempt is worth handing over because it is not free: measured on
-     * this project's macOS host, one close of a warm regular file costs about
-     * 17 us, so a program that opens and releases 8,192 files spends about
-     * 140 ms of its writer thread closing them one at a time. On Linux the
-     * same close costs about 0.45 us, which is why the ring-backed default of
-     * no helpers keeps it direct there. */
-    if (pthread_once(&wf_bridge_once, wf_bridge_initialize) == 0
-        && wf_bridge_ready != 0 && wf_bridge_ensure_file()
-        && wf_file_adapter_helper_count(&wf_bridge_adapter) != 0
-        && wf_file_adapter_submit_disposal(&wf_bridge_adapter, &request)
-            == WF_FILE_TARGET_OWNS) {
-        wf_bridge_notify_target();
-        return 0;
-    }
-    return (int)wf_bridge_return_direct(wf_file_execute_direct(&request));
-}
 
 int64_t wf__completion_directory_next_direct(
     int descriptor,

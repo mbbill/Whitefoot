@@ -862,7 +862,7 @@ fn regular_file_open_maps_status_and_release_after_completion() {
         1
     );
     assert!(module.contains("@wf.sys.open_file.completion"));
-    assert!(module.contains("@wf__completion_file_close_release"));
+    assert!(module.contains("@wf__completion_file_close_direct"));
     assert!(module.contains("i32 1, ptr %"));
     // The kind decision reads the mode of the descriptor the open produced.
     // It moved out of this adapter into the one shared rule every target
@@ -980,14 +980,14 @@ fn a_waiting_scheduler_parks_unless_it_is_itself_the_target_engine() {
 /// carries every transfer and a helper can only add a handoff to the
 /// operations it does not carry.
 ///
-/// The evidence of width is that a submission finds no helper waiting for it.
-/// This assertion used to name the queue depth instead — grow when the queue
-/// holds more requests than there are helpers. That rule measures how far
-/// behind the pool has already fallen, and on a program that submits a short
-/// run of independent operations the queue drains fast enough that it almost
-/// never fires: the eight-wide many-file program left the pool at its initial
-/// size and ran about 1.8x slower than the same program with helpers pinned
-/// at six. Pinning the depth rule here would pin that defect.
+/// The evidence of width is the queue depth at the moment a request is
+/// enqueued. A rule that instead grew whenever a submission found no helper
+/// *waiting* was tried and measured worse on the same programs: a helper that
+/// has been signalled but not yet scheduled still counts as waiting, so a run
+/// of consecutive submissions sees an available helper every time and the pool
+/// never grows at all. On the quiet macOS host that left the four-wide program
+/// at 919 ms against 625 ms for the depth rule. Queue depth is a lagging
+/// signal, but it is a true one.
 #[test]
 fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
@@ -1018,12 +1018,8 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         "growth must stop at the cap: {growth}"
     );
     assert!(
-        growth.contains("adapter->idle_helpers != 0"),
-        "growth must require that no helper was waiting to take the work: {growth}"
-    );
-    assert!(
-        growth.contains("adapter->queue_count == 0"),
-        "growth must require real queued work: {growth}"
+        growth.contains("adapter->queue_count <= held"),
+        "growth must require a queue that has outrun the pool: {growth}"
     );
     // Growth runs inside the one enqueue that already holds the queue lock,
     // so it creates at most one helper per submission and needs no second
@@ -1129,79 +1125,6 @@ fn a_native_ring_carries_opens_and_closes_under_one_kind_rule() {
     assert!(
         native < fallback,
         "the ring is tried before the bounded POSIX adapter"
-    );
-}
-
-/// A resource release is target work, not writer work.
-///
-/// A [SYS-5] release is one best-effort close whose diagnostic the language
-/// discards, on a resource the writer has already given up: nothing observes
-/// the outcome and no frame waits for it. It therefore has no reason to
-/// occupy the writer's thread, and on a host where the attempt is expensive
-/// it is most of what the writer's thread does. Measured on this project's
-/// macOS host, one close of a warm regular file costs about 17 us, so a
-/// program that opens and releases 8,192 of them spends about 140 ms closing
-/// them one after another; the same close costs about 0.45 us on Linux, where
-/// the ring-backed default keeps no helper and the attempt stays direct.
-///
-/// The release route is a different symbol from the immediate close a
-/// wrapper uses to dispose of a provisional descriptor before it can answer
-/// at all. That one must finish before the wrapper returns; this one must
-/// not have to.
-#[test]
-fn a_resource_release_may_be_taken_by_the_target() {
-    let module = emit(INDEPENDENT_REGULAR_FILE_OPENS);
-    assert!(
-        module.contains("@wf__completion_file_close_release"),
-        "a release reaches the target's release route"
-    );
-    assert!(
-        crate::module_requires_completion_runtime(&module),
-        "a module which releases through the bridge links the strong runtime"
-    );
-    let bridge = crate::COMPLETION_BRIDGE_SOURCE;
-    let release = bridge
-        .split_once("int wf__completion_file_close_release(int descriptor) {")
-        .expect("one release entry point")
-        .1
-        .split_once("\n}\n")
-        .expect("the release entry point ends with the function")
-        .0;
-    assert!(
-        release.contains("wf_file_adapter_submit_disposal"),
-        "a release offers the attempt to the target: {release}"
-    );
-    assert!(
-        release.contains("wf_file_adapter_helper_count(&wf_bridge_adapter) != 0"),
-        "a release is handed over only where a helper exists to take it: {release}"
-    );
-    assert!(
-        release.contains("wf_file_execute_direct(&request)"),
-        "a release that is not taken is still exactly one direct close: {release}"
-    );
-    // A disposal has no result and no owner, so it must not consume one of
-    // the bounded operations a real completion needs.
-    let adapter = crate::COMPLETION_FILE_ADAPTER_SOURCE;
-    let disposal = adapter
-        .split_once("enum wf_file_submit_result wf_file_adapter_submit_disposal(")
-        .expect("one disposal entry point")
-        .1
-        .split_once("\n}\n")
-        .expect("the disposal entry point ends with the function")
-        .0;
-    for operation in [
-        "wf_completion_begin_submit",
-        "wf_completion_target_accepted",
-        "wf_completion_publish",
-    ] {
-        assert!(
-            !disposal.contains(operation),
-            "a disposal must not touch {operation}: {disposal}"
-        );
-    }
-    assert!(
-        disposal.contains("return WF_FILE_WAIT_CAPACITY;"),
-        "a full queue refuses the disposal rather than making the writer wait"
     );
 }
 

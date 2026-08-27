@@ -375,18 +375,7 @@ static void wf_file_run_work(
     const wf_file_work *work,
     int helper
 ) {
-    wf_file_result result;
-    if (work->disposal != 0) {
-        /* One best-effort host attempt whose diagnostic the language
-         * discards. There is no operation, no token, and nothing to publish;
-         * the whole point of taking it here is that the writer's thread does
-         * not have to wait for it. */
-        (void)wf_file_execute_direct(&work->request);
-        wf_file_count_execution(adapter, helper);
-        return;
-    }
-    result = wf_file_execute_direct(&work->request);
-    {
+    wf_file_result result = wf_file_execute_direct(&work->request);
     wf_completion_publication publication = {
         .milestones = WF_COMPLETION_OWNERSHIP_COMPLETE,
         .terminal_kind = result.error_code == 0
@@ -412,32 +401,20 @@ static void wf_file_run_work(
             memory_order_relaxed
         );
     }
-    }
 }
 
 static void *wf_file_helper_main(void *context) {
     wf_file_adapter *adapter = context;
-    /* The thread that created this helper already counted it as idle. */
-    int counted_idle = 1;
     for (;;) {
         wf_file_work work;
         int released_capacity;
         (void)pthread_mutex_lock(&adapter->queue_lock);
-        /* Creation counted this helper as idle, and it stops counting the
-         * moment it takes work below, so the count is restored here rather
-         * than in a second lock acquisition after the work ran. */
-        if (counted_idle == 0) {
-            adapter->idle_helpers += 1;
-            counted_idle = 1;
-        }
         while (adapter->queue_count == 0 && adapter->stopping == 0) {
             (void)pthread_cond_wait(
                 &adapter->queue_available,
                 &adapter->queue_lock
             );
         }
-        adapter->idle_helpers -= 1;
-        counted_idle = 0;
         if (adapter->queue_count == 0 && adapter->stopping != 0) {
             (void)pthread_mutex_unlock(&adapter->queue_lock);
             return NULL;
@@ -514,9 +491,6 @@ int wf_file_adapter_init(
             adapter->initialized = 0;
             return error;
         }
-        (void)pthread_mutex_lock(&adapter->queue_lock);
-        adapter->idle_helpers += 1;
-        (void)pthread_mutex_unlock(&adapter->queue_lock);
         atomic_store_explicit(
             &adapter->helper_count,
             created + 1,
@@ -544,18 +518,16 @@ size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter) {
     return atomic_load_explicit(&adapter->helper_count, memory_order_acquire);
 }
 
-/* Adds one helper when a submission finds no helper waiting to take it.
+/* Adds one helper when the queue holds more accepted requests than there are
+ * helpers to take them, which is the only evidence this adapter has that a
+ * program exposed real width.
  *
- * That condition, and not a queue depth, is the evidence that this program
- * exposed width the pool cannot absorb: a request queued while every helper
- * is busy waits for one of them to finish, which is exactly the serialization
- * helpers exist to remove. Comparing the queue depth against the helper count
- * instead measures how far behind the pool has already fallen, and on a
- * program that submits a short run of independent operations the queue is
- * drained fast enough that the comparison almost never fires — measured on
- * the eight-wide many-file workload, the depth rule left the pool at its
- * initial size and finished around 1.8x slower than the same program with
- * helpers pinned at six.
+ * A rule that instead grew whenever a submission found no helper *waiting*
+ * was tried and measured worse: a helper that has been signalled but not yet
+ * scheduled still counts as waiting, so a run of consecutive submissions sees
+ * one available helper every time and the pool never grows at all. On the
+ * quiet macOS host that left the four-wide program at 919 ms against 625 ms
+ * for this rule. Queue depth is a lagging signal, but it is a true one.
  *
  * It runs on the submitting thread with the queue lock already held, so at
  * most one helper appears per submission and the count never passes the
@@ -567,7 +539,7 @@ static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {
         memory_order_relaxed
     );
     if (held == 0 || held >= adapter->helper_cap
-        || adapter->idle_helpers != 0 || adapter->queue_count == 0) {
+        || adapter->queue_count <= held) {
         return;
     }
     if (pthread_create(
@@ -578,7 +550,6 @@ static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {
         ) != 0) {
         return;
     }
-    adapter->idle_helpers += 1;
     atomic_store_explicit(
         &adapter->helper_count,
         held + 1,
@@ -586,18 +557,16 @@ static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {
     );
 }
 
-/* Appends one accepted queue entry, announces it, and grows the pool if this
- * submission found nobody waiting.  The caller holds the queue lock and has
- * already made whatever ownership transition the entry needs. */
+/* Appends one accepted queue entry, announces it to one helper, and grows the
+ * pool when the queue has outrun it.  The caller holds the queue lock and has
+ * already made the entry's ownership transition. */
 static void wf_file_enqueue_locked(
     wf_file_adapter *adapter,
     wf_completion_token token,
-    const wf_file_request *request,
-    unsigned disposal
+    const wf_file_request *request
 ) {
     adapter->queue[adapter->queue_tail].token = token;
     adapter->queue[adapter->queue_tail].request = *request;
-    adapter->queue[adapter->queue_tail].disposal = disposal;
     adapter->queue_tail = (adapter->queue_tail + 1) % adapter->queue_capacity;
     adapter->queue_count += 1;
     atomic_fetch_add_explicit(
@@ -659,35 +628,7 @@ enum wf_file_submit_result wf_file_adapter_submit(
             : WF_FILE_SUBMIT_INVALID;
     }
 
-    wf_file_enqueue_locked(adapter, token, request, 0u);
-    (void)pthread_mutex_unlock(&adapter->queue_lock);
-    return WF_FILE_TARGET_OWNS;
-}
-
-enum wf_file_submit_result wf_file_adapter_submit_disposal(
-    wf_file_adapter *adapter,
-    const wf_file_request *request
-) {
-    wf_completion_token none = {0u, 0u};
-    if (adapter == NULL || adapter->initialized == 0
-        || !wf_file_request_valid(request)) {
-        return WF_FILE_SUBMIT_INVALID;
-    }
-    (void)pthread_mutex_lock(&adapter->queue_lock);
-    if (adapter->stopping != 0) {
-        (void)pthread_mutex_unlock(&adapter->queue_lock);
-        return WF_FILE_ADAPTER_STOPPING;
-    }
-    if (adapter->queue_count == adapter->queue_capacity) {
-        atomic_fetch_add_explicit(
-            &adapter->stat_capacity_waits,
-            1,
-            memory_order_relaxed
-        );
-        (void)pthread_mutex_unlock(&adapter->queue_lock);
-        return WF_FILE_WAIT_CAPACITY;
-    }
-    wf_file_enqueue_locked(adapter, none, request, 1u);
+    wf_file_enqueue_locked(adapter, token, request);
     (void)pthread_mutex_unlock(&adapter->queue_lock);
     return WF_FILE_TARGET_OWNS;
 }

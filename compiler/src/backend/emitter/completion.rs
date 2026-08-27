@@ -62,7 +62,6 @@ pub fn module_requires_completion_runtime(module: &str) -> bool {
         || module.contains("@wf__completion_file_open_at_direct")
         || module.contains("@wf__completion_file_status_direct")
         || module.contains("@wf__completion_file_close_direct")
-        || module.contains("@wf__completion_file_close_release")
         || module.contains("@wf__completion_directory_next_direct")
 }
 

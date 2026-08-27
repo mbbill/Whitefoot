@@ -140,11 +140,6 @@ typedef struct wf_file_result {
 typedef struct wf_file_work {
     wf_completion_token token;
     wf_file_request request;
-    /* A disposal owns no completion operation and no token: the writer has
-     * already given the resource up and its diagnostic is discarded by the
-     * language rule, so there is no result to publish and no owner to wake.
-     * Ordinary work is zero here. */
-    unsigned disposal;
 } wf_file_work;
 
 enum wf_file_submit_result {
@@ -175,9 +170,6 @@ typedef struct wf_file_adapter {
      * scheduler deciding whether it is itself this queue's engine. */
     _Atomic size_t helper_count;
     size_t helper_cap;
-    /* Helpers currently waiting for work, under queue_lock. A submission that
-     * finds none is submitting behind every helper this adapter has. */
-    size_t idle_helpers;
     pthread_mutex_t queue_lock;
     pthread_cond_t queue_available;
     unsigned stopping;
@@ -205,24 +197,6 @@ int wf_file_adapter_init(
 enum wf_file_submit_result wf_file_adapter_submit(
     wf_file_adapter *adapter,
     wf_completion_token token,
-    const wf_file_request *request
-);
-
-/* Hands one resource disposal to the target without claiming a completion
- * operation for it.
- *
- * A [SYS-5] release is one best-effort host attempt whose diagnostic the
- * language discards; the writer has already given the resource up, so nothing
- * observes the outcome, no loan comes back, and no frame waits. That is not a
- * completion operation with a silent result — it is work with no result at
- * all, so it takes a queue entry and no operation slot, and it publishes
- * nothing.
- *
- * WAIT_CAPACITY means the queue is full. A disposal never waits for capacity:
- * waiting would put the serialization back that handing it over removes, so
- * the caller performs the attempt itself instead. */
-enum wf_file_submit_result wf_file_adapter_submit_disposal(
-    wf_file_adapter *adapter,
     const wf_file_request *request
 );
 

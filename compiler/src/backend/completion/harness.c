@@ -1338,55 +1338,6 @@ static int test_checked_open_rejects_and_closes_nonregular_descriptors(
     return 0;
 }
 
-/* A release disposes of the descriptor and owns no completion operation.
- *
- * The language rule for a [SYS-5] release is one best-effort attempt whose
- * diagnostic is discarded, and the writer has already given the resource up,
- * so nothing observes the outcome and no frame waits. Where a helper exists
- * the attempt is handed over, which is why the descriptor may close a moment
- * later; what may never happen is a completion publication, because a
- * disposal claims no operation and would otherwise consume the bounded
- * capacity a real operation needs. */
-static int test_a_release_disposes_without_claiming_an_operation(
-    const char *scratch_directory
-) {
-    char path[256];
-    int descriptor;
-    uint64_t publications;
-    unsigned attempt;
-    int closed = 0;
-
-    CHECK(scratch_directory != NULL);
-    CHECK(
-        snprintf(
-            path,
-            sizeof(path),
-            "%s/wf-completion-release-%ld",
-            scratch_directory,
-            (long)getpid()
-        ) > 0
-    );
-    (void)unlink(path);
-    descriptor = open(path, O_CREAT | O_EXCL | O_RDWR, 0600);
-    CHECK(descriptor >= 0);
-
-    publications = wf__completion_publications();
-    CHECK(wf__completion_file_close_release(descriptor) == 0);
-    for (attempt = 0; attempt < 1000000u && closed == 0; ++attempt) {
-        errno = 0;
-        if (fcntl(descriptor, F_GETFD) == -1 && errno == EBADF) {
-            closed = 1;
-            break;
-        }
-        (void)sched_yield();
-    }
-    CHECK(closed == 1);
-    CHECK(wf__completion_publications() == publications);
-
-    CHECK(unlink(path) == 0);
-    return 0;
-}
-
 /* Every way an open can fail names its own terminal discriminator, on the
  * submitted path and on the direct one.  The generated program switches on
  * exactly this value and aborts on anything outside the set, so a target
@@ -2194,7 +2145,6 @@ int main(int argc, char **argv) {
     RUN_TEST(test_open_failure_classes_are_typed_outcomes(argv[1]));
     RUN_TEST(test_open_capacity_refuses_and_resubmits(argv[1]));
     RUN_TEST(test_open_results_reach_every_independent_owner(argv[1]));
-    RUN_TEST(test_a_release_disposes_without_claiming_an_operation(argv[1]));
     RUN_TEST(test_process_wide_target_helper_budget());
     RUN_TEST(test_helper_completion_wakes_scheduler());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());

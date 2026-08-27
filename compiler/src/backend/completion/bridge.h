@@ -116,17 +116,6 @@ int wf__completion_file_status_direct(
 
 int wf__completion_file_close_direct(int descriptor);
 
-/* The [SYS-5] release of a descriptor-backed resource.
- *
- * One best-effort close attempt whose diagnostic the language discards. The
- * writer has already given the resource up, so nothing observes the outcome
- * and no frame waits: where a target helper exists to take the attempt this
- * hands it over and returns at once, and everywhere else it is the same
- * single direct close. The returned value is the direct attempt's result when
- * one was made and zero when the target took it; the caller discards it
- * either way. */
-int wf__completion_file_close_release(int descriptor);
-
 /* Darwin's qualified directory facility through the same target-progress
  * normalization as typed file operations. EINTR and readiness refusal never
  * cross this ABI as writer-visible errors. */

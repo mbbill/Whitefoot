@@ -489,11 +489,11 @@ fn every_release_action_emits_exactly_its_contract() {
     // both `Output` owners, `FileFactory`, and the returned `ExitStatus`
     // release with no host call at all [SYS-5].
     assert_eq!(
-        llvm.matches("call i32 @wf__completion_file_close_release(i32")
+        llvm.matches("call i32 @wf__completion_file_close_direct(i32")
             .count(),
         1
     );
-    assert!(llvm.contains("declare i32 @wf__completion_file_close_release(i32)"));
+    assert!(llvm.contains("declare i32 @wf__completion_file_close_direct(i32)"));
     // A logical consume and a source detach are explicit releases that emit
     // no code; the drop marker is still present for each owner.
     assert_eq!(llvm.matches("  ; drop %v").count(), 5);
