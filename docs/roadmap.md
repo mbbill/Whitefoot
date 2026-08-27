@@ -920,9 +920,11 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   [batch 0084](done/0084-io-performance.md).
 - **Facts:** [batch record 0082](done/0082-unified-state-completion-io.md) ·
   [batch record 0084](done/0084-io-performance.md) ·
+  [batch record 0089](done/0089-loop-pipeline-batch0.md) ·
   [program-level measurement bundle](../research/experiments/io-completion-bench/README.md) ·
   [first-principles derivation](../research/investigations/io-model/FIRST-PRINCIPLES.md) ·
   [concrete API and lowering design](../research/investigations/io-model/DESIGN.md) ·
+  [staged loop pipeline design](../research/investigations/io-model/LOOP-PIPELINE.md) ·
   [experimental implementation audit](../research/investigations/io-model/IMPLEMENTATION-AUDIT.md) ·
   [program-level and clean-core measurements](../research/investigations/io-model/RESULTS.md) ·
   [historical architecture dossier](../research/investigations/system-capability-architecture/DOSSIER.md) ·
