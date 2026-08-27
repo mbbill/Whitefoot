@@ -953,10 +953,22 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     let module = emit_with_overlap(OVERLAPPING_FOLD);
     let directory = test_directory();
 
+    // `wf__par_grants` counts steals, and a steal is a scheduling event: a
+    // pool thread has to be given a CPU before the offering lane finishes the
+    // work itself. On a saturated host that can fail to happen in one run of
+    // a program this short, so the existential claim (the default build CAN
+    // be granted lanes) is re-observed over a bounded number of runs, exactly as
+    // the WF_WORKERS=4 case above does. A pool that never grants fails every
+    // one of them; the opt-out runs below stay exact.
     let (defaulted, published) = run_counting_grants(&module, &directory, None);
     assert_eq!(published.status.code(), Some(0));
+    let observed_grants = if defaulted == 0 {
+        grants_over_runs(&module, &directory, None, 4)
+    } else {
+        defaulted
+    };
     assert!(
-        defaulted > 0,
+        observed_grants > 0,
         "a --par binary with no worker setting must run in the overlapped \
          world and be granted lanes, or the path is off for every real run"
     );

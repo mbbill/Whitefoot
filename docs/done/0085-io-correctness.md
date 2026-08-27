@@ -24,6 +24,7 @@ host and one on Linux only.
 | F-02 | permission attacks | over-rejection: unimplemented capability | both programs quoted below | flagged |
 | F-03 | runtime protocol, Linux | driver defect: cannot link on Linux | `the_compiler_owned_c_units_compile_in_the_default_dialect`, `compiler/src/backend/tests/completion.rs` | fixed with test |
 | F-04 | permission attacks | latent widening in the system-call footprint | reasoning below; no catalog row reaches it today | fixed, no observable change |
+| F-05 | integration gate | schedule-dependent test oracle (observed during the batch merge, not an I/O defect) | `an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not`, `compiler/src/backend/tests/parallel.rs` | fixed: re-observed over bounded runs like its WF_WORKERS=4 sibling |
 
 ### F-01 — a completion window before a block join named the wrong phi predecessor
 
