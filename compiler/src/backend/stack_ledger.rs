@@ -217,13 +217,7 @@ fn parse_call_graph(assembly: &str, index: &HashMap<&str, usize>) -> Vec<Vec<usi
     let mut edges = vec![Vec::new(); index.len()];
     let mut current: Option<usize> = None;
     for line in assembly.lines() {
-        let code = line
-            .split(';')
-            .next()
-            .unwrap_or(line)
-            .split("##")
-            .next()
-            .unwrap_or(line);
+        let code = strip_comment(line);
         if !code.starts_with([' ', '\t']) {
             // A label at column zero. A function's own label names it; every
             // other label belongs to whatever function is already open.
@@ -255,6 +249,29 @@ fn parse_call_graph(assembly: &str, index: &HashMap<&str, usize>) -> Vec<Vec<usi
         }
     }
     edges
+}
+
+/// One assembly line with its trailing comment removed.
+///
+/// The marker is the assembler's, not the architecture's, and the targets this
+/// compiler emits for do not agree on it: Darwin's arm64 assembler comments
+/// with `;`, its x86-64 assembler with `##`, and the ELF assemblers with `//`
+/// on arm64 and `#` on x86-64. Reading only the Darwin markers cost the whole
+/// call graph on x86-64 Linux, where every function label is written
+/// `wf_spine:                # @wf_spine`: the line does not end at the colon,
+/// so no label resolved, no instruction had an open caller, and the ledger
+/// reported a recursion as a chain with no cycle. Found by running the gate on
+/// a Linux runner in batch 0090.
+///
+/// Truncating at `#` is safe on an arm64 ELF operand that spells an immediate
+/// `#48`, because the only instructions read past the mnemonic here are calls
+/// and branches, whose operand is a symbol.
+fn strip_comment(line: &str) -> &str {
+    line.find([';', '#'])
+        .into_iter()
+        .chain(line.find("//"))
+        .min()
+        .map_or(line, |at| &line[..at])
 }
 
 /// The function one assembler symbol names, if it is one of this module's.

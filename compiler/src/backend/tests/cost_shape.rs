@@ -869,6 +869,14 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
         "the resource abort must be noreturn, or its census exemption is an \
          argument rather than a property"
     );
+    // `@exit` is exempt on the same terms, and for the same reason it is a
+    // property rather than an argument: the emitter declares it `noreturn`,
+    // so no execution that reaches it also finishes.
+    assert!(
+        emitted().contains("declare void @exit(i32) noreturn"),
+        "the bootstrap-failure exit must be declared noreturn, or its census \
+         exemption is an argument rather than a property"
+    );
     let host_entry = optimized_main_wrapper(optimized());
     for target in call_targets(program)
         .into_iter()
@@ -895,6 +903,19 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             | "calloc" | "free"
             // Written claims and their mandatory diagnostic record.
             | "wf_trap" | "abort"
+            // The [PROG-3] start failure: an initial working directory the
+            // host refuses leaves the program with nothing to run, so
+            // `wf__main_body`'s `start.failure` arm exits with the fixed
+            // start-failure status. It is `noreturn`, asserted above, and on
+            // no success path.
+            //
+            // This name was missing until batch 0090 ran the gate on a second
+            // macOS toolchain. It was never absent from the program: this
+            // machine's clang outlines that arm into `@wf__main_body.cold.5`,
+            // whose body this census does not scan, while the older clang on
+            // the CI runner leaves the call in `wf__main_body` where the
+            // census reads it. The hole was in the census, not in wfgrep.
+            | "exit"
             // The lane protocol of a permitted overlap group [PAR-1
             // candidate], and the one question its bootstrap asks. The module
             // this census reads is the default compilation, which actualizes
