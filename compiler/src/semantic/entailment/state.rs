@@ -861,13 +861,10 @@ impl InternHasher {
 
 impl std::hash::Hasher for InternHasher {
     fn write(&mut self, bytes: &[u8]) {
-        let mut words = bytes.chunks_exact(8);
-        for word in &mut words {
-            self.mix(u64::from_le_bytes(
-                word.try_into().expect("chunks_exact yields eight bytes"),
-            ));
+        let (words, tail) = bytes.as_chunks::<8>();
+        for word in words {
+            self.mix(u64::from_le_bytes(*word));
         }
-        let tail = words.remainder();
         if !tail.is_empty() {
             let mut word = [0_u8; 8];
             word[..tail.len()].copy_from_slice(tail);
@@ -3394,9 +3391,9 @@ fn close_with_excluded_term(
         for left in &ids {
             for right in &ids {
                 if left == right
-                    || !dense_bounds
+                    || dense_bounds
                         .get(*left, *right)
-                        .is_some_and(|(bound, _)| bound <= -1)
+                        .is_none_or(|(bound, _)| bound > -1)
                 {
                     continue;
                 }
