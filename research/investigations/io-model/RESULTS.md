@@ -1,12 +1,15 @@
 # Completion I/O results
 
 Status: measured at the program level on 2026-08-27, on macOS and on Linux
-with io_uring, and re-measured the same day with the base commit and the
-branch interleaved in one plan on a quiet host. Read the batch-0086 section
-for absolute values and the batch-0084 one for the findings it established;
-everything before that date was a C-level measurement of the completion core
-alone and is retained below, labelled, because it still describes what it
-measured.
+with io_uring, re-measured the same day with the base commit and the branch
+interleaved in one plan on a quiet host, and measured again on a real Linux
+kernel on real hardware through the repository's own continuous integration.
+Read the batch-0090 section first: it is the only Linux measurement here taken
+outside a container on the macOS machine, and it does not reproduce the
+container's headline ratio. Read the batch-0086 section for absolute values
+and the batch-0084 one for the findings it established; everything before that
+date was a C-level measurement of the completion core alone and is retained
+below, labelled, because it still describes what it measured.
 
 The program-level sections are the ones that answer the design's own question.
 Reproduce them with:
@@ -14,8 +17,12 @@ Reproduce them with:
 ```sh
 make -C research/experiments/io-completion-bench bench       # macOS
 make -C research/experiments/io-completion-bench bench-pipe
-make -C research/experiments/io-completion-bench linux       # Linux, io_uring
+make -C research/experiments/io-completion-bench linux       # Linux, container
 ```
+
+The Linux-hardware run is the `bench-linux` job in
+`.github/workflows/io-hosts.yml`, which runs the same `linux-bench.sh` with no
+container in the way; its table is uploaded as a job artifact.
 
 ## Program-level results, batch 0084 (2026-08-27)
 
@@ -67,7 +74,11 @@ C.wide  WF_IO_HELPERS=4      479.3 ms    67.0     378.7
 C.narrow (default policy)   1069.1 ms    48.9     304.0
 ```
 
-Linux 6.8.0 aarch64, 2 CPUs, 1.9 GiB, in a container with io_uring permitted:
+Linux 6.8.0 aarch64, 2 CPUs, 1.9 GiB, in a Docker container on the macOS
+machine above — a virtual guest, not Linux hardware — with io_uring
+permitted. The batch-0090 section below re-measures this workload on a real
+Linux kernel on real hardware and does not reproduce the C-against-S ratio
+here:
 
 ```text
 line                          median      user      sys
@@ -276,9 +287,9 @@ Nothing on the macOS path changed in this batch beyond the collapsed helper
 pool, and the paired lines say so: every before/after pair above agrees within
 the control's own spread.
 
-Linux 6.8.0 aarch64, 2 CPUs, in a container with io_uring permitted, tree on
-the container-local filesystem. Medians of nine recorded runs after two
-warm-ups:
+Linux 6.8.0 aarch64, 2 CPUs, in a Docker container on the macOS machine above
+— a virtual guest, not Linux hardware — with io_uring permitted, tree on the
+container-local filesystem. Medians of nine recorded runs after two warm-ups:
 
 ```text
 line                          median      min      user      sys
@@ -367,6 +378,151 @@ eight before the next round starts.
 Both remaining gaps are therefore the same shape the batch-0084 record already
 flagged: overlap groups are runs of consecutive calls in one basic block, so a
 program pipelines nothing across iterations and pays a barrier per round.
+
+## Program-level results on Linux hardware, batch 0090 (2026-08-27)
+
+Every Linux number above this line was taken inside a Docker container on this
+project's macOS machine: an aarch64 guest with two virtual CPUs, its tree on
+the container's own overlay filesystem. That is a Linux kernel, but it is not
+Linux hardware, and the section below shows the difference is not a rounding
+error. These numbers come from GitHub-hosted `ubuntu-24.04` runners through
+`.github/workflows/io-hosts.yml`, which builds the bundle natively — no
+container, no bind mount — and runs `linux-bench.sh` with the same protocol,
+the same `workload.h`, and the same published checksum.
+
+Host, reported by the job itself: kernel `6.17.0-1022-azure`, `x86_64`, 4
+CPUs, AMD EPYC 9V74, `kernel.io_uring_disabled=0`, tree on the runner's own
+local disk (`ext4`). Nine recorded runs after two warm-ups, medians with the
+observed spread, because a shared runner is noisy and the reading has to carry
+its own error bars.
+
+Two runs on two separately provisioned runners, printed side by side below.
+They differ in absolute speed by about 21 percent — the second landed on an
+NVMe-backed disk, the first on a SATA one — and agree on every ordering and
+every ratio. A third runner, also NVMe-backed, reproduces the second within
+two percent on every line and is not tabulated: `N.direct` 94.68, `N.pool4`
+27.14, `N.uring32` 94.75, `S.wide` 112.19, `C.wide.default` 118.14.
+
+```text
+                       run 1: sda1                 run 2: nvme0n1p1
+line                median   min    max         median   min    max
+N.direct            119.69 119.33 120.61         94.24  94.17  94.63
+N.pool1             120.35 119.71 125.55         94.84  94.71  95.87
+N.pool2              60.80  60.64  62.50         47.71  47.55  48.22
+N.pool4              34.04  33.81  34.52         26.61  26.30  33.10   best N
+N.pool8              38.49  36.77  41.61         31.11  28.18  33.17
+N.uring2            123.89 123.72 125.14         97.14  96.93  97.88
+N.uring4            121.95 121.44 122.49         95.81  95.36  96.02
+N.uring8            120.06 119.82 120.38         94.67  94.15  95.07
+N.uring16           119.00 118.82 119.39         94.25  94.13  94.51
+N.uring32           118.69 118.15 118.93         94.45  94.25  94.62
+S.narrow            145.26 144.87 147.22        114.30 113.85 114.66
+S.wide              142.15 141.66 144.20        112.07 111.22 113.52
+S.wide8             141.26 140.64 143.44        110.94 110.63 112.45   best S
+C.narrow.default    147.39 145.30 147.68        114.49 113.71 116.18
+C.wide.default      149.47 147.17 150.57        115.92 115.38 117.83
+C.wide8.default     147.04 146.57 149.51        115.97 115.53 117.79
+C.wide.w0.h0        148.88 146.82 155.20        117.19 115.78 117.72
+C.wide.w0.h1        148.03 147.52 153.46        115.75 115.50 117.67
+C.wide.w0.h2        149.80 147.87 150.72        117.33 115.79 118.08
+C.wide.w0.h4        148.33 147.45 153.23        116.17 115.73 117.54
+C.wide8.w0.h0       147.80 146.65 149.40        115.96 115.56 119.25
+C.wide8.w0.h1       147.58 146.65 149.31        116.04 115.82 117.64
+C.wide8.w0.h2       148.43 146.57 152.95        115.93 115.62 117.07
+C.wide8.w0.h4       147.49 146.79 150.07        115.96 115.53 117.93
+C.wide.w1.hdefault  148.23 147.10 150.59        116.12 115.91 117.72
+C.wide.w2.hdefault  148.29 147.45 149.96        116.88 115.79 117.67
+```
+
+### Against the standing bar
+
+The bar this investigation has carried since batch 0084: C at least as fast as
+S on every workload, and within 10 percent of N wherever N is a native
+completion path or a fairly sized thread pool.
+
+```text
+workload / platform          C vs S             C vs N best        bar
+many files / Linux hardware  1.03x slower       4.36x slower       missed, both halves
+```
+
+This is the first host on which **C is slower than S**. Not by much — 3 percent
+in run 2, 5 percent in runs 1 and 3, against a within-run spread of about 2
+percent — but consistently, on all three runners, at every helper count, and on
+both the four-wide and the eight-wide program. The container said C was 2.3 times
+faster than S. That reading was about the container.
+
+### Why nothing that reorders I/O moves this workload here
+
+Two facts from the table settle it without a further experiment.
+
+The hand-written io_uring baseline lands on `N.direct` at every depth from 2 to
+32 — 94.45 against 94.24 ms in run 2, a fifth of a percent. A ring that submits
+32 reads at once and a loop that blocks on one at a time finish together. There
+is no read latency on this host to hide, because the whole 68 MiB tree is in
+the page cache and a cached `pread` returns without ever sleeping.
+
+The one native line that does move is the thread pool, and the CPU columns say
+what it moves. In run 2 `N.pool4` spends 103.6 ms of CPU to reach 26.6 ms of
+wall time — 3.9 cores busy at once — while `N.direct` spends 94.1 ms of CPU for
+94.2 ms of wall. The pool is not hiding I/O; it is folding four checksums at
+once. Batch 0084 already named that as part of the pool's advantage. On real
+hardware with a warm cache it is the whole of it.
+
+So a lowering whose only power is to start an operation before waiting on the
+previous one has nothing to recover here, and what remains of it is its own
+cost: the submission, the token, the join. Three percent.
+
+### The measurement that separates this host from the container
+
+Wall time against child CPU time, for the same lines:
+
+```text
+                          wall      user+sys     CPU/wall
+runner run 2  N.direct    94.24       94.08        1.00
+              S.wide     112.07      111.61        1.00
+              C.wide     115.92      115.82        1.00
+container     N.direct    72.04       72.28        1.00
+              S.wide     337.29      221.98        0.66
+              C.wide     146.73      132.67        0.90
+```
+
+On the runner every line is CPU-saturated: the process runs for its whole wall
+time. In the container the C baseline is too, but Whitefoot's own sequential
+build is not — 115 ms of its 337 ms is time the process was not running at all,
+and the completion build recovers most of that. Overlap was repaying a wait
+that exists in the container and does not exist on the runner.
+
+What produced that wait is not settled here. Two candidates, both consistent
+with the numbers and neither established: the container's block and filesystem
+path can make an operation genuinely sleep where the runner's page cache
+answers inline; and a two-vCPU guest running a lane pool plus a writer is
+oversubscribed in a way a four-CPU host is not. Discriminating them wants a
+run with the pool disabled on both hosts, which this batch did not do.
+
+### What this changes and what it does not
+
+It does not touch the macOS results, the pipe workload, the C-level core
+measurements, or anything about correctness. It does not show overlap is
+worthless: a workload whose operations really wait is exactly the case the
+design is for, and this workload, on this host, is not one. The batch-0084
+section already listed "any workload whose operations genuinely wait" among
+what its numbers do not cover.
+
+What it does change is the standing of one claim. "Overlap is worth about two
+times on a program that exposes width" was measured on macOS, where the
+endpoint-security stack makes an open cost 116 us, and in a container where a
+third of the sequential build's wall time was spent not running. Neither is a
+statement about Linux hardware, and on Linux hardware the same programs, the
+same tree, and the same checksum say the lowering costs three percent. The
+honest summary is that the value of the completion lowering is a property of
+the host's I/O latency, and this repository has now measured one host where
+that latency is zero.
+
+It also retires the batch-0084 note that "a thread pool beats io_uring on this
+workload" needs opens to dominate. On this host opens do not dominate and the
+pool still wins, because it is winning at compute.
+
+
 ## Historical C-core results
 
 Everything below measures the completion core and its adapters directly,
@@ -604,6 +760,15 @@ not evidence about this core.
 The first native adapter probes were added after the timing run above, so they
 establish correctness and target shape rather than comparative performance.
 
+Batch 0090 re-ran the io_uring half on a real Linux kernel on real hardware —
+kernel `6.17.0-1022-azure`, `x86_64`, `kernel.io_uring_disabled=0` — through
+the `completion-linux` job, which treats an unavailable ring as a job failure
+rather than letting the fallback path report a pass. The native adapter probe
+returns `target=linux-io-uring status=pass`, and the full completion harness
+passes under `WF_REQUIRE_LINUX_IO_URING=1` at zero, one and four helpers,
+alongside ASan/UBSan and the thread-sanitizer target. The description below
+still holds; it was taken in the container.
+
 On Linux 6.8.0 aarch64, the raw io_uring probe executed two positioned reads
 simultaneously, observed bounded-capacity refusal of a third operation,
 resubmitted after capacity release, executed one positioned write, and checked
@@ -626,16 +791,42 @@ an I/O operation and does not count as a published terminal. The cross-linked
 probe covers bounded adapter capacity, real packet/wake interleaving, stale
 generations, duplicate terminal rejection, product milestones, adapter tags,
 batch claim atomicity, and scheduler-frame injection. These are compiled test
-paths, not execution evidence. Production Windows qualification remains
-fail-closed for two independent reasons: no Windows runner was available, and
-the current IOCP wake packet is neither coalesced nor persistent for every
-already-announced waiter. Both must close before `implemented` can change.
+paths, not execution evidence.
+
+**Batch 0090 executed both Windows probes for the first time.** The
+`completion-windows` job in `.github/workflows/io-hosts.yml` builds them with
+LLVM clang 20.1.8 targeting `x86_64-pc-windows-msvc` and runs them on
+`windows-latest` — Windows Server 2025 Datacenter, build 10.0.26100, x64:
+
+```text
+windows-native-completion-probe status=pass
+native-adapter-probe target=windows-iocp status=pass
+```
+
+The first drives the Win32-native completion core and a real completion port
+end to end: an overlapped `ReadFile` against a real file, an overlapped
+`WriteFile`, the `ERROR_HANDLE_EOF` that Windows reports for an overlapped
+read past the end and that the file-read contract observes as successful
+progress of zero bytes, a malformed reserved-key packet that is consumed and
+reported without publishing a terminal, and the adapter and core statistics
+that must agree afterwards. The second is the shared native-adapter probe over
+`windows_iocp.c`.
+
+Exactly one of the two reasons Windows qualification was fail-closed has
+closed. A Windows host now exists and both probes pass on it. The other reason
+stands unchanged: the current IOCP wake packet is neither coalesced nor
+persistent for every already-announced waiter. Production Windows
+qualification therefore remains fail-closed, and `implemented` does not move
+on this evidence.
 
 The reproducible local cross-link and import check is:
 
 ```sh
 make -C compiler completion-windows-cross
 ```
+
+It is still the right local check: a cross-link needs no Windows host, and the
+execution evidence above needs one, which is why it lives in CI.
 
 macOS continues to use the bounded typed helper fallback for regular files.
 Both zero-helper scheduler progress and one-helper execution pass the shared
