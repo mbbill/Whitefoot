@@ -147,7 +147,33 @@ read/write classification, exactness check, and ownership discipline. They
 remain separate source domains because their subjects have different names
 and different observable meaning.
 
-The exact spelling remains an open specification gate. The semantic shape is:
+The selected source surface is one flat row of self-contained tagged atoms:
+
+```whitefoot
+memory reads('f, 'd), memory writes('d), world reads(file)
+```
+
+The canonical category order is memory read, memory write, world read, world
+write, allocation, and trap. Each category appears at most once. `pure` remains
+the unique empty row.
+
+Repeating the domain on each atom is useful redundancy at a trust boundary.
+An atom can be copied, inspected, normalized, or diagnosed without depending
+on an enclosing block. The grammar accepts only REGIONIDs after `memory` and
+only formal authority paths after `world`, so neither of these mistakes forms:
+
+```whitefoot
+memory writes(output)
+world writes('d)
+```
+
+This is one effect algebra whose atoms carry a domain, access mode, and subject
+set. It is not two nested effect systems. An `effects { ... }` wrapper was
+rejected because it adds a container, grouping and formatting rules without
+adding semantics, and makes a `writes(...)` atom depend on distant block
+context.
+
+The two subject domains are:
 
 ```text
 memory effects
@@ -157,17 +183,29 @@ world effects
     reads and writes of incoming capability places
 ```
 
-One possible surface, shown only to make the rule concrete, is:
+Subject lists use commas, as every other Whitefoot list does. World subjects
+are rooted only at a formal parameter and select one exact authority leaf:
 
-```whitefoot
-effects {
-  memory reads('f 'd), writes('d);
-  world reads(file);
-}
+```text
+world_subject    := (IDENT | "deref" "(" world_subject ")")
+                    world_projection*
+world_projection := "." IDENT | "." TYPEID "." IDENT | "[" const "]"
 ```
 
-The final grammar may use another canonical spelling, but it must keep the two
-domains visibly distinct.
+The lowercase step selects a struct field. The `TYPEID.IDENT` step selects one
+enum variant payload field. A constant subscript selects one statically known
+array leaf. `deref` traverses an owning box or arena; parameter borrow mode is
+otherwise transparent.
+
+A finite concrete aggregate must name each affected leaf. The shorter
+`world writes(pair)` is not an alias for
+`world writes(pair.first, pair.second)`: two spellings for one boundary would
+violate canonicality and would hide which authority changed. A subject may end
+at an opaque resource leaf, a symbolic generic subtree, or a dynamic/recursive
+element-group summary. The last two are single compile-time summaries because
+their runtime leaves cannot be enumerated in source. They do not grant element
+overlap. Locals and result binders can never be roots because caller-visible
+state must project to an incoming formal.
 
 Neither `external` nor `blocks` remains a source effect. The world row
 replaces the former's semantic job with explicit subjects. Target completion
@@ -179,9 +217,7 @@ contracts replace the latter's implementation-shaped job.
 fn fill['d](
   destination: &uniq 'd buffer<u8>
 ) -> result: own unit
-effects {
-  memory writes('d);
-}
+memory writes('d)
 ```
 
 Mutation of a locally owned buffer does not enter the caller-facing row. Its
@@ -197,10 +233,7 @@ fn read_at['f, 'd](
   start: own u64,
   end: own u64
 ) -> result: own ReadOutcome
-effects {
-  memory reads('f 'd), writes('d);
-  world reads(file);
-}
+memory reads('f, 'd), memory writes('d), world reads(file)
 ```
 
 `ReadFile` promises position-explicit regular-file content observation with no
@@ -227,10 +260,7 @@ fn write_once['o, 's](
   start: own u64,
   end: own u64
 ) -> result: own Result<u64, IoError>
-effects {
-  memory reads('o 's);
-  world writes(output);
-}
+memory reads('o, 's), world writes(output)
 ```
 
 The Output handle's Whitefoot storage is read. The external byte sequence is
@@ -243,9 +273,7 @@ to one Output from holding authority simultaneously.
 fn finish_file(
   output: own FileOutput
 ) -> result: own Result<unit, FinishError>
-effects {
-  world writes(output);
-}
+world writes(output)
 ```
 
 An owned capability needs no fictitious borrow lifetime. The world row names
@@ -265,6 +293,16 @@ path remains the fail-stop exception described above; it does not unwind.
 `pure` means that memory effects, world effects, allocation effects, and traps
 are all empty. A backend or optimizer never invents a hidden world-action tag
 to repair a `pure` signature.
+
+The shared algebra does not make a world observation stable like an ordinary
+memory read. Another process, device, peer, or clock may change the observed
+state without a Whitefoot world write. A world read therefore cannot be
+coalesced, duplicated, hoisted from a loop, or replaced by an earlier result
+unless its API contract separately proves snapshot stability or another law
+which licenses that exact transformation. Shared borrowing may still permit
+overlap and arbitrary linearization; it does not turn two observations into
+one. Frame, substitution, exactness, and ownership are shared. Value stability
+is a property of the mapped API.
 
 ### 4.6 World-bearing type shape
 
@@ -355,13 +393,22 @@ The API must select one ownership-complete answer before such a family ships:
   `publish(parent, child)` transition;
 - move a keyed entry authority out of the parent while the published child is
   live, so the parent cannot reopen the same entry;
-- or add language-defined publication/escape ancestry to ordinary ownership
-  lineage and use that ancestry when projecting the parent dependency.
+- return independent handles whose contract explicitly promises no
+  cross-handle order or coherence, but only when use and release of one handle
+  cannot invalidate the safety or lifecycle of another; or
+- report a typed busy/conflict result or keep the mapping unsupported.
 
-The third choice is not permission to restore a family relation table. It is a
-general escape-provenance rule and must be artifact-surfaced, structural, and
-complete for aggregates. Until this gate closes, a published mutable child and
-a parent reopening path do not receive an independence proof.
+A published or remote-visible result is not `Fresh` merely because its native
+handle is new. Its lineage continues from the DirectoryWrite, ConnectPermit,
+ProcessAuthority, or other incoming authority which made it observable. This
+lineage projects effects at enclosing function boundaries; it grants no
+conflict or ordering permission. Two independent owned handle places may still
+overlap under explicitly unordered handle semantics because ordinary ownership,
+not lineage equality, decides overlap.
+
+This removes the need for publication/escape ancestry as another identity
+system. The API either transfers a structural authority, deliberately exposes
+unordered independent handles with safe lifecycles, or refuses the mapping.
 
 ## 6. Quota and capacity are real ownership
 
@@ -641,9 +688,20 @@ Pair
 Move transfers lineage. Borrow refers to the current place. Construction stores
 lineage by field or variant payload. Projection selects the corresponding
 leaf. Return transfers lineage to the result. A system factory declares fresh
-result leaves or a consuming continuation of an input owner. Branches and
-recursion form finite unions and fixed points. Unknown never becomes Fresh or
-empty; it causes an explicit unsupported boundary or a conservative refusal.
+result leaves or a consuming continuation of an input owner.
+
+Enum lineage remains correlated with its discriminator. If `Choice.Left`
+carries the left formal and `Choice.Right` carries the right formal, a later
+match recovers the exact origin in each arm; it does not receive
+`Union(left, right)` in both. `Impossible` variants are also distinct from a
+fixed-point `Bottom` which has not yet found a producing route. Only a real
+join of the same result leaf forms an origin union. This same structure lets a
+consuming split return several disjoint result fields without flattening them
+back into one root.
+
+Branches and recursion form structural finite unions and fixed points. Unknown
+never becomes Fresh or empty; it causes an explicit unsupported boundary or a
+conservative refusal. A preliminary recursive call is never guessed Fresh.
 
 For dynamic affine containers, lineage is an element-origin set rather than a
 fictional statically enumerated leaf. The container's existing occupancy proof
@@ -706,6 +764,7 @@ accepted
 result_ready
 payload_released
 authority_released
+order_committed(subject)
 terminal
 ```
 
@@ -714,9 +773,20 @@ typed outcome bytes are initialized and immutable. `payload_released` means
 the target can no longer read or write any payload loan. `authority_released`
 means the target can no longer use the resource owner or loan. The payload and
 authority milestones are independent when the target can release them at
-different times. `terminal` implies `result_ready`, `payload_released`, and
-`authority_released`, and promises that the target will publish nothing more.
+different times. `terminal` implies `result_ready`, `payload_released`,
+`authority_released`, and every required `order_committed` fact, and promises
+that the target will publish nothing more.
 Even cancellation and target failure publish a typed outcome before terminal.
+
+`authority_released` says only that the target has stopped accessing the owner
+or loan. It does not by itself prove that the world action reached a
+linearization point which later same-subject work cannot overtake.
+`order_committed(subject)` supplies that separate fact. A stream write may
+publish it when the request enters an ordered target queue; an unordered target
+or durability barrier may need native linking or terminal completion. A
+same-subject dependency waits for both the required authority release and the
+operation contract's ordering milestone. Waiting for terminal is always a
+correct fallback, but not automatically the fastest one.
 
 Each fact changes from false to true at most once; a target may publish several
 new facts atomically in one event. Publication is release and runtime drain is
@@ -738,6 +808,7 @@ result leaf              <- result_ready(component)
 payload formal/path A    <- payload_released(A)
 payload formal/path B    <- payload_released(B)
 authority formal/path C  <- authority_released(C)
+world formal/path C      <- order_committed(C)
 ```
 
 The first positioned-read slice has one destination payload component and one
@@ -758,6 +829,14 @@ of ordinary stale-reference safety, not proof that old bits vanished.
 A normal call exposes its result only when the ownership required by its source
 semantics is complete. A family-specific receipt or Source exists only when
 split milestones or persistent identity are program semantics.
+
+Compiler-derived release follows the same completion protocol. An enclosing
+call does not return past a close, detach, abandon, or credit disposition until
+that release reaches the completion milestone fixed by the resource type.
+Unrelated releases may overlap. A detached abandon is legal only when its type
+contract proves that no later caller-visible ordering, error result, owner, or
+Permit depends on it. A meaningful close, durability, or quota result therefore
+uses an explicit consuming finish operation rather than an implicit drop.
 
 Target code never resumes writer code. It publishes bytes and milestones. The
 completion runtime drains the event before a compiler-owned writer frame can
@@ -784,6 +863,13 @@ receive, and unknown-size streams use an owned Source or Subscription. The
 source owns its persistent target operation, pool, event capacity, overflow
 policy, and terminal lifecycle. `next` uniquely borrows the source and
 returns owned shots or batches.
+
+If a returned shot owns a pool slot or RecyclePermit, the Source no longer owns
+the complete pool while that shot is live. `finish(source)` and implicit drop
+cannot free or reuse the outstanding storage. The API must require every shot
+to recycle before finish, consume an explicit container of every outstanding
+permit at finish, or select an explicit abandon/owned-return-lane disposition.
+A hidden reference count or shared mutable pool cannot repair a missing owner.
 
 ### 12.4 Request and response
 
@@ -845,8 +931,7 @@ the compiler does not accept an unverifiable in-process escape.
 
 ### 13.1 Language and checking
 
-1. Select and implement a canonical syntax for visibly separate memory and
-   world effect domains.
+1. Implement the selected flat tagged atoms and formal authority-path grammar.
 2. Require every constructible effect to have a writable name and keep the
    callable boundary complete.
 3. Check memory and world rows in both directions, including compiler-derived
@@ -1091,9 +1176,10 @@ the responsible capability granularity or API.
    cases. Stress plus ASan/UBSan and TSan supplement the deterministic cases.
    This slice may not add dependent-successor, quota, facet, or new stackless
    semantics.
-2. **Language gate.** Close the effect-domain spelling, world subject
-   granularity, exact row rules, capability-closure law, and quota semantics.
-   Write positive and negative examples before editing the compiler.
+2. **Language gate.** Install the selected effect-domain spelling and world
+   subject paths; close exact generic release transformation,
+   capability-closure law, and quota semantics. Write positive and negative
+   examples before each affected compiler slice.
 3. **Ownership lineage.** Implement per-leaf lineage through construction,
    move, projection, match, replace, result substitution, recursion, and
    release. Make `Pair<ReadFile, ReadFile>` execute.
@@ -1117,47 +1203,49 @@ the responsible capability granularity or API.
 
 ## 19. Open design gates
 
+The effect-domain spelling and formal authority-path surface are closed above.
 The following questions are not silently decided by this plan:
 
-1. final canonical syntax and names for the memory and world effect domains;
-2. whether world subjects are direct formals, whole aggregate formals, or a
-   finite ownership-place path language;
-3. exact factory, quota, permit-return, pool, lease, and revocation APIs;
-4. publication ancestry for a mutable child which a parent can reopen;
-5. the boundary between exactly reservable semantic quota and nondeterministic
+1. exact factory, quota, permit-return, pool, lease, and revocation APIs;
+2. whether a mutable child which can be reopened through a parent uses a keyed
+   lease, explicitly unordered independent-handle semantics, or an unsupported
+   mapping boundary;
+3. the boundary between exactly reservable semantic quota and nondeterministic
    hosted target exhaustion;
-6. bounded completion-record handoff across dependency activation;
-7. typed Source, Subscription, Request/ResponsePermit, and ExternalMapping
-   families;
-8. the static and dynamic authority-splitting rules needed to match native
+4. bounded completion-record handoff across dependency activation;
+5. typed Source, Subscription, Request/ResponsePermit, and ExternalMapping
+   families, including outstanding-shot pool ownership and finish;
+6. the static and dynamic authority-splitting rules needed to match native
    parallel open/connect and multi-producer ceilings;
-9. whether unordered dynamic producer permits are needed at all, and, if native
+7. whether unordered dynamic producer permits are needed at all, and, if native
    MPSC measurements require them, their real reservation, consumer-visible
    merge semantics, world subject, and typed runtime sequencer;
-10. affine facet reunion or structured-parent ownership for long-lived
+8. affine facet reunion or structured-parent ownership for long-lived
     bidirectional work;
-11. full stackless ABI, frame-placement, reuse, and direct-path erasure;
-12. pre-accept ownership, acquisition order, rollback, capacity derivation,
+9. full stackless ABI, frame-placement, reuse, and direct-path erasure;
+10. pre-accept ownership, acquisition order, rollback, capacity derivation,
     and streaming versus all-or-none admission;
-13. Windows native execution and multi-waiter wake qualification;
-14. shared memory, MMIO, DMA, and GPU representation proof, which ordinary
+11. Windows native execution and multi-waiter wake qualification;
+12. shared memory, MMIO, DMA, and GPU representation proof, which ordinary
     Whitefoot borrows cannot solve when an external writer remains live;
-15. dynamic affine-container occupancy and effect-projection rules for mixed
+13. dynamic affine-container occupancy and effect-projection rules for mixed
     and recursively produced capability origins;
-16. complete foreign mapping contracts for hidden globals, synchronous and
+14. complete foreign mapping contracts for hidden globals, synchronous and
     asynchronous callbacks, retained pointers, unregister, signals, and
     process isolation;
-17. cancellation and deadline API signatures, reusable authority, race
+15. cancellation and deadline API signatures, reusable authority, race
     outcomes, partial progress, and per-result owner disposition;
-18. world-bearing type kinds and generic constraints;
-19. indirect-callable world rows, subject substitution, result lineage, and
-    completion contracts; and
-20. the exact cleanup contribution on every ordinary control-flow edge;
-21. the scalable runtime encoding of per-formal/per-leaf result, payload, and
-    authority release milestones;
-22. protocol rules for owned communicating endpoint pairs, including capacity,
+16. a symbolic generic release-effect transformer and instance-level exactness
+    for types whose world-bearing leaves or release rows depend on type
+    arguments;
+17. indirect-callable world rows, subject substitution, result lineage, and
+    completion contracts;
+18. the exact cleanup contribution on every ordinary control-flow edge;
+19. the scalable runtime encoding of per-formal/per-leaf result, payload, and
+    authority release milestones, plus per-subject `order_committed`;
+20. protocol rules for owned communicating endpoint pairs, including capacity,
     merge order, close, and terminal behavior; and
-23. target qualification boundaries for regular-file positioned reads versus
+21. target qualification boundaries for regular-file positioned reads versus
     device, virtual-file, and metadata-observing APIs.
 
 An open gate may block the affected API or optimization. It does not authorize
@@ -1175,6 +1263,8 @@ The I/O work is complete only when:
   handback path;
 - automatic release has an explicit credit disposition and never mutates a
   separately held quota owner;
+- a Source cannot finish or release storage still owned by an outstanding shot,
+  slot, or recycle permit;
 - no logical permit claims to reserve a host resource which the target did not
   actually reserve;
 - any unreserved host exhaustion is specified as environmental nondeterminism,
@@ -1182,6 +1272,8 @@ The I/O work is complete only when:
 - no shared world write is accepted;
 - memory and world effects are distinct in source and identical in frame,
   substitution, exactness, and read/write logic;
+- no optimization treats a world observation as stable merely because
+  Whitefoot code exhibits no world write;
 - permission relies on ordinary ownership places and loans rather than a
   family relation system;
 - fixed multi-root aggregates retain exact structural lineage, and dynamic
@@ -1193,6 +1285,8 @@ The I/O work is complete only when:
   undifferentiated bundle;
 - result, payload, authority, terminal, cancellation, and record-reuse
   transitions form one qualified monotonic ownership state machine;
+- same-subject successors wait for the qualified ordering milestone rather
+  than mistaking early authority release for world linearization;
 - dependency activation cannot deadlock while completed predecessors occupy
   bounded completion records;
 - no target executes writer code;
