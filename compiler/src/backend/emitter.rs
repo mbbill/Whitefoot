@@ -29,14 +29,15 @@ use super::qualification::{
 };
 use super::target::{TargetLayout, TargetLayoutFailure, validate_program};
 use crate::{
-    IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrClaimSite, IrConstant,
-    IrDrop, IrEntry, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction,
-    IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId, IrNominalKind, IrOperation,
-    IrOverlap, IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator,
-    IrType, IrValueId, SystemResourceType,
+    IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrClaimSite,
+    IrCompletionStep, IrConstant, IrDrop, IrEntry, IrEnumType, IrFloatOperation, IrFunction,
+    IrGlobalValue, IrInstruction, IrIntegerOperation, IrLayoutCeiling, IrNominal, IrNominalId,
+    IrNominalKind, IrOperation, IrOverlap, IrProgram, IrRuntimeTargetObligations,
+    IrTargetDomainObligation, IrTerminator, IrType, IrValueId, SystemResourceType,
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label, buffer_vacant_done_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
+use completion::completion_offered_label;
 pub use completion::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
@@ -924,7 +925,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     block_exit_label(
                         edge.predecessor,
                         self.block(edge.predecessor)?,
-                        &self.overlaps
+                        &self.overlaps,
+                        &self.completion_steps
                     )
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
@@ -1656,53 +1658,51 @@ fn overlap_join_tail(overlaps: &[IrOverlap], result: IrValueId) -> Option<IrValu
         .and_then(|overlap| overlap.handed_out().last().copied())
 }
 
-fn block_exit_label(block_id: IrBlockId, block: &IrBlock, overlaps: &[IrOverlap]) -> String {
+/// Where a block's terminator is actually emitted.
+///
+/// Emission is one pass over the blocks in order, so a block's phis are written
+/// before the blocks that reach it. A phi therefore has to name the label an
+/// incoming block *will* end at, and every operation that opens a new LLVM
+/// block moves that label away from the plain `bbN` header. This function is
+/// the one model of that: it replays a block's instructions and reports the
+/// label the terminator lands in.
+///
+/// The two hand-out mechanisms both leave the block somewhere else. A compute
+/// overlap settles on its group's `par.done` when its join site runs. A direct
+/// completion step submits into `completion.offered` and is joined later, and
+/// its join settles on that operation's own `par.done`; whatever is still
+/// outstanding when the block ends is joined by `emit_terminator` before the
+/// terminator itself, so the replay drains the same queue in the same order
+/// that `emit_completion_dependencies` does.
+fn block_exit_label(
+    block_id: IrBlockId,
+    block: &IrBlock,
+    overlaps: &[IrOverlap],
+    completion_steps: &HashMap<IrValueId, IrCompletionStep>,
+) -> String {
     let mut label = block_label(block_id);
+    // The direct completion hand-outs this block has submitted and not yet
+    // joined, in `FunctionEmitter::handed_out` order.
+    let mut outstanding: Vec<IrValueId> = Vec::new();
     for (index, instruction) in block.instructions().iter().enumerate() {
-        match instruction {
-            IrInstruction::Claim { .. } => label = claim_continue_label(block_id, index),
-            IrInstruction::Define {
-                result,
-                operation:
-                    IrOperation::Integer {
-                        operation:
-                            IrIntegerOperation::DivideChecked | IrIntegerOperation::RemainderChecked,
-                        ..
-                    },
-                ..
-            } => label = integer_continue_label(*result),
-            IrInstruction::Define {
-                result,
-                operation: IrOperation::ArrayFill { .. },
-                ..
-            } => label = array_fill_done_label(*result),
-            IrInstruction::Define {
-                result,
-                operation: IrOperation::BoxNew { .. },
-                ..
-            } => label = box_new_ready_label(*result),
-            IrInstruction::Define {
-                result,
-                operation: IrOperation::ArenaNew { .. },
-                ..
-            } => label = arena_new_ready_label(*result),
-            IrInstruction::Define {
-                result,
-                operation: IrOperation::BufferFill { .. },
-                ..
-            } => label = buffer_fill_done_label(*result),
-            IrInstruction::Define {
-                result,
-                operation: IrOperation::BufferVacant { .. },
-                ..
-            } => label = buffer_vacant_done_label(*result),
-            IrInstruction::Define {
-                result,
-                operation: IrOperation::BufferProbeSkip { .. },
-                ..
-            } => label = buffer_probe_join_label(*result),
-            _ => {}
+        // `emit_instruction` checks the completion step first and returns, so
+        // a step's call never reaches the compute-overlap join below.
+        if let IrInstruction::Define { result, .. } = instruction
+            && let Some(step) = completion_steps.get(result)
+        {
+            drain_completions(&mut outstanding, step.wait_for(), &mut label);
+            if step.submit() {
+                outstanding.push(*result);
+                label = completion_offered_label(*result);
+            } else {
+                definition_exit_label(block_id, index, instruction, &mut label);
+            }
+            if step.finish() {
+                drain_all_completions(&mut outstanding, &mut label);
+            }
+            continue;
         }
+        definition_exit_label(block_id, index, instruction, &mut label);
         // The overlap join rides its last member's own emission, so it settles
         // the label after whatever that emission left.
         if let IrInstruction::Define { result, .. } = instruction
@@ -1711,7 +1711,83 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock, overlaps: &[IrOverlap]
             label = par_done_label(last);
         }
     }
+    // `emit_terminator` joins every remaining hand-out before the terminator.
+    drain_all_completions(&mut outstanding, &mut label);
     label
+}
+
+/// Replays `emit_completion_dependencies`: each named operation still
+/// outstanding is joined, and each join leaves the block at its `par.done`.
+fn drain_completions(outstanding: &mut Vec<IrValueId>, wanted: &[IrValueId], label: &mut String) {
+    for value in wanted {
+        if let Some(position) = outstanding.iter().position(|held| held == value) {
+            outstanding.remove(position);
+            *label = par_done_label(*value);
+        }
+    }
+}
+
+/// Replays `emit_all_completion_joins`, which drains in hand-out order and so
+/// leaves the block at the last hand-out's `par.done`.
+fn drain_all_completions(outstanding: &mut Vec<IrValueId>, label: &mut String) {
+    if let Some(last) = outstanding.last() {
+        *label = par_done_label(*last);
+    }
+    outstanding.clear();
+}
+
+/// The label one ordinary instruction's own emission leaves the block at, for
+/// the operations whose lowering opens a further LLVM block.
+fn definition_exit_label(
+    block_id: IrBlockId,
+    index: usize,
+    instruction: &IrInstruction,
+    label: &mut String,
+) {
+    match instruction {
+        IrInstruction::Claim { .. } => *label = claim_continue_label(block_id, index),
+        IrInstruction::Define {
+            result,
+            operation:
+                IrOperation::Integer {
+                    operation:
+                        IrIntegerOperation::DivideChecked | IrIntegerOperation::RemainderChecked,
+                    ..
+                },
+            ..
+        } => *label = integer_continue_label(*result),
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::ArrayFill { .. },
+            ..
+        } => *label = array_fill_done_label(*result),
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::BoxNew { .. },
+            ..
+        } => *label = box_new_ready_label(*result),
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::ArenaNew { .. },
+            ..
+        } => *label = arena_new_ready_label(*result),
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::BufferFill { .. },
+            ..
+        } => *label = buffer_fill_done_label(*result),
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::BufferVacant { .. },
+            ..
+        } => *label = buffer_vacant_done_label(*result),
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::BufferProbeSkip { .. },
+            ..
+        } => *label = buffer_probe_join_label(*result),
+        _ => {}
+    }
 }
 
 fn block_label(block: IrBlockId) -> String {

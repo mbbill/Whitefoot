@@ -707,7 +707,7 @@ fn completion_inline_label(value: IrValueId) -> String {
     format!("completion.inline.v{}", value.ordinal())
 }
 
-fn completion_offered_label(value: IrValueId) -> String {
+pub(super) fn completion_offered_label(value: IrValueId) -> String {
     format!("completion.offered.v{}", value.ordinal())
 }
 

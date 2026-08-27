@@ -1117,10 +1117,10 @@ static int wf_bridge_take_file_result(
     union {
         wf_file_result file;
 #if defined(__linux__)
-        /* Not spelled `linux`: the compiler links these units with the host
-         * compiler's default dialect, which predefines `linux` as a macro, so
-         * that spelling makes every Linux link of a completion program fail
-         * to compile. */
+        /* Not `linux`: GNU C predefines that spelling as an object-like macro
+           on a Linux host outside a strict `-std=cNN` dialect, so a member of
+           that name compiles under the gate's `-std=c11` and fails wherever
+           the default dialect is in force. */
         wf_linux_file_result ring;
 #endif
         max_align_t alignment;

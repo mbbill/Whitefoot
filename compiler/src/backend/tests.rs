@@ -430,7 +430,9 @@ fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> 
     let executable = directory.join("program");
     std::fs::write(&module, llvm).expect("write backend test module");
     let mut command = Command::new("/usr/bin/clang");
-    command.arg("-x").arg("ir").arg(&module);
+    // The dialect the driver names, for the same reason: a test link must not
+    // compile the compiler-owned C units in a dialect the shipped one does not.
+    command.arg("-std=c11").arg("-x").arg("ir").arg(&module);
     let host_unit = host.map(|source| {
         let path = directory.join("host.c");
         std::fs::write(&path, source).expect("write deterministic host unit");

@@ -3,7 +3,8 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use super::{build_executable, emit, emit_lowered, test_directory};
+use super::{build_executable, emit, emit_lowered, emitted_function, test_directory};
+use crate::OverlapLowering;
 
 const INDEPENDENT_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   let bulk = buffer_new(1048576_u64, 65_u8);
@@ -292,6 +293,31 @@ const EMPTY_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output
 }
 "#;
 
+/// A permitted completion window that is the last thing a `match` arm does.
+///
+/// The arm's exit edge is emitted from the window's completion join block, not
+/// from the arm's own `bbN` header, so the join block's phis have to name that
+/// block. Nothing else in this corpus puts a hand-out in a block whose
+/// successor carries block parameters.
+const OVERLAP_BEFORE_A_BLOCK_JOIN: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+  let first = buffer_new(2_u64, 65_u8);
+  let second = buffer_new(2_u64, 66_u8);
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s first, start: 0_u64, end: 2_u64) {
+        Ok(value: written) => {
+          let a = write_once<'o, 's>(output: &uniq 'o out, source: &'s first, start: 0_u64, end: 2_u64);
+          let b = write_once<'o, 's>(output: &uniq 'o err, source: &'s second, start: 0_u64, end: 2_u64);
+        }
+        Err(error: problem) => {
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
 const PURE_COMPUTE: &[u8] = br#"fn choose(value: own u64) -> result: own u64 pure {
   return imax(value, value);
 }
@@ -513,6 +539,121 @@ fn one_empty_write_uses_the_normal_direct_operation_path() {
     std::fs::remove_file(executable).expect("remove empty-write probe");
     std::fs::remove_dir(directory).expect("remove empty-write directory");
 }
+
+/// A block whose terminator follows a completion hand-out exits from the
+/// hand-out's join block, and the successor's phis must say so.
+///
+/// The emitter writes a block's phis before it writes the blocks that reach
+/// it, so an incoming edge is named by predicting the label its predecessor
+/// will end at. Every construct that opens a further LLVM block moves that
+/// label; a direct completion hand-out does too, and naming the plain `bbN`
+/// header instead produced a module `clang` rejects outright. Building the
+/// executable is the assertion: an invalid module never links.
+#[test]
+fn a_completion_window_before_a_block_join_names_its_join_block() {
+    for lowering in [OverlapLowering::Completion, OverlapLowering::On] {
+        let module = emit_lowered(OVERLAP_BEFORE_A_BLOCK_JOIN, lowering);
+        let joined = emitted_function(&module, "main");
+        // The `match` join block's phis are the ones naming the `Err` arm's
+        // plain block; the other incoming edge is the overlapped arm's.
+        let block_parameters = joined
+            .lines()
+            .filter(|line| line.contains(" = phi ") && line.contains(", %bb"))
+            .collect::<Vec<_>>();
+        assert!(
+            !block_parameters.is_empty(),
+            "{lowering:?}: the join block carries block parameters"
+        );
+        for phi in block_parameters {
+            assert!(
+                phi.contains("%par.done."),
+                "{lowering:?}: the arm's edge leaves the completion join block: {phi}"
+            );
+        }
+
+        let directory = test_directory();
+        let executable = build_executable(&module, &directory);
+        for helpers in ["0", "1", "4"] {
+            let output = Command::new(&executable)
+                .env("WF_IO_HELPERS", helpers)
+                .output()
+                .expect("run the overlapped window before a block join");
+            assert!(
+                output.status.success(),
+                "{lowering:?} WF_IO_HELPERS={helpers}: {output:?}"
+            );
+            assert_eq!(
+                output.stdout, b"AAAA",
+                "{lowering:?} WF_IO_HELPERS={helpers}"
+            );
+            assert_eq!(output.stderr, b"BB", "{lowering:?} WF_IO_HELPERS={helpers}");
+        }
+        std::fs::remove_file(executable).expect("remove block-join probe");
+        std::fs::remove_dir(directory).expect("remove block-join directory");
+    }
+}
+/// The compiler-owned C units compile in the host compiler's default dialect,
+/// not only in the `-std=c11` the repository gate names.
+///
+/// The driver names `-std=c11` for its own link, so this is not about which
+/// dialect ships; it is about the units not *depending* on the pin. A GNU
+/// dialect predefines object-like macros — `linux`, `unix` — whose spellings
+/// are ordinary identifiers in C11, and a member named for one of them
+/// compiles under the gate and fails everywhere else. The gate never noticed,
+/// because the gate only ever compiled these units one way.
+///
+/// Host-limited by construction: this checks the units the host actually
+/// preprocesses, so a macOS run leaves the `__linux__` bodies unchecked.
+/// Batch 0085 ran the same units on Linux under Docker for that half.
+#[test]
+fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
+    let directory = test_directory();
+    let units: [(&str, &str); 12] = [
+        ("contract.h", crate::COMPLETION_CONTRACT_HEADER),
+        ("file_adapter.h", crate::COMPLETION_FILE_ADAPTER_HEADER),
+        ("bridge.h", crate::COMPLETION_BRIDGE_HEADER),
+        ("writer_scheduler.h", crate::WRITER_SCHEDULER_HEADER),
+        ("linux_io_uring.h", crate::COMPLETION_LINUX_IO_URING_HEADER),
+        ("runtime.c", crate::COMPLETION_RUNTIME_SOURCE),
+        ("file_adapter.c", crate::COMPLETION_FILE_ADAPTER_SOURCE),
+        ("bridge.c", crate::COMPLETION_BRIDGE_SOURCE),
+        ("writer_scheduler.c", crate::WRITER_SCHEDULER_SOURCE),
+        ("linux_io_uring.c", crate::COMPLETION_LINUX_IO_URING_SOURCE),
+        ("floor.c", crate::FLOOR_RUNTIME_SOURCE),
+        (
+            "par_completion.c",
+            crate::PARALLEL_COMPLETION_RUNTIME_SOURCE,
+        ),
+    ];
+    for (name, source) in units {
+        std::fs::write(directory.join(name), source).expect("write compiler-owned C unit");
+    }
+    for (name, _) in units {
+        if !name.ends_with(".c") {
+            continue;
+        }
+        let checked = Command::new("/usr/bin/clang")
+            .arg("-fsyntax-only")
+            .arg("-pthread")
+            .arg("-I")
+            .arg(&directory)
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join(name))
+            .output()
+            .expect("invoke host clang");
+        assert!(
+            checked.status.success(),
+            "{name} needs a dialect the shipped link may not select:\n{}",
+            String::from_utf8_lossy(&checked.stderr)
+        );
+    }
+    for (name, _) in units {
+        std::fs::remove_file(directory.join(name)).expect("remove compiler-owned C unit");
+    }
+    std::fs::remove_dir(directory).expect("remove the default-dialect directory");
+}
+
 #[test]
 fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
     let adapter = crate::COMPLETION_LINUX_IO_URING_SOURCE;

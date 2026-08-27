@@ -1287,6 +1287,23 @@ impl<'check> Program<'check> {
                 }
             }
 
+            // A consumed `own` actual transfers caller storage into the
+            // operation, and [PAR-1] puts the place it names in the written
+            // footprint whatever the row says about it. This is the same
+            // unconditional push `user_call_footprint` makes, and it is
+            // unconditional for the same reason: reading the row instead would
+            // leave a parameter the row mentions only under `reads` with no
+            // written footprint element, so another statement could read the
+            // consumed place alongside the consume.
+            if matches!(parameter.mode, SystemParameterMode::Own)
+                && let Some(place) = consumed_place(places, argument)
+            {
+                footprint.writes.push(Access::Place {
+                    place,
+                    argument: node.clone(),
+                });
+            }
+
             let Ok(ordinal) = u8::try_from(index) else {
                 footprint.unresolved = Some(node.clone());
                 continue;
@@ -1310,13 +1327,6 @@ impl<'check> Program<'check> {
                     }
                     None => footprint.unresolved = Some(node.clone()),
                 }
-            } else if matches!(parameter.mode, SystemParameterMode::Own)
-                && let Some(place) = consumed_place(places, argument)
-            {
-                footprint.writes.push(Access::Place {
-                    place,
-                    argument: node.clone(),
-                });
             }
         }
 
