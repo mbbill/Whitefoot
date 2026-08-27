@@ -993,7 +993,11 @@ static int wf_bridge_take_file_result(
     union {
         wf_file_result file;
 #if defined(__linux__)
-        wf_linux_file_result linux;
+        /* Not `linux`: GNU C predefines that spelling as an object-like macro
+           on a Linux host outside a strict `-std=cNN` dialect, so a member of
+           that name compiles under the gate's `-std=c11` and fails wherever
+           the default dialect is in force. */
+        wf_linux_file_result ring;
 #endif
         max_align_t alignment;
         unsigned char bytes[WF_COMPLETION_RESULT_CAPACITY];
@@ -1027,15 +1031,15 @@ static int wf_bridge_take_file_result(
         *file_result = result.file;
 #if defined(__linux__)
     } else if (route == WF_BRIDGE_ROUTE_LINUX_IO_URING) {
-        if (outcome.result_size != sizeof(result.linux)) {
+        if (outcome.result_size != sizeof(result.ring)) {
             abort();
         }
         memset(file_result, 0, sizeof(*file_result));
-        file_result->kind = result.linux.kind == WF_LINUX_FILE_READ_AT
+        file_result->kind = result.ring.kind == WF_LINUX_FILE_READ_AT
             ? WF_FILE_PREAD
             : WF_FILE_PWRITE;
-        file_result->value = result.linux.value;
-        file_result->error_code = result.linux.error_code;
+        file_result->value = result.ring.value;
+        file_result->error_code = result.ring.error_code;
 #endif
     } else {
         abort();

@@ -160,7 +160,17 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
     std::fs::write(&floor, FLOOR_RUNTIME_SOURCE)
         .map_err(|error| format!("cannot write the floor runtime: {error}"))?;
     let mut command = Command::new("/usr/bin/clang");
-    command.arg("-pthread").arg("-x").arg("c").arg(&floor);
+    // The compiler-owned C units are written to C11 and the repository gate
+    // compiles them as `-std=c11`. Naming the dialect here too is what makes
+    // that gate a statement about this link: clang's default is a GNU dialect,
+    // which predefines object-like macros such as `linux` that a C11 source
+    // may legitimately use as an identifier.
+    command
+        .arg("-std=c11")
+        .arg("-pthread")
+        .arg("-x")
+        .arg("c")
+        .arg(&floor);
     if let Some(path) = runtime.as_ref() {
         command.arg("-x").arg("c").arg(path);
     }
