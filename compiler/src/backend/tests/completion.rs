@@ -1320,3 +1320,154 @@ fn linked_c_units_avoid_identifiers_the_host_compiler_predefines() {
         }
     }
 }
+
+/// The same two independent writes, differing only in whether the second call
+/// is written as a `let` right-hand side or directly as a `match` scrutinee.
+///
+/// A call is a call in either position: both programs perform the same two
+/// operations in the same order, publish the same bytes, and are judged by the
+/// same [PAR-1] pair. Before the schedule saw scrutinee calls, the second
+/// program had no pair at all — one candidate is not a window — so its first
+/// write was never handed out and the two spellings compiled to different
+/// work for no semantic reason.
+const SCRUTINEE_TAIL_LET_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+  doc "Two independent writes whose second call is bound before it is matched.";
+  let bulk = buffer_new(1_u64, 65_u8);
+  let marker = buffer_new(1_u64, 77_u8);
+  region 'out {
+    region 'err {
+      region 'bulk {
+        region 'marker {
+          let first = write_once<'out, 'bulk>(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64);
+          let second = write_once<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
+          match second {
+            Ok(value: written) => {
+            }
+            Err(error: problem) => {
+            }
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+const SCRUTINEE_TAIL_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+  doc "Two independent writes whose second call is written in scrutinee position.";
+  let bulk = buffer_new(1_u64, 65_u8);
+  let marker = buffer_new(1_u64, 77_u8);
+  region 'out {
+    region 'err {
+      region 'bulk {
+        region 'marker {
+          let first = write_once<'out, 'bulk>(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64);
+          match write_once<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64) {
+            Ok(value: written) => {
+            }
+            Err(error: problem) => {
+            }
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// The scrutinee call written *first*, with an independent call after it.
+///
+/// This one must stay sequential, and not by accident: the match's own
+/// dispatch and the arm it selects read the call's result, so every statement
+/// after the match already stands behind that read. Handing the scrutinee call
+/// out would run the second write before the first write's arms.
+const SCRUTINEE_HEAD_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+  doc "A scrutinee call followed by an independent call, which cannot overlap.";
+  let bulk = buffer_new(1_u64, 65_u8);
+  let marker = buffer_new(1_u64, 77_u8);
+  region 'out {
+    region 'err {
+      region 'bulk {
+        region 'marker {
+          match write_once<'out, 'bulk>(output: &uniq 'out out, source: &'bulk bulk, start: 0_u64, end: 1_u64) {
+            Ok(value: written) => {
+            }
+            Err(error: problem) => {
+            }
+          }
+          let second = write_once<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// The submissions, joins, and direct calls of one emitted command entry.
+fn completion_write_shape(module: &str) -> (usize, usize, usize) {
+    let body = module
+        .split_once("@wf_main(")
+        .expect("command entry is emitted")
+        .1;
+    (
+        body.matches("call i32 @wf__completion_file_write_submit")
+            .count(),
+        body.matches("call void @wf__completion_file_join").count(),
+        body.matches("@wf.sys.write_once.v1(").count(),
+    )
+}
+
+/// Runs one emitted module in every helper configuration and returns nothing
+/// but the assurance that each run published the same two bytes.
+fn assert_publishes_marked_streams(module: &str) {
+    for helpers in ["0", "1", "4"] {
+        let directory = test_directory();
+        let executable = build_executable(module, &directory);
+        let output = Command::new(&executable)
+            .env("WF_IO_HELPERS", helpers)
+            .env("WF_WORKERS", "0")
+            .output()
+            .expect("run the scrutinee-position probe");
+        assert!(
+            output.status.success(),
+            "probe exited with {} at WF_IO_HELPERS={helpers}",
+            output.status
+        );
+        assert_eq!(output.stdout, b"A", "WF_IO_HELPERS={helpers}");
+        assert_eq!(output.stderr, b"M", "WF_IO_HELPERS={helpers}");
+        std::fs::remove_file(executable).expect("remove the probe");
+        std::fs::remove_dir(directory).expect("remove the probe directory");
+    }
+}
+
+#[test]
+fn a_call_in_scrutinee_position_is_handed_out_exactly_as_a_bound_call_is() {
+    let bound = emit(SCRUTINEE_TAIL_LET_FORM);
+    let scrutinee = emit(SCRUTINEE_TAIL_MATCH_FORM);
+    assert_eq!(
+        completion_write_shape(&bound),
+        (1, 1, 2),
+        "the bound form submits the first write and leaves the second direct"
+    );
+    assert_eq!(
+        completion_write_shape(&scrutinee),
+        completion_write_shape(&bound),
+        "a call written in scrutinee position is the same call"
+    );
+    assert_publishes_marked_streams(&bound);
+    assert_publishes_marked_streams(&scrutinee);
+}
+
+#[test]
+fn a_scrutinee_call_before_an_independent_call_stays_sequential() {
+    let module = emit(SCRUTINEE_HEAD_MATCH_FORM);
+    assert_eq!(
+        completion_write_shape(&module),
+        (0, 0, 2),
+        "the match's own arms read the first result, so nothing may overtake it"
+    );
+    assert_publishes_marked_streams(&module);
+}

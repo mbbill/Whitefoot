@@ -148,7 +148,7 @@ fn completion_waits_for_the_exact_nonadjacent_unique_loan() {
     assert!(!steps[2].has_later_independent_call);
     assert!(steps[0].wait_for.is_empty());
     assert!(steps[1].wait_for.is_empty());
-    assert_eq!(steps[2].wait_for, vec![steps[0].site.binding]);
+    assert_eq!(steps[2].wait_for, vec![steps[0].site.call.clone()]);
 }
 
 /// Two short exclusive factory loans mint independent ordinary owners. Once
@@ -457,7 +457,11 @@ command fn main() -> status: own ExitStatus pure {
     else {
         panic!("expected a dataflow denial, got {:?}", pair.verdict);
     };
-    assert_eq!(*binding, pair.first.binding, "cited the wrong binding");
+    assert_eq!(
+        Some(*binding),
+        pair.first.binding,
+        "cited the wrong binding"
+    );
     assert_eq!(
         (*definer, *reader),
         (PairSide::First, PairSide::Second),
@@ -1111,7 +1115,11 @@ command fn main() -> status: own ExitStatus pure {
     else {
         panic!("expected a dataflow denial, got {:?}", pair.verdict);
     };
-    assert_eq!(*binding, pair.first.binding, "s1's own result is the link");
+    assert_eq!(
+        Some(*binding),
+        pair.first.binding,
+        "s1's own result is the link"
+    );
     assert_eq!((*definer, *reader), (PairSide::First, PairSide::Between(0)));
 }
 
@@ -1495,5 +1503,101 @@ command fn main() -> status: own ExitStatus pure {
             .pairs
             .iter()
             .all(|pair| pair.verdict == PermissionVerdict::PermittedEligible)
+    );
+}
+
+// ----------------------------------------------------------------------
+// Call position
+// ----------------------------------------------------------------------
+
+/// A call is a candidate wherever it is written in call position.
+///
+/// [PAR-1] judges calls, and a `match` scrutinee is a call. Reaching it only
+/// through a `let` made one written spelling of the same two operations
+/// invisible to the judgment: with one candidate there is no window, so no
+/// pair was judged, no chain was formed, and the ledger reported nothing at
+/// all about a program that plainly performs two independent operations.
+#[test]
+fn a_call_in_scrutinee_position_is_judged_as_the_bound_form_is() {
+    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+  let bytes = buffer_new(2_u64, 65_u8);
+  region 'out {
+    region 'err {
+      region 'source {
+        let first = write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64);
+        match write_once<'err, 'source>(output: &uniq 'err err, source: &'source bytes, start: 1_u64, end: 2_u64) {
+          Ok(value: written) => {
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    assert_eq!(
+        pair.verdict,
+        PermissionVerdict::PermittedEligible,
+        "two independent outputs are eligible in either written position"
+    );
+    assert!(
+        pair.second.binding.is_none(),
+        "a scrutinee call defines no binding; the call occurrence is its identity"
+    );
+    let steps = &function_table(&table, "main").completion_steps;
+    assert_eq!(steps.len(), 2, "the eligible pair forms one schedule");
+    assert!(
+        steps[0].has_later_independent_call,
+        "the bound call runs while the scrutinee call is still outstanding"
+    );
+    assert!(!steps[1].has_later_independent_call);
+    assert_eq!(steps[1].site.call, pair.second.call);
+}
+
+/// The same two calls with the scrutinee written first, which must deny.
+///
+/// The match's dispatch and the arm it selects read the scrutinee's result, so
+/// the rest of that statement runs between the call and everything after it.
+/// The window therefore contains the match statement itself, and a match
+/// statement is a form this judgment does not project — the same refusal a
+/// match written *between* two bound calls already gets.
+#[test]
+fn a_scrutinee_call_denies_against_a_later_call_it_is_read_before() {
+    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+  let bytes = buffer_new(2_u64, 65_u8);
+  region 'out {
+    region 'err {
+      region 'source {
+        match write_once<'out, 'source>(output: &uniq 'out out, source: &'source bytes, start: 0_u64, end: 1_u64) {
+          Ok(value: written) => {
+          }
+          Err(error: problem) => {
+          }
+        }
+        let second = write_once<'err, 'source>(output: &uniq 'err err, source: &'source bytes, start: 1_u64, end: 2_u64);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = only_pair(&table, "main");
+    let Denial::InterposedForm { side, form } = denial(pair, 2) else {
+        panic!("expected an interposed-form denial, got {:?}", pair.verdict);
+    };
+    assert_eq!(
+        *side,
+        PairSide::Between(0),
+        "s1's own statement stands there"
+    );
+    assert_eq!(*form, "a match statement");
+    assert!(
+        function_table(&table, "main").completion_steps.is_empty(),
+        "a denied pair forms no schedule"
     );
 }
