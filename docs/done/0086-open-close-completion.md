@@ -290,8 +290,8 @@ which links only the core and the ring adapter:
 
 - `probe_open_and_close_cases` — a regular open and close, a double close, a
   name that does not resolve, a directory and a FIFO refused for a regular
-  open with the descriptor disposed of on the ring, and a directory opened as
-  a directory.
+  open with the descriptor they produced closed before the refusal is
+  published, and a directory opened as a directory.
 - `probe_open_capacity_case` — the adapter's bounded entries exhausted by
   opens, the third refused as `WAIT_CAPACITY` without taking ownership, and
   the same token readmitted once an entry returns.
@@ -304,9 +304,10 @@ which links only the core and the ring adapter:
 Compiler-level, in `compiler/src/backend/tests/completion.rs`:
 
 - `a_native_ring_carries_opens_and_closes_under_one_kind_rule` — the ring
-  submits `IORING_OP_OPENAT`, `IORING_OP_STATX` and `IORING_OP_CLOSE`; both
-  adapters answer with the one shared kind rule; no stage of an open calls
-  `openat`, `fstat`, `statx` or `close` on a scheduler thread; and the bridge
+  submits `IORING_OP_OPENAT` and `IORING_OP_CLOSE` and no longer stages an
+  `IORING_OP_STATX`; no open resolves its path through a host call on a
+  scheduler thread; the kind check reads the mode of the descriptor the open
+  produced; both adapters answer with the one shared kind rule; and the bridge
   offers an open to the ring before its bounded fallback.
 - `an_unset_helper_setting_selects_a_bounded_demand_driven_pool` and
   `a_waiting_scheduler_parks_unless_it_is_itself_the_target_engine` were
@@ -337,13 +338,15 @@ operations it may be none.
   ones refuted them.** The helper-growth rule and the release hand-over are
   described under "What was tried and removed" above. Keeping either would
   have been keeping a mechanism that its own measurement does not support.
-- **The kind check went on the ring rather than into a reap-time `fstat`.**
-  A `fstat` of the descriptor at completion-reaping time would be one cheap
-  syscall instead of a second ring round trip, and on Linux it would probably
-  measure slightly better. It would also put a blocking host call back on the
-  scheduler thread for every open, which is the property this batch exists to
-  remove. The ring shape is the one the design asks for and the one that
-  stays correct when the open is not answered from a warm cache.
+- **The kind check went into a reap-time `fstat` rather than onto the ring.**
+  The ring shape is what the charter asked for and what keeps the reaping
+  thread free of host calls, and it was built first. It costs a second round
+  trip per open and measured 31 to 45 percent slower, so the reap-time check
+  ships instead. That does leave one host call on a scheduler thread, and the
+  reason it is acceptable is what the call is: reading the mode of a
+  descriptor the kernel has already produced is an inode read that cannot
+  wait on an external event. The part of an open that genuinely can wait —
+  resolving the path — is on the ring, which is the property that mattered.
 - **The direct open stayed a blocking `openat`.** `wf__completion_file_pread_direct`
   goes through the ring on Linux, so an open could have followed it. It is
   left alone because the direct open is the last member of an overlap group,
@@ -378,13 +381,15 @@ operations it may be none.
 - **`write_once` on the ring.** Unchanged and deliberate: the ring's write
   request fixes an explicit offset, and `write_once` is an unpositioned
   `Output` operation whose stream semantics that would change.
-- **A reap-time `fstat` variant of the kind check, measured.** The ring
-  shape was chosen on the design principle rather than on a comparison, and
-  the comparison was not run. It is the obvious next experiment if the
-  remaining Linux distance ever matters.
 - **Uncached measurement.** Unchanged from batch 0084: the Whitefoot surface
   exposes no `F_NOCACHE` or `posix_fadvise` equivalent, so N and C could not
   be compared on the same terms. Every file number here has a warm page
   cache.
 - **More than two Linux CPUs.** The container VM has two, so no conclusion
   about pool scaling on a larger Linux machine is claimed.
+- **The bar, on either platform.** C is about two times its own sequential
+  build on macOS and 2.8 times on Linux, and matches a hand-written ring at
+  matched depth four, but it is 1.46x from the best native shape at matched
+  width on macOS and 1.26x at matched depth eight on Linux. The stage-level
+  reason is above and it is a lowering question — nothing in a target adapter
+  removes a per-round barrier the source shape creates.
