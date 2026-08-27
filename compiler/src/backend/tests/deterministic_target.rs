@@ -616,20 +616,20 @@ fn only_the_host_facing_rows_differ_between_the_two_targets() {
     let native = super::compile(RELEASES_ONE_DIRECTORY);
     let deterministic = emit_for_deterministic_target(RELEASES_ONE_DIRECTORY);
 
-    assert!(native.contains("declare i32 @wf__completion_file_close_direct(i32)"));
+    assert!(native.contains("declare i32 @wf__completion_file_close_release(i32)"));
     assert!(native.contains("declare i32 @open(ptr, i32, ...)"));
     assert!(!native.contains("wf_test"));
 
     assert!(deterministic.contains("declare i32 @wf_test_close(i32)"));
     assert!(deterministic.contains("declare i32 @wf_test_open(ptr, i32, ...)"));
     // The redirect is complete: no use site keeps calling the native facility.
-    assert!(!deterministic.contains("@wf__completion_file_close_direct(i32 "));
+    assert!(!deterministic.contains("@wf__completion_file_close_release(i32 "));
     assert!(!deterministic.contains("@open(ptr "));
 
     // One release, one close attempt, on either target [SYS-5].
     assert_eq!(
         native
-            .matches("call i32 @wf__completion_file_close_direct(i32")
+            .matches("call i32 @wf__completion_file_close_release(i32")
             .count(),
         1
     );
@@ -643,7 +643,7 @@ fn only_the_host_facing_rows_differ_between_the_two_targets() {
     // emits.
     assert_eq!(
         native
-            .replace("@wf__completion_file_close_direct", "@wf_test_close")
+            .replace("@wf__completion_file_close_release", "@wf_test_close")
             .replace("@open", "@wf_test_open")
             .replace(
                 "declare i32 @wf_test_open(ptr, i32, ...)\ndeclare i32 @wf_test_close(i32)",

@@ -974,9 +974,9 @@ fn an_opened_file_releases_with_one_direct_close_that_is_never_retried() {
     // `DirectoryRead` and `ReadFile` release with at most one native close
     // attempt [SYS-5]; every release site is one direct call to the one
     // declared close symbol.
-    assert!(llvm.contains("declare i32 @wf__completion_file_close_direct(i32)"));
+    assert!(llvm.contains("declare i32 @wf__completion_file_close_release(i32)"));
     let releases = llvm
-        .matches("call i32 @wf__completion_file_close_direct(i32")
+        .matches("call i32 @wf__completion_file_close_release(i32")
         .count();
     assert!(releases >= 2, "both closing owners must release:\n{llvm}");
     // The close diagnostic is discarded and an ambiguous close is never
@@ -988,7 +988,7 @@ fn an_opened_file_releases_with_one_direct_close_that_is_never_retried() {
             continue;
         };
         assert!(
-            line.contains("call i32 @wf__completion_file_close_direct(i32"),
+            line.contains("call i32 @wf__completion_file_close_release(i32"),
             "a release value comes from one direct close:\n{line}"
         );
         let ordinal = rest

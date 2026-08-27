@@ -29,12 +29,14 @@ cd "$BUNDLE"
 
 cd "$BUNDLE/programs"
 "$WFC" -o "$OUT/wide" many_files_wide.wf
+"$WFC" -o "$OUT/wide8" many_files_wide8.wf
 "$WFC" -o "$OUT/narrow" many_files_narrow.wf
 "$WFC" --no-overlap -o "$OUT/wide_seq" many_files_wide.wf
+"$WFC" --no-overlap -o "$OUT/wide8_seq" many_files_wide8.wf
 "$WFC" --no-overlap -o "$OUT/narrow_seq" many_files_narrow.wf
 
 for line in "$OUT/baseline $OUT/tree direct $FILES" "$OUT/wide" "$OUT/wide_seq" \
-            "$OUT/narrow" "$OUT/narrow_seq"; do
+            "$OUT/wide8" "$OUT/wide8_seq" "$OUT/narrow" "$OUT/narrow_seq"; do
     got=$(cd "$OUT/tree" && $line)
     if [ "$got" != "$EXPECTED" ]; then
         echo "MISMATCH: $line published [$got], expected [$EXPECTED]"
@@ -53,10 +55,15 @@ for d in 2 4 8 16 32; do
 done
 printf 'S.narrow\t\t%s/narrow_seq\n' "$OUT"
 printf 'S.wide\t\t%s/wide_seq\n' "$OUT"
+printf 'S.wide8\t\t%s/wide8_seq\n' "$OUT"
 printf 'C.narrow.default\t\t%s/narrow\n' "$OUT"
 printf 'C.wide.default\t\t%s/wide\n' "$OUT"
+printf 'C.wide8.default\t\t%s/wide8\n' "$OUT"
 for h in 0 1 2 4; do
     printf 'C.wide.w0.h%s\tWF_WORKERS=0,WF_IO_HELPERS=%s\t%s/wide\n' "$h" "$h" "$OUT"
+done
+for h in 0 1 2 4; do
+    printf 'C.wide8.w0.h%s\tWF_WORKERS=0,WF_IO_HELPERS=%s\t%s/wide8\n' "$h" "$h" "$OUT"
 done
 for w in 1 2; do
     printf 'C.wide.w%s.hdefault\tWF_WORKERS=%s\t%s/wide\n' "$w" "$w" "$OUT"

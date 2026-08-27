@@ -4,8 +4,14 @@
 #if defined(__linux__)
 
 #include "contract.h"
+/* The typed file vocabulary — expected kind, open outcome, and the one rule
+ * that decides them — is shared with the bounded POSIX adapter so that one
+ * open states one contract on every target.  Only the header is used: this
+ * adapter calls no function defined in file_adapter.c. */
+#include "file_adapter.h"
 
 #include <linux/io_uring.h>
+#include <linux/stat.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stddef.h>
@@ -17,24 +23,37 @@ extern "C" {
 
 enum wf_linux_file_operation_kind {
     WF_LINUX_FILE_READ_AT = 1,
-    WF_LINUX_FILE_WRITE_AT = 2
+    WF_LINUX_FILE_WRITE_AT = 2,
+    WF_LINUX_FILE_OPEN_AT = 3,
+    WF_LINUX_FILE_CLOSE = 4
 };
 
 typedef struct wf_linux_file_request {
     enum wf_linux_file_operation_kind kind;
+    /* A transfer or a close names the operated descriptor; an open names the
+     * directory its path is resolved against. */
     int descriptor;
     union {
         void *read_buffer;
         const void *write_buffer;
+        /* Caller-owned until the operation reaches terminal, exactly like a
+         * transfer buffer. */
+        const char *path;
     } buffer;
     size_t count;
     uint64_t offset;
+    int open_flags;
+    unsigned open_mode;
+    unsigned has_open_mode;
+    enum wf_file_expected_kind expected_kind;
 } wf_linux_file_request;
 
 typedef struct wf_linux_file_result {
     enum wf_linux_file_operation_kind kind;
     int64_t value;
     int error_code;
+    /* Meaningful for WF_LINUX_FILE_OPEN_AT; WF_FILE_OPEN_SUCCEEDED otherwise. */
+    enum wf_file_open_outcome open_outcome;
 } wf_linux_file_result;
 
 enum wf_linux_io_uring_submit_result {
@@ -52,12 +71,36 @@ enum wf_linux_io_uring_entry_state {
     WF_LINUX_IO_URING_ENTRY_RETRY_PENDING = 3
 };
 
+/* A kind-checked open is three ring operations, not one: the openat itself,
+ * a statx of the descriptor it produced, and — only when the kind is wrong or
+ * unknowable — a close of that descriptor.  The stage says which of them this
+ * entry has in flight.  Nothing about this is a blocking call on a scheduler
+ * thread: each stage is submitted to the same ring and reaped like any other
+ * completion. */
+enum wf_linux_io_uring_stage {
+    /* The operation the writer asked for. */
+    WF_LINUX_IO_URING_STAGE_PRIMARY = 0,
+    /* statx of the descriptor an open produced. */
+    WF_LINUX_IO_URING_STAGE_OPEN_STATUS = 1,
+    /* Close of a descriptor the kind check refused; the refusal is already
+     * decided and waits in `open_outcome`. */
+    WF_LINUX_IO_URING_STAGE_OPEN_DISCARD = 2
+};
+
 typedef struct wf_linux_io_uring_entry {
     _Atomic unsigned state;
     wf_completion_token token;
     enum wf_linux_file_operation_kind kind;
     wf_linux_file_request request;
     unsigned waiting_readiness;
+    unsigned stage;
+    /* Set once an open succeeds; the later stages operate on it, and it is
+     * the value the open publishes. */
+    int opened_descriptor;
+    /* The open's decided answer, carried across the remaining stages. */
+    enum wf_file_open_outcome open_outcome;
+    int open_error;
+    struct statx status;
 } wf_linux_io_uring_entry;
 
 typedef struct wf_linux_io_uring_statistics {
@@ -119,6 +162,11 @@ typedef struct wf_linux_io_uring_adapter {
     _Atomic uint64_t stat_host_wake_writes;
     _Atomic int progress_error;
 } wf_linux_io_uring_adapter;
+
+/* The kind check reads the descriptor's mode out of a kernel-ABI record that
+ * every translation unit must agree on, byte for byte, because the entry
+ * holding it is shared between this adapter and the bridge. */
+_Static_assert(sizeof(struct statx) == 256u, "kernel statx record ABI");
 
 /* `entry_storage` is the entire userspace operation capacity.  Initialization
  * requires IORING_FEAT_NODROP so an accepted operation can never silently

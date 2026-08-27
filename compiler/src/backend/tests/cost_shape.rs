@@ -762,7 +762,7 @@ fn every_release_close_is_one_discarded_attempt() {
     // provisional descriptor before publishing it as a Whitefoot value, so
     // its failure cleanup belongs to the adapter rather than to this IR.
     let closes = program()
-        .matches("@wf__completion_file_close_direct(")
+        .matches("@wf__completion_file_close_release(")
         .count();
     assert_eq!(
         closes,
@@ -782,7 +782,7 @@ fn every_release_close_is_one_discarded_attempt() {
     for function in program_functions() {
         for line in function.lines() {
             let trimmed = line.trim_start();
-            if !trimmed.contains("@wf__completion_file_close_direct(") {
+            if !trimmed.contains("@wf__completion_file_close_release(") {
                 continue;
             }
             let name = trimmed
@@ -831,8 +831,8 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
     for forbidden in [
         "@close(i32 1)",
         "@close(i32 2)",
-        "@wf__completion_file_close_direct(i32 1)",
-        "@wf__completion_file_close_direct(i32 2)",
+        "@wf__completion_file_close_release(i32 1)",
+        "@wf__completion_file_close_release(i32 2)",
         "@fflush",
         "@fclose",
         "@fsync",
@@ -884,7 +884,7 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             | "openat" | "fstat" | "pread" | "write" | "close"
             | "wf__completion_file_open_at_direct"
             | "wf__completion_file_status_direct"
-            | "wf__completion_file_close_direct"
+            | "wf__completion_file_close_release"
             | "wf__completion_file_pread_direct" | "wf__completion_file_write_direct"
             | "wf__completion_directory_next_direct"
             // Darwin's native error-slot access on failed host operations.

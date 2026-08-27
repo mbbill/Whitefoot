@@ -171,11 +171,30 @@ impl HostFacilities {
         }
     }
 
-    /// The facility one [SYS-5] consuming release attempts its single close
-    /// through.
+    /// The facility a qualified wrapper attempts its single immediate close
+    /// through, when a provisional descriptor must be disposed of before the
+    /// wrapper can answer at all.
     const fn close(self) -> &'static str {
         match self {
             Self::Native => "wf__completion_file_close_direct",
+            #[cfg(test)]
+            Self::DeterministicTest => "wf_test_close",
+        }
+    }
+
+    /// The facility one [SYS-5] consuming release attempts its single close
+    /// through.
+    ///
+    /// A release differs from the wrapper close above in exactly the way that
+    /// matters to a target: nothing observes its outcome and no frame waits
+    /// for it, because the writer has already given the resource up and the
+    /// language discards the diagnostic. A target may therefore make the
+    /// attempt off the writer's thread, and the native one does wherever it
+    /// has a helper to take it. Everywhere else it is the same single direct
+    /// close, so the action the checked program carries is unchanged.
+    const fn release_close(self) -> &'static str {
+        match self {
+            Self::Native => "wf__completion_file_close_release",
             #[cfg(test)]
             Self::DeterministicTest => "wf_test_close",
         }
@@ -1226,7 +1245,7 @@ fn resource_row(
         SystemResourceType::DirectoryRead
         | SystemResourceType::ReadFile
         | SystemResourceType::DirectorySource => {
-            ReleaseImplementation::NativeClose(target.host.close())
+            ReleaseImplementation::NativeClose(target.host.release_close())
         }
         SystemResourceType::Args
         | SystemResourceType::HostString
