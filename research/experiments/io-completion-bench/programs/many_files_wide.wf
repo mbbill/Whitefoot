@@ -1,0 +1,284 @@
+fn name_at['n](name: &uniq 'n buffer<u8>, index: own u64) -> result: own unit reads(name), writes(name) {
+  doc "Renders the fixed ten-byte generated file name for one index as f00000.dat.";
+  let room = len(deref(name));
+  let sized = ige(room, 10_u64);
+  if sized {
+  } else {
+    return unit;
+  }
+  set deref(name)[0_u64] = 102_u8;
+  let value = index;
+  let position = 5_u64;
+  loop @digits {
+    let digit = value % 10_u64;
+    let narrowed = cvt<u64, u8>(digit);
+    let byte = match narrowed {
+      Ok(value: exact) => {
+        give 48_u8 +wrap exact;
+      }
+      Err(error: failure) => {
+        give 48_u8;
+      }
+    }
+    let writable = ilt(position, room);
+    if writable {
+      set deref(name)[position] = byte;
+    }
+    set value = value / 10_u64;
+    let done = ieq(position, 1_u64);
+    if done {
+      break @digits;
+    }
+    set position = position -wrap 1_u64;
+  }
+  set deref(name)[6_u64] = 46_u8;
+  set deref(name)[7_u64] = 100_u8;
+  set deref(name)[8_u64] = 97_u8;
+  set deref(name)[9_u64] = 116_u8;
+  return unit;
+}
+
+fn render_u64['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+  doc "Renders one twenty-digit zero-padded decimal number and reports the position after it.";
+  let room = len(deref(destination));
+  let remaining = value;
+  let position = at +wrap 20_u64;
+  loop @digits {
+    let done = ile(position, at);
+    if done {
+      break @digits;
+    }
+    set position = position -wrap 1_u64;
+    let digit = remaining % 10_u64;
+    let narrowed = cvt<u64, u8>(digit);
+    let byte = match narrowed {
+      Ok(value: exact) => {
+        give 48_u8 +wrap exact;
+      }
+      Err(error: failure) => {
+        give 48_u8;
+      }
+    }
+    let writable = ilt(position, room);
+    if writable {
+      set deref(destination)[position] = byte;
+    }
+    set remaining = remaining / 10_u64;
+  }
+  return at +wrap 20_u64;
+}
+
+fn fold_bytes['b](source: &'b buffer<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
+  doc "Folds one read prefix into a running order-sensitive checksum.";
+  let room = len(deref(source));
+  let sum = seed;
+  let at = 0_u64;
+  loop @fold {
+    let scanned = ige(at, produced);
+    if scanned {
+      break @fold;
+    }
+    let readable = ilt(at, room);
+    if readable {
+    } else {
+      break @fold;
+    }
+    let byte = deref(source)[at];
+    let widened = cvt<u8, u64>(byte);
+    set sum = sum *wrap 31_u64;
+    set sum = sum +wrap widened;
+    set at = at +wrap 1_u64;
+  }
+  return sum;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {
+  doc "Opens and reads the generated file set four independent files at a time and publishes one folded checksum.";
+  let name_a = buffer_new(16_u64, 0_u8);
+  let name_b = buffer_new(16_u64, 0_u8);
+  let name_c = buffer_new(16_u64, 0_u8);
+  let name_d = buffer_new(16_u64, 0_u8);
+  let data_a = buffer_new(65536_u64, 0_u8);
+  let data_b = buffer_new(65536_u64, 0_u8);
+  let data_c = buffer_new(65536_u64, 0_u8);
+  let data_d = buffer_new(65536_u64, 0_u8);
+  let line = buffer_new(64_u64, 0_u8);
+  let sum_a = 0_u64;
+  let sum_b = 0_u64;
+  let sum_c = 0_u64;
+  let sum_d = 0_u64;
+  let bytes = 0_u64;
+  let index = 0_u64;
+  loop @scan {
+    let done = ige(index, 8192_u64);
+    if done {
+      break @scan;
+    }
+    let second = index +wrap 1_u64;
+    let third = index +wrap 2_u64;
+    let fourth = index +wrap 3_u64;
+    region 'name_a {
+      let rendered_a = name_at<'name_a>(name: &uniq 'name_a name_a, index: index);
+    }
+    region 'name_b {
+      let rendered_b = name_at<'name_b>(name: &uniq 'name_b name_b, index: second);
+    }
+    region 'name_c {
+      let rendered_c = name_at<'name_c>(name: &uniq 'name_c name_c, index: third);
+    }
+    region 'name_d {
+      let rendered_d = name_at<'name_d>(name: &uniq 'name_d name_d, index: fourth);
+    }
+    region 'f {
+      let permit_a = reserve_file<'f>(factory: &uniq 'f files);
+      let permit_b = reserve_file<'f>(factory: &uniq 'f files);
+      let permit_c = reserve_file<'f>(factory: &uniq 'f files);
+      let permit_d = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        let opened_a = open_file<'f, 'n>(permit: move permit_a, root: &'f cwd, name: &'n name_a, start: 0_u64, end: 10_u64);
+        let opened_b = open_file<'f, 'n>(permit: move permit_b, root: &'f cwd, name: &'n name_b, start: 0_u64, end: 10_u64);
+        let opened_c = open_file<'f, 'n>(permit: move permit_c, root: &'f cwd, name: &'n name_c, start: 0_u64, end: 10_u64);
+        let opened_d = open_file<'f, 'n>(permit: move permit_d, root: &'f cwd, name: &'n name_d, start: 0_u64, end: 10_u64);
+        match opened_a {
+          Ok(value: handle_a) => {
+            match opened_b {
+              Ok(value: handle_b) => {
+                match opened_c {
+                  Ok(value: handle_c) => {
+                    match opened_d {
+                      Ok(value: handle_d) => {
+                        region 'h {
+                          region 'd {
+                            let read_a = read_at<'h, 'd>(file: &'h handle_a, destination: &uniq 'd data_a, file_offset: 0_u64, start: 0_u64, end: 65536_u64);
+                            let read_b = read_at<'h, 'd>(file: &'h handle_b, destination: &uniq 'd data_b, file_offset: 0_u64, start: 0_u64, end: 65536_u64);
+                            let read_c = read_at<'h, 'd>(file: &'h handle_c, destination: &uniq 'd data_c, file_offset: 0_u64, start: 0_u64, end: 65536_u64);
+                            let read_d = read_at<'h, 'd>(file: &'h handle_d, destination: &uniq 'd data_d, file_offset: 0_u64, start: 0_u64, end: 65536_u64);
+                            match read_a {
+                              ReadBytes(next: produced_a) => {
+                                let digest_a = 0_u64;
+                                region 'fold_a {
+                                  set digest_a = fold_bytes<'fold_a>(source: &'fold_a data_a, produced: produced_a, seed: 0_u64);
+                                }
+                                let weight_a = index +wrap 1_u64;
+                                set digest_a = digest_a *wrap weight_a;
+                                set sum_a = sum_a +wrap digest_a;
+                                set bytes = bytes +wrap produced_a;
+                              }
+                              ReadEnd() => {
+                              }
+                              ReadFailed(error: problem_a) => {
+                              }
+                            }
+                            match read_b {
+                              ReadBytes(next: produced_b) => {
+                                let digest_b = 0_u64;
+                                region 'fold_b {
+                                  set digest_b = fold_bytes<'fold_b>(source: &'fold_b data_b, produced: produced_b, seed: 0_u64);
+                                }
+                                let weight_b = second +wrap 1_u64;
+                                set digest_b = digest_b *wrap weight_b;
+                                set sum_b = sum_b +wrap digest_b;
+                                set bytes = bytes +wrap produced_b;
+                              }
+                              ReadEnd() => {
+                              }
+                              ReadFailed(error: problem_b) => {
+                              }
+                            }
+                            match read_c {
+                              ReadBytes(next: produced_c) => {
+                                let digest_c = 0_u64;
+                                region 'fold_c {
+                                  set digest_c = fold_bytes<'fold_c>(source: &'fold_c data_c, produced: produced_c, seed: 0_u64);
+                                }
+                                let weight_c = third +wrap 1_u64;
+                                set digest_c = digest_c *wrap weight_c;
+                                set sum_c = sum_c +wrap digest_c;
+                                set bytes = bytes +wrap produced_c;
+                              }
+                              ReadEnd() => {
+                              }
+                              ReadFailed(error: problem_c) => {
+                              }
+                            }
+                            match read_d {
+                              ReadBytes(next: produced_d) => {
+                                let digest_d = 0_u64;
+                                region 'fold_d {
+                                  set digest_d = fold_bytes<'fold_d>(source: &'fold_d data_d, produced: produced_d, seed: 0_u64);
+                                }
+                                let weight_d = fourth +wrap 1_u64;
+                                set digest_d = digest_d *wrap weight_d;
+                                set sum_d = sum_d +wrap digest_d;
+                                set bytes = bytes +wrap produced_d;
+                              }
+                              ReadEnd() => {
+                              }
+                              ReadFailed(error: problem_d) => {
+                              }
+                            }
+                          }
+                        }
+                      }
+                      Err(error: failed_d) => {
+                        return exit_status(code: 7_u8);
+                      }
+                    }
+                  }
+                  Err(error: failed_c) => {
+                    return exit_status(code: 6_u8);
+                  }
+                }
+              }
+              Err(error: failed_b) => {
+                return exit_status(code: 5_u8);
+              }
+            }
+          }
+          Err(error: failed_a) => {
+            return exit_status(code: 4_u8);
+          }
+        }
+      }
+    }
+    set index = index +wrap 4_u64;
+  }
+  let sum = sum_a;
+  set sum = sum +wrap sum_b;
+  set sum = sum +wrap sum_c;
+  set sum = sum +wrap sum_d;
+  let room = len(line);
+  let cursor = 0_u64;
+  region 'render_sum {
+    set cursor = render_u64<'render_sum>(destination: &uniq 'render_sum line, at: cursor, value: sum);
+  }
+  let space_fits = ilt(cursor, room);
+  if space_fits {
+    set line[cursor] = 32_u8;
+    set cursor = cursor +wrap 1_u64;
+  }
+  region 'render_bytes {
+    set cursor = render_u64<'render_bytes>(destination: &uniq 'render_bytes line, at: cursor, value: bytes);
+  }
+  let end_fits = ilt(cursor, room);
+  if end_fits {
+    set line[cursor] = 10_u8;
+    set cursor = cursor +wrap 1_u64;
+  }
+  let status = 0_u8;
+  let publishable = ile(cursor, room);
+  if publishable {
+    region 'publish {
+      match write_once<'publish, 'publish>(output: &uniq 'publish out, source: &'publish line, start: 0_u64, end: cursor) {
+        Ok(value: written) => {
+        }
+        Err(error: problem) => {
+          set status = 2_u8;
+        }
+      }
+    }
+  } else {
+    set status = 3_u8;
+  }
+  return exit_status(code: status);
+}

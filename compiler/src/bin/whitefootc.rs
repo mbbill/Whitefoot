@@ -15,8 +15,8 @@ use whitefoot::{
     module_requires_parallel_runtime, stack_ledger,
 };
 
-const USAGE: &str =
-    "usage: whitefootc [--emit-llvm] [--par] [--par-ledger] [--stack-ledger] [-o OUTPUT] SOURCE...";
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--no-overlap] [--par-ledger] \
+[--stack-ledger] [-o OUTPUT] SOURCE...";
 
 fn main() {
     if let Err(message) = run() {
@@ -42,7 +42,9 @@ fn run() -> Result<(), String> {
         .zip(&bytes)
         .map(|(path, bytes)| SourceInput::new(path, bytes))
         .collect();
-    let overlap = if options.par {
+    let overlap = if options.no_overlap {
+        OverlapLowering::Off
+    } else if options.par {
         OverlapLowering::On
     } else {
         OverlapLowering::Completion
@@ -306,6 +308,18 @@ struct Options {
     /// CPU, which is what a binary handed to somebody gets, and `0`, `1`, or an
     /// unparsable value is the opt-out that starts no pool at all.
     par: bool,
+    /// Emit the module a compiler with no overlap lowering at all emits.
+    ///
+    /// This is the sequential reference build, and it exists for one reason:
+    /// measurement. The default compilation actualizes compiler-owned
+    /// completion I/O, so without this switch there is no way to compile one
+    /// source into the program that reaches the host through ordinary direct
+    /// calls and compare the two. Every I/O call becomes an ordinary call:
+    /// nothing is submitted, nothing is joined, and the completion runtime
+    /// does not join the link. It is not a performance option a writer picks
+    /// for a shipped program — the default build is what ships — and it
+    /// changes no acceptance, no claim, and no published value.
+    no_overlap: bool,
     /// Print the non-normative permission ledger on stdout.
     par_ledger: bool,
     /// Print the non-normative stack ledger on stdout.
@@ -328,6 +342,7 @@ impl Options {
     fn parse(arguments: &[String]) -> Result<Self, String> {
         let mut emit_llvm = false;
         let mut par = false;
+        let mut no_overlap = false;
         let mut par_ledger = false;
         let mut stack_ledger = false;
         let mut output = None;
@@ -337,6 +352,7 @@ impl Options {
             match arguments[cursor].as_str() {
                 "--emit-llvm" => emit_llvm = true,
                 "--par" => par = true,
+                "--no-overlap" => no_overlap = true,
                 "--par-ledger" => par_ledger = true,
                 "--stack-ledger" => stack_ledger = true,
                 "-o" => {
@@ -376,9 +392,16 @@ impl Options {
                     .to_owned(),
             );
         }
+        // The two switches name opposite lowerings, so an invocation that
+        // writes both has stated no build at all rather than a build with a
+        // precedence rule to remember.
+        if par && no_overlap {
+            return Err("--no-overlap and --par select opposite lowerings: write one".to_owned());
+        }
         Ok(Self {
             emit_llvm,
             par,
+            no_overlap,
             par_ledger,
             stack_ledger,
             output,
@@ -478,6 +501,25 @@ mod tests {
         assert_eq!(options.sources.len(), 1);
     }
 
+    /// The sequential reference build is its own switch, off unless asked
+    /// for, and it may not be written together with the switch that selects
+    /// the opposite lowering.
+    #[test]
+    fn the_sequential_reference_build_is_requested_by_its_own_option() {
+        let options = parse(&["value.wf"]).expect("one source is a complete invocation");
+        assert!(!options.no_overlap, "the default build is the shipped one");
+
+        let options = parse(&["--no-overlap", "value.wf"]).expect("the option is accepted");
+        assert!(options.no_overlap);
+        assert!(!options.par, "the reference build asks for no lanes");
+
+        let message = parse(&["--par", "--no-overlap", "value.wf"])
+            .err()
+            .expect("opposite lowerings may not be written together");
+        assert!(message.contains("--no-overlap"), "{message}");
+        assert!(message.contains("--par"), "{message}");
+    }
+
     /// The usage text is one definition, so the option list a reader is shown
     /// cannot drift from the option list the parser accepts.
     #[test]
@@ -485,6 +527,7 @@ mod tests {
         for option in [
             "--emit-llvm",
             "--par",
+            "--no-overlap",
             "--par-ledger",
             "--stack-ledger",
             "-o",

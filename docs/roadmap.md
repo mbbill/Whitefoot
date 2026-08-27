@@ -899,20 +899,32 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   io_uring work, Windows IOCP foundation, selective stackless slice, and
   component measurements were retained while the rejected group machinery was
   removed. The activated revision passes compiler, program, conformance,
-  sanitizer, native helper, stress, and cross-link gates. The cleaned Mac
-  runtime has also been remeasured; those numbers remain scoped to that host
-  and workload.
+  sanitizer, native helper, stress, and cross-link gates. Whole programs have
+  now been measured on both macOS and Linux with io_uring
+  ([batch 0084](done/0084-io-performance.md)): the shipped build is about
+  twice its own sequential build on a many-independent-files workload, and
+  within 3.4 percent of a hand-written io_uring pipeline at the same queue
+  depth the source can ask for. Measuring also found and fixed a join
+  busy-wait, a default helper count pinned at the worst value, and an
+  identifier collision that had made every Linux link of a completion program
+  fail to compile.
 - **Missing / next:** widen stackless lowering beyond single-instruction tail
   chains; execute and qualify Windows; add a clock reading, keyed directory
   places, namespace mutation, and network, timer, cancellation, deadline, and
   finish-required output APIs only with complete ordinary ownership and target
-  contracts; measure a whole program rather than components. The open items
-  are enumerated in [batch 0082](done/0082-unified-state-completion-io.md).
+  contracts. The performance question that remains is width, not protocol:
+  overlap groups are runs of consecutive calls in one basic block, so a loop
+  with one I/O call per iteration overlaps nothing, and whether the language,
+  the lowering, or neither should widen that is undecided. The open items are
+  enumerated in [batch 0082](done/0082-unified-state-completion-io.md) and
+  [batch 0084](done/0084-io-performance.md).
 - **Facts:** [batch record 0082](done/0082-unified-state-completion-io.md) ·
+  [batch record 0084](done/0084-io-performance.md) ·
+  [program-level measurement bundle](../research/experiments/io-completion-bench/README.md) ·
   [first-principles derivation](../research/investigations/io-model/FIRST-PRINCIPLES.md) ·
   [concrete API and lowering design](../research/investigations/io-model/DESIGN.md) ·
   [experimental implementation audit](../research/investigations/io-model/IMPLEMENTATION-AUDIT.md) ·
-  [clean-core measurements](../research/investigations/io-model/RESULTS.md) ·
+  [program-level and clean-core measurements](../research/investigations/io-model/RESULTS.md) ·
   [historical architecture dossier](../research/investigations/system-capability-architecture/DOSSIER.md) ·
   [historical review decision record](../research/investigations/system-capability-architecture/decisions.json) ·
   [WASI capability model](https://github.com/WebAssembly/WASI/blob/main/docs/Capabilities.md) ·

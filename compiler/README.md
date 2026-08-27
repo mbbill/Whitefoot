@@ -542,6 +542,13 @@ cargo run --bin whitefootc -- source.wf -o program
 cargo run --bin whitefootc -- --emit-llvm source.wf
 ```
 
+`--no-overlap` emits the module a compiler with no overlap lowering at all
+emits: every I/O call reaches the host through an ordinary direct call and the
+completion runtime does not join the link. It exists so one source can be
+compiled two ways and the pair measured, which is what
+`research/experiments/io-completion-bench/` does. It is not a build a program
+ships in, and it may not be written together with `--par`.
+
 There is deliberately no artifact protocol, replay layer, resource-profile
 product, or compatibility boundary in front of this path.
 

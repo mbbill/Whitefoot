@@ -31,6 +31,19 @@ high-level sequencing; plans do not grant or withhold branch permission.
 
 ## Completed current-compiler bounded research
 
+- `io-completion-bench/` — the program-level answer to whether the unified-state
+  completion I/O model reaches native performance on whole programs, which
+  until 2026-08-27 had only C-level component evidence. Three lines per
+  workload, all publishing the same checked bytes: the best hand-written
+  native shape, the Whitefoot program built `--no-overlap`, and the same
+  source built the way it ships. On a many-independent-files workload the
+  shipped build is 2.05x its own sequential build on macOS and 2.41x on Linux,
+  and lands within 3.4 percent of a hand-written io_uring pipeline running at
+  the same queue depth the source can ask for. The distance to a deeper native
+  shape is source width, not protocol cost: overlap groups are runs of
+  consecutive calls in one basic block, so the natural one-file-per-iteration
+  loop overlaps nothing. Table in
+  [`io-model/RESULTS.md`](../investigations/io-model/RESULTS.md).
 - `buffer-initialization-cost/` — the dossier §9.1 initialization-cost row,
   whose control §9.1 requires to be an *uninitialized* native read loop. A
   Whitefoot drain over a language-initialized reused buffer measures at

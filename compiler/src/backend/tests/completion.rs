@@ -561,11 +561,21 @@ fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
 #[test]
 fn independent_io_reaches_the_second_operation_before_the_first_unblocks() {
     let module = emit(INDEPENDENT_WRITES);
-    for helpers in ["1", "0", "4"] {
+    // `None` is the shipped default: no WF_IO_HELPERS in the environment at
+    // all, which selects the demand-driven policy rather than any pinned
+    // count. It belongs in this loop rather than in a test of its own so that
+    // only one probe is ever blocked on a full pipe at a time.
+    for helpers in [Some("1"), Some("0"), Some("4"), None] {
+        let helpers = helpers.unwrap_or("unset");
         let directory = test_directory();
         let executable = build_executable(&module, &directory);
-        let mut child = Command::new(&executable)
-            .env("WF_IO_HELPERS", helpers)
+        let mut command = Command::new(&executable);
+        if helpers == "unset" {
+            command.env_remove("WF_IO_HELPERS");
+        } else {
+            command.env("WF_IO_HELPERS", helpers);
+        }
+        let mut child = command
             .env("WF_WORKERS", "0")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -905,4 +915,144 @@ fn directory_enumeration_completes_before_writer_normalization() {
     std::fs::remove_file(directory.join("visible-entry"))
         .expect("remove directory completion fixture");
     std::fs::remove_dir(directory).expect("remove directory completion directory");
+}
+
+/// A scheduler waiting for a completion must sleep rather than spin whenever
+/// some other thread owns the work it is waiting for.
+///
+/// The park guard used to refuse to park while the target queue held anything
+/// at all. With helpers that is a busy wait for exactly as long as a helper
+/// keeps the queue non-empty, because `wf_bridge_progress` deliberately does
+/// not let a waiting scheduler execute an unrelated queued request when
+/// helpers exist — so the loop spins, makes no progress, and refuses to sleep.
+/// Measured on a four-wide many-file program, the one-helper configuration
+/// burned about 270 ms of user CPU against 71 ms for the same program at four
+/// helpers. Only the zero-helper configuration, where the waiting scheduler
+/// really is the target's engine, may refuse to park.
+#[test]
+fn a_waiting_scheduler_parks_unless_it_is_itself_the_target_engine() {
+    let bridge = crate::COMPLETION_BRIDGE_SOURCE;
+    let predicate = bridge
+        .split_once("static int wf_bridge_target_work_needs_this_thread(void) {")
+        .expect("the park guard is one named predicate")
+        .1
+        .split_once('}')
+        .expect("the predicate has a body")
+        .0;
+    assert!(
+        predicate.contains("wf_bridge_target_helper_count"),
+        "the guard must read the helper count: {predicate}"
+    );
+    assert!(
+        predicate.contains("wf_file_adapter_queued"),
+        "the guard must read the queue: {predicate}"
+    );
+    // Every join's park decision goes through the predicate, so no site may
+    // still spell the old queue-only condition.
+    assert!(
+        !bridge.contains("|| wf_file_adapter_queued(&wf_bridge_adapter) == 0)"),
+        "a join still refuses to park on a non-empty queue alone"
+    );
+    assert_eq!(
+        bridge
+            .matches("!wf_bridge_target_work_needs_this_thread()")
+            .count(),
+        3,
+        "each of the three joins asks the same question"
+    );
+}
+
+/// The helper count is target policy, and an unset `WF_IO_HELPERS` must not
+/// pin it at the one value that measured worst.
+///
+/// A written setting still pins the count exactly, which is what every test
+/// that names `0`, `1`, or `4` depends on. Unset asks for the measured
+/// policy: start at one, grow only on evidence that the queue holds more
+/// requests than there are helpers to take them, and never pass the machine's
+/// own bound. A host with a native completion path starts at none, because
+/// there the ring already carries every transfer and a helper can only add a
+/// handoff to the operations it does not carry.
+#[test]
+fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
+    let bridge = crate::COMPLETION_BRIDGE_SOURCE;
+    let policy = bridge
+        .split_once("static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {")
+        .expect("the helper policy is one function")
+        .1
+        .split_once("\nstatic ")
+        .expect("the policy ends before the next definition")
+        .0;
+    // A written value pins both ends, so growth cannot move it.
+    assert!(policy.contains("*initial = (size_t)parsed;"));
+    assert!(policy.contains("*cap = (size_t)parsed;"));
+    // Unset scales the ceiling to the machine rather than to a constant.
+    assert!(policy.contains("sysconf(_SC_NPROCESSORS_ONLN)"));
+    assert!(policy.contains("WF_BRIDGE_MAX_HELPERS"));
+
+    let growth = bridge
+        .split_once("static void wf_bridge_grow_target_helpers(void) {")
+        .expect("growth is one named function")
+        .1
+        .split_once("\nstatic ")
+        .expect("growth ends before the next definition")
+        .0;
+    assert!(
+        growth.contains("held >= wf_bridge_target_helper_cap"),
+        "growth must stop at the cap: {growth}"
+    );
+    assert!(
+        growth.contains("wf_file_adapter_queued(&wf_bridge_adapter) <= held"),
+        "growth must require real queue pressure: {growth}"
+    );
+    // Growth runs inside the announcement that already holds the target lock,
+    // so it creates at most one helper per submission.
+    let notify = bridge
+        .split_once("static void wf_bridge_notify_target(void) {")
+        .expect("one target announcer")
+        .1;
+    let locked = notify
+        .find("pthread_mutex_lock(&wf_bridge_target_lock)")
+        .expect("the announcer takes the target lock");
+    let grown = notify
+        .find("wf_bridge_grow_target_helpers()")
+        .expect("the announcer is where growth happens");
+    let unlocked = notify
+        .find("pthread_mutex_unlock(&wf_bridge_target_lock)")
+        .expect("the announcer releases the target lock");
+    assert!(locked < grown && grown < unlocked);
+}
+
+/// No C unit the compiler links may spell an identifier the host compiler
+/// predefines as a macro.
+///
+/// `whitefootc` compiles these units with the host compiler's default
+/// dialect, which is a GNU dialect, and that dialect predefines `linux` and
+/// `unix` as `1`. A union member spelled `linux` therefore made every Linux
+/// link of a completion program fail to compile — not a test, a link, so no
+/// macOS run could see it. The units are compiled here as they are shipped,
+/// so the rule is about the shipped bytes rather than about a probe's flags.
+#[test]
+fn linked_c_units_avoid_identifiers_the_host_compiler_predefines() {
+    for (name, source) in [
+        ("bridge.c", crate::COMPLETION_BRIDGE_SOURCE),
+        ("runtime.c", crate::COMPLETION_RUNTIME_SOURCE),
+        ("file_adapter.c", crate::COMPLETION_FILE_ADAPTER_SOURCE),
+        ("linux_io_uring.c", crate::COMPLETION_LINUX_IO_URING_SOURCE),
+        ("writer_scheduler.c", crate::WRITER_SCHEDULER_SOURCE),
+        ("contract.h", crate::COMPLETION_CONTRACT_HEADER),
+        ("bridge.h", crate::COMPLETION_BRIDGE_HEADER),
+        ("file_adapter.h", crate::COMPLETION_FILE_ADAPTER_HEADER),
+        ("linux_io_uring.h", crate::COMPLETION_LINUX_IO_URING_HEADER),
+        ("writer_scheduler.h", crate::WRITER_SCHEDULER_HEADER),
+    ] {
+        for reserved in ["linux", "unix"] {
+            for shape in [format!(" {reserved};"), format!(".{reserved}")] {
+                assert!(
+                    !source.contains(&shape),
+                    "{name} spells `{shape}`, and the host compiler's default \
+                     dialect predefines `{reserved}` as a macro"
+                );
+            }
+        }
+    }
 }

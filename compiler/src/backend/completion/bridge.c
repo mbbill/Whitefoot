@@ -1,6 +1,12 @@
 #if !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
+/* The online-CPU query the helper policy reads is a BSD extension that the
+ * POSIX macro above hides on Darwin, so the Darwin namespace is asked for as
+ * well. glibc declares it unconditionally. */
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE 1
+#endif
 
 /*
  * Compiler-owned finite file-completion bridge.
@@ -64,7 +70,13 @@ enum wf_bridge_route {
 static pthread_mutex_t wf_bridge_target_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t wf_bridge_target_available = PTHREAD_COND_INITIALIZER;
 static pthread_t wf_bridge_target_helpers[WF_BRIDGE_MAX_HELPERS];
-static size_t wf_bridge_target_helper_count;
+/* Read without the target lock by waiting schedulers, and grown under it by a
+ * submitting one, so it is atomic rather than a plain size_t. */
+static _Atomic size_t wf_bridge_target_helper_count;
+/* The most helpers this process may ever create. Writing WF_IO_HELPERS pins
+ * the count exactly: cap and initial count are both what was written, and no
+ * growth happens. Leaving it unset asks for the demand-driven policy. */
+static size_t wf_bridge_target_helper_cap;
 static unsigned wf_bridge_target_stopping;
 static _Atomic uint64_t wf_bridge_target_epoch;
 static _Atomic uint64_t wf_bridge_target_executions;
@@ -79,22 +91,61 @@ __attribute__((weak)) int wf__par_help_once(void) {
     return 0;
 }
 
-static size_t wf_bridge_helper_count(void) {
+/* The helper policy, in one place.
+ *
+ * A written WF_IO_HELPERS pins the count: `*initial` and `*cap` are both the
+ * written value, so a program asked for four helpers gets four and never a
+ * fifth, and a program asked for none keeps the zero-helper path where a
+ * waiting scheduler is itself the target engine.
+ *
+ * Unset asks for demand-driven growth from one. One helper is the right
+ * answer for a program with a single operation outstanding, and it was the
+ * old fixed default; it is the wrong answer for a program that exposes real
+ * width, because the submitting scheduler then waits on a queue only one
+ * thread is draining. On the four-wide many-file workload the fixed default
+ * finished 1.6x slower than the same program at four helpers, so growth is
+ * bounded by the machine rather than pinned at one. */
+static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {
     const char *text = getenv("WF_IO_HELPERS");
     char *end = NULL;
     unsigned long parsed;
-    if (text == NULL || *text == '\0') {
-        return 1u;
+    long online;
+    if (text != NULL && *text != 0) {
+        errno = 0;
+        parsed = strtoul(text, &end, 10);
+        if (errno == 0 && end != text && *end == 0) {
+            if (parsed > WF_BRIDGE_MAX_HELPERS) {
+                parsed = WF_BRIDGE_MAX_HELPERS;
+            }
+            *initial = (size_t)parsed;
+            *cap = (size_t)parsed;
+            return;
+        }
     }
-    errno = 0;
-    parsed = strtoul(text, &end, 10);
-    if (errno != 0 || end == text || *end != '\0') {
-        return 1u;
+#if defined(__linux__)
+    /* A ready ring already carries every transfer without a thread handoff, so
+     * a helper can only serve the operations the ring does not take — today,
+     * open and close. Those are exactly the operations a warm page cache
+     * answers immediately, and handing one to a helper costs a wake and a
+     * publication to save nothing. Measured on the four-wide many-file
+     * workload with a warm cache: 115 ms at zero helpers against 171 ms at
+     * one, two, or four, the whole difference being about 7 us per open. So a
+     * host with a native completion path starts with none, and the waiting
+     * scheduler runs those operations itself. WF_IO_HELPERS still pins a pool
+     * for a target whose opens really do wait. */
+    if (wf_bridge_linux_ready != 0) {
+        *initial = 0u;
+        *cap = 0u;
+        return;
     }
-    if (parsed > WF_BRIDGE_MAX_HELPERS) {
-        return WF_BRIDGE_MAX_HELPERS;
+#endif
+    online = sysconf(_SC_NPROCESSORS_ONLN);
+    if (online < 1) {
+        online = 1;
     }
-    return (size_t)parsed;
+    *cap = (size_t)online < WF_BRIDGE_MAX_HELPERS ? (size_t)online
+                                                  : WF_BRIDGE_MAX_HELPERS;
+    *initial = 1u;
 }
 
 static int wf_bridge_target_progress_one(void) {
@@ -137,8 +188,11 @@ static void *wf_bridge_target_helper_main(void *unused) {
 }
 
 static void wf_bridge_initialize_target_helpers(void) {
-    size_t requested = wf_bridge_helper_count();
+    size_t requested = 0;
+    size_t cap = 0;
     size_t created = 0;
+    wf_bridge_helper_policy(&requested, &cap);
+    wf_bridge_target_helper_cap = cap;
     atomic_init(&wf_bridge_target_epoch, 0);
     atomic_init(&wf_bridge_target_executions, 0);
     for (created = 0; created < requested; ++created) {
@@ -151,7 +205,43 @@ static void wf_bridge_initialize_target_helpers(void) {
             break;
         }
     }
-    wf_bridge_target_helper_count = created;
+    atomic_store_explicit(
+        &wf_bridge_target_helper_count,
+        created,
+        memory_order_release
+    );
+}
+
+/* Adds one helper when the queue holds more requests than there are helpers
+ * to take them, which is the only evidence this runtime has that a program
+ * exposed real width. It runs on the submitting scheduler with the target
+ * lock held, so at most one helper is created per submission and the count
+ * never passes the cap the policy set. A pinned WF_IO_HELPERS makes the cap
+ * equal the initial count, so this is a no-op for every explicit setting. */
+static void wf_bridge_grow_target_helpers(void) {
+    size_t held = atomic_load_explicit(
+        &wf_bridge_target_helper_count,
+        memory_order_relaxed
+    );
+    if (held == 0 || held >= wf_bridge_target_helper_cap) {
+        return;
+    }
+    if (wf_file_adapter_queued(&wf_bridge_adapter) <= held) {
+        return;
+    }
+    if (pthread_create(
+            &wf_bridge_target_helpers[held],
+            NULL,
+            wf_bridge_target_helper_main,
+            NULL
+        ) != 0) {
+        return;
+    }
+    atomic_store_explicit(
+        &wf_bridge_target_helper_count,
+        held + 1,
+        memory_order_release
+    );
 }
 
 static int wf_bridge_ensure_target_helpers(void) {
@@ -171,6 +261,7 @@ static void wf_bridge_notify_target(void) {
         1,
         memory_order_release
     );
+    wf_bridge_grow_target_helpers();
     (void)pthread_cond_broadcast(&wf_bridge_target_available);
     (void)pthread_mutex_unlock(&wf_bridge_target_lock);
     /* With zero helpers the sleeping scheduler is the target progress engine.
@@ -185,10 +276,15 @@ static void wf_bridge_shutdown_target_helpers(void) {
     wf_bridge_target_stopping = 1;
     (void)pthread_cond_broadcast(&wf_bridge_target_available);
     (void)pthread_mutex_unlock(&wf_bridge_target_lock);
-    for (helper = 0; helper < wf_bridge_target_helper_count; ++helper) {
+    for (helper = 0;
+         helper < atomic_load_explicit(
+             &wf_bridge_target_helper_count,
+             memory_order_acquire
+         );
+         ++helper) {
         (void)pthread_join(wf_bridge_target_helpers[helper], NULL);
     }
-    wf_bridge_target_helper_count = 0;
+    atomic_store_explicit(&wf_bridge_target_helper_count, 0, memory_order_release);
 }
 
 static void wf_bridge_initialize_file(void) {
@@ -313,11 +409,39 @@ static int wf_bridge_progress(void) {
      * target helper exists. With helpers, taking an unrelated request here
      * could block the exact writer which is waiting to consume a completion
      * they have already published. */
-    if (wf_bridge_target_helper_count == 0) {
+    if (atomic_load_explicit(
+            &wf_bridge_target_helper_count,
+            memory_order_acquire
+        ) == 0) {
         progressed |= wf_bridge_target_progress_one();
     }
     progressed |= wf__par_help_once() != 0;
     return progressed;
+}
+
+/* True exactly when this waiting scheduler is the only thread that can still
+ * execute a queued target request, so parking here would strand it.
+ *
+ * That is the zero-helper configuration and nothing else. With no helper the
+ * bounded target pass inside `wf_bridge_progress` is the engine, and a queued
+ * request moves only when some scheduler runs it. With helpers the request
+ * already has an owner: every enqueue bumps the target epoch under
+ * `wf_bridge_target_lock` and broadcasts, a helper drains the queue to empty
+ * before it sleeps again, and the terminal publication is this waiter's wake.
+ *
+ * Treating a non-empty queue as a reason not to park regardless of helpers is
+ * therefore not caution, it is a busy wait for exactly as long as a helper
+ * keeps the queue non-empty. Measured on the four-wide many-file workload,
+ * the one-helper default spun about 270 ms of user CPU against 71 ms for the
+ * same run at four helpers, and finished 1.6x slower than its own best
+ * setting. */
+static int wf_bridge_target_work_needs_this_thread(void) {
+    return wf_bridge_file_ready != 0
+        && atomic_load_explicit(
+               &wf_bridge_target_helper_count,
+               memory_order_acquire
+           ) == 0
+        && wf_file_adapter_queued(&wf_bridge_adapter) != 0;
 }
 
 static void wf_bridge_park(uint64_t observed_epoch) {
@@ -993,7 +1117,11 @@ static int wf_bridge_take_file_result(
     union {
         wf_file_result file;
 #if defined(__linux__)
-        wf_linux_file_result linux;
+        /* Not spelled `linux`: the compiler links these units with the host
+         * compiler's default dialect, which predefines `linux` as a macro, so
+         * that spelling makes every Linux link of a completion program fail
+         * to compile. */
+        wf_linux_file_result ring;
 #endif
         max_align_t alignment;
         unsigned char bytes[WF_COMPLETION_RESULT_CAPACITY];
@@ -1027,15 +1155,15 @@ static int wf_bridge_take_file_result(
         *file_result = result.file;
 #if defined(__linux__)
     } else if (route == WF_BRIDGE_ROUTE_LINUX_IO_URING) {
-        if (outcome.result_size != sizeof(result.linux)) {
+        if (outcome.result_size != sizeof(result.ring)) {
             abort();
         }
         memset(file_result, 0, sizeof(*file_result));
-        file_result->kind = result.linux.kind == WF_LINUX_FILE_READ_AT
+        file_result->kind = result.ring.kind == WF_LINUX_FILE_READ_AT
             ? WF_FILE_PREAD
             : WF_FILE_PWRITE;
-        file_result->value = result.linux.value;
-        file_result->error_code = result.linux.error_code;
+        file_result->value = result.ring.value;
+        file_result->error_code = result.ring.error_code;
 #endif
     } else {
         abort();
@@ -1127,8 +1255,7 @@ void wf__completion_file_join(
                 continue;
             }
             if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && (wf_bridge_file_ready == 0
-                    || wf_file_adapter_queued(&wf_bridge_adapter) == 0)) {
+                && !wf_bridge_target_work_needs_this_thread()) {
                 enum wf_completion_consume_wait_result wait =
                     wf_completion_wait_to_consume(
                         &wf_bridge_runtime,
@@ -1167,8 +1294,7 @@ void wf__completion_file_open_join(
                 continue;
             }
             if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && (wf_bridge_file_ready == 0
-                    || wf_file_adapter_queued(&wf_bridge_adapter) == 0)) {
+                && !wf_bridge_target_work_needs_this_thread()) {
                 enum wf_completion_consume_wait_result wait =
                     wf_completion_wait_to_consume(
                         &wf_bridge_runtime,
@@ -1211,8 +1337,7 @@ void wf__completion_file_status_join(
                 continue;
             }
             if (wf_completion_ready_event_count(&wf_bridge_runtime) == 0
-                && (wf_bridge_file_ready == 0
-                    || wf_file_adapter_queued(&wf_bridge_adapter) == 0)) {
+                && !wf_bridge_target_work_needs_this_thread()) {
                 enum wf_completion_consume_wait_result wait =
                     wf_completion_wait_to_consume(
                         &wf_bridge_runtime,
@@ -1276,7 +1401,10 @@ uint64_t wf__completion_file_helper_executions(void) {
 }
 
 uint64_t wf__completion_target_helper_count(void) {
-    return wf_bridge_target_helper_count;
+    return atomic_load_explicit(
+        &wf_bridge_target_helper_count,
+        memory_order_acquire
+    );
 }
 
 uint64_t wf__completion_target_helper_executions(void) {
