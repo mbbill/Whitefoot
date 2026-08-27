@@ -90,6 +90,18 @@ jobs:
       - name: make check
         run: make check
 
+      # Temporary diagnostic for batch 0090: `make check` stops at the first
+      # failing target, so one run would otherwise reveal one layer of Linux
+      # host limits at a time. Removed once the Linux picture is complete.
+      - name: Diagnose the remaining Linux stops
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "== research-tests =="
+          make research-tests 2>&1 | tail -40 || true
+          echo "== conformance-run =="
+          make conformance-run 2>&1 | tail -80 || true
+
   gate-macos:
     name: gate-macos (macos-14)
     runs-on: macos-14
