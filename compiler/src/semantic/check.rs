@@ -1266,11 +1266,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // The ledger is rendered here because only the checker still holds the
         // syntax tree the citations name. It is pure presentation over the
         // table above and reaches no decision.
-        let permission_ledger = if permission
-            .functions
-            .iter()
-            .any(|permissions| !permissions.pairs.is_empty() || !permissions.loops.is_empty())
-        {
+        let permission_ledger = if permission.functions.iter().any(|permissions| {
+            !permissions.pairs.is_empty()
+                || !permissions.loops.is_empty()
+                || !permissions.staged.is_empty()
+        }) {
             render_ledger(&permission, &PermissionLedgerSource { tree: &self.tree })?
         } else {
             Vec::new()

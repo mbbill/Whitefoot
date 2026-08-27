@@ -31,6 +31,18 @@
 //! rewrite would be refused too, and advice a writer cannot safely take is
 //! worse than silence.
 //!
+//! A `stage` line is the [PAR-3] verdict of one loop whose body performs I/O,
+//! and it is followed by one `place` line for every place that judgment
+//! classified. Those `place` lines are the teaching channel: a denial without
+//! them says only that a loop lost its pipeline, while the table says which
+//! place cost it, on which condition, and what the writer may write instead.
+//! The `stage` line therefore always names its condition, its offending node,
+//! and one admitted writer form, and the `place` lines always print the whole
+//! table, granted or denied — a granted loop's table is what a reader checks a
+//! later change against. Both are anchored at the loop's cut, because a
+//! `loop_stmt` carries no node path of its own and the cut identifies the loop
+//! exactly.
+//!
 //! Nothing here participates in acceptance, in lowering, or in any mandatory
 //! [DIAG-3] record. It reads the finished permission table and the source
 //! text, renders text, and returns it to the caller to print on the developer
@@ -42,6 +54,7 @@ use super::loop_permission::{LoopDenial, LoopPermission, LoopVerdict};
 use super::permission::{
     Access, Denial, ExitKind, PairSide, PermissionMetadata, PermissionVerdict,
 };
+use super::staged_permission::{StagedDenial, StagedPermission, StagedVerdict};
 
 /// The source facts one ledger line needs, supplied by the checker because
 /// only the checker still holds the syntax tree and the source bundle.
@@ -75,6 +88,13 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
     const CHAIN: u8 = 1;
     const LOOP: u8 = 2;
     const HINT: u8 = 3;
+    const STAGE: u8 = 4;
+    const PLACE: u8 = 5;
+    // Every entry outside a disposition table is the only one of its kind at
+    // its position, so its ordinal is zero; a table's rows carry the source
+    // order of the walk that found them, which the text alone would not
+    // preserve.
+    const ONLY: u32 = 0;
     let mut entries = Vec::new();
     for permissions in &metadata.functions {
         for pair in &permissions.pairs {
@@ -88,6 +108,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 logical_path.clone(),
                 line,
                 PAIR,
+                ONLY,
                 format!(
                     "PAR {verdict:<10}  {logical_path}:{line}  pair({}, {})  {detail}",
                     pair.first.callee_name, pair.second.callee_name
@@ -108,6 +129,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 logical_path.clone(),
                 line,
                 CHAIN,
+                ONLY,
                 format!(
                     "PAR chain       {logical_path}:{line}  run({members})  {} members through line {last_line}",
                     run.sites.len()
@@ -126,6 +148,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 logical_path.clone(),
                 line,
                 LOOP,
+                ONLY,
                 format!("PAR loop        {logical_path}:{line}  loop  {verdict:<10}  {detail}"),
             ));
             if !judged.advises_split {
@@ -139,11 +162,46 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 logical_path.clone(),
                 line,
                 HINT,
+                ONLY,
                 format!(
                     "PAR hint        {logical_path}:{line}  loop  refused by condition {condition}; a recursive split over its index range would be eligible, combining under {}",
                     judged.combines.join(", ")
                 ),
             ));
+        }
+        for judged in &permissions.staged {
+            let (logical_path, line) = source.location(&judged.cut)?;
+            let verdict = if judged.verdict.is_permitted() {
+                "permitted"
+            } else {
+                "denied"
+            };
+            let detail = staged_detail(judged, source)?;
+            entries.push((
+                logical_path.clone(),
+                line,
+                STAGE,
+                ONLY,
+                format!(
+                    "PAR stage       {logical_path}:{line}  {:<4}  {verdict:<10}  {detail}",
+                    judged.form
+                ),
+            ));
+            for (ordinal, place) in judged.dispositions.iter().enumerate() {
+                let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
+                entries.push((
+                    logical_path.clone(),
+                    line,
+                    PLACE,
+                    ordinal,
+                    format!(
+                        "PAR place       {logical_path}:{line}  {:<12}  {}  {}",
+                        place.disposition.spelling(),
+                        source.spelling(&place.citation)?,
+                        place.reason
+                    ),
+                ));
+            }
         }
     }
     entries.sort_by(|left, right| {
@@ -152,8 +210,9 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
             .then(left.1.cmp(&right.1))
             .then(left.2.cmp(&right.2))
             .then(left.3.cmp(&right.3))
+            .then(left.4.cmp(&right.4))
     });
-    entries.dedup_by(|left, right| left.3 == right.3);
+    entries.dedup_by(|left, right| left.4 == right.4);
     Ok(entries.into_iter().map(|(.., line)| line).collect())
 }
 
@@ -298,6 +357,84 @@ fn loop_denied_detail<Source: LedgerSource>(
         LoopDenial::Exit { edge } => format!("{edge} leaves the loop"),
     };
     Ok(format!("condition {condition}: {reason}"))
+}
+
+/// The part of a `stage` line that states the outcome.
+///
+/// A permitted loop states the cut it was granted over and how many places it
+/// classified, so the `place` lines underneath are read as a complete table
+/// rather than a selection. A denied loop states the condition, the node, and
+/// one admitted writer form, which is the whole of what a writer can act on.
+fn staged_detail<Source: LedgerSource>(
+    judged: &StagedPermission,
+    source: &Source,
+) -> Result<String, Source::Error> {
+    Ok(match &judged.verdict {
+        StagedVerdict::Permitted => format!(
+            "staged at {}; {} places classified",
+            source.spelling(&judged.cut)?,
+            judged.dispositions.len()
+        ),
+        StagedVerdict::Denied(denial) => staged_denied_detail(denial, source)?,
+    })
+}
+
+fn staged_denied_detail<Source: LedgerSource>(
+    denial: &StagedDenial,
+    source: &Source,
+) -> Result<String, Source::Error> {
+    // The number and the writer form both come from the judgment itself, so
+    // neither can drift from the condition that actually refused the loop. The
+    // cited node comes last, because a statement's canonical spelling carries
+    // its own terminator and anything appended after one reads as a typo.
+    let condition = denial.condition();
+    let exit = |edge: &str| match edge {
+        "a return" => "a return leaves the loop from the remainder",
+        "a give" => "a give leaves the loop from the remainder",
+        "a break" => "a break leaves the loop from the remainder",
+        _ => "a propagate leaves the loop from the remainder",
+    };
+    let (reason, node) = match denial {
+        StagedDenial::NoCut { reason, statement } => (*reason, statement.as_ref()),
+        StagedDenial::ExitInRemainder { edge, statement } => (exit(edge), statement.as_ref()),
+        StagedDenial::RetainedBorrow { argument, .. } => (
+            "a may-suspend call retains a borrow past its own submission on storage the body writes and the iteration does not introduce",
+            Some(argument),
+        ),
+        StagedDenial::RemainderExclusiveLoan { argument, .. } => (
+            "a call of the remainder holds an exclusive loan on storage the iteration does not introduce",
+            Some(argument),
+        ),
+        StagedDenial::NoDisposition { argument } => (
+            "the body reaches storage rooted outside the loop that no disposition of this rule covers",
+            Some(argument),
+        ),
+        StagedDenial::NotReplicable { statement } => (
+            "per-iteration storage whose element type is not a resolved copy type",
+            Some(statement),
+        ),
+        StagedDenial::BodyForm { form } => {
+            return Ok(format!(
+                "condition {condition}: the body contains {form}; instead, {}",
+                denial.writer_form()
+            ));
+        }
+        StagedDenial::Unresolved { argument } => (
+            "a footprint element this judgment does not resolve",
+            Some(argument),
+        ),
+    };
+    // A `break_stmt`, a `loop_stmt`, and a `region_stmt` carry no node path of
+    // their own, so a denial citing one names the condition without a source
+    // node rather than naming a node the writer did not write there.
+    let cited = match node {
+        Some(node) => format!(", at {}", source.spelling(node)?),
+        None => String::new(),
+    };
+    Ok(format!(
+        "condition {condition}: {reason}; instead, {}{cited}",
+        denial.writer_form()
+    ))
 }
 
 /// One footprint element as the writer wrote it.

@@ -38,6 +38,7 @@ mod reinterpret;
 mod replace;
 mod requires;
 mod slices;
+mod staged_permission;
 mod strict;
 mod system_effects;
 mod target_action;

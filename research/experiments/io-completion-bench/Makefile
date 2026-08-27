@@ -56,6 +56,7 @@ build: prepare compiler $(BUILD)/gen $(BUILD)/baseline $(BUILD)/runner \
 	$(BUILD)/many_files_wide $(BUILD)/many_files_wide_seq \
 	$(BUILD)/many_files_wide8 $(BUILD)/many_files_wide8_seq \
 	$(BUILD)/many_files_narrow $(BUILD)/many_files_narrow_seq \
+	$(BUILD)/many_files_loop $(BUILD)/many_files_loop_seq \
 	$(BUILD)/pipe_relay $(BUILD)/pipe_relay_seq
 
 prepare:
@@ -95,6 +96,9 @@ $(BUILD)/many_files_wide8_seq: programs/many_files_wide8.wf compiler | prepare
 $(BUILD)/many_files_narrow_seq: programs/many_files_narrow.wf compiler | prepare
 	$(WFC) --no-overlap -o $@ $<
 
+$(BUILD)/many_files_loop_seq: programs/many_files_loop.wf compiler | prepare
+	$(WFC) --no-overlap -o $@ $<
+
 $(BUILD)/pipe_relay_seq: programs/pipe_relay.wf compiler | prepare
 	$(WFC) --no-overlap -o $@ $<
 
@@ -109,6 +113,8 @@ verify: build gen
 		"$(BUILD)/baseline $(TREE) direct $(FILES)" \
 		"$(BUILD)/many_files_narrow" \
 		"$(BUILD)/many_files_narrow_seq" \
+		"$(BUILD)/many_files_loop" \
+		"$(BUILD)/many_files_loop_seq" \
 		"$(BUILD)/many_files_wide" \
 		"$(BUILD)/many_files_wide_seq" \
 		"$(BUILD)/many_files_wide8" \
@@ -133,9 +139,11 @@ bench: verify
 		printf 'N.pool%s\t\t$(BUILD)/baseline\t$(TREE)\tpool\t$(FILES)\t%s\n' $$t $$t; \
 	done; \
 	printf 'S.narrow\t\t$(BUILD)/many_files_narrow_seq\n'; \
+	printf 'S.loop\t\t$(BUILD)/many_files_loop_seq\n'; \
 	printf 'S.wide\t\t$(BUILD)/many_files_wide_seq\n'; \
 	printf 'S.wide8\t\t$(BUILD)/many_files_wide8_seq\n'; \
 	printf 'C.narrow.default\t\t$(BUILD)/many_files_narrow\n'; \
+	printf 'C.loop.default\t\t$(BUILD)/many_files_loop\n'; \
 	printf 'C.wide.default\t\t$(BUILD)/many_files_wide\n'; \
 	printf 'C.wide8.default\t\t$(BUILD)/many_files_wide8\n'; \
 	for w in 0 1 2 4; do for h in 0 1 2 4; do \

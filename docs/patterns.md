@@ -8,8 +8,9 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.37 guidance, including the unified-state
-completion-I/O forms activated by that version.
+This document carries active v0.38 guidance, including the unified-state
+completion-I/O forms activated by v0.37 and the per-iteration scratch form
+[PAR-3] admits (P15).
 
 Implementation boundary: the current backend emits no effect-derived
 attributes or alias metadata, performs no proof-driven check elision, has no
@@ -327,6 +328,78 @@ ordinary IR/backend path in every build mode.
 Replaces: `assert`, debug-only checks, `unreachable`, intentional aborts,
 "trust me" comments, and claims written merely to silence a partial-operation
 diagnostic.
+
+## P15. Per-iteration scratch in an I/O loop
+
+Problem: a loop opens and reads one file per iteration and folds what it read.
+The habit imported from every other systems language is to allocate the name
+buffer and the destination buffer once above the loop and reuse them, because
+allocation is expensive. Under [PAR-3] that habit is exactly what costs the
+loop its pipeline: the destination is storage the body writes and the iteration
+does not introduce, a `may-suspend` call retains a borrow of it past its own
+submission, and the staged permission denies. Reusing one buffer is also what
+makes the program genuinely order-dependent — after a short read the bytes
+beyond it are the previous iteration's.
+
+Pattern: construct the per-iteration scratch **inside** the loop body.
+
+```whitefoot
+for @scan index in 0_u64..8192_u64 {
+  let name = buffer_new(16_u64, 0_u8);
+  let data = buffer_new(65536_u64, 0_u8);
+  region 'name {
+    let rendered = name_at<'name>(name: &uniq 'name name, index: index);
+  }
+  region 'f {
+    let permit = reserve_file<'f>(factory: &uniq 'f files);
+    region 'n {
+      match open_file<'f, 'n>(permit: move permit, root: &'f cwd,
+                              name: &'n name, start: 0_u64, end: 10_u64) {
+        Ok(value: handle) => { /* read, fold, accumulate */ }
+        Err(error: problem) => { }
+      }
+    }
+  }
+}
+```
+
+Three companion rules make the rest of that body work, and each is a form to
+copy rather than a fact to rediscover:
+
+- **Take every early exit before the first submission.** A `break` or `return`
+  written after the submission denies the loop: with later iterations already
+  in flight, the decision to leave would be taken after opens the source-order
+  execution never performs. Write the guard and its `break` at the top of the
+  body, before any I/O.
+- **Write the accumulator as an ordinary source-order `set`.** `set sum = sum
+  +wrap digest;` needs no associativity, no identity element, and no
+  combination tree, because [PAR-3] commits the remainder's writes to storage
+  rooted outside the body in iteration order. This is strictly more general
+  than [PAR-2]'s admitted operation set: a non-associative fold, a float fold,
+  and a `Result` route are all admitted here.
+- **Reserve the file factory in the prologue.** `reserve_file` takes and
+  returns a short unique `&uniq FileFactory` loan inline [SYS-10], and
+  prologues run in index order without overlapping, so one enclosing factory
+  serves every iteration with no replication and no [OWN-5] relaxation.
+
+Read the verdict rather than guessing it: `whitefootc --par-ledger` prints one
+`PAR stage` line per loop that performs I/O, and one `PAR place` line for every
+place the judgment classified, with its disposition and the reason. A denial
+names the offending place, the numbered condition, and the admitted form.
+
+Current value: the judgment is landed and reported; the lowering that turns a
+granted verdict into overlapped execution is not, so today this form costs a
+per-iteration `malloc` and fill and buys a granted verdict rather than speed.
+An implementation may allocate the body's constructions once at loop entry and
+restore them per iteration, because the storage it reuses across iterations for
+a construction whose value the body releases without observing it is not
+observable [PAR-3] — so writing the natural form now is what makes the program
+fast later, with no source change.
+
+Replaces: hoisting scratch buffers out of loops for allocation cost, and every
+writer-visible depth, window, batch, or `par for` marker a language would
+otherwise need to express I/O overlap. There is no source spelling for how many
+operations stay outstanding; the runtime chooses it.
 
 ## Known gaps (findings, not yet patterns)
 

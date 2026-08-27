@@ -113,7 +113,17 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // refusal remain target progress and are not passed to the portable error
 // mapper. Completion dispatch is an emitted execution choice after this
 // static target qualification and adds no dynamic operation mapping.
-const REVIEWED_FOR: &str = "v0.37";
+// v0.38 review (2026-08-27): the added rule [PAR-3] is a permission over
+// the iterations of a loop and names no target facility. It adds no system
+// operation, no opaque resource type, no release action, no outcome
+// constructor, and no entry form, and it changes no signature, borrow mode,
+// or effect row this table maps. Its one target-visible sentence — that the
+// host resources a system operation of the loop creates are not execution
+// resources an implementation spends on overlapping — constrains a schedule
+// an implementation may take, not a facility this qualification approves,
+// and nothing in this version emits that schedule. Every v0.37 mapping
+// therefore stands unchanged.
+const REVIEWED_FOR: &str = "v0.38";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

@@ -23,11 +23,11 @@ ordered source bundle
   -> host executable
 ```
 
-The frontend targets the exact v0.37 bytes at `../spec/kernel-spec.md`,
-SHA-256 `ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`.
-v0.37 activates the unified-state completion-I/O model and supersedes v0.36 at
-`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`, whose
-outgoing bytes are archived at `../spec/kernel-spec-v0.36.md`.
+The frontend targets the exact v0.38 bytes at `../spec/kernel-spec.md`,
+SHA-256 `7d30a62566e96b659fe7be6fb6d5775f25fb576374396bff5d1f42542b8a4e4c`.
+v0.38 adds [PAR-3], the staged loop permission, and supersedes v0.37 at
+`ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`, whose
+outgoing bytes are archived at `../spec/kernel-spec-v0.37.md`.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same
 specification identity. The committed grammar tables are ordinary compiler

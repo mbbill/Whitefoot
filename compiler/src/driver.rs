@@ -1094,6 +1094,159 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         );
     }
 
+    /// The staged verdict of a loop that performs I/O, and the disposition
+    /// table underneath it.
+    ///
+    /// The table is the teaching channel the ledger exists for: a reader sees
+    /// what every place the body touches cost, not only that a loop was
+    /// granted. Asserting the whole block rather than the verdict line is
+    /// deliberate — a table that silently lost a row would still report a
+    /// grant, and a grant whose table is wrong is exactly the failure a
+    /// permission rule cannot afford.
+    #[test]
+    fn the_permission_ledger_reports_a_granted_stage_and_its_disposition_table() {
+        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    let name = buffer_new(16_u64, 97_u8);
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            set total = total +wrap 1_u64;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+        assert_eq!(
+            ledger_of("staged.wf", source),
+            vec![
+                // The counted rule refuses the same loop, and says why: the
+                // short unique factory loan is an exclusive loan on storage the
+                // iteration does not introduce. The staged rule admits exactly
+                // that loan, because prologues run in index order and never
+                // overlap. Both lines are printed, and neither judgment reads
+                // the other's verdict.
+                "PAR loop        staged.wf:3  loop  denied      condition 2: an iteration holds \
+                 an exclusive loan on storage the iteration does not introduce, at \
+                 &uniq 'f files"
+                    .to_owned(),
+                "PAR stage       staged.wf:8  for   permitted   staged at \
+                 open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, \
+                 start: 0_u64, end: 4_u64); 4 places classified"
+                    .to_owned(),
+                "PAR place       staged.wf:8  serialized-P  &uniq 'f files  every footprint \
+                 element and loan touching it belongs to the prologue, and prologues run in \
+                 index order without overlapping"
+                    .to_owned(),
+                "PAR place       staged.wf:8  read-only     &'f cwd  no footprint of the body \
+                 writes it and every loan on it is shared"
+                    .to_owned(),
+                "PAR place       staged.wf:8  serialized-E  set total = total +wrap 1_u64;  \
+                 every footprint element and loan touching it belongs to the remainder, whose \
+                 writes to storage rooted outside the loop commit in index order"
+                    .to_owned(),
+                "PAR place       staged.wf:8  replicated    let name = buffer_new(16_u64, \
+                 97_u8);  iteration-own storage with copy elements, which an implementation may \
+                 give each in-flight iteration its own of"
+                    .to_owned(),
+            ]
+        );
+    }
+
+    /// A denial names the numbered condition, the place, and one admitted
+    /// writer form.
+    ///
+    /// The writer form is what makes the line worth printing: "this loop got no
+    /// pipeline" teaches nothing, while "allocate the scratch storage inside the
+    /// loop body" is a change the writer can make. It comes from the judgment
+    /// itself, so it cannot drift from the condition that produced it.
+    #[test]
+    fn the_permission_ledger_names_the_condition_the_place_and_the_admitted_form() {
+        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let name = buffer_new(16_u64, 97_u8);
+  let data = buffer_new(64_u64, 0_u8);
+  let total = 0_u64;
+  for @scan index in 0_u64..4_u64 {
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            region 'h {
+              region 'd {
+                match read_at<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                  ReadBytes(next: produced) => {
+                    set total = total +wrap produced;
+                  }
+                  ReadEnd() => {
+                  }
+                  ReadFailed(error: problem) => {
+                  }
+                }
+              }
+            }
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+        let ledger = ledger_of("hoisted.wf", source);
+        assert_eq!(
+            ledger[1],
+            "PAR stage       hoisted.wf:9  for   denied      condition 3: a may-suspend call \
+             retains a borrow past its own submission on storage the body writes and the \
+             iteration does not introduce; instead, allocate the scratch storage inside the \
+             loop body, so each iteration owns the buffer it reads and writes, at \
+             &uniq 'd data"
+        );
+        // The table survives the denial, and it names the second place the
+        // writer must move as well as the one the verdict cites.
+        assert!(
+            ledger.iter().any(|line| line.contains(
+                "denied        &uniq 'd data  the body writes it and a may-suspend call retains \
+                 a borrow of it past its own submission"
+            )),
+            "the denied place is in the table: {ledger:?}"
+        );
+    }
+
+    /// A loop whose body performs no I/O has no cut, so it gets no `stage`
+    /// line at all. The staged judgment adds ledger volume exactly where it has
+    /// something to say, and every counted loop that had one `loop` line still
+    /// has exactly that.
+    #[test]
+    fn a_loop_without_io_gets_a_counted_line_and_no_staged_line() {
+        let source = b"command fn main() -> status: own ExitStatus pure {
+  let total = 0_u64;
+  for @sum i in 0_u64..8_u64 {
+    set total = total +wrap i;
+  }
+  return exit_status(code: 0_u8);
+}
+";
+        assert_eq!(
+            ledger_of("counting.wf", source),
+            vec![
+                "PAR loop        counting.wf:3  loop  permitted   eligible; one accumulator \
+                 under +wrap"
+                    .to_owned(),
+            ]
+        );
+    }
+
     /// A program with no analyzed pair reports nothing, and the ledger never
     /// reaches the module: the same compilation with and without it emits the
     /// same bytes.

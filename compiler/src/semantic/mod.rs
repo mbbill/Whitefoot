@@ -16,6 +16,7 @@ mod permission_ledger;
 mod places;
 mod postcondition;
 mod provenance;
+mod staged_permission;
 mod target_action;
 mod tree;
 

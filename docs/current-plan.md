@@ -3,14 +3,22 @@
 Status: IMPLEMENTED, VALIDATED, AND ACTIVATED on
 `codex/io-first-principles`.
 
-Active language authority: v0.37,
-`ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`.
-`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.36 is
-archived at `spec/kernel-spec-v0.36.md` and the merge-time record is in
+Active language authority: v0.38,
+`7d30a62566e96b659fe7be6fb6d5775f25fb576374396bff5d1f42542b8a4e4c`.
+`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.37 is
+archived at `spec/kernel-spec-v0.37.md` and the merge-time record is in
 `governance/APPROVALS.md`. Activation is branch content: nothing merges to
 `main` until the owner approves the exact revision and canonical `make check`
 passes on that revision. The batch record is
 `docs/done/0082-unified-state-completion-io.md`.
+
+v0.38 rides on `batch/0091-par3-judgment` and adds one rule, [PAR-3], the
+staged loop permission: it cuts the body of any `for_stmt` or `loop_stmt` at
+its first `may-suspend` submission and admits executing the remainder of one
+iteration against the prologue of a later one. That batch lands the judgment
+and its ledger only — no lowering and no runtime change — so it grants a
+verdict a later batch actualizes and moves no published byte today. Its record
+is `docs/done/0091-par3-judgment.md`.
 
 ## Objective
 
