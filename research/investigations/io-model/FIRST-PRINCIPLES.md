@@ -1,1421 +1,1214 @@
-# Whitefoot I/O from first principles
+# Whitefoot completion I/O implementation plan
 
-Status: LIVE DISCUSSION DRAFT. No entry in this file is a language decision
-until the owner marks it settled in discussion. This file records the
-derivation as it happens; it does not treat the active specification, the
-current compiler, conventional compiler design, conformance migration cost,
-or implementation effort as authority.
+Status: IMPLEMENTATION PLAN WITH OPEN DESIGN GATES, 2026-08-26.
 
-This file belongs beside the I/O investigation because it is the working
-derivation for that capability. It is removed after every settled conclusion
-has superseded the corresponding part of `DESIGN.md`, or when the investigation
-is abandoned.
+This file supersedes the earlier live discussion draft in place. Git history
+retains that discussion. The plan records the conclusions the owner has
+accepted, the implementation consequences derived from them, the parts of the
+current v0.37 candidate which remain useful, and the questions which must close
+before implementation can honestly claim completion.
 
-## Method
+This file is not the active language specification. The active specification
+remains the one named by `docs/roadmap.md`. Nothing here authorizes a merge to
+`main`; it defines the technical work to perform on the current work branch.
 
-Each decision starts from the Whitefoot constitution and the physical problem.
-It then compares every known design that could satisfy those premises. A
-current implementation can supply a counterexample or measurement, but it
-cannot select the design. A familiar design receives no preference for being
-familiar, and an unfamiliar design receives no preference for being novel.
+During the rebuild, `research/investigations/io-model/DESIGN.md`,
+`docs/current-plan.md`, the I/O sections of `docs/roadmap.md` and
+`compiler/README.md`, the current v0.37 candidate text, and the root README's
+candidate identity still describe the superseded shared-Output/root-family
+design. They remain evidence for the currently compiling candidate, not design
+authority for new work. Before the semantic migration starts they must receive
+an explicit superseded boundary or be rewritten together, so an implementer
+cannot mistake them for this plan. `RESULTS.md` remains measurement evidence;
+its measurements do not select the old semantics.
 
-Once the owner marks a decision settled, later discussions take its conclusion
-and derivation as premises. A settled decision is reopened only by a concrete
-counterexample, by refuting one of its load-bearing premises, or by deriving an
-alternative which better satisfies the constitution. Later work does not
-restart from conventional APIs or from the active implementation merely
-because they are familiar.
+## 1. Objective
 
-Before opening each later question, the discussion rereads the settled record
-and the corresponding owner conversation. Those conclusions are the starting
-state, not optional background. A proposal which repeats a rejected blocking,
-writer-scheduled, globally serialized, or implementation-shaped form without
-first refuting the recorded reasoning is not a new candidate.
+Whitefoot source uses ordinary calls for I/O:
 
-Every design search starts at the highest performance shape the constitution's
-safety and proof commitments permit. It first derives the theoretical ceiling,
-then asks how to realize it. A conservative fallback, compatibility mode,
-existing implementation shortcut, migration convenience, or familiar host API
-cannot be the starting candidate and cannot set the architecture. Such a
-fallback is considered only after the best design is known, and only as one
-target's bounded degradation rather than as language semantics.
+```whitefoot
+let left = read_at(
+  file: &file_a,
+  destination: &uniq left_bytes,
+  file_offset: 0_u64,
+  start: 0_u64,
+  end: left_end
+);
+let right = read_at(
+  file: &file_b,
+  destination: &uniq right_bytes,
+  file_offset: 0_u64,
+  start: 0_u64,
+  end: right_end
+);
+```
 
-### Mandatory two-layer separation
+The writer supplies values, ownership, borrows, effects, and typed outcomes.
+The writer does not choose a blocking API, create a future, install a callback,
+select a worker thread, or state queue depth. The compiler may keep independent
+operations in flight. The target publishes completion. The existing scheduler
+executes writer code only after the required ownership milestone is available.
 
-Every later question is classified into exactly one of two layers before it is
-reasoned about.
+The target is the fastest sound implementation selected independently on
+macOS, Linux, and Windows. Direct or inline execution at depth one is a
+specialization of the same completion semantics, not a second source API.
 
-1. **External-to-language mapping.** This layer asks whether an external
-   operation has been completely represented as an ordinary Whitefoot API:
-   owned values, borrows, lifetimes, state transitions, typed outcomes,
-   completion milestones, split or shared authority, and release. A missing
-   identity, lifetime, completion state, or authority relation is an API
-   mapping defect and is fixed here.
-2. **Ordinary API use.** Once the mapping exists, source code sees only normal
-   Whitefoot objects and functions. It knows no file, socket, device, host
-   thread, syscall, readiness mechanism, or external world. Calls obey exactly
-   the same value, control, ownership, lifetime, effect, and overlap rules as
-   every other call. A problem at this layer is either an ordinary language
-   problem or proof that the API mapping failed to expose a necessary ordinary
-   relation.
+## 2. Mandatory reasoning boundary
 
-Arguments may not cross this boundary. In particular, no source-level rule or
-special call form is justified by saying that a value "really" names a file or
-socket. A function taking two file capabilities is reasoned about exactly as a
-function taking two ordinary affine objects. Questions about what those
-objects must own, borrow, split, return, or complete belong to the mapping
-layer and are settled before ordinary code is considered.
+Every issue belongs to one of two layers.
 
-The premises used in the first discussion are:
+### 2.1 External-to-language mapping
 
-1. P0: preserve the largest legal optimization space and avoid writer-chosen
-   scheduling decisions that a compiler or runtime can make better from proof
-   and target state.
-2. W1: the accepted default shape must already be the fast shape; a writer
-   must not need to discover a hidden scheduling convention or manually tune
-   how many requests to keep in flight.
-3. W3, T1, and T2: the writer cannot acquire an escape that can lose an
-   operation, reuse loaned storage, race a completion, or lie about an effect.
-4. External work has its own clock. Performance requires the machine to keep
-   independent external operations in flight while useful compute or other
-   external work proceeds.
-
-## A false claim never shapes the correct path
-
-Status: SETTLED IN DISCUSSION on 2026-08-26.
-
-A retained `claim` is not input validation, an assertion, an expected failure,
-or a writer-requested abort. It is an independently true theorem which the
-checker cannot derive and which complete human review has approved as true on
-every execution that reaches it. A properly reviewed program therefore cannot
-execute a false `claim`. Reaching the trap means that the proof or its review
-was defective; it is not another valid outcome of the program.
-
-Whitefoot paid for this premise by making `claim` unusually narrow and by
-requiring complete human verification of every retained theorem. The rest of
-the system must use the premise. Treating a false `claim` as ordinary control
-flow would discard the strongest consequence of that work while retaining all
-of its cost.
-
-The first-principles consequence is strict: an execution which cannot occur in
-a correct program has no budget on the correct path. No permission,
-optimization, source shape, target choice, or fast path may be withheld in
-order to stabilize, reproduce, clean up, or otherwise improve the observables
-of an execution containing a false `claim`. If concurrency or world operations
-make more of that defective execution schedule-dependent, the promise for the
-defective execution widens; the permission granted to correct executions does
-not narrow.
-
-In particular, the possibility of a false `claim` may not cause any of the
-following:
-
-- a claim-free eligibility gate or serialization of code which contains a
-  `claim`;
-- a trap-latch read or trap-specific submit permit, gate, epoch, shared
-  counter, or scheduler poll whose sole purpose is guarding against a false
-  claim on a normal operation path;
-- an extra copy, allocation, reference count, pin, metadata field, queue hop,
-  completion transition, or wake on that path;
-- selection of a slower backend or refusal of an otherwise safe optimization;
-  or
-- an ordering or rollback protocol whose purpose is to make a defective run's
-  external effects deterministic.
-
-Work which an operation independently requires for its normal ownership,
-lifetime, target safety, or measured fastest implementation is not a trap
-cost. The prohibition applies when the work exists only because a retained
-theorem might be false.
-
-The false branch is an isolated cold fail-stop path. The failing continuation
-never resumes writer code; an operation whose safety proof depends on that
-`claim` may not be moved before the check; the runtime performs the required
-diagnostic action and enters whole-process termination without language
-unwinding, cleanup, or completion draining. Other lanes and target-owned
-operations may continue to race until the host actually stops the process.
-Every accepted operation still obeys its own ownership and external-effect
-contract, but the schedule may select which of those permitted effects became
-visible and none is rolled back.
-
-Memory safety remains unconditional. It is preserved by the ownership and
-loan rules already required on the normal path, together with qualified host
-process teardown which prevents target-held storage from being reused while
-the target can still access it. Any additional mitigation needed only for an
-abort belongs entirely to the cold trap path or the host trusted base; it may
-not surcharge correct execution.
-
-This is an explicit anti-regression rule. Previous designs repeatedly let trap
-handling leak into parallel eligibility, scheduling, submission, and resource
-lifecycle. A proposal which asks a correct execution to execute, store,
-synchronize, copy, wait, or lose optimization because a reviewed theorem might
-be false is rejected on that fact alone. Keeping the impossible path isolated
-is what makes the compiler and runtime both smaller and stronger; failing to
-exploit the impossibility wastes the central benefit of the `claim` discipline.
-
-## Completion is the only language-level I/O model
-
-Status: SETTLED IN DISCUSSION on 2026-08-25.
-
-External interaction has two irreducible directions: the program makes an
-operation available to the world, and the world later makes an outcome
-available to the program. The language model is therefore submission plus
-completion. An unrequested event is represented by a capability-backed event
-source whose next outcome enters through the same completion boundary; it does
-not require a callback or handler language.
-
-A blocking API binds one outstanding world operation to one occupied execution
-thread. That consumes a compute resource while the world, not the program, is
-making progress. It also creates a second writer-visible function family and
-makes the writer choose whether one operation deserves blocking or
-asynchronous treatment. Both costs oppose P0 and W1.
-
-A readiness API reports that a later operation might make progress rather than
-reporting the operation's result. Readiness can be a useful target mechanism,
-as can a blocking helper thread, polling, an interrupt, a hardware queue, or a
-completion port. None becomes a second language model. A target adapter may use
-any of them to implement the one submission/completion contract.
-
-When one operation has no independent work with which to overlap, a target may
-submit it and immediately wait for the normal call's ownership-complete
-requirement. That is one degenerate schedule of the completion model, not a
-blocking API exposed beside it.
-
-This selection follows the constitution rather than becoming an axiom. If a
-different model is derived or measured to provide higher theoretical and
-actual performance while preserving the same safety, proof authority,
-AI-writability, target freedom, and single optimal source shape, Whitefoot
-replaces completion with that model. Familiarity, compatibility, and
-implementation cost neither preserve completion nor justify an alternative.
-
-## Completion-I/O API shape
-
-Status: SETTLED IN DISCUSSION on 2026-08-26. Exact declaration names and
-grammar spellings remain future specification work; the semantic surface
-selection and its derivation are settled here.
-
-`Source`, `Sink`, `next`, `put`, `finish`, `command`, `receipt`, `ticket`,
-`scope`, and related capitalized or code-form names in this section are
-analysis roles. They do not select declaration names, type names, operation
-names, or grammar spellings.
-
-This section uses **normal call surface** in one narrow sense: the writer uses
-the same function-call grammar, ordinary argument evaluation, types,
-ownership, lifetimes, effects, and typed outcomes as for any other Whitefoot
-function. The phrase does not mean a blocking host call, source-line
-serialization, immediate native-ABI return, absence of an internal operation
-record, or absence of suspension lowering.
-
-Four questions remain separate at every such call:
+This layer turns a file, socket, directory, clock, process facility, device, or
+quota into ordinary Whitefoot values:
 
 ```text
-source surface       what the writer writes and the checker judges
-logical completion   when the result and returned authority become usable
-overlap permission   which other statements may progress before that point
-target lowering      whether a host thread waits, a queue is used, or the
-                     operation completes inline
+owned capability
++ shared or exclusive borrow
++ typed outcome
++ explicit lifecycle
++ finite capacity
++ completion milestones
 ```
 
-For a finite, one-shot, structurally owned operation whose pending identity
-does not become program data, Whitefoot selects the normal call surface. The
-result is not an early placeholder: it becomes an ordinary usable value only
-at the operation contract's declared ownership-complete milestone. While that
-call remains incomplete, the compiler may progress other statements only when
-their values, control, loans, authority fragments, and completion obligations
-permit the overlap.
+If the mapping cannot express the authority, result ownership, failure,
+release, or concurrency relation using ordinary language rules, the API is
+incomplete.
 
-For a persistent, unsolicited, unbounded, or multishot world relation, and for
-an unknown-size relation whose complete result is delivered as a bounded
-sequence, Whitefoot selects an owned family-specific Source or Sink role. A
-finite unknown-size one-shot may instead return operation-owned or
-pool-selected storage when its contract bounds ownership and completion.
-`next`, `put`, and lifecycle operations still use the normal call surface.
-Physical requests, buffers, queue depth, prefetch, batching, and rearming
-remain target/runtime policy rather than writer scheduling knobs.
+### 2.2 Ordinary API use
 
-Pending identity becomes a writer-visible affine value only when that
-identity is itself program semantics: it must be stored or returned, selected
-dynamically, individually cancelled or queried, kept beyond its structural
-scope, or used to observe independent milestones. Such a value is a
-family-specific command, receipt, ticket, operation set, or milestone guard,
-not a universal `Pending<T>` wrapped around every I/O result.
+Once mapped, source code sees only ordinary functions and values. Dataflow,
+control flow, memory effects, ownership, loans, and place overlap decide which
+calls may overlap. No source rule may inspect a native handle, path, syscall,
+backend queue, or system-operation spelling to grant permission.
 
-A writer-visible scope or transaction likewise exists only for real
-collective semantics such as winner/loser selection, atomic commit,
-collective cancellation, or error aggregation. A scope whose only purpose is
-batching or queue depth is compiler-generated. Writer callbacks are not a
-completion surface; a target callback may publish state and wake the scheduler
-but never executes writer code.
+An implementation problem may not be repaired by weakening this boundary.
 
-### Every in-flight operation is a closed affine authority bundle
+## 3. Non-negotiable laws
 
-Status: SETTLED IN DISCUSSION on 2026-08-26. `Operation` in this section is an
-analysis name for the logical ownership unit. It does not select a
-writer-visible type, syntax, call shape, or runtime allocation.
+### 3.1 Completion is the only language-level I/O model
 
-The target may accept an operation only after one closed affine bundle exists
-for everything the target can still access. The bundle logically contains:
+The language model is submission plus completion. Readiness, polling, a helper
+thread, an interrupt, a native completion queue, and a direct host call are
+target mechanisms beneath that model.
+
+### 3.2 No writer callback
+
+Target code may publish typed result bytes and milestone facts and may wake the
+scheduler. It never receives or invokes a Whitefoot function pointer. An
+unrequested or repeated event is represented by an owned Source or
+Subscription, not by executing writer code on a host callback stack.
+
+### 3.3 No correct-path cost for a false claim
+
+A false executed claim is impossible in a correctly reviewed program. No
+submission, completion, scheduler, target, release, or wake path reads a trap
+latch or carries trap-specific state. The erroneous path is fail-stop and does
+not shape normal performance.
+
+### 3.4 No ambient world authority
+
+Except for the explicitly named heap exception and compiler-owned process
+entry, termination, and trap boundaries, every writer-visible world authority
+originates in an entry parameter or in a factory lineage rooted in such a
+parameter.
+
+The following source shapes are therefore not ordinary system APIs:
+
+```whitefoot
+now();
+random();
+connect(address: address);
+spawn(image: image);
+open(path: path);
+```
+
+They require explicit Clock, Entropy, Network, Process, Directory, factory, or
+permit capabilities.
+
+### 3.5 No shared world mutation
+
+A world read may use a shared borrow. A world write requires an `own` or
+`&uniq` capability. A lock, atomic counter, queue, or target guarantee does
+not make shared writer-visible mutation legal.
+
+### 3.6 No second concurrency type system
+
+The language does not use a separate logical-root registry, family-fragment
+pair table, or Ordered attribution edge to repair an API which admits
+conflicting shared uses. Independent work must be represented by independent
+ownership places, disjoint fields, typed facets, ranges, shards, or owned
+permits.
+
+## 4. One effect algebra over two state domains
+
+Memory state and world state obey the same frame rule, call substitution,
+read/write classification, exactness check, and ownership discipline. They
+remain separate source domains because their subjects have different names
+and different observable meaning.
+
+The exact spelling remains an open specification gate. The semantic shape is:
 
 ```text
-one stable operation identity
-+ the exact resource authority required by this operation
-+ ownership or valid loans for every payload the target may access
-+ stable target metadata and any required registration or pin authority
-+ the unique inaccessible storage for results not yet produced
+memory effects
+    reads and writes of incoming Whitefoot regions
+
+world effects
+    reads and writes of incoming capability places
 ```
 
-Every handle, pointer, descriptor, callback context, or DMA mapping reachable
-by the target must ultimately reach either state owned by this bundle or state
-protected by a live loan held by it. Until the target has published the exact
-milestone which ends an access, the corresponding owner, loan, registration,
-metadata, and uninitialized result storage may not be destroyed, moved,
-reused, read through an uninitialized path, or accessed in conflict.
+One possible surface, shown only to make the rule concrete, is:
 
-Moving the whole resource into every operation is not the common rule. It
-would serialize two position-explicit reads of one file even when their
-destinations are disjoint and the operations share no cursor. Each operation
-instead holds the smallest authority its resource contract proves sufficient:
-a shared read authority, an exclusive authority, a range or role fragment, an
-ordered or keyed reservation, or the whole resource only when the family
-proves no finer safe authority relation. Consuming families such as stream
-receive, listener accept, datagram receive, and directory iteration can retain
-ordered or otherwise family-defined reservations rather than taking the whole
-resource. Resource identity alone neither grants overlap nor denies it.
-
-Payload capture likewise has no universal borrow-versus-move answer. A shared
-loan permits one immutable buffer to feed several independent zero-copy
-operations without copying. An exclusive loan protects caller-owned
-destination storage. Moving an owned payload lets its producer disappear and
-lets a queue or operation carry the payload without retaining that producer's
-owner. A target-selected receive buffer is represented by authority over a
-managed pool until a completion transfers one selected initialized buffer.
-The operation contract fixes the capture mode; it is not a writer scheduling
-choice.
-
-Completion is not one Boolean ownership instant. A result can become available
-before the target releases its payload access, and a long-lived operation can
-deliver one payload while remaining active for later deliveries. Linux
-zero-copy send, for example, can publish the send result before a later
-notification permits buffer reuse, while multishot operations and provided
-buffer rings can deliver several independently owned buffers before the
-operation becomes terminal. The common model therefore distinguishes at least
-result availability, each payload's release or delivery, and the terminal
-witness that no later runtime publication or target access through that
-operation bundle can occur. A simple operation may make these milestones
-coincide; an already accepted external effect may still become visible later
-when the family contract permits that behavior.
-
-The ownership bundle imposes no common heap allocation, reference count,
-global registry, coordinator hop, payload copy, or whole-resource lock. An
-inline completion may establish and discharge the same logical bundle entirely
-in registers or ordinary local storage, allowing the operation record and
-result cell to disappear. Only an operation which remains target-owned after
-submission needs stable runtime or target storage, selected by later lowering
-and target evidence.
-
-This conclusion fixes the ownership closure which every later surface,
-lifecycle, and lowering rule in this section preserves. The following
-subsections add authority, attribution, abandonment, and representation rules
-without weakening this closure.
-
-### Resource identity and operation concurrency are separate
-
-Status: SETTLED IN DISCUSSION on 2026-08-26.
-
-Every resource instance in a family has one stable logical identity and
-lifetime group which owns the common backing object and whole-resource
-control. Identity keeps the resource alive and defines where close, release,
-fatal failure, and whole reconfiguration act. It is not by itself either a
-mutex or permission to overlap operations.
-
-Operation concurrency is determined by family-defined authority fragments.
-A long-lived facet such as one direction of a full-duplex connection and a
-short-lived reservation held by one in-flight operation are the same
-ownership concept at different durations. Neither is a second kind of
-lifetime, an ambient runtime permission, or a copy of the native handle.
-
-A resource family can relate simultaneously live fragments in exactly three
-ways:
-
-```text
-freely coexisting
-    both operations may progress without an ordering edge
-
-ordered coexisting
-    both operations may be pending, but the resource contract fixes the
-    order in which their external actions or consumed inputs are attributed
-
-mutually exclusive
-    the later fragment cannot be admitted until the conflicting authority
-    has returned
+```whitefoot
+effects {
+  memory reads('f 'd), writes('d);
+  world reads(file);
+}
 ```
 
-A full-duplex connection demonstrates the first two relations. Its receive
-and transmit facets freely coexist while sharing one connection lifetime.
-Two operations in one transmit direction instead hold ordered reservations:
-the target may keep both pending and may publish their completions in either
-order, but completion order never selects the byte order. Whole close or reset
-requires mutually exclusive authority over the common lifetime group.
+The final grammar may use another canonical spelling, but it must keep the two
+domains visibly distinct.
 
-A position-explicit file read demonstrates freely coexisting fragments on one
-resource identity. Several such reads can share read authority because they do
-not use one cursor. A file write contract must additionally account for every
-state it can change, including any length, EOF, metadata, allocation, or
-durability state relevant to the promised semantics; disjoint byte ranges
-alone do not prove that two writes freely coexist.
+Neither `external` nor `blocks` remains a source effect. The world row
+replaces the former's semantic job with explicit subjects. Target completion
+contracts replace the latter's implementation-shaped job.
 
-The common model does not require one generic coordinator object. A fragment
-which the compiler and resource contract prove compatible may be a wholly
-erased fact. A family which needs dynamic ordering or admission may keep the
-minimum state local to that resource or use a qualified target facility.
-Unknown or unclassified families conservatively expose only mutually
-exclusive whole-resource authority. This preserves one ownership model
-without charging every operation for a global registry, lock, reference
-count, or generic reservation engine.
+### 4.1 Memory example
 
-The same semantic fragment has four possible representations, selected from
-least to most persistent:
-
-```text
-static proof
-    compiler forms and erases the fragment; no runtime admission cost
-
-small bounded dynamic choice
-    compiler emits a local compatibility/versioning guard
-
-dynamic or unbounded pending set
-    resource-local state admits, orders, or delays operation fragments
-
-persistent authority delegation
-    an ordinary long-lived facet value limits what another subsystem may do
+```whitefoot
+fn fill['d](
+  destination: &uniq 'd buffer<u8>
+) -> result: own unit
+effects {
+  memory writes('d);
+}
 ```
 
-Writer-visible splitting therefore serves lasting delegation, not the local
-request “make these two calls concurrent.” Known positional operations do not
-pay for an interval tree or generic coordinator; only a family whose dynamic
-pending set needs such arbitration owns it. Close takes whole-lifetime
-authority, and structural operations such as truncate take every content,
-length, and metadata fragment their family contract says they can disturb.
+Mutation of a locally owned buffer does not enter the caller-facing row. Its
+state either leaves through an owned result or ends locally.
 
-The following subsections select when a fragment remains compiler-owned, when
-it becomes a long-lived Source/Sink facet or family ticket, and how source
-outcomes are attributed. Dynamic admission remains family-specific because no
-one interval, queue, or protocol representation covers every resource.
+### 4.2 World read example
 
-### Event attribution is family semantics, not completion scheduling
-
-Status: SETTLED IN DISCUSSION on 2026-08-26.
-
-An external occurrence, its attribution to one logical reservation, runtime
-publication of the resulting completion, and execution of writer code are
-separate events:
-
-```text
-physical history
-    -> source-family linearization and attribution
-    -> operation-specific outcome
-    -> completion publication
-    -> writer continuation execution
+```whitefoot
+fn read_at['f, 'd](
+  file: &'f ReadFile,
+  destination: &uniq 'd buffer<u8>,
+  file_offset: own u64,
+  start: own u64,
+  end: own u64
+) -> result: own ReadOutcome
+effects {
+  memory reads('f 'd), writes('d);
+  world reads(file);
+}
 ```
 
-Only the attribution step decides which ordinary value receives a consuming
-outcome. Target completion order, the lane which harvests a completion, and
-the lane which next runs writer code do not acquire that authority.
-
-The minimum counterexample uses two receive reservations with different
-storage and policy:
-
-```text
-reservation a: 4-KiB destination, budget/context A
-reservation b: 64-KiB destination, budget/context B
-source publishes X = one 32-KiB message, then Y
-```
-
-An ordered family maps `X` to `a` and `Y` to `b`, so `a` receives the
-family's typed truncation outcome. Completion for `b` may still be published
-first. If completion race instead gave `X` to `b`, it would change truncation,
-budget use, and ordinary continuation context. The target has already written
-a particular buffer, so the runtime cannot repair the mistake by relabeling
-two completion records afterward. Attribution is therefore family semantics.
-
-Every event-source family therefore defines its own attribution rule. For an
-ordered consuming source, the nth source event after the family's declared
-linearization point belongs to the nth eligible logical reservation. Later
-reservations may publish completion and resume writer code before earlier
-ones; ordered attribution imposes no completion-order or resume-order wait.
-Once an event has been attributed, a later notification race cannot transfer
-it to another reservation.
-
-The family's linearization point must describe what the target can actually
-observe. A listener, for example, does not claim a portable wall-clock order
-between simultaneous network arrivals. It may define its event sequence by
-the order in which its qualified source engine dequeues and publishes accepted
-connections. The target may choose any order which the physical history and
-family contract allow before that point; after it has chosen, the scheduler
-may not perform a second reassignment.
-
-Logical reservations need not correspond one-for-one with physical target
-requests. Anonymous accept slots, provided-buffer pools, multishot requests,
-readiness pumps, and target-native queues may remain filled independently of
-writer progress. Each complete owned event is moved from that target capacity
-to the reservation selected by the family rule. This permits physical
-concurrency and zero-copy ownership transfer without making host request or
-callback identity part of source semantics.
-
-Ordered consumption is not the universal event model. A family may instead
-declare unordered matching, keyed or partitioned consumption, broadcast or
-persistent observation, or a coalescing reduction. Such behavior must be an
-explicit property of that family, including the allowed attribution, rather
-than an accident of backend completion timing. A source whose attribution rule
-has not been defined may have at most one outstanding consumer; the system
-does not guess either ordered tickets or unordered races for it.
-
-The capacity, cancellation, Source/Sink, and writer-surface consequences of
-this attribution law follow below.
-
-### Why one-shot calls and Source/Sink are the minimal surfaces
-
-Status: SETTLED IN DISCUSSION on 2026-08-26.
-
-Consider a finite positioned read followed by independent compute. The
-spelling is schematic rather than proposed grammar:
-
-```text
-header = read_at(config_file, offset, destination)
-digest = hash(default_policy)
-policy = combine(header, digest)
-```
-
-The read operation may remain target-owned while the compiler runs `hash`.
-`header` is not an initialized placeholder during that interval; only the
-operation owns its result storage. `combine` cannot run until the read reaches
-the milestone which makes `header` usable.
-
-Two independent world operations expose the same rule more directly:
-
-```text
-left  = read_at(left_file,  left_offset,  left_buffer)
-right = read_at(right_file, right_offset, right_buffer)
-value = combine(left, right)
-```
-
-After both semantic calls have been reached and their arguments, control,
-loans, and authority fragments are available, the compiler may submit both.
-Neither `left` nor `right` is a placeholder value; `combine` is the first real
-result dependency. Reusing one exclusive capability or overlapping one
-destination would instead create an authority or loan edge and prevent the
-second handoff until that edge is satisfied.
-
-An explicit generic start/finish surface can force this schedule:
-
-```text
-pending = start_read(...)
-header = finish(pending)
-digest = hash(...)
-```
-
-The normal call surface can reproduce the same schedule by waiting at the
-same position, but it can also delay the wait until `combine`. The explicit
-finish edge cannot in general be removed after the writer states it. It
-therefore reduces the legal schedule set without adding authority or result
-information for a finite structurally owned operation. This is why generic
-writer-placed `await` or `finish` is not the default.
-
-A listener provides the opposite lower bound. It can produce an unbounded
-sequence of fresh connections, and the fastest target may represent that
-sequence with one multishot request or an anonymous pool of accepts unrelated
-to logical `next` calls. No finite one-shot result can own that continuing
-relationship. An owned Source therefore holds its source authority, engine,
-finite capacity, attribution state, and terminal condition across deliveries.
-A Sink symmetrically holds an ordered or otherwise family-defined output
-relationship across payloads.
-
-Source/Sink is not imposed on finite random access. Routing one positioned
-file read through a persistent writer-visible queue would add lifecycle and
-receipt work which its physical operation does not require. The common model
-is unified below these surfaces, not by forcing every family through one
-surface type.
-
-Payload shape is selected independently of surface shape:
-
-```text
-caller retains storage identity   -> operation holds a shared or exclusive loan
-caller relinquishes storage       -> operation or Sink owns the moved payload
-target selects storage            -> Source owns a pool/quota permit and returns
-                                     the selected initialized buffer
-unbounded result                  -> Source yields bounded owned chunks
-```
-
-These modes state real future use of storage, not scheduling preference. A
-shared source loan allows one immutable buffer to feed several zero-copy
-operations; an owned transfer lets the producer disappear; a target-selected
-pool avoids guessing receive size.
-
-Normal-call dataflow is not sufficient when pending identity itself affects
-program control. Wait-any, race, deadline, dynamic collection, and individual
-cancellation require a structured completion owner or a family-specific
-ticket. For example, a choice scope owns both an I/O bundle and a timer bundle,
-selects one winner exactly once, and retains every loser until its own
-cancel/drain protocol reaches terminal. A function over two already completed
-values cannot implement wait-any, because evaluating its arguments would have
-waited for both.
-
-A deadline winning likewise does not prove payload release. An uncancellable
-family must either wait for target quiescence before returning its timeout
-outcome or return a family token which continues to own the active bundle. An
-uncompleted result also cannot enter an ordinary `container<T>` as though `T`
-were initialized; the container must own family tickets or be a specialized
-operation set/collector. Across a function boundary, every pending borrow and
-milestone obligation travels through the hidden completion ABI or through a
-real Source/Sink, guard, scope, or ticket owner.
-
-### Finite capacity, backpressure, and unknown-size results
-
-Status: SETTLED IN DISCUSSION on 2026-08-26.
-
-Every operation record, target queue, completion queue, buffer pool, device
-tag set, listener backlog, and ready-event queue is finite. The common
-operation lifecycle therefore includes admission before target ownership:
-
-```text
-READY
-    the closed bundle exists; target has no access
-
-WAIT_CAPACITY
-    a slot, credit, or buffer is unavailable; runtime still owns the bundle
-
-SUBMITTING
-    one lane is attempting the target handoff
-
-IN_FLIGHT
-    target may access the declared payload and metadata
-
-QUIESCING
-    stop/cancel/close was requested; target access may continue
-
-TERMINAL
-    no later publication or target access is possible
-
-CONSUMED
-    outcomes and authority have been transferred or released; slot may reuse
-```
-
-A host request may finish after partial progress while the semantic operation
-continues. Once the target has released that request's descriptor and declared
-the exact progress cursor, the bundle returns from `IN_FLIGHT` to `READY` or
-`WAIT_CAPACITY` and later submits only the proven remainder. This edge is what
-lets an adapter absorb short host operations without duplicating an external
-prefix.
-
-Temporary target or runtime fullness is normally `WAIT_CAPACITY`, not a
-writer-visible I/O failure. The scheduler runs other eligible work and retries
-admission when capacity returns. This prevents a writer retry loop from
-becoming a second scheduling interface. A family exposes a capacity outcome
-only when bounded credit, drop, timeout, or non-waiting admission is itself
-part of that resource's semantics.
-
-An unbounded hidden queue is not an alternative. Finite memory, an
-unthrottled producer, and lossless retention cannot all hold forever. A
-persistent Source must declare one honest behavior when its capacity is full:
-producer backpressure, a finite host backlog followed by typed overflow,
-coalescing, dropping with a gap/count outcome, latest-value sampling, or
-terminal failure. [Apple Dispatch
-Sources](https://developer.apple.com/library/archive/documentation/General/Conceptual/ConcurrencyProgrammingGuide/GCDWorkQueues/GCDWorkQueues.html),
-for example, explicitly coalesce pending events rather than retaining an
-unbounded event list.
-
-Unknown-size results have four honest storage shapes:
-
-```text
-bounded caller destination  -> typed truncation or required-size outcome
-owned segmented storage     -> grow without moving target-accessible segments
-target-selected pool slot   -> completion transfers one initialized owner
-bounded chunk sequence      -> Source yields chunks until EOF or failure
-```
-
-A preliminary size query followed by allocation is valid only when the family
-proves that size remains stable between the two operations. Files,
-directories, datagrams, and live devices do not supply that proof in general.
-
-For destination storage of capacity `n`, a delivery of `k` bytes proves newly
-delivered contents only for `[0, k)`. An initially uninitialized destination
-keeps its tail unreadable; a previously initialized caller buffer retains its
-prior tail value after the target releases the loan. For a pool slot, result
-publication does not by itself permit recycling: the target must have released
-the slot and the last result owner must have finished with it. Each reused slot
-carries a generation or equivalent proof so a late completion cannot write a
-later logical object.
-
-Queue depth, buffer size classes, batch size, and watermarks are target/runtime
-policy within an owned memory budget. A hosted target may grow nonmoving slabs;
-an embedded target may use statically sized frames, descriptors, and pools.
-The writer states a semantic maximum only when message size, memory quota, or
-loss policy is part of the program's requirement.
-
-A persistent source failure is a typed lifecycle transition rather than a
-trap or an excuse to release loans early:
-
-```text
-ACTIVE_SOURCE -> FAILING -> FAILED or REPLACED
-```
-
-The family declares what happens to already attributed events, produced but
-unconsumed shots, pending reservations, the source root, and every pool token.
-It may deliver attributed outcomes before a terminal failure, fail remaining
-reservations, poison the root, or return a replacement capability. In every
-case target access ends before the corresponding payload or pool authority is
-returned.
-
-### Completion milestones and typed partial outcomes
-
-Status: SETTLED IN DISCUSSION on 2026-08-26.
-
-A **milestone** is one exact fact which a resource contract publishes. The
-common vocabulary distinguishes at least:
-
-```text
-accepted             target has progress responsibility and effects may begin
-result_ready         a specified typed result is initialized
-payload_released     target no longer accesses the named payload range
-authority_released   a conflicting resource fragment may be granted again
-terminal             no later publication or target access can occur
-visible(domain)      the effect is visible in the named observer domain
-durable(model)       the effect survives the named failure model
-acknowledged(peer)   the named peer/protocol layer has confirmed it
-```
-
-These are not synonyms. [Linux zero-copy
-send](https://man7.org/linux/man-pages/man2/io_uring_enter.2.html) can publish
-the send result before a later notification permits buffer reuse; that
-notification does not prove remote receipt. A normal file write completion
-does not prove durability; a separate
-[sync/commit](https://pubs.opengroup.org/onlinepubs/009695399/functions/fsync.html)
-family establishes that stronger fact.
-
-The normal surface for a finite one-shot operation completes at its declared
-**ownership-complete milestone**: its writer result is ready, every borrowed
-payload which the caller regains is released, and the required operation
-authority is returned. This keeps normal call lifetime semantics simple. If a
-family must expose an earlier result while retaining payload or authority, it
-returns or associates a family-specific affine milestone guard/receipt. That
-guard becomes visible only because the split milestone is program semantics.
-
-Partial progress cannot collapse to a bare error. If a one-megabyte write has
-made a 128-KiB prefix externally visible before `NoSpace`, the terminal outcome
-must identify at least:
-
-```text
-the completed prefix and milestones it reached
-the still-owned remainder
-the resource's next state
-the retry cursor, if any retry is valid
-the typed error
-```
-
-The same rule protects input: a read error may coexist with an initialized
-prefix, and a directory error may coexist with entries already consumed from
-the source. Some family outcomes therefore contain both a value and an error.
-
-An adapter may retry only after proof that the earlier attempt was not
-accepted, that the family is idempotent under a stable operation identity, or
-that retry continues from an exact progress cursor without repeating the
-prefix. A zero-progress nonterminal attempt returns to target wait or
-backpressure; it never busy-loops.
-
-One-shot and multishot cardinality share the lifecycle but not result storage:
-
-```text
-one-shot
-    zero or more internal progress events -> one terminal outcome
-
-multishot
-    one persistent subscription bundle
-        -> many independently owned shot bundles
-        -> one subscription terminal outcome
-```
-
-Each shot owns its payload/pool token. A subscription result cell is never
-overwritten for the next shot. The family declares maximum unconsumed shots,
-pool exhaustion, attribution, coalescing/drop behavior, source failure, and
-the fate of already attributed shots during finish or cancellation.
-
-### Cancellation, abandonment, finish, release, and close
-
-Status: SETTLED IN DISCUSSION on 2026-08-26.
-
-A cancel request moves an active operation toward `QUIESCING`; it is not a
-terminal witness. Normal completion may win the race, cancellation may win,
-or an uncancellable operation may continue. Exactly one terminal transition
-publishes a typed outcome such as completed, cancelled, partial-then-cancelled,
-late error, or too late. Payload and metadata remain owned until target
-quiescence, whatever the cancel-request API returned.
-
-An unused result does not make an effectful operation removable or
-cancellable. A write still carries its external commitment, a receive may
-have consumed input, and an accept may own a fresh connection. The runtime
-drains the operation to its required terminal state and then releases an
-unobserved result, unless a separately proved elimination rule applies.
-
-An active bundle can never be dropped. Its ownership transfers to one of:
-
-```text
-the enclosing structured operation scope
-a resource-local pending set which continues to drain
-a family cancel-and-drain obligation
-a finish obligation
-whole-process teardown after the impossible false-claim path
-```
-
-Every normal, typed-error, `return`, branch, and loop exit from a latent
-operation scope carries one of the family-declared drain, cancel-and-drain,
-transfer-to-a-named-owner, finish, or abort/discard dispositions. Transfer is
-not writer-visible fire-and-forget: the receiving resource-local or enclosing
-owner retains the complete bundle through its required terminal. The compiler
-does not infer a cancel merely because a sibling failed or a result became
-dead, and it never submits across an unresolved control dependency in order to
-create overlap.
-
-`finish` is a world state transition, not a generic wait spelling. It can mean
-graceful EOF, flush, durable commit, source shutdown with final statistics,
-device-queue drain, or transaction publication. A family is either:
-
-```text
-release-complete
-    compiler-derived release can safely complete its declared lifecycle
-
-finish-required
-    normal success must consume the owner through finish, return the unfinished
-    owner, or take an explicitly different abort/discard transition
-```
-
-Compiler-derived release cannot silently upgrade itself into successful
-finish, because the writer has not authorized that stronger world transition
-and cannot handle its typed failure. Close is a whole-lifetime-group consuming
-transition: it stops new reservations, applies the family drain/cancel policy,
-waits for every conflicting authority-release, target-access, and
-registration-retirement milestone required by that family, and only then
-reclaims root storage. An independent durability or acknowledgement witness
-may remain live after it no longer owns the root. Close never rolls back
-effects already performed.
-
-The trap path remains outside these rules. Correct execution never reaches it,
-and no normal operation, Source/Sink, scope, slot, or target path pays for it.
-
-### Every resource family closes the same contract
-
-Status: SETTLED IN DISCUSSION on 2026-08-26.
-
-The common API is complete only when each family declares all of the following
-or explicitly marks a category inapplicable:
-
-1. root lifecycle, parameter-to-authority projection, fragment coexistence,
-   and how every fragment is returned or retired;
-2. capacity owner and bound, admission order, target-acceptance linearization,
-   transient-full behavior, and proof that a retry cannot duplicate effects;
-3. every payload region the target may access, its borrow/move/pool mode,
-   stable-address or registration needs, and its exact release milestones;
-4. result-size class, storage owner, initialization proof, truncation or chunk
-   behavior, and buffer recycling;
-5. progress unit, partial external effect, retry cursor, zero-progress rule,
-   and any independently releasable prefix;
-6. one-shot or multishot cardinality, shot ownership, maximum unconsumed
-   shots, and subscription terminal condition;
-7. ordered, unordered, keyed, broadcast, or coalescing attribution, including
-   cancellation and source-failure races;
-8. the milestone relation among acceptance, result, payload release,
-   authority release, terminal, visibility, durability, and acknowledgement;
-9. every normal, partial, late-error, cancelled, and source-failure outcome,
-   including exact resource and payload next-state;
-10. cancel support and quiescence proof; backpressure, loss, or overflow;
-    abandon, finish, implicit release, close, and root-reclamation behavior;
-11. target qualification evidence that each native path preserves the same
-    authority, attribution, milestone, memory-access, and progress contract.
-
-These declarations belong to trusted or machine-verified system-family data.
-The writer cannot weaken them, fill a missing category with a claim, or select
-a less safe backend behavior.
-
-### Family surface selection
-
-Status: SETTLED IN DISCUSSION on 2026-08-26.
-
-| Family or operation | Selected surface | Load-bearing reason |
-|---|---|---|
-| Positioned file read/write | finite one-shot normal call surface | independent offsets and finite outcomes should not pay persistent-queue cost |
-| Sequential file view | owned Source/Sink | cursor, read-ahead, batching, EOF, and finalization persist across chunks |
-| Stream receive direction | owned Source; fixed-buffer finite read may be one-shot | unknown byte arrival, ordered attribution, pool/backpressure, EOF |
-| Stream send direction | owned Sink | ordered payload queue, batching, backpressure, half-close, late errors |
-| Finite datagram send | finite one-shot normal call surface | one bounded message and one typed send outcome |
-| Repeated datagram receive or persistent batched send | message Source/Sink role | message boundaries, target-selected buffers, truncation/drop policy |
-| Listener | Source of owned connections | persistent accept capacity and multishot/preposted target operations |
-| One-shot timer | finite one-shot; a family may declare broadcast observation | one bounded expiry/cancel outcome rather than a persistent sequence |
-| Periodic/coalescing event | Source | repeated outcomes and family delivery algebra |
-| Directory iteration | Source of owned batches | advancing cursor, unknown record sizes, partial batch plus error |
-| Device | one-shot, Source/Sink, or family Command | target queue/tag/DMA algebra and semantic command identity vary by family |
-| Multi-resource finite operation | composite one-shot normal call surface | all authority fragments are acquired before any target handoff |
-| Real collective transaction | family Transaction/Scope | atomic commit, collective abort, or error aggregation is program semantics |
-
-No family selects a writer callback. A UI or event loop consumes a Source and
-the Whitefoot scheduler executes the resulting writer code.
-
-### Compiler, runtime, and code generation required by the API
-
-Status: SETTLED IN DISCUSSION on 2026-08-26.
-
-The checked compiler graph carries:
-
-```text
-value and argument dependencies
-control dependencies
-authority-fragment relations
-payload loans and capacity reservations
-event attribution
-result, payload-release, authority-release, and terminal milestones
-scope, finish, close, and release obligations
-```
-
-It may submit a node only after its semantic call has been reached and all
-submission inputs and authority are available. It may progress another node
-before the first completes only when this graph gives the necessary free or
-ordered coexistence permission.
-
-Every concrete function receives a compiler-derived internal classification:
-
-```text
-NeverSuspends
-MaySuspend
-```
-
-This is target/lowering metadata, not a writer effect or claim. A
-`NeverSuspends` direct function retains the normal machine ABI, receives no
-frame pointer or scheduler check, returns no pending tag, and initializes no
-completion backend. A direct call chain uses a hidden suspend-capable ABI only
-where a world operation can really suspend. An indirect call whose target set
-is unknown pays for a suspend-capable thunk at that call site; the cost does
-not spread to known pure calls.
-
-The default representation is selective stackless lowering. A compute segment
-runs on the normal machine stack. At a real suspension, the compiler stores
-only values, loans, operation slots, child counts, and the program position
-which remain live across that suspension. A resume entry can therefore run on
-any lane permitted by the scheduler rather than remaining attached to one
-native stack. This choice supersedes the earlier provisional fixed-calling-lane
-assumption.
-
-Operation metadata must have stable storage before the first target handoff,
-because a completion may race the return from submission. A target adapter
-distinguishes exactly:
-
-```text
-TARGET_OWNS
-INLINE_TERMINAL_WITH_NO_FUTURE_EVENT
-REJECTED_BEFORE_OWNERSHIP
-```
-
-The selected target adapter owns exactly one terminalization path. Either the
-submission classification proves a true inline terminal with no future event,
-or a later asynchronous publisher performs the terminal transition, never
-both. On a platform where an apparently inline success still produces a later
-completion packet, the submitter does not also publish or release. A callback,
-CQE harvester, helper, or interrupt writes results, changes state, and wakes
-the scheduler; it never invokes writer continuations.
-
-Storage selection proceeds from least to most dynamic:
-
-```text
-statically bounded operation slots embedded in the parent frame
-compiler-generated window/arena with slot-lifetime reuse
-persistent Source/Sink control and buffer pools
-nonmoving resource/lane slabs for dynamic bounded fan-out
-backpressure before any unbounded growth
-```
-
-Inline completion can discharge the logical bundle locally and permit scalar
-replacement of the result cell and operation record. When no independent work
-exists and measurement shows a direct host call wins, a target may collapse
-submission plus immediate wait into that direct call. This is a degenerate
-lowering of the same completion contract, not a second writer-visible blocking
-API.
-
-The machine shape is known to be implementable without adopting another
-language's surface: [LLVM coroutine
-lowering](https://llvm.org/docs/Coroutines.html) splits a function into
-initial, resume, and destroy paths and can place a nonescaping frame in caller
-storage; [embedded executors](https://github.com/embassy-rs/embassy)
-demonstrate statically allocated state machines awakened by interrupts on one
-stack. Whitefoot must nevertheless qualify its own emitted shape and may
-replace the mechanism if measurements find a faster sound one.
-
-### Evidence which can still falsify the selected shape
-
-Status: OPEN EXPERIMENT. The owner settled the derived surface and lowering
-direction, not unmeasured performance claims.
-
-The semantic surface is settled, but its P0 claims remain experimentally
-falsifiable. The cheapest required probes are:
-
-1. Pure-compute machine code and startup resources are identical with and
-   without unused completion capability.
-2. An inline-heavy one-shot path adds no heap allocation, completion enqueue,
-   or wake compared with the best direct target call.
-3. Two non-inlined, separately compiled compatible wrappers overlap without
-   writer-visible pending values or an LTO-only trick.
-4. Runtime-selected queue depth approaches the best measured hand-tuned
-   pending queue and batch window across payload sizes and loads.
-5. Source/Sink reaches raw multishot, preposted-accept, buffer-pool, and target
-   pump ceilings without an extra payload copy or one writer call per physical
-   event.
-6. Cancellation/attribution races never duplicate an event, return a loan
-   early, or accumulate unbounded abandoned state.
-7. Opposite-order multi-resource admission cannot deadlock or half-submit and
-   does not require a universal global lock.
-
-Failure reopens the relevant surface or lowering premise from the
-constitution. It is not dismissed because the abstract model admits more
-schedules.
-
-## Capability values and ordinary regions are the language-level identity
-
-Status: SETTLED IN DISCUSSION on 2026-08-25.
-
-The rejected candidate used a second type-level identity:
-
-```wf
-&uniq 'loan Output<'world>
-```
-
-`Output<'world>` would be new syntax and was introduced before necessity was
-proved. It is not part of the selected model. A lifetime or Whitefoot region
-states how long a borrow is live; it is not an object identifier. Two factory
-results may live in the same lexical region, and one value may receive several
-successive borrow lifetimes.
-
-The settled identity rule uses the existing ownership and effect vocabulary.
-The spelling below illustrates possession versus use only; it does not select
-the final Output/Sink declaration or call shape:
-
-```wf
-fn emit['out, 's](
-  output: &uniq 'out Output,
+`ReadFile` promises position-explicit regular-file content observation with no
+caller-visible cursor mutation. Its qualified native representations exclude
+devices, proc-like streams, and other files for which positioned read consumes
+or commands external state; those require a distinct Device or Source API.
+Shared uses may therefore coexist. Destination memory remains protected by its
+ordinary exclusive loan.
+
+Hosted `pread` may update access-time metadata or implementation counters. The
+`ReadFile` mapping deliberately does not expose or order those incidental host
+facts, just as it does not expose another process's cache observation. No
+Whitefoot API may later promise ordered observation of them through an
+independent capability. If atime or another such fact becomes program
+semantics, the file mapping must expose its real authority and reopen the
+shared-read proof rather than silently retaining this contract.
+
+### 4.3 World write example
+
+```whitefoot
+fn write_once['o, 's](
+  output: &uniq 'o Output,
   source: &'s buffer<u8>,
-) -> result: own unit reads('s), writes('out);
+  start: own u64,
+  end: own u64
+) -> result: own Result<u64, IoError>
+effects {
+  memory reads('o 's);
+  world writes(output);
+}
 ```
 
-In this one-at-a-time schematic fallback, `&uniq 'out Output` states
-possession: the logical call holds the only usable root path through its
-ownership-complete milestone. A returned milestone guard would instead carry
-any authority which survives an earlier result. `writes('out)` states use: the
-function actually performs an observable state transition through the logical
-resource. These facts remain independent. Holding a key does not prove that
-the function used it, and using it does not make the key own the persistent
-external result.
+The Output handle's Whitefoot storage is read. The external byte sequence is
+written. The `&uniq` loan, not an Ordered family relation, prevents two writes
+to one Output from holding authority simultaneously.
 
-At a call boundary the formal row is projected to the actual resolved place.
-Two values `left` and `right` therefore produce `writes(place(left))` and
-`writes(place(right))`, even when both borrows use the same caller lexical
-region. At the unrefined root level, two uses of one value conservatively
-conflict. A checked family authority rule may refine them into freely
-coexisting or ordered fragments, as an actual Send Sink does when it mints
-several ordered reservations. Distinct lifetime spellings are neither
-necessary nor sufficient for that refinement.
+### 4.4 Owned terminal example
 
-A capability value locates a language-level identity/lifetime group and its
-whole-resource control; family authority and attribution contracts determine
-the actual interaction and ordering fragments. It is not a claim that the host
-backing is globally unique. The external effect may outlive the capability
-value; the checked `reads`/`writes` fact records the operation, not the
-lifetime of the physical object.
+```whitefoot
+fn finish_file(
+  output: own FileOutput
+) -> result: own Result<unit, FinishError>
+effects {
+  world writes(output);
+}
+```
 
-The API section above now fixes borrow, move, pool, finish, and release
-semantics at the common level. Exact declarations, container projection, and
-generated-capability lineage remain specification work and may require
-internal metadata, but they do not restore a second writer-visible lifetime or
-`Output<'world>`.
+An owned capability needs no fictitious borrow lifetime. The world row names
+the formal ownership place directly. Compiler-derived release contributes the
+same world footprint and is checked against the written row.
 
-## Environment aliasing is outside the language alias proof
+### 4.5 Exactness and purity
 
-Status: SETTLED IN DISCUSSION on 2026-08-25.
+The checker derives both rows from the complete body, every callee boundary,
+and every compiler-derived release on every ordinary control-flow edge, then
+checks the written rows in both directions. This includes fallthrough,
+explicit return, propagation failure, `give`, `break`, loop backedges, match
+residuals, displaced values from replace, and partially constructed aggregate
+cleanup. A writer cannot omit or pad a world effect. The impossible false-claim
+path remains the fail-stop exception described above; it does not unwind.
 
-Two successful `open` operations produce two logical capability instances.
-Hard links, symbolic links, mount or rename behavior, redirection of stdout and
-stderr to one sink, another process, a common remote endpoint, and other
-environment choices may cause two instances to reach the same physical state.
-Whitefoot does not recover or track that physical identity.
+`pure` means that memory effects, world effects, allocation effects, and traps
+are all empty. A backend or optimizer never invents a hidden world-action tag
+to repair a `pure` signature.
 
-Consequently, two distinct file capabilities may be used concurrently even if
-the environment maps them to one inode. Their file bytes may reflect any
-interleaving the qualified operation and host permit. This is an external
-logical race, like another process modifying the file; it is not a Whitefoot
-memory data race and may never become native undefined behavior, memory
-corruption, an invalid buffer access, or a broken loan. Target qualification
-must serialize or reject a native facility whose concurrent use cannot meet
-that safety boundary.
+### 4.6 World-bearing type shape
 
-The exact `reads`/`writes` footprint therefore names logical capabilities and
-coordination domains, not final host objects. Different capability roots have
-no implicit cross-root external order. A program that needs such order supplies
-a value, control, loan, or coordinator dependency as the completion-dependency
-rule requires.
+Whether a place may appear in a world row is a structural type judgment, never
+a type-name or operation-name test. An opaque system resource declaration
+explicitly declares each world-bearing leaf. Struct and enum declarations
+derive a shape from their fields and payloads. Projection selects a leaf;
+borrowing preserves it; construction, move, match, and replacement preserve
+the corresponding structural path.
 
-This boundary is what makes the ordinary ownership model both general and
-fast: it does not impose a filesystem identity registry or a global I/O order
-on every program merely to stabilize an environment-created alias.
+A generic parameter is world-bearing only under an explicit kind constraint or
+after closed-world specialization proves its concrete shape. A generic body
+which must name a world effect but has neither fact is unsupported rather than
+silently pure. Plain data has no world leaf. A factory declares freshness and
+publication projection per world-bearing result leaf. The same shape drives
+release, row substitution, and ownership lineage, so aggregates do not need an
+I/O-specific side table.
 
-## Relationships created by the runtime must close under ownership
+## 5. The shared frame theorem
 
-Status: SETTLED IN DISCUSSION on 2026-08-25.
-
-Environment-created aliasing is outside the proof, but the system API must be
-honest about mutable protocol state which it creates and whose contract the
-program relies on. It may not manufacture one non-commuting runtime state and
-present it as two unrelated owners.
-
-Every system-created relationship remains inside one resource lifetime group.
-The family can project long-lived role or range facets, mint short-lived
-operation reservations, move/consume whole authority, or retain the minimum
-resource-local coordination state required by noncommuting operations. These
-are durations and refinements of one authority model, not a closed list of
-unrelated API tricks.
-
-A listener Source retains common accept authority and owns anonymous physical
-accept capacity; each logical accept reservation receives one fresh connection
-owner under the family's attribution rule. A stream may expose one long-lived
-send facet and one receive facet. It does not mint two unordered independent
-send owners, but the one send facet may create many ordered short-lived send
-reservations. A native `dup` which shares a cursor, queue, reservation, or
-other noncommuting state retains the same lineage/lifetime group rather than
-pretending to create independent roots.
-
-Each in-flight operation owns its closed bundle through all declared
-milestones and the unique final terminal witness. Result publication,
-payload release, authority release, cancellation, and terminal may be separate
-transitions; no one-bit completion shorthand may release the whole bundle
-early.
-
-No ambient writer authority is allowed. Clock samples, randomness, input
-consumption, receive, accept, resource factories, and every other ordered world
-interaction enter through an explicit capability or compiler-owned operation
-contract. This is the completeness condition which lets ownership and exact
-`reads`/`writes` replace a coarse global marker.
-
-## `external` and `blocks` are deleted as language effects
-
-Status: SETTLED IN DISCUSSION on 2026-08-25.
-
-`external` records a non-empty world interaction as one payload-free bit. It
-does not say which logical capability was used, whether the operation read or
-wrote it, or which other operation conflicts. Keeping it would either serialize
-all I/O or duplicate facts already present in capability-specific
-`reads`/`writes`.
-
-The valid jobs once attributed to `external` have precise owners:
-
-- exact `reads`/`writes` distinguish possession from actual use and propagate
-  the fact through user calls;
-- an empty complete effect row defines purity;
-- compiler-derived release contributes the resource contract's own footprint;
-- trap and teardown rules speak directly about submitted operations and world
-  writes;
-- an unknown trusted boundary must expose a conservative capability footprint
-  or be rejected; and
-- cross-capability ordering is a real value, control, loan, or coordinator
-  dependency, not a global source-order promise.
-
-An implementation may cache a derived `touches_world` bit, but that cache has
-no language authority and the writer never declares it.
-
-`blocks` describes whether one target implementation occupies a host thread.
-That property changes when the same semantic operation is served by a hardware
-queue, an interrupt, a helper thread, or another backend. It is therefore not a
-portable language effect. The operation's completion and progress contract
-states its terminal outcomes, possible non-completion, cancellation rules, and
-loan-return point. Target metadata states whether an adapter consumes a helper
-thread or must avoid a required compute lane. User-function summaries are
-derived from calls and releases rather than written as `blocks`.
-
-The final language removes both atoms from writer effect rows and does not keep
-their bare spellings reserved merely for their retired meanings. Compiler
-internals may retain derived summaries for performance, diagnostics, or
-lowering, but those summaries are not independent semantic facts.
-
-The deletion itself does not select those later layers. The preceding API
-section and the runtime sections below now select their common semantic shape
-and lowering direction. Exact factory declarations, target ABI bytes, and
-measured emitted layouts remain specification and implementation work rather
-than reasons to restore either effect atom.
-
-## The completion backend does not require one dedicated I/O thread
-
-Status: SETTLED IN DISCUSSION on 2026-08-25.
-
-The hosted target set for this investigation is exactly macOS, Linux, and
-Windows. Other hosted systems and embedded targets do not shape this runtime
-decision.
-
-Whenever a program contains world operations, completion is their sole backend
-model. A pure program may dead-strip or lazily avoid initializing every
-completion-runtime facility, preserving the selected pure-compute zero-tax
-boundary. For a program which uses the world, this statement still does not
-require one dedicated I/O thread. It requires only that operations can be
-submitted and that some target facility can publish their milestones. An
-existing compute lane may reap or wait for completions whenever it has no ready
-compute work.
-
-On Linux, ordinary `io_uring` exposes shared submission and completion queues;
-Whitefoot needs no dedicated userspace I/O thread. Submission-queue polling is
-an optional mode which creates a kernel polling thread, and the kernel may use
-internal asynchronous workers for operations which need them. Those are Linux
-backend choices, not common-runtime requirements. See
-[`io_uring_setup(2)`](https://man7.org/linux/man-pages/man2/io_uring_setup.2.html).
-
-On Windows, an I/O completion port queues completion packets. The main thread
-or any existing thread may call `GetQueuedCompletionStatus` or its batched
-variant, so a Whitefoot compute lane may service the port when idle. At least
-one thread must eventually dequeue packets, but it need not be a dedicated I/O
-thread. See
-[I/O Completion Ports](https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports)
-and
-[`GetQueuedCompletionStatus`](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getqueuedcompletionstatus).
-
-On macOS, Dispatch I/O schedules asynchronous file operations and delivers
-handlers on dispatch queues. A Whitefoot-specific dedicated I/O thread is not
-required, but the backend may use libdispatch-managed execution resources and
-may incur a thread hop. Event-oriented facilities may instead be waited on by
-an idle compute lane. Which macOS arrangement is fastest remains an experiment,
-not a common architectural rule. See
-[Dispatch I/O](https://developer.apple.com/documentation/dispatch/dispatch-i-o)
-and
-[`dispatch_io_read`](https://developer.apple.com/documentation/dispatch/dispatch_io_read).
-
-Compute lowering is independent of this question. The number of lanes which
-execute Whitefoot code neither enables nor disables the completion backend,
-and the choice of a target-managed helper or polling thread does not select a
-single-threaded or multi-threaded compute lowering.
-
-## One scheduler consumes compute work and world completions
-
-Status: SETTLED IN DISCUSSION on 2026-08-25.
-
-Whitefoot has one scheduler with two specialized progress sources. Runnable
-compute work remains in work-stealing deques: its owning lane may run it and
-another lane may steal it. A pending world operation has no writer code which
-a lane can execute; only the target can publish its completion. It therefore
-uses a completion queue or mailbox rather than a compute deque.
-
-Completion publication performs only target-to-runtime transitions: initialize
-the value carried by a declared milestone, release-publish that milestone or
-the final terminal state, and make every newly satisfied frame runnable. The
-scheduler then wakes only the parked lanes needed for that new runnable set. A
-target callback, waiter, libdispatch worker, kernel worker, or other adapter
-thread never runs a writer continuation, steals compute work, or decides which
-calls may overlap. Such a thread remains part of the target adapter and does
-not form a second Whitefoot executor.
-
-The scheduler repeatedly observes both sources. It first makes arrived
-milestones visible to their owners, immediately continues when a result or
-authority requirement it needs is satisfied, otherwise runs local compute work
-or steals ready compute work. Only when neither source can make progress does
-it park at one target-specific wait point which can be awakened by either new
-compute work or a world completion.
-
-Two sleep rules are mandatory. After processing any completion, wake hint, or
-compute frame, the lane returns to the top and rechecks all sources; it never
-parks immediately after progress. Before sleeping, the lane first announces
-its intent to sleep and then rechecks both compute and completion sources. A
-publisher which arrives before the recheck is observed by the lane; a publisher
-which arrives after the announcement is responsible for the wake. These rules
-prevent a lane from sleeping beside already completed work or losing a wake in
-the gap between an empty check and the host wait.
-
-The common architecture does not require compute work and completions to share
-one queue, one producer protocol, or one target facility. It requires one
-scheduling authority and one sleeping decision, so a completion does not cross
-an I/O executor, a second ready queue, and then the compute scheduler before
-writer code can continue.
-
-## World means target ownership, not a thread
-
-Status: SETTLED IN DISCUSSION on 2026-08-26.
-
-`World` names the period in which an operation has left the Whitefoot
-scheduler and the selected target owns progress under the family contract. It
-publishes each milestone the contract guarantees; if and when the family
-reaches its terminal condition, it publishes the unique terminal witness.
-Possible non-completion and persistent Sources therefore do not become false
-liveness promises. World is neither a Whitefoot lane nor necessarily one
-kernel thread. The target may represent this responsibility with kernel
-operation state, a protocol stack, a device or DMA queue, a kernel worker, an
-optional polling thread, or libdispatch-managed work on macOS.
-
-The world does not inspect a compute deque and steal an I/O task. The lane
-which creates the operation executes the short, nonblocking target submission
-path itself. Once the target accepts responsibility, ownership changes as
-follows:
+The world row follows the same rule as the memory row:
 
 ```text
-READY / WAIT_CAPACITY: runtime owns the complete operation bundle
-    -> SUBMITTING: one lane is publishing the target descriptor
-    -> IN_FLIGHT: target owns progress and may publish declared milestones
-    -> QUIESCING: stop was requested but target access may continue
-    -> TERMINAL: target access and later publication have ended
-    -> CONSUMED: outcomes and returned authority have their final owners
+only state supplied from outside the function appears in its boundary row
 ```
 
-Submission may complete inline or be rejected with a terminal error. If a
-target queue is temporarily full, the operation remains runtime-owned and
-ready to submit; any lane may perform that short runtime action. It does not
-become world-owned until target acceptance. Bounded batching may combine
-submissions, but the maximum delay before a target kick is runtime policy and
-must be measured.
+A function-local fresh capability creates no anonymous `world writes(own)`
+effect.
 
-On ordinary Linux `io_uring`, the submitting lane publishes the SQE and kicks
-the ring; SQPOLL optionally replaces that kick with a kernel polling thread.
-On Windows the submitting lane issues the overlapped operation directly. On
-macOS the lane hands the operation to Dispatch I/O or another selected adapter;
-libdispatch-managed work may occur before the kernel sees the actual file
-operation. A centralized Whitefoot submitter would add a queue handoff and is
-therefore not the common default.
+For a fresh capability `F`, returning an owner closes the boundary only while
+`F` remains completely framed and unpublished before the return. No namespace,
+remote peer, process, device, or other observer may have observed its state.
+The owned result then carries all state which survived the call.
 
-## World operations use the same internal join shape as parallel compute
+If any state is published, made remotely visible, installed in a namespace,
+delegated, or otherwise exposed before the return, that transition also
+projects to the incoming capability which authorized the exposure. Returning
+the resulting owner does not erase that world effect. A connection which has
+sent SYN, a process which has started, and a named file which has been
+installed therefore carry both a fresh result owner and a write to Network,
+ProcessAuthority, or DirectoryWrite respectively.
 
-Status: SETTLED IN DISCUSSION on 2026-08-26. This is internal runtime
-structure beneath the selected API surfaces, not a writer-visible join form.
+If an observer exists but neither a returned owner nor an incoming publishing
+authority accounts for it, the system API used ambient authority and is
+invalid.
 
-Both compute and world work have a runtime handle whose result or ownership
-milestone is eventually needed. Their internal joins differ in one fallback:
+Examples:
+
+- a named file create, write, rename, unlink, or publication projects to an
+  incoming DirectoryWrite;
+- connect, send, FIN, or remote-visible close projects to an incoming Network
+  or ConnectPermit lineage;
+- process spawn or detach projects to an incoming ProcessAuthority or
+  SpawnPermit;
+- stdout and stderr writes project to their entry-supplied Output owners;
+- endpoint-local state in a socketpair which never escapes has no additional
+  caller footprint, but creating the pair still names its incoming
+  SocketFactory, ProcessResources, or semantic quota;
+- one returned socketpair endpoint carries its still-unpublished endpoint state
+  in the result, while the factory and quota actions remain in the row;
+  transferring an endpoint to another process projects to the explicit IPC or
+  Process capability used by that transfer.
+
+Factories must declare both facts:
 
 ```text
-compute join:
-    if another lane ran the frame, take its result
-    otherwise the joining lane may run the frame itself
-
-world join:
-    if the required milestone is published, take the result or authority
-    otherwise run other eligible compute work or wait for target completion
-    the joining lane can never execute the world operation itself
+which incoming capability the factory reads or writes
+which owned result leaves are fresh
 ```
 
-With one Whitefoot lane, a frame submits the operation and continues until it
-first needs a declared result, payload release, authority release, or scope
-terminal. If that milestone is already published, the frame continues without
-suspending. Otherwise it registers the exact dependency, rechecks to close the
-publication race, saves only its live state, and returns control to the
-scheduler. The lane then runs another eligible frame; only the scheduler, when
-no frame can progress, enters the target wait.
+Freshness is ordinary ownership construction provenance. It is not an
+independent runtime root or permission relation.
 
-With two or more lanes, the same suspended-frame protocol applies. Submission
-does not give one lane ownership of the later join. Publication records the
-declared milestone and makes every newly satisfied frame runnable; it performs
-no wake when no registered dependency became ready. A nonterminal result
-milestone does not falsely retire the operation or release a payload whose
-later milestone is still outstanding.
-
-The selected compiler representation is a stackless frame containing only
-state live across suspension. The frame may therefore resume on any eligible
-lane which atomically claims it; the originating lane remains an affinity hint,
-not an ownership requirement. A target callback still never executes the
-continuation directly. A target or fallback which retains a native stack may
-pin that particular continuation to its lane, but that is a measured target
-degradation rather than the common semantic rule.
-
-The operation state is conceptually a product rather than one completion bit:
+Freshness alone does not close a published-child alias. If a factory installs a
+named child under a parent and the parent can later reopen that same mutable
+state, these operations are not automatically independent:
 
 ```text
-lifecycle phase
-+ published milestone facts
-+ per-payload release facts
-+ live multishot deliveries
-+ unique final terminal witness
-+ registered frame requirements
+child = create(parent, "x")
+write(child, "A")
+other = open(parent, "x")
+read(other)
 ```
 
-The race-free conceptual protocol is:
+The API must select one ownership-complete answer before such a family ships:
+
+- keep the child unpublished until an explicit consuming
+  `publish(parent, child)` transition;
+- move a keyed entry authority out of the parent while the published child is
+  live, so the parent cannot reopen the same entry;
+- or add language-defined publication/escape ancestry to ordinary ownership
+  lineage and use that ancestry when projecting the parent dependency.
+
+The third choice is not permission to restore a family relation table. It is a
+general escape-provenance rule and must be artifact-surfaced, structural, and
+complete for aggregates. Until this gate closes, a published mutable child and
+a parent reopening path do not receive an independence proof.
+
+## 6. Quota and capacity are real ownership
+
+Program-controlled, recoverable quotas are world state and require explicit
+ownership. A Whitefoot budget, registered target slot, reserved port range,
+device credit, or runtime pool cannot depend on a hidden process-global owner.
+
+An abstract permit cannot promise that a later hosted allocation will succeed.
+Host-wide fd tables, Windows handle capacity, ephemeral ports, kernel memory,
+and limits affected by other processes may still report target exhaustion even
+after Whitefoot admission. The design must distinguish:
 
 ```text
-depend_on_world(frame, operation, requirement):
-    if acquire(operation.milestones) satisfies requirement:
-        continue frame
+semantic quota
+    controlled and exactly reservable by Whitefoot/runtime
 
-    save frame state and mark SUSPENDING
-    register (frame, requirement)
-
-    if acquire(operation.milestones) satisfies requirement
-       or frame was notified while SUSPENDING:
-        unregister dependency
-        mark frame RUNNING
-        continue frame
-
-    atomically commit frame to SUSPENDED
-    return control to scheduler
+host exhaustion
+    reported by the target and not made deterministic by a logical permit
 ```
+
+If a typed host-exhaustion result is required to participate in exact program
+ordering, the target must reserve a real transferable resource or the API must
+name the real arbiter capability. Otherwise the outcome remains an honest
+environmental/resource result rather than a false promise supplied by a
+portable permit. Its assignment to one of several otherwise independent
+operations is then allowed environmental nondeterminism: if only one host fd
+remains, overlapping `open A` and `open B` may let either one receive it. A
+program which requires source-order allocation uses a real reserved credit or
+one `&uniq` admission authority and thereby expresses the dependency.
+
+The correct pattern separates short admission from long target progress:
 
 ```text
-publish_milestone(operation, milestone, value):
-    write value if this milestone carries one
-    release_publish(operation.milestones, milestone)
+short admission
+    &uniq Factory / Quota -> owned Permit
 
-    for each registered requirement newly satisfied:
-        if its frame is SUSPENDING:
-            mark that frame notified
-        else if atomically changing SUSPENDED to READY succeeds:
-            enqueue that frame once
-
-    wake the number of parked lanes scheduler policy now requires
+long operation
+    consume owned Permit + payload -> fresh Resource carrying that credit,
+                                      or the same Permit on failure
 ```
 
-Immediate milestone publication does not mean unconditional wake. A
-continuation which has not registered a requirement needs no wake; it will
-observe the published state later. A one-owner one-shot fast path may store one
-dependency inline; broadcast, multishot, and shared milestones use a
-family-owned dependency set. Runnable publication precedes any wake, and the
-scheduler avoids both missed wakes and broadcast thundering herds. Nor does a
-wake guarantee immediate writer execution: a lane already running
-nonpreemptive compute reaches another frame only at its next scheduler
-boundary.
+Conceptual source:
 
-A dedicated target reaper may reduce the delay between a host event and its
-declared milestone publication, drain queue pressure, and wake parked lanes as
-scheduler policy requires. It cannot execute writer code or eliminate the
-delay caused by all compute lanes running long nonpreemptive work. Fixed or
-adaptive reapers, Linux SQPOLL, macOS worker arrangements, batching limits,
-and completion-to-resume latency therefore remain target experiments rather
-than common language or scheduler rules.
+```whitefoot
+let permits = reserve_connects(
+  network: &uniq network,
+  quota: &uniq socket_quota,
+  count: 2_u64
+);
 
-## Open experiment: completion overhead against direct blocking host calls
+let first = connect(permit: move permits.first, peer: peer_a);
+let second = connect(permit: move permits.second, peer: peer_b);
+```
 
-Status: OPEN EXPERIMENT. No performance dominance result has been established.
+The factory and quota loans end after permit creation. The two handshakes may
+remain in flight independently.
 
-The earlier paper argument that completion admits every blocking schedule does
-not prove equal or better realized performance. A completion runtime may pay
-three additional groups of cost: request encoding and publication; suspension
-state and waiting bookkeeping; and completion publication, result transfer,
-wakeup, and resumption. A direct blocking call may remain on one stack and
-return through one host call. The difference can be material at concurrency
-one even when completion provides more schedules at higher concurrency.
+Each outcome keeps the credit visible:
 
-This experiment isolates the finite one-shot direct-host floor. The broader
-Source/Sink, pure-compute, cross-function, cancellation, and multi-resource
-falsifiers are listed in the API section's open-evidence subsection and remain
-separate measurements.
+```whitefoot
+match first {
+  Connected { connection } => {
+    let finished = finish(connection: move connection);
+    // Every finished outcome contains the original owned ConnectPermit.
+  }
+  Failed { error, permit } => {
+    // No connection exists; the same permit is immediately reusable.
+  }
+}
+```
 
-Build semantically matched blocking and completion implementations on all
-three targets:
+The exact result declarations remain API work. The invariant is not optional:
+no success, failure, partial, cancellation, or release path loses track of the
+credit by mutating an invisible pool.
 
-- Linux: direct `read`/`write` against `io_uring`;
-- Windows: synchronous I/O against overlapped I/O plus an I/O completion port;
-  and
-- macOS: direct `read`/`write` against Dispatch I/O and any competing event
-  arrangement which the target supports.
+This is a real ABI boundary. A normal call which keeps either unique loan until
+the handshake result has not implemented short admission. The admission call
+must finish before the long operation begins, or publish an
+`authority_released` milestone which transfers an owned permit while the
+remaining target work continues without the factory loan.
 
-Sweep concurrency depth, payload size, isolated I/O versus mixed compute and
-I/O, single operations, bursts, and sustained saturation. Measure median and
-tail latency, throughput, CPU cycles, system calls, context switches, thread
-hops, cache misses, bytes of live operation state, and the effect of batched
-submission and completion. Test allocation-free slots, inline completion, and
-same-thread resumption rather than assuming them free.
+Failure returns the unused permit. A successful resource owns its credit until
+an explicit close, finish, recycle, or other consuming lifecycle operation
+returns the same reusable Permit. The Permit is the authority fragment; it
+does not need to be checked against a hidden parent identity. Any restriction
+on where it may operate is carried by its declared type and owned payload.
+Mixing fungible permits transfers capacity and is legal; a non-fungible credit
+must be a different or structurally bound type.
 
-The result selects target implementation strategy and identifies the depth at
-which completion repays its machinery. It does not introduce a second
-writer-visible blocking API. If completion cannot recover the relevant
-performance on one target, the investigation must locate the irreducible cost
-and revisit the common model or target implementation from the constitution;
-it may not dismiss the measurement because completion has a larger abstract
-schedule set.
+The default API does not consume a Permit into an arbitrary still-live Quota
+and then ask the compiler whether their secret ancestors match. A quota may be
+split into a remainder plus permits using the same rules as taking owned
+elements from an affine container. Long-lived code reuses the returned permits
+directly or stores them in an ordinary owned permit container.
+
+Automatic release may close a resource, but it cannot silently return credit
+to a quota owner held elsewhere: that would be hidden shared mutation. Its
+declared disposition is instead one of:
+
+- consume or burn the embedded credit while closing the native resource;
+- require an explicit finish which returns an owned Permit; or
+- move the Permit through a producer facet or return lane owned by the resource
+  itself; the corresponding collector is another explicit owned value.
+
+This is a type release contract, not runtime convention. Every ordinary
+lifecycle edge selects exactly one of `Burn`, `ReturnResult`, or
+`SendToOwnedReturnLane`. Pre-accept failure returns the original Permit.
+Post-accept success, error, cancellation, and partial-progress races reach one
+terminal disposition exactly once. If a resource has neither a legal implicit
+`Burn`/owned-lane disposition nor an explicit finish result, the type is
+finish-required and implicit release is rejected.
+
+The default resource shape may use the first rule for convenience. A
+long-lived program which must reuse a finite logical budget uses the explicit
+permit-return path. The cost and lifecycle exist in the API because they exist
+in the computation.
+
+Dynamic counts use affine containers of permits. Fixed products preserve exact
+lineage per leaf. A dynamic affine container records occupancy with the
+language's ordinary element-ownership rules and carries a finite origin set for
+its possible elements. Taking an element transfers one owned value and its
+origin set; replace returns the displaced value; partitioning transfers
+disjoint element ranges; loops and recursion compute a conservative fixed
+point. A constant index or proven partition may retain a narrower summary.
+Mixing permits from different formals widens the element origin set rather than
+inventing freshness. An unknown origin remains unsupported for a boundary
+which requires exact projection.
+
+This summary does not grant or deny parallelism. Extracted permits in distinct
+owned places may coexist because ordinary ownership proves the places
+disjoint. No runtime lineage identity is added. Static permits and proof-only
+authority may erase completely. Runtime capacities which are not part of
+program semantics remain target backpressure and do not masquerade as
+writer-visible quota.
+
+## 7. The heap exception
+
+The implicit process heap violates the general capability-closure law:
+
+```text
+functions may allocate without receiving an explicit Heap capability
+```
+
+Whitefoot tolerates this exception for code-generation convenience and records
+it explicitly as `allocates(heap)`. Current OOM remains a TCB/resource failure,
+not a recoverable state threaded through ordinary program semantics.
+
+Fallible allocation, custom allocators, request budgets, revocable memory
+capacity, and allocator selection should not inherit this exception. They
+belong to a later explicit Allocator, Arena, MemoryBudget, and Permit design.
+Unifying heap, arena, and allocation authority is a candidate project after
+the I/O work closes; it is not part of this implementation.
+
+## 8. Ownership is the only overlap authority
+
+World effects declare actual external use. They do not grant overlap.
+
+The overlap checker uses the existing judgments:
+
+```text
+data and control dependencies
+resolved ownership places
+ordinary memory footprints
+shared and exclusive loans
+own consumption
+exit paths
+```
+
+The additional world checks are mode and completeness checks:
+
+- a world write must name an `own` or `&uniq` capability formal;
+- a world read may name a shared, unique, or owned capability formal;
+- a system operation may use only authority supplied through its typed
+  arguments;
+- the body and release footprint must equal the written world row.
+
+Taking a shared capability borrow is itself the API's visible promise that
+concurrent observations may be linearized in any allowed order without
+changing the program contract. Merely being non-consuming and
+non-cursor-mutating is insufficient: two clock, metadata, or sensor reads can
+observe externally changing state in an order the caller cares about. Such an
+API takes `&uniq` unless arbitrary observation order is part of its specified
+meaning, even when its effect remains `world reads(...)`.
+
+A cursor, entropy sequence, accept backlog, send position, receive position,
+output sequence, or lifecycle transition is a world write and therefore also
+uses `&uniq` or `own`. This adds no commutativity tag: the borrow mode is the
+language-level rule, just as it is for ordinary memory.
+
+Different owned places are independent in the language proof. The source
+semantics therefore gives no cross-capability ordering guarantee. If stdout
+and stderr are redirected to one pipe, or two paths are hard links, writes
+through their two independent owners may appear in any allowed overlap order.
+That environment alias does not merge the owners after entry. A program which
+requires one order must carry one common `&uniq` sequencing or admission
+authority in its API.
+
+This rule does not let the Whitefoot runtime mint false independence. When a
+factory, split, reopen operation, or mapping implemented inside the trusted
+system creates related handles, its contract must either provide genuinely
+independent authority, expose the common sequencing authority structurally, or
+withhold overlap. The language ignores aliases introduced outside the mapped
+program; the mapping remains responsible for aliases it creates.
+
+## 9. Structural facets, not relation tables
+
+Independent sub-authorities are represented as ordinary structure:
+
+```whitefoot
+struct TcpParts {
+  receive: TcpReceive;
+  send: TcpSend;
+}
+```
+
+Receive and send operations borrow disjoint fields. Same-direction operations
+borrow one field uniquely. Whole-resource control consumes or uniquely borrows
+the aggregate after all field loans end.
+
+The API must not mint independently escaping aliases which later require a
+hidden generative brand to prove they came from the same parent. Keep related
+facets in one owned aggregate with scoped field borrows, or explicitly design a
+future branded capability system. A one-way split is valid only when the
+target contract proves that each child's operation, terminal transition, and
+release cannot alter the other child. Shared native lifecycle, reset, shutdown,
+or close authority fails that proof.
+
+Long-lived send and receive work may need to move into separate suspended
+frames and later participate in one whole-resource close. Scoped field borrows
+alone do not solve that lifecycle. Such an API must keep the aggregate in a
+structured parent frame, return an affine join token with both children, or
+define an explicit consuming reunite operation which cannot mix children from
+different parents. This is an open API gate, not grounds for an implicit root.
+
+Disjoint ranges, protocol streams, queue lanes, and resource shards follow the
+same rule. If two authorities are placed in independent ownership places, the
+system contract must prove the mapping itself did not create an undisclosed
+conflict. Environment aliases outside that mapping retain the cross-capability
+nondeterminism above.
+
+Independent facets and communicating endpoints are different API shapes.
+Independent facets promise that their observable operations and terminal
+transitions commute. A linear channel pair, cancellation pair, request/response
+pair, or Permit return lane intentionally communicates: a transition through
+one endpoint changes what the other endpoint can later observe.
+
+Communication remains ordinary ownership rather than shared mutation. Each
+endpoint is an owned value; send/request operations use `own` or `&uniq` on the
+producer endpoint, receive/next operations use `own` or `&uniq` on the consumer
+endpoint, and the channel's capacity, ordering, overflow, close, and terminal
+rules are part of the type contract. Their world rows name the endpoint places.
+One producer naturally preserves its unique program order. Multiple producer
+permits are legal only under an explicit arbitrary-merge contract or structural
+lanes. These protocol relations do not claim the endpoints are independently
+reorderable and do not create a general family-pair permission table.
+
+## 10. Ownership lineage
+
+The compiler must complete general structural ownership lineage rather than
+maintain an I/O-specific root system:
+
+```text
+Formal(place)
+Fresh
+Absent
+Union(...)
+```
+
+Lineage is stored per affine resource leaf:
+
+```text
+Pair
+  first  -> lineage A
+  second -> lineage B
+```
+
+Move transfers lineage. Borrow refers to the current place. Construction stores
+lineage by field or variant payload. Projection selects the corresponding
+leaf. Return transfers lineage to the result. A system factory declares fresh
+result leaves or a consuming continuation of an input owner. Branches and
+recursion form finite unions and fixed points. Unknown never becomes Fresh or
+empty; it causes an explicit unsupported boundary or a conservative refusal.
+
+For dynamic affine containers, lineage is an element-origin set rather than a
+fictional statically enumerated leaf. The container's existing occupancy proof
+ensures that take, replace, partition, iteration, and release move each element
+exactly once. Constant indices and proven disjoint ranges may refine the set;
+dynamic extraction conservatively inherits it. This affects boundary effect
+projection, not the ownership proof that two extracted values occupy different
+places.
+
+This is a language-defined, artifact-surfaced ownership judgment. It carries no
+runtime identity, family relation, or ordering authority. It is the same
+information required to release affine aggregate leaves exactly once.
+
+The current compiler's flat zero-or-one capability origin record must be
+replaced by this per-leaf representation. `Pair { first: ReadFile, second:
+ReadFile }` is a required positive case, not a permanent language limit.
+
+## 11. Completion ownership
+
+Before target acceptance, the compiler-owned call frame owns one prepared
+affine bundle:
+
+```text
+typed operation identity
+resource owner or live resource loan
+payload owners or live payload loans
+stable target metadata
+inaccessible result storage
+quota / target-capacity permit where semantic
+```
+
+Admission is an internal ownership protocol, not a typed I/O outcome:
+
+```text
+PREPARED
+    frame owns the complete bundle; target owns nothing
+
+RECORD_RESERVED / WAIT_CAPACITY
+    one generation-safe record is reserved; frame still owns the bundle;
+    a target-capacity notification makes the exact submission retryable
+
+ACCEPTED
+    target atomically accepts the complete bundle; frame can no longer use it
+```
+
+Transient record, SQE, queue, or helper-credit exhaustion suspends and retries
+the compiler-owned admission path. It neither calls the host operation nor
+returns `WouldBlock` or another writer-visible I/O failure. The acquisition
+order and rollback are fixed by the runtime: a failed pre-accept attempt
+transfers nothing; abandoning an unaccepted record restores it and leaves every
+owner and loan in the frame. Capacity release publishes the wake epoch used by
+the waiting admission. A batch or dependency handoff must reserve all resources
+whose partial ownership could form hold-and-wait, or reserve none.
+
+Target acceptance transfers the complete bundle from the frame to the target.
+The target then publishes monotonic milestones:
+
+```text
+accepted
+result_ready
+payload_released
+authority_released
+terminal
+```
+
+`accepted` precedes every other milestone. `result_ready` means the complete
+typed outcome bytes are initialized and immutable. `payload_released` means
+the target can no longer read or write any payload loan. `authority_released`
+means the target can no longer use the resource owner or loan. The payload and
+authority milestones are independent when the target can release them at
+different times. `terminal` implies `result_ready`, `payload_released`, and
+`authority_released`, and promises that the target will publish nothing more.
+Even cancellation and target failure publish a typed outcome before terminal.
+
+Each fact changes from false to true at most once; a target may publish several
+new facts atomically in one event. Publication is release and runtime drain is
+acquire. Duplicate, regressing, post-terminal, result-before-initialization, or
+release-before-last-access publication fails target qualification and is a
+runtime contract fault if reached.
+
+These facts do not create authority. They return parts of the affine operation
+bundle which acceptance transferred to the target. They are nevertheless
+permission-critical: a result consumer requires `result_ready`, payload memory
+access requires `payload_released`, and a new borrow or consume of the resource
+requires `authority_released`.
+
+Callable and operation summaries map milestones to exact formal or result
+leaves, not just to one undifferentiated payload and authority bit:
+
+```text
+result leaf              <- result_ready(component)
+payload formal/path A    <- payload_released(A)
+payload formal/path B    <- payload_released(B)
+authority formal/path C  <- authority_released(C)
+```
+
+The first positioned-read slice has one destination payload component and one
+file-authority component. A wrapper borrowing several leaves may publish them
+at different times, so a dependent on A need not wait for unrelated B. The
+checked callable contract carries this transformer through direct and indirect
+calls. The runtime representation may coalesce facts proven simultaneous, but
+cannot erase semantic distinctions needed by a caller.
+
+A completion record is reusable only after terminal has been drained, the
+typed result has moved to stable frame storage, and no authorized holder
+remains: no target bundle, pending event, dependent-frame registration,
+consume-wait registration, or live result-owner token. Old copied token bits
+may still physically exist; the next generation must reject them before they
+can observe or modify result storage. Generation validation is therefore part
+of ordinary stale-reference safety, not proof that old bits vanished.
+
+A normal call exposes its result only when the ownership required by its source
+semantics is complete. A family-specific receipt or Source exists only when
+split milestones or persistent identity are program semantics.
+
+Target code never resumes writer code. It publishes bytes and milestones. The
+completion runtime drains the event before a compiler-owned writer frame can
+become runnable.
+
+## 12. API surface patterns
+
+### 12.1 Finite one-shot
+
+Positioned file reads, finite datagram sends, one-shot timers, and finite
+operations with fully owned inputs use ordinary calls. The compiler may overlap
+them when existing data, place, loan, world-effect, and exit rules permit.
+
+### 12.2 Stateful sequential resource
+
+Output, a directory cursor, a same-direction stream state, an RNG sequence, and
+similar state use `&uniq` one-shot operations or one explicit batch operation
+under a single unique loan.
+
+### 12.3 Persistent source
+
+Listeners, periodic events, file monitoring, signals, hotplug, multishot
+receive, and unknown-size streams use an owned Source or Subscription. The
+source owns its persistent target operation, pool, event capacity, overflow
+policy, and terminal lifecycle. `next` uniquely borrows the source and
+returns owned shots or batches.
+
+### 12.4 Request and response
+
+A host callback which requires a writer decision becomes an owned Request plus
+ResponsePermit delivered through a Source. Writer code runs on the Whitefoot
+scheduler. A host protocol which requires immediate reentrant execution on the
+original callback stack and cannot be adapted is unsupported.
+
+### 12.5 Finish and recycle
+
+Finish, close, abandon, recycle, quota handback, durable commit, peer
+acknowledgement, and detach are distinct consuming operations whenever their
+outcomes differ. Compiler-derived release cannot silently perform a stronger
+successful lifecycle transition.
+
+### 12.6 Cancellation
+
+The default finite ordinary call has no writer-visible pending identity and is
+not independently cancellable. Cancellation is available only when an API
+explicitly maps it into owned authority, for example a structural pair of one
+CancelRequest facet and one operation registration moved into the target
+bundle. There is no ambient cancellation table or magic future handle.
+
+The target contract defines one linearization between the cancel request and
+ordinary terminal completion. If terminal wins, cancellation reports `TooLate`
+and the ordinary outcome owns every value. If cancellation wins, the operation
+still reaches terminal with a typed `Cancelled` or `Partial` outcome. That
+outcome accounts for committed external progress and returns or burns every
+payload owner, resource authority, and Permit exactly once. A cancellation
+acknowledgement which precedes last target access is not terminal and cannot
+release a loan.
+
+The CancelRequest and operation registration are ordinary owned facets designed
+to communicate through the target arbiter; their API specifies that race. They
+do not authorize unrelated shared mutation or a generic relation table. Exact
+signatures, reusable cancellation scopes, deadlines, and whether a selected API
+offers cancellation at all remain part of its concrete design.
+
+### 12.7 Foreign and callback mappings
+
+A foreign boundary receives an explicit owned or borrowed mapping context for
+every foreign global, registration table, signal disposition, callback queue,
+and retained allocation it may observe or change. No foreign or target callback
+executes Whitefoot writer code. During a synchronous foreign call, a
+compiler-owned adapter may use an explicit call-scoped child loan and
+qualification must prove that the foreign side retains nothing after return.
+An asynchronous callback instead receives a closed owned bundle containing the
+retained payload, target operation, event capacity, and terminal/unregister
+protocol; it publishes into a Source.
+
+Unregister is complete only at a target-defined terminal milestone after which
+the foreign side cannot call again or retain the pointer. Signal and event
+overflow policy is owned by the Source rather than hidden in a process global.
+If a foreign library cannot expose or satisfy these facts, the mapping fails
+qualification. A process-isolated adapter may turn it into explicit IPC, but
+the compiler does not accept an unverifiable in-process escape.
+
+## 13. Compiler implementation
+
+### 13.1 Language and checking
+
+1. Select and implement a canonical syntax for visibly separate memory and
+   world effect domains.
+2. Require every constructible effect to have a writable name and keep the
+   callable boundary complete.
+3. Check memory and world rows in both directions, including compiler-derived
+   release.
+4. Enforce world-write mode: `own` or `&uniq`, never shared.
+5. Reject ambient authority and any factory whose observable quota,
+   publication, or parent effect cannot be projected to a formal.
+6. Replace capability-root cardinality with per-leaf ownership lineage.
+7. Keep target action and completion milestones in system contracts and in
+   artifact-surfaced callable summaries; these facts return transferred
+   authority at proven milestones rather than minting new authority.
+8. A first-class or indirect callable type must carry its complete memory and
+   world rows, formal-subject substitution, result-lineage transformer, and
+   completion contract. Until that callable boundary exists, an indirect call
+   with world-bearing arguments or results is explicitly unsupported; it never
+   receives an empty or global fallback effect.
+
+### 13.2 Permission
+
+Reuse the existing dataflow, memory footprint, operand-read, loan, consumed
+place, and exit judgments. Remove family-fragment pair relations and Ordered
+edges. Direct system calls enter the same ordinary call analysis.
+
+The current whole-run rule is too coarse for:
+
+```text
+A writes out
+B writes unrelated err
+C later writes out
+```
+
+`A` and `C` cannot overlap, but `C` should become eligible as soon as
+`A` releases `out`, even if `B` remains incomplete. Build a generic
+dependency DAG from ordinary data, control, memory, and loan-release edges
+instead of using an Output-specific Ordered batch.
+
+### 13.3 Lowering
+
+1. Keep completion enabled independently of compute `--par`.
+2. Preserve pure-compute zero-link and zero-loop-tax boundaries.
+3. Generalize selective stackless lowering from one single-block suspension to
+   branches, loops, multiple suspension sites, indirect calls, and non-tail
+   suspended children.
+4. Allow a completed operation to activate compiler-owned dependent target work
+   directly when no writer frame must run first, but only after closing the
+   bounded-record handoff below.
+5. Fuse static same-authority sequences under one unique operation when a
+   qualified target offers `writev`, request linking, or a finite batch
+   without changing partial/error semantics.
+6. Keep direct and inline depth-one specializations of the same source call.
+7. Treat multishot as persistent Source lowering with a target-owned pool, not
+   as fusion of a finite list of ordinary one-shot calls.
+8. Give each dynamic function activation at most one reusable suspension frame
+   or an equivalent proven bound. A call which does not suspend must erase that
+   frame and retain the direct ABI.
+9. Do not materialize proof-only authority. Do not pass a native handle twice
+   as both handle and capability. Closed-world wrappers must remain
+   specializable; opaque ABI pointer and register-spill cost receives its own
+   bound and benchmark.
+
+## 14. Runtime implementation
+
+The new completion runtime remains separate from the pre-existing compute-par
+runtime. In prose and diagnostics, call `wf_completion_slot` an I/O completion
+record; it is not `wf__par_slot`.
+
+Retain and harden:
+
+- typed target requests with no writer function pointer;
+- generation validation before result bytes change;
+- one terminal publisher;
+- separate result, payload-release, authority-release, and terminal facts;
+- drain-before-writer-ready;
+- exact-token consume-to-park handshake;
+- one wake epoch and correct multi-waiter publication;
+- target callbacks which never execute writer code;
+- zero-helper progress for qualified nonblocking, native-completion, inline,
+  or otherwise bounded direct-progress operations;
+- bounded queues and operation storage.
+
+Rework:
+
+- remove the special Ordered Output root, batch, and 16-member arrays;
+- remove language meaning from the current 64-record bridge capacity;
+- derive or configure bounded capacity from target/runtime policy and measure it;
+- compare whole-batch all-or-none admission against streaming admission and
+  dependency-driven submission;
+- close the bounded dependency handoff before enabling successor activation:
+  either reserve successor capacity, move predecessor results into stable frame
+  storage and consume their records during drain, reuse one record along a
+  dependency chain, or prove another no-hold-and-wait protocol;
+- distinguish semantic quota permits from runtime target backpressure;
+- let permit pools use batch refill, per-lane caches, and explicit recycle
+  without writer-visible shared mutation;
+- define any runtime-owned atomic sequencer used by dynamic producer permits as
+  one typed trusted primitive; it may implement native admission but grants no
+  shared writer-visible mutation. Such permits are valid only when each owns a
+  real reservation and the API explicitly permits the target to choose their
+  merge order. If consumer-visible order must follow program order, use one
+  `&uniq` sequencer authority or structurally separate lanes instead. Moving an
+  old Ordered relation table into the runtime is not an implementation.
+
+## 15. Target implementation
+
+### Linux
+
+Keep real io_uring operation submission, CQ completion, and the combined native
+wait set. Requalify every API after the ownership rewrite. Do not replace
+current-position Output semantics with positioned write semantics. Measure
+linked requests, batching, registered resources, and multishot against the best
+direct path.
+
+### macOS
+
+Keep typed target fallback for facilities without a qualified native completion
+path. Zero-helper mode remains required only where the chosen operation cannot
+block the sole scheduler beside work needed to unblock it. A potentially
+blocking fallback with independent runnable work must first obtain helper
+credit or use another target facility. Helper count is target policy, not a
+language mode. Compare bounded helper, dispatch, readiness, direct, and
+completion paths per operation.
+
+### Windows
+
+Keep the IOCP/OVERLAPPED implementation fail-closed until it executes on a
+Windows runner and closes the persistent multi-waiter wake proof. Cross-linking
+alone is not execution evidence.
+
+## 16. Verification plan
+
+### 16.1 API correctness
+
+Every system API receives a contract matrix covering:
+
+```text
+success
+empty input
+partial progress
+EOF / terminal state
+typed resource failure
+invalid target representation
+owner and permit disposition on every result
+ordinary memory changes and untouched tails
+world effects and publication
+release, finish, abandon, and recycle
+```
+
+### 16.2 Concurrency and runtime robustness
+
+Use deterministic hostile schedules and long randomized stress:
+
+```text
+completion before wait
+stale generation
+duplicate terminal publication
+drain / consume / park races
+multi-waiter wake
+capacity exhaustion and refill
+permit split, return, loss, and duplicate prevention
+partial I/O and cancellation races
+single-thread and multiple-thread progress
+dependency activation without unrelated group joins
+```
+
+Run ASan, UBSan, TSan where supported, strict C warnings, and native target
+tests. Stress complements deterministic race construction; it does not replace
+it.
+
+### 16.3 Performance
+
+Compare against the best native and Rust shape, not a naive blocking baseline:
+
+```text
+depth 1 through target saturation
+static and dynamic keys
+payload sizes and batch sizes
+single and multiple producers
+whole-capability uniq versus short admission plus permits
+central pool versus per-lane credits and batch refill
+direct, inline, linked, batch, multishot, and helper paths
+CPU cycles, atomics, cache misses, context switches
+p50 and p99 latency
+live pinned bytes and buffer-byte-time
+extra ABI arguments and spills
+```
+
+The two first decisive experiments are parallel open/connect admission and
+dynamic multi-producer delivery. Failure to match the native ceiling reopens
+the responsible capability granularity or API.
+
+## 17. Current candidate disposition
+
+### Retain
+
+- completion-only source model;
+- ordinary call surface;
+- no writer callback;
+- no correct-path false-claim cost;
+- typed outcomes and empty-I/O no-host behavior;
+- completion record generation and publication protocol;
+- drain-before-resume and lost-wake fixes;
+- pure-compute completion-runtime link boundary;
+- Linux io_uring work, macOS typed fallback, and Windows IOCP foundation;
+- measurements which compare direct, completion, helper, and wake paths.
+
+### Delete or replace
+
+- mixed REGIONID/IDENT operands inside one memory effect row;
+- shared Output and shared DirectorySource mutation;
+- Ordered Output batches and OutputBytes edges;
+- family Free/Ordered/Exclusive relation as a second concurrency system;
+- logical-root identity used independently of ordinary ownership places;
+- the flat zero-or-one capability origin record;
+- the 16-member ordered limit as a design concept;
+- the 64-member free batch limit as a language-like claim;
+- completion grouping which waits for unrelated members before releasing a
+  dependent operation.
+
+### Generalize
+
+- ownership lineage to every affine resource leaf;
+- world effects to aggregate-safe formal subjects;
+- compiler stackless state machines;
+- dependency-driven completion scheduling;
+- quota, permit, pool, lease, Source, and recycle lifecycles;
+- API and runtime tests across every result and platform.
+
+## 18. Implementation sequence
+
+1. **Safe core isolation.** Before the language gates close, isolate and qualify
+   the generic completion state machine plus positioned `read_at`. Its gate has
+   an explicit link-unit list containing the generic runtime, file adapter, and
+   dedicated core/read probe but not the legacy bridge, Output code, or logical
+   root implementation. A dependency/link map is the primary isolation proof;
+   absence of legacy symbols in the final binary is an additional guard, not
+   the proof by itself.
+
+   The gate must pass generation/stale publication, exactly-one terminal,
+   result-before-publication visibility, drain-before-consume, exact-token
+   consume-to-park, capacity exhaustion/retry/wake, single- and multi-waiter
+   schedules, and positioned-read empty/full/short/EOF/error/untouched-tail
+   cases. Stress plus ASan/UBSan and TSan supplement the deterministic cases.
+   This slice may not add dependent-successor, quota, facet, or new stackless
+   semantics.
+2. **Language gate.** Close the effect-domain spelling, world subject
+   granularity, exact row rules, capability-closure law, and quota semantics.
+   Write positive and negative examples before editing the compiler.
+3. **Ownership lineage.** Implement per-leaf lineage through construction,
+   move, projection, match, replace, result substitution, recursion, and
+   release. Make `Pair<ReadFile, ReadFile>` execute.
+4. **Effect checker.** Add the world domain, release contribution, call
+   substitution, contract equality, entry support, diagnostics, and ledgers.
+5. **API correction.** Convert stateful world operations to `own`/`&uniq`;
+   add typed facets, factories, quotas, permits, finish, abandon, and recycle
+   contracts for the selected file slice.
+6. **Permission and IR.** Remove family relation permission and build ordinary
+   dependency edges and milestone requirements.
+7. **Lowering.** Generalize stackless state machines and implement dependent
+   target activation, batching, and direct specialization.
+8. **Runtime cleanup.** Remove Ordered Output machinery, revise bounded
+   admission, and keep the proven completion/wake core.
+9. **Targets.** Requalify macOS and Linux; execute and finish Windows.
+10. **Evidence.** Complete API matrices, hostile race tests, stress, sanitizer,
+   conformance, maintained-program, link-boundary, and performance gates.
+11. **Activation.** Only after exact owner review, convert the candidate
+    specification to ACTIVE, archive the previous bytes, record the protected
+    boundary, and run canonical `make check` on the exact revision.
+
+## 19. Open design gates
+
+The following questions are not silently decided by this plan:
+
+1. final canonical syntax and names for the memory and world effect domains;
+2. whether world subjects are direct formals, whole aggregate formals, or a
+   finite ownership-place path language;
+3. exact factory, quota, permit-return, pool, lease, and revocation APIs;
+4. publication ancestry for a mutable child which a parent can reopen;
+5. the boundary between exactly reservable semantic quota and nondeterministic
+   hosted target exhaustion;
+6. bounded completion-record handoff across dependency activation;
+7. typed Source, Subscription, Request/ResponsePermit, and ExternalMapping
+   families;
+8. the static and dynamic authority-splitting rules needed to match native
+   parallel open/connect and multi-producer ceilings;
+9. whether unordered dynamic producer permits are needed at all, and, if native
+   MPSC measurements require them, their real reservation, consumer-visible
+   merge semantics, world subject, and typed runtime sequencer;
+10. affine facet reunion or structured-parent ownership for long-lived
+    bidirectional work;
+11. full stackless ABI, frame-placement, reuse, and direct-path erasure;
+12. pre-accept ownership, acquisition order, rollback, capacity derivation,
+    and streaming versus all-or-none admission;
+13. Windows native execution and multi-waiter wake qualification;
+14. shared memory, MMIO, DMA, and GPU representation proof, which ordinary
+    Whitefoot borrows cannot solve when an external writer remains live;
+15. dynamic affine-container occupancy and effect-projection rules for mixed
+    and recursively produced capability origins;
+16. complete foreign mapping contracts for hidden globals, synchronous and
+    asynchronous callbacks, retained pointers, unregister, signals, and
+    process isolation;
+17. cancellation and deadline API signatures, reusable authority, race
+    outcomes, partial progress, and per-result owner disposition;
+18. world-bearing type kinds and generic constraints;
+19. indirect-callable world rows, subject substitution, result lineage, and
+    completion contracts; and
+20. the exact cleanup contribution on every ordinary control-flow edge;
+21. the scalable runtime encoding of per-formal/per-leaf result, payload, and
+    authority release milestones;
+22. protocol rules for owned communicating endpoint pairs, including capacity,
+    merge order, close, and terminal behavior; and
+23. target qualification boundaries for regular-file positioned reads versus
+    device, virtual-file, and metadata-observing APIs.
+
+An open gate may block the affected API or optimization. It does not authorize
+a hidden tag, ambient capability, shared mutation, global serialization, or
+unsafe fallback.
+
+## 20. Completion criteria
+
+The I/O work is complete only when:
+
+- every externally observable ordinary world action names explicit incoming
+  authority; a returned fresh owner is sufficient only for state which stayed
+  unpublished and completely framed until return;
+- every program-controlled recoverable quota has an explicit owner and
+  handback path;
+- automatic release has an explicit credit disposition and never mutates a
+  separately held quota owner;
+- no logical permit claims to reserve a host resource which the target did not
+  actually reserve;
+- any unreserved host exhaustion is specified as environmental nondeterminism,
+  while code requiring deterministic allocation carries a real arbiter;
+- no shared world write is accepted;
+- memory and world effects are distinct in source and identical in frame,
+  substitution, exactness, and read/write logic;
+- permission relies on ordinary ownership places and loans rather than a
+  family relation system;
+- fixed multi-root aggregates retain exact structural lineage, and dynamic
+  affine containers preserve occupancy plus conservative element origins;
+- completion preserves every owner and loan through its declared milestones;
+- pre-accept capacity waits leave the complete bundle outside target ownership,
+  transfer nothing on retry, and have a proven wake and rollback path;
+- callable milestones release exact formal/result leaves rather than one
+  undifferentiated bundle;
+- result, payload, authority, terminal, cancellation, and record-reuse
+  transitions form one qualified monotonic ownership state machine;
+- dependency activation cannot deadlock while completed predecessors occupy
+  bounded completion records;
+- no target executes writer code;
+- pure computation links and executes no completion machinery;
+- all three hosted targets have honest qualification status;
+- API correctness, hostile concurrency, stress, sanitizer, conformance, and
+  maintained-program gates pass;
+- measured fast paths match the best relevant native/Rust shape or the
+  responsible design is reopened; and
+- the exact revision receives owner approval before merge to `main`.
+
+## 21. Deferred successor: allocation unification
+
+Heap allocation is the deliberate ambient-authority exception in the current
+language, while arena and future quota/permit designs expose more ownership.
+After I/O closes, investigate one unified allocation model covering heap,
+arena, allocator selection, fallible capacity, budgets, recycle, and target
+memory pools. That project starts from the same capability-closure and frame
+principles, but it does not delay this I/O implementation.
