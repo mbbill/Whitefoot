@@ -163,6 +163,27 @@ The activated revision proves:
   gate pass; and
 - cleaned fast paths are measured against the best matched native shape.
 
+## Program-level performance, measured 2026-08-27
+
+The evidence above is component evidence. Whole programs were measured on
+branch `batch/0084-io-perf` and the table is in
+`research/investigations/io-model/RESULTS.md`; the bundle that produces it is
+`research/experiments/io-completion-bench/`.
+
+On a many-independent-files workload the shipped build is 2.05x faster than
+its own sequential build on macOS and 2.41x faster on Linux, so the overlap
+is real. Against the native ceiling it is within 3.4 percent of a
+hand-written io_uring pipeline running at the same queue depth the Whitefoot
+source can ask for, and well outside 10 percent of any native shape that asks
+for a deeper one.
+
+The open question this leaves is not the completion protocol but the width a
+source can express: overlap groups are runs of consecutive calls in one basic
+block, so a loop with one I/O call per iteration overlaps nothing and measures
+like the sequential build. Deciding whether the language, the lowering, or
+neither should widen that is the next I/O question, and it is a design
+decision rather than a defect.
+
 No test, verdict, check, or failure path was weakened to make this revision
 green. Canonical `make check` now runs to completion on the activated identity
 rather than stopping at the candidate archive gate. No merge into `main`

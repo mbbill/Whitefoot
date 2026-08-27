@@ -1,0 +1,53 @@
+command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+  doc "Relays a fixed byte volume onto two independent outputs, one chunk to each per round, so a consumer that makes one output wait cannot stop the other.";
+  let left = buffer_new(262144_u64, 65_u8);
+  let right = buffer_new(262144_u64, 66_u8);
+  let status = 0_u8;
+  let round = 0_u64;
+  loop @relay {
+    let done = ige(round, 64_u64);
+    if done {
+      break @relay;
+    }
+    region 'out {
+      region 'err {
+        region 'left {
+          region 'right {
+            let published_left = write_once<'out, 'left>(output: &uniq 'out out, source: &'left left, start: 0_u64, end: 262144_u64);
+            let published_right = write_once<'err, 'right>(output: &uniq 'err err, source: &'right right, start: 0_u64, end: 262144_u64);
+            match published_left {
+              Ok(value: reached_left) => {
+                let complete_left = ieq(reached_left, 262144_u64);
+                if complete_left {
+                } else {
+                  set status = 4_u8;
+                }
+              }
+              Err(error: failed_left) => {
+                set status = 2_u8;
+              }
+            }
+            match published_right {
+              Ok(value: reached_right) => {
+                let complete_right = ieq(reached_right, 262144_u64);
+                if complete_right {
+                } else {
+                  set status = 5_u8;
+                }
+              }
+              Err(error: failed_right) => {
+                set status = 3_u8;
+              }
+            }
+          }
+        }
+      }
+    }
+    if ieq(status, 0_u8) {
+    } else {
+      break @relay;
+    }
+    set round = round +wrap 1_u64;
+  }
+  return exit_status(code: status);
+}

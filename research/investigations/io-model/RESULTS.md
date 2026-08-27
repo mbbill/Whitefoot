@@ -1,12 +1,208 @@
 # Completion I/O results
 
-Status: the unified-state rebuild was validated and remeasured on 2026-08-27.
-The later sections retain historical component measurements for comparison.
+Status: measured at the program level on 2026-08-27, on macOS and on Linux
+with io_uring. Everything before that date was a C-level measurement of the
+completion core alone; those numbers are retained below, labelled, because
+they still describe what they measured.
+
+The program-level section is the one that answers the design's own question.
+Reproduce it with:
+
+```sh
+make -C research/experiments/io-completion-bench bench       # macOS
+make -C research/experiments/io-completion-bench bench-pipe
+make -C research/experiments/io-completion-bench linux       # Linux, io_uring
+```
+
+## Program-level results, 2026-08-27
+
+### What is compared
+
+Three lines, every one checked to publish the same bytes on every recorded
+run:
+
+```text
+N   the best hand-written native C shape, -O2, no handicap
+S   the Whitefoot program built with `whitefootc --no-overlap`
+C   the same Whitefoot source built the way it ships
+```
+
+C and S are one source compiled two ways, so the pair is a statement about
+the lowering and not about two programs. Protocol: two warm-up runs, seven
+recorded runs, medians reported, child user and system CPU from `wait4`.
+
+### Workload 1: many independent files
+
+8,192 generated files of mixed size, 1 to 16 KiB, 68 MiB in total, each
+opened by name and transferred with one positioned read, folded into one
+position-weighted checksum. Warm page cache. Two Whitefoot programs over the
+identical work: `many_files_wide.wf` states four opens and then four reads
+consecutively; `many_files_narrow.wf` is the natural one-file-at-a-time loop.
+
+macOS 26.5.2, Apple M4, 10 cores, 16 GiB:
+
+```text
+line                          median      user      sys
+N.direct                     948.9 ms    45.4     253.9
+N.pool4                      365.5 ms    69.6     390.5
+N.pool6                      289.8 ms    56.9     375.6      best N
+S.wide                       974.8 ms    46.5     252.9      best S
+S.narrow                     989.4 ms    50.0     255.1
+C.wide  (default policy)     475.2 ms    63.0     348.8      best C
+C.wide  WF_IO_HELPERS=0     1018.9 ms    50.6     287.8
+C.wide  WF_IO_HELPERS=2      647.5 ms    61.5     315.9
+C.wide  WF_IO_HELPERS=4      479.3 ms    67.0     378.7
+C.narrow (default policy)   1069.1 ms    48.9     304.0
+```
+
+Linux 6.8.0 aarch64, 2 CPUs, 1.9 GiB, in a container with io_uring permitted:
+
+```text
+line                          median      user      sys
+N.direct                      56.5 ms    37.0      20.0
+N.pool2                       30.5 ms    41.4      19.8      best N
+N.pool4                       31.1 ms    39.7      20.8
+N.uring4                     117.1 ms    50.8      46.1
+N.uring8                      74.6 ms    45.1      53.1
+N.uring32                     63.9 ms    44.9      36.7      best native ring
+S.wide                       292.0 ms    60.5     123.4      best S
+S.narrow                     303.3 ms    69.0     122.2
+C.wide  (default policy)     121.1 ms    51.3      54.3      best C
+C.wide  WF_IO_HELPERS=0      121.0 ms    51.6      53.7
+C.wide  WF_IO_HELPERS=1      157.4 ms    63.1      81.7
+C.wide  WF_IO_HELPERS=2      173.6 ms    64.2      84.2
+C.narrow (default policy)    300.9 ms    65.3     130.6
+```
+
+### Workload 2: two independent output streams
+
+64 rounds of 256 KiB onto `command.stdout` and `command.stderr`, chunks
+larger than the pipe buffer so a write genuinely waits, two independent
+consumers each sleeping 1 ms per read. macOS, medians of seven:
+
+```text
+N.seq        394.8 ms
+N.threads    389.9 ms
+S.relay      395.6 ms
+C.relay      390.4 ms
+```
+
+All four lines fall inside 1.5 percent of each other, including the ideal
+native shape of one thread per stream. The workload is entirely
+consumer-bound: the pipe buffer already decouples the two streams, so a
+producer that serializes its two writes loses nothing that overlap could
+recover. This measures no gain and no loss; it does not measure the absence
+of overlap. The semantic property — an independent operation running while
+another is blocked — is pinned separately and executably by
+`independent_io_reaches_the_second_operation_before_the_first_unblocks`.
+
+### Against the bar
+
+The bar: C at least as fast as S on every workload, and within 10 percent of
+N wherever N is a native completion path or a fairly sized thread pool.
+
+```text
+workload / platform      C vs S              C vs N                    bar
+many files / macOS       2.05x faster        1.64x slower than pool6   missed
+                                             1.30x slower than pool4
+many files / Linux       2.41x faster        3.97x slower than pool2   missed
+                                             1.89x slower than uring32
+                                             1.03x slower than uring4  met
+two streams / macOS      1.01x faster        1.00x of threads          met
+```
+
+C beats S on every workload, so overlap is real and it is worth roughly two
+times on a program that exposes width. The 10 percent bar is met against the
+native completion path **at the concurrency the Whitefoot source can
+actually ask for**, and missed against every native shape that asks for
+more.
+
+### Where the remaining distance is
+
+It is not the completion protocol. On Linux the four-wide Whitefoot program
+and the hand-written io_uring pipeline at queue depth four land 3.4 percent
+apart, on the same kernel, the same tree, the same checksum. Widen the native
+baseline to depth 32 and it pulls away to 63.9 ms; the Whitefoot source has
+no way to ask for depth 32.
+
+The overlap a program gets is decided by its source shape. The lowering forms
+groups from runs of *consecutive* calls in one basic block
+(`IrBuilder::completion_steps`, with `has_later_independent_call` in
+`semantic/permission.rs`), so a loop body holding one I/O call per iteration
+has no later independent call to overlap with and emits zero submissions.
+That is exactly what `many_files_narrow.wf` does, and it measures within
+noise of its own sequential build on both platforms — 1069 against 989 ms on
+macOS, 301 against 303 ms on Linux. The four-wide program over identical
+work is about twice as fast as its own sequential build on both.
+
+Two further facts bound the native ceiling rather than the Whitefoot one:
+
+1. A blocking thread pool beats io_uring on this workload at every depth
+   tested — 30.5 ms against 63.9 ms on Linux. Opens dominate a
+   many-small-file workload and the ring does not carry them, so each file
+   still costs a blocking `openat` on the submitting thread. Whitefoot's own
+   Linux adapter has the same split: `linux_io_uring.c` submits
+   `IORING_OP_READ` and `IORING_OP_WRITE` and nothing else.
+2. The pool baseline also folds each file's checksum on the worker that read
+   it, so part of its advantage is compute parallelism the Whitefoot program
+   does not have — its fold runs on the single writer thread. On Linux
+   `N.pool2` uses 61 ms of CPU across two cores for a 30.5 ms wall time,
+   while the four-wide C line uses 106 ms of CPU on essentially one.
+
+### What this run changed in the runtime
+
+Three defects were found by measuring and fixed on the same branch.
+
+```text
+                                    before          after
+macOS default, user CPU             266 ms          60 ms
+macOS default, wall                 838 ms         475 ms
+Linux default, wall                 171 ms         121 ms
+Linux link of a completion program  did not compile  compiles
+```
+
+1. A scheduler waiting in `wf__completion_file_join` refused to park while
+   the target queue held anything at all. With helpers it cannot execute
+   that queued work, so it spun for exactly as long as a helper kept the
+   queue non-empty. The guard is now one named predicate true only in the
+   zero-helper configuration, where the waiting scheduler really is the
+   target's engine.
+2. An unset `WF_IO_HELPERS` pinned one helper, which measured worst of every
+   setting on a program with width. The policy now starts at one, grows by
+   one only when the queue holds more requests than there are helpers to
+   take them, and stops at the machine's CPU count — and starts at **zero**
+   where a native ring is ready, because there the ring already carries
+   every transfer and a helper can only add a handoff to the operations it
+   does not take. A written `WF_IO_HELPERS` still pins the count exactly.
+3. `bridge.c` declared a union member spelled `linux`. `whitefootc` compiles
+   the runtime units with the host compiler's default dialect, which
+   predefines `linux` as `1`, so every Linux link of a completion program
+   failed in the C compiler. The repository's own Linux probes compile with
+   `-std=c11`, where the macro is absent, which is why the adapter evidence
+   below was real while the compiler was still broken.
+
+### What these numbers do not cover
+
+Cold storage, durable writes, network I/O, Windows IOCP execution, machines
+with more than two Linux CPUs, and any workload whose operations genuinely
+wait. Every file measurement here has a warm page cache, which is the case
+least favourable to completion and most favourable to a direct call. The
+uncached variant was not run: `fcntl(F_NOCACHE)` and `posix_fadvise` are
+available to the C baseline but the Whitefoot surface exposes no equivalent,
+so the two lines could not have been compared on the same terms.
+
+## Historical C-core results
+
+Everything below measures the completion core and its adapters directly,
+before any program-level measurement existed. It remains evidence for what it
+measured.
+
 The owner-confirmed design of 2026-08-26 removed the former Ordered batch and
 capability-root layers. The first historical result measures commit
 `6dec866363cdaceaaa2e26ef57971ede79abf098`; the last historical rerun uses the
 completed admission protocol, distinct admission/capacity notification paths,
 and target adapters described below.
+
 
 ## Unified-state rebuild result, 2026-08-27
 
