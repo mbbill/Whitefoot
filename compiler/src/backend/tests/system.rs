@@ -1077,7 +1077,10 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
             assert!(llvm.contains("@wf.sys.open_file.completion"));
             assert!(llvm.contains("i32 3, label %kind.directory.return"));
             assert!(llvm.contains("i32 4, label %kind.other.return"));
-            assert!(crate::COMPLETION_FILE_ADAPTER_SOURCE.contains("S_ISREG(status.st_mode)"));
+            // The kind decision moved into the one shared rule every target
+            // answers with, so the check that a provisional descriptor is
+            // classified from its own mode now reads the shared header.
+            assert!(crate::COMPLETION_FILE_ADAPTER_HEADER.contains("S_ISREG(file_mode)"));
             assert_eq!(
                 crate::COMPLETION_FILE_ADAPTER_SOURCE
                     .matches("(void)close(descriptor);")

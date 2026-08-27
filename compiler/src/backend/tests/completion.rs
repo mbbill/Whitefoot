@@ -483,8 +483,8 @@ fn positioned_read_emits_a_checked_typed_pread_request() {
         .split_once("int wf__completion_file_write_submit(")
         .expect("the bridge exposes write_once")
         .1
-        .split_once("int wf__completion_file_pread_submit_writer(")
-        .expect("ordinary write submit precedes writer-dependent positioned read")
+        .split_once("int wf__completion_file_open_at_submit(")
+        .expect("ordinary write submit precedes the open submission")
         .0;
     assert!(!write.contains("wf_bridge_submit_linux"));
     assert!(write.contains("current-position and"));
@@ -492,8 +492,8 @@ fn positioned_read_emits_a_checked_typed_pread_request() {
         .split_once("int64_t wf__completion_file_write_direct(")
         .expect("the bridge exposes direct write progress")
         .1
-        .split_once("void wf__completion_file_join(")
-        .expect("direct write precedes join")
+        .split_once("int wf__completion_file_open_at_direct(")
+        .expect("direct write precedes the direct open")
         .0;
     assert!(!direct_write.contains("wf_bridge_submit_linux"));
     assert!(direct_write.contains("wf_file_execute_direct"));
@@ -1005,7 +1005,14 @@ fn regular_file_open_maps_status_and_release_after_completion() {
     assert!(module.contains("@wf.sys.open_file.completion"));
     assert!(module.contains("@wf__completion_file_close_direct"));
     assert!(module.contains("i32 1, ptr %"));
-    assert!(crate::COMPLETION_FILE_ADAPTER_SOURCE.contains("S_ISREG(status.st_mode)"));
+    // The kind decision reads the mode of the descriptor the open produced.
+    // It moved out of this adapter into the one shared rule every target
+    // answers with, so the adapter now calls that rule with its own fstat.
+    assert!(crate::COMPLETION_FILE_ADAPTER_HEADER.contains("S_ISREG(file_mode)"));
+    assert!(crate::COMPLETION_FILE_ADAPTER_SOURCE.contains("fstat(descriptor, &status)"));
+    assert!(crate::COMPLETION_FILE_ADAPTER_SOURCE.contains(
+        "wf_file_kind_outcome(\n                request->operation.open_at.expected_kind,"
+    ));
     let directory = test_directory();
     let input = directory.join("x");
     std::fs::write(&input, b"regular").expect("write regular-file probe input");
@@ -1081,7 +1088,7 @@ fn a_waiting_scheduler_parks_unless_it_is_itself_the_target_engine() {
         .expect("the predicate has a body")
         .0;
     assert!(
-        predicate.contains("wf_bridge_target_helper_count"),
+        predicate.contains("wf_file_adapter_helper_count"),
         "the guard must read the helper count: {predicate}"
     );
     assert!(
@@ -1108,14 +1115,24 @@ fn a_waiting_scheduler_parks_unless_it_is_itself_the_target_engine() {
 ///
 /// A written setting still pins the count exactly, which is what every test
 /// that names `0`, `1`, or `4` depends on. Unset asks for the measured
-/// policy: start at one, grow only on evidence that the queue holds more
-/// requests than there are helpers to take them, and never pass the machine's
-/// own bound. A host with a native completion path starts at none, because
-/// there the ring already carries every transfer and a helper can only add a
-/// handoff to the operations it does not carry.
+/// policy: start at one, grow only on evidence that the program exposed width
+/// the pool cannot absorb, and never pass the machine's own bound. A host with
+/// a native completion path starts at none, because there the ring already
+/// carries every transfer and a helper can only add a handoff to the
+/// operations it does not carry.
+///
+/// The evidence of width is the queue depth at the moment a request is
+/// enqueued. A rule that instead grew whenever a submission found no helper
+/// *waiting* was tried and measured worse on the same programs: a helper that
+/// has been signalled but not yet scheduled still counts as waiting, so a run
+/// of consecutive submissions sees an available helper every time and the pool
+/// never grows at all. On the quiet macOS host that left the four-wide program
+/// at 919 ms against 625 ms for the depth rule. Queue depth is a lagging
+/// signal, but it is a true one.
 #[test]
 fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
+    let adapter = crate::COMPLETION_FILE_ADAPTER_SOURCE;
     let policy = bridge
         .split_once("static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {")
         .expect("the helper policy is one function")
@@ -1130,37 +1147,143 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
     assert!(policy.contains("sysconf(_SC_NPROCESSORS_ONLN)"));
     assert!(policy.contains("WF_BRIDGE_MAX_HELPERS"));
 
-    let growth = bridge
-        .split_once("static void wf_bridge_grow_target_helpers(void) {")
+    let growth = adapter
+        .split_once("static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {")
         .expect("growth is one named function")
         .1
-        .split_once("\nstatic ")
-        .expect("growth ends before the next definition")
+        .split_once("\n}\n")
+        .expect("growth ends with the function")
         .0;
     assert!(
-        growth.contains("held >= wf_bridge_target_helper_cap"),
+        growth.contains("held >= adapter->helper_cap"),
         "growth must stop at the cap: {growth}"
     );
     assert!(
-        growth.contains("wf_file_adapter_queued(&wf_bridge_adapter) <= held"),
-        "growth must require real queue pressure: {growth}"
+        growth.contains("adapter->queue_count <= held"),
+        "growth must require a queue that has outrun the pool: {growth}"
     );
-    // Growth runs inside the announcement that already holds the target lock,
-    // so it creates at most one helper per submission.
-    let notify = bridge
-        .split_once("static void wf_bridge_notify_target(void) {")
-        .expect("one target announcer")
+    // Growth runs inside the one enqueue that already holds the queue lock,
+    // so it creates at most one helper per submission and needs no second
+    // lock, and every kind of queued work reaches the pool the same way.
+    let enqueue = adapter
+        .split_once("static void wf_file_enqueue_locked(")
+        .expect("one place appends an accepted queue entry")
+        .1
+        .split_once("\n}\n")
+        .expect("the enqueue ends with the function")
+        .0;
+    assert!(
+        enqueue.contains("wf_file_grow_helpers_locked(adapter)"),
+        "the enqueue is where growth happens: {enqueue}"
+    );
+    // One queued request wakes one helper, never every helper.
+    assert!(
+        enqueue.contains("pthread_cond_signal(&adapter->queue_available)"),
+        "a submission announces to exactly one helper"
+    );
+    assert!(
+        !enqueue.contains("pthread_cond_broadcast(&adapter->queue_available)"),
+        "a submission must not wake every helper"
+    );
+    // The bridge owns no second helper pool layered over this one.
+    assert!(
+        !bridge.contains("wf_bridge_target_helpers"),
+        "the bridge must not keep a helper pool of its own"
+    );
+}
+
+/// Where a native completion path exists, an open and a close are operations
+/// on it, and one rule decides the open's typed outcome on every target.
+///
+/// While the ring carried only transfers, every open cost a blocking `openat`
+/// on the submitting scheduler: in the zero-helper configuration a native ring
+/// selects, that is the one thread which could otherwise run any other ready
+/// frame, so a slow path resolution stalls all of them. The path resolution is
+/// what the ring now carries.
+///
+/// The kind check that makes an open typed — refusing a FIFO, refusing a
+/// directory — stays a host call on the reaping thread, and that placement is
+/// measured rather than preferred. Written first as a linked `IORING_OP_STATX`
+/// of the same descriptor, it kept the reaping thread free of host calls and
+/// cost two ring round trips per open: on the two-CPU Linux container the
+/// eight-wide many-file program ran 152 ms against 116 ms for the bounded
+/// adapter it replaced. Done as one `fstat` of an already-open descriptor —
+/// an inode read that cannot wait on anything — the same program runs 119 ms.
+///
+/// The refusal rule itself lives once, so a FIFO is refused identically
+/// whether the open ran on a helper thread, on the scheduler, or in the
+/// kernel.
+#[test]
+fn a_native_ring_carries_opens_and_closes_under_one_kind_rule() {
+    let ring = crate::COMPLETION_LINUX_IO_URING_SOURCE;
+    let bridge = crate::COMPLETION_BRIDGE_SOURCE;
+    let adapter_header = crate::COMPLETION_FILE_ADAPTER_HEADER;
+
+    for opcode in ["IORING_OP_OPENAT", "IORING_OP_CLOSE"] {
+        assert!(
+            ring.contains(opcode),
+            "the ring adapter must submit {opcode}"
+        );
+    }
+    // The kind decision is one rule, stated once, called by both adapters.
+    assert!(
+        adapter_header.contains("wf_file_kind_outcome("),
+        "the open-kind rule belongs to the shared typed file contract"
+    );
+    assert!(
+        ring.contains("wf_file_kind_outcome("),
+        "the ring adapter must answer with the shared open-kind rule"
+    );
+    assert!(
+        crate::COMPLETION_FILE_ADAPTER_SOURCE.contains("wf_file_kind_outcome("),
+        "the bounded POSIX adapter must answer with the shared open-kind rule"
+    );
+    // The part of an open that can wait is the path resolution, and no
+    // scheduler thread may perform that: it is a ring operation or nothing.
+    let decision = ring
+        .split_once("static void wf_linux_decide_open(")
+        .expect("the open decision is one named function")
+        .1
+        .split_once("\n}\n")
+        .expect("the open decision ends with the function")
+        .0;
+    assert!(
+        !decision.contains("openat("),
+        "an open's path resolution belongs to the ring: {decision}"
+    );
+    assert!(
+        !ring.contains("submission->opcode = IORING_OP_STATX"),
+        "the kind check is one fstat of an open descriptor, not a second ring \
+         round trip that measured 31 percent slower"
+    );
+    assert!(
+        decision.contains("fstat(entry->opened_descriptor"),
+        "the kind check reads the mode of the descriptor the open produced: \
+         {decision}"
+    );
+    // The bridge offers both operations to the ring before the bounded
+    // fallback, and answers -1 rather than claiming an operation it cannot
+    // then hand over.
+    for route in [
+        "wf_bridge_submit_linux_open_at(",
+        "wf_bridge_submit_linux_close(",
+    ] {
+        assert!(bridge.contains(route), "the bridge must offer {route}");
+    }
+    let open_submit = bridge
+        .split_once("int wf__completion_file_open_at_submit(")
+        .expect("one open submission entry point")
         .1;
-    let locked = notify
-        .find("pthread_mutex_lock(&wf_bridge_target_lock)")
-        .expect("the announcer takes the target lock");
-    let grown = notify
-        .find("wf_bridge_grow_target_helpers()")
-        .expect("the announcer is where growth happens");
-    let unlocked = notify
-        .find("pthread_mutex_unlock(&wf_bridge_target_lock)")
-        .expect("the announcer releases the target lock");
-    assert!(locked < grown && grown < unlocked);
+    let native = open_submit
+        .find("wf_bridge_submit_linux_open_at(")
+        .expect("the open tries the ring");
+    let fallback = open_submit
+        .find("request.kind = WF_FILE_OPEN_AT;")
+        .expect("the open keeps its bounded fallback");
+    assert!(
+        native < fallback,
+        "the ring is tried before the bounded POSIX adapter"
+    );
 }
 
 /// No C unit the compiler links may spell an identifier the host compiler

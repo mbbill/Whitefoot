@@ -154,10 +154,9 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
                 request->operation.open_at.directory,
                 request->operation.open_at.path,
                 request->operation.open_at.flags
-                    | (request->operation.open_at.expected_kind
-                               == WF_FILE_EXPECT_REGULAR
-                           ? O_NONBLOCK
-                           : 0),
+                    | wf_file_open_kind_flags(
+                          request->operation.open_at.expected_kind
+                      ),
                 (mode_t)request->operation.open_at.mode
             );
         } else {
@@ -165,10 +164,9 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
                 request->operation.open_at.directory,
                 request->operation.open_at.path,
                 request->operation.open_at.flags
-                    | (request->operation.open_at.expected_kind
-                               == WF_FILE_EXPECT_REGULAR
-                           ? O_NONBLOCK
-                           : 0)
+                    | wf_file_open_kind_flags(
+                          request->operation.open_at.expected_kind
+                      )
             );
         }
         if (result.value < 0) {
@@ -185,16 +183,12 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
                 result.open_outcome = WF_FILE_OPEN_STATUS_FAILED;
                 return result;
             }
-            if ((request->operation.open_at.expected_kind
-                        == WF_FILE_EXPECT_REGULAR
-                    && !S_ISREG(status.st_mode))
-                || (request->operation.open_at.expected_kind
-                        == WF_FILE_EXPECT_DIRECTORY
-                    && !S_ISDIR(status.st_mode))) {
+            result.open_outcome = wf_file_kind_outcome(
+                request->operation.open_at.expected_kind,
+                (unsigned int)status.st_mode
+            );
+            if (result.open_outcome != WF_FILE_OPEN_SUCCEEDED) {
                 (void)close(descriptor);
-                result.open_outcome = S_ISDIR(status.st_mode)
-                    ? WF_FILE_OPEN_IS_DIRECTORY
-                    : WF_FILE_OPEN_OTHER_KIND;
                 return result;
             }
         }
@@ -367,6 +361,15 @@ static int wf_file_take_work(wf_file_adapter *adapter, wf_file_work *work) {
     return present;
 }
 
+static void wf_file_count_execution(wf_file_adapter *adapter, int helper) {
+    atomic_fetch_add_explicit(
+        helper != 0 ? &adapter->stat_helper_executions
+                    : &adapter->stat_scheduler_executions,
+        1,
+        memory_order_relaxed
+    );
+}
+
 static void wf_file_run_work(
     wf_file_adapter *adapter,
     const wf_file_work *work,
@@ -387,19 +390,7 @@ static void wf_file_run_work(
         work->token,
         &publication
     );
-    if (helper != 0) {
-        atomic_fetch_add_explicit(
-            &adapter->stat_helper_executions,
-            1,
-            memory_order_relaxed
-        );
-    } else {
-        atomic_fetch_add_explicit(
-            &adapter->stat_scheduler_executions,
-            1,
-            memory_order_relaxed
-        );
-    }
+    wf_file_count_execution(adapter, helper);
     if (published != WF_COMPLETION_PUBLISHED) {
         /* A legitimate accepted work item owns the unique terminal route.  A
          * failure here records an adapter/core defect; it never invokes writer
@@ -460,7 +451,8 @@ int wf_file_adapter_init(
     adapter->queue = queue_storage;
     adapter->queue_capacity = queue_capacity;
     adapter->helpers = helper_storage;
-    adapter->helper_count = helper_count;
+    atomic_init(&adapter->helper_count, 0);
+    adapter->helper_cap = helper_count;
     atomic_init(&adapter->stat_submissions, 0);
     atomic_init(&adapter->stat_capacity_waits, 0);
     atomic_init(&adapter->stat_helper_executions, 0);
@@ -499,8 +491,98 @@ int wf_file_adapter_init(
             adapter->initialized = 0;
             return error;
         }
+        atomic_store_explicit(
+            &adapter->helper_count,
+            created + 1,
+            memory_order_release
+        );
     }
     return 0;
+}
+
+int wf_file_adapter_set_helper_cap(wf_file_adapter *adapter, size_t cap) {
+    if (adapter == NULL || adapter->initialized == 0
+        || (cap != 0 && adapter->helpers == NULL)) {
+        return EINVAL;
+    }
+    (void)pthread_mutex_lock(&adapter->queue_lock);
+    adapter->helper_cap = cap;
+    (void)pthread_mutex_unlock(&adapter->queue_lock);
+    return 0;
+}
+
+size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter) {
+    if (adapter == NULL || adapter->initialized == 0) {
+        return 0;
+    }
+    return atomic_load_explicit(&adapter->helper_count, memory_order_acquire);
+}
+
+/* Adds one helper when the queue holds more accepted requests than there are
+ * helpers to take them, which is the only evidence this adapter has that a
+ * program exposed real width.
+ *
+ * A rule that instead grew whenever a submission found no helper *waiting*
+ * was tried and measured worse: a helper that has been signalled but not yet
+ * scheduled still counts as waiting, so a run of consecutive submissions sees
+ * one available helper every time and the pool never grows at all. On the
+ * quiet macOS host that left the four-wide program at 919 ms against 625 ms
+ * for this rule. Queue depth is a lagging signal, but it is a true one.
+ *
+ * It runs on the submitting thread with the queue lock already held, so at
+ * most one helper appears per submission and the count never passes the
+ * policy's cap. A pinned helper policy sets the cap equal to the initial
+ * count, making this a no-op. */
+static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {
+    size_t held = atomic_load_explicit(
+        &adapter->helper_count,
+        memory_order_relaxed
+    );
+    if (held == 0 || held >= adapter->helper_cap
+        || adapter->queue_count <= held) {
+        return;
+    }
+    if (pthread_create(
+            &adapter->helpers[held],
+            NULL,
+            wf_file_helper_main,
+            adapter
+        ) != 0) {
+        return;
+    }
+    atomic_store_explicit(
+        &adapter->helper_count,
+        held + 1,
+        memory_order_release
+    );
+}
+
+/* Appends one accepted queue entry, announces it to one helper, and grows the
+ * pool when the queue has outrun it.  The caller holds the queue lock and has
+ * already made the entry's ownership transition. */
+static void wf_file_enqueue_locked(
+    wf_file_adapter *adapter,
+    wf_completion_token token,
+    const wf_file_request *request
+) {
+    adapter->queue[adapter->queue_tail].token = token;
+    adapter->queue[adapter->queue_tail].request = *request;
+    adapter->queue_tail = (adapter->queue_tail + 1) % adapter->queue_capacity;
+    adapter->queue_count += 1;
+    atomic_fetch_add_explicit(
+        &adapter->stat_submissions,
+        1,
+        memory_order_relaxed
+    );
+    /* One newly queued request needs exactly one helper woken. Announcing it
+     * to every helper would cost a wake per helper per submission, which on a
+     * program that submits a run of independent operations is a thundering
+     * herd rather than progress. */
+    if (atomic_load_explicit(&adapter->helper_count, memory_order_relaxed)
+        != 0) {
+        (void)pthread_cond_signal(&adapter->queue_available);
+    }
+    wf_file_grow_helpers_locked(adapter);
 }
 
 enum wf_file_submit_result wf_file_adapter_submit(
@@ -546,18 +628,7 @@ enum wf_file_submit_result wf_file_adapter_submit(
             : WF_FILE_SUBMIT_INVALID;
     }
 
-    adapter->queue[adapter->queue_tail].token = token;
-    adapter->queue[adapter->queue_tail].request = *request;
-    adapter->queue_tail = (adapter->queue_tail + 1) % adapter->queue_capacity;
-    adapter->queue_count += 1;
-    atomic_fetch_add_explicit(
-        &adapter->stat_submissions,
-        1,
-        memory_order_relaxed
-    );
-    if (adapter->helper_count != 0) {
-        (void)pthread_cond_signal(&adapter->queue_available);
-    }
+    wf_file_enqueue_locked(adapter, token, request);
     (void)pthread_mutex_unlock(&adapter->queue_lock);
     return WF_FILE_TARGET_OWNS;
 }
@@ -592,20 +663,24 @@ size_t wf_file_adapter_queued(const wf_file_adapter *adapter) {
 
 int wf_file_adapter_shutdown(wf_file_adapter *adapter) {
     size_t helper;
+    size_t held;
     int first_error = 0;
     if (adapter == NULL || adapter->initialized == 0) {
         return EINVAL;
     }
     (void)pthread_mutex_lock(&adapter->queue_lock);
     adapter->stopping = 1;
+    /* Growth stops with admission, so the count read below is final. */
+    adapter->helper_cap = 0;
     (void)pthread_cond_broadcast(&adapter->queue_available);
     (void)pthread_mutex_unlock(&adapter->queue_lock);
 
-    if (adapter->helper_count == 0) {
+    held = atomic_load_explicit(&adapter->helper_count, memory_order_acquire);
+    if (held == 0) {
         while (wf_file_adapter_progress(adapter, 1) != 0) {
         }
     }
-    for (helper = 0; helper < adapter->helper_count; ++helper) {
+    for (helper = 0; helper < held; ++helper) {
         int error = pthread_join(adapter->helpers[helper], NULL);
         if (first_error == 0 && error != 0) {
             first_error = error;

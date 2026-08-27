@@ -54,6 +54,7 @@ DOCKER_IMAGE ?= wf-io-bench:linux
 build: prepare compiler $(BUILD)/gen $(BUILD)/baseline $(BUILD)/runner \
 	$(BUILD)/pipe_producer $(BUILD)/pipe_harness \
 	$(BUILD)/many_files_wide $(BUILD)/many_files_wide_seq \
+	$(BUILD)/many_files_wide8 $(BUILD)/many_files_wide8_seq \
 	$(BUILD)/many_files_narrow $(BUILD)/many_files_narrow_seq \
 	$(BUILD)/pipe_relay $(BUILD)/pipe_relay_seq
 
@@ -88,6 +89,9 @@ $(BUILD)/%: programs/%.wf compiler | prepare
 $(BUILD)/many_files_wide_seq: programs/many_files_wide.wf compiler | prepare
 	$(WFC) --no-overlap -o $@ $<
 
+$(BUILD)/many_files_wide8_seq: programs/many_files_wide8.wf compiler | prepare
+	$(WFC) --no-overlap -o $@ $<
+
 $(BUILD)/many_files_narrow_seq: programs/many_files_narrow.wf compiler | prepare
 	$(WFC) --no-overlap -o $@ $<
 
@@ -106,7 +110,9 @@ verify: build gen
 		"$(BUILD)/many_files_narrow" \
 		"$(BUILD)/many_files_narrow_seq" \
 		"$(BUILD)/many_files_wide" \
-		"$(BUILD)/many_files_wide_seq"; do \
+		"$(BUILD)/many_files_wide_seq" \
+		"$(BUILD)/many_files_wide8" \
+		"$(BUILD)/many_files_wide8_seq"; do \
 		got=$$($$line); \
 		if [ "$$got" != "$(EXPECTED)" ]; then \
 			echo "MISMATCH: $$line published [$$got], expected [$(EXPECTED)]"; \
@@ -128,12 +134,17 @@ bench: verify
 	done; \
 	printf 'S.narrow\t\t$(BUILD)/many_files_narrow_seq\n'; \
 	printf 'S.wide\t\t$(BUILD)/many_files_wide_seq\n'; \
+	printf 'S.wide8\t\t$(BUILD)/many_files_wide8_seq\n'; \
 	printf 'C.narrow.default\t\t$(BUILD)/many_files_narrow\n'; \
 	printf 'C.wide.default\t\t$(BUILD)/many_files_wide\n'; \
+	printf 'C.wide8.default\t\t$(BUILD)/many_files_wide8\n'; \
 	for w in 0 1 2 4; do for h in 0 1 2 4; do \
 		printf 'C.wide.w%s.h%s\tWF_WORKERS=%s,WF_IO_HELPERS=%s\t$(BUILD)/many_files_wide\n' \
 			$$w $$h $$w $$h; \
 	done; done; \
+	for h in 0 1 2 4 6; do \
+		printf 'C.wide8.h%s\tWF_IO_HELPERS=%s\t$(BUILD)/many_files_wide8\n' $$h $$h; \
+	done; \
 	} > $(WORK)/plan.txt
 	cd $(TREE) && $(BUILD)/runner $(WORK)/plan.txt $(ROUNDS) $(WARMUP) "$(EXPECTED)"
 

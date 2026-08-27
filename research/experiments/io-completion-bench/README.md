@@ -37,9 +37,12 @@ cannot report a time.
 
 `programs/many_files_wide.wf` opens and reads four independent generated files
 per round, four opens and then four positioned reads written consecutively so
-the lowering can overlap them. `programs/many_files_narrow.wf` is the same
-work written as the natural one-file-at-a-time loop; it exists to measure what
-a writer gets who does not hand-widen, and the answer is no overlap at all.
+the lowering can overlap them. `programs/many_files_wide8.wf` is the same
+shape hand-widened to eight, so the comparison against an eight-thread pool
+and a deep io_uring baseline is made at a matched width.
+`programs/many_files_narrow.wf` is the same work written as the natural
+one-file-at-a-time loop; it exists to measure what a writer gets who does not
+hand-widen, and the answer is no overlap at all.
 `programs/pipe_relay.wf` pushes two independent byte streams at two
 independent consumers through `command.stdout` and `command.stderr`.
 

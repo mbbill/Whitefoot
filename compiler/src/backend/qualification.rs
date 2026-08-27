@@ -172,7 +172,8 @@ impl HostFacilities {
     }
 
     /// The facility one [SYS-5] consuming release attempts its single close
-    /// through.
+    /// through, and the facility a qualified wrapper disposes of a
+    /// provisional descriptor through.
     const fn close(self) -> &'static str {
         match self {
             Self::Native => "wf__completion_file_close_direct",

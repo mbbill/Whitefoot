@@ -1,12 +1,15 @@
 # Completion I/O results
 
 Status: measured at the program level on 2026-08-27, on macOS and on Linux
-with io_uring. Everything before that date was a C-level measurement of the
-completion core alone; those numbers are retained below, labelled, because
-they still describe what they measured.
+with io_uring, and re-measured the same day with the base commit and the
+branch interleaved in one plan on a quiet host. Read the batch-0086 section
+for absolute values and the batch-0084 one for the findings it established;
+everything before that date was a C-level measurement of the completion core
+alone and is retained below, labelled, because it still describes what it
+measured.
 
-The program-level section is the one that answers the design's own question.
-Reproduce it with:
+The program-level sections are the ones that answer the design's own question.
+Reproduce them with:
 
 ```sh
 make -C research/experiments/io-completion-bench bench       # macOS
@@ -14,7 +17,16 @@ make -C research/experiments/io-completion-bench bench-pipe
 make -C research/experiments/io-completion-bench linux       # Linux, io_uring
 ```
 
-## Program-level results, 2026-08-27
+## Program-level results, batch 0084 (2026-08-27)
+
+These were the first whole-program numbers, taken on a busy host one line
+after another. The batch-0086 measurement below, taken on a quiet one with
+before and after interleaved in a single plan, shows that method carried
+roughly 20 percent of noise, so read the *ratios* here and the absolute values
+below. Every finding this section states survives the quieter run: overlap is
+worth about two times on a program that exposes width, a narrow loop overlaps
+nothing, and the completion path matches a hand-written ring at the depth the
+source can ask for.
 
 ### What is compared
 
@@ -143,6 +155,12 @@ Two further facts bound the native ceiling rather than the Whitefoot one:
    still costs a blocking `openat` on the submitting thread. Whitefoot's own
    Linux adapter has the same split: `linux_io_uring.c` submits
    `IORING_OP_READ` and `IORING_OP_WRITE` and nothing else.
+
+   *Batch 0086 refuted the causal half of this.* One `openat` on that
+   container costs 0.85 us and one close 0.45 us, so the entire
+   open-plus-close budget of this workload is about 11 ms — the opens do not
+   dominate on Linux, and putting them on the ring changed the total by one
+   percent. The pool's advantage is item 2 below, not item 1.
 2. The pool baseline also folds each file's checksum on the worker that read
    it, so part of its advantage is compute parallelism the Whitefoot program
    does not have — its fold runs on the single writer thread. On Linux
@@ -191,6 +209,164 @@ uncached variant was not run: `fcntl(F_NOCACHE)` and `posix_fadvise` are
 available to the C baseline but the Whitefoot surface exposes no equivalent,
 so the two lines could not have been compared on the same terms.
 
+
+## Program-level results, batch 0086 (2026-08-27)
+
+### What changed in the method
+
+Same workload, same protocol, same checked bytes. One change: the base commit
+and the branch are built as two compilers, their programs are built from the
+same sources, and both sets of binaries run inside **one** plan. Before and
+after therefore see the same machine, the same tree and the same page cache,
+which the batch-0084 method did not.
+
+`S.wide.before` against `S.wide.after` is the built-in control. The sequential
+build reaches the host through ordinary direct calls, and nothing on that path
+changed on macOS, so whatever separates those two lines is measurement noise.
+On the quiet macOS run they differ by 0.01 percent; on the batch-0084 method
+under load the same pair differed by 19 percent.
+
+The eight-wide program is new here. `many_files_wide8.wf` states eight opens
+and then eight positioned reads consecutively, and emits seven open
+submissions plus one direct open and seven read submissions plus one direct
+read, against the four-wide program's three plus one. The narrow program still
+emits none. Hand-widening from four to eight is worth 13 percent on macOS
+(629 ms to 546 ms) and 19 percent on Linux (147 ms to 119 ms).
+
+### What one file operation costs
+
+Measured directly on the same trees, warm cache, one file open at a time,
+which is the pattern the programs use:
+
+```text
+                    openat      pread 64 KiB      close
+macOS M4 host       116 us          1.9 us        4.8 us
+Linux container    0.85 us          ~1 us        0.45 us
+```
+
+The macOS host runs an endpoint-security stack that hooks file operations.
+That is the host every line here is measured on, so the comparison is fair; it
+does mean macOS is almost entirely open-bound and Linux is not. On Linux the
+whole open-plus-close budget of the workload is about 11 ms.
+
+macOS 26.5.2, Apple M4, 10 cores, 16 GiB. Medians of fifteen recorded runs
+after two warm-ups:
+
+```text
+line                          median      min      user      sys
+N.direct                     1138.51  1076.71     58.85   323.55
+N.pool2                       715.91   689.55     63.94   430.82
+N.pool4                       455.64   452.93     75.58   528.39
+N.pool6                       374.29   368.92     78.24   528.79
+N.pool8                       373.91   361.79     78.45   528.45    best N
+N.pool10                      378.30   370.83     78.89   528.84
+S.wide.before                1171.42  1128.13     58.65   325.03
+S.wide.after                 1217.53  1114.55     61.64   353.25
+S.wide8.before               1168.63  1114.62     58.17   315.54
+S.wide8.after                1130.97  1099.88     58.41   313.55
+C.wide.before                 637.33   624.57     91.66   564.82
+C.wide.after                  629.30   625.38     90.07   568.64
+C.wide8.before                543.40   538.82     97.54   661.88
+C.wide8.after                 545.50   542.10     97.10   682.54    best C
+C.narrow.before              1182.99  1158.98     59.53   327.62
+C.narrow.after               1183.83  1114.80     59.83   328.91
+```
+
+Nothing on the macOS path changed in this batch beyond the collapsed helper
+pool, and the paired lines say so: every before/after pair above agrees within
+the control's own spread.
+
+Linux 6.8.0 aarch64, 2 CPUs, in a container with io_uring permitted, tree on
+the container-local filesystem. Medians of nine recorded runs after two
+warm-ups:
+
+```text
+line                          median      min      user      sys
+N.direct                       72.04    70.47     52.20    20.08
+N.pool1                        70.43    69.59     48.15    22.07
+N.pool2                        40.21    37.70     54.54    23.31    best N
+N.pool4                        41.55    40.76     59.41    22.15
+N.pool8                        44.72    41.77     56.79    31.90
+N.uring4                      138.76   134.54     59.28    54.71
+N.uring8                       94.89    93.34     53.75    60.04
+N.uring16                      86.37    85.74     57.55    52.51
+N.uring32                      82.46    81.14     49.47    53.20    best one-thread N
+S.wide.before                 335.89   330.56     86.17   141.01
+S.wide.after                  337.29   202.02     82.97   139.01
+S.wide8.before                331.72   323.63     85.91   138.26
+S.wide8.after                 335.50   326.25     88.08   141.39
+S.narrow.after                345.95   340.89     87.66   148.51
+C.wide.before                 142.31   141.04     71.58    56.71
+C.wide.after                  146.73   143.87     70.20    62.47
+C.wide8.before                118.09   106.53     69.66    52.54
+C.wide8.after                 119.47   117.30     65.65    61.42    best C
+C.narrow.before               346.32   338.42     82.83   151.97
+C.narrow.after                346.65   342.91     86.07   151.25
+C.wide8.after WF_IO_HELPERS=0 117.61   108.37     65.12    57.34
+C.wide8.after WF_IO_HELPERS=1 116.58   112.72     69.61    52.60
+C.wide8.after WF_IO_HELPERS=2 119.36   116.72     64.93    60.99
+```
+
+The 202.02 ms minimum on `S.wide.after` is one outlier in nine runs against a
+337 ms median and a 357 ms maximum. It is left as reported; every other
+minimum in either table is within about 10 percent of its own median.
+
+### Against the bar
+
+The bar: C at least as fast as S on every workload, and within 10 percent of
+the best native shape at matched width.
+
+```text
+comparison                                   ratio            bar
+macOS  C.wide8 against S.wide8               2.07x faster
+macOS  C.wide8 against N.pool8 (width 8)     1.46x slower     missed
+macOS  C.wide  against N.pool4 (width 4)     1.38x slower     missed
+Linux  C.wide8 against S.wide8               2.81x faster
+Linux  C.wide  against N.uring4 (depth 4)    1.06x slower     met
+Linux  C.wide8 against N.uring8 (depth 8)    1.26x slower     missed
+Linux  C.wide8 against N.uring32             1.45x slower     missed
+Linux  C.wide8 against N.pool2               2.97x slower     missed
+```
+
+C beats its own sequential build everywhere, by about two times on macOS and
+2.8 times on Linux. The depth-matched Linux comparison batch 0084 reported —
+the four-wide program against a hand-written ring at queue depth four — still
+holds, at 6 percent. It opens to 26 percent when both are widened to eight,
+and that widening is the finding about where the distance lives.
+
+### Where the remaining distance is
+
+It is not the opens, and on neither platform is it the completion protocol's
+per-operation cost.
+
+**Linux is compute-bound and barrier-bound, not open-bound.** The whole
+open-plus-close budget is about 11 ms of a 119 ms program — 9 percent, and a
+perfect open could not take more than that. `C.wide8` spends 65.7 ms of user
+CPU on one thread, which is its own fold and program logic and is a floor
+under any single-threaded line. The comparison that controls for that is
+`N.uring32`, which also folds on one thread: 82.5 ms against 119.5 ms, using
+103 ms of CPU against 127 ms. So C spends about a quarter more CPU — the
+completion protocol's claims, publications, drains and consumes, plus a
+bounds-checked fold — and about half again as much wall time. The wall-time
+excess beyond the CPU excess is the group barrier: the program joins all eight
+operations before submitting the next eight, so each round costs the maximum
+of eight latencies while the ring baseline keeps 32 continuously in flight.
+`N.pool2` at 40.2 ms is not a matched shape at all — it folds each file's
+checksum on the worker that read it, which is compute parallelism the
+Whitefoot source cannot express.
+
+**macOS is open-bound, and the host itself limits how much that helps.** One
+`openat` costs 116 us there. The best native shape, an eight-thread pool,
+turns 1113 ms of serial work into 368 ms — a 3.0x speedup on eight threads,
+so the security stack serializes most of the concurrency a pool asks for. The
+eight-wide Whitefoot program gets 2.0x over its own sequential build. The
+difference is what the writer thread still does serially in every round: its
+own direct open, the eight folds, the eight releases, and the join of all
+eight before the next round starts.
+
+Both remaining gaps are therefore the same shape the batch-0084 record already
+flagged: overlap groups are runs of consecutive calls in one basic block, so a
+program pipelines nothing across iterations and pays a barrier per round.
 ## Historical C-core results
 
 Everything below measures the completion core and its adapters directly,

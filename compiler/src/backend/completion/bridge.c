@@ -50,7 +50,6 @@ static wf_file_work wf_bridge_queue[WF_BRIDGE_QUEUE_COUNT];
 static pthread_t wf_bridge_helpers[WF_BRIDGE_MAX_HELPERS];
 static pthread_once_t wf_bridge_once = PTHREAD_ONCE_INIT;
 static pthread_once_t wf_bridge_file_once = PTHREAD_ONCE_INIT;
-static pthread_once_t wf_bridge_target_once = PTHREAD_ONCE_INIT;
 static int wf_bridge_error;
 static int wf_bridge_file_error;
 static unsigned wf_bridge_ready;
@@ -66,24 +65,6 @@ enum wf_bridge_route {
     WF_BRIDGE_ROUTE_FILE_FALLBACK = 1,
     WF_BRIDGE_ROUTE_LINUX_IO_URING = 2
 };
-
-static pthread_mutex_t wf_bridge_target_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t wf_bridge_target_available = PTHREAD_COND_INITIALIZER;
-static pthread_t wf_bridge_target_helpers[WF_BRIDGE_MAX_HELPERS];
-/* Read without the target lock by waiting schedulers, and grown under it by a
- * submitting one, so it is atomic rather than a plain size_t. */
-static _Atomic size_t wf_bridge_target_helper_count;
-/* The most helpers this process may ever create. Writing WF_IO_HELPERS pins
- * the count exactly: cap and initial count are both what was written, and no
- * growth happens. Leaving it unset asks for the demand-driven policy. */
-static size_t wf_bridge_target_helper_cap;
-static unsigned wf_bridge_target_stopping;
-static _Atomic uint64_t wf_bridge_target_epoch;
-static _Atomic uint64_t wf_bridge_target_executions;
-
-static int wf_bridge_ensure_target_helpers(void);
-static void wf_bridge_notify_target(void);
-static void wf_bridge_shutdown_target_helpers(void);
 
 /* Supplied by the compute runtime when one is linked.  The bridge's own weak
  * answer keeps completion-only programs independent of that runtime. */
@@ -153,150 +134,28 @@ static int wf_bridge_target_progress_one(void) {
         && wf_file_adapter_progress(&wf_bridge_adapter, 1u) != 0;
 }
 
-static void *wf_bridge_target_helper_main(void *unused) {
-    uint64_t seen = 0;
-    (void)unused;
-    for (;;) {
-        (void)pthread_mutex_lock(&wf_bridge_target_lock);
-        while (wf_bridge_target_stopping == 0
-               && atomic_load_explicit(
-                      &wf_bridge_target_epoch,
-                      memory_order_acquire
-                  ) == seen) {
-            (void)pthread_cond_wait(
-                &wf_bridge_target_available,
-                &wf_bridge_target_lock
-            );
-        }
-        if (wf_bridge_target_stopping != 0) {
-            (void)pthread_mutex_unlock(&wf_bridge_target_lock);
-            return NULL;
-        }
-        seen = atomic_load_explicit(
-            &wf_bridge_target_epoch,
-            memory_order_acquire
-        );
-        (void)pthread_mutex_unlock(&wf_bridge_target_lock);
-        while (wf_bridge_target_progress_one()) {
-            atomic_fetch_add_explicit(
-                &wf_bridge_target_executions,
-                1,
-                memory_order_relaxed
-            );
-        }
-    }
-}
-
-static void wf_bridge_initialize_target_helpers(void) {
-    size_t requested = 0;
-    size_t cap = 0;
-    size_t created = 0;
-    wf_bridge_helper_policy(&requested, &cap);
-    wf_bridge_target_helper_cap = cap;
-    atomic_init(&wf_bridge_target_epoch, 0);
-    atomic_init(&wf_bridge_target_executions, 0);
-    for (created = 0; created < requested; ++created) {
-        if (pthread_create(
-                &wf_bridge_target_helpers[created],
-                NULL,
-                wf_bridge_target_helper_main,
-                NULL
-            ) != 0) {
-            break;
-        }
-    }
-    atomic_store_explicit(
-        &wf_bridge_target_helper_count,
-        created,
-        memory_order_release
-    );
-}
-
-/* Adds one helper when the queue holds more requests than there are helpers
- * to take them, which is the only evidence this runtime has that a program
- * exposed real width. It runs on the submitting scheduler with the target
- * lock held, so at most one helper is created per submission and the count
- * never passes the cap the policy set. A pinned WF_IO_HELPERS makes the cap
- * equal the initial count, so this is a no-op for every explicit setting. */
-static void wf_bridge_grow_target_helpers(void) {
-    size_t held = atomic_load_explicit(
-        &wf_bridge_target_helper_count,
-        memory_order_relaxed
-    );
-    if (held == 0 || held >= wf_bridge_target_helper_cap) {
-        return;
-    }
-    if (wf_file_adapter_queued(&wf_bridge_adapter) <= held) {
-        return;
-    }
-    if (pthread_create(
-            &wf_bridge_target_helpers[held],
-            NULL,
-            wf_bridge_target_helper_main,
-            NULL
-        ) != 0) {
-        return;
-    }
-    atomic_store_explicit(
-        &wf_bridge_target_helper_count,
-        held + 1,
-        memory_order_release
-    );
-}
-
-static int wf_bridge_ensure_target_helpers(void) {
-    return pthread_once(
-               &wf_bridge_target_once,
-               wf_bridge_initialize_target_helpers
-           ) == 0;
-}
-
+/* One newly queued request is announced once, under the queue lock the
+ * enqueue already holds, and reaches exactly one helper.  With zero helpers a
+ * sleeping scheduler is itself the target's engine, so the same announcement
+ * has to reach the completion core's park endpoint as well. */
 static void wf_bridge_notify_target(void) {
-    if (!wf_bridge_ensure_target_helpers()) {
-        return;
-    }
-    (void)pthread_mutex_lock(&wf_bridge_target_lock);
-    atomic_fetch_add_explicit(
-        &wf_bridge_target_epoch,
-        1,
-        memory_order_release
-    );
-    wf_bridge_grow_target_helpers();
-    (void)pthread_cond_broadcast(&wf_bridge_target_available);
-    (void)pthread_mutex_unlock(&wf_bridge_target_lock);
-    /* With zero helpers the sleeping scheduler is the target progress engine.
-     * With helpers this is still one unified announcement, and costs no host
-     * wake while every scheduler lane remains active. */
     wf_completion_notify_target(&wf_bridge_runtime);
 }
 
-static void wf_bridge_shutdown_target_helpers(void) {
-    size_t helper;
-    (void)pthread_mutex_lock(&wf_bridge_target_lock);
-    wf_bridge_target_stopping = 1;
-    (void)pthread_cond_broadcast(&wf_bridge_target_available);
-    (void)pthread_mutex_unlock(&wf_bridge_target_lock);
-    for (helper = 0;
-         helper < atomic_load_explicit(
-             &wf_bridge_target_helper_count,
-             memory_order_acquire
-         );
-         ++helper) {
-        (void)pthread_join(wf_bridge_target_helpers[helper], NULL);
-    }
-    atomic_store_explicit(&wf_bridge_target_helper_count, 0, memory_order_release);
-}
-
 static void wf_bridge_initialize_file(void) {
+    size_t requested = 0;
+    size_t cap = 0;
+    wf_bridge_helper_policy(&requested, &cap);
     wf_bridge_file_error = wf_file_adapter_init(
         &wf_bridge_adapter,
         &wf_bridge_runtime,
         wf_bridge_queue,
         WF_BRIDGE_QUEUE_COUNT,
         wf_bridge_helpers,
-        0
+        requested
     );
-    if (wf_bridge_file_error == 0 && wf_bridge_ensure_target_helpers()) {
+    if (wf_bridge_file_error == 0
+        && wf_file_adapter_set_helper_cap(&wf_bridge_adapter, cap) == 0) {
         wf_bridge_file_ready = 1;
     }
 }
@@ -309,9 +168,6 @@ static int wf_bridge_ensure_file(void) {
 static void wf_bridge_shutdown(void) {
     if (wf_bridge_ready == 0) {
         return;
-    }
-    if (wf_bridge_file_ready != 0) {
-        wf_bridge_shutdown_target_helpers();
     }
     if (wf_bridge_file_ready != 0) {
         (void)wf_file_adapter_shutdown(&wf_bridge_adapter);
@@ -409,10 +265,7 @@ static int wf_bridge_progress(void) {
      * target helper exists. With helpers, taking an unrelated request here
      * could block the exact writer which is waiting to consume a completion
      * they have already published. */
-    if (atomic_load_explicit(
-            &wf_bridge_target_helper_count,
-            memory_order_acquire
-        ) == 0) {
+    if (wf_file_adapter_helper_count(&wf_bridge_adapter) == 0) {
         progressed |= wf_bridge_target_progress_one();
     }
     progressed |= wf__par_help_once() != 0;
@@ -425,9 +278,9 @@ static int wf_bridge_progress(void) {
  * That is the zero-helper configuration and nothing else. With no helper the
  * bounded target pass inside `wf_bridge_progress` is the engine, and a queued
  * request moves only when some scheduler runs it. With helpers the request
- * already has an owner: every enqueue bumps the target epoch under
- * `wf_bridge_target_lock` and broadcasts, a helper drains the queue to empty
- * before it sleeps again, and the terminal publication is this waiter's wake.
+ * already has an owner: every enqueue signals one helper under the adapter's
+ * own queue lock, that helper drains the queue before it sleeps again, and the
+ * terminal publication is this waiter's wake.
  *
  * Treating a non-empty queue as a reason not to park regardless of helpers is
  * therefore not caution, it is a busy wait for exactly as long as a helper
@@ -437,10 +290,7 @@ static int wf_bridge_progress(void) {
  * setting. */
 static int wf_bridge_target_work_needs_this_thread(void) {
     return wf_bridge_file_ready != 0
-        && atomic_load_explicit(
-               &wf_bridge_target_helper_count,
-               memory_order_acquire
-           ) == 0
+        && wf_file_adapter_helper_count(&wf_bridge_adapter) == 0
         && wf_file_adapter_queued(&wf_bridge_adapter) != 0;
 }
 
@@ -603,28 +453,20 @@ static int wf_bridge_submit_file(
 }
 
 #if defined(__linux__)
-/* Returns -1 only while target ownership is still available to the caller, so
- * the caller may honestly choose the bounded POSIX adapter. */
-static int wf_bridge_submit_linux_pread(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    uint64_t file_offset,
+/* Submits one typed request to the native ring.
+ *
+ * Returns -1 only while target ownership is still available to the caller, so
+ * the caller may honestly choose the bounded POSIX adapter; 1 once the ring
+ * owns the operation; 0 when the operation could not be claimed at all. */
+static int wf_bridge_submit_linux(
+    const wf_linux_file_request *request,
     wf_completion_token *token,
     void *dependent_frame
 ) {
-    wf_linux_file_request request;
     if (pthread_once(&wf_bridge_once, wf_bridge_initialize) != 0
-        || wf_bridge_ready == 0 || wf_bridge_linux_ready == 0
-        || count == 0 || count > UINT32_MAX) {
+        || wf_bridge_ready == 0 || wf_bridge_linux_ready == 0) {
         return -1;
     }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_LINUX_FILE_READ_AT;
-    request.descriptor = descriptor;
-    request.buffer.read_buffer = buffer;
-    request.count = (size_t)count;
-    request.offset = file_offset;
     if (!wf_bridge_claim(token)) {
         return 0;
     }
@@ -650,7 +492,7 @@ static int wf_bridge_submit_linux_pread(
             wf_linux_io_uring_submit(
                 &wf_bridge_linux_adapter,
                 *token,
-                &request
+                request
             );
         if (submitted == WF_LINUX_IO_URING_TARGET_OWNS) {
             if (wf_linux_io_uring_progress_error(
@@ -670,6 +512,80 @@ static int wf_bridge_submit_linux_pread(
             wf_bridge_park(epoch);
         }
     }
+}
+
+/* The ring's READ_AT fixes an explicit offset, so only a nonempty,
+ * representable positioned transfer qualifies for it. */
+static int wf_bridge_submit_linux_pread(
+    int descriptor,
+    void *buffer,
+    uint64_t count,
+    uint64_t file_offset,
+    wf_completion_token *token,
+    void *dependent_frame
+) {
+    wf_linux_file_request request;
+    /* Anything the ring would refuse is answered before an operation is
+     * claimed, so a refusal is an honest fallback to the bounded POSIX
+     * adapter rather than a fail-stop after ownership moved. */
+    if (count == 0 || count > UINT32_MAX || descriptor < 0) {
+        return -1;
+    }
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_LINUX_FILE_READ_AT;
+    request.descriptor = descriptor;
+    request.buffer.read_buffer = buffer;
+    request.count = (size_t)count;
+    request.offset = file_offset;
+    return wf_bridge_submit_linux(&request, token, dependent_frame);
+}
+
+/* An open reaches the ring as IORING_OP_OPENAT, and its kind check as a
+ * further IORING_OP_STATX of the descriptor the open produced.  Both are
+ * ordinary ring operations, so no scheduler thread blocks in `openat` and no
+ * helper handoff stands between a program's independent opens. */
+static int wf_bridge_submit_linux_open_at(
+    int directory,
+    const char *path,
+    int flags,
+    unsigned mode,
+    unsigned has_mode,
+    unsigned expected_kind,
+    wf_completion_token *token,
+    void *dependent_frame
+) {
+    wf_linux_file_request request;
+    if (path == NULL || has_mode > 1u
+        || expected_kind > WF_FILE_EXPECT_DIRECTORY) {
+        return -1;
+    }
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_LINUX_FILE_OPEN_AT;
+    request.descriptor = directory;
+    request.buffer.path = path;
+    request.open_flags = flags;
+    request.open_mode = mode;
+    request.has_open_mode = has_mode;
+    request.expected_kind = (enum wf_file_expected_kind)expected_kind;
+    return wf_bridge_submit_linux(&request, token, dependent_frame);
+}
+
+static int wf_bridge_submit_linux_close(
+    int descriptor,
+    wf_completion_token *token,
+    void *dependent_frame
+) {
+    wf_linux_file_request request;
+    /* A descriptor this program never held is refused by the bounded POSIX
+     * adapter as an ordinary typed EBADF, which is a writer-visible outcome;
+     * the ring would refuse it as a request-shape defect, which is not. */
+    if (descriptor < 0) {
+        return -1;
+    }
+    memset(&request, 0, sizeof(request));
+    request.kind = WF_LINUX_FILE_CLOSE;
+    request.descriptor = descriptor;
+    return wf_bridge_submit_linux(&request, token, dependent_frame);
 }
 #endif
 
@@ -785,6 +701,23 @@ int wf__completion_file_open_at_submit(
         || expected_kind > WF_FILE_EXPECT_DIRECTORY) {
         return 0;
     }
+#if defined(__linux__)
+    {
+        int native = wf_bridge_submit_linux_open_at(
+            directory,
+            path,
+            flags,
+            mode,
+            has_mode,
+            expected_kind,
+            (wf_completion_token *)token_storage,
+            NULL
+        );
+        if (native >= 0) {
+            return native;
+        }
+    }
+#endif
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_OPEN_AT;
     request.operation.open_at.directory = directory;
@@ -827,6 +760,18 @@ int wf__completion_file_close_submit(
     if (token_storage == NULL) {
         return 0;
     }
+#if defined(__linux__)
+    {
+        int native = wf_bridge_submit_linux_close(
+            descriptor,
+            (wf_completion_token *)token_storage,
+            NULL
+        );
+        if (native >= 0) {
+            return native;
+        }
+    }
+#endif
     memset(&request, 0, sizeof(request));
     request.kind = WF_FILE_CLOSE;
     request.operation.close.descriptor = descriptor;
@@ -1078,6 +1023,7 @@ int wf__completion_file_close_direct(int descriptor) {
     return (int)wf_bridge_return_direct(wf_file_execute_direct(&request));
 }
 
+
 int64_t wf__completion_directory_next_direct(
     int descriptor,
     void *buffer,
@@ -1159,11 +1105,25 @@ static int wf_bridge_take_file_result(
             abort();
         }
         memset(file_result, 0, sizeof(*file_result));
-        file_result->kind = result.ring.kind == WF_LINUX_FILE_READ_AT
-            ? WF_FILE_PREAD
-            : WF_FILE_PWRITE;
+        switch (result.ring.kind) {
+        case WF_LINUX_FILE_READ_AT:
+            file_result->kind = WF_FILE_PREAD;
+            break;
+        case WF_LINUX_FILE_WRITE_AT:
+            file_result->kind = WF_FILE_PWRITE;
+            break;
+        case WF_LINUX_FILE_OPEN_AT:
+            file_result->kind = WF_FILE_OPEN_AT;
+            break;
+        case WF_LINUX_FILE_CLOSE:
+            file_result->kind = WF_FILE_CLOSE;
+            break;
+        default:
+            abort();
+        }
         file_result->value = result.ring.value;
         file_result->error_code = result.ring.error_code;
+        file_result->open_outcome = result.ring.open_outcome;
 #endif
     } else {
         abort();
@@ -1394,24 +1354,18 @@ uint64_t wf__completion_file_fallback_submissions(void) {
 }
 
 uint64_t wf__completion_file_helper_executions(void) {
-    return atomic_load_explicit(
-        &wf_bridge_target_executions,
-        memory_order_relaxed
-    );
+    return wf_bridge_file_ready == 0
+        ? 0
+        : wf_file_adapter_statistics_snapshot(&wf_bridge_adapter)
+            .helper_executions;
 }
 
 uint64_t wf__completion_target_helper_count(void) {
-    return atomic_load_explicit(
-        &wf_bridge_target_helper_count,
-        memory_order_acquire
-    );
+    return (uint64_t)wf_file_adapter_helper_count(&wf_bridge_adapter);
 }
 
 uint64_t wf__completion_target_helper_executions(void) {
-    return atomic_load_explicit(
-        &wf_bridge_target_executions,
-        memory_order_relaxed
-    );
+    return wf__completion_file_helper_executions();
 }
 
 uint64_t wf__completion_publications(void) {

@@ -4,6 +4,11 @@
 #if defined(__linux__)
 
 #include "contract.h"
+/* The typed file vocabulary — expected kind, open outcome, and the one rule
+ * that decides them — is shared with the bounded POSIX adapter so that one
+ * open states one contract on every target.  Only the header is used: this
+ * adapter calls no function defined in file_adapter.c. */
+#include "file_adapter.h"
 
 #include <linux/io_uring.h>
 #include <pthread.h>
@@ -17,24 +22,37 @@ extern "C" {
 
 enum wf_linux_file_operation_kind {
     WF_LINUX_FILE_READ_AT = 1,
-    WF_LINUX_FILE_WRITE_AT = 2
+    WF_LINUX_FILE_WRITE_AT = 2,
+    WF_LINUX_FILE_OPEN_AT = 3,
+    WF_LINUX_FILE_CLOSE = 4
 };
 
 typedef struct wf_linux_file_request {
     enum wf_linux_file_operation_kind kind;
+    /* A transfer or a close names the operated descriptor; an open names the
+     * directory its path is resolved against. */
     int descriptor;
     union {
         void *read_buffer;
         const void *write_buffer;
+        /* Caller-owned until the operation reaches terminal, exactly like a
+         * transfer buffer. */
+        const char *path;
     } buffer;
     size_t count;
     uint64_t offset;
+    int open_flags;
+    unsigned open_mode;
+    unsigned has_open_mode;
+    enum wf_file_expected_kind expected_kind;
 } wf_linux_file_request;
 
 typedef struct wf_linux_file_result {
     enum wf_linux_file_operation_kind kind;
     int64_t value;
     int error_code;
+    /* Meaningful for WF_LINUX_FILE_OPEN_AT; WF_FILE_OPEN_SUCCEEDED otherwise. */
+    enum wf_file_open_outcome open_outcome;
 } wf_linux_file_result;
 
 enum wf_linux_io_uring_submit_result {
@@ -58,6 +76,12 @@ typedef struct wf_linux_io_uring_entry {
     enum wf_linux_file_operation_kind kind;
     wf_linux_file_request request;
     unsigned waiting_readiness;
+    /* An open's answer, decided when its completion is reaped. The descriptor
+     * is named even where the kind check refused and disposed of it, which is
+     * what the direct path reports too. */
+    int opened_descriptor;
+    enum wf_file_open_outcome open_outcome;
+    int open_error;
 } wf_linux_io_uring_entry;
 
 typedef struct wf_linux_io_uring_statistics {

@@ -256,6 +256,332 @@ static int probe_wait_for_parked_count(
     return 1;
 }
 
+/* Drives one already-owned operation to its terminal and consumes it.  A
+ * kind-checked open passes through more than one ring operation on the way,
+ * which this loop deliberately does not need to know: it waits for the one
+ * terminal the contract promises. */
+static int probe_drive_to_terminal(
+    wf_completion_runtime *runtime,
+    wf_linux_io_uring_adapter *adapter,
+    wf_completion_token token,
+    wf_linux_file_result *result
+) {
+    wf_completion_event event;
+    wf_completion_outcome outcome;
+    unsigned attempt;
+    for (attempt = 0; attempt < 100000u; ++attempt) {
+        size_t published = 0;
+        uint32_t milestones = 0;
+        unsigned phase = 0;
+        PROBE_CHECK(
+            wf_completion_observe(runtime, token, &milestones, &phase)
+            == WF_COMPLETION_TRANSITIONED
+        );
+        if (phase == WF_COMPLETION_TERMINAL_PHASE) {
+            break;
+        }
+        PROBE_CHECK(
+            wf_linux_io_uring_progress(adapter, 4, 1, &published) == 0
+        );
+    }
+    PROBE_CHECK(probe_drain(runtime, &event, 1) == 0);
+    PROBE_CHECK(
+        wf_completion_consume(
+            runtime,
+            token,
+            result,
+            sizeof(*result),
+            &outcome
+        ) == WF_COMPLETION_CONSUMED
+    );
+    PROBE_CHECK(outcome.milestones == WF_COMPLETION_OWNERSHIP_COMPLETE);
+    return 0;
+}
+
+static int probe_run_one(
+    wf_completion_runtime *runtime,
+    wf_linux_io_uring_adapter *adapter,
+    const wf_linux_file_request *request,
+    wf_linux_file_result *result
+) {
+    wf_completion_token token;
+    PROBE_CHECK(wf_completion_claim(runtime, &token) == WF_COMPLETION_CLAIMED);
+    PROBE_CHECK(
+        wf_linux_io_uring_submit(adapter, token, request)
+        == WF_LINUX_IO_URING_TARGET_OWNS
+    );
+    return probe_drive_to_terminal(runtime, adapter, token, result);
+}
+
+static void probe_open_request(
+    wf_linux_file_request *request,
+    const char *path,
+    enum wf_file_expected_kind expected
+) {
+    memset(request, 0, sizeof(*request));
+    request->kind = WF_LINUX_FILE_OPEN_AT;
+    request->descriptor = AT_FDCWD;
+    request->buffer.path = path;
+    request->open_flags = O_RDONLY;
+    request->expected_kind = expected;
+}
+
+static void probe_close_request(
+    wf_linux_file_request *request,
+    int descriptor
+) {
+    memset(request, 0, sizeof(*request));
+    request->kind = WF_LINUX_FILE_CLOSE;
+    request->descriptor = descriptor;
+}
+
+/* Opens and closes are ring operations with the same typed answers the
+ * bounded POSIX adapter gives, including the kind refusal that disposes of a
+ * descriptor the writer must never receive. */
+static int probe_open_and_close_cases(
+    wf_completion_runtime *runtime,
+    wf_linux_io_uring_adapter *adapter,
+    const char *data_path
+) {
+    wf_linux_file_request request;
+    wf_linux_file_result result;
+    char directory[512];
+    char missing[512];
+    char fifo[512];
+    char *separator;
+    int descriptor;
+
+    PROBE_CHECK(
+        (size_t)snprintf(directory, sizeof(directory), "%s", data_path)
+        < sizeof(directory)
+    );
+    separator = strrchr(directory, '/');
+    PROBE_CHECK(separator != NULL);
+    *separator = 0;
+    PROBE_CHECK(
+        (size_t)snprintf(
+            missing,
+            sizeof(missing),
+            "%s/wf-probe-absent",
+            directory
+        ) < sizeof(missing)
+    );
+    PROBE_CHECK(
+        (size_t)snprintf(fifo, sizeof(fifo), "%s/wf-probe-fifo", directory)
+        < sizeof(fifo)
+    );
+    (void)unlink(missing);
+    (void)unlink(fifo);
+    PROBE_CHECK(mkfifo(fifo, 0600) == 0);
+
+    /* A regular file the operation asked for opens and closes on the ring. */
+    probe_open_request(&request, data_path, WF_FILE_EXPECT_REGULAR);
+    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
+    PROBE_CHECK(result.kind == WF_LINUX_FILE_OPEN_AT);
+    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    PROBE_CHECK(result.error_code == 0);
+    PROBE_CHECK(result.value >= 0);
+    descriptor = (int)result.value;
+    PROBE_CHECK(fcntl(descriptor, F_GETFD) != -1);
+
+    probe_close_request(&request, descriptor);
+    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
+    PROBE_CHECK(result.kind == WF_LINUX_FILE_CLOSE);
+    PROBE_CHECK(result.value == 0 && result.error_code == 0);
+
+    /* Closing a descriptor whose authority is already gone is a typed
+     * refusal, never a second disposal of whatever reused the number. */
+    probe_close_request(&request, descriptor);
+    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
+    PROBE_CHECK(result.value < 0 && result.error_code == EBADF);
+
+    /* A name that does not resolve fails before a descriptor exists. */
+    probe_open_request(&request, missing, WF_FILE_EXPECT_REGULAR);
+    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
+    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_FAILED);
+    PROBE_CHECK(result.error_code == ENOENT);
+    PROBE_CHECK(result.value < 0);
+
+    /* A directory is refused for a regular open, and the descriptor the ring
+     * opened is disposed of on the same ring rather than leaked. */
+    probe_open_request(&request, directory, WF_FILE_EXPECT_REGULAR);
+    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
+    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_IS_DIRECTORY);
+    PROBE_CHECK(result.error_code == 0);
+    PROBE_CHECK(result.value >= 0);
+    errno = 0;
+    PROBE_CHECK(fcntl((int)result.value, F_GETFD) == -1 && errno == EBADF);
+
+    /* Any other kind is refused the same way. */
+    probe_open_request(&request, fifo, WF_FILE_EXPECT_REGULAR);
+    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
+    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_OTHER_KIND);
+    PROBE_CHECK(result.error_code == 0);
+    PROBE_CHECK(result.value >= 0);
+    errno = 0;
+    PROBE_CHECK(fcntl((int)result.value, F_GETFD) == -1 && errno == EBADF);
+
+    /* The refusals above are about the kind, not the request shape: the same
+     * directory opens when a directory is what the operation asked for. */
+    probe_open_request(&request, directory, WF_FILE_EXPECT_DIRECTORY);
+    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
+    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    PROBE_CHECK(result.value >= 0);
+    probe_close_request(&request, (int)result.value);
+    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
+    PROBE_CHECK(result.value == 0 && result.error_code == 0);
+
+    PROBE_CHECK(unlink(fifo) == 0);
+    return 0;
+}
+
+/* An open exhausts the adapter's bounded entries like any other operation,
+ * says so without taking ownership, and succeeds once an entry returns. */
+static int probe_open_capacity_case(
+    wf_completion_runtime *runtime,
+    wf_linux_io_uring_adapter *adapter,
+    const char *data_path
+) {
+    wf_linux_file_request request;
+    wf_linux_file_result result;
+    wf_completion_token held[2];
+    wf_completion_token refused;
+    unsigned index;
+
+    probe_open_request(&request, data_path, WF_FILE_EXPECT_REGULAR);
+    for (index = 0; index < 2u; ++index) {
+        PROBE_CHECK(
+            wf_completion_claim(runtime, &held[index]) == WF_COMPLETION_CLAIMED
+        );
+        PROBE_CHECK(
+            wf_linux_io_uring_submit(adapter, held[index], &request)
+            == WF_LINUX_IO_URING_TARGET_OWNS
+        );
+    }
+    PROBE_CHECK(wf_completion_claim(runtime, &refused) == WF_COMPLETION_CLAIMED);
+    PROBE_CHECK(
+        wf_linux_io_uring_submit(adapter, refused, &request)
+        == WF_LINUX_IO_URING_WAIT_CAPACITY
+    );
+    for (index = 0; index < 2u; ++index) {
+        PROBE_CHECK(
+            probe_drive_to_terminal(runtime, adapter, held[index], &result) == 0
+        );
+        PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+        PROBE_CHECK(close((int)result.value) == 0);
+    }
+    /* Released capacity readmits the exact operation that was refused, with
+     * its own token still owned by the caller. */
+    PROBE_CHECK(
+        wf_linux_io_uring_submit(adapter, refused, &request)
+        == WF_LINUX_IO_URING_TARGET_OWNS
+    );
+    PROBE_CHECK(probe_drive_to_terminal(runtime, adapter, refused, &result) == 0);
+    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    PROBE_CHECK(close((int)result.value) == 0);
+    return 0;
+}
+
+/* An open result is one terminal publication into one generation. A second
+ * publication is refused as a duplicate, and a token copied before the slot
+ * was recycled is refused as stale rather than overwriting a live open. */
+static int probe_open_generation_cases(void) {
+    /* One slot, so the operation claimed after the first is recycled onto
+     * exactly the storage the stale token still names. */
+    wf_completion_runtime storage;
+    wf_completion_runtime *runtime = &storage;
+    wf_completion_slot only;
+    wf_completion_token token;
+    wf_completion_token stale;
+    wf_completion_event event;
+    wf_completion_outcome outcome;
+    wf_linux_file_result result;
+    wf_linux_file_result published;
+    wf_completion_publication publication;
+
+    PROBE_CHECK(wf_completion_runtime_init(runtime, &only, 1) == 0);
+    memset(&published, 0, sizeof(published));
+    published.kind = WF_LINUX_FILE_OPEN_AT;
+    published.value = 7;
+    published.open_outcome = WF_FILE_OPEN_SUCCEEDED;
+    publication.milestones = WF_COMPLETION_OWNERSHIP_COMPLETE;
+    publication.terminal_kind = 1;
+    publication.result = &published;
+    publication.result_size = sizeof(published);
+
+    PROBE_CHECK(wf_completion_claim(runtime, &token) == WF_COMPLETION_CLAIMED);
+    stale = token;
+    PROBE_CHECK(
+        wf_completion_begin_submit(runtime, token) == WF_COMPLETION_TRANSITIONED
+    );
+    PROBE_CHECK(
+        wf_completion_target_accepted(runtime, token)
+        == WF_COMPLETION_TRANSITIONED
+    );
+    PROBE_CHECK(
+        wf_completion_publish_terminal(runtime, token, &publication)
+        == WF_COMPLETION_PUBLISHED
+    );
+    PROBE_CHECK(
+        wf_completion_publish_terminal(runtime, token, &publication)
+        == WF_COMPLETION_PUBLISH_DUPLICATE_TERMINAL
+    );
+    PROBE_CHECK(probe_drain(runtime, &event, 1) == 0);
+    PROBE_CHECK(
+        wf_completion_consume(
+            runtime,
+            token,
+            &result,
+            sizeof(result),
+            &outcome
+        ) == WF_COMPLETION_CONSUMED
+    );
+    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    PROBE_CHECK(result.value == 7);
+
+    /* The recycled slot now belongs to a different operation, and the copied
+     * token bits must fail generation validation before any result byte of
+     * that operation changes. */
+    {
+        wf_completion_token reused;
+        PROBE_CHECK(
+            wf_completion_claim(runtime, &reused) == WF_COMPLETION_CLAIMED
+        );
+        PROBE_CHECK(reused.slot == stale.slot);
+        PROBE_CHECK(reused.generation != stale.generation);
+        PROBE_CHECK(
+            wf_completion_begin_submit(runtime, reused)
+            == WF_COMPLETION_TRANSITIONED
+        );
+        PROBE_CHECK(
+            wf_completion_target_accepted(runtime, reused)
+            == WF_COMPLETION_TRANSITIONED
+        );
+        PROBE_CHECK(
+            wf_completion_publish_terminal(runtime, stale, &publication)
+            == WF_COMPLETION_PUBLISH_STALE
+        );
+        published.value = 11;
+        PROBE_CHECK(
+            wf_completion_publish_terminal(runtime, reused, &publication)
+            == WF_COMPLETION_PUBLISHED
+        );
+        PROBE_CHECK(probe_drain(runtime, &event, 1) == 0);
+        PROBE_CHECK(
+            wf_completion_consume(
+                runtime,
+                reused,
+                &result,
+                sizeof(result),
+                &outcome
+            ) == WF_COMPLETION_CONSUMED
+        );
+        PROBE_CHECK(result.value == 11);
+    }
+    PROBE_CHECK(wf_completion_runtime_destroy(runtime) == 0);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     wf_completion_runtime runtime;
     wf_completion_slot slots[8];
@@ -551,6 +877,10 @@ int main(int argc, char **argv) {
             );
         }
     }
+
+    PROBE_CHECK(probe_open_and_close_cases(&runtime, &adapter, argv[1]) == 0);
+    PROBE_CHECK(probe_open_capacity_case(&runtime, &adapter, argv[1]) == 0);
+    PROBE_CHECK(probe_open_generation_cases() == 0);
 
     /* Once target ownership exists, a fatal progress condition is sticky and
      * observable by both progress and park. The production bridge fail-stops

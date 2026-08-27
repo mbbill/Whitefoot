@@ -1,6 +1,11 @@
 #if !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
+/* The online-CPU query the helper budget is checked against is a BSD
+ * extension the POSIX macro above hides on Darwin, exactly as in bridge.c. */
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE 1
+#endif
 
 #include "contract.h"
 #include "bridge.h"
@@ -22,6 +27,10 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+
+/* The bridge's whole process-wide operation capacity. A test which means to
+ * reach the capacity boundary must name the same number the bridge does. */
+#define WF_HARNESS_OPERATION_CAPACITY 64u
 
 #define CHECK(condition)                                                      \
     do {                                                                      \
@@ -1099,6 +1108,7 @@ static int test_bridge_open_status_and_close_are_typed_operations(
     unsigned open_outcome = WF_FILE_OPEN_FAILED;
     char path[256];
     int descriptor;
+    uint64_t native_before = wf__completion_linux_io_uring_submissions();
 
     CHECK(scratch_directory != NULL);
     CHECK(
@@ -1151,6 +1161,23 @@ static int test_bridge_open_status_and_close_are_typed_operations(
     wf__completion_file_join(&token, &value, &error_code);
     CHECK(value == 0 && error_code == 0);
 
+    /* Closing a descriptor whose authority this program already gave up is a
+     * typed refusal, not a crash and not a silent success. */
+    CHECK(wf__completion_file_close_submit(descriptor, &token) == 1);
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value < 0 && error_code == EBADF);
+
+#if defined(__linux__)
+    /* Where the ring is the qualified target, the open and both closes above
+     * are ring operations. Without this the whole test would still pass on a
+     * silent fallback to the bounded POSIX adapter, which is exactly the
+     * regression the ring path exists to prevent. */
+    if (getenv("WF_REQUIRE_LINUX_IO_URING") != NULL) {
+        CHECK(wf__completion_linux_io_uring_submissions() >= native_before + 3);
+    }
+#endif
+    (void)native_before;
+
     descriptor = (int)wf__completion_file_open_at_direct(
         AT_FDCWD,
         path,
@@ -1178,13 +1205,13 @@ static int test_bridge_open_status_and_close_are_typed_operations(
 }
 
 static int test_bridge_capacity_falls_back_per_operation(void) {
-    wf_completion_token tokens[64];
+    wf_completion_token tokens[WF_HARNESS_OPERATION_CAPACITY];
     wf_completion_token refused;
     int64_t value = -1;
     int error_code = -1;
     size_t index;
 
-    for (index = 0; index < 64; ++index) {
+    for (index = 0; index < WF_HARNESS_OPERATION_CAPACITY; ++index) {
         CHECK(
             wf__completion_file_pread_submit(
                 -1,
@@ -1199,7 +1226,7 @@ static int test_bridge_capacity_falls_back_per_operation(void) {
         wf__completion_file_pread_submit(-1, NULL, 0, 0, &refused)
         == 0
     );
-    for (index = 0; index < 64; ++index) {
+    for (index = 0; index < WF_HARNESS_OPERATION_CAPACITY; ++index) {
         wf__completion_file_join(&tokens[index], &value, &error_code);
         CHECK(value == 0 && error_code == 0);
     }
@@ -1286,25 +1313,400 @@ static int test_checked_open_rejects_and_closes_nonregular_descriptors(
     CHECK(fcntl((int)value, F_GETFD) == -1);
     CHECK(errno == EBADF);
 
+    /* The same submitted refusal, so a target which carries opens natively
+     * answers the same discriminator as one which does not. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            scratch_directory,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &token
+        ) == 1
+    );
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0);
+    CHECK(error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_IS_DIRECTORY);
+    errno = 0;
+    CHECK(fcntl((int)value, F_GETFD) == -1);
+    CHECK(errno == EBADF);
+
     CHECK(unlink(path) == 0);
     return 0;
 }
 
+/* Every way an open can fail names its own terminal discriminator, on the
+ * submitted path and on the direct one.  The generated program switches on
+ * exactly this value and aborts on anything outside the set, so a target
+ * which answers the wrong one is a fail-stop defect rather than a wrong
+ * program. */
+static int test_open_failure_classes_are_typed_outcomes(
+    const char *scratch_directory
+) {
+    wf_completion_token token;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_SUCCEEDED;
+    char missing[256];
+    char regular[256];
+    int descriptor;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            missing,
+            sizeof(missing),
+            "%s/wf-completion-absent-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    CHECK(
+        snprintf(
+            regular,
+            sizeof(regular),
+            "%s/wf-completion-regular-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(missing);
+    (void)unlink(regular);
+    descriptor = open(regular, O_CREAT | O_EXCL | O_RDWR, 0600);
+    CHECK(descriptor >= 0);
+    CHECK(close(descriptor) == 0);
+
+    /* A name that does not resolve fails before any descriptor exists. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            missing,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &token
+        ) == 1
+    );
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(value < 0);
+    CHECK(error_code == ENOENT);
+    CHECK(open_outcome == WF_FILE_OPEN_FAILED);
+
+    value = wf__completion_file_open_at_direct(
+        AT_FDCWD,
+        missing,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        &error_code,
+        &open_outcome
+    );
+    CHECK(value < 0);
+    CHECK(error_code == ENOENT);
+    CHECK(open_outcome == WF_FILE_OPEN_FAILED);
+
+    /* A directory open of a regular file is refused by the same one rule
+     * that refuses a regular open of a directory. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            regular,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_DIRECTORY,
+            &token
+        ) == 1
+    );
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0);
+    CHECK(error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_OTHER_KIND);
+    errno = 0;
+    CHECK(fcntl((int)value, F_GETFD) == -1);
+    CHECK(errno == EBADF);
+
+    value = wf__completion_file_open_at_direct(
+        AT_FDCWD,
+        regular,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_DIRECTORY,
+        &error_code,
+        &open_outcome
+    );
+    CHECK(value >= 0);
+    CHECK(error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_OTHER_KIND);
+    errno = 0;
+    CHECK(fcntl((int)value, F_GETFD) == -1);
+    CHECK(errno == EBADF);
+
+    /* The directory the refusal above named really does open as a directory,
+     * so the refusal is about the kind and not about the request shape. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            scratch_directory,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_DIRECTORY,
+            &token
+        ) == 1
+    );
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    CHECK(value >= 0);
+    CHECK(error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    CHECK(wf__completion_file_close_submit((int)value, &token) == 1);
+    wf__completion_file_join(&token, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    CHECK(unlink(regular) == 0);
+    return 0;
+}
+
+/* Opens exhaust the same bounded operation capacity every other completion
+ * operation draws on, refuse honestly at the boundary, and the refused
+ * request succeeds once capacity returns. */
+static int test_open_capacity_refuses_and_resubmits(
+    const char *scratch_directory
+) {
+    wf_completion_token tokens[WF_HARNESS_OPERATION_CAPACITY];
+    wf_completion_token refused;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
+    char path[256];
+    size_t index;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-open-capacity-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    {
+        int seed = open(path, O_CREAT | O_EXCL | O_RDWR, 0600);
+        CHECK(seed >= 0);
+        CHECK(close(seed) == 0);
+    }
+
+    for (index = 0; index < WF_HARNESS_OPERATION_CAPACITY; ++index) {
+        CHECK(
+            wf__completion_file_open_at_submit(
+                AT_FDCWD,
+                path,
+                O_RDONLY,
+                0u,
+                0u,
+                WF_FILE_EXPECT_REGULAR,
+                &tokens[index]
+            ) == 1
+        );
+    }
+    /* No operation is left to claim, so the bridge refuses before touching a
+     * token and the generated program takes its qualified direct call. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &refused
+        ) == 0
+    );
+    for (index = 0; index < WF_HARNESS_OPERATION_CAPACITY; ++index) {
+        wf__completion_file_open_join(
+            &tokens[index],
+            &value,
+            &error_code,
+            &open_outcome
+        );
+        CHECK(value >= 0 && error_code == 0);
+        CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
+        CHECK(wf__completion_file_close_submit((int)value, &tokens[index]) == 1);
+    }
+    for (index = 0; index < WF_HARNESS_OPERATION_CAPACITY; ++index) {
+        wf__completion_file_join(&tokens[index], &value, &error_code);
+        CHECK(value == 0 && error_code == 0);
+    }
+    /* Released capacity readmits the request that was refused. */
+    CHECK(
+        wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &refused
+        ) == 1
+    );
+    wf__completion_file_open_join(&refused, &value, &error_code, &open_outcome);
+    CHECK(value >= 0 && error_code == 0);
+    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    CHECK(wf__completion_file_close_submit((int)value, &refused) == 1);
+    wf__completion_file_join(&refused, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+typedef struct wf_open_waiter {
+    const char *path;
+    unsigned yields;
+    int result;
+} wf_open_waiter;
+
+static void *wf_open_waiter_main(void *opaque) {
+    wf_open_waiter *waiter = opaque;
+    wf_completion_token token;
+    int64_t value = -1;
+    int error_code = -1;
+    unsigned open_outcome = WF_FILE_OPEN_FAILED;
+    unsigned yield;
+    waiter->result = 1;
+    if (wf__completion_file_open_at_submit(
+            AT_FDCWD,
+            waiter->path,
+            O_RDONLY,
+            0u,
+            0u,
+            WF_FILE_EXPECT_REGULAR,
+            &token
+        ) != 1) {
+        return NULL;
+    }
+    /* Give the target every chance to reach terminal before this owner asks
+     * for the result, so the join exercises the already-published path rather
+     * than only the park-and-wake one. */
+    for (yield = 0; yield < waiter->yields; ++yield) {
+        (void)sched_yield();
+    }
+    wf__completion_file_open_join(&token, &value, &error_code, &open_outcome);
+    if (value < 0 || error_code != 0
+        || open_outcome != WF_FILE_OPEN_SUCCEEDED) {
+        return NULL;
+    }
+    if (wf__completion_file_close_submit((int)value, &token) != 1) {
+        return NULL;
+    }
+    wf__completion_file_join(&token, &value, &error_code);
+    waiter->result = value == 0 && error_code == 0 ? 0 : 1;
+    return NULL;
+}
+
+/* Independent owners each hold their own open operation at once. No owner
+ * observes another's result, and an owner whose operation finished before it
+ * asked still consumes exactly its own. */
+static int test_open_results_reach_every_independent_owner(
+    const char *scratch_directory
+) {
+    enum { WF_OPEN_WAITERS = 6u };
+    pthread_t threads[WF_OPEN_WAITERS];
+    wf_open_waiter waiters[WF_OPEN_WAITERS];
+    char path[256];
+    unsigned index;
+
+    CHECK(scratch_directory != NULL);
+    CHECK(
+        snprintf(
+            path,
+            sizeof(path),
+            "%s/wf-completion-open-waiters-%ld",
+            scratch_directory,
+            (long)getpid()
+        ) > 0
+    );
+    (void)unlink(path);
+    {
+        int seed = open(path, O_CREAT | O_EXCL | O_RDWR, 0600);
+        CHECK(seed >= 0);
+        CHECK(close(seed) == 0);
+    }
+    for (index = 0; index < WF_OPEN_WAITERS; ++index) {
+        waiters[index].path = path;
+        /* Half join immediately and half only after yielding, so both the
+         * already-terminal and the still-in-flight join are covered. */
+        waiters[index].yields = index % 2u == 0u ? 0u : 64u;
+        waiters[index].result = 1;
+        CHECK(
+            pthread_create(
+                &threads[index],
+                NULL,
+                wf_open_waiter_main,
+                &waiters[index]
+            ) == 0
+        );
+    }
+    for (index = 0; index < WF_OPEN_WAITERS; ++index) {
+        CHECK(pthread_join(threads[index], NULL) == 0);
+        CHECK(waiters[index].result == 0);
+    }
+    CHECK(unlink(path) == 0);
+    return 0;
+}
+
+/* The helper policy makes two different promises and this pins both.
+ *
+ * A written WF_IO_HELPERS pins the count exactly, which is what every test
+ * that names a helper configuration depends on. An unset one asks for
+ * demand-driven growth: it starts at one and may reach the machine's own CPU
+ * count, never past it and never past the process ceiling.
+ *
+ * The unset arm previously asserted exactly one helper. That was the fixed
+ * default before growth existed, and it kept passing after growth shipped
+ * only because the growth rule compared queue depth against helper count and
+ * so almost never fired. Asserting the range is what the policy actually
+ * promises; asserting one would now pin the defect instead of the contract. */
 static int test_process_wide_target_helper_budget(void) {
     const char *text = getenv("WF_IO_HELPERS");
-    unsigned long expected = 1;
+    uint64_t held = wf__completion_target_helper_count();
+    unsigned long ceiling = 8;
+    long online;
     if (text != NULL && *text != '\0') {
         char *end = NULL;
+        unsigned long pinned;
         errno = 0;
-        expected = strtoul(text, &end, 10);
-        if (errno != 0 || end == text || *end != '\0') {
-            expected = 1;
+        pinned = strtoul(text, &end, 10);
+        if (errno == 0 && end != text && *end == '\0') {
+            if (pinned > ceiling) {
+                pinned = ceiling;
+            }
+            CHECK(held == pinned);
+            return 0;
         }
     }
-    if (expected > 8) {
-        expected = 8;
+    online = sysconf(_SC_NPROCESSORS_ONLN);
+    if (online < 1) {
+        online = 1;
     }
-    CHECK(wf__completion_target_helper_count() == expected);
+    if ((unsigned long)online < ceiling) {
+        ceiling = (unsigned long)online;
+    }
+    /* Where a native ring carries the operations, the same unset policy asks
+     * for no helpers at all and a waiting scheduler is the engine, so only
+     * the ceiling applies there. */
+    if (wf__completion_linux_io_uring_submissions() == 0) {
+        CHECK(held >= 1);
+    }
+    CHECK(held <= ceiling);
     return 0;
 }
 
@@ -1740,6 +2142,9 @@ int main(int argc, char **argv) {
     RUN_TEST(test_bridge_open_status_and_close_are_typed_operations(argv[1]));
     RUN_TEST(test_bridge_capacity_falls_back_per_operation());
     RUN_TEST(test_checked_open_rejects_and_closes_nonregular_descriptors(argv[1]));
+    RUN_TEST(test_open_failure_classes_are_typed_outcomes(argv[1]));
+    RUN_TEST(test_open_capacity_refuses_and_resubmits(argv[1]));
+    RUN_TEST(test_open_results_reach_every_independent_owner(argv[1]));
     RUN_TEST(test_process_wide_target_helper_budget());
     RUN_TEST(test_helper_completion_wakes_scheduler());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());

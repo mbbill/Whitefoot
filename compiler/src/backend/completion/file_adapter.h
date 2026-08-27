@@ -13,10 +13,12 @@
 
 #include "contract.h"
 
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/stat.h>
 
 #if defined(__cplusplus)
 extern "C" {
@@ -50,6 +52,31 @@ enum wf_file_open_outcome {
     WF_FILE_OPEN_IS_DIRECTORY = 3,
     WF_FILE_OPEN_OTHER_KIND = 4
 };
+
+/* The one rule deciding whether an opened descriptor is the kind the
+ * operation asked for.  Every target adapter answers with this function, so a
+ * FIFO is refused identically whether the open ran on a helper thread, on the
+ * scheduler itself, or on a kernel completion ring.  `file_mode` is the host
+ * mode word of the descriptor that was actually opened, never of a path
+ * inspected a second time. */
+static inline enum wf_file_open_outcome wf_file_kind_outcome(
+    enum wf_file_expected_kind expected,
+    unsigned int file_mode
+) {
+    if (expected == WF_FILE_EXPECT_ANY
+        || (expected == WF_FILE_EXPECT_REGULAR && S_ISREG(file_mode))
+        || (expected == WF_FILE_EXPECT_DIRECTORY && S_ISDIR(file_mode))) {
+        return WF_FILE_OPEN_SUCCEEDED;
+    }
+    return S_ISDIR(file_mode) ? WF_FILE_OPEN_IS_DIRECTORY
+                              : WF_FILE_OPEN_OTHER_KIND;
+}
+
+/* The extra open flag a kind-checked open needs so that opening a waiting
+ * facility such as a FIFO cannot block before the kind is known. */
+static inline int wf_file_open_kind_flags(enum wf_file_expected_kind expected) {
+    return expected == WF_FILE_EXPECT_REGULAR ? O_NONBLOCK : 0;
+}
 
 typedef struct wf_file_request {
     enum wf_file_operation_kind kind;
@@ -139,7 +166,10 @@ typedef struct wf_file_adapter {
     size_t queue_tail;
     size_t queue_count;
     pthread_t *helpers;
-    size_t helper_count;
+    /* Grown under queue_lock by a submitting thread and read without it by a
+     * scheduler deciding whether it is itself this queue's engine. */
+    _Atomic size_t helper_count;
+    size_t helper_cap;
     pthread_mutex_t queue_lock;
     pthread_cond_t queue_available;
     unsigned stopping;
@@ -181,6 +211,16 @@ wf_file_result wf_file_execute_direct(const wf_file_request *request);
 size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget);
 
 size_t wf_file_adapter_queued(const wf_file_adapter *adapter);
+
+/* Raises the ceiling the helper pool may grow to when a program exposes more
+ * independent queued work than there are helpers to take it. `helper_storage`
+ * given to init must hold `cap` helpers. A cap at or below the initial count
+ * disables growth, which is what a pinned helper policy asks for. */
+int wf_file_adapter_set_helper_cap(wf_file_adapter *adapter, size_t cap);
+
+/* Read without the queue lock. Zero means the calling scheduler is itself the
+ * only engine this queue has. */
+size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter);
 
 /* Stops admission and drains accepted queue entries before joining helpers.
  * With zero helpers, the calling thread performs the bounded typed work one
