@@ -165,24 +165,37 @@ The activated revision proves:
 
 ## Program-level performance, measured 2026-08-27
 
-The evidence above is component evidence. Whole programs were measured on
-branch `batch/0084-io-perf` and the table is in
-`research/investigations/io-model/RESULTS.md`; the bundle that produces it is
-`research/experiments/io-completion-bench/`.
+The evidence above is component evidence. Whole programs were first measured
+on branch `batch/0084-io-perf` and re-measured on `batch/0086-open-handout`
+with the base commit and the branch interleaved in one plan on a quiet host;
+both tables are in `research/investigations/io-model/RESULTS.md` and the
+bundle that produces them is `research/experiments/io-completion-bench/`.
 
-On a many-independent-files workload the shipped build is 2.05x faster than
-its own sequential build on macOS and 2.41x faster on Linux, so the overlap
-is real. Against the native ceiling it is within 3.4 percent of a
-hand-written io_uring pipeline running at the same queue depth the Whitefoot
-source can ask for, and well outside 10 percent of any native shape that asks
-for a deeper one.
+On a many-independent-files workload the shipped build is about two times
+faster than its own sequential build on macOS and about 2.8 times on Linux, so
+the overlap is real. Against the native ceiling it is within 6 percent of a
+hand-written io_uring pipeline running at the same queue depth the four-wide
+source asks for; at eight-wide the same comparison opens to 26 percent, and
+against a thread pool that also folds each file on the worker that read it —
+compute parallelism the source cannot express — it is 1.5x on macOS and 3.0x
+on Linux.
 
-The open question this leaves is not the completion protocol but the width a
-source can express: overlap groups are runs of consecutive calls in one basic
-block, so a loop with one I/O call per iteration overlaps nothing and measures
-like the sequential build. Deciding whether the language, the lowering, or
-neither should widen that is the next I/O question, and it is a design
-decision rather than a defect.
+Batch 0086 moved the Linux open onto the ring, which removes the last blocking
+`openat` from a scheduler thread at no measured cost, and established what the
+remaining distance is not. It is not the opens: on Linux the entire
+open-plus-close budget is 9 percent of the program, and moving it changed the
+total by about one percent. It is not the completion protocol's per-operation
+cost either: the four-wide program still matches a hand-written ring at the
+same depth.
+
+What remains is the width a source can express and the barrier that comes with
+it. Overlap groups are runs of consecutive calls in one basic block, so a loop
+with one I/O call per iteration overlaps nothing and measures like the
+sequential build, and a hand-widened one joins its whole group before starting
+the next — paying the maximum of N latencies per round where a native pipeline
+keeps N continuously in flight. Deciding whether the language, the lowering, or
+neither should widen and pipeline that is the next I/O question, and it is a
+design decision rather than a defect.
 
 No test, verdict, check, or failure path was weakened to make this revision
 green. Canonical `make check` now runs to completion on the activated identity
