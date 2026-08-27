@@ -1471,3 +1471,40 @@ fn a_scrutinee_call_before_an_independent_call_stays_sequential() {
     );
     assert_publishes_marked_streams(&module);
 }
+
+/// Every completion storage element of a handed-out site is reached through
+/// the site's own indexed storage, and none is a bare slot.
+///
+/// The storage belongs to an outstanding *operation*: the target writes the
+/// result into it and reads the staged path out of it while the operation is
+/// in flight. One element per site is right only while a site can hold exactly
+/// one hand-out, which is what the current schedule guarantees and what a
+/// deeper one would end. Indexing it is what keeps that fact a number rather
+/// than an unwritten assumption.
+#[test]
+fn every_completion_storage_element_is_indexed_by_its_hand_out() {
+    let module = emit(POSITIONED_READS);
+    let body = emitted_function(&module, "probe");
+    let storages = body
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("%"))
+        .filter_map(|line| line.split_once(" = alloca "))
+        .map(|(name, ty)| (name.to_owned(), ty.trim().to_owned()))
+        .collect::<Vec<_>>();
+    assert!(
+        !storages.is_empty(),
+        "the handed-out probe allocates completion storage"
+    );
+    for (name, ty) in &storages {
+        assert!(
+            ty.starts_with("[1 x "),
+            "completion storage %{name} is {ty}, not one element per outstanding operation"
+        );
+        assert!(
+            body.contains(&format!(
+                "getelementptr inbounds {ty}, ptr %{name}, i64 0, i64 0"
+            )),
+            "completion storage %{name} is not reached through its hand-out's index"
+        );
+    }
+}

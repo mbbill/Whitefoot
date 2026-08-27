@@ -151,6 +151,48 @@ impl FunctionEmitter<'_, '_> {
         self.emit_completion_dependencies(&dependencies)
     }
 
+    /// How many operations one handed-out call site can have outstanding at
+    /// once.
+    ///
+    /// Every completion storage element — the token, the result slot, the raw
+    /// value and error, an open's outcome, a directory cursor's position, an
+    /// open's staged path — belongs to one *operation*, not to one written
+    /// call.  The target writes the result and reads the staged path while the
+    /// operation is outstanding, so two operations of one site that are
+    /// outstanding together need one element each; sharing would let the newer
+    /// hand-out overwrite storage the older one is still being read from.
+    ///
+    /// Every site the current lowering produces answers one.  A completion
+    /// schedule is submitted and joined inside the block that formed it, so a
+    /// site never holds a second hand-out, which is why one shared element has
+    /// never been wrong — and exactly why it would become wrong, silently and
+    /// without a compile error, the first time a schedule outlives its block.
+    /// The storage is therefore indexed rather than shared: the count and the
+    /// index are the whole of what a deeper schedule changes.
+    fn outstanding_completion_operations(&self, _site: IrValueId) -> u64 {
+        1
+    }
+
+    /// Which element of this site's storage the hand-out being emitted owns.
+    ///
+    /// One hand-out per site, so element zero.  A site with several
+    /// outstanding operations answers with the index of the one it is
+    /// emitting.
+    fn completion_storage_index(&self, _site: IrValueId) -> u64 {
+        0
+    }
+
+    /// Reserves one completion storage element for the hand-out being emitted.
+    fn completion_entry_slot(
+        &mut self,
+        site: IrValueId,
+        ty: &str,
+    ) -> Result<String, BackendFailure> {
+        let outstanding = self.outstanding_completion_operations(site);
+        let index = self.completion_storage_index(site);
+        self.indexed_entry_slot(ty, outstanding, index)
+    }
+
     /// Starts one direct file operation before the remaining independent
     /// members run.  All operation storage is allocated in the function entry
     /// block before the adapter can own the request.
@@ -208,10 +250,10 @@ impl FunctionEmitter<'_, '_> {
             return Err(BackendFailure::InvalidIr);
         }
 
-        let token = self.entry_slot("[2 x i64]")?;
-        let result_slot = self.entry_slot(&llvm_type(self.program, ty)?)?;
-        let raw_value = self.entry_slot("i64")?;
-        let raw_error = self.entry_slot("i32")?;
+        let token = self.completion_entry_slot(result, "[2 x i64]")?;
+        let result_slot = self.completion_entry_slot(result, &llvm_type(self.program, ty)?)?;
+        let raw_value = self.completion_entry_slot(result, "i64")?;
+        let raw_error = self.completion_entry_slot(result, "i32")?;
         let extent = format!("%{}", self.next_temporary()?);
         let vacant = format!("%{}", self.next_temporary()?);
         let offset_too_large = file_offset
@@ -390,11 +432,11 @@ impl FunctionEmitter<'_, '_> {
         if llvm_type(self.program, directory_ty)? != "i32" {
             return Err(BackendFailure::InvalidIr);
         }
-        let token = self.entry_slot("[2 x i64]")?;
-        let result_slot = self.entry_slot(&llvm_type(self.program, ty)?)?;
-        let raw_value = self.entry_slot("i64")?;
-        let raw_error = self.entry_slot("i32")?;
-        let open_outcome = self.entry_slot("i32")?;
+        let token = self.completion_entry_slot(result, "[2 x i64]")?;
+        let result_slot = self.completion_entry_slot(result, &llvm_type(self.program, ty)?)?;
+        let raw_value = self.completion_entry_slot(result, "i64")?;
+        let raw_error = self.completion_entry_slot(result, "i32")?;
+        let open_outcome = self.completion_entry_slot(result, "i32")?;
         let status = format!("%{}", self.next_temporary()?);
         let accepted = format!("%{}", self.next_temporary()?);
         let inline_result = format!("%{}", self.next_temporary()?);
@@ -460,7 +502,7 @@ impl FunctionEmitter<'_, '_> {
         let slot = limit
             .checked_add(1)
             .ok_or(BackendFailure::CounterOverflow)?;
-        let component = self.entry_slot(&format!("[{slot} x i8]"))?;
+        let component = self.completion_entry_slot(result, &format!("[{slot} x i8]"))?;
         let extent = format!("%{}", self.next_temporary()?);
         let oversize = format!("%{}", self.next_temporary()?);
         let vacant = format!("%{}", self.next_temporary()?);
@@ -549,11 +591,11 @@ impl FunctionEmitter<'_, '_> {
             .value_type(*destination)
             .ok_or(BackendFailure::InvalidIr)?;
         let destination_llvm = llvm_type(self.program, destination_ty)?;
-        let token = self.entry_slot("[2 x i64]")?;
-        let result_slot = self.entry_slot(&llvm_type(self.program, ty)?)?;
-        let raw_value = self.entry_slot("i64")?;
-        let raw_error = self.entry_slot("i32")?;
-        let position = self.entry_slot("i64")?;
+        let token = self.completion_entry_slot(result, "[2 x i64]")?;
+        let result_slot = self.completion_entry_slot(result, &llvm_type(self.program, ty)?)?;
+        let raw_value = self.completion_entry_slot(result, "i64")?;
+        let raw_error = self.completion_entry_slot(result, "i32")?;
+        let position = self.completion_entry_slot(result, "i64")?;
         let extent = format!("%{}", self.next_temporary()?);
         let vacant = format!("%{}", self.next_temporary()?);
         let base = format!("%{}", self.next_temporary()?);
