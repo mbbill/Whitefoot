@@ -2,12 +2,12 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
-the active v0.36 authority at SHA-256
-`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
-The stable path currently carries the v0.37 work-branch candidate which
-supersedes those exact bytes; the candidate amendment at the end of this file
-binds its changed derivations, while released versioned files retain the
-superseded authorities. Requirement (META-6): every rule is provably
+the active v0.37 authority at SHA-256
+`ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`.
+v0.37 supersedes v0.36 at
+`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`; the v0.37
+amendment at the end of this file binds its changed derivations, while released
+versioned files retain the superseded authorities. Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
 exist; this form is minimality-selected and awaits its experiment),
@@ -16,7 +16,9 @@ exist; this form is minimality-selected and awaits its experiment),
 **Statistics: 85 derived · 52 existence-only · 0 underived**
 (137 rules: v0.28's 132 plus the v0.29 CLM-3, v0.31 SET-2, and v0.32 SYS-14
 additions; v0.33 and v0.34 add no numbered rule and change no status; the
-v0.35 adds PAR-1 and PAR-2 and changes no prior status).
+v0.35 adds PAR-1 and PAR-2, v0.36 amends PAR-1 and PAR-2 only, and v0.37 adds
+no numbered rule while amending effect, system, release, trap, and overlap
+derivations).
 
 ## Re-grounding priority queue (weakest chains)
 
@@ -1403,16 +1405,18 @@ gate's coverage denominator is satisfied. Both annotations landed with the
 v0.35 activation as the owner-approved protected addition their records
 prepared.
 
-## v0.37 candidate amendment: unified state and completion I/O (2026-08-26)
+## v0.37 amendment: unified state and completion I/O (activated 2026-08-27)
 
-Candidate binding: `spec/kernel-spec.md`, headed v0.37 CANDIDATE, superseding
-the exact active v0.36 digest named above. Its complete first-principles chain
+Specification binding: `spec/kernel-spec.md`, headed v0.37 ACTIVE, SHA-256
+`ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`,
+superseding the exact v0.36 digest named above, whose outgoing bytes are
+archived as `spec/kernel-spec-v0.36.md`. Its complete first-principles chain
 is `research/investigations/io-model/FIRST-PRINCIPLES.md`; the selected concrete
 surface is `research/investigations/io-model/DESIGN.md`; the discarded branch
 evidence and clean-core measurements are `IMPLEMENTATION-AUDIT.md` and
-`RESULTS.md` beside it. These bytes are work-branch language authority and are
-not merge-ready ACTIVE bytes until the normal exact-revision approval,
-activation-chain, and outgoing-archive step.
+`RESULTS.md` beside it. These bytes are the activation-chain tail; merging them
+into `main` still requires the normal exact-revision owner approval recorded in
+`governance/APPROVALS.md`.
 
 No numbered rule is added or removed and no derivation status changes. The
 new `effect_path` grammar production raises the grammar count from 74 to 75.

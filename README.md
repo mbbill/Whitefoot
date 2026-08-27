@@ -33,14 +33,16 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.36 remains the active language authority, SHA-256
-`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
-On this work branch the stable [specification path](spec/kernel-spec.md)
-contains an in-progress v0.37 candidate for unified-state completion I/O. Its
-bytes are changing during the rebuild. It is valid branch work and not a
-merge-ready ACTIVE identity.
+Kernel specification v0.37 is the active language authority, SHA-256
+`ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`, carried by
+the stable [specification path](spec/kernel-spec.md). It activates
+unified-state completion I/O and supersedes v0.36, whose outgoing bytes are
+preserved as [`spec/kernel-spec-v0.36.md`](spec/kernel-spec-v0.36.md). The
+merge-time record for that activation is in
+[governance/APPROVALS.md](governance/APPROVALS.md), which becomes effective
+with the owner's merge approval of the exact revision containing it.
 
-The selected candidate uses ordinary opaque values, `own`, `move`, `&`, and
+v0.37 uses ordinary opaque values, `own`, `move`, `&`, and
 `&uniq` for every I/O resource. `reads` and `writes` name formal parameters or
 their static struct fields rather than lifetimes. Resource types do not form a
 separate language capability category. There is no separate `world`,
@@ -104,11 +106,12 @@ harness, validates conformance structure and rule coverage, runs every
 non-pending conformance case through the native compile-run adapter, checks the
 maintained research fixtures, and verifies the specification/archive identity
 chain. Gate results are revision-specific, so this overview carries no floating
-pass count while the candidate bytes are changing. Canonical `make check`
-deliberately rejects `CANDIDATE` status at the archive-identity step; branch
-work uses `make spec-candidate-integrity`, while a merge revision must carry the exact
-owner-approved ACTIVE identity and outgoing archive. A green result states
-only what the selected gate exercises and is not a completeness claim.
+pass count. Canonical `make check` deliberately rejects `CANDIDATE` status at
+the archive-identity step: a merge revision must carry the exact ACTIVE
+identity and the outgoing archive, as this revision does. A work branch
+drafting the next version uses `make spec-candidate-integrity` instead. A green
+result states only what the selected gate exercises and is not a completeness
+claim.
 
 ## License
 

@@ -1,17 +1,19 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 52 (v0.36 remains activated authority; the unified-state
-completion-I/O rebuild is the live v0.37 work-branch direction)
+Revision: 53 (v0.37 activates the unified-state completion-I/O model as the
+language authority)
 
-The active language authority is v0.36, SHA-256
-`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
-On this work branch the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md)
-contains an in-progress v0.37 candidate which supersedes those exact bytes.
-Its bytes are changing during the rebuild. A candidate is valid branch work,
-not a merge-ready active identity; activation still needs
-the exact owner-approved revision, outgoing v0.36 archive, approval record,
-and canonical gate. The execution plan is
+The active language authority is v0.37, SHA-256
+`ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`, carried by
+the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md). It supersedes
+v0.36 at `fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`,
+archived at [`spec/kernel-spec-v0.36.md`](../spec/kernel-spec-v0.36.md). The
+merge-time approval record is in
+[`governance/APPROVALS.md`](../governance/APPROVALS.md) and becomes effective
+with the owner's merge approval of the exact revision containing it; the batch
+record is [batch 0082](done/0082-unified-state-completion-io.md). The
+execution plan is
 [`docs/current-plan.md`](current-plan.md).
 Project law is the [`Constitution`](constitution.md), and the operational
 process is [`WORKFLOW.md`](WORKFLOW.md).
@@ -57,7 +59,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.36]` `[current: safe-Rust compiler]`
+`[current: spec v0.37]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -68,10 +70,10 @@ unsupported rather than invalid source.
 The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
-belong in the [compiler README](../compiler/README.md). v0.36 is the active
-semantic authority. The work branch is rebuilding the system interface around
-formal state paths, ordinary ownership, and completion-only lowering; its
-partially migrated v0.37 candidate is not active language authority.
+belong in the [compiler README](../compiler/README.md). v0.37 is the active
+semantic authority. It rebuilds the system interface around formal state paths,
+ordinary ownership, and completion-only lowering, with no separate world
+region, capability class, blocking-call family, or `Ordered` relation.
 Which gap matters next is selected by a project, never by checklist length.
 
 ## Dependency rules
@@ -441,7 +443,7 @@ creating writer trust or weakening the checked safety envelope.
 
 ### outline:PROOF-10 — Claim residual source canonicality
 
-`[current: active v0.36; introduced by v0.34]` `[terminal]`
+`[current: active v0.37; introduced by v0.34]` `[terminal]`
 
 - **Goal:** make every claim in a successful checker result one mechanically
   qualified, individually necessary runtime-residual candidate, and every
@@ -483,7 +485,7 @@ creating writer trust or weakening the checked safety envelope.
   irredundancy, not a unique proof basis or globally weakest proposition.
   Accepted-claim runtime execution is unchanged, and no optional solver
   participates in ordinary source acceptance.
-- **Current:** v0.34 introduced this direction, and active v0.36 preserves it.
+- **Current:** v0.34 introduced this direction, and active v0.37 preserves it.
   The exact activation identities and conformance boundaries remain in
   `governance/APPROVALS.md`. The residual lifecycle, contribution basis,
   reconstruction, fixed eligible set, component/occurrence necessity, stable
@@ -537,7 +539,7 @@ facts-off evidence rather than trust in the compiler or writer.
 ### outline:VERIFY-2 — Execute the conformance corpus against the compiler
 
 `[current: native adapter installed]`
-`[next: publish an exact-revision report for the migrated candidate]`
+`[next: publish an exact-revision report for the activated v0.37 revision]`
 
 - **Goal:** compare compiler behavior with compiler-independent active-spec
   expectations through the normal command path.
@@ -546,10 +548,9 @@ facts-off evidence rather than trust in the compiler or writer.
   compiler. Canonical root `make check` invokes the complete adapter
   explicitly even though the Cargo integration remains marked `#[ignore]` for
   ordinary test runs. Historical exact-revision results remain in their batch
-  and activation records; this outline carries no floating count for the
-  changing v0.37 candidate.
+  and activation records; this outline carries no floating count of its own.
 - **Missing / next:** publish the next independent pass/fail/skip report for
-  the exact migrated candidate. Any
+  the exact activated v0.37 revision. Any
   expectation, source, status, collection, or invocation change is conformance
   evidence whose exact before/after content is recorded under merge rule 4.
 - **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
@@ -785,7 +786,7 @@ and failure semantics survive the runtime implementation.
   [measured results](../research/investigations/proof-derived-parallelism/RESULTS.md) ·
   [deciding probes](../research/investigations/proof-derived-parallelism/probes/README.md) ·
   [permission and layer model](../research/investigations/proof-derived-parallelism/PAL.md) ·
-  [batch record 0074](ongoing/0074-proof-derived-parallelism.md) ·
+  [batch record 0074](done/0074-proof-derived-parallelism.md) ·
   [auto-parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md).
 
 ### outline:PAR-2 — Intra-object disjointness
@@ -810,7 +811,7 @@ and failure semantics survive the runtime implementation.
 - **Facts:** [parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md) ·
   [pattern gaps](patterns.md#known-gaps-findings-not-yet-patterns) ·
   [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md) ·
-  [batch record 0078](ongoing/0078-loop-permission.md).
+  [batch record 0078](done/0078-loop-permission.md).
 
 Note the name collision, which the `outline:` prefix keeps formally distinct:
 this direction is `outline:PAR-2`, and the spec rule `[PAR-2]` the branch
@@ -843,7 +844,7 @@ carries is counted-loop reduction permission, not intra-object disjointness.
   each with a named re-entry condition in the design ruling.
 - **Facts:** [historical chunk-summary result](../research/experiments/port-study/wc-chunk-summary/RESULTS.md) ·
   [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md) ·
-  [batch record 0078](ongoing/0078-loop-permission.md).
+  [batch record 0078](done/0078-loop-permission.md).
 
 ### outline:PAR-4 — Runtime, allocation, and dynamic fan-out
 
@@ -875,14 +876,14 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### outline:BOUND-1 — Unified state and host integration
 
-`[current: v0.36 active; v0.37 unified-state candidate implemented and validated]`
-`[next: owner review and activation; then wider APIs and target measurements]`
+`[current: v0.37 active; unified-state model implemented and validated]`
+`[next: wider APIs and target measurements]`
 
 - **Goal:** give command, service, and embedded program instances a coherent
   host boundary covering process context, filesystems, data streams, clocks,
   randomness, networking, waiting, and cancellation without ambient mutable
   authority, writer-defined trust, or a second I/O type system.
-- **Current:** v0.36 remains active. The owner-confirmed v0.37 direction uses
+- **Current:** v0.37 is active and carries this model. It uses
   ordinary opaque affine values and the existing `own`, `move`, `&`, and
   `&uniq` rules for all resources. `reads` and `writes` name formal parameters
   or static struct fields rather than lifetimes. Lifetimes state loan duration
@@ -897,16 +898,18 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   I/O model. The generation-safe runtime core, target-only helpers, Linux
   io_uring work, Windows IOCP foundation, selective stackless slice, and
   component measurements were retained while the rejected group machinery was
-  removed. The final candidate passes compiler, program, conformance,
+  removed. The activated revision passes compiler, program, conformance,
   sanitizer, native helper, stress, and cross-link gates. The cleaned Mac
   runtime has also been remeasured; those numbers remain scoped to that host
   and workload.
-- **Missing / next:** present the exact candidate bytes and conformance changes
-  for owner review and activation; widen stackless lowering; execute and
-  qualify Windows; add network, timer, cancellation, deadline, and
+- **Missing / next:** widen stackless lowering beyond single-instruction tail
+  chains; execute and qualify Windows; add a clock reading, keyed directory
+  places, namespace mutation, and network, timer, cancellation, deadline, and
   finish-required output APIs only with complete ordinary ownership and target
-  contracts.
-- **Facts:** [first-principles derivation](../research/investigations/io-model/FIRST-PRINCIPLES.md) ·
+  contracts; measure a whole program rather than components. The open items
+  are enumerated in [batch 0082](done/0082-unified-state-completion-io.md).
+- **Facts:** [batch record 0082](done/0082-unified-state-completion-io.md) ·
+  [first-principles derivation](../research/investigations/io-model/FIRST-PRINCIPLES.md) ·
   [concrete API and lowering design](../research/investigations/io-model/DESIGN.md) ·
   [experimental implementation audit](../research/investigations/io-model/IMPLEMENTATION-AUDIT.md) ·
   [clean-core measurements](../research/investigations/io-model/RESULTS.md) ·

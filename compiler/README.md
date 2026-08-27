@@ -23,13 +23,11 @@ ordered source bundle
   -> host executable
 ```
 
-The frontend follows the in-progress v0.37 candidate at
-`../spec/kernel-spec.md`. Those bytes are changing during the unified-state
-completion-I/O rebuild, so this README records no floating candidate hash. The
-candidate supersedes the exact active v0.36 bytes at
-`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
-The compiler's merge authority remains the exact v0.36 bytes until activation.
-The candidate is valid work-branch content, not a merge-ready ACTIVE identity.
+The frontend targets the exact v0.37 bytes at `../spec/kernel-spec.md`,
+SHA-256 `ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`.
+v0.37 activates the unified-state completion-I/O model and supersedes v0.36 at
+`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`, whose
+outgoing bytes are archived at `../spec/kernel-spec-v0.36.md`.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same
 specification identity. The committed grammar tables are ordinary compiler
@@ -116,7 +114,7 @@ Resource release uses the same ordinary state contract as an explicit call.
 A resource with a meaningful finish result uses a consuming finish operation;
 compiler-derived release performs only the weaker action its type declares.
 The old shared advancing directory source and shared mutable Output shapes are
-not candidate authority. Advancing sources and outputs use `own` or `&uniq`.
+not v0.37 authority. Advancing sources and outputs use `own` or `&uniq`.
 
 The macOS/Linux command bootstrap owns the process before entry: it establishes
 the QUAL-2 argument backing from the native vector, installs the selected
@@ -140,12 +138,12 @@ level and nested scopes alike, with a
 `(System, system_declaration_ordinal)` origin; there is no shadowing in either
 direction.
 
-The candidate catalog records parameter names, modes, loan lifetimes, result
+The system catalog records parameter names, modes, loan lifetimes, result
 types, exact formal state paths, and completion contracts. Ordinary place and
-loan overlap decides permission. The work branch is removing the temporary
-root/family/fragment and Free/Ordered/Exclusive tables; any remaining field in
-an intermediate revision is migration debris and cannot authorize accepted
-source or lowering.
+loan overlap decides permission. The temporary root/family/fragment and
+Free/Ordered/Exclusive tables are gone; no capability root, family relation,
+authority fragment, or `Ordered` relation authorizes accepted source or
+lowering.
 
 The resolver covers every active-specification declaration, lexical-use, and deferred
 owner/member role through one grammar-driven path, including exact scopes,
@@ -303,8 +301,8 @@ their v0.18-specified source rejections.
 
 The first lexical borrow family adds caller region parameters, local region
 blocks, shared and unique buffer holders, explicit `deref`, resolved
-field-prefix overlap, and ultimate-origin `reads`/`writes` effects. Active
-v0.36 spells those effect subjects as lifetimes; the v0.37 migration below
+field-prefix overlap, and ultimate-origin `reads`/`writes` effects. The
+superseded v0.36 spelled those effect subjects as lifetimes; active v0.37
 preserves the borrow behavior while naming formal state paths instead. Borrowed
 buffer descriptors cross ordinary calls by value, but only the original owner
 is cleaned up. Distinct struct fields can therefore be uniquely passed to a
@@ -313,9 +311,9 @@ allocation. The backend remains conservative LLVM without unearned overflow
 flags or check elision.
 
 Effect rows are checked as exact source-level summaries for every admitted
-function. `pure` is the empty effect row, not a termination claim. The
-v0.37 migration gives `reads` and `writes` one operand kind: a formal parameter
-or static field path naming logical state. Lifetimes remain in borrow and slice
+function. `pure` is the empty effect row, not a termination claim. v0.37 gives `reads`
+and `writes` one operand kind: a formal parameter or static field path naming
+logical state. Lifetimes remain in borrow and slice
 types only, where they state loan duration and outlives facts. A write requires
 an ordinary `own` or `&uniq` route; a read may use `own`, `&uniq`, or `&`.
 Reads and writes remain separate exact sets. A transition that observes the
@@ -335,9 +333,9 @@ The exhibited row additionally unions every compiler-derived release on a
 normal edge, and a mismatch a release alone explains is reported at the
 function's `effects` node, rendering the owning parameter or binding. The
 computed row must equal the declared row, so both missing and superfluous
-state paths reject under EFF-2. The migration is extending this path across
-all owned aggregates and results before the candidate can claim semantic
-closure.
+state paths reject under EFF-2. Extending this provenance across every
+remaining owned aggregate and result is ordinary compiler work under the
+activated rules; the rules themselves are settled.
 The backend emits no effect-derived LLVM function attributes or alias metadata,
 licenses no check elision from an effect row, and never emits `willreturn`;
 Whitefoot currently has no termination checker.

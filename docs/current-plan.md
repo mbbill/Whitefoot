@@ -1,13 +1,16 @@
 # Current Plan: unified-state completion I/O
 
-Status: IMPLEMENTED AND VALIDATED WORK-BRANCH CANDIDATE on
+Status: IMPLEMENTED, VALIDATED, AND ACTIVATED on
 `codex/io-first-principles`.
 
-Active language authority: v0.36,
-`fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`.
-The edited `spec/kernel-spec.md` is an unapproved candidate. It does not become
-active and nothing merges to `main` until the owner approves the exact revision
-and canonical `make check` passes on that revision.
+Active language authority: v0.37,
+`ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`.
+`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.36 is
+archived at `spec/kernel-spec-v0.36.md` and the merge-time record is in
+`governance/APPROVALS.md`. Activation is branch content: nothing merges to
+`main` until the owner approves the exact revision and canonical `make check`
+passes on that revision. The batch record is
+`docs/done/0082-unified-state-completion-io.md`.
 
 ## Objective
 
@@ -125,12 +128,14 @@ the components they actually measured.
 7. Remove the legacy bridge and group admission surfaces while retaining the
    qualified single-operation completion core and target-private channels.
 8. Migrate all compiler tests, conformance cases, maintained programs, and
-   documentation to the same candidate bytes.
+   documentation to the same specification bytes.
 9. Run the complete verification matrix and measure the cleaned runtime again.
+10. Archive the outgoing v0.36 bytes, activate v0.37, record the activation and
+    conformance boundary, and bring every digest anchor to the new identity.
 
 ## Evidence obtained
 
-The candidate now proves:
+The activated revision proves:
 
 - two parameters sharing one lifetime remain separate effect subjects;
 - an owned resource parameter is directly nameable in an effect;
@@ -158,8 +163,7 @@ The candidate now proves:
   gate pass; and
 - cleaned fast paths are measured against the best matched native shape.
 
-No test, verdict, check, or failure path was weakened to make the candidate
-green. Canonical `make check` intentionally stops at the candidate archive
-identity; after owner-approved activation, the exact merge revision must pass
-that canonical entry point. No merge into `main` occurs without owner approval
-of the exact revision.
+No test, verdict, check, or failure path was weakened to make this revision
+green. Canonical `make check` now runs to completion on the activated identity
+rather than stopping at the candidate archive gate. No merge into `main`
+occurs without owner approval of the exact revision.

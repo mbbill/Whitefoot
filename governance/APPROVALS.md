@@ -1491,3 +1491,64 @@ ACTIVE-SPEC: v0.35 645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb
   `tests/conformance` content is added, modified, deleted, or renamed;
   coverage remains 137/137 with zero corpus delta.
 ACTIVE-SPEC: v0.36 fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62 645b22b19bdfcf51683b9b10c7fd9109fc4029e9687df30e09e871daf84eb769
+
+## 2026-08-27 — merge-time approval content: v0.37 unified-state completion I/O ([EFF-5] rewrite, `effect_path`, [PAR-1] direct system calls)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step.
+- SPECIFICATION: activate Whitefoot v0.37 at exact SHA-256
+  `ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619`.
+  It supersedes active v0.36 at SHA-256
+  `fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.36.md`. Per the specification's own META-5 delta
+  declaration: the numbered rule count is unchanged at 137, and runtime-trap
+  families, entry forms, contract block forms, and exception clauses are
+  unchanged. Grammar productions are +1/-0 (75 remain): `reads` and `writes`
+  stop accepting REGIONID, and the new `effect_path` production admits only
+  formal-rooted static struct paths. Unique fixed lowercase grammar atoms are
+  net -2 because `external` and `blocks` become ordinary IDENT spellings.
+  Writer operation spellings are +4/-3: `read_at`, `open_directory_source`,
+  and `directory_next` replace the cursor-shaped spellings, and `reserve_file`
+  is added. Two opaque system nominal spellings are added (`FileFactory` and
+  `FilePermit`) while one changes from `DirectoryList` to `DirectorySource`.
+  System operations are +1 and declaration records +4, from 199 to 203,
+  because positioned read adds `file_offset`, each of four open operations
+  adds one `permit` parameter, file reservation adds one operation, one
+  region, and one parameter, and the backend-only `Interrupted` and
+  `WouldBlock` outcome constructors and their four fields are removed.
+  Existing effect, system, release, trap, and overlap rules are amended:
+  [EFF-5] is rewritten so ordinary owned places, exact effect paths, and loans
+  decide coexistence rather than a global sequential external-call order, and
+  direct system calls participate in [PAR-1] under the same effect, loan,
+  dataflow, and exit permission as user calls. No writer-visible world region,
+  capability category, blocking call family, callback, task, future, or
+  scheduling marker is added. The selection ground is the first-principles
+  derivation in `research/investigations/io-model/FIRST-PRINCIPLES.md`.
+- CONFORMANCE BOUNDARY: relative to the v0.36 activation boundary at `main`
+  tip `eab81a335addfb0ae060735771d4e98891dec2ea`, `tests/conformance` content
+  changes as follows. Added: two case files,
+  `tests/conformance/cases/accept-sysfile-two-permits-shared-directory.wf`
+  and `tests/conformance/cases/reject-sysfile-permit-used-twice.wf`.
+  Modified: ninety-six files, being ninety-five case files under
+  `tests/conformance/cases/` and `tests/conformance/manifest.jsonl`. Deleted:
+  none. Renamed: none. Within `tests/conformance/manifest.jsonl`, two case
+  records are added for the two added cases and twenty-one records are
+  modified in place, taking the case-record count from 421 to 423 with no
+  record removed. The twenty-one in-place modifications are three
+  rule-annotation records and eighteen case records. The rule-annotation
+  changes are: [CAP-1] moves from `gated-family` to `compiler-ownership-model`
+  because the rule now states that no separate capability category exists;
+  [SYS-7]'s portable class count changes from thirty to twenty-eight with the
+  removal of the `Interrupted` and `WouldBlock` constructors; and [EFF-5]'s
+  annotation reason is rewritten from sequential external-call ordering to
+  coexistence decided by owned places, exact effect paths, and loans, observed
+  by the runnable redirected-output case. The eighteen case-record changes are
+  rule-list and doc-text updates for the renamed operations
+  (`read_once`/`list_once` to `read_at`/`directory_next`), the
+  `DirectoryList`-to-`DirectorySource` spelling change, the explicit `Args`
+  state path in the effect rows, the `FilePermit` parameter on the open
+  operations, and the five-row command standard-input table; no `expect`
+  verdict changes in any of them. Coverage remains 137/137 rules.
+ACTIVE-SPEC: v0.37 ee9f12ec9356267c13b536e962288ebbffa0b3507cfac0a5345f99e8dce53619 fd57cfc4bfcf685f14b073c98e149c8a44a201dc79fbd76075ebd49a87995c62
